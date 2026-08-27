@@ -98,6 +98,7 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
           deleted: replyRaw.deleted === true,
         }
       : null
+  const imagePath = typeof msg.imagePath === 'string' ? msg.imagePath : null
   return {
     type:
       r.type === 'message:deleted'
@@ -122,6 +123,7 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
           : { id: msg.senderId, name: 'Unknown', color: 'emerald' },
       reactions,
       replyTo,
+      imagePath,
     },
     recipientIds: [],
     conversationId: msg.conversationId,

@@ -46,6 +46,13 @@ export async function GET(req: Request) {
     conversations.map((conv) => buildConversationSummary(conv, userId)),
   )
 
+  // Pinned (by this viewer) float to the top, then freshest first.
+  summaries.sort((a, b) => {
+    const pinDelta = (b.pinnedAt ? Date.parse(b.pinnedAt) : 0) - (a.pinnedAt ? Date.parse(a.pinnedAt) : 0)
+    if (pinDelta !== 0) return pinDelta
+    return Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
+  })
+
   return NextResponse.json({ conversations: summaries })
 }
 

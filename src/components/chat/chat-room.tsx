@@ -24,6 +24,8 @@ import {
   Clock,
   Copy,
   EllipsisVertical,
+  ImagePlus,
+  LoaderCircle,
   Reply,
   SendHorizontal,
   Smile,
@@ -38,6 +40,7 @@ import type {
 } from '@/lib/types'
 import {
   apiJson,
+  compressImageToDataUrl,
   conversationDisplayName,
   formatDayChip,
   formatListStamp,
@@ -51,6 +54,7 @@ import {
   uid,
 } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
+import { pulseDraftsStore } from '@/lib/pulse-drafts'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import { cn } from '@/lib/utils'
 import {
@@ -65,6 +69,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Drawer, DrawerContent } from '@/components/ui/drawer'
 import {
   Dialog,
   DialogContent,
@@ -114,13 +119,20 @@ export function ChatRoom({
   const { resolvedTheme } = useTheme()
   const themeMounted = useMounted()
 
-  const [input, setInput] = useState('')
+  // restore persisted draft once per opened conversation
+  const [input, setInput] = useState(() => pulseDraftsStore.getState().drafts[conversationId] ?? '')
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [selected, setSelected] = useState<ChatMessage | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [showJump, setShowJump] = useState(false)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  /** {message, emoji} → who-reacted sheet */
+  const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
+  const [sendingImage, setSendingImage] = useState(false)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -318,7 +330,7 @@ export function ChatRoom({
         scrollToBottom(true)
       } else {
         setShowJump(true)
-        buzz(10)
+        haptic(10)
       }
     })
   }, [lastMessageId, historyLoaded, scrollToBottom])
@@ -349,22 +361,29 @@ export function ChatRoom({
       clientId,
       content,
       replyToId,
+      imagePath,
     }: {
       clientId: string
       content: string
       replyToId?: string
+      imagePath?: string
     }) => {
       const res = await apiJson<SendResponse>(
         `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ senderId: me.id, content, ...(replyToId ? { replyToId } : {}) }),
+          body: JSON.stringify({
+            senderId: me.id,
+            content,
+            ...(replyToId ? { replyToId } : {}),
+            ...(imagePath ? { imagePath } : {}),
+          }),
         },
       )
       return { res, clientId }
     },
-    onMutate: async ({ clientId, content, replyToId }) => {
+    onMutate: async ({ clientId, content, replyToId, imagePath }) => {
       const parentSnapshot = replyToId && replyTo && replyTo.id === replyToId
         ? {
             id: replyTo.id,
@@ -383,6 +402,7 @@ export function ChatRoom({
         sender: { id: me.id, name: me.name, color: me.color },
         reactions: [],
         replyTo: parentSnapshot,
+        imagePath: imagePath ?? null,
       }
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
         old ? [...old, temp] : [temp],
@@ -524,17 +544,23 @@ export function ChatRoom({
     if (content.length === 0 || sendMessage.isPending) return
     stopTyping()
     setInput('')
+    pulseDraftsStore.getState().clearDraft(conversationId)
     requestAnimationFrame(autosize)
     sendMessage.mutate({
       clientId: uid(),
       content,
       ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
     })
-  }, [input, sendMessage, stopTyping, autosize, replyTo])
+  }, [input, sendMessage, stopTyping, autosize, replyTo, conversationId])
 
   const handleInputChange = (value: string) => {
     setInput(value)
     autosize()
+    if (draftTimerRef.current !== null) clearTimeout(draftTimerRef.current)
+    draftTimerRef.current = setTimeout(() => {
+      draftTimerRef.current = null
+      pulseDraftsStore.getState().setDraft(conversationId, value)
+    }, 300)
     if (value.trim().length > 0 && recipients.length > 0) {
       realtime.signalTyping(conversationId, {
         viewerId: me.id,
@@ -543,6 +569,32 @@ export function ChatRoom({
       })
     } else {
       stopTyping()
+    }
+  }
+
+  /** Pick → compress → upload → send as an image message. */
+  const handleImagePicked = async (file: File | undefined) => {
+    if (!file || sendingImage) return
+    setSendingImage(true)
+    try {
+      const dataUrl = await compressImageToDataUrl(file)
+      const up = await apiJson<{ imagePath: string }>('/api/uploads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl }),
+      })
+      haptic(12)
+      sendMessage.mutate({
+        clientId: uid(),
+        content: '',
+        imagePath: up.imagePath,
+        ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not send the image')
+    } finally {
+      setSendingImage(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
@@ -770,6 +822,12 @@ export function ChatRoom({
                   onStartLongPress={startLongPress}
                   onEndLongPress={clearLongPress}
                   onToggleReaction={handleToggleReaction}
+                  onReply={(m) => {
+                    setReplyTo(m)
+                    requestAnimationFrame(() => textareaRef.current?.focus())
+                  }}
+                  onReactionInfo={(m, emoji) => setReactionInfo({ message: m, emoji })}
+                  onOpenImage={setLightboxSrc}
                 />
               ),
             )}
@@ -871,6 +929,28 @@ export function ChatRoom({
         </AnimatePresence>
 
         <div className="flex items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            aria-hidden
+            tabIndex={-1}
+            onChange={(e) => void handleImagePicked(e.target.files?.[0])}
+          />
+          <button
+            type="button"
+            aria-label="Send a photo"
+            disabled={sendingImage}
+            onClick={() => fileInputRef.current?.click()}
+            className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 disabled:opacity-50 dark:hover:bg-zinc-800"
+          >
+            {sendingImage ? (
+              <LoaderCircle className="size-5 animate-spin" aria-hidden />
+            ) : (
+              <ImagePlus className="size-[22px]" aria-hidden />
+            )}
+          </button>
           <Popover>
             <PopoverTrigger asChild>
               <button
@@ -1027,6 +1107,97 @@ export function ChatRoom({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* photo lightbox */}
+      <AnimatePresence>
+        {lightboxSrc ? (
+          <motion.div
+            key="lightbox"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            role="dialog"
+            aria-label="Photo viewer"
+            className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm"
+            onClick={() => setLightboxSrc(null)}
+          >
+            <motion.img
+              src={lightboxSrc}
+              alt="Shared photo enlarged"
+              initial={{ scale: 0.88, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.94, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              className="max-h-[74%] max-w-[92%] rounded-2xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              type="button"
+              aria-label="Close photo viewer"
+              onClick={() => setLightboxSrc(null)}
+              className="absolute right-3 top-3 rounded-full bg-white/10 p-2 text-white outline-none transition-colors hover:bg-white/20"
+            >
+              <X className="size-5" aria-hidden />
+            </button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* who-reacted sheet */}
+      <Drawer open={reactionInfo !== null} onOpenChange={(open) => !open && setReactionInfo(null)}>
+        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+          {reactionInfo ? (
+            <div className="pb-2">
+              <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                <span className="text-lg leading-none">{reactionInfo.emoji}</span>
+                {(() => {
+                  const group = reactionInfo.message.reactions.find((g) => g.emoji === reactionInfo.emoji)
+                  const n = group?.count ?? 0
+                  return n === 1 ? '1 reaction' : `${n} reactions`
+                })()}
+              </p>
+              <ul className="pulse-scroll max-h-56 overflow-y-auto py-1">
+                {(reactionInfo.message.reactions
+                  .find((g) => g.emoji === reactionInfo.emoji)
+                  ?.userIds.map((userId) => ({
+                    id: userId,
+                    member: detailData?.members.find((m) => m.id === userId),
+                  })) ?? [])
+                  .map(({ id, member }) => (
+                    <li key={id} className="flex items-center gap-3 rounded-xl px-2 py-2">
+                      <UserAvatar
+                        name={member?.name ?? 'Unknown'}
+                        color={member?.color ?? 'emerald'}
+                        size={34}
+                      />
+                      <span className="flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                        {member?.name ?? 'Unknown'}
+                        {id === me.id ? <span className="ml-1 text-xs text-zinc-400">(you)</span> : null}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+              <button
+                type="button"
+                disabled={toggleReaction.isPending}
+                onClick={() => {
+                  handleToggleReaction(reactionInfo.message.id, reactionInfo.emoji)
+                  setReactionInfo(null)
+                }}
+                className="mt-1 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-bold text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-60"
+              >
+                <span className="text-base leading-none">{reactionInfo.emoji}</span>
+                {reactionInfo.message.reactions
+                  .find((g) => g.emoji === reactionInfo.emoji)
+                  ?.userIds.includes(me.id)
+                  ? 'Remove your reaction'
+                  : `React ${reactionInfo.emoji}`}
+              </button>
+            </div>
+          ) : null}
+        </DrawerContent>
+      </Drawer>
+
       {/* info dialog */}
       <InfoDialog
         open={infoOpen}
@@ -1067,6 +1238,10 @@ interface MessageRowProps {
   onStartLongPress: (message: ChatMessage) => void
   onEndLongPress: () => void
   onToggleReaction: (messageId: string, emoji: string) => void
+  onReply: (message: ChatMessage) => void
+  /** long-press a chip → who-reacted sheet */
+  onReactionInfo: (message: ChatMessage, emoji: string) => void
+  onOpenImage: (src: string) => void
 }
 
 /** Bubble body text with URL auto-linking (safe anchors, no HTML injection). */
@@ -1115,14 +1290,31 @@ const MessageRow = memo(function MessageRow({
   onStartLongPress,
   onEndLongPress,
   onToggleReaction,
+  onReply,
+  onReactionInfo,
+  onOpenImage,
 }: MessageRowProps) {
   const deleted = message.deletedAt !== null
   const pending = message.id.startsWith('temp-')
   const createdMs = Date.parse(message.createdAt)
   const isRead = !Number.isNaN(createdMs) && createdMs <= readMs
   const interactive = !deleted && !pending
-  const jumbo = !deleted && isJumboEmoji(message.content)
+  const jumbo = !deleted && !message.imagePath && isJumboEmoji(message.content)
   const hasReactions = message.reactions.length > 0
+  const isImage = !deleted && message.imagePath !== null
+  const dragMovedRef = useRef(false)
+  const chipPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const chipFiredRef = useRef(false)
+
+  const beginReply = () => {
+    haptic(12)
+    onReply(message)
+  }
+
+  const openReactionInfo = (emoji: string) => {
+    haptic(10)
+    onReactionInfo(message, emoji)
+  }
 
   return (
     <div
@@ -1149,11 +1341,49 @@ const MessageRow = memo(function MessageRow({
           </span>
         ) : null}
 
-        <motion.div
-          initial={{ opacity: 0, y: 8, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ type: 'spring', stiffness: 480, damping: 32, mass: 0.7 }}
-          onClick={() => interactive && onPress(message)}
+        <div className="relative flex w-full">
+          {!mine ? (
+            <motion.span
+              aria-hidden
+              initial={false}
+              className="absolute left-0 top-1/2 -translate-y-1/2 text-emerald-500 opacity-0"
+              style={{ pointerEvents: 'none' }}
+            >
+              <Reply className="size-4" />
+            </motion.span>
+          ) : (
+            <motion.span
+              aria-hidden
+              initial={false}
+              className="absolute right-0 top-1/2 -translate-y-1/2 text-emerald-500 opacity-0"
+              style={{ pointerEvents: 'none' }}
+            >
+              <Reply className="size-4" />
+            </motion.span>
+          )}
+          <motion.div
+          drag="x"
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.24}
+          dragSnapToOrigin
+          onDragStart={() => {
+            dragMovedRef.current = false
+            onEndLongPress()
+          }}
+          onDragEnd={(_e, info) => {
+            const toward = mine ? -info.offset.x : info.offset.x
+            if (toward > 52) {
+              dragMovedRef.current = true
+              beginReply()
+            }
+          }}
+          onClick={() => {
+            if (dragMovedRef.current) {
+              dragMovedRef.current = false
+              return
+            }
+            if (interactive && !isImage) onPress(message)
+          }}
           onPointerDown={() => interactive && onStartLongPress(message)}
           onPointerUp={onEndLongPress}
           onPointerLeave={onEndLongPress}
@@ -1162,19 +1392,18 @@ const MessageRow = memo(function MessageRow({
               onToggleReaction(message.id, '❤️')
             }
           }}
-          role={interactive ? 'button' : undefined}
-          tabIndex={interactive ? 0 : undefined}
+          role={interactive && !isImage ? 'button' : undefined}
+          tabIndex={interactive && !isImage ? 0 : undefined}
           onKeyDown={(event) => {
-            if (interactive && event.key === 'Enter') onPress(message)
+            if (interactive && !isImage && event.key === 'Enter') onPress(message)
           }}
           className={cn(
             'relative select-none',
             jumbo
-              ? cn(
-                  'px-1 py-0.5',
-                  deleted && 'rounded-2xl',
-                )
-              : 'rounded-2xl px-3 py-2 shadow-sm',
+              ? 'px-1 py-0.5'
+              : isImage
+                ? 'rounded-2xl p-1 shadow-sm'
+                : 'rounded-2xl px-3 py-2 shadow-sm',
             deleted &&
               cn(
                 'border border-dashed italic',
@@ -1229,7 +1458,32 @@ const MessageRow = memo(function MessageRow({
                   </p>
                 </div>
               ) : null}
-              {jumbo ? (
+              {isImage ? (
+                <button
+                  type="button"
+                  aria-label="Open photo"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (message.imagePath) {
+                      onOpenImage(`/api/uploads/${encodeURIComponent(message.imagePath)}`)
+                    }
+                  }}
+                  className={cn(
+                    'block overflow-hidden rounded-xl outline-none',
+                    mine ? '' : '',
+                  )}
+                >
+                  <img
+                    src={`/api/uploads/${encodeURIComponent(message.imagePath as string)}`}
+                    alt="Shared photo"
+                    loading="lazy"
+                    className={cn(
+                      'block max-h-[300px] w-auto max-w-full rounded-xl object-cover transition-transform active:scale-[0.985]',
+                      pending && 'opacity-80',
+                    )}
+                  />
+                </button>
+              ) : jumbo ? (
                 <p className="text-[34px] leading-[1.2] break-words">{message.content}</p>
               ) : (
                 <BubbleText content={message.content} mine={mine} />
@@ -1258,6 +1512,7 @@ const MessageRow = memo(function MessageRow({
             ) : null}
           </div>
         </motion.div>
+        </div>
 
         {hasReactions && !deleted ? (
           <motion.div
@@ -1275,8 +1530,32 @@ const MessageRow = memo(function MessageRow({
                 <button
                   key={group.emoji}
                   type="button"
-                  aria-label={`${group.emoji} ${group.count} — tap to toggle`}
-                  onClick={() => onToggleReaction(message.id, group.emoji)}
+                  aria-label={`${group.emoji} ${group.count} — tap to toggle, hold for details`}
+                  onClick={() => {
+                    if (!chipFiredRef.current) onToggleReaction(message.id, group.emoji)
+                    chipFiredRef.current = false
+                  }}
+                  onPointerDown={() => {
+                    if (chipPressRef.current !== null) clearTimeout(chipPressRef.current)
+                    chipFiredRef.current = false
+                    chipPressRef.current = setTimeout(() => {
+                      chipFiredRef.current = true
+                      chipPressRef.current = null
+                      openReactionInfo(group.emoji)
+                    }, 380)
+                  }}
+                  onPointerUp={() => {
+                    if (chipPressRef.current !== null) {
+                      clearTimeout(chipPressRef.current)
+                      chipPressRef.current = null
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    if (chipPressRef.current !== null) {
+                      clearTimeout(chipPressRef.current)
+                      chipPressRef.current = null
+                    }
+                  }}
                   className={cn(
                     'flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] shadow-sm backdrop-blur transition-transform active:scale-90',
                     iReacted
@@ -1318,7 +1597,10 @@ function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
     prev.onPress === next.onPress &&
     prev.onStartLongPress === next.onStartLongPress &&
     prev.onEndLongPress === next.onEndLongPress &&
-    prev.onToggleReaction === next.onToggleReaction
+    prev.onToggleReaction === next.onToggleReaction &&
+    prev.onReply === next.onReply &&
+    prev.onReactionInfo === next.onReactionInfo &&
+    prev.onOpenImage === next.onOpenImage
   )
 }
 

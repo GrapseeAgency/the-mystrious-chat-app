@@ -3,11 +3,12 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, Search, SquarePen, X } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowRight, MoreVertical, Pin, PinOff, Search, SquarePen, X } from 'lucide-react'
+import { toast } from 'sonner'
 import type { AppUser, ConversationSummary } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import {
@@ -19,9 +20,11 @@ import {
   otherMemberOf,
 } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
+import { haptic } from '@/lib/pulse-settings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Drawer, DrawerContent } from '@/components/ui/drawer'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 import { ThemeToggleButton } from '@/components/chat/theme-toggle'
 
@@ -43,8 +46,12 @@ interface ConversationRowProps {
   dmColor: string
   groupTitle: string
   online: boolean
+  pinned: boolean
   onPress: () => void
+  onLongPress: () => void
 }
+
+const LONG_PRESS_MS = 450
 
 const ConversationRow = memo(function ConversationRow({
   id,
@@ -59,15 +66,50 @@ const ConversationRow = memo(function ConversationRow({
   dmColor,
   groupTitle,
   online,
+  pinned,
   onPress,
+  onLongPress,
 }: ConversationRowProps) {
   const hasUnread = unreadCount > 0
+  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressFiredRef = useRef(false)
+
+  const clearLongPress = useCallback(() => {
+    if (longPressRef.current !== null) {
+      clearTimeout(longPressRef.current)
+      longPressRef.current = null
+    }
+  }, [])
+
+  const startLongPress = useCallback(() => {
+    clearLongPress()
+    longPressFiredRef.current = false
+    longPressRef.current = setTimeout(() => {
+      longPressFiredRef.current = true
+      longPressRef.current = null
+      haptic(15)
+      onLongPress()
+    }, LONG_PRESS_MS)
+  }, [clearLongPress, onLongPress])
+
+  const handleClick = useCallback(() => {
+    if (!longPressFiredRef.current) onPress()
+    longPressFiredRef.current = false
+  }, [onPress])
+
   return (
-    <div className="px-2">
+    <div className="group relative px-2">
       <button
         type="button"
-        onClick={onPress}
-        className="flex w-full touch-manipulation items-center gap-3 rounded-2xl px-2 py-2.5 text-left outline-none transition-colors active:bg-zinc-100 dark:active:bg-zinc-800"
+        onClick={handleClick}
+        onPointerDown={startLongPress}
+        onPointerUp={clearLongPress}
+        onPointerLeave={clearLongPress}
+        onContextMenu={(e) => e.preventDefault()}
+        className={cn(
+          'flex w-full touch-manipulation items-center gap-3 rounded-2xl px-2 py-2.5 text-left outline-none transition-colors active:bg-zinc-100 dark:active:bg-zinc-800',
+          pinned && 'bg-emerald-500/[0.045] dark:bg-emerald-500/[0.06]',
+        )}
       >
         {isGroup ? (
           <GroupAvatar title={groupTitle} id={id} size={48} />
@@ -77,15 +119,20 @@ const ConversationRow = memo(function ConversationRow({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
-            <span
-              className={cn(
-                'truncate text-[15px] tracking-tight',
-                hasUnread
-                  ? 'font-semibold text-zinc-900 dark:text-zinc-50'
-                  : 'font-medium text-zinc-900 dark:text-zinc-100',
-              )}
-            >
-              {name}
+            <span className="flex min-w-0 items-center gap-1">
+              {pinned ? (
+                <Pin className="size-3 shrink-0 fill-emerald-500 text-emerald-500" aria-label="Pinned" />
+              ) : null}
+              <span
+                className={cn(
+                  'truncate text-[15px] tracking-tight',
+                  hasUnread
+                    ? 'font-semibold text-zinc-900 dark:text-zinc-50'
+                    : 'font-medium text-zinc-900 dark:text-zinc-100',
+                )}
+              >
+                {name}
+              </span>
             </span>
             <span
               className={cn(
@@ -122,6 +169,17 @@ const ConversationRow = memo(function ConversationRow({
             ) : null}
           </div>
         </div>
+      </button>
+      <button
+        type="button"
+        aria-label={`Options for ${name}`}
+        onClick={(e) => {
+          e.stopPropagation()
+          onLongPress()
+        }}
+        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-zinc-400 opacity-0 shadow-sm outline-none backdrop-blur transition-opacity hover:text-zinc-600 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-zinc-800/90 dark:hover:text-zinc-200"
+      >
+        <MoreVertical className="size-4" aria-hidden />
       </button>
       <div aria-hidden className="ml-[64px] h-px bg-zinc-100 dark:bg-zinc-800" />
     </div>
@@ -192,6 +250,7 @@ export function ChatsTab({
           dmColor: other?.color ?? 'emerald',
           groupTitle: groupName,
           online: !conv.isGroup && other !== null && realtime.onlineIds.has(other.id),
+          pinned: conv.pinnedAt !== null,
         },
       }
     })
@@ -224,6 +283,33 @@ export function ChatsTab({
     setSearching(false)
     setSearchQuery('')
   }, [])
+
+  // ── row long-press action sheet (pin/unpin) ───────────────
+  const [sheetConv, setSheetConv] = useState<ConversationSummary | null>(null)
+  const queryClient = useQueryClient()
+
+  const togglePin = useMutation({
+    mutationFn: async (conv: ConversationSummary) => {
+      return apiJson<{ ok: boolean; pinned: boolean }>(
+        `/api/conversations/${encodeURIComponent(conv.id)}/pin`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me.id }),
+        },
+      )
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success(data.pinned ? 'Pinned to top' : 'Unpinned')
+      setSheetConv(null)
+    },
+    onError: () => {
+      toast.error('Could not update the pin')
+    },
+  })
+
+  const openSheetFor = useCallback((conv: ConversationSummary) => setSheetConv(conv), [])
 
   const data = conversations.data ?? []
 
@@ -293,6 +379,7 @@ export function ChatsTab({
                   key={props.id}
                   {...props}
                   onPress={() => handlePress(conv)}
+                  onLongPress={() => openSheetFor(conv)}
                 />
               ))}
             </div>
@@ -314,11 +401,52 @@ export function ChatsTab({
                 key={props.id}
                 {...props}
                 onPress={() => handlePress(conv)}
+                onLongPress={() => openSheetFor(conv)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* long-press action sheet — pin / unpin */}
+      <Drawer open={sheetConv !== null} onOpenChange={(open) => !open && setSheetConv(null)}>
+        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+          {sheetConv ? (
+            <div className="pb-2">
+              <p className="px-2 pb-2 pt-1 text-center text-xs font-medium text-zinc-400 dark:text-zinc-500">
+                {conversationDisplayName(sheetConv, me.id)}
+              </p>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={togglePin.isPending}
+                onClick={() => togglePin.mutate(sheetConv)}
+                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-sm font-semibold text-zinc-800 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              >
+                {sheetConv.pinnedAt ? (
+                  <>
+                    <PinOff className="size-5 text-amber-500" aria-hidden />
+                    Unpin from top
+                  </>
+                ) : (
+                  <>
+                    <Pin className="size-5 text-emerald-500" aria-hidden />
+                    Pin to top
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => setSheetConv(null)}
+                className="flex w-full items-center justify-center rounded-2xl px-3 py-3 text-left text-sm font-medium text-zinc-500 outline-none transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : null}
+        </DrawerContent>
+      </Drawer>
     </div>
   )
 }

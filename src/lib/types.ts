@@ -46,6 +46,7 @@ export interface ChatMessage {
   sender: MessageAuthor
   reactions: MessageReactionGroup[]
   replyTo: ReplySnippet | null
+  imagePath: string | null // served via GET /api/uploads/[imagePath]
 }
 
 /** Row of the conversations list */
@@ -58,6 +59,7 @@ export interface ConversationSummary {
   members: AppUser[] // every participant EXCEPT is never filtered; UI filters out self where needed
   lastMessage: ChatMessage | null
   unreadCount: number // count of non-deleted messages from others newer than my lastReadAt
+  pinnedAt: string | null // viewer's pin watermark (null = not pinned)
 }
 
 /** Full detail for a chat room */

@@ -2,6 +2,8 @@
 // /api/conversations/[id]/messages — history + send
 // ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
+import { stat } from 'node:fs/promises'
+import path from 'node:path'
 import { db } from '@/lib/db'
 import {
   mapMessage,
@@ -12,6 +14,7 @@ import {
   MESSAGES_DEFAULT_LIMIT,
   MESSAGES_MAX_LIMIT,
   MESSAGE_MAX,
+  UPLOADS_DIR,
   safeJson,
   strField,
 } from '@/lib/serializers'
@@ -86,12 +89,31 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'senderId is required.' }, { status: 400 })
   }
   const content = strField(body.content)
-  if (!content) {
-    return NextResponse.json({ error: 'Message content cannot be empty.' }, { status: 400 })
-  }
   if (content.length > MESSAGE_MAX) {
     return NextResponse.json(
       { error: `Message must be ${MESSAGE_MAX} characters or fewer.` },
+      { status: 400 },
+    )
+  }
+
+  // Optional image attachment — must reference a previously uploaded file.
+  const imagePath = strField(body.imagePath)
+  if (imagePath) {
+    if (!/^[A-Za-z0-9-]+\.(jpg|jpeg|png|webp)$/.test(imagePath)) {
+      return NextResponse.json({ error: 'imagePath is invalid.' }, { status: 400 })
+    }
+    try {
+      await stat(path.join(UPLOADS_DIR, imagePath))
+    } catch {
+      return NextResponse.json(
+        { error: 'imagePath does not reference an uploaded file. POST /api/uploads first.' },
+        { status: 400 },
+      )
+    }
+  }
+  if (!content && !imagePath) {
+    return NextResponse.json(
+      { error: 'Message needs text content or an image.' },
       { status: 400 },
     )
   }
@@ -137,6 +159,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
         senderId,
         content,
         ...(replyToId ? { replyToId } : {}),
+        ...(imagePath ? { imagePath } : {}),
       },
       include: MESSAGE_FULL_INCLUDE,
     })

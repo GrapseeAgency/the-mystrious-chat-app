@@ -167,6 +167,45 @@ export function splitUrlSegments(text: string): Array<{ kind: 'text' | 'url'; va
   return out
 }
 
+// ── Image compression (client-side, canvas-based) ────────────
+
+const IMAGE_MAX_EDGE = 1280
+const IMAGE_JPEG_QUALITY = 0.82
+
+/**
+ * Downscale/re-encode an image file to a JPEG data URL (≤1280px edge).
+ * PNG transparency is flattened onto white (JPEG has no alpha).
+ * Throws on non-images or unreadable files.
+ */
+export async function compressImageToDataUrl(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Only image files are supported')
+  }
+  const bitmapUrl = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('Could not read the image'))
+      el.src = bitmapUrl
+    })
+    const scale = Math.min(1, IMAGE_MAX_EDGE / Math.max(img.width, img.height))
+    const w = Math.max(1, Math.round(img.width * scale))
+    const h = Math.max(1, Math.round(img.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas is unavailable here')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    return canvas.toDataURL('image/jpeg', IMAGE_JPEG_QUALITY)
+  } finally {
+    URL.revokeObjectURL(bitmapUrl)
+  }
+}
+
 // ── Time formatting (en-US) ──────────────────────────────────
 
 const hmFormatter = new Intl.DateTimeFormat('en-US', {
@@ -267,22 +306,24 @@ export function conversationDisplayName(
 export function conversationPreview(
   conversation: ConversationSummary,
   myId: string,
-): { text: string; deleted: boolean; mine: boolean; senderName: string; isReply: boolean } {
+): { text: string; deleted: boolean; mine: boolean; senderName: string; isReply: boolean; isImage: boolean } {
   const last = conversation.lastMessage
   if (!last) {
-    return { text: 'No messages yet', deleted: false, mine: false, senderName: '', isReply: false }
+    return { text: 'No messages yet', deleted: false, mine: false, senderName: '', isReply: false, isImage: false }
   }
   if (last.deletedAt) {
-    return { text: '🚫 message deleted', deleted: true, mine: false, senderName: '', isReply: false }
+    return { text: '🚫 message deleted', deleted: true, mine: false, senderName: '', isReply: false, isImage: false }
   }
   const mine = last.senderId === myId
   const collapsed = last.content.replace(/\s+/g, ' ').trim()
+  const isImage = last.imagePath !== null && collapsed.length === 0
   return {
-    text: collapsed,
+    text: isImage ? '📷 Photo' : collapsed,
     deleted: false,
     mine,
     senderName: last.sender.name,
     isReply: last.replyTo !== null,
+    isImage,
   }
 }
 

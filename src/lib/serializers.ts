@@ -4,6 +4,7 @@
 // input normalization, safe JSON parsing, socket relay.
 // Server-only — never import from client components.
 // ─────────────────────────────────────────────────────────────
+import path from 'node:path'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import type {
@@ -151,6 +152,7 @@ export function mapMessage(message: MessageRowWithRelations): ChatMessage {
     sender: mapAuthor(message.sender),
     reactions: groupReactions(message.reactions),
     replyTo,
+    imagePath: message.imagePath ?? null,
   }
 }
 
@@ -196,6 +198,7 @@ export async function buildConversationSummary(
     },
   })
   const lastRow = conv.messages[0] ?? null
+  const mine = conv.participants.find((p) => p.userId === viewerId)
   return {
     id: conv.id,
     isGroup: conv.isGroup,
@@ -205,6 +208,7 @@ export async function buildConversationSummary(
     members: conv.participants.map(mapMember).sort(byName),
     lastMessage: lastRow ? mapMessage(lastRow) : null,
     unreadCount,
+    pinnedAt: mine?.pinnedAt ? mine.pinnedAt.toISOString() : null,
   }
 }
 
@@ -227,6 +231,20 @@ export async function memberIdsOf(conversationId: string): Promise<string[]> {
     select: { userId: true },
   })
   return rows.map((r) => r.userId)
+}
+
+/**
+ * Uploads directory for image messages (files served via /api/uploads/[name]).
+ * Lives outside /public so the API controls access + caching.
+ */
+export const UPLOADS_DIR = path.join(process.cwd(), 'uploads')
+
+/** Whitelist of allowed upload extensions → mime for serving. */
+export const UPLOAD_MIME: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
 }
 
 // ── Socket relay (best-effort — never fails the API call) ──
