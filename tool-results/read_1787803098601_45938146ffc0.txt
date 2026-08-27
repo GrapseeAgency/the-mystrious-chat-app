@@ -1,0 +1,1702 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse Chat — full-screen chat room overlay.
+     3→// Bubbles with clustering, day chips, typing indicators,
+     4→// read receipts, optimistic sending, delete-for-everyone.
+     5→// ─────────────────────────────────────────────────────────────
+     6→'use client'
+     7→
+     8→import {
+     9→  memo,
+    10→  useCallback,
+    11→  useEffect,
+    12→  useMemo,
+    13→  useRef,
+    14→  useState,
+    15→} from 'react'
+    16→import { AnimatePresence, motion } from 'framer-motion'
+    17→import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+    18→import { useTheme } from 'next-themes'
+    19→import {
+    20→  ArrowDown,
+    21→  Check,
+    22→  CheckCheck,
+    23→  ChevronLeft,
+    24→  Clock,
+    25→  Copy,
+    26→  EllipsisVertical,
+    27→  ImagePlus,
+    28→  LoaderCircle,
+    29→  Reply,
+    30→  SendHorizontal,
+    31→  Smile,
+    32→  Trash2,
+    33→  X,
+    34→} from 'lucide-react'
+    35→import { toast } from 'sonner'
+    36→import type {
+    37→  AppUser,
+    38→  ChatMessage,
+    39→  ConversationDetail,
+    40→} from '@/lib/types'
+    41→import {
+    42→  apiJson,
+    43→  compressImageToDataUrl,
+    44→  conversationDisplayName,
+    45→  formatDayChip,
+    46→  formatListStamp,
+    47→  formatTime,
+    48→  isJumboEmoji,
+    49→  isSameDayIso,
+    50→  otherMemberOf,
+    51→  REACTION_CHOICES,
+    52→  EMOJI_PICKER_CHOICES,
+    53→  splitUrlSegments,
+    54→  uid,
+    55→} from '@/lib/pulse-utils'
+    56→import { haptic } from '@/lib/pulse-settings'
+    57→import { pulseDraftsStore } from '@/lib/pulse-drafts'
+    58→import { usePulseRealtime } from '@/hooks/use-pulse-socket'
+    59→import { cn } from '@/lib/utils'
+    60→import {
+    61→  AlertDialog,
+    62→  AlertDialogAction,
+    63→  AlertDialogCancel,
+    64→  AlertDialogContent,
+    65→  AlertDialogDescription,
+    66→  AlertDialogFooter,
+    67→  AlertDialogHeader,
+    68→  AlertDialogTitle,
+    69→} from '@/components/ui/alert-dialog'
+    70→import { Button } from '@/components/ui/button'
+    71→import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+    72→import { Drawer, DrawerContent } from '@/components/ui/drawer'
+    73→import {
+    74→  Dialog,
+    75→  DialogContent,
+    76→  DialogDescription,
+    77→  DialogHeader,
+    78→  DialogTitle,
+    79→} from '@/components/ui/dialog'
+    80→import { Skeleton } from '@/components/ui/skeleton'
+    81→import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
+    82→import { useMounted } from '@/hooks/use-mounted'
+    83→
+    84→interface DetailResponse {
+    85→  conversation: ConversationDetail
+    86→}
+    87→interface MessagesResponse {
+    88→  messages: ChatMessage[]
+    89→}
+    90→interface SendResponse {
+    91→  message: ChatMessage
+    92→}
+    93→interface DeleteResponse {
+    94→  message: ChatMessage
+    95→}
+    96→
+    97→const CLUSTER_WINDOW_MS = 5 * 60 * 1000
+    98→const NEAR_BOTTOM_PX = 160
+    99→
+   100→type ClusterItem =
+   101→  | { kind: 'day'; key: string; label: string }
+   102→  | { kind: 'unread'; key: string }
+   103→  | { kind: 'msg'; key: string; message: ChatMessage; head: boolean; tail: boolean }
+   104→
+   105→export function ChatRoom({
+   106→  me,
+   107→  conversationId,
+   108→  unreadAnchorMs = null,
+   109→  onClose,
+   110→}: {
+   111→  me: AppUser
+   112→  conversationId: string
+   113→  /** pre-open read watermark frozen by the chats list at tap time (unread divider) */
+   114→  unreadAnchorMs?: number | null
+   115→  onClose: () => void
+   116→}) {
+   117→  const queryClient = useQueryClient()
+   118→  const realtime = usePulseRealtime()
+   119→  const { resolvedTheme } = useTheme()
+   120→  const themeMounted = useMounted()
+   121→
+   122→  // restore persisted draft once per opened conversation
+   123→  const [input, setInput] = useState(() => pulseDraftsStore.getState().drafts[conversationId] ?? '')
+   124→  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   125→  const fileInputRef = useRef<HTMLInputElement>(null)
+   126→  const [menuOpen, setMenuOpen] = useState(false)
+   127→  const [infoOpen, setInfoOpen] = useState(false)
+   128→  const [selected, setSelected] = useState<ChatMessage | null>(null)
+   129→  const [confirmingDelete, setConfirmingDelete] = useState(false)
+   130→  const [showJump, setShowJump] = useState(false)
+   131→  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+   132→  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+   133→  /** {message, emoji} → who-reacted sheet */
+   134→  const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
+   135→  const [sendingImage, setSendingImage] = useState(false)
+   136→
+   137→  const viewportRef = useRef<HTMLDivElement>(null)
+   138→  const textareaRef = useRef<HTMLTextAreaElement>(null)
+   139→  const nearBottomRef = useRef(true)
+   140→  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   141→  /** flipped (inside rAF) after the first history fetch so render stays ref-free */
+   142→  const [historyLoaded, setHistoryLoaded] = useState(false)
+   143→
+   144→  // ── data ───────────────────────────────────────────────────
+   145→
+   146→  const detail = useQuery({
+   147→    queryKey: ['conversation', conversationId],
+   148→    queryFn: async (): Promise<ConversationDetail> => {
+   149→      const res = await apiJson<DetailResponse>(
+   150→        `/api/conversations/${encodeURIComponent(conversationId)}?userId=${encodeURIComponent(me.id)}`,
+   151→      )
+   152→      return res.conversation
+   153→    },
+   154→    staleTime: 15_000,
+   155→    // safety net: keeps read-ticks/membership fresh even if the socket path degrades
+   156→    refetchInterval: 6_000,
+   157→  })
+   158→
+   159→  const messages = useQuery({
+   160→    queryKey: ['messages', conversationId],
+   161→    queryFn: async (): Promise<ChatMessage[]> => {
+   162→      const res = await apiJson<MessagesResponse>(
+   163→        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=200`,
+   164→      )
+   165→      return res.messages
+   166→    },
+   167→    staleTime: 15_000,
+   168→    // safety net: messages still arrive within seconds even without websocket realtime
+   169→    refetchInterval: 3_500,
+   170→  })
+   171→
+   172→  // ── realtime registration + read receipts ──────────────────
+   173→
+   174→  useEffect(() => {
+   175→    realtime.setActiveConversation(conversationId)
+   176→    return () => realtime.setActiveConversation(null)
+   177→  }, [conversationId, realtime])
+   178→
+   179→  /** POST read marker (visible rooms only) then patch local caches. */
+   180→  const markVisibleRead = useCallback(() => {
+   181→    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+   182→    if ((messages.data ?? []).length === 0) return
+   183→    fetch(`/api/conversations/${encodeURIComponent(conversationId)}/read`, {
+   184→      method: 'POST',
+   185→      headers: { 'Content-Type': 'application/json' },
+   186→      body: JSON.stringify({ userId: me.id }),
+   187→    })
+   188→      .then(() => {
+   189→        const nowIso = new Date().toISOString()
+   190→        queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   191→          old
+   192→            ? {
+   193→                ...old,
+   194→                members: old.members.map((m) =>
+   195→                  m.id === me.id ? { ...m, lastReadAt: nowIso } : m,
+   196→                ),
+   197→              }
+   198→            : old,
+   199→        )
+   200→        // refresh list badges (my unread for this room is now zero)
+   201→        queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   202→      })
+   203→      .catch(() => undefined)
+   204→  }, [conversationId, me.id, messages.data, queryClient])
+   205→
+   206→  // opening the room + every new batch of messages ⇒ (debounced) read
+   207→  useEffect(() => {
+   208→    const timer = setTimeout(markVisibleRead, 600)
+   209→    return () => clearTimeout(timer)
+   210→  }, [markVisibleRead])
+   211→
+   212→  useEffect(() => {
+   213→    const onVisibility = () => {
+   214→      if (document.visibilityState === 'visible') markVisibleRead()
+   215→    }
+   216→    document.addEventListener('visibilitychange', onVisibility)
+   217→    return () => document.removeEventListener('visibilitychange', onVisibility)
+   218→  }, [markVisibleRead])
+   219→
+   220→  // ── derived ────────────────────────────────────────────────
+   221→
+   222→  const detailData = detail.data
+   223→  const other = useMemo(
+   224→    () => (detailData ? otherMemberOf(detailData, me.id) : null),
+   225→    [detailData, me.id],
+   226→  )
+   227→  const isGroup = detailData?.isGroup ?? false
+   228→  const displayName = detailData ? conversationDisplayName(detailData, me.id) : ''
+   229→
+   230→  const recipients = useMemo(
+   231→    () => (detailData ? detailData.members.filter((m) => m.id !== me.id).map((m) => m.id) : []),
+   232→    [detailData, me.id],
+   233→  )
+   234→
+   235→  const typers = realtime.typersIn(conversationId, me.id)
+   236→  const typerLabel = useMemo(() => {
+   237→    if (typers.length === 0) return ''
+   238→    if (!isGroup) return 'typing…'
+   239→    const names = typers.map((t) => t.userName)
+   240→    if (names.length === 1) return `${names[0]} is typing…`
+   241→    if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`
+   242→    return `${names.length} people are typing…`
+   243→  }, [typers, isGroup])
+   244→
+   245→  const onlineOthers = useMemo(
+   246→    () =>
+   247→      detailData
+   248→        ? detailData.members.filter((m) => m.id !== me.id && realtime.onlineIds.has(m.id)).length
+   249→        : 0,
+   250→    [detailData, me.id, realtime.onlineIds],
+   251→  )
+   252→
+   253→  /** highest read watermark among OTHER members → double ticks */
+   254→  const othersMaxReadMs = useMemo(() => {
+   255→    if (!detailData) return Number.NEGATIVE_INFINITY
+   256→    let max = Number.NEGATIVE_INFINITY
+   257→    for (const m of detailData.members) {
+   258→      if (m.id === me.id) continue
+   259→      const t = Date.parse(m.lastReadAt)
+   260→      if (!Number.isNaN(t) && t > max) max = t
+   261→    }
+   262→    return max
+   263→  }, [detailData, me.id])
+   264→
+   265→  const items = useMemo<ClusterItem[]>(() => {
+   266→    const list = messages.data ?? []
+   267→    const now = new Date()
+   268→
+   269→    interface Entry {
+   270→      message: ChatMessage
+   271→      head: boolean
+   272→    }
+   273→    const built: Entry[] = []
+   274→    let prev: ChatMessage | null = null
+   275→    for (const message of list) {
+   276→      const clusterBreak =
+   277→        prev === null ||
+   278→        !isSameDayIso(prev.createdAt, message.createdAt) ||
+   279→        prev.senderId !== message.senderId ||
+   280→        Date.parse(message.createdAt) - Date.parse(prev.createdAt) > CLUSTER_WINDOW_MS
+   281→      built.push({ message, head: clusterBreak })
+   282→      prev = message
+   283→    }
+   284→
+   285→    const out: ClusterItem[] = []
+   286→    let dayAnchor: ChatMessage | null = null
+   287→    let dividerPlaced = unreadAnchorMs === null
+   288→    for (let i = 0; i < built.length; i += 1) {
+   289→      const { message, head } = built[i]
+   290→      if (dayAnchor === null || !isSameDayIso(dayAnchor.createdAt, message.createdAt)) {
+   291→        out.push({ kind: 'day', key: `day-${message.id}`, label: formatDayChip(message.createdAt, now) })
+   292→        dayAnchor = message
+   293→      }
+   294→      if (
+   295→        !dividerPlaced &&
+   296→        message.senderId !== me.id &&
+   297→        message.deletedAt === null &&
+   298→        unreadAnchorMs !== null &&
+   299→        Date.parse(message.createdAt) > unreadAnchorMs
+   300→      ) {
+   301→        out.push({ kind: 'unread', key: 'unread-divider' })
+   302→        dividerPlaced = true
+   303→      }
+   304→      out.push({
+   305→        kind: 'msg',
+   306→        key: message.id,
+   307→        message,
+   308→        head,
+   309→        tail: i === built.length - 1 || built[i + 1].head,
+   310→      })
+   311→    }
+   312→    return out
+   313→  }, [messages.data, unreadAnchorMs, me.id])
+   314→
+   315→  const lastMessageId =
+   316→    messages.data && messages.data.length > 0 ? messages.data[messages.data.length - 1].id : null
+   317→
+   318→  // ── scrolling ──────────────────────────────────────────────
+   319→
+   320→  const scrollToBottom = useCallback((smooth: boolean) => {
+   321→    const el = viewportRef.current
+   322→    if (!el) return
+   323→    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+   324→  }, [])
+   325→
+   326→  useEffect(() => {
+   327→    if (lastMessageId === null || !historyLoaded) return
+   328→    requestAnimationFrame(() => {
+   329→      if (nearBottomRef.current) {
+   330→        scrollToBottom(true)
+   331→      } else {
+   332→        setShowJump(true)
+   333→        haptic(10)
+   334→      }
+   335→    })
+   336→  }, [lastMessageId, historyLoaded, scrollToBottom])
+   337→
+   338→  useEffect(() => {
+   339→    if (messages.isSuccess && !historyLoaded) {
+   340→      const frame = requestAnimationFrame(() => {
+   341→        scrollToBottom(false)
+   342→        setHistoryLoaded(true)
+   343→      })
+   344→      return () => cancelAnimationFrame(frame)
+   345→    }
+   346→    return undefined
+   347→  }, [messages.isSuccess, historyLoaded, scrollToBottom])
+   348→
+   349→  const handleScroll = useCallback(() => {
+   350→    const el = viewportRef.current
+   351→    if (!el) return
+   352→    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+   353→    nearBottomRef.current = distance < NEAR_BOTTOM_PX
+   354→    if (nearBottomRef.current) setShowJump(false)
+   355→  }, [])
+   356→
+   357→  // ── sending ────────────────────────────────────────────────
+   358→
+   359→  const sendMessage = useMutation({
+   360→    mutationFn: async ({
+   361→      clientId,
+   362→      content,
+   363→      replyToId,
+   364→      imagePath,
+   365→    }: {
+   366→      clientId: string
+   367→      content: string
+   368→      replyToId?: string
+   369→      imagePath?: string
+   370→    }) => {
+   371→      const res = await apiJson<SendResponse>(
+   372→        `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
+   373→        {
+   374→          method: 'POST',
+   375→          headers: { 'Content-Type': 'application/json' },
+   376→          body: JSON.stringify({
+   377→            senderId: me.id,
+   378→            content,
+   379→            ...(replyToId ? { replyToId } : {}),
+   380→            ...(imagePath ? { imagePath } : {}),
+   381→          }),
+   382→        },
+   383→      )
+   384→      return { res, clientId }
+   385→    },
+   386→    onMutate: async ({ clientId, content, replyToId, imagePath }) => {
+   387→      const parentSnapshot = replyToId && replyTo && replyTo.id === replyToId
+   388→        ? {
+   389→            id: replyTo.id,
+   390→            content: replyTo.content,
+   391→            senderName: replyTo.sender.name,
+   392→            deleted: replyTo.deletedAt !== null,
+   393→          }
+   394→        : null
+   395→      const temp: ChatMessage = {
+   396→        id: `temp-${clientId}`,
+   397→        conversationId,
+   398→        senderId: me.id,
+   399→        content,
+   400→        deletedAt: null,
+   401→        createdAt: new Date().toISOString(),
+   402→        sender: { id: me.id, name: me.name, color: me.color },
+   403→        reactions: [],
+   404→        replyTo: parentSnapshot,
+   405→        imagePath: imagePath ?? null,
+   406→      }
+   407→      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+   408→        old ? [...old, temp] : [temp],
+   409→      )
+   410→    },
+   411→    onSuccess: ({ res, clientId }) => {
+   412→      const real = res.message
+   413→      setReplyTo(null)
+   414→      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
+   415→        if (!old) return [real]
+   416→        const hadReal = old.some((m) => m.id === real.id)
+   417→        const cleaned = old.filter(
+   418→          (m) =>
+   419→            m.id !== `temp-${clientId}` &&
+   420→            !(m.id.startsWith('temp-') && m.content === real.content && m.senderId === real.senderId),
+   421→        )
+   422→        return hadReal ? cleaned : [...cleaned, real]
+   423→      })
+   424→      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   425→    },
+   426→    onError: (_error, { clientId }) => {
+   427→      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+   428→        old ? old.filter((m) => m.id !== `temp-${clientId}`) : old,
+   429→      )
+   430→      toast.error('Message failed to send')
+   431→    },
+   432→  })
+   433→
+   434→  /** Toggle an emoji reaction (optimistic; server response is truth). */
+   435→  const toggleReaction = useMutation({
+   436→    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
+   437→      const res = await apiJson<SendResponse>(`/api/messages/${encodeURIComponent(messageId)}/react`, {
+   438→        method: 'POST',
+   439→        headers: { 'Content-Type': 'application/json' },
+   440→        body: JSON.stringify({ userId: me.id, emoji }),
+   441→      })
+   442→      return res.message
+   443→    },
+   444→    onMutate: async ({ messageId, emoji }) => {
+   445→      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+   446→        old
+   447→          ? old.map((m) => {
+   448→              if (m.id !== messageId) return m
+   449→              const groups = m.reactions.map((g) => ({ ...g, userIds: [...g.userIds] }))
+   450→              const mineIdx = groups.findIndex((g) => g.emoji === emoji)
+   451→              if (mineIdx >= 0) {
+   452→                const group = groups[mineIdx]
+   453→                const had = group.userIds.includes(me.id)
+   454→                if (had) {
+   455→                  group.userIds = group.userIds.filter((id) => id !== me.id)
+   456→                } else {
+   457→                  group.userIds.push(me.id)
+   458→                }
+   459→                group.count = group.userIds.length
+   460→                if (group.count === 0) groups.splice(mineIdx, 1)
+   461→              } else {
+   462→                groups.push({ emoji, userIds: [me.id], count: 1 })
+   463→              }
+   464→              return { ...m, reactions: groups }
+   465→            })
+   466→          : old,
+   467→      )
+   468→    },
+   469→    onSuccess: (real) => {
+   470→      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+   471→        old ? old.map((m) => (m.id === real.id ? { ...m, reactions: real.reactions } : m)) : old,
+   472→      )
+   473→    },
+   474→    onError: () => {
+   475→      toast.error('Reaction failed — try again')
+   476→      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] })
+   477→    },
+   478→  })
+   479→
+   480→  const handleToggleReaction = useCallback(
+   481→    (messageId: string, emoji: string) => {
+   482→      haptic(12)
+   483→      toggleReaction.mutate({ messageId, emoji })
+   484→    },
+   485→    [toggleReaction],
+   486→  )
+   487→
+   488→  const deleteMessage = useMutation({
+   489→    mutationFn: async (messageId: string) => {
+   490→      return apiJson<DeleteResponse>(`/api/messages/${encodeURIComponent(messageId)}`, {
+   491→        method: 'DELETE',
+   492→        headers: { 'Content-Type': 'application/json' },
+   493→        body: JSON.stringify({ requesterId: me.id }),
+   494→      })
+   495→    },
+   496→    onMutate: async (messageId) => {
+   497→      const previous = queryClient.getQueryData<ChatMessage[]>(['messages', conversationId])
+   498→      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+   499→        old
+   500→          ? old.map((m) => (m.id === messageId ? { ...m, deletedAt: new Date().toISOString() } : m))
+   501→          : old,
+   502→      )
+   503→      return { previous }
+   504→    },
+   505→    onSuccess: (data) => {
+   506→      const real = data.message
+   507→      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+   508→        old ? old.map((m) => (m.id === real.id ? real : m)) : old,
+   509→      )
+   510→      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   511→      toast.success('Message deleted')
+   512→    },
+   513→    onError: (_error, _messageId, context) => {
+   514→      if (context?.previous) {
+   515→        queryClient.setQueryData(['messages', conversationId], context.previous)
+   516→      }
+   517→      toast.error('Could not delete the message')
+   518→    },
+   519→    onSettled: () => {
+   520→      setSelected(null)
+   521→      setConfirmingDelete(false)
+   522→    },
+   523→  })
+   524→
+   525→  // ── composer behaviour ─────────────────────────────────────
+   526→
+   527→  const autosize = useCallback(() => {
+   528→    const el = textareaRef.current
+   529→    if (!el) return
+   530→    el.style.height = 'auto'
+   531→    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+   532→  }, [])
+   533→
+   534→  const stopTyping = useCallback(() => {
+   535→    if (recipients.length > 0) {
+   536→      realtime.cancelTyping(conversationId, { viewerId: me.id, recipients })
+   537→    }
+   538→  }, [realtime, conversationId, me.id, recipients])
+   539→
+   540→  useEffect(() => () => stopTyping(), [stopTyping])
+   541→
+   542→  const submit = useCallback(() => {
+   543→    const content = input.trim()
+   544→    if (content.length === 0 || sendMessage.isPending) return
+   545→    stopTyping()
+   546→    setInput('')
+   547→    pulseDraftsStore.getState().clearDraft(conversationId)
+   548→    requestAnimationFrame(autosize)
+   549→    sendMessage.mutate({
+   550→      clientId: uid(),
+   551→      content,
+   552→      ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+   553→    })
+   554→  }, [input, sendMessage, stopTyping, autosize, replyTo, conversationId])
+   555→
+   556→  const handleInputChange = (value: string) => {
+   557→    setInput(value)
+   558→    autosize()
+   559→    if (draftTimerRef.current !== null) clearTimeout(draftTimerRef.current)
+   560→    draftTimerRef.current = setTimeout(() => {
+   561→      draftTimerRef.current = null
+   562→      pulseDraftsStore.getState().setDraft(conversationId, value)
+   563→    }, 300)
+   564→    if (value.trim().length > 0 && recipients.length > 0) {
+   565→      realtime.signalTyping(conversationId, {
+   566→        viewerId: me.id,
+   567→        userName: me.name,
+   568→        recipients,
+   569→      })
+   570→    } else {
+   571→      stopTyping()
+   572→    }
+   573→  }
+   574→
+   575→  /** Pick → compress → upload → send as an image message. */
+   576→  const handleImagePicked = async (file: File | undefined) => {
+   577→    if (!file || sendingImage) return
+   578→    setSendingImage(true)
+   579→    try {
+   580→      const dataUrl = await compressImageToDataUrl(file)
+   581→      const up = await apiJson<{ imagePath: string }>('/api/uploads', {
+   582→        method: 'POST',
+   583→        headers: { 'Content-Type': 'application/json' },
+   584→        body: JSON.stringify({ dataUrl }),
+   585→      })
+   586→      haptic(12)
+   587→      sendMessage.mutate({
+   588→        clientId: uid(),
+   589→        content: '',
+   590→        imagePath: up.imagePath,
+   591→        ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+   592→      })
+   593→    } catch (error) {
+   594→      toast.error(error instanceof Error ? error.message : 'Could not send the image')
+   595→    } finally {
+   596→      setSendingImage(false)
+   597→      if (fileInputRef.current) fileInputRef.current.value = ''
+   598→    }
+   599→  }
+   600→
+   601→  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+   602→    if (
+   603→      event.key === 'Enter' &&
+   604→      !event.shiftKey &&
+   605→      typeof window !== 'undefined' &&
+   606→      window.matchMedia('(min-width: 640px)').matches
+   607→    ) {
+   608→      event.preventDefault()
+   609→      submit()
+   610→    }
+   611→  }
+   612→
+   613→  // ── long-press helpers ─────────────────────────────────────
+   614→
+   615→  const clearLongPress = useCallback(() => {
+   616→    if (longPressRef.current !== null) {
+   617→      clearTimeout(longPressRef.current)
+   618→      longPressRef.current = null
+   619→    }
+   620→  }, [])
+   621→
+   622→  const startLongPress = useCallback(
+   623→    (message: ChatMessage) => {
+   624→      clearLongPress()
+   625→      longPressRef.current = setTimeout(() => {
+   626→        setSelected(message)
+   627→        longPressRef.current = null
+   628→      }, 450)
+   629→    },
+   630→    [clearLongPress],
+   631→  )
+   632→
+   633→  const copySelected = async () => {
+   634→    if (!selected) return
+   635→    try {
+   636→      await navigator.clipboard.writeText(selected.content)
+   637→      toast.success('Copied to clipboard')
+   638→    } catch {
+   639→      toast.error('Clipboard is unavailable here')
+   640→    }
+   641→    setSelected(null)
+   642→  }
+   643→
+   644→  const canDeleteSelected = selected !== null && selected.senderId === me.id && !selected.deletedAt
+   645→
+   646→  const headerTitle = !isGroup && other ? other.name : displayName || 'Conversation'
+   647→
+   648→  const subtitle = typerLabel.length > 0
+   649→    ? typerLabel
+   650→    : isGroup
+   651→      ? `${detailData?.members.length ?? 0} members · ${onlineOthers} online`
+   652→      : !other
+   653→        ? ''
+   654→        : realtime.onlineIds.has(other.id)
+   655→          ? 'online'
+   656→          : 'offline'
+   657→
+   658→  const dotColor = themeMounted && resolvedTheme === 'dark' ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.05)'
+   659→
+   660→  return (
+   661→    <motion.div
+   662→      initial={{ y: '100%' }}
+   663→      animate={{ y: 0 }}
+   664→      exit={{ y: '100%' }}
+   665→      transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+   666→      className="absolute inset-0 z-40 flex flex-col bg-white dark:bg-zinc-900"
+   667→      role="dialog"
+   668→      aria-label={`Conversation with ${headerTitle}`}
+   669→    >
+   670→      {/* header */}
+   671→      <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-zinc-800 dark:bg-zinc-900">
+   672→        <Button
+   673→          variant="ghost"
+   674→          size="icon"
+   675→          aria-label="Back to chats"
+   676→          onClick={() => {
+   677→            stopTyping()
+   678→            onClose()
+   679→          }}
+   680→          className="size-10 shrink-0 rounded-full text-zinc-600 hover:bg-transparent hover:text-zinc-900 active:scale-95 dark:text-zinc-300 dark:hover:text-white"
+   681→        >
+   682→          <ChevronLeft className="size-6" aria-hidden />
+   683→        </Button>
+   684→        {isGroup ? (
+   685→          <GroupAvatar title={displayName} id={conversationId} size={36} />
+   686→        ) : (
+   687→          <UserAvatar
+   688→            name={other?.name ?? displayName}
+   689→            color={other?.color}
+   690→            size={36}
+   691→            showPresence
+   692→            online={other ? realtime.onlineIds.has(other.id) : false}
+   693→          />
+   694→        )}
+   695→        <button
+   696→          type="button"
+   697→          onClick={() => setInfoOpen(true)}
+   698→          aria-label="Show info"
+   699→          className="ml-1.5 min-w-0 flex-1 text-left outline-none"
+   700→        >
+   701→          <p className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+   702→            {headerTitle}
+   703→          </p>
+   704→          <AnimatePresence mode="wait" initial={false}>
+   705→            <motion.p
+   706→              key={subtitle}
+   707→              initial={{ opacity: 0, y: 3 }}
+   708→              animate={{ opacity: 1, y: 0 }}
+   709→              exit={{ opacity: 0 }}
+   710→              transition={{ duration: 0.18 }}
+   711→              className={cn(
+   712→                'truncate text-[11px]',
+   713→                typerLabel.length > 0
+   714→                  ? 'font-medium text-emerald-600 italic dark:text-emerald-400'
+   715→                  : 'text-zinc-500 dark:text-zinc-400',
+   716→              )}
+   717→            >
+   718→              {subtitle}
+   719→            </motion.p>
+   720→          </AnimatePresence>
+   721→        </button>
+   722→
+   723→        <Button
+   724→          variant="ghost"
+   725→          size="icon"
+   726→          aria-haspopup="menu"
+   727→          aria-expanded={menuOpen}
+   728→          aria-label="Conversation menu"
+   729→          onClick={() => setMenuOpen((v) => !v)}
+   730→          className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+   731→        >
+   732→          <EllipsisVertical className="size-5" aria-hidden />
+   733→        </Button>
+   734→
+   735→        <AnimatePresence>
+   736→          {menuOpen ? (
+   737→            <>
+   738→              <button
+   739→                type="button"
+   740→                aria-hidden
+   741→                tabIndex={-1}
+   742→                onClick={() => setMenuOpen(false)}
+   743→                className="fixed inset-0 z-30 cursor-default outline-none"
+   744→              />
+   745→              <motion.div
+   746→                initial={{ opacity: 0, scale: 0.92, y: -4 }}
+   747→                animate={{ opacity: 1, scale: 1, y: 0 }}
+   748→                exit={{ opacity: 0, scale: 0.95 }}
+   749→                transition={{ duration: 0.14 }}
+   750→                role="menu"
+   751→                className="absolute top-[calc(3.5rem+env(safe-area-inset-top))] right-2 z-40 min-w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800"
+   752→              >
+   753→                <button
+   754→                  type="button"
+   755→                  role="menuitem"
+   756→                  onClick={() => {
+   757→                    setMenuOpen(false)
+   758→                    setInfoOpen(true)
+   759→                  }}
+   760→                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+   761→                >
+   762→                  {isGroup ? 'Group info' : 'Contact info'}
+   763→                </button>
+   764→              </motion.div>
+   765→            </>
+   766→          ) : null}
+   767→        </AnimatePresence>
+   768→      </header>
+   769→
+   770→      {/* messages */}
+   771→      <div
+   772→        ref={viewportRef}
+   773→        onScroll={handleScroll}
+   774→        className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-zinc-50 px-3 pt-3 pb-2 dark:bg-black/25"
+   775→        style={{
+   776→          backgroundImage: `radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
+   777→          backgroundSize: '16px 16px',
+   778→        }}
+   779→      >
+   780→        {messages.isPending && !historyLoaded ? (
+   781→          <div role="status" aria-label="Loading messages" className="space-y-3 pt-4">
+   782→            <Skeleton className="mx-auto h-5 w-24 rounded-full" />
+   783→            <Skeleton className="h-9 w-2/5 rounded-2xl" />
+   784→            <Skeleton className="ml-auto h-12 w-1/2 rounded-2xl" />
+   785→            <Skeleton className="h-9 w-1/3 rounded-2xl" />
+   786→            <Skeleton className="ml-auto h-9 w-2/5 rounded-2xl" />
+   787→          </div>
+   788→        ) : items.length === 0 ? (
+   789→          <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+   790→            <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
+   791→            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+   792→              Say hello — your words travel in real time.
+   793→            </p>
+   794→          </div>
+   795→        ) : (
+   796→          <div className="flex flex-col">
+   797→            {items.map((item) =>
+   798→              item.kind === 'day' ? (
+   799→                <div key={item.key} className="my-3 flex justify-center">
+   800→                  <span className="rounded-full bg-zinc-200/70 px-3 py-1 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+   801→                    {item.label}
+   802→                  </span>
+   803→                </div>
+   804→              ) : item.kind === 'unread' ? (
+   805→                <div key={item.key} className="my-3 flex items-center gap-2 px-1" role="separator" aria-label="Unread messages">
+   806→                  <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
+   807→                  <span className="text-[10px] font-bold tracking-widest text-emerald-600 dark:text-emerald-400">
+   808→                    UNREAD
+   809→                  </span>
+   810→                  <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
+   811→                </div>
+   812→              ) : (
+   813→                <MessageRow
+   814→                  key={item.key}
+   815→                  message={item.message}
+   816→                  head={item.head}
+   817→                  mine={item.message.senderId === me.id}
+   818→                  isGroup={isGroup}
+   819→                  readMs={othersMaxReadMs}
+   820→                  myId={me.id}
+   821→                  onPress={setSelected}
+   822→                  onStartLongPress={startLongPress}
+   823→                  onEndLongPress={clearLongPress}
+   824→                  onToggleReaction={handleToggleReaction}
+   825→                  onReply={(m) => {
+   826→                    setReplyTo(m)
+   827→                    requestAnimationFrame(() => textareaRef.current?.focus())
+   828→                  }}
+   829→                  onReactionInfo={(m, emoji) => setReactionInfo({ message: m, emoji })}
+   830→                  onOpenImage={setLightboxSrc}
+   831→                />
+   832→              ),
+   833→            )}
+   834→
+   835→            <AnimatePresence>
+   836→              {typers.length > 0 ? (
+   837→                <motion.div
+   838→                  key="typing-bubble"
+   839→                  initial={{ opacity: 0, y: 6 }}
+   840→                  animate={{ opacity: 1, y: 0 }}
+   841→                  exit={{ opacity: 0, y: 4 }}
+   842→                  transition={{ duration: 0.15 }}
+   843→                  className="mt-1.5 flex items-end gap-1.5"
+   844→                >
+   845→                  {isGroup ? (
+   846→                    (() => {
+   847→                      const typer =
+   848→                        typers.find((t) => detailData?.members.some((m) => m.id === t.userId)) ??
+   849→                        typers[0]
+   850→                      return (
+   851→                        <UserAvatar
+   852→                          name={typer.userName}
+   853→                          color={
+   854→                            detailData?.members.find((m) => m.id === typer.userId)?.color ?? 'emerald'
+   855→                          }
+   856→                          size={28}
+   857→                        />
+   858→                      )
+   859→                    })()
+   860→                  ) : other ? (
+   861→                    <UserAvatar name={other.name} color={other.color} size={28} />
+   862→                  ) : null}
+   863→                  <div className="rounded-2xl rounded-bl-md border border-zinc-100 bg-white px-3 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800">
+   864→                    <TypingDots />
+   865→                  </div>
+   866→                </motion.div>
+   867→              ) : null}
+   868→            </AnimatePresence>
+   869→          </div>
+   870→        )}
+   871→
+   872→        <AnimatePresence>
+   873→          {showJump ? (
+   874→            <motion.button
+   875→              type="button"
+   876→              aria-label="Jump to newest messages"
+   877→              initial={{ opacity: 0, y: 10, scale: 0.85 }}
+   878→              animate={{ opacity: 1, y: 0, scale: 1 }}
+   879→              exit={{ opacity: 0, y: 8, scale: 0.9 }}
+   880→              transition={{ type: 'spring', stiffness: 420, damping: 22 }}
+   881→              onClick={() => {
+   882→                setShowJump(false)
+   883→                haptic(8)
+   884→                scrollToBottom(true)
+   885→              }}
+   886→              className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-emerald-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 active:scale-95"
+   887→            >
+   888→              New messages
+   889→              <ArrowDown className="size-3.5" aria-hidden />
+   890→            </motion.button>
+   891→          ) : null}
+   892→        </AnimatePresence>
+   893→      </div>
+   894→
+   895→      {/* composer */}
+   896→      <div className="shrink-0 border-t border-zinc-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:border-zinc-800 dark:bg-zinc-900">
+   897→        <AnimatePresence initial={false}>
+   898→          {replyTo ? (
+   899→            <motion.div
+   900→              key="reply-bar"
+   901→              initial={{ height: 0, opacity: 0 }}
+   902→              animate={{ height: 'auto', opacity: 1 }}
+   903→              exit={{ height: 0, opacity: 0 }}
+   904→              transition={{ duration: 0.18, ease: 'easeOut' }}
+   905→              className="overflow-hidden"
+   906→            >
+   907→              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-emerald-500 bg-zinc-100 py-2 pr-2 pl-2.5 dark:bg-zinc-800">
+   908→                <div className="min-w-0 flex-1">
+   909→                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+   910→                    Replying to {replyTo.sender.id === me.id ? 'yourself' : replyTo.sender.name}
+   911→                  </p>
+   912→                  <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+   913→                    {replyTo.deletedAt
+   914→                      ? 'Deleted message'
+   915→                      : replyTo.content.replace(/\s+/g, ' ').slice(0, 120)}
+   916→                  </p>
+   917→                </div>
+   918→                <button
+   919→                  type="button"
+   920→                  aria-label="Cancel reply"
+   921→                  onClick={() => setReplyTo(null)}
+   922→                  className="rounded-full p-1.5 text-zinc-400 outline-none transition-colors hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+   923→                >
+   924→                  <X className="size-4" aria-hidden />
+   925→                </button>
+   926→              </div>
+   927→            </motion.div>
+   928→          ) : null}
+   929→        </AnimatePresence>
+   930→
+   931→        <div className="flex items-end gap-2">
+   932→          <input
+   933→            ref={fileInputRef}
+   934→            type="file"
+   935→            accept="image/*"
+   936→            className="hidden"
+   937→            aria-hidden
+   938→            tabIndex={-1}
+   939→            onChange={(e) => void handleImagePicked(e.target.files?.[0])}
+   940→          />
+   941→          <button
+   942→            type="button"
+   943→            aria-label="Send a photo"
+   944→            disabled={sendingImage}
+   945→            onClick={() => fileInputRef.current?.click()}
+   946→            className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 disabled:opacity-50 dark:hover:bg-zinc-800"
+   947→          >
+   948→            {sendingImage ? (
+   949→              <LoaderCircle className="size-5 animate-spin" aria-hidden />
+   950→            ) : (
+   951→              <ImagePlus className="size-[22px]" aria-hidden />
+   952→            )}
+   953→          </button>
+   954→          <Popover>
+   955→            <PopoverTrigger asChild>
+   956→              <button
+   957→                type="button"
+   958→                aria-label="Insert emoji"
+   959→                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-500 active:scale-90 dark:hover:bg-zinc-800"
+   960→              >
+   961→                <Smile className="size-6" aria-hidden />
+   962→              </button>
+   963→            </PopoverTrigger>
+   964→            <PopoverContent
+   965→              side="top"
+   966→              align="start"
+   967→              sideOffset={10}
+   968→              className="w-[272px] rounded-2xl p-2 dark:bg-zinc-800"
+   969→            >
+   970→              <div className="grid grid-cols-8 gap-0.5">
+   971→                {EMOJI_PICKER_CHOICES.map((emoji) => (
+   972→                  <button
+   973→                    key={emoji}
+   974→                    type="button"
+   975→                    aria-label={`Insert ${emoji}`}
+   976→                    onClick={() => {
+   977→                      setInput((prev) => prev + emoji)
+   978→                      requestAnimationFrame(() => {
+   979→                        autosize()
+   980→                        textareaRef.current?.focus()
+   981→                      })
+   982→                    }}
+   983→                    className="rounded-lg py-1 text-xl outline-none transition-transform hover:bg-zinc-100 hover:scale-125 active:scale-95 dark:hover:bg-zinc-700"
+   984→                  >
+   985→                    {emoji}
+   986→                  </button>
+   987→                ))}
+   988→              </div>
+   989→            </PopoverContent>
+   990→          </Popover>
+   991→          <textarea
+   992→            ref={textareaRef}
+   993→            value={input}
+   994→            rows={1}
+   995→            aria-label="Message input"
+   996→            placeholder="Type a message"
+   997→            maxLength={2000}
+   998→            enterKeyHint="send"
+   999→            onChange={(e) => handleInputChange(e.target.value)}
+  1000→            onKeyDown={handleKeyDown}
+  1001→            onBlur={stopTyping}
+  1002→            className="pulse-scroll max-h-[120px] flex-1 resize-none rounded-3xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-colors focus:border-emerald-400 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-emerald-500/70"
+  1003→          />
+  1004→          <button
+  1005→            type="button"
+  1006→            aria-label="Send message"
+  1007→            disabled={input.trim().length === 0 || sendMessage.isPending}
+  1008→            onClick={submit}
+  1009→            className={cn(
+  1010→              'flex size-11 shrink-0 items-center justify-center rounded-full transition-all active:scale-90',
+  1011→              input.trim().length > 0
+  1012→                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90'
+  1013→                : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500',
+  1014→            )}
+  1015→          >
+  1016→            <SendHorizontal className="size-5" aria-hidden />
+  1017→          </button>
+  1018→        </div>
+  1019→      </div>
+  1020→
+  1021→      {/* message actions */}
+  1022→      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
+  1023→        <DialogContent className="max-w-[300px] gap-3 rounded-2xl p-4 sm:left-1/2 sm:translate-x-[-50%] dark:bg-zinc-900">
+  1024→          <DialogHeader className="text-left">
+  1025→            <DialogTitle className="text-sm font-bold tracking-tight">Message options</DialogTitle>
+  1026→            <DialogDescription className="text-xs leading-relaxed">
+  1027→              {selected?.deletedAt
+  1028→                ? 'This message was deleted.'
+  1029→                : selected?.content.replace(/\s+/g, ' ').slice(0, 140)}
+  1030→            </DialogDescription>
+  1031→          </DialogHeader>
+  1032→          {selected && !selected.deletedAt ? (
+  1033→            <div className="flex items-center justify-between gap-0.5" role="group" aria-label="React with an emoji">
+  1034→              {REACTION_CHOICES.map((emoji) => (
+  1035→                <button
+  1036→                  key={emoji}
+  1037→                  type="button"
+  1038→                  aria-label={`React with ${emoji}`}
+  1039→                  onClick={() => {
+  1040→                    handleToggleReaction(selected.id, emoji)
+  1041→                    setSelected(null)
+  1042→                  }}
+  1043→                  className="flex size-10 items-center justify-center rounded-full text-xl outline-none transition-transform hover:scale-125 hover:bg-zinc-100 active:scale-95 dark:hover:bg-zinc-800"
+  1044→                >
+  1045→                  {emoji}
+  1046→                </button>
+  1047→              ))}
+  1048→            </div>
+  1049→          ) : null}
+  1050→          <div className="flex flex-col gap-1.5">
+  1051→            <Button
+  1052→              variant="outline"
+  1053→              onClick={() => {
+  1054→                if (!selected) return
+  1055→                setReplyTo(selected)
+  1056→                setSelected(null)
+  1057→                requestAnimationFrame(() => textareaRef.current?.focus())
+  1058→              }}
+  1059→              disabled={!!selected?.deletedAt}
+  1060→              className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+  1061→            >
+  1062→              <Reply className="size-4" aria-hidden />
+  1063→              Reply
+  1064→            </Button>
+  1065→            <Button
+  1066→              variant="outline"
+  1067→              onClick={copySelected}
+  1068→              disabled={!!selected?.deletedAt}
+  1069→              className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+  1070→            >
+  1071→              <Copy className="size-4" aria-hidden />
+  1072→              Copy text
+  1073→            </Button>
+  1074→            <Button
+  1075→              variant="outline"
+  1076→              disabled={!canDeleteSelected}
+  1077→              onClick={() => setConfirmingDelete(true)}
+  1078→              className="h-10 justify-start gap-2 rounded-xl border-destructive/40 text-sm font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+  1079→            >
+  1080→              <Trash2 className="size-4" aria-hidden />
+  1081→              Delete for everyone
+  1082→            </Button>
+  1083→          </div>
+  1084→        </DialogContent>
+  1085→      </Dialog>
+  1086→
+  1087→      <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+  1088→        <AlertDialogContent className="max-w-[320px] rounded-2xl bg-white dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">
+  1089→          <AlertDialogHeader>
+  1090→            <AlertDialogTitle className="tracking-tight">Delete this message?</AlertDialogTitle>
+  1091→            <AlertDialogDescription className="text-[13px] leading-relaxed">
+  1092→              It will be replaced with a tombstone for everyone here. This can&apos;t be undone.
+  1093→            </AlertDialogDescription>
+  1094→          </AlertDialogHeader>
+  1095→          <AlertDialogFooter className="gap-2">
+  1096→            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+  1097→            <AlertDialogAction
+  1098→              disabled={deleteMessage.isPending}
+  1099→              onClick={() => {
+  1100→                if (selected) deleteMessage.mutate(selected.id)
+  1101→              }}
+  1102→              className="rounded-xl bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40"
+  1103→            >
+  1104→              Delete
+  1105→            </AlertDialogAction>
+  1106→          </AlertDialogFooter>
+  1107→        </AlertDialogContent>
+  1108→      </AlertDialog>
+  1109→
+  1110→      {/* photo lightbox */}
+  1111→      <AnimatePresence>
+  1112→        {lightboxSrc ? (
+  1113→          <motion.div
+  1114→            key="lightbox"
+  1115→            initial={{ opacity: 0 }}
+  1116→            animate={{ opacity: 1 }}
+  1117→            exit={{ opacity: 0 }}
+  1118→            transition={{ duration: 0.18 }}
+  1119→            role="dialog"
+  1120→            aria-label="Photo viewer"
+  1121→            className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm"
+  1122→            onClick={() => setLightboxSrc(null)}
+  1123→          >
+  1124→            <motion.img
+  1125→              src={lightboxSrc}
+  1126→              alt="Shared photo enlarged"
+  1127→              initial={{ scale: 0.88, opacity: 0 }}
+  1128→              animate={{ scale: 1, opacity: 1 }}
+  1129→              exit={{ scale: 0.94, opacity: 0 }}
+  1130→              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+  1131→              className="max-h-[74%] max-w-[92%] rounded-2xl shadow-2xl"
+  1132→              onClick={(e) => e.stopPropagation()}
+  1133→            />
+  1134→            <button
+  1135→              type="button"
+  1136→              aria-label="Close photo viewer"
+  1137→              onClick={() => setLightboxSrc(null)}
+  1138→              className="absolute right-3 top-3 rounded-full bg-white/10 p-2 text-white outline-none transition-colors hover:bg-white/20"
+  1139→            >
+  1140→              <X className="size-5" aria-hidden />
+  1141→            </button>
+  1142→          </motion.div>
+  1143→        ) : null}
+  1144→      </AnimatePresence>
+  1145→
+  1146→      {/* who-reacted sheet */}
+  1147→      <Drawer open={reactionInfo !== null} onOpenChange={(open) => !open && setReactionInfo(null)}>
+  1148→        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+  1149→          {reactionInfo ? (
+  1150→            <div className="pb-2">
+  1151→              <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+  1152→                <span className="text-lg leading-none">{reactionInfo.emoji}</span>
+  1153→                {(() => {
+  1154→                  const group = reactionInfo.message.reactions.find((g) => g.emoji === reactionInfo.emoji)
+  1155→                  const n = group?.count ?? 0
+  1156→                  return n === 1 ? '1 reaction' : `${n} reactions`
+  1157→                })()}
+  1158→              </p>
+  1159→              <ul className="pulse-scroll max-h-56 overflow-y-auto py-1">
+  1160→                {(reactionInfo.message.reactions
+  1161→                  .find((g) => g.emoji === reactionInfo.emoji)
+  1162→                  ?.userIds.map((userId) => ({
+  1163→                    id: userId,
+  1164→                    member: detailData?.members.find((m) => m.id === userId),
+  1165→                  })) ?? [])
+  1166→                  .map(({ id, member }) => (
+  1167→                    <li key={id} className="flex items-center gap-3 rounded-xl px-2 py-2">
+  1168→                      <UserAvatar
+  1169→                        name={member?.name ?? 'Unknown'}
+  1170→                        color={member?.color ?? 'emerald'}
+  1171→                        size={34}
+  1172→                      />
+  1173→                      <span className="flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+  1174→                        {member?.name ?? 'Unknown'}
+  1175→                        {id === me.id ? <span className="ml-1 text-xs text-zinc-400">(you)</span> : null}
+  1176→                      </span>
+  1177→                    </li>
+  1178→                  ))}
+  1179→              </ul>
+  1180→              <button
+  1181→                type="button"
+  1182→                disabled={toggleReaction.isPending}
+  1183→                onClick={() => {
+  1184→                  handleToggleReaction(reactionInfo.message.id, reactionInfo.emoji)
+  1185→                  setReactionInfo(null)
+  1186→                }}
+  1187→                className="mt-1 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-bold text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-60"
+  1188→              >
+  1189→                <span className="text-base leading-none">{reactionInfo.emoji}</span>
+  1190→                {reactionInfo.message.reactions
+  1191→                  .find((g) => g.emoji === reactionInfo.emoji)
+  1192→                  ?.userIds.includes(me.id)
+  1193→                  ? 'Remove your reaction'
+  1194→                  : `React ${reactionInfo.emoji}`}
+  1195→              </button>
+  1196→            </div>
+  1197→          ) : null}
+  1198→        </DrawerContent>
+  1199→      </Drawer>
+  1200→
+  1201→      {/* info dialog */}
+  1202→      <InfoDialog
+  1203→        open={infoOpen}
+  1204→        onOpenChange={setInfoOpen}
+  1205→        detail={detailData ?? null}
+  1206→        me={me}
+  1207→        onlineIds={realtime.onlineIds}
+  1208→      />
+  1209→    </motion.div>
+  1210→  )
+  1211→}
+  1212→
+  1213→// ── pieces ───────────────────────────────────────────────────
+  1214→
+  1215→function TypingDots() {
+  1216→  return (
+  1217→    <span className="inline-flex items-center gap-1 py-0.5" aria-hidden>
+  1218→      {[0, 1, 2].map((i) => (
+  1219→        <motion.span
+  1220→          key={i}
+  1221→          animate={{ y: [0, -3, 0], opacity: [0.5, 1, 0.5] }}
+  1222→          transition={{ repeat: Infinity, duration: 0.9, delay: i * 0.15, ease: 'easeInOut' }}
+  1223→          className="size-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500"
+  1224→        />
+  1225→      ))}
+  1226→    </span>
+  1227→  )
+  1228→}
+  1229→
+  1230→interface MessageRowProps {
+  1231→  message: ChatMessage
+  1232→  head: boolean
+  1233→  mine: boolean
+  1234→  isGroup: boolean
+  1235→  readMs: number
+  1236→  myId: string
+  1237→  onPress: (message: ChatMessage) => void
+  1238→  onStartLongPress: (message: ChatMessage) => void
+  1239→  onEndLongPress: () => void
+  1240→  onToggleReaction: (messageId: string, emoji: string) => void
+  1241→  onReply: (message: ChatMessage) => void
+  1242→  /** long-press a chip → who-reacted sheet */
+  1243→  onReactionInfo: (message: ChatMessage, emoji: string) => void
+  1244→  onOpenImage: (src: string) => void
+  1245→}
+  1246→
+  1247→/** Bubble body text with URL auto-linking (safe anchors, no HTML injection). */
+  1248→function BubbleText({ content, mine }: { content: string; mine: boolean }) {
+  1249→  const segments = splitUrlSegments(content)
+  1250→  return (
+  1251→    <p
+  1252→      className={cn(
+  1253→        'text-[14px] leading-snug break-words whitespace-pre-wrap',
+  1254→        mine ? 'text-white' : 'text-zinc-900 dark:text-zinc-100',
+  1255→      )}
+  1256→    >
+  1257→      {segments.map((seg, i) =>
+  1258→        seg.kind === 'url' ? (
+  1259→          <a
+  1260→            key={i}
+  1261→            href={seg.value.startsWith('www.') ? `https://${seg.value}` : seg.value}
+  1262→            target="_blank"
+  1263→            rel="noopener noreferrer"
+  1264→            onClick={(e) => e.stopPropagation()}
+  1265→            className={cn(
+  1266→              'underline underline-offset-2',
+  1267→              mine
+  1268→                ? 'text-white decoration-white/60 hover:decoration-white'
+  1269→                : 'text-emerald-700 decoration-emerald-400/60 hover:decoration-emerald-600 dark:text-emerald-400',
+  1270→            )}
+  1271→          >
+  1272→            {seg.value}
+  1273→          </a>
+  1274→        ) : (
+  1275→          <span key={i}>{seg.value}</span>
+  1276→        ),
+  1277→      )}
+  1278→    </p>
+  1279→  )
+  1280→}
+  1281→
+  1282→const MessageRow = memo(function MessageRow({
+  1283→  message,
+  1284→  head,
+  1285→  mine,
+  1286→  isGroup,
+  1287→  readMs,
+  1288→  myId,
+  1289→  onPress,
+  1290→  onStartLongPress,
+  1291→  onEndLongPress,
+  1292→  onToggleReaction,
+  1293→  onReply,
+  1294→  onReactionInfo,
+  1295→  onOpenImage,
+  1296→}: MessageRowProps) {
+  1297→  const deleted = message.deletedAt !== null
+  1298→  const pending = message.id.startsWith('temp-')
+  1299→  const createdMs = Date.parse(message.createdAt)
+  1300→  const isRead = !Number.isNaN(createdMs) && createdMs <= readMs
+  1301→  const interactive = !deleted && !pending
+  1302→  const jumbo = !deleted && !message.imagePath && isJumboEmoji(message.content)
+  1303→  const hasReactions = message.reactions.length > 0
+  1304→  const isImage = !deleted && message.imagePath !== null
+  1305→  const dragMovedRef = useRef(false)
+  1306→  const chipPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  1307→  const chipFiredRef = useRef(false)
+  1308→
+  1309→  const beginReply = () => {
+  1310→    haptic(12)
+  1311→    onReply(message)
+  1312→  }
+  1313→
+  1314→  const openReactionInfo = (emoji: string) => {
+  1315→    haptic(10)
+  1316→    onReactionInfo(message, emoji)
+  1317→  }
+  1318→
+  1319→  return (
+  1320→    <div
+  1321→      className={cn(
+  1322→        'flex w-full',
+  1323→        mine ? 'justify-end' : 'justify-start',
+  1324→        head ? 'mt-2.5' : 'mt-0.5',
+  1325→      )}
+  1326→    >
+  1327→      {!mine && isGroup ? (
+  1328→        head ? (
+  1329→          <div className="mr-1.5 flex shrink-0 items-end pb-5">
+  1330→            <UserAvatar name={message.sender.name} color={message.sender.color} size={28} />
+  1331→          </div>
+  1332→        ) : (
+  1333→          <span className="mr-1.5 block w-7 shrink-0" aria-hidden />
+  1334→        )
+  1335→      ) : null}
+  1336→
+  1337→      <div className={cn('flex max-w-[78%] flex-col', mine ? 'items-end' : 'items-start')}>
+  1338→        {!mine && isGroup && head && !deleted ? (
+  1339→          <span className="mb-0.5 ml-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+  1340→            {message.sender.name}
+  1341→          </span>
+  1342→        ) : null}
+  1343→
+  1344→        <div className="relative flex w-full">
+  1345→          {!mine ? (
+  1346→            <motion.span
+  1347→              aria-hidden
+  1348→              initial={false}
+  1349→              className="absolute left-0 top-1/2 -translate-y-1/2 text-emerald-500 opacity-0"
+  1350→              style={{ pointerEvents: 'none' }}
+  1351→            >
+  1352→              <Reply className="size-4" />
+  1353→            </motion.span>
+  1354→          ) : (
+  1355→            <motion.span
+  1356→              aria-hidden
+  1357→              initial={false}
+  1358→              className="absolute right-0 top-1/2 -translate-y-1/2 text-emerald-500 opacity-0"
+  1359→              style={{ pointerEvents: 'none' }}
+  1360→            >
+  1361→              <Reply className="size-4" />
+  1362→            </motion.span>
+  1363→          )}
+  1364→          <motion.div
+  1365→          drag="x"
+  1366→          dragConstraints={{ left: 0, right: 0 }}
+  1367→          dragElastic={0.24}
+  1368→          dragSnapToOrigin
+  1369→          onDragStart={() => {
+  1370→            dragMovedRef.current = false
+  1371→            onEndLongPress()
+  1372→          }}
+  1373→          onDragEnd={(_e, info) => {
+  1374→            const toward = mine ? -info.offset.x : info.offset.x
+  1375→            if (toward > 52) {
+  1376→              dragMovedRef.current = true
+  1377→              beginReply()
+  1378→            }
+  1379→          }}
+  1380→          onClick={() => {
+  1381→            if (dragMovedRef.current) {
+  1382→              dragMovedRef.current = false
+  1383→              return
+  1384→            }
+  1385→            if (interactive && !isImage) onPress(message)
+  1386→          }}
+  1387→          onPointerDown={() => interactive && onStartLongPress(message)}
+  1388→          onPointerUp={onEndLongPress}
+  1389→          onPointerLeave={onEndLongPress}
+  1390→          onDoubleClick={() => {
+  1391→            if (interactive) {
+  1392→              onToggleReaction(message.id, '❤️')
+  1393→            }
+  1394→          }}
+  1395→          role={interactive && !isImage ? 'button' : undefined}
+  1396→          tabIndex={interactive && !isImage ? 0 : undefined}
+  1397→          onKeyDown={(event) => {
+  1398→            if (interactive && !isImage && event.key === 'Enter') onPress(message)
+  1399→          }}
+  1400→          className={cn(
+  1401→            'relative select-none',
+  1402→            jumbo
+  1403→              ? 'px-1 py-0.5'
+  1404→              : isImage
+  1405→                ? 'rounded-2xl p-1 shadow-sm'
+  1406→                : 'rounded-2xl px-3 py-2 shadow-sm',
+  1407→            deleted &&
+  1408→              cn(
+  1409→                'border border-dashed italic',
+  1410→                'rounded-2xl border-zinc-300 bg-transparent text-zinc-400 dark:border-zinc-600 dark:text-zinc-500',
+  1411→                mine ? 'rounded-br-md opacity-80' : 'rounded-bl-md',
+  1412→              ),
+  1413→            !deleted && !jumbo && (mine
+  1414→              ? 'rounded-2xl rounded-br-md bg-emerald-500 text-white'
+  1415→              : 'rounded-2xl rounded-bl-md border border-zinc-100 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100'),
+  1416→            interactive
+  1417→              ? cn(
+  1418→                  'cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:brightness-95',
+  1419→                  jumbo && 'rounded-2xl',
+  1420→                )
+  1421→              : '',
+  1422→          )}
+  1423→        >
+  1424→          {deleted ? (
+  1425→            <p className="text-[13px] leading-snug">This message was deleted</p>
+  1426→          ) : (
+  1427→            <>
+  1428→              {message.replyTo ? (
+  1429→                <div
+  1430→                  className={cn(
+  1431→                    'mb-1 rounded-md border-l-[3px] px-2 py-1',
+  1432→                    mine
+  1433→                      ? 'border-white/70 bg-black/10'
+  1434→                      : 'border-emerald-400 bg-zinc-100 dark:border-emerald-500/80 dark:bg-zinc-700/60',
+  1435→                  )}
+  1436→                >
+  1437→                  <p
+  1438→                    className={cn(
+  1439→                      'text-[11px] font-bold',
+  1440→                      mine ? 'text-white/90' : 'text-emerald-700 dark:text-emerald-400',
+  1441→                    )}
+  1442→                  >
+  1443→                    {message.replyTo.deleted
+  1444→                      ? 'Deleted message'
+  1445→                      : message.replyTo.senderName === message.sender.name
+  1446→                        ? message.replyTo.senderName
+  1447→                        : message.replyTo.senderName || 'Unknown'}
+  1448→                  </p>
+  1449→                  <p
+  1450→                    className={cn(
+  1451→                      'truncate text-[12px] leading-snug',
+  1452→                      mine ? 'text-white/75' : 'text-zinc-500 dark:text-zinc-400',
+  1453→                    )}
+  1454→                  >
+  1455→                    {message.replyTo.deleted
+  1456→                      ? 'This message was deleted'
+  1457→                      : message.replyTo.content.replace(/\s+/g, ' ').slice(0, 120)}
+  1458→                  </p>
+  1459→                </div>
+  1460→              ) : null}
+  1461→              {isImage ? (
+  1462→                <button
+  1463→                  type="button"
+  1464→                  aria-label="Open photo"
+  1465→                  onClick={(e) => {
+  1466→                    e.stopPropagation()
+  1467→                    if (message.imagePath) {
+  1468→                      onOpenImage(`/api/uploads/${encodeURIComponent(message.imagePath)}`)
+  1469→                    }
+  1470→                  }}
+  1471→                  className={cn(
+  1472→                    'block overflow-hidden rounded-xl outline-none',
+  1473→                    mine ? '' : '',
+  1474→                  )}
+  1475→                >
+  1476→                  <img
+  1477→                    src={`/api/uploads/${encodeURIComponent(message.imagePath as string)}`}
+  1478→                    alt="Shared photo"
+  1479→                    loading="lazy"
+  1480→                    className={cn(
+  1481→                      'block max-h-[300px] w-auto max-w-full rounded-xl object-cover transition-transform active:scale-[0.985]',
+  1482→                      pending && 'opacity-80',
+  1483→                    )}
+  1484→                  />
+  1485→                </button>
+  1486→              ) : jumbo ? (
+  1487→                <p className="text-[34px] leading-[1.2] break-words">{message.content}</p>
+  1488→              ) : (
+  1489→                <BubbleText content={message.content} mine={mine} />
+  1490→              )}
+  1491→            </>
+  1492→          )}
+  1493→          <div
+  1494→            className={cn(
+  1495→              'mt-0.5 flex items-center justify-end gap-1 text-[10px]',
+  1496→              deleted
+  1497→                ? 'text-zinc-400 dark:text-zinc-500'
+  1498→                : mine && !jumbo
+  1499→                  ? 'text-white/80'
+  1500→                  : 'text-zinc-400 dark:text-zinc-500',
+  1501→            )}
+  1502→          >
+  1503→            <span className={jumbo ? 'opacity-70' : undefined}>{formatTime(message.createdAt)}</span>
+  1504→            {mine && !deleted ? (
+  1505→              pending ? (
+  1506→                <Clock className="size-3 opacity-90" aria-label="sending…" />
+  1507→              ) : isRead ? (
+  1508→                <CheckCheck className="size-3.5 text-white/90" aria-label="read" />
+  1509→              ) : (
+  1510→                <Check className="size-3 text-white/60" aria-label="sent" />
+  1511→              )
+  1512→            ) : null}
+  1513→          </div>
+  1514→        </motion.div>
+  1515→        </div>
+  1516→
+  1517→        {hasReactions && !deleted ? (
+  1518→          <motion.div
+  1519→            initial={{ opacity: 0, scale: 0.7, y: -2 }}
+  1520→            animate={{ opacity: 1, scale: 1, y: 0 }}
+  1521→            transition={{ type: 'spring', stiffness: 500, damping: 24 }}
+  1522→            className={cn(
+  1523→              '-mt-1.5 z-10 flex flex-wrap gap-1',
+  1524→              mine ? 'mr-2 justify-end' : 'ml-2 justify-start',
+  1525→            )}
+  1526→          >
+  1527→            {message.reactions.map((group) => {
+  1528→              const iReacted = group.userIds.includes(myId)
+  1529→              return (
+  1530→                <button
+  1531→                  key={group.emoji}
+  1532→                  type="button"
+  1533→                  aria-label={`${group.emoji} ${group.count} — tap to toggle, hold for details`}
+  1534→                  onClick={() => {
+  1535→                    if (!chipFiredRef.current) onToggleReaction(message.id, group.emoji)
+  1536→                    chipFiredRef.current = false
+  1537→                  }}
+  1538→                  onPointerDown={() => {
+  1539→                    if (chipPressRef.current !== null) clearTimeout(chipPressRef.current)
+  1540→                    chipFiredRef.current = false
+  1541→                    chipPressRef.current = setTimeout(() => {
+  1542→                      chipFiredRef.current = true
+  1543→                      chipPressRef.current = null
+  1544→                      openReactionInfo(group.emoji)
+  1545→                    }, 380)
+  1546→                  }}
+  1547→                  onPointerUp={() => {
+  1548→                    if (chipPressRef.current !== null) {
+  1549→                      clearTimeout(chipPressRef.current)
+  1550→                      chipPressRef.current = null
+  1551→                    }
+  1552→                  }}
+  1553→                  onPointerLeave={() => {
+  1554→                    if (chipPressRef.current !== null) {
+  1555→                      clearTimeout(chipPressRef.current)
+  1556→                      chipPressRef.current = null
+  1557→                    }
+  1558→                  }}
+  1559→                  className={cn(
+  1560→                    'flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] shadow-sm backdrop-blur transition-transform active:scale-90',
+  1561→                    iReacted
+  1562→                      ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-500/70 dark:bg-emerald-500/15'
+  1563→                      : 'border-zinc-200 bg-white/95 dark:border-zinc-600 dark:bg-zinc-800/95',
+  1564→                  )}
+  1565→                >
+  1566→                  <span className="text-xs leading-none">{group.emoji}</span>
+  1567→                  {group.count > 1 ? (
+  1568→                    <span
+  1569→                      className={cn(
+  1570→                        'font-semibold',
+  1571→                        iReacted
+  1572→                          ? 'text-emerald-700 dark:text-emerald-300'
+  1573→                          : 'text-zinc-500 dark:text-zinc-300',
+  1574→                      )}
+  1575→                    >
+  1576→                      {group.count}
+  1577→                    </span>
+  1578→                  ) : null}
+  1579→                </button>
+  1580→              )
+  1581→            })}
+  1582→          </motion.div>
+  1583→        ) : null}
+  1584→      </div>
+  1585→    </div>
+  1586→  )
+  1587→}, rowsEqual)
+  1588→
+  1589→function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
+  1590→  return (
+  1591→    prev.message === next.message &&
+  1592→    prev.head === next.head &&
+  1593→    prev.mine === next.mine &&
+  1594→    prev.isGroup === next.isGroup &&
+  1595→    prev.readMs === next.readMs &&
+  1596→    prev.myId === next.myId &&
+  1597→    prev.onPress === next.onPress &&
+  1598→    prev.onStartLongPress === next.onStartLongPress &&
+  1599→    prev.onEndLongPress === next.onEndLongPress &&
+  1600→    prev.onToggleReaction === next.onToggleReaction &&
+  1601→    prev.onReply === next.onReply &&
+  1602→    prev.onReactionInfo === next.onReactionInfo &&
+  1603→    prev.onOpenImage === next.onOpenImage
+  1604→  )
+  1605→}
+  1606→
+  1607→function InfoDialog({
+  1608→  open,
+  1609→  onOpenChange,
+  1610→  detail,
+  1611→  me,
+  1612→  onlineIds,
+  1613→}: {
+  1614→  open: boolean
+  1615→  onOpenChange: (open: boolean) => void
+  1616→  detail: ConversationDetail | null
+  1617→  me: AppUser
+  1618→  onlineIds: ReadonlySet<string>
+  1619→}) {
+  1620→  if (!detail) {
+  1621→    return (
+  1622→      <Dialog open={open} onOpenChange={onOpenChange}>
+  1623→        <DialogContent className="max-w-[320px] rounded-2xl sm:left-1/2 sm:translate-x-[-50%]" />
+  1624→      </Dialog>
+  1625→    )
+  1626→  }
+  1627→  const title = detail.isGroup
+  1628→    ? detail.name?.trim() || 'Group'
+  1629→    : otherMemberOf(detail, me.id)?.name ?? 'Direct message'
+  1630→
+  1631→  return (
+  1632→    <Dialog open={open} onOpenChange={onOpenChange}>
+  1633→      <DialogContent className="max-w-[340px] gap-4 rounded-2xl p-4 sm:left-1/2 sm:translate-x-[-50%] dark:bg-zinc-900">
+  1634→        <DialogHeader>
+  1635→          <div className="flex items-center gap-3">
+  1636→            {detail.isGroup ? (
+  1637→              <GroupAvatar title={title} id={detail.id} size={44} />
+  1638→            ) : (
+  1639→              (() => {
+  1640→                const o = otherMemberOf(detail, me.id)
+  1641→                return (
+  1642→                  <UserAvatar
+  1643→                    name={o?.name ?? title}
+  1644→                    color={o?.color}
+  1645→                    size={44}
+  1646→                    showPresence
+  1647→                    online={o ? onlineIds.has(o.id) : false}
+  1648→                  />
+  1649→                )
+  1650→              })()
+  1651→            )}
+  1652→            <div className="min-w-0 text-left">
+  1653→              <DialogTitle className="truncate text-base font-bold tracking-tight">{title}</DialogTitle>
+  1654→              <DialogDescription className="text-xs">
+  1655→                {detail.isGroup ? `${detail.members.length} members` : 'Direct conversation'}
+  1656→              </DialogDescription>
+  1657→            </div>
+  1658→          </div>
+  1659→        </DialogHeader>
+  1660→        <ul className="pulse-scroll max-h-64 space-y-1 overflow-y-auto pr-1">
+  1661→          {detail.members.map((member) => {
+  1662→            const isMe = member.id === me.id
+  1663→            const online = onlineIds.has(member.id)
+  1664→            return (
+  1665→              <li
+  1666→                key={member.id}
+  1667→                className="flex items-center gap-3 rounded-xl bg-zinc-50 p-2.5 dark:bg-zinc-800/60"
+  1668→              >
+  1669→                <UserAvatar name={member.name} color={member.color} size={38} showPresence online={online} />
+  1670→                <div className="min-w-0 flex-1">
+  1671→                  <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+  1672→                    {member.name}
+  1673→                    {isMe ? <span className="ml-1 text-xs font-normal text-zinc-400">(you)</span> : null}
+  1674→                  </p>
+  1675→                  <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{member.about}</p>
+  1676→                </div>
+  1677→                <span className="shrink-0 text-right text-[10px] leading-tight text-zinc-400 dark:text-zinc-500">
+  1678→                  {isMe ? (
+  1679→                    <>
+  1680→                      all caught up<br />
+  1681→                      <span className="font-semibold text-zinc-500 dark:text-zinc-400">
+  1682→                        read {formatListStamp(member.lastReadAt)}
+  1683→                      </span>
+  1684→                    </>
+  1685→                  ) : (
+  1686→                    <>
+  1687→                      last read<br />
+  1688→                      <span className="font-semibold text-zinc-500 dark:text-zinc-400">
+  1689→                        {formatListStamp(member.lastReadAt)}
+  1690→                      </span>
+  1691→                    </>
+  1692→                  )}
+  1693→                </span>
+  1694→              </li>
+  1695→            )
+  1696→          })}
+  1697→        </ul>
+  1698→      </DialogContent>
+  1699→    </Dialog>
+  1700→  )
+  1701→}
+  1702→

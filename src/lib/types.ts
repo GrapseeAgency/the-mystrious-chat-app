@@ -47,6 +47,8 @@ export interface ChatMessage {
   reactions: MessageReactionGroup[]
   replyTo: ReplySnippet | null
   imagePath: string | null // served via GET /api/uploads/[imagePath]
+  audioPath: string | null // voice-note file served via GET /api/uploads/[audioPath]
+  durationMs: number | null // voice-note length in milliseconds
 }
 
 /** Row of the conversations list */
@@ -97,4 +99,12 @@ export interface SocketMessageEvent {
   /** ids of all members except sender */
   recipientIds: string[]
   conversationId: string
+}
+
+/** Group meta changed (renamed / members added / someone left). */
+export interface ConversationUpdatedEvent {
+  type: 'conversation:updated'
+  conversationId: string
+  /** ids of ALL current members (after the change) */
+  recipientIds: string[]
 }

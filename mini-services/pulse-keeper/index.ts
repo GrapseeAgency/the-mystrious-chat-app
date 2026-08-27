@@ -9,6 +9,10 @@ import { createServer } from 'node:http'
 const APP_PORT = 3000
 const HEALTH_PORT = 3004
 const CHECK_INTERVAL_MS = 5000
+/** require this many consecutive failed probes before respawning (avoids false positives under load) */
+const DOWN_STREAK_THRESHOLD = 3
+/** after a failed spawn attempt, wait before trying again (port-in-use storms) */
+const SPAWN_COOLDOWN_MS = 15_000
 
 interface ChildHandle {
   pid: number | undefined
@@ -18,6 +22,8 @@ interface ChildHandle {
 let lastChild: ChildHandle | null = null
 let restarting = false
 let restartCount = 0
+let downStreak = 0
+let cooldownUntil = 0
 
 async function isAppUp(): Promise<boolean> {
   try {
@@ -45,6 +51,11 @@ function spawnApp(): void {
     console.log(`[keeper] spawned next dev (pid=${proc.pid}, restarts=${restartCount})`)
     void proc.exited.then((code) => {
       console.log(`[keeper] child pid=${proc.pid} exited code=${code}`)
+      // Fast exit right after spawn almost always means port-in-use:
+      // back off so we never storm a perfectly healthy server.
+      if (Date.now() - (lastChild?.startedAt ?? Date.now()) < 8_000) {
+        cooldownUntil = Date.now() + SPAWN_COOLDOWN_MS
+      }
     })
   } catch (error) {
     console.error('[keeper] spawn failed:', error)
@@ -57,10 +68,17 @@ function spawnApp(): void {
 
 async function tick(): Promise<void> {
   if (restarting) return
+  if (Date.now() < cooldownUntil) return
   const up = await isAppUp()
   if (!up) {
-    console.log(`[keeper] app DOWN on :${APP_PORT} → respawning`)
-    spawnApp()
+    downStreak += 1
+    if (downStreak >= DOWN_STREAK_THRESHOLD) {
+      console.log(`[keeper] app DOWN on :${APP_PORT} (${downStreak} probes) → respawning`)
+      downStreak = 0
+      spawnApp()
+    }
+  } else {
+    downStreak = 0
   }
 }
 
@@ -78,6 +96,8 @@ const httpServer = createServer((_req, res) => {
       lastChildPid: lastChild?.pid ?? null,
       childUptimeSec: lastChild ? Math.round((Date.now() - lastChild.startedAt) / 1000) : null,
       restartCount,
+      downStreak,
+      cooldownSec: Math.max(0, Math.round((cooldownUntil - Date.now()) / 1000)),
       uptimeSec: Math.round(process.uptime()),
     }),
   )

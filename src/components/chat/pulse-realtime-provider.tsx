@@ -99,6 +99,8 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
         }
       : null
   const imagePath = typeof msg.imagePath === 'string' ? msg.imagePath : null
+  const audioPath = typeof msg.audioPath === 'string' ? msg.audioPath : null
+  const durationMs = typeof msg.durationMs === 'number' && Number.isFinite(msg.durationMs) ? msg.durationMs : null
   return {
     type:
       r.type === 'message:deleted'
@@ -124,6 +126,8 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
       reactions,
       replyTo,
       imagePath,
+      audioPath,
+      durationMs,
     },
     recipientIds: [],
     conversationId: msg.conversationId,
@@ -409,6 +413,14 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
       patchReadWatermark(ev.conversationId, ev.userId, ev.lastReadAt)
     }
 
+    const onConversationUpdated = (raw: unknown) => {
+      if (raw === null || typeof raw !== 'object') return
+      const r = raw as Record<string, unknown>
+      if (typeof r.conversationId !== 'string') return
+      queryClient.invalidateQueries({ queryKey: ['conversation', r.conversationId] })
+      queryClient.invalidateQueries({ queryKey: ['conversations', myId] })
+    }
+
     sock.on('connect', onConnect)
     sock.on('disconnect', onDisconnect)
     sock.on('joined', applySnapshot)
@@ -418,6 +430,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     sock.on('message:deleted', onMessageDeleted)
     sock.on('message:react', onMessageReact)
     sock.on('message:read', onMessageRead)
+    sock.on('conversation:updated', onConversationUpdated)
 
     // Warm audio during the first gesture so later pings can play unmuted.
     const warm = () => primeSound()

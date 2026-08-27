@@ -47,6 +47,8 @@ interface ConversationRowProps {
   groupTitle: string
   online: boolean
   pinned: boolean
+  /** someone is typing in this conversation right now */
+  typing: boolean
   onPress: () => void
   onLongPress: () => void
 }
@@ -67,6 +69,7 @@ const ConversationRow = memo(function ConversationRow({
   groupTitle,
   online,
   pinned,
+  typing,
   onPress,
   onLongPress,
 }: ConversationRowProps) {
@@ -146,23 +149,39 @@ const ConversationRow = memo(function ConversationRow({
             </span>
           </div>
           <div className="mt-0.5 flex items-center justify-between gap-2">
-            <p
-              className={cn(
-                'truncate text-[13px]',
-                hasUnread
-                  ? 'font-medium text-zinc-600 dark:text-zinc-300'
-                  : 'text-zinc-500 dark:text-zinc-400',
-              )}
-            >
-              {previewPrefix ? <span className="text-zinc-400 dark:text-zinc-500">{previewPrefix}</span> : null}
-              <span className={previewDeleted ? 'italic' : undefined}>{preview}</span>
-            </p>
+            {typing ? (
+              <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium italic text-emerald-600 dark:text-emerald-400">
+                <span className="inline-flex items-center gap-0.5" aria-hidden>
+                  {[0, 1, 2].map((i) => (
+                    <motion.span
+                      key={i}
+                      animate={{ y: [0, -2.5, 0], opacity: [0.45, 1, 0.45] }}
+                      transition={{ repeat: Infinity, duration: 0.9, delay: i * 0.15, ease: 'easeInOut' }}
+                      className="size-[3.5px] rounded-full bg-emerald-500"
+                    />
+                  ))}
+                </span>
+                typing…
+              </p>
+            ) : (
+              <p
+                className={cn(
+                  'truncate text-[13px]',
+                  hasUnread
+                    ? 'font-medium text-zinc-600 dark:text-zinc-300'
+                    : 'text-zinc-500 dark:text-zinc-400',
+                )}
+              >
+                {previewPrefix ? <span className="text-zinc-400 dark:text-zinc-500">{previewPrefix}</span> : null}
+                <span className={previewDeleted ? 'italic' : undefined}>{preview}</span>
+              </p>
+            )}
             {hasUnread ? (
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ type: 'spring', stiffness: 520, damping: 20 }}
-                className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white"
+                className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
               >
                 {unreadCount > 99 ? '99+' : unreadCount}
               </motion.span>
@@ -212,6 +231,8 @@ export function ChatsTab({
   onGoProfile: () => void
 }) {
   const realtime = usePulseRealtime()
+  const typersIn = realtime.typersIn
+  const onlineIds = realtime.onlineIds
   const [searching, setSearching] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -249,12 +270,13 @@ export function ChatsTab({
           dmName: other?.name ?? null,
           dmColor: other?.color ?? 'emerald',
           groupTitle: groupName,
-          online: !conv.isGroup && other !== null && realtime.onlineIds.has(other.id),
+          online: !conv.isGroup && other !== null && onlineIds.has(other.id),
           pinned: conv.pinnedAt !== null,
+          typing: typersIn(conv.id, me.id).length > 0,
         },
       }
     })
-  }, [conversations.data, me.id, realtime.onlineIds])
+  }, [conversations.data, me.id, onlineIds, typersIn])
 
   const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()

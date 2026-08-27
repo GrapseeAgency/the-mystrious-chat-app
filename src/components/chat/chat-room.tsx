@@ -9,6 +9,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -21,15 +22,23 @@ import {
   Check,
   CheckCheck,
   ChevronLeft,
+  ChevronUp,
   Clock,
   Copy,
   EllipsisVertical,
   ImagePlus,
   LoaderCircle,
+  LogOut,
+  Mic,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
   Reply,
   SendHorizontal,
   Smile,
   Trash2,
+  UserPlus,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -45,6 +54,7 @@ import {
   formatDayChip,
   formatListStamp,
   formatTime,
+  hashString,
   isJumboEmoji,
   isSameDayIso,
   otherMemberOf,
@@ -86,6 +96,8 @@ interface DetailResponse {
 }
 interface MessagesResponse {
   messages: ChatMessage[]
+  hasMore?: boolean
+  total?: number
 }
 interface SendResponse {
   message: ChatMessage
@@ -96,6 +108,16 @@ interface DeleteResponse {
 
 const CLUSTER_WINDOW_MS = 5 * 60 * 1000
 const NEAR_BOTTOM_PX = 160
+const OLDER_PAGE_SIZE = 40
+const MESSAGES_PAGE_SIZE = 200
+const MIN_VOICE_MS = 600
+/** "1:23" (minutes:seconds) for voice notes + record timer. */
+function formatVoicems(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 
 type ClusterItem =
   | { kind: 'day'; key: string; label: string }
@@ -133,6 +155,11 @@ export function ChatRoom({
   /** {message, emoji} → who-reacted sheet */
   const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
   const [sendingImage, setSendingImage] = useState(false)
+  const [hasMoreHistory, setHasMoreHistory] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [recordMs, setRecordMs] = useState(0)
+  const [sendingVoice, setSendingVoice] = useState(false)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -140,6 +167,13 @@ export function ChatRoom({
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** flipped (inside rAF) after the first history fetch so render stays ref-free */
   const [historyLoaded, setHistoryLoaded] = useState(false)
+  /** pending scroll-anchor restore after prepending an older page */
+  const scrollRestoreRef = useRef<{ prevHeight: number; prevTop: number } | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const recordChunksRef = useRef<Blob[]>([])
+  const recordStartedAtRef = useRef(0)
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const recordCancelRef = useRef(false)
 
   // ── data ───────────────────────────────────────────────────
 
@@ -160,13 +194,66 @@ export function ChatRoom({
     queryKey: ['messages', conversationId],
     queryFn: async (): Promise<ChatMessage[]> => {
       const res = await apiJson<MessagesResponse>(
-        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=200`,
+        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=${MESSAGES_PAGE_SIZE}`,
       )
-      return res.messages
+      // Merge with whatever is cached (older pages loaded via "Load older")
+      // so a background refetch never amputates already-loaded history.
+      const previous = queryClient.getQueryData<ChatMessage[]>(['messages', conversationId])
+      if (!previous || previous.length === 0) {
+        setHasMoreHistory(res.total !== undefined ? res.messages.length < res.total : res.hasMore === true)
+        return res.messages
+      }
+      const byId = new Map(previous.map((m) => [m.id, m]))
+      for (const m of res.messages) byId.set(m.id, m)
+      setHasMoreHistory(res.total !== undefined ? byId.size < res.total : res.hasMore === true)
+      return [...byId.values()].sort(
+        (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+      )
     },
     staleTime: 15_000,
     // safety net: messages still arrive within seconds even without websocket realtime
     refetchInterval: 3_500,
+  })
+
+  /** Fetch the next page of history and prepend it, keeping scroll anchored. */
+  const loadOlder = useCallback(async () => {
+    const list = messages.data ?? []
+    if (loadingOlder || list.length === 0) return
+    const oldest = list[0]
+    const el = viewportRef.current
+    const prevHeight = el?.scrollHeight ?? 0
+    const prevTop = el?.scrollTop ?? 0
+    setLoadingOlder(true)
+    try {
+      const res = await apiJson<MessagesResponse>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=${OLDER_PAGE_SIZE}&before=${encodeURIComponent(oldest.createdAt)}`,
+      )
+      // Arm the anchor only now — the very next render (data applied) restores it.
+      scrollRestoreRef.current = { prevHeight, prevTop }
+      let cachedCount = res.messages.length
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
+        if (!old || old.length === 0) return res.messages
+        const known = new Set(old.map((m) => m.id))
+        const additions = res.messages.filter((m) => !known.has(m.id))
+        cachedCount = old.length + additions.length
+        return [...additions, ...old]
+      })
+      setHasMoreHistory(res.total !== undefined ? cachedCount < res.total : res.hasMore === true)
+      haptic(6)
+    } catch {
+      toast.error('Could not load older messages')
+    } finally {
+      setLoadingOlder(false)
+    }
+  }, [messages.data, loadingOlder, conversationId, queryClient])
+
+  // scroll anchor: after prepending, keep the viewport pinned to the same content
+  useLayoutEffect(() => {
+    const pending = scrollRestoreRef.current
+    const el = viewportRef.current
+    if (!pending || !el) return
+    scrollRestoreRef.current = null
+    el.scrollTop = el.scrollHeight - pending.prevHeight + pending.prevTop
   })
 
   // ── realtime registration + read receipts ──────────────────
@@ -362,11 +449,15 @@ export function ChatRoom({
       content,
       replyToId,
       imagePath,
+      audioPath,
+      durationMs,
     }: {
       clientId: string
       content: string
       replyToId?: string
       imagePath?: string
+      audioPath?: string
+      durationMs?: number
     }) => {
       const res = await apiJson<SendResponse>(
         `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
@@ -378,12 +469,13 @@ export function ChatRoom({
             content,
             ...(replyToId ? { replyToId } : {}),
             ...(imagePath ? { imagePath } : {}),
+            ...(audioPath ? { audioPath, ...(durationMs ? { durationMs } : {}) } : {}),
           }),
         },
       )
       return { res, clientId }
     },
-    onMutate: async ({ clientId, content, replyToId, imagePath }) => {
+    onMutate: async ({ clientId, content, replyToId, imagePath, audioPath, durationMs }) => {
       const parentSnapshot = replyToId && replyTo && replyTo.id === replyToId
         ? {
             id: replyTo.id,
@@ -403,6 +495,8 @@ export function ChatRoom({
         reactions: [],
         replyTo: parentSnapshot,
         imagePath: imagePath ?? null,
+        audioPath: audioPath ?? null,
+        durationMs: durationMs ?? null,
       }
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
         old ? [...old, temp] : [temp],
@@ -610,6 +704,184 @@ export function ChatRoom({
     }
   }
 
+  // ── voice notes ────────────────────────────────────────────
+
+  const teardownRecorder = useCallback(() => {
+    if (recordTimerRef.current !== null) {
+      clearInterval(recordTimerRef.current)
+      recordTimerRef.current = null
+    }
+    recorderRef.current = null
+    setRecording(false)
+    setRecordMs(0)
+  }, [])
+
+  /** stop = false → cancel (discard); stop = true → upload + send. */
+  const finishRecording = useCallback(
+    (send: boolean) => {
+      const rec = recorderRef.current
+      if (!rec) return
+      recordCancelRef.current = !send
+      try {
+        rec.stop()
+      } catch {
+        teardownRecorder()
+      }
+    },
+    [teardownRecorder],
+  )
+
+  const startRecording = useCallback(async () => {
+    if (recorderRef.current || sendingVoice) return
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      toast.error('Voice notes are not supported in this browser')
+      return
+    }
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      toast.error('Microphone access was denied — check browser permissions')
+      return
+    }
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
+    const mimeType = candidates.find((t) => MediaRecorder.isTypeSupported(t))
+    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+    recordChunksRef.current = []
+    recordCancelRef.current = false
+    rec.ondataavailable = (event) => {
+      if (event.data.size > 0) recordChunksRef.current.push(event.data)
+    }
+    rec.onstop = async () => {
+      stream.getTracks().forEach((track) => track.stop())
+      const elapsed = Date.now() - recordStartedAtRef.current
+      const cancelled = recordCancelRef.current
+      const chunks = recordChunksRef.current
+      const type = rec.mimeType || 'audio/webm'
+      teardownRecorder()
+      if (cancelled || elapsed < MIN_VOICE_MS || chunks.length === 0) {
+        if (!cancelled && elapsed < MIN_VOICE_MS) toast.info('Hold too short — voice note discarded')
+        return
+      }
+      setSendingVoice(true)
+      try {
+        const buffer = await new Blob(chunks, { type }).arrayBuffer()
+        const bytes = new Uint8Array(buffer)
+        const CHUNK = 0x8000
+        let binary = ''
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+        }
+        const up = await apiJson<{ filePath: string }>('/api/uploads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl: `data:${type};base64,${btoa(binary)}` }),
+        })
+        haptic(12)
+        sendMessage.mutate({
+          clientId: uid(),
+          content: '',
+          audioPath: up.filePath,
+          durationMs: Math.max(1, Math.round(elapsed / 100) * 100),
+          ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+        })
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Could not send the voice note')
+      } finally {
+        setSendingVoice(false)
+      }
+    }
+    recorderRef.current = rec
+    recordStartedAtRef.current = Date.now()
+    setRecording(true)
+    setRecordMs(0)
+    rec.start(250)
+    recordTimerRef.current = setInterval(() => {
+      setRecordMs(Date.now() - recordStartedAtRef.current)
+    }, 200)
+    haptic(14)
+  }, [sendMessage, replyTo, sendingVoice, teardownRecorder])
+
+  // safety: leaving the room (or tab) mid-recording discards the note
+  useEffect(
+    () => () => {
+      const rec = recorderRef.current
+      if (rec) {
+        recordCancelRef.current = true
+        try {
+          rec.stop()
+        } catch {
+          // already stopped
+        }
+      }
+    },
+    [],
+  )
+
+  // ── group management ───────────────────────────────────────
+
+  const renameGroup = useMutation({
+    mutationFn: async (name: string) => {
+      return apiJson<DetailResponse>(`/api/conversations/${encodeURIComponent(conversationId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requesterId: me.id, name }),
+      })
+    },
+    onSuccess: (res) => {
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], res.conversation)
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success('Group name updated')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not rename the group')
+    },
+  })
+
+  const addMembers = useMutation({
+    mutationFn: async (userIds: string[]) => {
+      return apiJson<DetailResponse & { added: string[] }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/members`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requesterId: me.id, userIds }),
+        },
+      )
+    },
+    onSuccess: (res) => {
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], res.conversation)
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success(res.added.length === 1 ? '1 member added' : `${res.added.length} members added`)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not add members')
+    },
+  })
+
+  const leaveGroup = useMutation({
+    mutationFn: async () => {
+      return apiJson<{ ok: boolean }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/members`,
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requesterId: me.id }),
+        },
+      )
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success('You left the group')
+      setInfoOpen(false)
+      stopTyping()
+      onClose()
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not leave the group')
+    },
+  })
+
   // ── long-press helpers ─────────────────────────────────────
 
   const clearLongPress = useCallback(() => {
@@ -786,25 +1058,50 @@ export function ChatRoom({
             <Skeleton className="ml-auto h-9 w-2/5 rounded-2xl" />
           </div>
         ) : items.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
-            <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
-            <p className="text-xs text-zinc-400 dark:text-zinc-500">
-              Say hello — your words travel in real time.
-            </p>
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+            <div
+              aria-hidden
+              className="flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/15 to-emerald-600/10 text-emerald-500 dark:from-emerald-400/10 dark:to-emerald-600/5"
+            >
+              <SendHorizontal className="size-7 -rotate-45" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
+              <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                Say hello — your words travel in real time.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col">
+            {hasMoreHistory ? (
+              <div className="flex justify-center pb-3">
+                <button
+                  type="button"
+                  disabled={loadingOlder}
+                  onClick={() => void loadOlder()}
+                  className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-zinc-500 shadow-sm outline-none backdrop-blur transition-colors hover:border-emerald-300 hover:text-emerald-600 active:scale-95 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-400 dark:hover:border-emerald-500/50 dark:hover:text-emerald-400"
+                >
+                  {loadingOlder ? (
+                    <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <ChevronUp className="size-3.5" aria-hidden />
+                  )}
+                  {loadingOlder ? 'Loading…' : 'Load older messages'}
+                </button>
+              </div>
+            ) : null}
             {items.map((item) =>
               item.kind === 'day' ? (
                 <div key={item.key} className="my-3 flex justify-center">
-                  <span className="rounded-full bg-zinc-200/70 px-3 py-1 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                  <span className="rounded-full bg-zinc-200/70 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-white/5">
                     {item.label}
                   </span>
                 </div>
               ) : item.kind === 'unread' ? (
                 <div key={item.key} className="my-3 flex items-center gap-2 px-1" role="separator" aria-label="Unread messages">
                   <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
-                  <span className="text-[10px] font-bold tracking-widest text-emerald-600 dark:text-emerald-400">
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-emerald-600 dark:text-emerald-400">
                     UNREAD
                   </span>
                   <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
@@ -938,83 +1235,138 @@ export function ChatRoom({
             tabIndex={-1}
             onChange={(e) => void handleImagePicked(e.target.files?.[0])}
           />
-          <button
-            type="button"
-            aria-label="Send a photo"
-            disabled={sendingImage}
-            onClick={() => fileInputRef.current?.click()}
-            className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 disabled:opacity-50 dark:hover:bg-zinc-800"
-          >
-            {sendingImage ? (
-              <LoaderCircle className="size-5 animate-spin" aria-hidden />
-            ) : (
-              <ImagePlus className="size-[22px]" aria-hidden />
-            )}
-          </button>
-          <Popover>
-            <PopoverTrigger asChild>
+          {recording ? (
+            <>
               <button
                 type="button"
-                aria-label="Insert emoji"
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-500 active:scale-90 dark:hover:bg-zinc-800"
+                aria-label="Cancel recording"
+                onClick={() => finishRecording(false)}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 outline-none transition-transform hover:bg-rose-200 active:scale-90 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-500/25"
               >
-                <Smile className="size-6" aria-hidden />
+                <X className="size-5" aria-hidden />
               </button>
-            </PopoverTrigger>
-            <PopoverContent
-              side="top"
-              align="start"
-              sideOffset={10}
-              className="w-[272px] rounded-2xl p-2 dark:bg-zinc-800"
-            >
-              <div className="grid grid-cols-8 gap-0.5">
-                {EMOJI_PICKER_CHOICES.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    aria-label={`Insert ${emoji}`}
-                    onClick={() => {
-                      setInput((prev) => prev + emoji)
-                      requestAnimationFrame(() => {
-                        autosize()
-                        textareaRef.current?.focus()
-                      })
-                    }}
-                    className="rounded-lg py-1 text-xl outline-none transition-transform hover:bg-zinc-100 hover:scale-125 active:scale-95 dark:hover:bg-zinc-700"
-                  >
-                    {emoji}
-                  </button>
-                ))}
+              <div
+                role="status"
+                aria-label="Recording voice note"
+                className="flex h-11 flex-1 items-center gap-2.5 rounded-full border border-rose-200 bg-rose-50 px-4 dark:border-rose-500/30 dark:bg-rose-500/10"
+              >
+                <span className="relative flex size-2.5 shrink-0" aria-hidden>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                  <span className="relative inline-flex size-2.5 rounded-full bg-rose-500" />
+                </span>
+                <span className="text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                  {formatVoicems(recordMs)}
+                </span>
+                <span className="ml-auto truncate text-xs text-zinc-400 dark:text-zinc-500">
+                  Recording voice note…
+                </span>
               </div>
-            </PopoverContent>
-          </Popover>
-          <textarea
-            ref={textareaRef}
-            value={input}
-            rows={1}
-            aria-label="Message input"
-            placeholder="Type a message"
-            maxLength={2000}
-            enterKeyHint="send"
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={stopTyping}
-            className="pulse-scroll max-h-[120px] flex-1 resize-none rounded-3xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-colors focus:border-emerald-400 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-emerald-500/70"
-          />
-          <button
-            type="button"
-            aria-label="Send message"
-            disabled={input.trim().length === 0 || sendMessage.isPending}
-            onClick={submit}
-            className={cn(
-              'flex size-11 shrink-0 items-center justify-center rounded-full transition-all active:scale-90',
-              input.trim().length > 0
-                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90'
-                : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500',
-            )}
-          >
-            <SendHorizontal className="size-5" aria-hidden />
-          </button>
+              <button
+                type="button"
+                aria-label="Stop and send voice note"
+                disabled={sendingVoice}
+                onClick={() => finishRecording(true)}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-90 disabled:opacity-60"
+              >
+                {sendingVoice ? (
+                  <LoaderCircle className="size-5 animate-spin" aria-hidden />
+                ) : (
+                  <SendHorizontal className="size-5" aria-hidden />
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                aria-label="Send a photo"
+                disabled={sendingImage}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 disabled:opacity-50 dark:hover:bg-zinc-800"
+              >
+                {sendingImage ? (
+                  <LoaderCircle className="size-5 animate-spin" aria-hidden />
+                ) : (
+                  <ImagePlus className="size-[22px]" aria-hidden />
+                )}
+              </button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Insert emoji"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-500 active:scale-90 dark:hover:bg-zinc-800"
+                  >
+                    <Smile className="size-6" aria-hidden />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="start"
+                  sideOffset={10}
+                  className="w-[272px] rounded-2xl p-2 dark:bg-zinc-800"
+                >
+                  <div className="grid grid-cols-8 gap-0.5">
+                    {EMOJI_PICKER_CHOICES.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        aria-label={`Insert ${emoji}`}
+                        onClick={() => {
+                          setInput((prev) => prev + emoji)
+                          requestAnimationFrame(() => {
+                            autosize()
+                            textareaRef.current?.focus()
+                          })
+                        }}
+                        className="rounded-lg py-1 text-xl outline-none transition-transform hover:bg-zinc-100 hover:scale-125 active:scale-95 dark:hover:bg-zinc-700"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                rows={1}
+                aria-label="Message input"
+                placeholder="Type a message"
+                maxLength={2000}
+                enterKeyHint="send"
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={stopTyping}
+                className="pulse-scroll max-h-[120px] flex-1 resize-none rounded-3xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-colors focus:border-emerald-400 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-emerald-500/70"
+              />
+              {input.trim().length === 0 ? (
+                <button
+                  type="button"
+                  aria-label="Record voice note"
+                  onClick={() => void startRecording()}
+                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 outline-none transition-all hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-90 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-emerald-400"
+                >
+                  <Mic className="size-5" aria-hidden />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Send message"
+                  disabled={input.trim().length === 0 || sendMessage.isPending}
+                  onClick={submit}
+                  className={cn(
+                    'flex size-11 shrink-0 items-center justify-center rounded-full transition-all active:scale-90',
+                    input.trim().length > 0
+                      ? 'bg-emerald-500 text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90'
+                      : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500',
+                  )}
+                >
+                  <SendHorizontal className="size-5" aria-hidden />
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -1205,6 +1557,12 @@ export function ChatRoom({
         detail={detailData ?? null}
         me={me}
         onlineIds={realtime.onlineIds}
+        renamePending={renameGroup.isPending}
+        onRename={(name) => renameGroup.mutate(name)}
+        addMembersPending={addMembers.isPending}
+        onAddMembers={(userIds) => addMembers.mutate(userIds)}
+        leavePending={leaveGroup.isPending}
+        onLeave={() => leaveGroup.mutate()}
       />
     </motion.div>
   )
@@ -1224,6 +1582,111 @@ function TypingDots() {
         />
       ))}
     </span>
+  )
+}
+
+/** Deterministic decorative waveform bars derived from the message id. */
+function voiceBars(seed: string, count = 26): number[] {
+  let h = hashString(seed)
+  const bars: number[] = []
+  for (let i = 0; i < count; i += 1) {
+    h = (h * 1103515245 + 12345) % 2147483648
+    const v = Math.abs(h) / 2147483648
+    bars.push(Math.round(28 + v * 72))
+  }
+  return bars
+}
+
+/** Voice-note bubble: play/pause + pseudo waveform + duration + progress. */
+function VoiceBubble({
+  src,
+  durationMs,
+  mine,
+  seed,
+}: {
+  src: string
+  durationMs: number | null
+  mine: boolean
+  seed: string
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const bars = useMemo(() => voiceBars(seed), [seed])
+
+  const toggle = (event: React.SyntheticEvent) => {
+    event.stopPropagation()
+    const audio = audioRef.current
+    if (!audio) return
+    if (playing) {
+      audio.pause()
+    } else {
+      void audio.play().catch(() => {
+        toast.error('Could not play this voice note')
+      })
+    }
+  }
+
+  return (
+    <div className="flex min-w-[196px] items-center gap-2.5 py-0.5">
+      <button
+        type="button"
+        aria-label={playing ? 'Pause voice note' : 'Play voice note'}
+        onClick={toggle}
+        className={cn(
+          'flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition-transform active:scale-90',
+          mine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-emerald-500 text-white hover:bg-emerald-500/90',
+        )}
+      >
+        {playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4 translate-x-[1px]" aria-hidden />}
+      </button>
+      <div className="flex h-7 min-w-0 flex-1 items-center gap-[2.5px]" aria-hidden>
+        {bars.map((height, i) => {
+            const played = i / bars.length <= progress
+            return (
+              <span
+                key={i}
+                style={{ height: `${height}%` }}
+                className={cn(
+                  'w-[3px] shrink-0 rounded-full transition-colors',
+                  played
+                    ? mine
+                      ? 'bg-white'
+                      : 'bg-emerald-500'
+                    : mine
+                      ? 'bg-white/35'
+                      : 'bg-zinc-300 dark:bg-zinc-600',
+                )}
+              />
+            )
+          })}
+      </div>
+      <span
+        className={cn(
+          'shrink-0 text-[10px] font-semibold tabular-nums',
+          mine ? 'text-white/85' : 'text-zinc-400 dark:text-zinc-500',
+        )}
+      >
+        {durationMs !== null ? formatVoicems(durationMs) : '--:--'}
+      </span>
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="none"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false)
+          setProgress(0)
+        }}
+        onTimeUpdate={() => {
+          const audio = audioRef.current
+          if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return
+          setProgress(Math.min(1, audio.currentTime / audio.duration))
+        }}
+        className="hidden"
+      />
+    </div>
   )
 }
 
@@ -1299,9 +1762,10 @@ const MessageRow = memo(function MessageRow({
   const createdMs = Date.parse(message.createdAt)
   const isRead = !Number.isNaN(createdMs) && createdMs <= readMs
   const interactive = !deleted && !pending
-  const jumbo = !deleted && !message.imagePath && isJumboEmoji(message.content)
+  const jumbo = !deleted && !message.imagePath && !message.audioPath && isJumboEmoji(message.content)
   const hasReactions = message.reactions.length > 0
   const isImage = !deleted && message.imagePath !== null
+  const isVoice = !deleted && !isImage && message.audioPath !== null
   const dragMovedRef = useRef(false)
   const chipPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const chipFiredRef = useRef(false)
@@ -1403,7 +1867,9 @@ const MessageRow = memo(function MessageRow({
               ? 'px-1 py-0.5'
               : isImage
                 ? 'rounded-2xl p-1 shadow-sm'
-                : 'rounded-2xl px-3 py-2 shadow-sm',
+                : isVoice
+                  ? 'rounded-2xl px-2.5 py-2 shadow-sm'
+                  : 'rounded-2xl px-3 py-2 shadow-sm',
             deleted &&
               cn(
                 'border border-dashed italic',
@@ -1483,6 +1949,13 @@ const MessageRow = memo(function MessageRow({
                     )}
                   />
                 </button>
+              ) : isVoice && message.audioPath ? (
+                <VoiceBubble
+                  src={`/api/uploads/${encodeURIComponent(message.audioPath)}`}
+                  durationMs={message.durationMs}
+                  mine={mine}
+                  seed={message.id}
+                />
               ) : jumbo ? (
                 <p className="text-[34px] leading-[1.2] break-words">{message.content}</p>
               ) : (
@@ -1610,13 +2083,42 @@ function InfoDialog({
   detail,
   me,
   onlineIds,
+  renamePending,
+  onRename,
+  addMembersPending,
+  onAddMembers,
+  leavePending,
+  onLeave,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   detail: ConversationDetail | null
   me: AppUser
   onlineIds: ReadonlySet<string>
+  renamePending: boolean
+  onRename: (name: string) => void
+  addMembersPending: boolean
+  onAddMembers: (userIds: string[]) => void
+  leavePending: boolean
+  onLeave: () => void
 }) {
+  // group-management local state (all resets happen in event handlers)
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickedIds, setPickedIds] = useState<string[]>([])
+  const [confirmingLeave, setConfirmingLeave] = useState(false)
+
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: async (): Promise<AppUser[]> => {
+      const res = await apiJson<{ users: AppUser[] }>('/api/users')
+      return res.users
+    },
+    enabled: open && pickerOpen,
+    staleTime: 10_000,
+  })
+
   if (!detail) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1628,8 +2130,20 @@ function InfoDialog({
     ? detail.name?.trim() || 'Group'
     : otherMemberOf(detail, me.id)?.name ?? 'Direct message'
 
+  const memberIds = new Set(detail.members.map((m) => m.id))
+  const addableUsers = (usersQuery.data ?? []).filter((u) => !memberIds.has(u.id))
+
+  const closeDialog = () => {
+    onOpenChange(false)
+    setEditingName(false)
+    setPickerOpen(false)
+    setPickedIds([])
+    setConfirmingLeave(false)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : closeDialog())}>
       <DialogContent className="max-w-[340px] gap-4 rounded-2xl p-4 sm:left-1/2 sm:translate-x-[-50%] dark:bg-zinc-900">
         <DialogHeader>
           <div className="flex items-center gap-3">
@@ -1649,53 +2163,249 @@ function InfoDialog({
                 )
               })()
             )}
-            <div className="min-w-0 text-left">
-              <DialogTitle className="truncate text-base font-bold tracking-tight">{title}</DialogTitle>
+            <div className="min-w-0 flex-1 text-left">
+              {detail.isGroup && editingName ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    autoFocus
+                    value={nameDraft}
+                    maxLength={48}
+                    aria-label="Group name"
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && nameDraft.trim().length > 0 && !renamePending) {
+                        onRename(nameDraft.trim())
+                        setEditingName(false)
+                      }
+                      if (e.key === 'Escape') setEditingName(false)
+                    }}
+                    className="h-8 min-w-0 flex-1 rounded-lg border border-emerald-300 bg-white px-2 text-sm font-semibold outline-none focus:border-emerald-500 dark:border-emerald-500/50 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Save group name"
+                    disabled={nameDraft.trim().length === 0 || renamePending}
+                    onClick={() => {
+                      onRename(nameDraft.trim())
+                      setEditingName(false)
+                    }}
+                    className="rounded-lg bg-emerald-500 p-1.5 text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-90 disabled:opacity-50"
+                  >
+                    <Check className="size-3.5" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Cancel renaming"
+                    onClick={() => setEditingName(false)}
+                    className="rounded-lg p-1.5 text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <DialogTitle className="truncate text-base font-bold tracking-tight">{title}</DialogTitle>
+                  {detail.isGroup && !pickerOpen ? (
+                    <button
+                      type="button"
+                      aria-label="Rename group"
+                      onClick={() => {
+                        setNameDraft(detail.name?.trim() ?? '')
+                        setEditingName(true)
+                      }}
+                      className="rounded-md p-1 text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 dark:hover:bg-zinc-800 dark:hover:text-emerald-400"
+                    >
+                      <Pencil className="size-3.5" aria-hidden />
+                    </button>
+                  ) : null}
+                </div>
+              )}
               <DialogDescription className="text-xs">
                 {detail.isGroup ? `${detail.members.length} members` : 'Direct conversation'}
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
-        <ul className="pulse-scroll max-h-64 space-y-1 overflow-y-auto pr-1">
-          {detail.members.map((member) => {
-            const isMe = member.id === me.id
-            const online = onlineIds.has(member.id)
-            return (
-              <li
-                key={member.id}
-                className="flex items-center gap-3 rounded-xl bg-zinc-50 p-2.5 dark:bg-zinc-800/60"
+
+        {detail.isGroup && pickerOpen ? (
+          <div className="space-y-2">
+            <p className="px-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Tap people to add them to {title}.
+            </p>
+            <ul className="pulse-scroll max-h-64 space-y-1 overflow-y-auto pr-1">
+              {usersQuery.isPending ? (
+                <li className="flex justify-center py-6">
+                  <LoaderCircle className="size-5 animate-spin text-zinc-400" aria-hidden />
+                </li>
+              ) : addableUsers.length === 0 ? (
+                <li className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                  Everyone on Pulse is already here.
+                </li>
+              ) : (
+                addableUsers.map((user) => {
+                  const picked = pickedIds.includes(user.id)
+                  return (
+                    <li key={user.id}>
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={picked}
+                        onClick={() =>
+                          setPickedIds((prev) =>
+                            prev.includes(user.id)
+                              ? prev.filter((id) => id !== user.id)
+                              : [...prev, user.id],
+                          )
+                        }
+                        className={cn(
+                          'flex w-full items-center gap-3 rounded-xl p-2.5 text-left outline-none transition-colors',
+                          picked
+                            ? 'bg-emerald-500/10 ring-1 ring-emerald-400/60'
+                            : 'bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800/60 dark:hover:bg-zinc-800',
+                        )}
+                      >
+                        <UserAvatar name={user.name} color={user.color} size={38} />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          {user.name}
+                        </span>
+                        <span
+                          className={cn(
+                            'flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                            picked
+                              ? 'border-emerald-500 bg-emerald-500 text-white'
+                              : 'border-zinc-300 dark:border-zinc-600',
+                          )}
+                          aria-hidden
+                        >
+                          {picked ? <Check className="size-3" /> : null}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })
+              )}
+            </ul>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPickerOpen(false)
+                  setPickedIds([])
+                }}
+                className="h-10 flex-1 rounded-xl text-sm font-medium"
               >
-                <UserAvatar name={member.name} color={member.color} size={38} showPresence online={online} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                    {member.name}
-                    {isMe ? <span className="ml-1 text-xs font-normal text-zinc-400">(you)</span> : null}
-                  </p>
-                  <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{member.about}</p>
-                </div>
-                <span className="shrink-0 text-right text-[10px] leading-tight text-zinc-400 dark:text-zinc-500">
-                  {isMe ? (
-                    <>
-                      all caught up<br />
-                      <span className="font-semibold text-zinc-500 dark:text-zinc-400">
-                        read {formatListStamp(member.lastReadAt)}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      last read<br />
-                      <span className="font-semibold text-zinc-500 dark:text-zinc-400">
-                        {formatListStamp(member.lastReadAt)}
-                      </span>
-                    </>
-                  )}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
+                Cancel
+              </Button>
+              <Button
+                disabled={pickedIds.length === 0 || addMembersPending}
+                onClick={() => {
+                  onAddMembers(pickedIds)
+                  setPickerOpen(false)
+                  setPickedIds([])
+                }}
+                className="h-10 flex-1 gap-1.5 rounded-xl bg-emerald-500 text-sm font-semibold text-white hover:bg-emerald-500/90"
+              >
+                {addMembersPending ? (
+                  <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <UserPlus className="size-4" aria-hidden />
+                )}
+                Add {pickedIds.length > 0 ? pickedIds.length : ''}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <ul className="pulse-scroll max-h-64 space-y-1 overflow-y-auto pr-1">
+              {detail.members.map((member) => {
+                const isMe = member.id === me.id
+                const online = onlineIds.has(member.id)
+                return (
+                  <li
+                    key={member.id}
+                    className="flex items-center gap-3 rounded-xl bg-zinc-50 p-2.5 dark:bg-zinc-800/60"
+                  >
+                    <UserAvatar name={member.name} color={member.color} size={38} showPresence online={online} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                        {member.name}
+                        {isMe ? <span className="ml-1 text-xs font-normal text-zinc-400">(you)</span> : null}
+                      </p>
+                      <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{member.about}</p>
+                    </div>
+                    <span className="shrink-0 text-right text-[10px] leading-tight text-zinc-400 dark:text-zinc-500">
+                      {isMe ? (
+                        <>
+                          all caught up<br />
+                          <span className="font-semibold text-zinc-500 dark:text-zinc-400">
+                            read {formatListStamp(member.lastReadAt)}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          last read<br />
+                          <span className="font-semibold text-zinc-500 dark:text-zinc-400">
+                            {formatListStamp(member.lastReadAt)}
+                          </span>
+                        </>
+                      )}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+            {detail.isGroup ? (
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPickedIds([])
+                    setPickerOpen(true)
+                  }}
+                  className="h-10 justify-start gap-2 rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 dark:text-emerald-400"
+                >
+                  <UserPlus className="size-4" aria-hidden />
+                  Add members
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={leavePending}
+                  onClick={() => setConfirmingLeave(true)}
+                  className="h-10 justify-start gap-2 rounded-xl border-destructive/40 text-sm font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <LogOut className="size-4" aria-hidden />
+                  Leave group
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={confirmingLeave} onOpenChange={setConfirmingLeave}>
+      <AlertDialogContent className="max-w-[320px] rounded-2xl bg-white dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="tracking-tight">Leave “{title}”?</AlertDialogTitle>
+          <AlertDialogDescription className="text-[13px] leading-relaxed">
+            You won&apos;t receive new messages from this group. You can always be added back later.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel className="rounded-xl">Stay</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={leavePending}
+            onClick={() => {
+              setConfirmingLeave(false)
+              onLeave()
+            }}
+            className="rounded-xl bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40"
+          >
+            Leave group
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

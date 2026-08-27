@@ -15,6 +15,7 @@ import {
   MESSAGES_MAX_LIMIT,
   MESSAGE_MAX,
   UPLOADS_DIR,
+  AUDIO_EXT_REGEX,
   safeJson,
   strField,
 } from '@/lib/serializers'
@@ -26,8 +27,12 @@ interface RouteCtx {
 }
 
 /**
- * GET /api/conversations/[id]/messages?limit=200&after=<ISO>
- * → { messages: ChatMessage[] } ascending by createdAt.
+ * GET /api/conversations/[id]/messages?limit=200&before=<ISO>
+ * → { messages: ChatMessage[], hasMore: boolean, total: number }
+ *
+ * Default window: the NEWEST `limit` messages, returned ascending.
+ * `before=<ISO>` pages further back (messages strictly older than the ISO
+ * timestamp — use the oldest message's createdAt as the cursor).
  * Soft-deleted rows are included (client renders tombstones).
  */
 export async function GET(req: Request, { params }: RouteCtx) {
@@ -50,30 +55,57 @@ export async function GET(req: Request, { params }: RouteCtx) {
     limit = Math.min(Math.max(parsed, 1), MESSAGES_MAX_LIMIT)
   }
 
-  let after: Date | undefined
-  const afterRaw = url.searchParams.get('after')
-  if (afterRaw) {
-    const parsed = parseIsoDate(afterRaw)
+  const beforeRaw = url.searchParams.get('before')
+  let before: Date | undefined
+  if (beforeRaw) {
+    const parsed = parseIsoDate(beforeRaw)
     if (!parsed) {
       return NextResponse.json(
-        { error: 'after must be a valid ISO date string.' },
+        { error: 'before must be a valid ISO date string.' },
         { status: 400 },
       )
     }
-    after = parsed
+    before = parsed
   }
 
-  const messages = await db.message.findMany({
-    where: {
-      conversationId: id,
-      ...(after ? { createdAt: { gt: after } } : {}),
-    },
-    orderBy: { createdAt: 'asc' },
-    take: limit,
-    include: MESSAGE_FULL_INCLUDE,
-  })
+  const afterRaw = url.searchParams.get('after')
+  if (afterRaw && !parseIsoDate(afterRaw)) {
+    return NextResponse.json(
+      { error: 'after must be a valid ISO date string.' },
+      { status: 400 },
+    )
+  }
 
-  return NextResponse.json({ messages: messages.map(mapMessage) })
+  if (before) {
+    // Older page: take N older than the cursor, then flip to ascending.
+    const [rows, total] = await Promise.all([
+      db.message.findMany({
+        where: { conversationId: id, createdAt: { lt: before } },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: MESSAGE_FULL_INCLUDE,
+      }),
+      db.message.count({ where: { conversationId: id } }),
+    ])
+    rows.reverse()
+    return NextResponse.json({ messages: rows.map(mapMessage), hasMore: rows.length === limit, total })
+  }
+
+  // Newest window (also the polling path — `after` narrows it when supplied).
+  const [messages, total] = await Promise.all([
+    db.message.findMany({
+      where: {
+        conversationId: id,
+        ...(afterRaw ? { createdAt: { gt: parseIsoDate(afterRaw) as Date } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: MESSAGE_FULL_INCLUDE,
+    }),
+    db.message.count({ where: { conversationId: id } }),
+  ])
+  messages.reverse()
+  return NextResponse.json({ messages: messages.map(mapMessage), hasMore: messages.length === limit, total })
 }
 
 /**
@@ -111,9 +143,36 @@ export async function POST(req: Request, { params }: RouteCtx) {
       )
     }
   }
-  if (!content && !imagePath) {
+
+  // Optional voice-note attachment — uploaded via /api/uploads first.
+  const audioPath = strField(body.audioPath)
+  if (audioPath) {
+    if (!AUDIO_EXT_REGEX.test(audioPath)) {
+      return NextResponse.json({ error: 'audioPath is invalid.' }, { status: 400 })
+    }
+    try {
+      await stat(path.join(UPLOADS_DIR, audioPath))
+    } catch {
+      return NextResponse.json(
+        { error: 'audioPath does not reference an uploaded file. POST /api/uploads first.' },
+        { status: 400 },
+      )
+    }
+  }
+  const durationRaw = body.durationMs
+  let durationMs: number | null = null
+  if (durationRaw !== undefined && durationRaw !== null) {
+    if (typeof durationRaw !== 'number' || !Number.isFinite(durationRaw) || durationRaw < 0 || durationRaw > 600_000) {
+      return NextResponse.json({ error: 'durationMs must be a number between 0 and 600000.' }, { status: 400 })
+    }
+    durationMs = Math.round(durationRaw)
+  }
+  if (durationMs !== null && !audioPath) {
+    return NextResponse.json({ error: 'durationMs is only valid together with audioPath.' }, { status: 400 })
+  }
+  if (!content && !imagePath && !audioPath) {
     return NextResponse.json(
-      { error: 'Message needs text content or an image.' },
+      { error: 'Message needs text content, an image, or a voice note.' },
       { status: 400 },
     )
   }
@@ -160,6 +219,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
         content,
         ...(replyToId ? { replyToId } : {}),
         ...(imagePath ? { imagePath } : {}),
+        ...(audioPath ? { audioPath, ...(durationMs !== null ? { durationMs } : {}) } : {}),
       },
       include: MESSAGE_FULL_INCLUDE,
     })

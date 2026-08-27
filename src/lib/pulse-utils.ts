@@ -306,24 +306,26 @@ export function conversationDisplayName(
 export function conversationPreview(
   conversation: ConversationSummary,
   myId: string,
-): { text: string; deleted: boolean; mine: boolean; senderName: string; isReply: boolean; isImage: boolean } {
+): { text: string; deleted: boolean; mine: boolean; senderName: string; isReply: boolean; isImage: boolean; isAudio: boolean } {
   const last = conversation.lastMessage
   if (!last) {
-    return { text: 'No messages yet', deleted: false, mine: false, senderName: '', isReply: false, isImage: false }
+    return { text: 'No messages yet', deleted: false, mine: false, senderName: '', isReply: false, isImage: false, isAudio: false }
   }
   if (last.deletedAt) {
-    return { text: '🚫 message deleted', deleted: true, mine: false, senderName: '', isReply: false, isImage: false }
+    return { text: '🚫 message deleted', deleted: true, mine: false, senderName: '', isReply: false, isImage: false, isAudio: false }
   }
   const mine = last.senderId === myId
   const collapsed = last.content.replace(/\s+/g, ' ').trim()
   const isImage = last.imagePath !== null && collapsed.length === 0
+  const isAudio = !isImage && last.audioPath !== null && collapsed.length === 0
   return {
-    text: isImage ? '📷 Photo' : collapsed,
+    text: isImage ? '📷 Photo' : isAudio ? '🎤 Voice message' : collapsed,
     deleted: false,
     mine,
     senderName: last.sender.name,
     isReply: last.replyTo !== null,
     isImage,
+    isAudio,
   }
 }
 

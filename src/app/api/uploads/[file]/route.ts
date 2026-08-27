@@ -13,13 +13,13 @@ interface RouteCtx {
 }
 
 /**
- * GET /api/uploads/<uuid>.<ext> → image bytes (immutable cache).
+ * GET /api/uploads/<uuid>.<ext> → stored attachment bytes (immutable cache).
  * Strict filename whitelist blocks any path traversal.
  */
 export async function GET(_req: Request, { params }: RouteCtx) {
   const { file } = await params
 
-  if (!/^[A-Za-z0-9-]+\.(jpg|jpeg|png|webp)$/.test(file)) {
+  if (!/^[A-Za-z0-9-]+\.(jpg|jpeg|png|webp|webm|mp3|ogg|wav|m4a|aac)$/.test(file)) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
   const ext = file.split('.').pop() as string

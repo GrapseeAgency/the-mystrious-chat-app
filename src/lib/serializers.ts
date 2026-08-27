@@ -153,6 +153,8 @@ export function mapMessage(message: MessageRowWithRelations): ChatMessage {
     reactions: groupReactions(message.reactions),
     replyTo,
     imagePath: message.imagePath ?? null,
+    audioPath: message.audioPath ?? null,
+    durationMs: message.durationMs ?? null,
   }
 }
 
@@ -245,13 +247,27 @@ export const UPLOAD_MIME: Record<string, string> = {
   jpeg: 'image/jpeg',
   png: 'image/png',
   webp: 'image/webp',
+  webm: 'audio/webm',
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
 }
+
+/** Extensions accepted for voice notes. */
+export const AUDIO_EXT_REGEX = /^[A-Za-z0-9-]+\.(webm|mp3|ogg|wav|m4a|aac)$/
 
 // ── Socket relay (best-effort — never fails the API call) ──
 
 const SOCKET_URL = 'http://localhost:3003'
 
-export type PulseSocketEvent = 'message:new' | 'message:deleted' | 'message:read' | 'message:react'
+export type PulseSocketEvent =
+  | 'message:new'
+  | 'message:deleted'
+  | 'message:read'
+  | 'message:react'
+  | 'conversation:updated'
 
 /**
  * Relay a realtime event to the socket.io mini service so it can fan out
