@@ -45,7 +45,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
 
 /**
  * PATCH /api/conversations/[id]  body { requesterId, name }
- * Group-only rename. Any member may rename (no admin roles in Pulse).
+ * Group-only rename. ADMINS ONLY (group role governance).
  * → 200 { conversation: ConversationDetail }; relays conversation:updated.
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
@@ -73,10 +73,13 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   }
   const participant = await db.conversationParticipant.findUnique({
     where: { userId_conversationId: { userId: requesterId, conversationId: id } },
-    select: { id: true },
+    select: { role: true },
   })
   if (!participant) {
     return NextResponse.json({ error: 'You are not a participant of this conversation.' }, { status: 403 })
+  }
+  if (participant.role !== 'admin') {
+    return NextResponse.json({ error: 'Only group admins can rename this group.' }, { status: 403 })
   }
 
   const updated = await db.conversation.update({

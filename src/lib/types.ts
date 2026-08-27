@@ -66,6 +66,8 @@ export interface ConversationSummary {
   archivedAt: string | null // viewer's archive watermark (null = active chat)
 }
 
+export type GroupRole = 'admin' | 'member'
+
 /** Full detail for a chat room */
 export interface ConversationDetail {
   id: string
@@ -73,7 +75,8 @@ export interface ConversationDetail {
   name: string | null
   createdAt: string
   updatedAt: string
-  members: Array<AppUser & { lastReadAt: string }> // includes per-member read watermark → double ticks
+  // per-member read watermark (→ double ticks) + group role (groups only)
+  members: Array<AppUser & { lastReadAt: string; role: GroupRole }>
   myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
 }
 

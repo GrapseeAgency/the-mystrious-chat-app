@@ -40,6 +40,8 @@ model ConversationParticipant {
   id             String    @id @default(cuid())
   userId         String
   conversationId String
+  role           String    @default("member") // "admin" | "member" (groups: creator is admin)
+  joinedAt       DateTime  @default(now()) // join watermark (tie-breaker for admin succession)
   lastReadAt     DateTime  @default(now()) // read receipts / unread counts
   pinnedAt       DateTime? // per-user pinned-to-top
   mutedUntil     DateTime? // per-user notification mute watermark (null = unmuted)

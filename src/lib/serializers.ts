@@ -158,9 +158,14 @@ export function mapMessage(message: MessageRowWithRelations): ChatMessage {
   }
 }
 
-/** Participant row (+user) → AppUser with read watermark. */
-export function mapMember(participant: { lastReadAt: Date; user: UserRow }): AppUser & { lastReadAt: string } {
-  return { ...mapUser(participant.user), lastReadAt: participant.lastReadAt.toISOString() }
+/** Group role of a participant row — normalizes unexpected values to "member". */
+export function mapRole(role: string): 'admin' | 'member' {
+  return role === 'admin' ? 'admin' : 'member'
+}
+
+/** Participant row (+user) → AppUser with read watermark + group role. */
+export function mapMember(participant: { lastReadAt: Date; user: UserRow; role: string }): AppUser & { lastReadAt: string; role: 'admin' | 'member' } {
+  return { ...mapUser(participant.user), lastReadAt: participant.lastReadAt.toISOString(), role: mapRole(participant.role) }
 }
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)

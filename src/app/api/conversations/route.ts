@@ -152,7 +152,12 @@ export async function POST(req: Request) {
     data: {
       isGroup,
       name: groupName,
-      participants: { create: distinctIds.map((userId) => ({ userId })) },
+      participants: {
+        create: distinctIds.map((userId) => ({
+          userId,
+          ...(isGroup && userId === creatorId ? { role: 'admin' } : {}),
+        })),
+      },
     },
     select: { id: true },
   })

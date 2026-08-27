@@ -19,7 +19,7 @@ interface RouteCtx {
 
 /**
  * POST /api/conversations/[id]/members  body { requesterId, userIds: string[] }
- * Group-only. Any member may add; duplicates silently ignored.
+ * Group-only. ADMINS ONLY add members; duplicates silently ignored.
  * New participants start with lastReadAt=now (no unread backlog).
  * → 200 { conversation: ConversationDetail, added: string[] }; relays conversation:updated.
  */
@@ -46,10 +46,13 @@ export async function POST(req: Request, { params }: RouteCtx) {
   }
   const requester = await db.conversationParticipant.findUnique({
     where: { userId_conversationId: { userId: requesterId, conversationId: id } },
-    select: { id: true },
+    select: { role: true },
   })
   if (!requester) {
     return NextResponse.json({ error: 'You are not a participant of this conversation.' }, { status: 403 })
+  }
+  if (requester.role !== 'admin') {
+    return NextResponse.json({ error: 'Only group admins can add members.' }, { status: 403 })
   }
 
   // Every candidate must be a real user.
@@ -98,7 +101,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
 /**
  * DELETE /api/conversations/[id]/members  body { requesterId }
  * Leave a group (self-removal only). History is kept; other members continue.
- * → 200 { ok: true, remainingMembers }; relays conversation:updated to remaining.
+ * Succession rule: if the leaver was the group's LAST admin and members remain,
+ * the longest-standing remaining member is auto-promoted to admin (groups never
+ * end up leaderless).
+ * → 200 { ok: true, remainingMembers, promotedUserId? }; relays conversation:updated.
  */
 export async function DELETE(req: Request, { params }: RouteCtx) {
   const { id } = await params
@@ -118,13 +124,40 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
   }
   const participant = await db.conversationParticipant.findUnique({
     where: { userId_conversationId: { userId: requesterId, conversationId: id } },
-    select: { id: true },
+    select: { id: true, role: true },
   })
   if (!participant) {
     return NextResponse.json({ error: 'You are not a participant of this conversation.' }, { status: 403 })
   }
 
-  await db.conversationParticipant.delete({ where: { id: participant.id } })
+  let promotedUserId: string | null = null
+
+  if (participant.role === 'admin') {
+    // Will anyone else hold an admin flag after this row disappears?
+    const otherAdmins = await db.conversationParticipant.count({
+      where: { conversationId: id, role: 'admin', NOT: { id: participant.id } },
+    })
+    if (otherAdmins === 0) {
+      const successor = await db.conversationParticipant.findFirst({
+        where: { conversationId: id, NOT: { id: participant.id } },
+        orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }],
+        select: { userId: true },
+      })
+      if (successor) {
+        promotedUserId = successor.userId
+      }
+    }
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.conversationParticipant.delete({ where: { id: participant.id } })
+    if (promotedUserId !== null) {
+      await tx.conversationParticipant.update({
+        where: { userId_conversationId: { userId: promotedUserId, conversationId: id } },
+        data: { role: 'admin' },
+      })
+    }
+  })
 
   const remaining = await memberIdsOf(id)
   await notifySocket('conversation:updated', remaining, {
@@ -133,5 +166,5 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
     recipientIds: remaining,
   })
 
-  return NextResponse.json({ ok: true, remainingMembers: remaining.length })
+  return NextResponse.json({ ok: true, remainingMembers: remaining.length, promotedUserId })
 }

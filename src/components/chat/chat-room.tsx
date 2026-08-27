@@ -14,7 +14,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
 import {
@@ -26,11 +26,13 @@ import {
   ChevronUp,
   Clock,
   Copy,
+  Crown,
   EllipsisVertical,
   Forward,
   ImagePlus,
   Info,
   LoaderCircle,
+  Lock,
   LogOut,
   Mic,
   Pause,
@@ -44,6 +46,7 @@ import {
   Smile,
   Trash2,
   UserPlus,
+  UserRoundMinus,
   VolumeX,
   X,
 } from 'lucide-react'
@@ -1185,6 +1188,48 @@ export function ChatRoom({
     },
   })
 
+  const setMemberRole = useMutation({
+    mutationFn: async ({ userId, promote }: { userId: string; promote: boolean }) => {
+      return apiJson<DetailResponse>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requesterId: me.id, action: promote ? 'promote' : 'demote' }),
+        },
+      )
+    },
+    onSuccess: (res, vars) => {
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], res.conversation)
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success(vars.promote ? 'Promoted to admin' : 'Admin role removed')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not update the admin role')
+    },
+  })
+
+  const removeMember = useMutation({
+    mutationFn: async (userId: string) => {
+      return apiJson<{ ok: boolean }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requesterId: me.id }),
+        },
+      )
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success('Removed from the group')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not remove the member')
+    },
+  })
+
   // ── long-press helpers ─────────────────────────────────────
 
   const clearLongPress = useCallback(() => {
@@ -2299,6 +2344,9 @@ export function ChatRoom({
         onAddMembers={(userIds) => addMembers.mutate(userIds)}
         leavePending={leaveGroup.isPending}
         onLeave={() => leaveGroup.mutate()}
+        setRolePending={setMemberRole.isPending || removeMember.isPending}
+        onSetRole={(userId, promote) => setMemberRole.mutate({ userId, promote })}
+        onRemoveMember={(userId) => removeMember.mutate(userId)}
       />
     </motion.div>
   )
@@ -2541,6 +2589,14 @@ const MessageRow = memo(function MessageRow({
     onReply(message)
   }
 
+  // Swipe affordance driven by live bubble position: both sides share one
+  // signal (offset along the natural direction), so dragging "the wrong way"
+  // keeps every hint invisible.
+  const bubbleX = useMotionValue(0)
+  const towardX = useTransform(bubbleX, (v) => (mine ? -v : v))
+  const hintOpacity = useTransform(towardX, [10, 34], [0, 1])
+  const hintScale = useTransform(towardX, [10, 52], [0.6, 1.05])
+
   const openReactionInfo = (emoji: string) => {
     haptic(10)
     onReactionInfo(message, emoji)
@@ -2577,8 +2633,8 @@ const MessageRow = memo(function MessageRow({
             <motion.span
               aria-hidden
               initial={false}
-              className="absolute left-0 top-1/2 -translate-y-1/2 text-emerald-500 opacity-0"
-              style={{ pointerEvents: 'none' }}
+              className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-emerald-500/10 p-1 text-emerald-500"
+              style={{ opacity: hintOpacity, scale: hintScale, pointerEvents: 'none' }}
             >
               <Reply className="size-4" />
             </motion.span>
@@ -2586,17 +2642,19 @@ const MessageRow = memo(function MessageRow({
             <motion.span
               aria-hidden
               initial={false}
-              className="absolute right-0 top-1/2 -translate-y-1/2 text-emerald-500 opacity-0"
-              style={{ pointerEvents: 'none' }}
+              className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-emerald-500/10 p-1 text-emerald-500"
+              style={{ opacity: hintOpacity, scale: hintScale, pointerEvents: 'none' }}
             >
               <Reply className="size-4" />
             </motion.span>
           )}
           <motion.div
           drag="x"
-          dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={0.24}
+          dragConstraints={{ left: -56, right: 56 }}
+          dragElastic={0.16}
+          dragDirectionLock
           dragSnapToOrigin
+          style={{ x: bubbleX }}
           onDragStart={() => {
             dragMovedRef.current = false
             onEndLongPress()
@@ -2918,6 +2976,9 @@ function InfoDialog({
   onAddMembers,
   leavePending,
   onLeave,
+  setRolePending,
+  onSetRole,
+  onRemoveMember,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -2930,6 +2991,9 @@ function InfoDialog({
   onAddMembers: (userIds: string[]) => void
   leavePending: boolean
   onLeave: () => void
+  setRolePending: boolean
+  onSetRole: (userId: string, promote: boolean) => void
+  onRemoveMember: (userId: string) => void
 }) {
   // group-management local state (all resets happen in event handlers)
   const [editingName, setEditingName] = useState(false)
@@ -2937,6 +3001,7 @@ function InfoDialog({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickedIds, setPickedIds] = useState<string[]>([])
   const [confirmingLeave, setConfirmingLeave] = useState(false)
+  const [pendingRemoval, setPendingRemoval] = useState<string | null>(null)
 
   const usersQuery = useQuery({
     queryKey: ['users'],
@@ -2963,6 +3028,11 @@ function InfoDialog({
     ? detail.name?.trim() || 'Group'
     : otherMemberOf(detail, me.id)?.name ?? 'Direct message'
 
+  const myRole = detail.members.find((m) => m.id === me.id)?.role ?? 'member'
+  const isAdmin = myRole === 'admin'
+  const adminCount = detail.members.filter((m) => m.role === 'admin').length
+  const pendingRemovalTarget = detail.members.find((m) => m.id === pendingRemoval) ?? null
+
   const memberIds = new Set(detail.members.map((m) => m.id))
   const addableUsers = (usersQuery.data ?? []).filter((u) => !memberIds.has(u.id))
 
@@ -2972,6 +3042,7 @@ function InfoDialog({
     setPickerOpen(false)
     setPickedIds([])
     setConfirmingLeave(false)
+    setPendingRemoval(null)
   }
 
   return (
@@ -3038,10 +3109,11 @@ function InfoDialog({
               ) : (
                 <div className="flex items-center gap-1">
                   <DialogTitle className="truncate text-base font-bold tracking-tight">{title}</DialogTitle>
-                  {detail.isGroup && !pickerOpen ? (
+                  {detail.isGroup && isAdmin && !pickerOpen ? (
                     <button
                       type="button"
                       aria-label="Rename group"
+                      title="Only admins can rename this group"
                       onClick={() => {
                         setNameDraft(detail.name?.trim() ?? '')
                         setEditingName(true)
@@ -3054,7 +3126,9 @@ function InfoDialog({
                 </div>
               )}
               <DialogDescription className="text-xs">
-                {detail.isGroup ? `${detail.members.length} members` : 'Direct conversation'}
+                {detail.isGroup
+                  ? `${detail.members.length} member${detail.members.length === 1 ? '' : 's'} · ${adminCount} admin${adminCount === 1 ? '' : 's'}`
+                  : 'Direct conversation'}
               </DialogDescription>
             </div>
           </div>
@@ -3156,17 +3230,68 @@ function InfoDialog({
                 return (
                   <li
                     key={member.id}
-                    className="flex items-center gap-3 rounded-xl bg-zinc-50 p-2.5 dark:bg-zinc-800/60"
+                    className="flex items-start gap-3 rounded-xl bg-zinc-50 p-2.5 dark:bg-zinc-800/60"
                   >
                     <UserAvatar name={member.name} color={member.color} size={38} showPresence online={online} />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                        {member.name}
-                        {isMe ? <span className="ml-1 text-xs font-normal text-zinc-400">(you)</span> : null}
-                      </p>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <p className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          {member.name}
+                          {isMe ? <span className="ml-1 text-xs font-normal text-zinc-400">(you)</span> : null}
+                        </p>
+                        {detail.isGroup && member.role === 'admin' ? (
+                          <span
+                            aria-label={`${member.role === 'admin' ? member.name : ''} is a group admin`}
+                            className="flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400"
+                          >
+                            <Crown className="size-2.5" aria-hidden />
+                            Admin
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{member.about}</p>
+                      {isAdmin && !isMe ? (
+                        <div className="mt-1.5 flex items-center gap-1.5" role="group" aria-label={`Manage ${member.name}`}>
+                          {member.role === 'admin' ? (
+                            <button
+                              type="button"
+                              disabled={setRolePending}
+                              onClick={() => onSetRole(member.id, false)}
+                              aria-label={`Demote ${member.name} to member`}
+                              title="Demote to member"
+                              className="inline-flex h-6 items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 text-[10px] font-semibold text-zinc-500 outline-none transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-600 active:scale-95 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-amber-500/40 dark:hover:bg-amber-950/40 dark:hover:text-amber-400"
+                            >
+                              <Crown className="size-3" aria-hidden />
+                              Demote
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={setRolePending}
+                              onClick={() => onSetRole(member.id, true)}
+                              aria-label={`Promote ${member.name} to admin`}
+                              title="Promote to admin"
+                              className="inline-flex h-6 items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 text-[10px] font-semibold text-zinc-500 outline-none transition-colors hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400"
+                            >
+                              <Crown className="size-3" aria-hidden />
+                              Promote
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={setRolePending}
+                            onClick={() => setPendingRemoval(member.id)}
+                            aria-label={`Remove ${member.name} from the group`}
+                            title="Remove from group"
+                            className="inline-flex h-6 items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 text-[10px] font-semibold text-zinc-500 outline-none transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive active:scale-95 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+                          >
+                            <UserRoundMinus className="size-3" aria-hidden />
+                            Remove
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
-                    <span className="shrink-0 text-right text-[10px] leading-tight text-zinc-400 dark:text-zinc-500">
+                    <span className="shrink-0 pt-1 text-right text-[10px] leading-tight text-zinc-400 dark:text-zinc-500">
                       {isMe ? (
                         <>
                           all caught up<br />
@@ -3189,17 +3314,24 @@ function InfoDialog({
             </ul>
             {detail.isGroup ? (
               <div className="flex flex-col gap-1.5">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setPickedIds([])
-                    setPickerOpen(true)
-                  }}
-                  className="h-10 justify-start gap-2 rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 dark:text-emerald-400"
-                >
-                  <UserPlus className="size-4" aria-hidden />
-                  Add members
-                </Button>
+                {isAdmin ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setPickedIds([])
+                      setPickerOpen(true)
+                    }}
+                    className="h-10 justify-start gap-2 rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 dark:text-emerald-400"
+                  >
+                    <UserPlus className="size-4" aria-hidden />
+                    Add members
+                  </Button>
+                ) : (
+                  <p className="flex items-center justify-center gap-1.5 rounded-xl bg-zinc-50 px-3 py-2.5 text-[11px] font-medium text-zinc-400 dark:bg-zinc-800/60 dark:text-zinc-500">
+                    <Lock className="size-3" aria-hidden />
+                    Only admins can rename or add members
+                  </p>
+                )}
                 <Button
                   variant="outline"
                   disabled={leavePending}
@@ -3215,6 +3347,30 @@ function InfoDialog({
         )}
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={pendingRemoval !== null} onOpenChange={(o) => (!o ? setPendingRemoval(null) : null)}>
+      <AlertDialogContent className="max-w-[320px] rounded-2xl bg-white dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="tracking-tight">Remove {pendingRemovalTarget?.name ?? 'member'}?</AlertDialogTitle>
+          <AlertDialogDescription className="text-[13px] leading-relaxed">
+            They lose access to this group immediately. Someone with an admin role can add them back later.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={setRolePending}
+            onClick={() => {
+              if (pendingRemoval !== null) onRemoveMember(pendingRemoval)
+              setPendingRemoval(null)
+            }}
+            className="rounded-xl bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40"
+          >
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <AlertDialog open={confirmingLeave} onOpenChange={setConfirmingLeave}>
       <AlertDialogContent className="max-w-[320px] rounded-2xl bg-white dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">
