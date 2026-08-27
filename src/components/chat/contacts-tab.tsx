@@ -31,7 +31,7 @@ export function ContactsTab({
   onRequestNewGroup,
 }: {
   me: AppUser
-  onOpenConversation: (conversationId: string) => void
+  onOpenConversation: (conversationId: string, unreadAnchorMs?: number | null) => void
   onGoProfile: () => void
   onRequestNewGroup: () => void
 }) {
@@ -69,7 +69,7 @@ export function ContactsTab({
     },
     onSuccess: (conversation) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
-      onOpenConversation(conversation.id)
+      onOpenConversation(conversation.id, null)
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Could not start the chat')

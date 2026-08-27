@@ -21,6 +21,21 @@ export interface MessageAuthor {
 
 export type MessageStatus = 'sent' | 'deleted'
 
+/** Reactions grouped by emoji for one message. */
+export interface MessageReactionGroup {
+  emoji: string
+  userIds: string[]
+  count: number
+}
+
+/** Quoted-parent snippet embedded when a message is a reply. */
+export interface ReplySnippet {
+  id: string
+  content: string
+  senderName: string
+  deleted: boolean
+}
+
 export interface ChatMessage {
   id: string
   conversationId: string
@@ -29,6 +44,8 @@ export interface ChatMessage {
   deletedAt: string | null // ISO or null
   createdAt: string // ISO
   sender: MessageAuthor
+  reactions: MessageReactionGroup[]
+  replyTo: ReplySnippet | null
 }
 
 /** Row of the conversations list */
@@ -73,7 +90,7 @@ export interface ReadEvent {
 }
 
 export interface SocketMessageEvent {
-  type: 'message:new' | 'message:deleted'
+  type: 'message:new' | 'message:deleted' | 'message:react'
   message: ChatMessage
   /** ids of all members except sender */
   recipientIds: string[]

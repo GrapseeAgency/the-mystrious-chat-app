@@ -43,7 +43,7 @@ interface ConversationRowProps {
   dmColor: string
   groupTitle: string
   online: boolean
-  onPress: (id: string) => void
+  onPress: () => void
 }
 
 const ConversationRow = memo(function ConversationRow({
@@ -66,7 +66,7 @@ const ConversationRow = memo(function ConversationRow({
     <div className="px-2">
       <button
         type="button"
-        onClick={() => onPress(id)}
+        onClick={onPress}
         className="flex w-full touch-manipulation items-center gap-3 rounded-2xl px-2 py-2.5 text-left outline-none transition-colors active:bg-zinc-100 dark:active:bg-zinc-800"
       >
         {isGroup ? (
@@ -148,7 +148,7 @@ export function ChatsTab({
   onGoProfile,
 }: {
   me: AppUser
-  onOpenConversation: (conversationId: string) => void
+  onOpenConversation: (conversationId: string, unreadAnchorMs: number | null) => void
   onOpenContacts: () => void
   onRequestNewChat: () => void
   onGoProfile: () => void
@@ -207,9 +207,17 @@ export function ChatsTab({
     })
   }, [rows, searchQuery])
 
+  /** Freeze "where was I" from the list summary AT TAP TIME (pre-read watermark). */
   const handlePress = useCallback(
-    (id: string) => onOpenConversation(id),
-    [onOpenConversation],
+    (conv: ConversationSummary) => {
+      const mine = conv.members.find((m) => m.id === me.id) as
+        | (AppUser & { lastReadAt?: string })
+        | undefined
+      const wm = mine?.lastReadAt ? Date.parse(mine.lastReadAt) : Number.NaN
+      const anchor = conv.unreadCount > 0 && !Number.isNaN(wm) ? wm : null
+      onOpenConversation(conv.id, anchor)
+    },
+    [onOpenConversation, me.id],
   )
 
   const closeSearch = useCallback(() => {
@@ -280,8 +288,12 @@ export function ChatsTab({
         ) : searching ? (
           filteredRows.length > 0 ? (
             <div className="py-1">
-              {filteredRows.map(({ props }) => (
-                <ConversationRow key={props.id} {...props} onPress={handlePress} />
+              {filteredRows.map(({ conv, props }) => (
+                <ConversationRow
+                  key={props.id}
+                  {...props}
+                  onPress={() => handlePress(conv)}
+                />
               ))}
             </div>
           ) : (
@@ -297,8 +309,12 @@ export function ChatsTab({
           <EmptyChats onSayHi={onOpenContacts} />
         ) : (
           <div className="py-1">
-            {rows.map(({ props }) => (
-              <ConversationRow key={props.id} {...props} onPress={handlePress} />
+            {rows.map(({ conv, props }) => (
+              <ConversationRow
+                key={props.id}
+                {...props}
+                onPress={() => handlePress(conv)}
+              />
             ))}
           </div>
         )}

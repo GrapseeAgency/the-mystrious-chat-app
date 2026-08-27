@@ -18,7 +18,7 @@ import type {
   TypingEvent,
 } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
-import { buzz } from '@/lib/pulse-utils'
+import { haptic, playIncomingPing, primeSound } from '@/lib/pulse-settings'
 import {
   PulseRealtimeContext,
   type PulseRealtimeValue,
@@ -80,8 +80,31 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
     return null
   }
   const deletedAt = typeof msg.deletedAt === 'string' ? msg.deletedAt : null
+  const reactions = Array.isArray(msg.reactions)
+    ? msg.reactions.flatMap((entry) => {
+        const r = entry as Record<string, unknown>
+        if (typeof r.emoji !== 'string' || !Array.isArray(r.userIds)) return []
+        const userIds = r.userIds.filter((u): u is string => typeof u === 'string')
+        return [{ emoji: r.emoji, userIds, count: userIds.length }]
+      })
+    : []
+  const replyRaw = (msg.replyTo ?? null) as Record<string, unknown> | null
+  const replyTo =
+    replyRaw && typeof replyRaw.id === 'string' && typeof replyRaw.content === 'string'
+      ? {
+          id: replyRaw.id,
+          content: replyRaw.content,
+          senderName: typeof replyRaw.senderName === 'string' ? replyRaw.senderName : '',
+          deleted: replyRaw.deleted === true,
+        }
+      : null
   return {
-    type: r.type === 'message:deleted' ? 'message:deleted' : 'message:new',
+    type:
+      r.type === 'message:deleted'
+        ? 'message:deleted'
+        : r.type === 'message:react'
+          ? 'message:react'
+          : 'message:new',
     message: {
       id: msg.id,
       conversationId: msg.conversationId,
@@ -97,6 +120,8 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
               color: typeof sender.color === 'string' ? sender.color : 'emerald',
             }
           : { id: msg.senderId, name: 'Unknown', color: 'emerald' },
+      reactions,
+      replyTo,
     },
     recipientIds: [],
     conversationId: msg.conversationId,
@@ -349,8 +374,19 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
       if (viewing) {
         scheduleRead(evt.message.conversationId)
       } else {
-        buzz(20)
+        // attention: gentle ping + buzz while backgrounded / elsewhere
+        playIncomingPing()
+        haptic(20)
       }
+    }
+
+    const onMessageReact = (raw: unknown) => {
+      const evt = asMessageEvent(raw)
+      if (!evt) return
+      const fresh = evt.message
+      queryClient.setQueryData<ChatMessage[]>(['messages', fresh.conversationId], (old) =>
+        old ? old.map((m) => (m.id === fresh.id ? { ...m, reactions: fresh.reactions } : m)) : old,
+      )
     }
 
     const onMessageDeleted = (raw: unknown) => {
@@ -378,9 +414,15 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     sock.on('typing', onTyping)
     sock.on('message:new', onMessageNew)
     sock.on('message:deleted', onMessageDeleted)
+    sock.on('message:react', onMessageReact)
     sock.on('message:read', onMessageRead)
 
+    // Warm audio during the first gesture so later pings can play unmuted.
+    const warm = () => primeSound()
+    window.addEventListener('pointerdown', warm, { once: true, passive: true })
+
     return () => {
+      window.removeEventListener('pointerdown', warm)
       sock.off()
       sock.disconnect()
       socketRef.current = null

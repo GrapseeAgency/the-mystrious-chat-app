@@ -3,7 +3,14 @@
 // ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { mapMessage, memberIdsOf, notifySocket, safeJson, strField } from '@/lib/serializers'
+import {
+  mapMessage,
+  memberIdsOf,
+  notifySocket,
+  MESSAGE_FULL_INCLUDE,
+  safeJson,
+  strField,
+} from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +35,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
 
   const message = await db.message.findUnique({
     where: { id },
-    include: { sender: true },
+    include: MESSAGE_FULL_INCLUDE,
   })
   if (!message) {
     return NextResponse.json({ error: 'Message not found.' }, { status: 404 })
@@ -49,7 +56,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
   const updated = await db.message.update({
     where: { id },
     data: { deletedAt: new Date() },
-    include: { sender: true },
+    include: MESSAGE_FULL_INCLUDE,
   })
 
   // Sender already knows → relay only to other members of the conversation.

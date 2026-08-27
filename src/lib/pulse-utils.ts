@@ -123,11 +123,48 @@ export function uid(): string {
   }
 }
 
-/** Best-effort haptic ping. */
+/** Best-effort raw haptic ping (preference-unaware; prefer haptic() from pulse-settings). */
 export function buzz(pattern: number = 20): void {
   const nav = typeof navigator !== 'undefined' ? navigator : undefined
   const vib = nav as (Navigator & { vibrate?: (p: number | number[]) => boolean }) | undefined
   vib?.vibrate?.(pattern)
+}
+
+// ── Messages ─────────────────────────────────────────────────
+
+/** Reaction palette shown in the message action sheet + chips. */
+export const REACTION_CHOICES = ['👍', '❤️', '😂', '😮', '😢', '🎉'] as const
+
+/** Quick composer emoji strip. */
+export const EMOJI_PICKER_CHOICES = [
+  '😀', '😂', '🥹', '😍', '😎', '🤔', '😴', '🥳',
+  '👍', '🙏', '👏', '🔥', '❤️', '💜', '✨', '🎉',
+  '🚀', '🌈', '☀️', '🌙', '☕', '🍕', '🎂', '⚽',
+] as const
+
+const JUMBO_EMOJI_RE = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\s|\u200d|\ufe0f){1,9}$/u
+
+/** Pure-emoji short messages render extra large (WhatsApp-style). */
+export function isJumboEmoji(content: string): boolean {
+  const trimmed = content.trim()
+  if (trimmed.length === 0 || trimmed.length > 24) return false
+  if (!JUMBO_EMOJI_RE.test(trimmed)) return false
+  return /\p{Extended_Pictographic}/u.test(trimmed)
+}
+
+/** Split text into plain/url segments so bubbles can auto-link URLs. */
+export function splitUrlSegments(text: string): Array<{ kind: 'text' | 'url'; value: string }> {
+  const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi
+  const out: Array<{ kind: 'text' | 'url'; value: string }> = []
+  let last = 0
+  for (const match of text.matchAll(URL_RE)) {
+    const idx = match.index ?? 0
+    if (idx > last) out.push({ kind: 'text', value: text.slice(last, idx) })
+    out.push({ kind: 'url', value: match[0] })
+    last = idx + match[0].length
+  }
+  if (last < text.length) out.push({ kind: 'text', value: text.slice(last) })
+  return out
 }
 
 // ── Time formatting (en-US) ──────────────────────────────────
@@ -230,13 +267,13 @@ export function conversationDisplayName(
 export function conversationPreview(
   conversation: ConversationSummary,
   myId: string,
-): { text: string; deleted: boolean; mine: boolean; senderName: string } {
+): { text: string; deleted: boolean; mine: boolean; senderName: string; isReply: boolean } {
   const last = conversation.lastMessage
   if (!last) {
-    return { text: 'No messages yet', deleted: false, mine: false, senderName: '' }
+    return { text: 'No messages yet', deleted: false, mine: false, senderName: '', isReply: false }
   }
   if (last.deletedAt) {
-    return { text: '🚫 message deleted', deleted: true, mine: false, senderName: '' }
+    return { text: '🚫 message deleted', deleted: true, mine: false, senderName: '', isReply: false }
   }
   const mine = last.senderId === myId
   const collapsed = last.content.replace(/\s+/g, ' ').trim()
@@ -245,6 +282,7 @@ export function conversationPreview(
     deleted: false,
     mine,
     senderName: last.sender.name,
+    isReply: last.replyTo !== null,
   }
 }
 
@@ -254,7 +292,8 @@ export function conversationPreviewPrefix(
   isGroup: boolean,
 ): string {
   if (preview.deleted || !preview.text) return ''
-  if (preview.mine) return 'You: '
-  if (isGroup) return `${preview.senderName}: `
-  return ''
+  const replyArrow = preview.isReply ? '↩ ' : ''
+  if (preview.mine) return `${replyArrow}You: `
+  if (isGroup) return `${replyArrow}${preview.senderName}: `
+  return replyArrow
 }

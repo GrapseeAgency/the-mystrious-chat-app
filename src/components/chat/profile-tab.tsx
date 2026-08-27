@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
-import { BadgeCheck, Check, Copy, LogOut, LoaderCircle, Moon, Sun } from 'lucide-react'
+import { BadgeCheck, Check, Copy, LogOut, LoaderCircle, Moon, Sun, Volume2, Vibrate } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
@@ -38,6 +38,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { UserAvatar } from '@/components/chat/user-avatar'
+import { pulseSettingsStore, haptic, primeSound } from '@/lib/pulse-settings'
 import { useMounted } from '@/hooks/use-mounted'
 
 interface UsersResponse {
@@ -61,6 +62,10 @@ function ProfileEditor({ me }: { me: AppUser }) {
   const queryClient = useQueryClient()
   const setUser = usePulseSession((s) => s.setUser)
   const { resolvedTheme, setTheme } = useTheme()
+  const soundOn = pulseSettingsStore((s) => s.soundOn)
+  const hapticsOn = pulseSettingsStore((s) => s.hapticsOn)
+  const setSoundOn = pulseSettingsStore((s) => s.setSoundOn)
+  const setHapticsOn = pulseSettingsStore((s) => s.setHapticsOn)
   const mounted = useMounted()
 
   const [name, setName] = useState(me.name)
@@ -251,6 +256,40 @@ function ProfileEditor({ me }: { me: AppUser }) {
           <StatChip label="Unread" value={stats.unread > 99 ? '99+' : String(stats.unread)} accent />
           <StatChip label="Member since" value={stats.memberSince} />
         </section>
+
+        {/* notifications */}
+        <Section title="Notifications">
+          <div className="flex items-center justify-between px-1 py-1.5">
+            <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              <Volume2 className="size-4 text-emerald-500" aria-hidden />
+              In-app sounds
+            </span>
+            <Switch
+              checked={soundOn}
+              onCheckedChange={(on) => {
+                setSoundOn(on)
+                if (on) primeSound()
+              }}
+              aria-label="Toggle notification sounds"
+              className="data-[state=checked]:bg-emerald-500"
+            />
+          </div>
+          <div className="flex items-center justify-between px-1 py-1.5">
+            <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              <Vibrate className="size-4 text-emerald-500" aria-hidden />
+              Haptic feedback
+            </span>
+            <Switch
+              checked={hapticsOn}
+              onCheckedChange={(on) => {
+                setHapticsOn(on)
+                if (on) haptic(15)
+              }}
+              aria-label="Toggle haptic feedback"
+              className="data-[state=checked]:bg-emerald-500"
+            />
+          </div>
+        </Section>
 
         {/* appearance */}
         <Section title="Appearance">

@@ -24,8 +24,11 @@ import {
   Clock,
   Copy,
   EllipsisVertical,
+  Reply,
   SendHorizontal,
+  Smile,
   Trash2,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type {
@@ -35,15 +38,19 @@ import type {
 } from '@/lib/types'
 import {
   apiJson,
-  buzz,
   conversationDisplayName,
   formatDayChip,
   formatListStamp,
   formatTime,
+  isJumboEmoji,
   isSameDayIso,
   otherMemberOf,
+  REACTION_CHOICES,
+  EMOJI_PICKER_CHOICES,
+  splitUrlSegments,
   uid,
 } from '@/lib/pulse-utils'
+import { haptic } from '@/lib/pulse-settings'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import { cn } from '@/lib/utils'
 import {
@@ -57,6 +64,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Dialog,
   DialogContent,
@@ -86,15 +94,19 @@ const NEAR_BOTTOM_PX = 160
 
 type ClusterItem =
   | { kind: 'day'; key: string; label: string }
+  | { kind: 'unread'; key: string }
   | { kind: 'msg'; key: string; message: ChatMessage; head: boolean; tail: boolean }
 
 export function ChatRoom({
   me,
   conversationId,
+  unreadAnchorMs = null,
   onClose,
 }: {
   me: AppUser
   conversationId: string
+  /** pre-open read watermark frozen by the chats list at tap time (unread divider) */
+  unreadAnchorMs?: number | null
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -108,6 +120,7 @@ export function ChatRoom({
   const [selected, setSelected] = useState<ChatMessage | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [showJump, setShowJump] = useState(false)
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -240,6 +253,7 @@ export function ChatRoom({
   const items = useMemo<ClusterItem[]>(() => {
     const list = messages.data ?? []
     const now = new Date()
+
     interface Entry {
       message: ChatMessage
       head: boolean
@@ -258,11 +272,22 @@ export function ChatRoom({
 
     const out: ClusterItem[] = []
     let dayAnchor: ChatMessage | null = null
+    let dividerPlaced = unreadAnchorMs === null
     for (let i = 0; i < built.length; i += 1) {
       const { message, head } = built[i]
       if (dayAnchor === null || !isSameDayIso(dayAnchor.createdAt, message.createdAt)) {
         out.push({ kind: 'day', key: `day-${message.id}`, label: formatDayChip(message.createdAt, now) })
         dayAnchor = message
+      }
+      if (
+        !dividerPlaced &&
+        message.senderId !== me.id &&
+        message.deletedAt === null &&
+        unreadAnchorMs !== null &&
+        Date.parse(message.createdAt) > unreadAnchorMs
+      ) {
+        out.push({ kind: 'unread', key: 'unread-divider' })
+        dividerPlaced = true
       }
       out.push({
         kind: 'msg',
@@ -273,7 +298,7 @@ export function ChatRoom({
       })
     }
     return out
-  }, [messages.data])
+  }, [messages.data, unreadAnchorMs, me.id])
 
   const lastMessageId =
     messages.data && messages.data.length > 0 ? messages.data[messages.data.length - 1].id : null
@@ -320,18 +345,34 @@ export function ChatRoom({
   // ── sending ────────────────────────────────────────────────
 
   const sendMessage = useMutation({
-    mutationFn: async ({ clientId, content }: { clientId: string; content: string }) => {
+    mutationFn: async ({
+      clientId,
+      content,
+      replyToId,
+    }: {
+      clientId: string
+      content: string
+      replyToId?: string
+    }) => {
       const res = await apiJson<SendResponse>(
         `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ senderId: me.id, content }),
+          body: JSON.stringify({ senderId: me.id, content, ...(replyToId ? { replyToId } : {}) }),
         },
       )
       return { res, clientId }
     },
-    onMutate: async ({ clientId, content }) => {
+    onMutate: async ({ clientId, content, replyToId }) => {
+      const parentSnapshot = replyToId && replyTo && replyTo.id === replyToId
+        ? {
+            id: replyTo.id,
+            content: replyTo.content,
+            senderName: replyTo.sender.name,
+            deleted: replyTo.deletedAt !== null,
+          }
+        : null
       const temp: ChatMessage = {
         id: `temp-${clientId}`,
         conversationId,
@@ -340,6 +381,8 @@ export function ChatRoom({
         deletedAt: null,
         createdAt: new Date().toISOString(),
         sender: { id: me.id, name: me.name, color: me.color },
+        reactions: [],
+        replyTo: parentSnapshot,
       }
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
         old ? [...old, temp] : [temp],
@@ -347,6 +390,7 @@ export function ChatRoom({
     },
     onSuccess: ({ res, clientId }) => {
       const real = res.message
+      setReplyTo(null)
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
         if (!old) return [real]
         const hadReal = old.some((m) => m.id === real.id)
@@ -366,6 +410,60 @@ export function ChatRoom({
       toast.error('Message failed to send')
     },
   })
+
+  /** Toggle an emoji reaction (optimistic; server response is truth). */
+  const toggleReaction = useMutation({
+    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
+      const res = await apiJson<SendResponse>(`/api/messages/${encodeURIComponent(messageId)}/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: me.id, emoji }),
+      })
+      return res.message
+    },
+    onMutate: async ({ messageId, emoji }) => {
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+        old
+          ? old.map((m) => {
+              if (m.id !== messageId) return m
+              const groups = m.reactions.map((g) => ({ ...g, userIds: [...g.userIds] }))
+              const mineIdx = groups.findIndex((g) => g.emoji === emoji)
+              if (mineIdx >= 0) {
+                const group = groups[mineIdx]
+                const had = group.userIds.includes(me.id)
+                if (had) {
+                  group.userIds = group.userIds.filter((id) => id !== me.id)
+                } else {
+                  group.userIds.push(me.id)
+                }
+                group.count = group.userIds.length
+                if (group.count === 0) groups.splice(mineIdx, 1)
+              } else {
+                groups.push({ emoji, userIds: [me.id], count: 1 })
+              }
+              return { ...m, reactions: groups }
+            })
+          : old,
+      )
+    },
+    onSuccess: (real) => {
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+        old ? old.map((m) => (m.id === real.id ? { ...m, reactions: real.reactions } : m)) : old,
+      )
+    },
+    onError: () => {
+      toast.error('Reaction failed — try again')
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] })
+    },
+  })
+
+  const handleToggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      haptic(12)
+      toggleReaction.mutate({ messageId, emoji })
+    },
+    [toggleReaction],
+  )
 
   const deleteMessage = useMutation({
     mutationFn: async (messageId: string) => {
@@ -427,8 +525,12 @@ export function ChatRoom({
     stopTyping()
     setInput('')
     requestAnimationFrame(autosize)
-    sendMessage.mutate({ clientId: uid(), content })
-  }, [input, sendMessage, stopTyping, autosize])
+    sendMessage.mutate({
+      clientId: uid(),
+      content,
+      ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+    })
+  }, [input, sendMessage, stopTyping, autosize, replyTo])
 
   const handleInputChange = (value: string) => {
     setInput(value)
@@ -647,6 +749,14 @@ export function ChatRoom({
                     {item.label}
                   </span>
                 </div>
+              ) : item.kind === 'unread' ? (
+                <div key={item.key} className="my-3 flex items-center gap-2 px-1" role="separator" aria-label="Unread messages">
+                  <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
+                  <span className="text-[10px] font-bold tracking-widest text-emerald-600 dark:text-emerald-400">
+                    UNREAD
+                  </span>
+                  <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
+                </div>
               ) : (
                 <MessageRow
                   key={item.key}
@@ -655,9 +765,11 @@ export function ChatRoom({
                   mine={item.message.senderId === me.id}
                   isGroup={isGroup}
                   readMs={othersMaxReadMs}
+                  myId={me.id}
                   onPress={setSelected}
                   onStartLongPress={startLongPress}
                   onEndLongPress={clearLongPress}
+                  onToggleReaction={handleToggleReaction}
                 />
               ),
             )}
@@ -710,6 +822,7 @@ export function ChatRoom({
               transition={{ type: 'spring', stiffness: 420, damping: 22 }}
               onClick={() => {
                 setShowJump(false)
+                haptic(8)
                 scrollToBottom(true)
               }}
               className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-emerald-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 active:scale-95"
@@ -723,7 +836,78 @@ export function ChatRoom({
 
       {/* composer */}
       <div className="shrink-0 border-t border-zinc-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:border-zinc-800 dark:bg-zinc-900">
+        <AnimatePresence initial={false}>
+          {replyTo ? (
+            <motion.div
+              key="reply-bar"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-emerald-500 bg-zinc-100 py-2 pr-2 pl-2.5 dark:bg-zinc-800">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    Replying to {replyTo.sender.id === me.id ? 'yourself' : replyTo.sender.name}
+                  </p>
+                  <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                    {replyTo.deletedAt
+                      ? 'Deleted message'
+                      : replyTo.content.replace(/\s+/g, ' ').slice(0, 120)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Cancel reply"
+                  onClick={() => setReplyTo(null)}
+                  className="rounded-full p-1.5 text-zinc-400 outline-none transition-colors hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                >
+                  <X className="size-4" aria-hidden />
+                </button>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
         <div className="flex items-end gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="Insert emoji"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-500 active:scale-90 dark:hover:bg-zinc-800"
+              >
+                <Smile className="size-6" aria-hidden />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              side="top"
+              align="start"
+              sideOffset={10}
+              className="w-[272px] rounded-2xl p-2 dark:bg-zinc-800"
+            >
+              <div className="grid grid-cols-8 gap-0.5">
+                {EMOJI_PICKER_CHOICES.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    aria-label={`Insert ${emoji}`}
+                    onClick={() => {
+                      setInput((prev) => prev + emoji)
+                      requestAnimationFrame(() => {
+                        autosize()
+                        textareaRef.current?.focus()
+                      })
+                    }}
+                    className="rounded-lg py-1 text-xl outline-none transition-transform hover:bg-zinc-100 hover:scale-125 active:scale-95 dark:hover:bg-zinc-700"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
           <textarea
             ref={textareaRef}
             value={input}
@@ -765,7 +949,39 @@ export function ChatRoom({
                 : selected?.content.replace(/\s+/g, ' ').slice(0, 140)}
             </DialogDescription>
           </DialogHeader>
+          {selected && !selected.deletedAt ? (
+            <div className="flex items-center justify-between gap-0.5" role="group" aria-label="React with an emoji">
+              {REACTION_CHOICES.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  aria-label={`React with ${emoji}`}
+                  onClick={() => {
+                    handleToggleReaction(selected.id, emoji)
+                    setSelected(null)
+                  }}
+                  className="flex size-10 items-center justify-center rounded-full text-xl outline-none transition-transform hover:scale-125 hover:bg-zinc-100 active:scale-95 dark:hover:bg-zinc-800"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="flex flex-col gap-1.5">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!selected) return
+                setReplyTo(selected)
+                setSelected(null)
+                requestAnimationFrame(() => textareaRef.current?.focus())
+              }}
+              disabled={!!selected?.deletedAt}
+              className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+            >
+              <Reply className="size-4" aria-hidden />
+              Reply
+            </Button>
             <Button
               variant="outline"
               onClick={copySelected}
@@ -846,9 +1062,46 @@ interface MessageRowProps {
   mine: boolean
   isGroup: boolean
   readMs: number
+  myId: string
   onPress: (message: ChatMessage) => void
   onStartLongPress: (message: ChatMessage) => void
   onEndLongPress: () => void
+  onToggleReaction: (messageId: string, emoji: string) => void
+}
+
+/** Bubble body text with URL auto-linking (safe anchors, no HTML injection). */
+function BubbleText({ content, mine }: { content: string; mine: boolean }) {
+  const segments = splitUrlSegments(content)
+  return (
+    <p
+      className={cn(
+        'text-[14px] leading-snug break-words whitespace-pre-wrap',
+        mine ? 'text-white' : 'text-zinc-900 dark:text-zinc-100',
+      )}
+    >
+      {segments.map((seg, i) =>
+        seg.kind === 'url' ? (
+          <a
+            key={i}
+            href={seg.value.startsWith('www.') ? `https://${seg.value}` : seg.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              'underline underline-offset-2',
+              mine
+                ? 'text-white decoration-white/60 hover:decoration-white'
+                : 'text-emerald-700 decoration-emerald-400/60 hover:decoration-emerald-600 dark:text-emerald-400',
+            )}
+          >
+            {seg.value}
+          </a>
+        ) : (
+          <span key={i}>{seg.value}</span>
+        ),
+      )}
+    </p>
+  )
 }
 
 const MessageRow = memo(function MessageRow({
@@ -857,15 +1110,19 @@ const MessageRow = memo(function MessageRow({
   mine,
   isGroup,
   readMs,
+  myId,
   onPress,
   onStartLongPress,
   onEndLongPress,
+  onToggleReaction,
 }: MessageRowProps) {
   const deleted = message.deletedAt !== null
   const pending = message.id.startsWith('temp-')
   const createdMs = Date.parse(message.createdAt)
   const isRead = !Number.isNaN(createdMs) && createdMs <= readMs
-  const interactive = mine && !deleted && !pending
+  const interactive = !deleted && !pending
+  const jumbo = !deleted && isJumboEmoji(message.content)
+  const hasReactions = message.reactions.length > 0
 
   return (
     <div
@@ -892,46 +1149,104 @@ const MessageRow = memo(function MessageRow({
           </span>
         ) : null}
 
-        <div
+        <motion.div
+          initial={{ opacity: 0, y: 8, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 480, damping: 32, mass: 0.7 }}
           onClick={() => interactive && onPress(message)}
           onPointerDown={() => interactive && onStartLongPress(message)}
           onPointerUp={onEndLongPress}
           onPointerLeave={onEndLongPress}
+          onDoubleClick={() => {
+            if (interactive) {
+              onToggleReaction(message.id, '❤️')
+            }
+          }}
           role={interactive ? 'button' : undefined}
           tabIndex={interactive ? 0 : undefined}
           onKeyDown={(event) => {
             if (interactive && event.key === 'Enter') onPress(message)
           }}
           className={cn(
-            'relative px-3 py-2 shadow-sm select-none',
-            deleted
+            'relative select-none',
+            jumbo
               ? cn(
-                  'border border-dashed italic',
-                  'rounded-2xl border-zinc-300 bg-transparent text-zinc-400 dark:border-zinc-600 dark:text-zinc-500',
-                  mine ? 'rounded-br-md opacity-80' : 'rounded-bl-md',
+                  'px-1 py-0.5',
+                  deleted && 'rounded-2xl',
                 )
-              : mine
-                ? 'rounded-2xl rounded-br-md bg-emerald-500 text-white'
-                : 'rounded-2xl rounded-bl-md border border-zinc-100 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100',
-            interactive ? 'cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:brightness-95' : '',
+              : 'rounded-2xl px-3 py-2 shadow-sm',
+            deleted &&
+              cn(
+                'border border-dashed italic',
+                'rounded-2xl border-zinc-300 bg-transparent text-zinc-400 dark:border-zinc-600 dark:text-zinc-500',
+                mine ? 'rounded-br-md opacity-80' : 'rounded-bl-md',
+              ),
+            !deleted && !jumbo && (mine
+              ? 'rounded-2xl rounded-br-md bg-emerald-500 text-white'
+              : 'rounded-2xl rounded-bl-md border border-zinc-100 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100'),
+            interactive
+              ? cn(
+                  'cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:brightness-95',
+                  jumbo && 'rounded-2xl',
+                )
+              : '',
           )}
         >
           {deleted ? (
             <p className="text-[13px] leading-snug">This message was deleted</p>
           ) : (
-            <p className="text-[14px] leading-snug break-words whitespace-pre-wrap">{message.content}</p>
+            <>
+              {message.replyTo ? (
+                <div
+                  className={cn(
+                    'mb-1 rounded-md border-l-[3px] px-2 py-1',
+                    mine
+                      ? 'border-white/70 bg-black/10'
+                      : 'border-emerald-400 bg-zinc-100 dark:border-emerald-500/80 dark:bg-zinc-700/60',
+                  )}
+                >
+                  <p
+                    className={cn(
+                      'text-[11px] font-bold',
+                      mine ? 'text-white/90' : 'text-emerald-700 dark:text-emerald-400',
+                    )}
+                  >
+                    {message.replyTo.deleted
+                      ? 'Deleted message'
+                      : message.replyTo.senderName === message.sender.name
+                        ? message.replyTo.senderName
+                        : message.replyTo.senderName || 'Unknown'}
+                  </p>
+                  <p
+                    className={cn(
+                      'truncate text-[12px] leading-snug',
+                      mine ? 'text-white/75' : 'text-zinc-500 dark:text-zinc-400',
+                    )}
+                  >
+                    {message.replyTo.deleted
+                      ? 'This message was deleted'
+                      : message.replyTo.content.replace(/\s+/g, ' ').slice(0, 120)}
+                  </p>
+                </div>
+              ) : null}
+              {jumbo ? (
+                <p className="text-[34px] leading-[1.2] break-words">{message.content}</p>
+              ) : (
+                <BubbleText content={message.content} mine={mine} />
+              )}
+            </>
           )}
           <div
             className={cn(
               'mt-0.5 flex items-center justify-end gap-1 text-[10px]',
               deleted
                 ? 'text-zinc-400 dark:text-zinc-500'
-                : mine
+                : mine && !jumbo
                   ? 'text-white/80'
                   : 'text-zinc-400 dark:text-zinc-500',
             )}
           >
-            <span>{formatTime(message.createdAt)}</span>
+            <span className={jumbo ? 'opacity-70' : undefined}>{formatTime(message.createdAt)}</span>
             {mine && !deleted ? (
               pending ? (
                 <Clock className="size-3 opacity-90" aria-label="sending…" />
@@ -942,7 +1257,51 @@ const MessageRow = memo(function MessageRow({
               )
             ) : null}
           </div>
-        </div>
+        </motion.div>
+
+        {hasReactions && !deleted ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.7, y: -2 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 24 }}
+            className={cn(
+              '-mt-1.5 z-10 flex flex-wrap gap-1',
+              mine ? 'mr-2 justify-end' : 'ml-2 justify-start',
+            )}
+          >
+            {message.reactions.map((group) => {
+              const iReacted = group.userIds.includes(myId)
+              return (
+                <button
+                  key={group.emoji}
+                  type="button"
+                  aria-label={`${group.emoji} ${group.count} — tap to toggle`}
+                  onClick={() => onToggleReaction(message.id, group.emoji)}
+                  className={cn(
+                    'flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] shadow-sm backdrop-blur transition-transform active:scale-90',
+                    iReacted
+                      ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-500/70 dark:bg-emerald-500/15'
+                      : 'border-zinc-200 bg-white/95 dark:border-zinc-600 dark:bg-zinc-800/95',
+                  )}
+                >
+                  <span className="text-xs leading-none">{group.emoji}</span>
+                  {group.count > 1 ? (
+                    <span
+                      className={cn(
+                        'font-semibold',
+                        iReacted
+                          ? 'text-emerald-700 dark:text-emerald-300'
+                          : 'text-zinc-500 dark:text-zinc-300',
+                      )}
+                    >
+                      {group.count}
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </motion.div>
+        ) : null}
       </div>
     </div>
   )
@@ -955,9 +1314,11 @@ function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
     prev.mine === next.mine &&
     prev.isGroup === next.isGroup &&
     prev.readMs === next.readMs &&
+    prev.myId === next.myId &&
     prev.onPress === next.onPress &&
     prev.onStartLongPress === next.onStartLongPress &&
-    prev.onEndLongPress === next.onEndLongPress
+    prev.onEndLongPress === next.onEndLongPress &&
+    prev.onToggleReaction === next.onToggleReaction
   )
 }
 

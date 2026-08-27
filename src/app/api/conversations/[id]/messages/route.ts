@@ -8,6 +8,7 @@ import {
   memberIdsOf,
   notifySocket,
   parseIsoDate,
+  MESSAGE_FULL_INCLUDE,
   MESSAGES_DEFAULT_LIMIT,
   MESSAGES_MAX_LIMIT,
   MESSAGE_MAX,
@@ -66,7 +67,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     },
     orderBy: { createdAt: 'asc' },
     take: limit,
-    include: { sender: true },
+    include: MESSAGE_FULL_INCLUDE,
   })
 
   return NextResponse.json({ messages: messages.map(mapMessage) })
@@ -95,6 +96,21 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
+  // Optional reply parent — must exist inside THIS conversation.
+  const replyToId = strField(body.replyToId)
+  if (replyToId) {
+    const parent = await db.message.findUnique({
+      where: { id: replyToId },
+      select: { conversationId: true },
+    })
+    if (!parent || parent.conversationId !== id) {
+      return NextResponse.json(
+        { error: 'replyToId must reference a message in the same conversation.' },
+        { status: 400 },
+      )
+    }
+  }
+
   // Existence + membership checks up-front → clean 404 / 403 semantics.
   const [conv, participant] = await Promise.all([
     db.conversation.findUnique({ where: { id }, select: { id: true } }),
@@ -116,8 +132,13 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const now = new Date()
   const message = await db.$transaction(async (tx) => {
     const created = await tx.message.create({
-      data: { conversationId: id, senderId, content },
-      include: { sender: true },
+      data: {
+        conversationId: id,
+        senderId,
+        content,
+        ...(replyToId ? { replyToId } : {}),
+      },
+      include: MESSAGE_FULL_INCLUDE,
     })
     // Bump list ordering — @updatedAt allows an explicit value write.
     await tx.conversation.update({ where: { id }, data: { updatedAt: now } })

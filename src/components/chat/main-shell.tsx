@@ -17,6 +17,8 @@ import { NewChatSheet } from '@/components/chat/new-chat-sheet'
 export function MainShell({ me }: { me: AppUser }) {
   const [tab, setTab] = useState<PulseTab>('chats')
   const [openConversationId, setOpenConversationId] = useState<string | null>(null)
+  /** frozen pre-open read watermark for the open conversation (unread divider) */
+  const [openConversationAnchorMs, setOpenConversationAnchorMs] = useState<number | null>(null)
   const [newChatOpen, setNewChatOpen] = useState(false)
   const [newChatMode, setNewChatMode] = useState<'dm' | 'group'>('dm')
   // generation bumps per open-session so the sheet remounts with fresh state;
@@ -55,7 +57,10 @@ export function MainShell({ me }: { me: AppUser }) {
             {tab === 'chats' ? (
               <ChatsTab
                 me={me}
-                onOpenConversation={setOpenConversationId}
+                onOpenConversation={(conversationId, anchorMs) => {
+                  setOpenConversationAnchorMs(anchorMs)
+                  setOpenConversationId(conversationId)
+                }}
                 onOpenContacts={() => setTab('contacts')}
                 onRequestNewChat={() => openNewChat('dm')}
                 onGoProfile={() => setTab('profile')}
@@ -64,7 +69,10 @@ export function MainShell({ me }: { me: AppUser }) {
             {tab === 'contacts' ? (
               <ContactsTab
                 me={me}
-                onOpenConversation={setOpenConversationId}
+                onOpenConversation={(conversationId) => {
+                  setOpenConversationAnchorMs(null)
+                  setOpenConversationId(conversationId)
+                }}
                 onGoProfile={() => setTab('profile')}
                 onRequestNewGroup={() => openNewChat('group')}
               />
@@ -79,6 +87,7 @@ export function MainShell({ me }: { me: AppUser }) {
               key="chat-room"
               me={me}
               conversationId={openConversationId}
+              unreadAnchorMs={openConversationAnchorMs}
               onClose={() => setOpenConversationId(null)}
             />
           ) : null}
@@ -96,6 +105,7 @@ export function MainShell({ me }: { me: AppUser }) {
           initialMode={newChatMode}
           onConversationOpened={(conversationId) => {
             setNewChatOpen(false)
+            setOpenConversationAnchorMs(null)
             setOpenConversationId(conversationId)
           }}
         />

@@ -12,6 +12,7 @@ import type {
   ConversationDetail,
   ConversationSummary,
   MessageAuthor,
+  MessageReactionGroup,
 } from '@/lib/types'
 
 // ── Validation constants ────────────────────────────────────
@@ -21,6 +22,9 @@ export const MESSAGE_MAX = 2000
 export const GROUP_NAME_MAX = 48
 export const MESSAGES_DEFAULT_LIMIT = 200
 export const MESSAGES_MAX_LIMIT = 500
+
+/** Emoji allowed as reactions (keeps bubbles tidy). */
+export const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉'] as const
 
 export const AVATAR_COLORS = [
   'emerald',
@@ -95,17 +99,48 @@ export function mapUser(user: UserRow): AppUser {
   }
 }
 
-interface MessageRow {
-  id: string
-  conversationId: string
-  senderId: string
-  content: string
-  deletedAt: Date | null
-  createdAt: Date
-  sender: UserRow
+interface ReactionRow {
+  emoji: string
+  userId: string
 }
 
-export function mapMessage(message: MessageRow): ChatMessage {
+export function groupReactions(reactions: ReactionRow[]): MessageReactionGroup[] {
+  const order: string[] = []
+  const byEmoji = new Map<string, string[]>()
+  for (const r of reactions) {
+    let ids = byEmoji.get(r.emoji)
+    if (!ids) {
+      ids = []
+      byEmoji.set(r.emoji, ids)
+      order.push(r.emoji)
+    }
+    ids.push(r.userId)
+  }
+  return order.map((emoji) => {
+    const userIds = byEmoji.get(emoji) ?? []
+    return { emoji, userIds, count: userIds.length }
+  })
+}
+
+/** Deep include reused by every message fetch (history, last-message, single). */
+export const MESSAGE_FULL_INCLUDE = {
+  sender: true,
+  reactions: { select: { emoji: true, userId: true } },
+  replyTo: { select: { id: true, content: true, deletedAt: true, sender: { select: { name: true } } } },
+} satisfies Prisma.MessageInclude
+
+export type MessageRowWithRelations = Prisma.MessageGetPayload<{ include: typeof MESSAGE_FULL_INCLUDE }>
+
+export function mapMessage(message: MessageRowWithRelations): ChatMessage {
+  const parent = message.replyTo
+  const replyTo = parent
+    ? {
+        id: parent.id,
+        content: parent.content,
+        senderName: parent.sender.name,
+        deleted: parent.deletedAt !== null,
+      }
+    : null
   return {
     id: message.id,
     conversationId: message.conversationId,
@@ -114,6 +149,8 @@ export function mapMessage(message: MessageRow): ChatMessage {
     deletedAt: message.deletedAt ? message.deletedAt.toISOString() : null,
     createdAt: message.createdAt.toISOString(),
     sender: mapAuthor(message.sender),
+    reactions: groupReactions(message.reactions),
+    replyTo,
   }
 }
 
@@ -127,7 +164,11 @@ const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompar
 /** Reusable deep include for "conversation + members + newest message". */
 export const CONVERSATION_FULL_INCLUDE = {
   participants: { include: { user: true } },
-  messages: { orderBy: { createdAt: 'desc' as const }, take: 1, include: { sender: true } },
+  messages: {
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+    include: MESSAGE_FULL_INCLUDE,
+  },
 } satisfies Prisma.ConversationInclude
 
 export type ConversationRowWithRelations = Prisma.ConversationGetPayload<{
@@ -192,7 +233,7 @@ export async function memberIdsOf(conversationId: string): Promise<string[]> {
 
 const SOCKET_URL = 'http://localhost:3003'
 
-export type PulseSocketEvent = 'message:new' | 'message:deleted' | 'message:read'
+export type PulseSocketEvent = 'message:new' | 'message:deleted' | 'message:read' | 'message:react'
 
 /**
  * Relay a realtime event to the socket.io mini service so it can fan out
