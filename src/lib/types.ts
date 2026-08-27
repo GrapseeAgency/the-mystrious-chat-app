@@ -49,6 +49,9 @@ export interface ChatMessage {
   imagePath: string | null // served via GET /api/uploads/[imagePath]
   audioPath: string | null // voice-note file served via GET /api/uploads/[audioPath]
   durationMs: number | null // voice-note length in milliseconds
+  editedAt: string | null // ISO or null — set when the sender edited the text
+  pinnedAt: string | null // ISO or null — pinned within the conversation
+  pinnedBy: string | null // userId of whoever pinned (null when unpinned)
   /** client-only marker: message is held in the offline outbox (never sent by server) */
   _queued?: boolean
 }
@@ -121,7 +124,7 @@ export interface ReadEvent {
 }
 
 export interface SocketMessageEvent {
-  type: 'message:new' | 'message:deleted' | 'message:react'
+  type: 'message:new' | 'message:deleted' | 'message:react' | 'message:edited' | 'message:pinned'
   message: ChatMessage
   /** ids of all members except sender */
   recipientIds: string[]

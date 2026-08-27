@@ -103,13 +103,20 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
   const imagePath = typeof msg.imagePath === 'string' ? msg.imagePath : null
   const audioPath = typeof msg.audioPath === 'string' ? msg.audioPath : null
   const durationMs = typeof msg.durationMs === 'number' && Number.isFinite(msg.durationMs) ? msg.durationMs : null
+  const editedAt = typeof msg.editedAt === 'string' ? msg.editedAt : null
+  const pinnedAt = typeof msg.pinnedAt === 'string' ? msg.pinnedAt : null
+  const pinnedBy = typeof msg.pinnedBy === 'string' ? msg.pinnedBy : null
   return {
     type:
       r.type === 'message:deleted'
         ? 'message:deleted'
         : r.type === 'message:react'
           ? 'message:react'
-          : 'message:new',
+          : r.type === 'message:edited'
+            ? 'message:edited'
+            : r.type === 'message:pinned'
+              ? 'message:pinned'
+              : 'message:new',
     message: {
       id: msg.id,
       conversationId: msg.conversationId,
@@ -130,6 +137,9 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
       imagePath,
       audioPath,
       durationMs,
+      editedAt,
+      pinnedAt,
+      pinnedBy,
     },
     recipientIds: [],
     conversationId: msg.conversationId,
@@ -444,6 +454,25 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
       )
     }
 
+    /** message:edited / message:pinned — the full fresh row arrives, swap it in. */
+    const onMessageReplaced = (raw: unknown) => {
+      const evt = asMessageEvent(raw)
+      if (!evt) return
+      const fresh = evt.message
+      queryClient.setQueryData<ChatMessage[]>(['messages', fresh.conversationId], (old) => {
+        if (!old) return old // room never loaded → fresh fetch covers it
+        const exists = old.some((m) => m.id === fresh.id)
+        return exists ? old.map((m) => (m.id === fresh.id ? fresh : m)) : old
+      })
+      // edits change the chat-list preview text; edits + pins change the pinned list
+      if (evt.type === 'message:edited') {
+        queryClient.invalidateQueries({ queryKey: ['conversations', myId] })
+      }
+      if (evt.type === 'message:edited' || evt.type === 'message:pinned') {
+        queryClient.invalidateQueries({ queryKey: ['pinned', fresh.conversationId] })
+      }
+    }
+
     const onMessageDeleted = (raw: unknown) => {
       const evt = asMessageEvent(raw)
       if (!evt) return
@@ -478,6 +507,8 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     sock.on('message:new', onMessageNew)
     sock.on('message:deleted', onMessageDeleted)
     sock.on('message:react', onMessageReact)
+    sock.on('message:edited', onMessageReplaced)
+    sock.on('message:pinned', onMessageReplaced)
     sock.on('message:read', onMessageRead)
     sock.on('conversation:updated', onConversationUpdated)
 

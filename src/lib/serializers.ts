@@ -155,6 +155,9 @@ export function mapMessage(message: MessageRowWithRelations): ChatMessage {
     imagePath: message.imagePath ?? null,
     audioPath: message.audioPath ?? null,
     durationMs: message.durationMs ?? null,
+    editedAt: message.editedAt ? message.editedAt.toISOString() : null,
+    pinnedAt: message.pinnedAt ? message.pinnedAt.toISOString() : null,
+    pinnedBy: message.pinnedBy ?? null,
   }
 }
 
@@ -300,6 +303,8 @@ export type PulseSocketEvent =
   | 'message:deleted'
   | 'message:read'
   | 'message:react'
+  | 'message:edited'
+  | 'message:pinned'
   | 'conversation:updated'
 
 /**

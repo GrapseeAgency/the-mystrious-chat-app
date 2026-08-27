@@ -65,6 +65,9 @@ model Message {
   imagePath      String?   // stored image filename via /api/uploads (image message)
   audioPath      String?   // stored voice-note filename via /api/uploads (audio message)
   durationMs     Int?      // voice-note length in milliseconds
+  editedAt       DateTime? // last edit timestamp (null = never edited → "edited" label)
+  pinnedAt       DateTime? // pinned within the conversation (null = not pinned)
+  pinnedBy       String?   // userId who pinned (display attribution)
   createdAt      DateTime  @default(now())
   sender         User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

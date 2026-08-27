@@ -13,6 +13,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from 'react'
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -39,6 +40,8 @@ import {
   Mic,
   Pause,
   Pencil,
+  Pin,
+  PinOff,
   Play,
   Plus,
   Reply,
@@ -188,6 +191,10 @@ export function ChatRoom({
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [showJump, setShowJump] = useState(false)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+  /** message being edited (Telegram-style composer edit mode) */
+  const [editing, setEditing] = useState<ChatMessage | null>(null)
+  /** pinned-messages sheet */
+  const [pinnedOpen, setPinnedOpen] = useState(false)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   /** {message, emoji} → who-reacted sheet */
   const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
@@ -770,6 +777,9 @@ export function ChatRoom({
         imagePath: imagePath ?? null,
         audioPath: audioPath ?? null,
         durationMs: durationMs ?? null,
+        editedAt: null,
+        pinnedAt: null,
+        pinnedBy: null,
       }
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
         old ? [...old, temp] : [temp],
@@ -889,6 +899,100 @@ export function ChatRoom({
     },
   })
 
+  // ── edit message (sender only) ───────────────────────────
+
+  const editMessage = useMutation({
+    mutationFn: async ({ messageId, content }: { messageId: string; content: string }) => {
+      return apiJson<SendResponse>(`/api/messages/${encodeURIComponent(messageId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: me.id, content }),
+      })
+    },
+    onMutate: async ({ messageId, content }) => {
+      const previous = queryClient.getQueryData<ChatMessage[]>(['messages', conversationId])
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+        old
+          ? old.map((m) =>
+              m.id === messageId
+                ? { ...m, content, editedAt: m.editedAt ?? new Date().toISOString() }
+                : m,
+            )
+          : old,
+      )
+      return { previous }
+    },
+    onSuccess: ({ message: real }) => {
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+        old ? old.map((m) => (m.id === real.id ? real : m)) : old,
+      )
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success('Message updated')
+      haptic(10)
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['messages', conversationId], context.previous)
+      }
+      toast.error('Could not update the message')
+    },
+    onSettled: () => {
+      setEditing(null)
+    },
+  })
+
+  // ── pin / unpin (any participant, toggle) ────────────────
+
+  const pinMessage = useMutation({
+    mutationFn: async (messageId: string) => {
+      return apiJson<SendResponse>(`/api/messages/${encodeURIComponent(messageId)}/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: me.id }),
+      })
+    },
+    onMutate: async (messageId) => {
+      const now = new Date().toISOString()
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+        old?.map((m) =>
+          m.id === messageId
+            ? { ...m, pinnedAt: m.pinnedAt ? null : now, pinnedBy: m.pinnedAt ? null : me.id }
+            : m,
+        ),
+      )
+    },
+    onSuccess: ({ message: real }) => {
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+        old ? old.map((m) => (m.id === real.id ? real : m)) : old,
+      )
+      queryClient.invalidateQueries({ queryKey: ['pinned', conversationId] })
+      toast.success(real.pinnedAt ? 'Message pinned' : 'Message unpinned')
+      haptic(12)
+    },
+    onError: () => {
+      toast.error('Could not update the pin')
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] })
+    },
+  })
+
+  /** Authoritative pinned list (banner + sheet) — refreshed by pin events. */
+  const pinnedQuery = useQuery({
+    queryKey: ['pinned', conversationId],
+    queryFn: async (): Promise<ChatMessage[]> => {
+      const res = await apiJson<{ messages: ChatMessage[] }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/pinned?userId=${encodeURIComponent(me.id)}`,
+      )
+      return res.messages
+    },
+    staleTime: 4_000,
+    refetchInterval: 15_000,
+  })
+
+  /** banner shows the newest pin (list is pinnedAt asc) */
+  const pinnedList = pinnedQuery.data ?? []
+  const latestPinned = pinnedList.length > 0 ? pinnedList[pinnedList.length - 1] : null
+  const pinnedCount = pinnedList.length
+
   // ── notification mute (per-user watermark) ─────────────
 
   const isRoomMuted =
@@ -944,9 +1048,96 @@ export function ChatRoom({
 
   useEffect(() => () => stopTyping(), [stopTyping])
 
+  // ── @mention autocomplete (composer) ────────────────────
+
+  /** caret position inside the textarea (tracked on every change) */
+  const [mentionCaret, setMentionCaret] = useState(0)
+  /** active `@token` immediately before the caret, else null */
+  const mentionToken = useMemo(() => {
+    const upto = input.slice(0, mentionCaret)
+    const m = /(?:^|\s)@([^@\s]*)$/.exec(upto)
+    return m ? { token: m[1], start: mentionCaret - m[1].length - 1 } : null
+  }, [input, mentionCaret])
+  const mentionMatches = useMemo(() => {
+    if (mentionToken === null) return []
+    const q = mentionToken.token.toLowerCase()
+    return (detailData?.members ?? [])
+      .filter((m) => m.name.toLowerCase().startsWith(q))
+      .slice(0, 5)
+  }, [mentionToken, detailData])
+
+  const pickMention = useCallback(
+    (member: { name: string }) => {
+      if (mentionToken === null) return
+      const before = input.slice(0, mentionToken.start)
+      const after = input.slice(mentionCaret)
+      const inserted = `@${member.name} `
+      const next = before + inserted + after
+      setInput(next)
+      const caret = before.length + inserted.length
+      setMentionCaret(caret)
+      requestAnimationFrame(() => {
+        autosize()
+        const el = textareaRef.current
+        if (el) {
+          el.focus()
+          el.setSelectionRange(caret, caret)
+        }
+      })
+    },
+    [input, mentionToken, mentionCaret, autosize],
+  )
+
+  // stable member-name list for mention chips in bubbles
+  const memberNamesKey = (detailData?.members ?? []).map((m) => m.name).join('\u0000')
+  const memberNames = useMemo(() => memberNamesKey.split('\u0000'), [memberNamesKey])
+
+  // ── edit mode helpers ────────────────────────────────────
+
+  const startEdit = useCallback(
+    (message: ChatMessage) => {
+      setSelected(null)
+      setReplyTo(null)
+      setEditing(message)
+      setInput(message.content)
+      requestAnimationFrame(() => {
+        autosize()
+        const el = textareaRef.current
+        if (el) {
+          el.focus()
+          el.setSelectionRange(el.value.length, el.value.length)
+        }
+      })
+    },
+    [autosize],
+  )
+
+  const cancelEdit = useCallback(() => {
+    setEditing(null)
+    setInput('')
+    pulseDraftsStore.getState().clearDraft(conversationId)
+    requestAnimationFrame(autosize)
+  }, [autosize, conversationId])
+
   const submit = useCallback(() => {
     const content = input.trim()
-    if (content.length === 0 || sendMessage.isPending) return
+    if (content.length === 0) return
+
+    // Telegram-style edit mode → PATCH instead of send
+    if (editing) {
+      if (editMessage.isPending) return
+      if (content !== editing.content) {
+        editMessage.mutate({ messageId: editing.id, content })
+      } else {
+        setEditing(null)
+      }
+      setInput('')
+      pulseDraftsStore.getState().clearDraft(conversationId)
+      requestAnimationFrame(autosize)
+      return
+    }
+
+    if (sendMessage.isPending) return
     stopTyping()
     setInput('')
     pulseDraftsStore.getState().clearDraft(conversationId)
@@ -978,6 +1169,9 @@ export function ChatRoom({
         imagePath: null,
         audioPath: null,
         durationMs: null,
+        editedAt: null,
+        pinnedAt: null,
+        pinnedBy: null,
         _queued: true,
       }
       pulseOutboxStore.getState().enqueue({
@@ -1002,10 +1196,11 @@ export function ChatRoom({
       content,
       ...(replyTarget ? { replyToId: replyTarget.id } : {}),
     })
-  }, [input, sendMessage, stopTyping, autosize, replyTo, conversationId, me, queryClient])
+  }, [input, editing, editMessage, sendMessage, stopTyping, autosize, replyTo, conversationId, me, queryClient])
 
   const handleInputChange = (value: string) => {
     setInput(value)
+    setMentionCaret(textareaRef.current?.selectionStart ?? value.length)
     autosize()
     if (draftTimerRef.current !== null) clearTimeout(draftTimerRef.current)
     draftTimerRef.current = setTimeout(() => {
@@ -1062,12 +1257,23 @@ export function ChatRoom({
   }, [pendingImage, captionDraft, sendMessage, stopTyping, replyTo])
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Escape' && editing) {
+      event.preventDefault()
+      cancelEdit()
+      return
+    }
     if (
       event.key === 'Enter' &&
       !event.shiftKey &&
       typeof window !== 'undefined' &&
       window.matchMedia('(min-width: 640px)').matches
     ) {
+      // mention popup open → Enter picks the highlighted member first
+      if (mentionMatches.length > 0 && mentionToken !== null) {
+        event.preventDefault()
+        pickMention(mentionMatches[0])
+        return
+      }
       event.preventDefault()
       submit()
     }
@@ -1542,6 +1748,28 @@ export function ChatRoom({
         </AnimatePresence>
       </header>
 
+      {/* pinned banner (Telegram/WhatsApp-style) */}
+      {latestPinned ? (
+        <button
+          type="button"
+          onClick={() => setPinnedOpen(true)}
+          aria-label={`Open pinned messages — ${pinnedCount} pinned`}
+          className="flex shrink-0 items-center gap-2 border-b border-emerald-500/15 bg-white/85 px-3 py-1.5 text-left backdrop-blur transition-colors hover:bg-white dark:border-emerald-400/10 dark:bg-zinc-900/85 dark:hover:bg-zinc-900"
+        >
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10" aria-hidden>
+            <Pin className="size-3 rotate-45 text-emerald-500" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              Pinned{pinnedCount > 1 ? ` · ${pinnedCount}` : ''}
+            </span>
+            <span className="block truncate text-xs text-zinc-600 dark:text-zinc-300">
+              {latestPinned.content.replace(/\s+/g, ' ').trim().slice(0, 80) || 'Photo'}
+            </span>
+          </span>
+        </button>
+      ) : null}
+
       {/* messages */}
       <div
         ref={viewportRef}
@@ -1619,6 +1847,8 @@ export function ChatRoom({
                   isGroup={isGroup}
                   readMs={othersMaxReadMs}
                   myId={me.id}
+                  myName={me.name}
+                  memberNames={memberNames}
                   readBy={
                     isGroup && lastOwnMessage !== null && item.message.id === lastOwnMessage.id
                       ? readByLast
@@ -1726,6 +1956,39 @@ export function ChatRoom({
         </AnimatePresence>
 
         <AnimatePresence initial={false}>
+          {editing ? (
+            <motion.div
+              key="edit-bar"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-amber-400 bg-zinc-100 py-2 pr-2 pl-2.5 dark:bg-zinc-800">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1 text-xs font-bold text-amber-600 dark:text-amber-400">
+                    <Pencil className="size-3" aria-hidden />
+                    Editing message
+                  </p>
+                  <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                    {editing.content.replace(/\s+/g, ' ').slice(0, 120) || 'Media caption'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Cancel editing"
+                  onClick={cancelEdit}
+                  className="rounded-full p-1.5 text-zinc-400 outline-none transition-colors hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                >
+                  <X className="size-4" aria-hidden />
+                </button>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
           {replyTo ? (
             <motion.div
               key="reply-bar"
@@ -1759,7 +2022,37 @@ export function ChatRoom({
           ) : null}
         </AnimatePresence>
 
-        <div className="flex items-end gap-2">
+        <div className="relative flex items-end gap-2">
+          {/* @mention autocomplete (Slack/Discord-style) */}
+          {mentionMatches.length > 0 ? (
+            <div
+              role="listbox"
+              aria-label="Mention suggestions"
+              className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800"
+            >
+              {mentionMatches.map((m, i) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="option"
+                  aria-selected={i === 0}
+                  onClick={() => pickMention(m)}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 px-3 py-2 text-left outline-none transition-colors',
+                    i === 0
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10'
+                      : 'hover:bg-zinc-100 dark:hover:bg-zinc-700',
+                  )}
+                >
+                  <UserAvatar name={m.name} color={m.color} size={26} />
+                  <span className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">{m.name}</span>
+                  {m.id === me.id ? (
+                    <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">(you)</span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <input
             ref={fileInputRef}
             type="file"
@@ -1874,7 +2167,7 @@ export function ChatRoom({
                 onBlur={stopTyping}
                 className="pulse-scroll max-h-[120px] flex-1 resize-none rounded-3xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-colors focus:border-emerald-400 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-emerald-500/70"
               />
-              {input.trim().length === 0 ? (
+              {input.trim().length === 0 && !editing ? (
                 <button
                   type="button"
                   aria-label="Record voice note"
@@ -1886,8 +2179,8 @@ export function ChatRoom({
               ) : (
                 <button
                   type="button"
-                  aria-label="Send message"
-                  disabled={input.trim().length === 0 || sendMessage.isPending}
+                  aria-label={editing ? 'Save edit' : 'Send message'}
+                  disabled={input.trim().length === 0 || sendMessage.isPending || editMessage.isPending}
                   onClick={submit}
                   className={cn(
                     'flex size-11 shrink-0 items-center justify-center rounded-full transition-all active:scale-90',
@@ -1896,7 +2189,11 @@ export function ChatRoom({
                       : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500',
                   )}
                 >
-                  <SendHorizontal className="size-5" aria-hidden />
+                  {editing ? (
+                    <Check className="size-5" aria-hidden />
+                  ) : (
+                    <SendHorizontal className="size-5" aria-hidden />
+                  )}
                 </button>
               )}
             </>
@@ -1957,6 +2254,35 @@ export function ChatRoom({
               <Copy className="size-4" aria-hidden />
               Copy text
             </Button>
+            {selected && selected.senderId === me.id && !selected.deletedAt && selected.audioPath === null ? (
+              <Button
+                variant="outline"
+                onClick={() => startEdit(selected)}
+                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+              >
+                <Pencil className="size-4 text-amber-500" aria-hidden />
+                Edit message
+              </Button>
+            ) : null}
+            {selected && !selected.deletedAt ? (
+              <Button
+                variant="outline"
+                disabled={pinMessage.isPending}
+                onClick={() => {
+                  const targetId = selected.id
+                  setSelected(null)
+                  pinMessage.mutate(targetId)
+                }}
+                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+              >
+                {selected.pinnedAt ? (
+                  <PinOff className="size-4 text-zinc-400" aria-hidden />
+                ) : (
+                  <Pin className="size-4 text-emerald-500" aria-hidden />
+                )}
+                {selected.pinnedAt ? 'Unpin' : 'Pin'}
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               disabled={!!selected?.deletedAt}
@@ -2129,6 +2455,76 @@ export function ChatRoom({
               </div>
             </div>
           ) : null}
+        </DrawerContent>
+      </Drawer>
+
+      {/* pinned messages sheet */}
+      <Drawer open={pinnedOpen} onOpenChange={setPinnedOpen}>
+        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+          <DrawerTitle className="sr-only">Pinned messages</DrawerTitle>
+          <DrawerDescription className="sr-only">Messages pinned in this chat</DrawerDescription>
+          <div className="pb-2">
+            <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+              <Pin className="size-4 rotate-45 text-emerald-500" aria-hidden />
+              {pinnedCount === 1 ? '1 pinned message' : `${pinnedCount} pinned messages`}
+            </p>
+            {pinnedQuery.isPending ? (
+              <div className="space-y-2 py-2" role="status" aria-label="Loading pinned messages">
+                <Skeleton className="h-16 w-full rounded-2xl" />
+                <Skeleton className="h-16 w-full rounded-2xl" />
+              </div>
+            ) : pinnedList.length === 0 ? (
+              <p className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                Nothing pinned yet — long-press a message and choose Pin.
+              </p>
+            ) : (
+              <ul className="pulse-scroll max-h-[52dvh] space-y-2 overflow-y-auto py-1">
+                {pinnedList.map((m) => (
+                  <li
+                    key={m.id}
+                    className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-2.5 dark:border-zinc-700 dark:bg-zinc-800/60"
+                  >
+                    <div className="flex items-center gap-2">
+                      <UserAvatar name={m.sender.name} color={m.sender.color} size={24} />
+                      <span className="truncate text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                        {m.sender.id === me.id ? 'You' : m.sender.name}
+                      </span>
+                      <span className="ml-auto shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500">
+                        {formatListStamp(m.createdAt)}
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-3 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
+                      {m.content.replace(/\s+/g, ' ').trim() || '📷 Photo'}
+                    </p>
+                    <div className="mt-1.5 flex gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setPinnedOpen(false)
+                          void jumpToMessage(m.id)
+                        }}
+                        className="h-7 gap-1 rounded-full px-3 text-[11px] font-semibold"
+                      >
+                        <ArrowDown className="size-3" aria-hidden />
+                        Jump
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={pinMessage.isPending}
+                        onClick={() => pinMessage.mutate(m.id)}
+                        className="h-7 gap-1 rounded-full px-3 text-[11px] font-semibold text-zinc-500 hover:text-destructive"
+                      >
+                        <PinOff className="size-3" aria-hidden />
+                        Unpin
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </DrawerContent>
       </Drawer>
 
@@ -2593,6 +2989,10 @@ interface MessageRowProps {
   isGroup: boolean
   readMs: number
   myId: string
+  /** viewer's display name — drives the mention-me highlight */
+  myName: string
+  /** member display names (stable ref) — drives @mention chips */
+  memberNames: string[]
   /** group read-by stack for the last own message (null otherwise) */
   readBy: { members: Array<{ id: string; name: string; color: string }>; all: boolean } | null
   /** search/reply jump flash — ring-pulse this bubble briefly */
@@ -2628,9 +3028,191 @@ function MatchedText({ content, query }: { content: string; query: string }) {
   )
 }
 
-/** Bubble body text with URL auto-linking (safe anchors, no HTML injection). */
-function BubbleText({ content, mine }: { content: string; mine: boolean }) {
-  const segments = splitUrlSegments(content)
+/** Escapes a member name for safe embedding in a RegExp. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Formatting tokens (WhatsApp/Telegram/Discord-flavored):
+ * ```pre``` · `code` · **bold** · *bold* · __underline__ · _italic_ · ~~strike~~ · ~strike~ · ||spoiler||
+ * Order matters: multi-char tokens first so ** wins over *.
+ */
+const FORMAT_RE =
+  /```([\s\S]+?)```|`([^`\n]+)`|\*\*([^*\n]+?)\*\*|__([^_\n]+?)__|~~([^~\n]+?)~~|\|\|([^|\n]+?)\|\||\*([^*\n]+?)\*|_([^_\n]+?)_|~([^~\n]+?)~/g
+
+/** Discord-style blur-reveal spoiler — tap once to unmask. */
+function SpoilerSpan({ children, mine }: { children: ReactNode; mine: boolean }) {
+  const [revealed, setRevealed] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        if (!revealed) {
+          setRevealed(true)
+          haptic(8)
+        }
+      }}
+      aria-label={revealed ? undefined : 'Hidden spoiler — tap to reveal'}
+      className="inline align-baseline outline-none"
+    >
+      <span
+        className={cn(
+          'rounded px-0.5 transition-all duration-300',
+          revealed
+            ? 'bg-transparent'
+            : cn(
+                'cursor-pointer select-none blur-[5px]',
+                mine ? 'bg-white/25' : 'bg-zinc-500/20 dark:bg-white/25',
+              ),
+        )}
+      >
+        {children}
+      </span>
+    </button>
+  )
+}
+
+/** Splits text into [plain, @mention, plain, …] runs against real member names. */
+function buildMentionRuns(
+  content: string,
+  memberNames: string[],
+): Array<{ text: string; mention: string | null }> {
+  if (memberNames.length === 0) return [{ text: content, mention: null }]
+  // longest names first so "Alice Chen" wins over a hypothetical "Alice"
+  const names = [...memberNames].filter(Boolean).sort((a, b) => b.length - a.length)
+  if (names.length === 0) return [{ text: content, mention: null }]
+  const re = new RegExp(`@(${names.map(escapeRegExp).join('|')})`, 'gi')
+  const runs: Array<{ text: string; mention: string | null }> = []
+  let last = 0
+  for (const m of content.matchAll(re)) {
+    const idx = m.index ?? 0
+    if (idx > last) runs.push({ text: content.slice(last, idx), mention: null })
+    runs.push({ text: m[0], mention: m[1] })
+    last = idx + m[0].length
+  }
+  if (last < content.length) runs.push({ text: content.slice(last), mention: null })
+  return runs.length > 0 ? runs : [{ text: content, mention: null }]
+}
+
+/** Bubble body text: URL auto-linking + rich formatting + @mention chips (no HTML injection). */
+function BubbleText({
+  content,
+  mine,
+  memberNames,
+}: {
+  content: string
+  mine: boolean
+  memberNames: string[]
+}) {
+  const nodes: ReactNode[] = []
+  let key = 0
+  let linkKey = 0
+
+  /** renders a plain run: URLs become safe anchors, the rest stays literal */
+  const renderPlain = (text: string) => {
+    const segments = splitUrlSegments(text)
+    return segments.map((seg) =>
+      seg.kind === 'url' ? (
+        <a
+          key={`lnk-${linkKey++}`}
+          href={seg.value.startsWith('www.') ? `https://${seg.value}` : seg.value}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            'underline underline-offset-2',
+            mine
+              ? 'text-white decoration-white/60 hover:decoration-white'
+              : 'text-emerald-700 decoration-emerald-400/60 hover:decoration-emerald-600 dark:text-emerald-400',
+          )}
+        >
+          {seg.value}
+        </a>
+      ) : (
+        <span key={`txt-${linkKey++}`}>{seg.value}</span>
+      ),
+    )
+  }
+
+  for (const run of buildMentionRuns(content, memberNames)) {
+    if (run.mention !== null) {
+      nodes.push(
+        <span
+          key={`men-${key++}`}
+          className="rounded bg-emerald-500/20 px-1 font-semibold text-emerald-800 dark:bg-emerald-400/25 dark:text-emerald-200"
+        >
+          @{run.mention}
+        </span>,
+      )
+      continue
+    }
+    let last = 0
+    for (const m of run.text.matchAll(FORMAT_RE)) {
+      const idx = m.index ?? 0
+      if (idx > last) {
+        nodes.push(<span key={`p-${key++}`}>{renderPlain(run.text.slice(last, idx))}</span>)
+      }
+      const [full, pre, code, boldDouble, underline, strikeDouble, spoiler, boldSingle, italic, strikeSingle] = m
+      if (pre !== undefined) {
+        nodes.push(
+          <span
+            key={`pre-${key++}`}
+            className={cn(
+              'my-0.5 block whitespace-pre-wrap rounded-lg px-2 py-1.5 font-mono text-[12.5px] leading-snug',
+              mine ? 'bg-black/20' : 'bg-zinc-100 dark:bg-black/40',
+            )}
+          >
+            {pre}
+          </span>,
+        )
+      } else if (code !== undefined) {
+        nodes.push(
+          <code
+            key={`code-${key++}`}
+            className={cn(
+              'rounded px-1 py-0.5 font-mono text-[12.5px]',
+              mine ? 'bg-black/20' : 'bg-zinc-100 dark:bg-black/40',
+            )}
+          >
+            {code}
+          </code>,
+        )
+      } else if (boldDouble !== undefined || boldSingle !== undefined) {
+        nodes.push(
+          <strong key={`b-${key++}`} className="font-bold">
+            {boldDouble ?? boldSingle}
+          </strong>,
+        )
+      } else if (underline !== undefined) {
+        nodes.push(
+          <span key={`u-${key++}`} className="underline underline-offset-2">
+            {underline}
+          </span>,
+        )
+      } else if (strikeDouble !== undefined || strikeSingle !== undefined) {
+        nodes.push(
+          <s key={`s-${key++}`} className="opacity-80">
+            {strikeDouble ?? strikeSingle}
+          </s>,
+        )
+      } else if (spoiler !== undefined) {
+        nodes.push(
+          <SpoilerSpan key={`sp-${key++}`} mine={mine}>
+            {spoiler}
+          </SpoilerSpan>,
+        )
+      } else if (italic !== undefined) {
+        nodes.push(<em key={`i-${key++}`}>{italic}</em>)
+      }
+      last = idx + full.length
+    }
+    if (last < run.text.length) {
+      nodes.push(<span key={`p-${key++}`}>{renderPlain(run.text.slice(last))}</span>)
+    }
+  }
+
   return (
     <p
       className={cn(
@@ -2638,27 +3220,7 @@ function BubbleText({ content, mine }: { content: string; mine: boolean }) {
         mine ? 'text-white' : 'text-zinc-900 dark:text-zinc-100',
       )}
     >
-      {segments.map((seg, i) =>
-        seg.kind === 'url' ? (
-          <a
-            key={i}
-            href={seg.value.startsWith('www.') ? `https://${seg.value}` : seg.value}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className={cn(
-              'underline underline-offset-2',
-              mine
-                ? 'text-white decoration-white/60 hover:decoration-white'
-                : 'text-emerald-700 decoration-emerald-400/60 hover:decoration-emerald-600 dark:text-emerald-400',
-            )}
-          >
-            {seg.value}
-          </a>
-        ) : (
-          <span key={i}>{seg.value}</span>
-        ),
-      )}
+      {nodes}
     </p>
   )
 }
@@ -2670,6 +3232,8 @@ const MessageRow = memo(function MessageRow({
   isGroup,
   readMs,
   myId,
+  myName,
+  memberNames,
   readBy,
   highlighted,
   onPress,
@@ -2693,6 +3257,13 @@ const MessageRow = memo(function MessageRow({
   const hasReactions = message.reactions.length > 0
   const isImage = !deleted && message.imagePath !== null
   const isVoice = !deleted && !isImage && message.audioPath !== null
+  const edited = message.editedAt !== null && !deleted
+  const pinned = message.pinnedAt !== null && !deleted
+  /** someone @mentioned the viewer → amber attention ring (WhatsApp/Telegram-style) */
+  const mentionsMe =
+    !deleted &&
+    myName.length > 0 &&
+    message.content.toLowerCase().includes(`@${myName.toLowerCase()}`)
   const dragMovedRef = useRef(false)
   const chipPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const chipFiredRef = useRef(false)
@@ -2819,8 +3390,14 @@ const MessageRow = memo(function MessageRow({
               ? cn(
                   'rounded-2xl rounded-br-md bg-emerald-500 text-white',
                   queued && 'ring-1 ring-inset ring-white/40 opacity-95', // queued: dashed-feel cue
+                  mentionsMe && 'ring-2 ring-inset ring-amber-300/80', // you were mentioned
                 )
-              : 'rounded-2xl rounded-bl-md border border-zinc-100 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100'),
+              : cn(
+                  'rounded-2xl rounded-bl-md border bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100',
+                  mentionsMe
+                    ? 'border-amber-400/70 ring-2 ring-inset ring-amber-300/60 dark:border-amber-400/60'
+                    : 'border-zinc-100 dark:border-zinc-700',
+                )),
             interactive
               ? cn(
                   'cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:brightness-95',
@@ -2911,7 +3488,7 @@ const MessageRow = memo(function MessageRow({
                   </button>
                   {message.content.trim().length > 0 ? (
                     <div className="px-0.5 pb-0.5">
-                      <BubbleText content={message.content} mine={mine} />
+                      <BubbleText content={message.content} mine={mine} memberNames={memberNames} />
                     </div>
                   ) : null}
                 </>
@@ -2925,7 +3502,7 @@ const MessageRow = memo(function MessageRow({
               ) : jumbo ? (
                 <p className="text-[34px] leading-[1.2] break-words">{message.content}</p>
               ) : (
-                <BubbleText content={message.content} mine={mine} />
+                <BubbleText content={message.content} mine={mine} memberNames={memberNames} />
               )}
             </>
           )}
@@ -2940,6 +3517,12 @@ const MessageRow = memo(function MessageRow({
             )}
           >
             <span className={jumbo ? 'opacity-70' : undefined}>{formatTime(message.createdAt)}</span>
+            {pinned ? <Pin className="size-3 rotate-45 opacity-80" aria-label="pinned" /> : null}
+            {edited ? (
+              <span className="italic opacity-80" aria-label="message was edited">
+                edited
+              </span>
+            ) : null}
             {mine && !deleted ? (
               queued ? (
                 <CloudOff className="size-3 text-amber-200" aria-label="queued — sends when online" />
@@ -3060,13 +3643,20 @@ const MessageRow = memo(function MessageRow({
 }, rowsEqual)
 
 function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
+  if (prev.message !== next.message) return false
+  if (
+    prev.memberNames.length !== next.memberNames.length ||
+    prev.memberNames.some((n, i) => n !== next.memberNames[i])
+  ) {
+    return false
+  }
   return (
-    prev.message === next.message &&
     prev.head === next.head &&
     prev.mine === next.mine &&
     prev.isGroup === next.isGroup &&
     prev.readMs === next.readMs &&
     prev.myId === next.myId &&
+    prev.myName === next.myName &&
     prev.readBy === next.readBy &&
     prev.highlighted === next.highlighted &&
     prev.onPress === next.onPress &&
