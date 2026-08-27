@@ -116,7 +116,15 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
             ? 'message:edited'
             : r.type === 'message:pinned'
               ? 'message:pinned'
-              : 'message:new',
+              : r.type === 'poll:voted'
+                ? 'poll:voted'
+                : r.type === 'link:preview'
+                  ? 'link:preview'
+                  : r.type === 'translation:added'
+                    ? 'translation:added'
+                    : r.type === 'message:viewed'
+                      ? 'message:viewed'
+                      : 'message:new',
     message: {
       id: msg.id,
       conversationId: msg.conversationId,
@@ -140,6 +148,65 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
       editedAt,
       pinnedAt,
       pinnedBy,
+      parentId: typeof msg.parentId === 'string' ? msg.parentId : null,
+      viewOnce: msg.viewOnce === true,
+      viewedAt: typeof msg.viewedAt === 'string' ? msg.viewedAt : null,
+      viewedBy: typeof msg.viewedBy === 'string' ? msg.viewedBy : null,
+      expiresAt: typeof msg.expiresAt === 'string' ? msg.expiresAt : null,
+      linkUrl: typeof msg.linkUrl === 'string' ? msg.linkUrl : null,
+      linkPreview:
+        msg.linkPreview !== null && typeof msg.linkPreview === 'object'
+          ? (() => {
+              const lp = msg.linkPreview as Record<string, unknown>
+              if (typeof lp.url !== 'string') return null
+              return {
+                url: lp.url,
+                title: typeof lp.title === 'string' ? lp.title : null,
+                description: typeof lp.description === 'string' ? lp.description : null,
+                imageUrl: typeof lp.imageUrl === 'string' ? lp.imageUrl : null,
+                siteName: typeof lp.siteName === 'string' ? lp.siteName : null,
+              }
+            })()
+          : null,
+      poll:
+        msg.poll !== null && typeof msg.poll === 'object'
+          ? (() => {
+              const p = msg.poll as Record<string, unknown>
+              if (typeof p.id !== 'string' || typeof p.question !== 'string' || !Array.isArray(p.options)) {
+                return null
+              }
+              const options = p.options.flatMap((o) => {
+                const opt = o as Record<string, unknown>
+                if (typeof opt.id !== 'string' || typeof opt.text !== 'string') return []
+                return [
+                  {
+                    id: opt.id,
+                    text: opt.text,
+                    position: typeof opt.position === 'number' ? opt.position : 0,
+                    voteCount: typeof opt.voteCount === 'number' ? opt.voteCount : 0,
+                    votedBy: Array.isArray(opt.votedBy)
+                      ? opt.votedBy.filter((u): u is string => typeof u === 'string')
+                      : [],
+                  },
+                ]
+              })
+              return {
+                id: p.id,
+                question: p.question,
+                closed: p.closed === true,
+                options,
+                totalVotes: typeof p.totalVotes === 'number' ? p.totalVotes : 0,
+                myOptionId: typeof p.myOptionId === 'string' ? p.myOptionId : null,
+              }
+            })()
+          : null,
+      translations: Array.isArray(msg.translations)
+        ? msg.translations.flatMap((t) => {
+            const tr = t as Record<string, unknown>
+            if (typeof tr.lang !== 'string' || typeof tr.text !== 'string') return []
+            return [{ lang: tr.lang, text: tr.text }]
+          })
+        : [],
     },
     recipientIds: [],
     conversationId: msg.conversationId,
@@ -246,6 +313,18 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
         )
         return [...cleaned, message]
       })
+      // thread replies live under their root's sheet key too
+      if (message.parentId !== null) {
+        queryClient.setQueryData<ChatMessage[]>(['thread', message.parentId], (old) => {
+          if (!old || old.length === 0) return undefined
+          if (old.some((m) => m.id === message.id)) return old
+          const cleaned = old.filter(
+            (m) =>
+              !(m.id.startsWith('temp-') && m.senderId === message.senderId && m.content === message.content),
+          )
+          return [...cleaned, message]
+        })
+      }
       queryClient.invalidateQueries({ queryKey: ['conversations', myId] })
     },
     [queryClient, myId],
@@ -430,10 +509,10 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
         document.visibilityState === 'visible'
       if (viewing) {
         scheduleRead(evt.message.conversationId)
-      } else {
+      } else if (evt.message.parentId === null) {
         // attention: gentle ping + buzz while backgrounded / elsewhere
         // (respected per-conversation mute watermark — synced by the 6s list poll —
-        // and the global client-side quiet-hours window)
+        // and the global client-side quiet-hours window); thread replies stay quiet
         const summaries = queryClient.getQueryData<ConversationSummary[]>(['conversations', myId])
         const until = summaries?.find((c) => c.id === evt.message.conversationId)?.mutedUntil
         const muted = typeof until === 'string' && Date.parse(until) > Date.now()
@@ -454,7 +533,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
       )
     }
 
-    /** message:edited / message:pinned — the full fresh row arrives, swap it in. */
+    /** Fresh full row arrived (edit/pin/tally/preview/translation/viewed) — swap it in. */
     const onMessageReplaced = (raw: unknown) => {
       const evt = asMessageEvent(raw)
       if (!evt) return
@@ -464,6 +543,13 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
         const exists = old.some((m) => m.id === fresh.id)
         return exists ? old.map((m) => (m.id === fresh.id ? fresh : m)) : old
       })
+      queryClient.setQueryData<ChatMessage[]>(
+        ['thread', fresh.parentId ?? fresh.id],
+        (old) =>
+          old
+            ? old.map((m) => (m.id === fresh.id ? fresh : m))
+            : old,
+      )
       // edits change the chat-list preview text; edits + pins change the pinned list
       if (evt.type === 'message:edited') {
         queryClient.invalidateQueries({ queryKey: ['conversations', myId] })
@@ -509,6 +595,10 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     sock.on('message:react', onMessageReact)
     sock.on('message:edited', onMessageReplaced)
     sock.on('message:pinned', onMessageReplaced)
+    sock.on('poll:voted', onMessageReplaced)
+    sock.on('link:preview', onMessageReplaced)
+    sock.on('translation:added', onMessageReplaced)
+    sock.on('message:viewed', onMessageReplaced)
     sock.on('message:read', onMessageRead)
     sock.on('conversation:updated', onConversationUpdated)
 

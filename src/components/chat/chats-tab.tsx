@@ -22,6 +22,8 @@ import {
 } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
 import { haptic } from '@/lib/pulse-settings'
+import type { ChatsListFilter } from '@/lib/pulse-settings'
+import { pulseSettingsStore } from '@/lib/pulse-settings'
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -436,6 +438,19 @@ export function ChatsTab({
   /** main-list rows exclude the viewer's archived chats */
   const activeRows = useMemo(() => rows.filter(({ conv }) => conv.archivedAt === null), [rows])
   const archivedRows = useMemo(() => rows.filter(({ conv }) => conv.archivedAt !== null), [rows])
+
+  // Telegram-style folder filter (persisted preference)
+  const listFilter = useStore(pulseSettingsStore, (s) => s.listFilter)
+  const setListFilter = useStore(pulseSettingsStore, (s) => s.setListFilter)
+  const unreadTotal = useMemo(
+    () => activeRows.reduce((sum, { conv }) => sum + conv.unreadCount, 0),
+    [activeRows],
+  )
+  const folderFiltered = useMemo(() => {
+    if (listFilter === 'unread') return activeRows.filter(({ conv }) => conv.unreadCount > 0)
+    if (listFilter === 'groups') return activeRows.filter(({ conv }) => conv.isGroup)
+    return activeRows
+  }, [activeRows, listFilter])
   const archivedUnread = useMemo(
     () => archivedRows.reduce((sum, { conv }) => sum + conv.unreadCount, 0),
     [archivedRows],
@@ -658,6 +673,44 @@ export function ChatsTab({
         ) : null}
       </header>
 
+      {/* Telegram-style folder filter chips */}
+      {!searching ? (
+        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto px-3 pb-1.5 pt-1.5" role="tablist" aria-label="Chat filters">
+          {([
+            { key: 'all', label: 'All' },
+            { key: 'unread', label: 'Unread' },
+            { key: 'groups', label: 'Groups' },
+          ] as Array<{ key: ChatsListFilter; label: string }>).map((f) => {
+            const active = listFilter === f.key
+            return (
+              <button
+                key={f.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  haptic(6)
+                  setListFilter(f.key)
+                }}
+                className={cn(
+                  'flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-[12px] font-semibold outline-none transition-all active:scale-95',
+                  active
+                    ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-600/25'
+                    : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200/70 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
+                )}
+              >
+                {f.label === 'Unread' && unreadTotal > 0 && !active ? (
+                  <span className="flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-emerald-500/20 px-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                    {unreadTotal > 99 ? '99+' : unreadTotal}
+                  </span>
+                ) : null}
+                {f.label}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
       {/* list */}
       <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
         {conversations.isPending ? (
@@ -742,7 +795,7 @@ export function ChatsTab({
                 </span>
               </button>
             ) : null}
-            {activeRows.map(({ conv, props }) => (
+            {folderFiltered.map(({ conv, props }) => (
               <ConversationRow
                 key={props.id}
                 {...props}
@@ -750,6 +803,11 @@ export function ChatsTab({
                 onLongPress={() => openSheetFor(conv)}
               />
             ))}
+            {folderFiltered.length === 0 && activeRows.length > 0 ? (
+              <p className="px-8 pb-4 pt-10 text-center text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+                {listFilter === 'unread' ? 'No unread chats — you are all caught up.' : 'No groups yet — start one from Contacts.'}
+              </p>
+            ) : null}
             {activeRows.length === 0 && archivedRows.length > 0 ? (
               <p className="px-8 pb-4 pt-10 text-center text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
                 Every chat is archived.

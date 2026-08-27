@@ -44,9 +44,11 @@ export async function GET(req: Request, { params }: RouteCtx) {
 }
 
 /**
- * PATCH /api/conversations/[id]  body { requesterId, name }
- * Group-only rename. ADMINS ONLY (group role governance).
- * → 200 { conversation: ConversationDetail }; relays conversation:updated.
+ * PATCH /api/conversations/[id]  body { requesterId, name?, broadcast? }
+ * Group-only meta changes. ADMINS ONLY. `name` renames; `broadcast`
+ * toggles announcement mode (Discord stage / Telegram channel: only
+ * admins may post while on). → { conversation: ConversationDetail }
+ * · relays conversation:updated.
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params
@@ -56,10 +58,22 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!requesterId) {
     return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
   }
-  const name = strField(body.name)
-  if (name.length === 0 || name.length > GROUP_NAME_MAX) {
+
+  const hasName = body.name !== undefined
+  const hasBroadcast = typeof body.broadcast === 'boolean'
+  let name = ''
+  if (hasName) {
+    name = strField(body.name)
+    if (name.length === 0 || name.length > GROUP_NAME_MAX) {
+      return NextResponse.json(
+        { error: `Group name must be 1-${GROUP_NAME_MAX} characters.` },
+        { status: 400 },
+      )
+    }
+  }
+  if (!hasName && !hasBroadcast) {
     return NextResponse.json(
-      { error: `Group name must be 1-${GROUP_NAME_MAX} characters.` },
+      { error: 'Nothing to update — provide name and/or broadcast.' },
       { status: 400 },
     )
   }
@@ -69,7 +83,10 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
   if (!conv.isGroup) {
-    return NextResponse.json({ error: 'Direct conversations cannot be renamed.' }, { status: 400 })
+    return NextResponse.json(
+      { error: hasName ? 'Direct conversations cannot be renamed.' : 'Announcement mode is groups-only.' },
+      { status: 400 },
+    )
   }
   const participant = await db.conversationParticipant.findUnique({
     where: { userId_conversationId: { userId: requesterId, conversationId: id } },
@@ -79,12 +96,18 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'You are not a participant of this conversation.' }, { status: 403 })
   }
   if (participant.role !== 'admin') {
-    return NextResponse.json({ error: 'Only group admins can rename this group.' }, { status: 403 })
+    return NextResponse.json(
+      { error: hasName ? 'Only group admins can rename this group.' : 'Only group admins can change announcement mode.' },
+      { status: 403 },
+    )
   }
 
   const updated = await db.conversation.update({
     where: { id },
-    data: { name },
+    data: {
+      ...(hasName ? { name } : {}),
+      ...(hasBroadcast ? { broadcastMode: body.broadcast as boolean } : {}),
+    },
     include: CONVERSATION_FULL_INCLUDE,
   })
 

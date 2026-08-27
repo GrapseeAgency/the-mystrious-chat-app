@@ -1,0 +1,702 @@
+     1→     1→// ─────────────────────────────────────────────────────────────
+     2→     2→// Pulse Chat — full-screen chat room overlay.
+     3→     3→// Bubbles with clustering, day chips, typing indicators,
+     4→     4→// read receipts, optimistic sending, delete-for-everyone.
+     5→     5→// ─────────────────────────────────────────────────────────────
+     6→     6→'use client'
+     7→     7→
+     8→     8→import {
+     9→     9→  memo,
+    10→    10→  useCallback,
+    11→    11→  useEffect,
+    12→    12→  useLayoutEffect,
+    13→    13→  useMemo,
+    14→    14→  useRef,
+    15→    15→  useState,
+    16→    16→  type ReactNode,
+    17→    17→} from 'react'
+    18→    18→import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
+    19→    19→import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+    20→    20→import { useTheme } from 'next-themes'
+    21→    21→import {
+    22→    22→  ArrowDown,
+    23→    23→  BellOff,
+    24→    24→  Check,
+    25→    25→  CheckCheck,
+    26→    26→  ChevronLeft,
+    27→    27→  CloudOff,
+    28→    28→  ChevronUp,
+    29→    29→  Clock,
+    30→    30→  Copy,
+    31→    31→  Crown,
+    32→    32→  EllipsisVertical,
+    33→    33→  Forward,
+    34→    34→  ImagePlus,
+    35→    35→  Info,
+    36→    36→  Link2,
+    37→    37→  LoaderCircle,
+    38→    38→  Lock,
+    39→    39→  LogOut,
+    40→    40→  Mic,
+    41→    41→  Pause,
+    42→    42→  Pencil,
+    43→    43→  Pin,
+    44→    44→  PinOff,
+    45→    45→  Play,
+    46→    46→  Plus,
+    47→    47→  Reply,
+    48→    48→  RotateCcw,
+    49→    49→  Search,
+    50→    50→  SearchX,
+    51→    51→  SendHorizontal,
+    52→    52→  Smile,
+    53→    53→  Trash2,
+    54→    54→  UserPlus,
+    55→    55→  UserRoundMinus,
+    56→    56→  VolumeX,
+    57→    57→  X,
+    58→    58→} from 'lucide-react'
+    59→    59→import { toast } from 'sonner'
+    60→    60→import type {
+    61→    61→  AppUser,
+    62→    62→  ChatMessage,
+    63→    63→  ConversationDetail,
+    64→    64→} from '@/lib/types'
+    65→    65→import {
+    66→    66→  apiJson,
+    67→    67→  compressImageToDataUrl,
+    68→    68→  conversationDisplayName,
+    69→    69→  formatDayChip,
+    70→    70→  formatListStamp,
+    71→    71→  formatTime,
+    72→    72→  hashString,
+    73→    73→  isJumboEmoji,
+    74→    74→  isSameDayIso,
+    75→    75→  otherMemberOf,
+    76→    76→  REACTION_CHOICES,
+    77→    77→  EMOJI_PICKER_CHOICES,
+    78→    78→  splitUrlSegments,
+    79→    79→  uid,
+    80→    80→} from '@/lib/pulse-utils'
+    81→    81→import { haptic } from '@/lib/pulse-settings'
+    82→    82→import { pulseDraftsStore } from '@/lib/pulse-drafts'
+    83→    83→import { pulseOutboxStore, outboxCount } from '@/lib/pulse-outbox'
+    84→    84→import { ForwardSheet } from '@/components/chat/forward-sheet'
+    85→    85→import { usePulseRealtime } from '@/hooks/use-pulse-socket'
+    86→    86→import { cn } from '@/lib/utils'
+    87→    87→import { Input } from '@/components/ui/input'
+    88→    88→import {
+    89→    89→  AlertDialog,
+    90→    90→  AlertDialogAction,
+    91→    91→  AlertDialogCancel,
+    92→    92→  AlertDialogContent,
+    93→    93→  AlertDialogDescription,
+    94→    94→  AlertDialogFooter,
+    95→    95→  AlertDialogHeader,
+    96→    96→  AlertDialogTitle,
+    97→    97→} from '@/components/ui/alert-dialog'
+    98→    98→import { Button } from '@/components/ui/button'
+    99→    99→import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+   100→   100→import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
+   101→   101→import {
+   102→   102→  Dialog,
+   103→   103→  DialogContent,
+   104→   104→  DialogDescription,
+   105→   105→  DialogHeader,
+   106→   106→  DialogTitle,
+   107→   107→} from '@/components/ui/dialog'
+   108→   108→import { Skeleton } from '@/components/ui/skeleton'
+   109→   109→import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
+   110→   110→import { useMounted } from '@/hooks/use-mounted'
+   111→   111→
+   112→   112→interface DetailResponse {
+   113→   113→  conversation: ConversationDetail
+   114→   114→}
+   115→   115→interface MessagesResponse {
+   116→   116→  messages: ChatMessage[]
+   117→   117→  hasMore?: boolean
+   118→   118→  total?: number
+   119→   119→}
+   120→   120→interface SendResponse {
+   121→   121→  message: ChatMessage
+   122→   122→}
+   123→   123→interface DeleteResponse {
+   124→   124→  message: ChatMessage
+   125→   125→}
+   126→   126→interface SearchResponse {
+   127→   127→  messages: ChatMessage[]
+   128→   128→  total?: number
+   129→   129→}
+   130→   130→
+   131→   131→const CLUSTER_WINDOW_MS = 5 * 60 * 1000
+   132→   132→const NEAR_BOTTOM_PX = 160
+   133→   133→const OLDER_PAGE_SIZE = 40
+   134→   134→const MESSAGES_PAGE_SIZE = 200
+   135→   135→const MIN_VOICE_MS = 600
+   136→   136→/** "1:23" (minutes:seconds) for voice notes + record timer. */
+   137→   137→function formatVoicems(ms: number): string {
+   138→   138→  const total = Math.max(0, Math.round(ms / 1000))
+   139→   139→  const m = Math.floor(total / 60)
+   140→   140→  const s = total % 60
+   141→   141→  return `${m}:${String(s).padStart(2, '0')}`
+   142→   142→}
+   143→   143→
+   144→   144→type ClusterItem =
+   145→   145→  | { kind: 'day'; key: string; label: string }
+   146→   146→  | { kind: 'unread'; key: string }
+   147→   147→  | { kind: 'msg'; key: string; message: ChatMessage; head: boolean; tail: boolean }
+   148→   148→
+   149→   149→export function ChatRoom({
+   150→   150→  me,
+   151→   151→  conversationId,
+   152→   152→  unreadAnchorMs = null,
+   153→   153→  initialJumpMessageId = null,
+   154→   154→  onClose,
+   155→   155→}: {
+   156→   156→  me: AppUser
+   157→   157→  conversationId: string
+   158→   158→  /** pre-open read watermark frozen by the chats list at tap time (unread divider) */
+   159→   159→  unreadAnchorMs?: number | null
+   160→   160→  /** global-search hit — jump + flash this message once history renders */
+   161→   161→  initialJumpMessageId?: string | null
+   162→   162→  onClose: () => void
+   163→   163→}) {
+   164→   164→  const queryClient = useQueryClient()
+   165→   165→  const realtime = usePulseRealtime()
+   166→   166→  const { resolvedTheme } = useTheme()
+   167→   167→  const themeMounted = useMounted()
+   168→   168→
+   169→   169→  // device connectivity → offline texts are queued in the outbox
+   170→   170→  const [isOffline, setIsOffline] = useState(false)
+   171→   171→  useEffect(() => {
+   172→   172→    const sync = () => setIsOffline(!navigator.onLine)
+   173→   173→    sync()
+   174→   174→    window.addEventListener('online', sync)
+   175→   175→    window.addEventListener('offline', sync)
+   176→   176→    return () => {
+   177→   177→      window.removeEventListener('online', sync)
+   178→   178→      window.removeEventListener('offline', sync)
+   179→   179→    }
+   180→   180→  }, [])
+   181→   181→
+   182→   182→  // restore persisted draft once per opened conversation
+   183→   183→  const [input, setInput] = useState(() => pulseDraftsStore.getState().drafts[conversationId] ?? '')
+   184→   184→  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   185→   185→  const fileInputRef = useRef<HTMLInputElement>(null)
+   186→   186→  const [menuOpen, setMenuOpen] = useState(false)
+   187→   187→  const [infoOpen, setInfoOpen] = useState(false)
+   188→   188→  /** header menu → inline mute preset choices */
+   189→   189→  const [muteChoicesOpen, setMuteChoicesOpen] = useState(false)
+   190→   190→  const [selected, setSelected] = useState<ChatMessage | null>(null)
+   191→   191→  const [confirmingDelete, setConfirmingDelete] = useState(false)
+   192→   192→  const [showJump, setShowJump] = useState(false)
+   193→   193→  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+   194→   194→  /** message being edited (Telegram-style composer edit mode) */
+   195→   195→  const [editing, setEditing] = useState<ChatMessage | null>(null)
+   196→   196→  /** pinned-messages sheet */
+   197→   197→  const [pinnedOpen, setPinnedOpen] = useState(false)
+   198→   198→  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+   199→   199→  /** {message, emoji} → who-reacted sheet */
+   200→   200→  const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
+   201→   201→  /** seen-by detail sheet (read receipts) */
+   202→   202→  const [seenByOpen, setSeenByOpen] = useState(false)
+   203→   203→  /** message whose info the sheet shows — null = the latest own message (read-by stack tap) */
+   204→   204→  const [infoMessage, setInfoMessage] = useState<ChatMessage | null>(null)
+   205→   205→  const [sendingImage, setSendingImage] = useState(false)
+   206→   206→  /** uploaded image awaiting an optional caption → caption sheet */
+   207→   207→  const [pendingImage, setPendingImage] = useState<{ imagePath: string; preview: string } | null>(null)
+   208→   208→  const [captionDraft, setCaptionDraft] = useState('')
+   209→   209→  const [hasMoreHistory, setHasMoreHistory] = useState(false)
+   210→   210→  /** mirror of hasMoreHistory readable from stable callbacks without re-creating them */
+   211→   211→  const hasMoreHistoryRef = useRef(false)
+   212→   212→  const [loadingOlder, setLoadingOlder] = useState(false)
+   213→   213→  const [recording, setRecording] = useState(false)
+   214→   214→  const [recordMs, setRecordMs] = useState(0)
+   215→   215→  const [sendingVoice, setSendingVoice] = useState(false)
+   216→   216→
+   217→   217→  // ── search overlay + jump-to-message ───────────────────────
+   218→   218→  const [searchOpen, setSearchOpen] = useState(false)
+   219→   219→  const [searchDraft, setSearchDraft] = useState('')
+   220→   220→  const [searchQuery, setSearchQuery] = useState('')
+   221→   221→  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   222→   222→  /** message currently flashing (search hit / quoted-reply jump) */
+   223→   223→  const [highlight, setHighlight] = useState<{ id: string; nonce: number } | null>(null)
+   224→   224→  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   225→   225→
+   226→   226→  // ── forward-message sheet (fresh mount per open) ──────────
+   227→   227→  const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null)
+   228→   228→  const [forwardGeneration, setForwardGeneration] = useState(0)
+   229→   229→  const [forwardMounted, setForwardMounted] = useState(false)
+   230→   230→  const [forwardOpen, setForwardOpen] = useState(false)
+   231→   231→
+   232→   232→  const viewportRef = useRef<HTMLDivElement>(null)
+   233→   233→  const textareaRef = useRef<HTMLTextAreaElement>(null)
+   234→   234→  const nearBottomRef = useRef(true)
+   235→   235→
+   236→   236→  const applyHasMore = useCallback((next: boolean) => {
+   237→   237→    hasMoreHistoryRef.current = next
+   238→   238→    setHasMoreHistory(next)
+   239→   239→  }, [])
+   240→   240→  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   241→   241→  /** flipped (inside rAF) after the first history fetch so render stays ref-free */
+   242→   242→  const [historyLoaded, setHistoryLoaded] = useState(false)
+   243→   243→  /** pending scroll-anchor restore after prepending an older page */
+   244→   244→  const scrollRestoreRef = useRef<{ prevHeight: number; prevTop: number } | null>(null)
+   245→   245→  const recorderRef = useRef<MediaRecorder | null>(null)
+   246→   246→  const recordChunksRef = useRef<Blob[]>([])
+   247→   247→  const recordStartedAtRef = useRef(0)
+   248→   248→  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+   249→   249→  const recordCancelRef = useRef(false)
+   250→   250→
+   251→   251→  // ── data ───────────────────────────────────────────────────
+   252→   252→
+   253→   253→  const detail = useQuery({
+   254→   254→    queryKey: ['conversation', conversationId],
+   255→   255→    queryFn: async (): Promise<ConversationDetail> => {
+   256→   256→      const res = await apiJson<DetailResponse>(
+   257→   257→        `/api/conversations/${encodeURIComponent(conversationId)}?userId=${encodeURIComponent(me.id)}`,
+   258→   258→      )
+   259→   259→      return res.conversation
+   260→   260→    },
+   261→   261→    staleTime: 15_000,
+   262→   262→    // safety net: keeps read-ticks/membership fresh even if the socket path degrades
+   263→   263→    refetchInterval: 6_000,
+   264→   264→  })
+   265→   265→
+   266→   266→  const messages = useQuery({
+   267→   267→    queryKey: ['messages', conversationId],
+   268→   268→    queryFn: async (): Promise<ChatMessage[]> => {
+   269→   269→      const res = await apiJson<MessagesResponse>(
+   270→   270→        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=${MESSAGES_PAGE_SIZE}`,
+   271→   271→      )
+   272→   272→      // Merge with whatever is cached (older pages loaded via "Load older")
+   273→   273→      // so a background refetch never amputates already-loaded history.
+   274→   274→      const previous = queryClient.getQueryData<ChatMessage[]>(['messages', conversationId])
+   275→   275→      if (!previous || previous.length === 0) {
+   276→   276→        applyHasMore(res.total !== undefined ? res.messages.length < res.total : res.hasMore === true)
+   277→   277→        return res.messages
+   278→   278→      }
+   279→   279→      const byId = new Map(previous.map((m) => [m.id, m]))
+   280→   280→      for (const m of res.messages) byId.set(m.id, m)
+   281→   281→      applyHasMore(res.total !== undefined ? byId.size < res.total : res.hasMore === true)
+   282→   282→      return [...byId.values()].sort(
+   283→   283→        (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+   284→   284→      )
+   285→   285→    },
+   286→   286→    staleTime: 15_000,
+   287→   287→    // safety net: messages still arrive within seconds even without websocket realtime
+   288→   288→    refetchInterval: 3_500,
+   289→   289→  })
+   290→   290→
+   291→   291→  /** Fetch the next page of history and prepend it, keeping scroll anchored. */
+   292→   292→  const loadOlder = useCallback(async () => {
+   293→   293→    const list = messages.data ?? []
+   294→   294→    if (loadingOlder || list.length === 0) return
+   295→   295→    const oldest = list[0]
+   296→   296→    const el = viewportRef.current
+   297→   297→    const prevHeight = el?.scrollHeight ?? 0
+   298→   298→    const prevTop = el?.scrollTop ?? 0
+   299→   299→    setLoadingOlder(true)
+   300→   300→    try {
+   301→   301→      const res = await apiJson<MessagesResponse>(
+   302→   302→        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=${OLDER_PAGE_SIZE}&before=${encodeURIComponent(oldest.createdAt)}`,
+   303→   303→      )
+   304→   304→      // Arm the anchor only now — the very next render (data applied) restores it.
+   305→   305→      scrollRestoreRef.current = { prevHeight, prevTop }
+   306→   306→      let cachedCount = res.messages.length
+   307→   307→      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
+   308→   308→        if (!old || old.length === 0) return res.messages
+   309→   309→        const known = new Set(old.map((m) => m.id))
+   310→   310→        const additions = res.messages.filter((m) => !known.has(m.id))
+   311→   311→        cachedCount = old.length + additions.length
+   312→   312→        return [...additions, ...old]
+   313→   313→      })
+   314→   314→      applyHasMore(res.total !== undefined ? cachedCount < res.total : res.hasMore === true)
+   315→   315→      haptic(6)
+   316→   316→    } catch {
+   317→   317→      toast.error('Could not load older messages')
+   318→   318→    } finally {
+   319→   319→      setLoadingOlder(false)
+   320→   320→    }
+   321→   321→  }, [messages.data, loadingOlder, conversationId, queryClient, applyHasMore])
+   322→   322→
+   323→   323→  // scroll anchor: after prepending, keep the viewport pinned to the same content
+   324→   324→  useLayoutEffect(() => {
+   325→   325→    const pending = scrollRestoreRef.current
+   326→   326→    const el = viewportRef.current
+   327→   327→    if (!pending || !el) return
+   328→   328→    scrollRestoreRef.current = null
+   329→   329→    el.scrollTop = el.scrollHeight - pending.prevHeight + pending.prevTop
+   330→   330→  })
+   331→   331→
+   332→   332→  // ── jump-to-message machinery (search hits + quoted replies) ─
+   333→   333→
+   334→   334→  /** Smooth-scroll the thread so the target message sits mid-viewport. */
+   335→   335→  const scrollToMessageEl = useCallback((messageId: string): boolean => {
+   336→   336→    const vp = viewportRef.current
+   337→   337→    if (!vp) return false
+   338→   338→    const node = vp.querySelector<HTMLElement>(`[data-mid="${CSS.escape(messageId)}"]`)
+   339→   339→    if (!node) return false
+   340→   340→    const rect = node.getBoundingClientRect()
+   341→   341→    const vpRect = vp.getBoundingClientRect()
+   342→   342→    const target =
+   343→   343→      vp.scrollTop + (rect.top - vpRect.top) - vp.clientHeight / 2 + rect.height / 2
+   344→   344→    vp.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+   345→   345→    return true
+   346→   346→  }, [])
+   347→   347→
+   348→   348→  const flashHighlight = useCallback((messageId: string) => {
+   349→   349→    if (highlightTimerRef.current !== null) clearTimeout(highlightTimerRef.current)
+   350→   350→    setHighlight({ id: messageId, nonce: Date.now() })
+   351→   351→    highlightTimerRef.current = setTimeout(() => {
+   352→   352→      highlightTimerRef.current = null
+   353→   353→      setHighlight(null)
+   354→   354→    }, 1500)
+   355→   355→  }, [])
+   356→   356→
+   357→   357→  /**
+   358→   358→   * Jump the thread to any message. When it predates the loaded window,
+   359→   359→   * silently page back through history (bounded) until it shows up.
+   360→   360→   */
+   361→   361→  const jumpToMessage = useCallback(
+   362→   362→    async (messageId: string) => {
+   363→   363→      const readCache = () =>
+   364→   364→        queryClient.getQueryData<ChatMessage[]>(['messages', conversationId]) ?? []
+   365→   365→      haptic(8)
+   366→   366→      if (readCache().some((m) => m.id === messageId)) {
+   367→   367→        scrollToMessageEl(messageId)
+   368→   368→        flashHighlight(messageId)
+   369→   369→        return
+   370→   370→      }
+   371→   371→      let cached = readCache()
+   372→   372→      let more = hasMoreHistoryRef.current
+   373→   373→      let paged = 0
+   374→   374→      while (more && cached.length > 0 && paged < 14) {
+   375→   375→        paged += 1
+   376→   376→        try {
+   377→   377→          const res = await apiJson<SearchResponse>(
+   378→   378→            `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=60&before=${encodeURIComponent(cached[0].createdAt)}`,
+   379→   379→          )
+   380→   380→          if (res.messages.length === 0) break
+   381→   381→          // Plain prepend; no scroll-restore arm — we re-anchor on the hit below.
+   382→   382→          queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
+   383→   383→            const base = old ?? cached
+   384→   384→            const known = new Set(base.map((m) => m.id))
+   385→   385→            return [...res.messages.filter((m) => !known.has(m.id)), ...base].sort(
+   386→   386→              (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+   387→   387→            )
+   388→   388→          })
+   389→   389→          const byId = new Map<string, ChatMessage>()
+   390→   390→          for (const m of [...cached, ...res.messages]) byId.set(m.id, m)
+   391→   391→          cached = [...byId.values()].sort(
+   392→   392→            (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+   393→   393→          )
+   394→   394→          more =
+   395→   395→            res.total !== undefined ? cached.length < res.total : res.messages.length >= 60
+   396→   396→          hasMoreHistoryRef.current = more
+   397→   397→          if (cached.some((m) => m.id === messageId)) break
+   398→   398→        } catch {
+   399→   399→          toast.error('Could not page back through history')
+   400→   400→          return
+   401→   401→        }
+   402→   402→      }
+   403→   403→      if (paged > 0) applyHasMore(hasMoreHistoryRef.current)
+   404→   404→      if (cached.some((m) => m.id === messageId)) {
+   405→   405→        requestAnimationFrame(() => {
+   406→   406→          scrollToMessageEl(messageId)
+   407→   407→          flashHighlight(messageId)
+   408→   408→        })
+   409→   409→      } else {
+   410→   410→        toast.info('That message could not be found in this chat')
+   411→   411→      }
+   412→   412→    },
+   413→   413→    [conversationId, queryClient, scrollToMessageEl, flashHighlight, applyHasMore],
+   414→   414→  )
+   415→   415→
+   416→   416→  const jumpToReply = useCallback(
+   417→   417→    (parentId: string) => {
+   418→   418→      void jumpToMessage(parentId)
+   419→   419→    },
+   420→   420→    [jumpToMessage],
+   421→   421→  )
+   422→   422→
+   423→   423→  // ── search overlay plumbing ────────────────────────────────
+   424→   424→
+   425→   425→  /** Debounced commit of the search draft (same pattern as drafts). */
+   426→   426→  const handleSearchChange = (value: string) => {
+   427→   427→    setSearchDraft(value)
+   428→   428→    if (searchTimerRef.current !== null) clearTimeout(searchTimerRef.current)
+   429→   429→    searchTimerRef.current = setTimeout(() => {
+   430→   430→      searchTimerRef.current = null
+   431→   431→      setSearchQuery(value.trim())
+   432→   432→    }, 220)
+   433→   433→  }
+   434→   434→
+   435→   435→  const closeSearch = useCallback(() => {
+   436→   436→    if (searchTimerRef.current !== null) {
+   437→   437→      clearTimeout(searchTimerRef.current)
+   438→   438→      searchTimerRef.current = null
+   439→   439→    }
+   440→   440→    setSearchOpen(false)
+   441→   441→  }, [])
+   442→   442→
+   443→   443→  const searchResults = useQuery({
+   444→   444→    queryKey: ['message-search', conversationId, searchQuery],
+   445→   445→    enabled: searchOpen && searchQuery.length > 0,
+   446→   446→    staleTime: 20_000,
+   447→   447→    queryFn: async (): Promise<{ items: ChatMessage[]; total: number }> => {
+   448→   448→      const res = await apiJson<SearchResponse>(
+   449→   449→        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=100&q=${encodeURIComponent(searchQuery)}`,
+   450→   450→      )
+   451→   451→      return { items: res.messages, total: res.total ?? res.messages.length }
+   452→   452→    },
+   453→   453→  })
+   454→   454→
+   455→   455→  // ── forward-message sheet ─────────────────────────────────
+   456→   456→
+   457→   457→  const startForward = useCallback((message: ChatMessage | null) => {
+   458→   458→    if (!message || message.deletedAt) return
+   459→   459→    setForwardTarget(message)
+   460→   460→    setForwardGeneration((g) => g + 1)
+   461→   461→    setForwardMounted(true)
+   462→   462→    setForwardOpen(false)
+   463→   463→    setTimeout(() => setForwardOpen(true), 30)
+   464→   464→  }, [])
+   465→   465→
+   466→   466→  const handleForwardClose = useCallback((next: boolean) => {
+   467→   467→    setForwardOpen(next)
+   468→   468→    if (!next) setTimeout(() => setForwardMounted(false), 300)
+   469→   469→  }, [])
+   470→   470→
+   471→   471→  // unmount safety: clear search/highlight timers
+   472→   472→  useEffect(
+   473→   473→    () => () => {
+   474→   474→      if (searchTimerRef.current !== null) clearTimeout(searchTimerRef.current)
+   475→   475→      if (highlightTimerRef.current !== null) clearTimeout(highlightTimerRef.current)
+   476→   476→    },
+   477→   477→    [],
+   478→   478→  )
+   479→   479→
+   480→   480→
+   481→   481→  // ── realtime registration + read receipts ──────────────────
+   482→   482→
+   483→   483→  useEffect(() => {
+   484→   484→    realtime.setActiveConversation(conversationId)
+   485→   485→    return () => realtime.setActiveConversation(null)
+   486→   486→  }, [conversationId, realtime])
+   487→   487→
+   488→   488→  /** POST read marker (visible rooms only) then patch local caches. */
+   489→   489→  const markVisibleRead = useCallback(() => {
+   490→   490→    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+   491→   491→    if ((messages.data ?? []).length === 0) return
+   492→   492→    fetch(`/api/conversations/${encodeURIComponent(conversationId)}/read`, {
+   493→   493→      method: 'POST',
+   494→   494→      headers: { 'Content-Type': 'application/json' },
+   495→   495→      body: JSON.stringify({ userId: me.id }),
+   496→   496→    })
+   497→   497→      .then(() => {
+   498→   498→        const nowIso = new Date().toISOString()
+   499→   499→        queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   500→   500→          old
+   501→   501→            ? {
+   502→   502→                ...old,
+   503→   503→                members: old.members.map((m) =>
+   504→   504→                  m.id === me.id ? { ...m, lastReadAt: nowIso } : m,
+   505→   505→                ),
+   506→   506→              }
+   507→   507→            : old,
+   508→   508→        )
+   509→   509→        // refresh list badges (my unread for this room is now zero)
+   510→   510→        queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   511→   511→      })
+   512→   512→      .catch(() => undefined)
+   513→   513→  }, [conversationId, me.id, messages.data, queryClient])
+   514→   514→
+   515→   515→  // opening the room + every new batch of messages ⇒ (debounced) read
+   516→   516→  useEffect(() => {
+   517→   517→    const timer = setTimeout(markVisibleRead, 600)
+   518→   518→    return () => clearTimeout(timer)
+   519→   519→  }, [markVisibleRead])
+   520→   520→
+   521→   521→  useEffect(() => {
+   522→   522→    const onVisibility = () => {
+   523→   523→      if (document.visibilityState === 'visible') markVisibleRead()
+   524→   524→    }
+   525→   525→    document.addEventListener('visibilitychange', onVisibility)
+   526→   526→    return () => document.removeEventListener('visibilitychange', onVisibility)
+   527→   527→  }, [markVisibleRead])
+   528→   528→
+   529→   529→  // ── derived ────────────────────────────────────────────────
+   530→   530→
+   531→   531→  const detailData = detail.data
+   532→   532→  const other = useMemo(
+   533→   533→    () => (detailData ? otherMemberOf(detailData, me.id) : null),
+   534→   534→    [detailData, me.id],
+   535→   535→  )
+   536→   536→  const isGroup = detailData?.isGroup ?? false
+   537→   537→  const displayName = detailData ? conversationDisplayName(detailData, me.id) : ''
+   538→   538→
+   539→   539→  const recipients = useMemo(
+   540→   540→    () => (detailData ? detailData.members.filter((m) => m.id !== me.id).map((m) => m.id) : []),
+   541→   541→    [detailData, me.id],
+   542→   542→  )
+   543→   543→
+   544→   544→  const typers = realtime.typersIn(conversationId, me.id)
+   545→   545→  const typerLabel = useMemo(() => {
+   546→   546→    if (typers.length === 0) return ''
+   547→   547→    if (!isGroup) return 'typing…'
+   548→   548→    const names = typers.map((t) => t.userName)
+   549→   549→    if (names.length === 1) return `${names[0]} is typing…`
+   550→   550→    if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`
+   551→   551→    return `${names.length} people are typing…`
+   552→   552→  }, [typers, isGroup])
+   553→   553→
+   554→   554→  const onlineOthers = useMemo(
+   555→   555→    () =>
+   556→   556→      detailData
+   557→   557→        ? detailData.members.filter((m) => m.id !== me.id && realtime.onlineIds.has(m.id)).length
+   558→   558→        : 0,
+   559→   559→    [detailData, me.id, realtime.onlineIds],
+   560→   560→  )
+   561→   561→
+   562→   562→  /** highest read watermark among OTHER members → double ticks */
+   563→   563→  const othersMaxReadMs = useMemo(() => {
+   564→   564→    if (!detailData) return Number.NEGATIVE_INFINITY
+   565→   565→    let max = Number.NEGATIVE_INFINITY
+   566→   566→    for (const m of detailData.members) {
+   567→   567→      if (m.id === me.id) continue
+   568→   568→      const t = Date.parse(m.lastReadAt)
+   569→   569→      if (!Number.isNaN(t) && t > max) max = t
+   570→   570→    }
+   571→   571→    return max
+   572→   572→  }, [detailData, me.id])
+   573→   573→
+   574→   574→  // ── group read-by stack (last own message) ────────────
+   575→   575→
+   576→   576→  /** newest own non-pending message still in the loaded window */
+   577→   577→  const lastOwnMessage = useMemo(() => {
+   578→   578→    const list = messages.data ?? []
+   579→   579→    for (let i = list.length - 1; i >= 0; i -= 1) {
+   580→   580→      const m = list[i]
+   581→   581→      if (m.senderId === me.id && m.deletedAt === null && !m.id.startsWith('temp-')) return m
+   582→   582→    }
+   583→   583→    return null
+   584→   584→  }, [messages.data, me.id])
+   585→   585→
+   586→   586→  /** members (≠ me) who have read the last own message → tiny avatar stack */
+   587→   587→  const readByLast = useMemo(() => {
+   588→   588→    if (!lastOwnMessage || !detailData) return null
+   589→   589→    const createdMs = Date.parse(lastOwnMessage.createdAt)
+   590→   590→    if (Number.isNaN(createdMs)) return null
+   591→   591→    const members = detailData.members
+   592→   592→      .filter((m) => m.id !== me.id && Date.parse(m.lastReadAt) >= createdMs)
+   593→   593→      .map((m) => ({ id: m.id, name: m.name, color: m.color }))
+   594→   594→    const others = detailData.members.length - 1
+   595→   595→    return members.length > 0 ? { members, all: members.length >= others } : null
+   596→   596→  }, [lastOwnMessage, detailData, me.id])
+   597→   597→
+   598→   598→  /** tap the read-by stack → seen-by detail sheet (latest own message) */
+   599→   599→  const openSeenBy = useCallback(() => {
+   600→   600→    haptic(8)
+   601→   601→    setInfoMessage(null)
+   602→   602→    setSeenByOpen(true)
+   603→   603→  }, [])
+   604→   604→
+   605→   605→  /** options dialog → per-message info sheet (any own message) */
+   606→   606→  const openMessageInfo = useCallback((message: ChatMessage) => {
+   607→   607→    haptic(8)
+   608→   608→    setInfoMessage(message)
+   609→   609→    setSelected(null)
+   610→   610→    setSeenByOpen(true)
+   611→   611→  }, [])
+   612→   612→
+   613→   613→  const items = useMemo<ClusterItem[]>(() => {
+   614→   614→    const list = messages.data ?? []
+   615→   615→    const now = new Date()
+   616→   616→
+   617→   617→    interface Entry {
+   618→   618→      message: ChatMessage
+   619→   619→      head: boolean
+   620→   620→    }
+   621→   621→    const built: Entry[] = []
+   622→   622→    let prev: ChatMessage | null = null
+   623→   623→    for (const message of list) {
+   624→   624→      const clusterBreak =
+   625→   625→        prev === null ||
+   626→   626→        !isSameDayIso(prev.createdAt, message.createdAt) ||
+   627→   627→        prev.senderId !== message.senderId ||
+   628→   628→        Date.parse(message.createdAt) - Date.parse(prev.createdAt) > CLUSTER_WINDOW_MS
+   629→   629→      built.push({ message, head: clusterBreak })
+   630→   630→      prev = message
+   631→   631→    }
+   632→   632→
+   633→   633→    const out: ClusterItem[] = []
+   634→   634→    let dayAnchor: ChatMessage | null = null
+   635→   635→    let dividerPlaced = unreadAnchorMs === null
+   636→   636→    for (let i = 0; i < built.length; i += 1) {
+   637→   637→      const { message, head } = built[i]
+   638→   638→      if (dayAnchor === null || !isSameDayIso(dayAnchor.createdAt, message.createdAt)) {
+   639→   639→        out.push({ kind: 'day', key: `day-${message.id}`, label: formatDayChip(message.createdAt, now) })
+   640→   640→        dayAnchor = message
+   641→   641→      }
+   642→   642→      if (
+   643→   643→        !dividerPlaced &&
+   644→   644→        message.senderId !== me.id &&
+   645→   645→        message.deletedAt === null &&
+   646→   646→        unreadAnchorMs !== null &&
+   647→   647→        Date.parse(message.createdAt) > unreadAnchorMs
+   648→   648→      ) {
+   649→   649→        out.push({ kind: 'unread', key: 'unread-divider' })
+   650→   650→        dividerPlaced = true
+   651→   651→      }
+   652→   652→      out.push({
+   653→   653→        kind: 'msg',
+   654→   654→        key: message.id,
+   655→   655→        message,
+   656→   656→        head,
+   657→   657→        tail: i === built.length - 1 || built[i + 1].head,
+   658→   658→      })
+   659→   659→    }
+   660→   660→    return out
+   661→   661→  }, [messages.data, unreadAnchorMs, me.id])
+   662→   662→
+   663→   663→  const lastMessageId =
+   664→   664→    messages.data && messages.data.length > 0 ? messages.data[messages.data.length - 1].id : null
+   665→   665→
+   666→   666→  // ── scrolling ──────────────────────────────────────────────
+   667→   667→
+   668→   668→  const scrollToBottom = useCallback((smooth: boolean) => {
+   669→   669→    const el = viewportRef.current
+   670→   670→    if (!el) return
+   671→   671→    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+   672→   672→  }, [])
+   673→   673→
+   674→   674→  /** a bubble image finished loading → re-anchor to bottom if we were there */
+   675→   675→  const handleImageLoaded = useCallback(() => {
+   676→   676→    if (nearBottomRef.current) {
+   677→   677→      requestAnimationFrame(() => scrollToBottom(true))
+   678→   678→    }
+   679→   679→  }, [scrollToBottom])
+   680→   680→
+   681→   681→  useEffect(() => {
+   682→   682→    if (lastMessageId === null || !historyLoaded) return
+   683→   683→    // initial search-jump owns the first positioning — no bottom auto-scroll race
+   684→   684→    if (initialJumpMessageId !== null) return
+   685→   685→    requestAnimationFrame(() => {
+   686→   686→      if (nearBottomRef.current) {
+   687→   687→        scrollToBottom(true)
+   688→   688→      } else {
+   689→   689→        setShowJump(true)
+   690→   690→        haptic(10)
+   691→   691→      }
+   692→   692→    })
+   693→   693→  }, [lastMessageId, historyLoaded, scrollToBottom, initialJumpMessageId])
+   694→   694→
+   695→   695→  useEffect(() => {
+   696→   696→    if (messages.isSuccess && !historyLoaded) {
+   697→   697→      // global-search hit: skip the plain bottom anchor, land on the hit instead.
+   698→   698→      // Deferred until the room's slide-in spring has mostly settled — running the
+   699→   699→      // centering math mid-flight measures a transformed layout and mis-aims.
+   700→   700→      if (initialJumpMessageId !== null) {
+   701→
+   702→[showing lines 1-700 of 4177; use offset=701 with limit to continue reading]

@@ -21,6 +21,7 @@ import { useTheme } from 'next-themes'
 import {
   ArrowDown,
   BellOff,
+  CalendarClock,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -28,15 +29,22 @@ import {
   ChevronUp,
   Clock,
   Copy,
+  CornerDownRight,
   Crown,
+  Dices,
   EllipsisVertical,
+  EyeOff,
   Forward,
+  Globe,
+  HelpCircle,
   ImagePlus,
   Info,
   Link2,
   LoaderCircle,
   Lock,
   LogOut,
+  Megaphone,
+  MessageSquare,
   Mic,
   Pause,
   Pencil,
@@ -50,17 +58,24 @@ import {
   SearchX,
   SendHorizontal,
   Smile,
+  Sparkles,
+  Star,
+  Timer,
   Trash2,
   UserPlus,
   UserRoundMinus,
+  Vote,
   VolumeX,
   X,
+  Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type {
   AppUser,
   ChatMessage,
   ConversationDetail,
+  SavedItem,
+  ScheduledItem,
 } from '@/lib/types'
 import {
   apiJson,
@@ -85,6 +100,7 @@ import { ForwardSheet } from '@/components/chat/forward-sheet'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -133,6 +149,79 @@ const NEAR_BOTTOM_PX = 160
 const OLDER_PAGE_SIZE = 40
 const MESSAGES_PAGE_SIZE = 200
 const MIN_VOICE_MS = 600
+/** Discord/WhatsApp-flavored slash commands understood by the composer. */
+const SLASH_COMMANDS = [
+  { cmd: '/me', args: '<action>', help: 'Send an italic action line' },
+  { cmd: '/shrug', args: '[text]', help: 'Append ¯\\_(ツ)_/¯' },
+  { cmd: '/tableflip', args: '[text]', help: 'Append (╯°□°）╯︵ ┻━┻' },
+  { cmd: '/unflip', args: '[text]', help: 'Prefix ┬─┬ ノ( ゜-゜ノ' },
+  { cmd: '/roll', args: '[AdM]', help: 'Roll dice, e.g. /roll 2d6' },
+  { cmd: '/poll', args: '', help: 'Open the live-poll builder' },
+  { cmd: '/schedule', args: '', help: 'Schedule this message for later' },
+  { cmd: '/help', args: '', help: 'Show every command' },
+] as const
+
+/** Parse one rolled die — returns null on malformed input. */
+function rollDice(spec: string): { rolls: number[]; total: number } | null {
+  const m = /^(\d{1,2})d(\d{1,3})$/i.exec(spec.trim())
+  const count = m ? Math.min(Math.max(parseInt(m[1], 10), 1), 12) : 1
+  const sides = m ? Math.min(Math.max(parseInt(m[2], 10), 2), 1000) : 0
+  if (!m && spec.trim().length > 0) return null
+  if (!m) return null
+  const rolls = Array.from({ length: count }, () => {
+    const buf = new Uint32Array(1)
+    crypto.getRandomValues(buf)
+    return Math.floor((buf[0] / 4294967296) * sides) + 1
+  })
+  return { rolls, total: rolls.reduce((a, b) => a + b, 0) }
+}
+
+interface SlashOutcome {
+  kind: 'send'
+  content: string
+}
+
+/** Transform a leading slash command into real message content (or a UI action code). */
+function applySlash(rawInput: string): SlashOutcome | { kind: 'poll' } | { kind: 'schedule' } | { kind: 'help' } | { kind: 'error'; message: string } {
+  const input = rawInput.trim()
+  const m = new RegExp('^' + String.fromCharCode(92) + '/(\\w+)(?:\\s+([\\s\\S]+))?$').exec(input)
+  if (!m) return { kind: 'send', content: input }
+  const [, word, rest] = m
+  const arg = (rest ?? '').trim()
+  switch (word.toLowerCase()) {
+    case 'me': {
+      if (arg.length === 0) return { kind: 'error', message: 'Usage: /me waves hello' }
+      return { kind: 'send', content: `_${arg.slice(0, 1998)}_` }
+    }
+    case 'shrug':
+      return { kind: 'send', content: `${arg}${arg.length > 0 ? ' ' : ''}¯\\_(ツ)_/¯` }
+    case 'tableflip':
+      return { kind: 'send', content: `${arg}${arg.length > 0 ? ' ' : ''}(╯°□°）╯︵ ┻━┻` }
+    case 'unflip':
+      return { kind: 'send', content: `┬─┬ ノ( ゜-゜ノ${arg.length > 0 ? ` ${arg}` : ''}` }
+    case 'roll': {
+      if (arg.length === 0) {
+        const roll = rollDice('1d6')
+        return { kind: 'send', content: `🎲 Rolled **1d6**: *${roll?.total ?? '?'}*` }
+      }
+      const roll = rollDice(arg)
+      if (!roll) return { kind: 'error', message: 'Usage: /roll AdM — e.g. /roll 2d6' }
+      const parts = roll.rolls.join(' + ')
+      return { kind: 'send', content: `🎲 Rolled **${arg.toLowerCase()}**: ${parts} = *${roll.total}*` }
+    }
+    case 'poll':
+      return { kind: 'poll' }
+    case 'schedule':
+      return { kind: 'schedule' }
+    case 'help':
+      return { kind: 'help' }
+    default:
+      return {
+        kind: 'error',
+        message: `Unknown command "/${word}" — try /help`,
+      }
+  }
+}
 /** "1:23" (minutes:seconds) for voice notes + record timer. */
 function formatVoicems(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000))
@@ -228,6 +317,24 @@ export function ChatRoom({
   const [forwardGeneration, setForwardGeneration] = useState(0)
   const [forwardMounted, setForwardMounted] = useState(false)
   const [forwardOpen, setForwardOpen] = useState(false)
+
+  // ── threads (Slack/Zulip) ───────────────────────────────────
+  /** open thread root — drawer shows its replies */
+  const [threadRoot, setThreadRoot] = useState<ChatMessage | null>(null)
+  /** lifted thread composer draft (survives drawer re-mounts) */
+  const [threadDraft, setThreadDraft] = useState('')
+
+  // ── live polls ─────────────────────────────────────────────
+  const [pollBuilderOpen, setPollBuilderOpen] = useState(false)
+
+  // ── scheduled sends (Telegram-style) ──────────────────────
+  const [scheduleFor, setScheduleFor] = useState<string | null>(null) // pending draft text
+  const [scheduledListOpen, setScheduledListOpen] = useState(false)
+
+  // disappearing-message TTL submenu inside the header menu
+  const [ttlChoicesOpen, setTtlChoicesOpen] = useState(false)
+  /** slash-command cheat-sheet dialog */
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -602,6 +709,11 @@ export function ChatRoom({
     setSeenByOpen(true)
   }, [])
 
+  /** bubble chip → open this root's thread sheet (Slack/Zulip) */
+  const openThread = useCallback((message: ChatMessage) => {
+    setThreadRoot(message)
+  }, [])
+
   /** options dialog → per-message info sheet (any own message) */
   const openMessageInfo = useCallback((message: ChatMessage) => {
     haptic(8)
@@ -612,6 +724,12 @@ export function ChatRoom({
 
   const items = useMemo<ClusterItem[]>(() => {
     const list = messages.data ?? []
+    const nowMs = Date.now()
+    const visible = list.filter((m) => {
+      if (m.parentId !== null) return false // Slack/Zulip: thread replies live in their own sheet
+      if (m.expiresAt !== null && Date.parse(m.expiresAt) <= nowMs) return false
+      return true
+    })
     const now = new Date()
 
     interface Entry {
@@ -620,7 +738,7 @@ export function ChatRoom({
     }
     const built: Entry[] = []
     let prev: ChatMessage | null = null
-    for (const message of list) {
+    for (const message of visible) {
       const clusterBreak =
         prev === null ||
         !isSameDayIso(prev.createdAt, message.createdAt) ||
@@ -662,6 +780,16 @@ export function ChatRoom({
 
   const lastMessageId =
     messages.data && messages.data.length > 0 ? messages.data[messages.data.length - 1].id : null
+
+  /** rootId → live reply count (drives the ↳ chip under parent bubbles) */
+  const threadCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const m of messages.data ?? []) {
+      if (m.parentId === null || m.deletedAt !== null) continue
+      counts.set(m.parentId, (counts.get(m.parentId) ?? 0) + 1)
+    }
+    return counts
+  }, [messages.data])
 
   // ── scrolling ──────────────────────────────────────────────
 
@@ -731,6 +859,8 @@ export function ChatRoom({
       imagePath,
       audioPath,
       durationMs,
+      parentId,
+      viewOnce,
     }: {
       clientId: string
       content: string
@@ -738,6 +868,8 @@ export function ChatRoom({
       imagePath?: string
       audioPath?: string
       durationMs?: number
+      parentId?: string
+      viewOnce?: boolean
     }) => {
       const res = await apiJson<SendResponse>(
         `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
@@ -750,12 +882,14 @@ export function ChatRoom({
             ...(replyToId ? { replyToId } : {}),
             ...(imagePath ? { imagePath } : {}),
             ...(audioPath ? { audioPath, ...(durationMs ? { durationMs } : {}) } : {}),
+            ...(parentId ? { parentId } : {}),
+            ...(viewOnce ? { viewOnce: true } : {}),
           }),
         },
       )
       return { res, clientId }
     },
-    onMutate: async ({ clientId, content, replyToId, imagePath, audioPath, durationMs }) => {
+    onMutate: async ({ clientId, content, replyToId, imagePath, audioPath, durationMs, parentId, viewOnce }) => {
       const parentSnapshot = replyToId && replyTo && replyTo.id === replyToId
         ? {
             id: replyTo.id,
@@ -780,12 +914,28 @@ export function ChatRoom({
         editedAt: null,
         pinnedAt: null,
         pinnedBy: null,
+        parentId: parentId ?? null,
+        viewOnce: viewOnce === true,
+        viewedAt: null,
+        viewedBy: null,
+        expiresAt: null,
+        linkUrl: null,
+        linkPreview: null,
+        poll: null,
+        translations: [],
       }
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
         old ? [...old, temp] : [temp],
       )
+      if (parentId) {
+        // optimistic echo inside the open thread sheet too
+        queryClient.setQueryData<ChatMessage[]>(['thread', parentId], (old) => {
+          const base = old ?? []
+          return [...base.filter((m) => m.id !== temp.id), temp]
+        })
+      }
     },
-    onSuccess: ({ res, clientId }) => {
+    onSuccess: ({ res, clientId }, vars) => {
       const real = res.message
       setReplyTo(null)
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
@@ -798,7 +948,23 @@ export function ChatRoom({
         )
         return hadReal ? cleaned : [...cleaned, real]
       })
+      if (vars.parentId) {
+        queryClient.setQueryData<ChatMessage[]>(['thread', vars.parentId], (old) => {
+          const base = old ?? []
+          return base.some((m) => m.id === real.id)
+            ? base.map((m) => (m.id === real.id ? real : m))
+            : [...base.filter((m) => m.id !== `temp-${clientId}`), real]
+        })
+      }
       queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      // link previews: fire-and-forget unfurl on outbound URL messages
+      if (!vars.parentId && /https?:\/\/|(^|\s)www\./i.test(real.content)) {
+        void apiJson(`/api/messages/${encodeURIComponent(real.id)}/unfurl`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me.id }),
+        }).catch(() => undefined)
+      }
     },
     onError: (_error, { clientId }) => {
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
@@ -993,6 +1159,235 @@ export function ChatRoom({
   const latestPinned = pinnedList.length > 0 ? pinnedList[pinnedList.length - 1] : null
   const pinnedCount = pinnedList.length
 
+  // ── live-poll actions ─────────────────────────────────────
+
+  /** swap a fresh poll-bearing row into every cache it lives in */
+  const applyPollRow = useCallback(
+    (fresh: ChatMessage) => {
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+        old ? old.map((m) => (m.id === fresh.id ? fresh : m)) : old,
+      )
+    },
+    [queryClient, conversationId],
+  )
+
+  const createPoll = useMutation({
+    mutationFn: async ({ question, options }: { question: string; options: string[] }) => {
+      return apiJson<SendResponse>(`/api/conversations/${encodeURIComponent(conversationId)}/poll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId: me.id, question, options }),
+      })
+    },
+    onSuccess: ({ message }) => {
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
+        if (!old || old.length === 0) return [message]
+        return old.some((m) => m.id === message.id) ? old : [...old, message]
+      })
+      setPollBuilderOpen(false)
+      toast.success('Poll posted — tap an option to vote')
+      haptic(12)
+      requestAnimationFrame(() => scrollToBottom(true))
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not post the poll')
+    },
+  })
+
+  const votePoll = useMutation({
+    mutationFn: async ({ pollId, optionId }: { pollId: string; optionId: string }) => {
+      return apiJson<SendResponse>(`/api/polls/${encodeURIComponent(pollId)}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: me.id, optionId }),
+      })
+    },
+    onSuccess: ({ message }) => applyPollRow(message),
+    onError: () => toast.error('Vote failed — try again'),
+  })
+
+  const closePoll = useMutation({
+    mutationFn: async (pollId: string) => {
+      return apiJson<SendResponse>(`/api/polls/${encodeURIComponent(pollId)}/close`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: me.id }),
+      })
+    },
+    onSuccess: ({ message }) => {
+      applyPollRow(message)
+      toast.success('Voting closed — results are final')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not close the poll')
+    },
+  })
+
+  const handleVote = useCallback(
+    (pollId: string, optionId: string) => {
+      haptic(10)
+      votePoll.mutate({ pollId, optionId })
+    },
+    [votePoll],
+  )
+
+  // ── saved / starred messages (Telegram-style) ────────────
+
+  const toggleSaved = useMutation({
+    mutationFn: async (messageId: string) => {
+      return apiJson<{ saved: boolean }>(`/api/messages/${encodeURIComponent(messageId)}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: me.id }),
+      })
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['saved', me.id] })
+      toast.success(data.saved ? 'Saved to your library ⭐' : 'Removed from saved')
+      haptic(10)
+    },
+    onError: () => toast.error('Could not update saved state'),
+  })
+
+  // ── view-once consumption ────────────────────────────────
+
+  const consumeViewOnce = useMutation({
+    mutationFn: async (messageId: string) => {
+      return apiJson<SendResponse>(`/api/messages/${encodeURIComponent(messageId)}/viewed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: me.id }),
+      })
+    },
+    onSuccess: ({ message }) => applyPollRow(message),
+    onError: () => toast.error('Could not open this photo'),
+  })
+
+  /** open lightbox (consuming a view-once gate when needed) */
+  const openImageGated = useCallback(
+    (message: ChatMessage) => {
+      if (!message.imagePath) return
+      const src = `/api/uploads/${encodeURIComponent(message.imagePath)}`
+      if (message.viewOnce && message.senderId !== me.id && message.viewedAt === null) {
+        consumeViewOnce.mutate(message.id)
+      }
+      setLightboxSrc(src)
+    },
+    [consumeViewOnce, me.id],
+  )
+
+  // ── disappearing messages TTL ────────────────────────────
+
+  const setTtl = useMutation({
+    mutationFn: async (ttlSeconds: number) => {
+      return apiJson<{ conversation: ConversationDetail }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/disappearing`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me.id, ttlSeconds }),
+        },
+      )
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], data.conversation)
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      setMenuOpen(false)
+      setTtlChoicesOpen(false)
+      const t = data.conversation.ttlSeconds
+      toast.success(
+        t === 0 ? 'Disappearing messages off' : `New messages vanish after ${t === 86400 ? '24 hours' : t === 604800 ? '7 days' : '30 days'}`,
+      )
+      haptic(12)
+    },
+    onError: () => toast.error('Could not update disappearing messages'),
+  })
+
+  // ── scheduled sends ──────────────────────────────────────
+
+  const scheduledQuery = useQuery({
+    queryKey: ['scheduled', conversationId, me.id],
+    queryFn: async (): Promise<ScheduledItem[]> => {
+      const res = await apiJson<{ items: ScheduledItem[] }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/scheduled?userId=${encodeURIComponent(me.id)}`,
+      )
+      return res.items
+    },
+    enabled: scheduleFor !== null || scheduledListOpen,
+  })
+
+  const scheduleSend = useMutation({
+    mutationFn: async ({ content, whenIso }: { content: string; whenIso: string }) => {
+      return apiJson<{ item: ScheduledItem }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/scheduled`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ senderId: me.id, content, scheduledAt: whenIso }),
+        },
+      )
+    },
+    onSuccess: (data) => {
+      setInput('')
+      pulseDraftsStore.getState().clearDraft(conversationId)
+      requestAnimationFrame(autosize)
+      setScheduleFor(null)
+      void scheduledQuery.refetch()
+      toast.success(`Scheduled for ${formatListStamp(data.item.scheduledAt)} — it sends itself`)
+      haptic(12)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not schedule the message')
+    },
+  })
+
+  const cancelScheduled = useMutation({
+    mutationFn: async (id: string) => {
+      return apiJson<{ ok: boolean }>(`/api/scheduled/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requesterId: me.id }),
+      })
+    },
+    onSuccess: () => {
+      void scheduledQuery.refetch()
+      toast.success('Scheduled message cancelled')
+    },
+    onError: () => toast.error('Could not cancel'),
+  })
+
+  /** viewer's saved library (drives Save/Unsave label + profile screen) */
+  const savedQuery = useQuery({
+    queryKey: ['saved', me.id],
+    queryFn: async (): Promise<SavedItem[]> => {
+      const res = await apiJson<{ items: SavedItem[] }>(
+        `/api/users/${encodeURIComponent(me.id)}/saved`,
+      )
+      return res.items
+    },
+    staleTime: 20_000,
+  })
+  const isSavedIds = useMemo(
+    () =>
+      new Set(
+        (savedQuery.data ?? [])
+          .filter((item) => item.message.conversationId === conversationId)
+          .map((item) => item.message.id),
+      ),
+    [savedQuery.data, conversationId],
+  )
+
+  /** viewer's group role → announcement-mode lockout */
+  const myRole = detailData?.members.find((m) => m.id === me.id)?.role ?? 'member'
+  const broadcastLocked = isGroup && (detailData?.broadcastMode ?? false) && myRole !== 'admin'
+
+  /** amber chip above the composer while delayed sends are pending */
+  const scheduledChip = useMemo(() => {
+    const items = scheduledQuery.data ?? []
+    if (items.length === 0) return null
+    return { count: items.length, next: formatListStamp(items[0].scheduledAt) }
+  }, [scheduledQuery.data])
+
   // ── notification mute (per-user watermark) ─────────────
 
   const isRoomMuted =
@@ -1120,14 +1515,14 @@ export function ChatRoom({
   }, [autosize, conversationId])
 
   const submit = useCallback(() => {
-    const content = input.trim()
-    if (content.length === 0) return
+    const raw = input.trim()
+    if (raw.length === 0) return
 
     // Telegram-style edit mode → PATCH instead of send
     if (editing) {
       if (editMessage.isPending) return
-      if (content !== editing.content) {
-        editMessage.mutate({ messageId: editing.id, content })
+      if (raw !== editing.content) {
+        editMessage.mutate({ messageId: editing.id, content: raw })
       } else {
         setEditing(null)
       }
@@ -1136,6 +1531,44 @@ export function ChatRoom({
       requestAnimationFrame(autosize)
       return
     }
+
+    // Discord/Twitch-flavored slash commands — parsed BEFORE any network call.
+    // Everything they produce is real message content / a real sheet open.
+    let transformed = ''
+    if (raw.startsWith('/')) {
+      const outcome = applySlash(raw)
+      if (outcome.kind === 'error') {
+        toast.error(outcome.message)
+        return
+      }
+      if (outcome.kind === 'help') {
+        setHelpOpen(true)
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+        requestAnimationFrame(autosize)
+        return
+      }
+      if (outcome.kind === 'poll') {
+        setPollBuilderOpen(true)
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+        requestAnimationFrame(autosize)
+        return
+      }
+      if (outcome.kind === 'schedule') {
+        setScheduleFor(null)
+        setScheduledListOpen(true)
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+        requestAnimationFrame(autosize)
+        return
+      }
+      transformed = outcome.content.trim()
+      if (transformed.length === 0) return
+    }
+
+    const content = transformed.length > 0 ? transformed : input.trim()
+    if (content.length === 0) return
 
     if (sendMessage.isPending) return
     stopTyping()
@@ -1172,6 +1605,15 @@ export function ChatRoom({
         editedAt: null,
         pinnedAt: null,
         pinnedBy: null,
+        parentId: null,
+        viewOnce: false,
+        viewedAt: null,
+        viewedBy: null,
+        expiresAt: null,
+        linkUrl: null,
+        linkPreview: null,
+        poll: null,
+        translations: [],
         _queued: true,
       }
       pulseOutboxStore.getState().enqueue({
@@ -1198,15 +1640,23 @@ export function ChatRoom({
     })
   }, [input, editing, editMessage, sendMessage, stopTyping, autosize, replyTo, conversationId, me, queryClient])
 
+  /** Thread drawer composer — replies land under the root, never the main flow. */
+  const submitThreadReply = useCallback(
+    (text: string) => {
+      const content = text.trim()
+      if (content.length === 0 || !threadRoot || sendMessage.isPending) return
+      haptic(8)
+      setThreadDraft('')
+      sendMessage.mutate({ clientId: uid(), content, parentId: threadRoot.id })
+    },
+    [threadRoot, threadDraft, sendMessage],
+  )
+
   const handleInputChange = (value: string) => {
     setInput(value)
     setMentionCaret(textareaRef.current?.selectionStart ?? value.length)
     autosize()
     if (draftTimerRef.current !== null) clearTimeout(draftTimerRef.current)
-    draftTimerRef.current = setTimeout(() => {
-      draftTimerRef.current = null
-      pulseDraftsStore.getState().setDraft(conversationId, value)
-    }, 300)
     if (value.trim().length > 0 && recipients.length > 0) {
       realtime.signalTyping(conversationId, {
         viewerId: me.id,
@@ -1216,6 +1666,13 @@ export function ChatRoom({
     } else {
       stopTyping()
     }
+    // persist the draft — but never resurrect one the user just cleared/sent
+    draftTimerRef.current = setTimeout(() => {
+      draftTimerRef.current = null
+      const live = textareaRef.current?.value ?? ''
+      if (live !== value) return
+      pulseDraftsStore.getState().setDraft(conversationId, live)
+    }, 300)
   }
 
   /** Pick → compress → upload → open the caption sheet (send from there). */
@@ -1521,6 +1978,35 @@ export function ChatRoom({
     },
   })
 
+  /** announcement-mode toggle (Discord stage / Telegram channel parity) */
+  const toggleBroadcast = useMutation({
+    mutationFn: async (broadcast: boolean) => {
+      return apiJson<DetailResponse>(`/api/conversations/${encodeURIComponent(conversationId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requesterId: me.id, broadcast }),
+      })
+    },
+    onSuccess: (res) => {
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], res.conversation)
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success(
+        res.conversation.broadcastMode
+          ? 'Announcement mode on — only admins can post'
+          : 'Announcement mode off — everyone can post',
+      )
+      haptic(12)
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not update announcement mode')
+    },
+  })
+
+  const onToggleBroadcast = useCallback(
+    (broadcast: boolean) => toggleBroadcast.mutate(broadcast),
+    [toggleBroadcast],
+  )
+
   // ── long-press helpers ─────────────────────────────────────
 
   const clearLongPress = useCallback(() => {
@@ -1556,15 +2042,24 @@ export function ChatRoom({
 
   const headerTitle = !isGroup && other ? other.name : displayName || 'Conversation'
 
+  /** Discord-style custom status on DM partners surfaces in the room header */
+  const dmStatus = !isGroup && other ? [other.statusEmoji, other.statusText].filter(Boolean).join(' ').trim() : ''
+  const ttlSeconds = detailData?.ttlSeconds ?? 0
+  const isBroadcast = isGroup && (detailData?.broadcastMode ?? false)
+
   const subtitle = typerLabel.length > 0
     ? typerLabel
     : isGroup
-      ? `${detailData?.members.length ?? 0} members · ${onlineOthers} online`
+      ? `${detailData?.members.length ?? 0} members · ${onlineOthers} online${isBroadcast ? ' · 📣 announcements' : ''}${ttlSeconds > 0 ? ' · ⏱ disappearing' : ''}`
       : !other
         ? ''
-        : realtime.onlineIds.has(other.id)
-          ? 'online'
-          : 'offline'
+        : dmStatus.length > 0
+          ? realtime.onlineIds.has(other.id)
+            ? `${dmStatus} · online`
+            : `${dmStatus} · offline`
+          : realtime.onlineIds.has(other.id)
+            ? 'online'
+            : 'offline'
 
   const dotColor = themeMounted && resolvedTheme === 'dark' ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.05)'
   // layered wallpaper: soft emerald glows top/bottom over the dot grid
@@ -1742,6 +2237,48 @@ export function ChatRoom({
                     Mute notifications
                   </button>
                 )}
+                {ttlChoicesOpen ? (
+                  <div className="px-1 pb-1 pt-0.5" role="group" aria-label="Disappearing messages">
+                    <p className="flex items-center gap-1 px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                      <Timer className="size-3" aria-hidden />
+                      New messages vanish after
+                    </p>
+                    <div className="grid grid-cols-4 gap-1">
+                      {([0, 86_400, 604_800, 2_592_000] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          role="menuitem"
+                          disabled={setTtl.isPending}
+                          onClick={() => setTtl.mutate(t)}
+                          className={cn(
+                            'h-8 rounded-lg text-xs font-semibold outline-none transition-colors active:scale-95 disabled:opacity-50',
+                            ttlSeconds === t
+                              ? 'bg-emerald-500/15 text-emerald-700 ring-1 ring-emerald-400 dark:text-emerald-300'
+                              : 'bg-zinc-100 text-zinc-700 hover:bg-emerald-500/15 hover:text-emerald-700 dark:bg-zinc-700 dark:text-zinc-200',
+                          )}
+                        >
+                          {t === 0 ? 'Off' : t === 86_400 ? '24h' : t === 604_800 ? '7d' : '30d'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => setTtlChoicesOpen(true)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  >
+                    <Timer className={cn('size-4', ttlSeconds > 0 ? 'text-emerald-500' : 'text-zinc-400')} aria-hidden />
+                    Disappearing messages
+                    {ttlSeconds > 0 ? (
+                      <span className="ml-auto rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase text-emerald-600 dark:text-emerald-400">
+                        {ttlSeconds === 86_400 ? '24h' : ttlSeconds === 604_800 ? '7d' : '30d'}
+                      </span>
+                    ) : null}
+                  </button>
+                )}
               </motion.div>
             </>
           ) : null}
@@ -1863,10 +2400,14 @@ export function ChatRoom({
                     requestAnimationFrame(() => textareaRef.current?.focus())
                   }}
                   onReactionInfo={(m, emoji) => setReactionInfo({ message: m, emoji })}
-                  onOpenImage={setLightboxSrc}
+                  onOpenImageGated={openImageGated}
                   onJumpToReply={jumpToReply}
                   onOpenSeenBy={openSeenBy}
                   onImageLoad={handleImageLoaded}
+                  threadCount={threadCounts.get(item.message.id) ?? 0}
+                  onOpenThread={openThread}
+                  onVote={handleVote}
+                  onClosePoll={(pollId) => closePoll.mutate(pollId)}
                   highlighted={highlight !== null && highlight.id === item.message.id}
                 />
               ),
@@ -2022,7 +2563,36 @@ export function ChatRoom({
           ) : null}
         </AnimatePresence>
 
-        <div className="relative flex items-end gap-2">
+        <AnimatePresence initial={false}>
+          {scheduledChip !== null ? (
+            <motion.div
+              key="scheduled-chip"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => setScheduledListOpen(true)}
+                className="mb-2 flex w-full items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-left text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30"
+              >
+                <CalendarClock className="size-3.5 shrink-0" aria-hidden />
+                {scheduledChip.next} · {scheduledChip.count} pending — tap to manage
+              </button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        {broadcastLocked ? (
+          <div className="flex items-center justify-center gap-2 rounded-2xl bg-zinc-100 px-3 py-3 text-xs font-semibold text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
+            <Megaphone className="size-4 text-emerald-500" aria-hidden />
+            Announcement mode — only admins can send here
+          </div>
+        ) : null}
+
+        <div className={cn('relative flex items-end gap-2', broadcastLocked && 'pointer-events-none select-none opacity-40')}>
           {/* @mention autocomplete (Slack/Discord-style) */}
           {mentionMatches.length > 0 ? (
             <div
@@ -2104,19 +2674,94 @@ export function ChatRoom({
             </>
           ) : (
             <>
-              <button
-                type="button"
-                aria-label="Send a photo"
-                disabled={sendingImage}
-                onClick={() => fileInputRef.current?.click()}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 disabled:opacity-50 dark:hover:bg-zinc-800"
-              >
-                {sendingImage ? (
-                  <LoaderCircle className="size-5 animate-spin" aria-hidden />
-                ) : (
-                  <ImagePlus className="size-[22px]" aria-hidden />
-                )}
-              </button>
+              {/* Telegram/Discord attach menu: photos · polls · scheduled · quick phrases */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Add attachment"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 dark:hover:bg-zinc-800"
+                  >
+                    <Plus className="size-6" aria-hidden />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="start"
+                  sideOffset={10}
+                  className="w-56 rounded-2xl p-1.5 dark:bg-zinc-800"
+                >
+                  <div className="flex flex-col">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={sendingImage || broadcastLocked}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    >
+                      {sendingImage ? (
+                        <LoaderCircle className="size-4 animate-spin text-emerald-500" aria-hidden />
+                      ) : (
+                        <ImagePlus className="size-4 text-emerald-500" aria-hidden />
+                      )}
+                      Photo
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={broadcastLocked}
+                      onClick={() => {
+                        setPollBuilderOpen(true)
+                        setHelpOpen(false)
+                      }}
+                      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    >
+                      <Vote className="size-4 text-violet-500" aria-hidden />
+                      Create poll
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={broadcastLocked}
+                      onClick={() => {
+                        const draft = input.trim()
+                        if (draft.length === 0 && scheduleFor === null) {
+                          toast.info('Type the message first, then schedule it')
+                          return
+                        }
+                        setScheduleFor(draft)
+                      }}
+                      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    >
+                      <CalendarClock className="size-4 text-amber-500" aria-hidden />
+                      Schedule message
+                    </button>
+                    {(scheduledQuery.data?.length ?? 0) > 0 ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => setScheduledListOpen(true)}
+                        className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                      >
+                        <Clock className="size-4 text-zinc-400" aria-hidden />
+                        Pending sends
+                        <span className="ml-auto rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-600 dark:bg-amber-500/20 dark:text-amber-300">
+                          {scheduledQuery.data?.length}
+                        </span>
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => setHelpOpen(true)}
+                      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    >
+                      <Dices className="size-4 text-teal-500" aria-hidden />
+                      Slash commands
+                    </button>
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Popover>
                 <PopoverTrigger asChild>
                   <button
@@ -2245,6 +2890,34 @@ export function ChatRoom({
               <Reply className="size-4" aria-hidden />
               Reply
             </Button>
+            {selected && selected.parentId === null && !selected.deletedAt ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const target = selected
+                  setSelected(null)
+                  openThread(target)
+                }}
+                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+              >
+                <MessageSquare className="size-4 text-violet-500" aria-hidden />
+                Reply in thread
+              </Button>
+            ) : null}
+            {selected && !selected.deletedAt ? (
+              <Button
+                variant="outline"
+                disabled={toggleSaved.isPending}
+                onClick={() => {
+                  toggleSaved.mutate(selected.id)
+                  setSelected(null)
+                }}
+                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+              >
+                <Star className={cn('size-4', isSavedIds.has(selected.id) ? 'fill-amber-400 text-amber-500' : 'text-amber-500')} aria-hidden />
+                {isSavedIds.has(selected.id) ? 'Unsave' : 'Save message'}
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               onClick={copySelected}
@@ -2820,6 +3493,88 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
+      {/* poll builder sheet */}
+      <PollBuilderSheet
+        open={pollBuilderOpen}
+        onOpenChange={setPollBuilderOpen}
+        submitting={createPoll.isPending}
+        onSubmit={(question, options) => createPoll.mutate({ question, options })}
+      />
+
+      {/* schedule sheet */}
+      <ScheduleSheet
+        draft={scheduleFor}
+        onDraftChange={setScheduleFor}
+        open={scheduleFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setScheduleFor(null)
+        }}
+        chatTitle={headerTitle}
+        pendingCount={scheduledQuery.data?.length ?? 0}
+        sending={scheduleSend.isPending}
+        onShowPending={() => {
+          setScheduleFor(null)
+          setScheduledListOpen(true)
+        }}
+        onSubmit={(whenIso) => {
+          const content = (scheduleFor ?? '').trim()
+          if (content.length === 0) return
+          scheduleSend.mutate({ content, whenIso })
+        }}
+      />
+
+      {/* scheduled sends manager */}
+      <ScheduledListDrawer
+        open={scheduledListOpen}
+        onOpenChange={setScheduledListOpen}
+        items={scheduledQuery.data ?? []}
+        loading={scheduledQuery.isPending && !scheduledQuery.data}
+        onCancel={(id) => cancelScheduled.mutate(id)}
+      />
+
+      {/* thread sheet (Slack/Zulip-style) */}
+      <ThreadSheet
+        root={threadRoot}
+        onClose={() => {
+          setThreadDraft('')
+          setThreadRoot(null)
+        }}
+        myId={me.id}
+        sending={sendMessage.isPending}
+        text={threadDraft}
+        onTextChange={setThreadDraft}
+        onSend={() => submitThreadReply(threadDraft)}
+      />
+
+      {/* slash-command cheat sheet */}
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="max-w-[320px] gap-3 rounded-2xl p-4 sm:left-1/2 sm:translate-x-[-50%] dark:bg-zinc-900">
+          <DialogHeader className="text-left">
+            <DialogTitle className="flex items-center gap-1.5 text-sm font-bold tracking-tight">
+              <Dices className="size-4 text-teal-500" aria-hidden />
+              Slash commands
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Type these at the start of the message box — Discord/Twitch style.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-1.5">
+            {SLASH_COMMANDS.map((c) => (
+              <li key={c.cmd} className="flex items-baseline gap-2 rounded-lg bg-zinc-50 px-2 py-1.5 dark:bg-zinc-800/70">
+                <code className="shrink-0 font-mono text-[12px] font-bold text-emerald-700 dark:text-emerald-400">
+                  {c.cmd}
+                  {c.args ? <span className="font-normal text-zinc-400"> {c.args}</span> : null}
+                </code>
+                <span className="min-w-0 flex-1 text-right text-[11px] text-zinc-500 dark:text-zinc-400">{c.help}</span>
+              </li>
+            ))}
+          </ul>
+          <Button variant="outline" onClick={() => setHelpOpen(false)} className="h-10 rounded-xl text-sm font-medium">
+            Got it
+          </Button>
+        </DialogContent>
+      </Dialog>
+
       {/* forward-message sheet */}
       {forwardMounted && forwardTarget ? (
         <ForwardSheet
@@ -2855,6 +3610,9 @@ export function ChatRoom({
         onRemoveMember={(userId) => removeMember.mutate(userId)}
         invitePending={inviteLink.isPending}
         onInvite={(regenerate) => inviteLink.mutate(regenerate)}
+        broadcastMode={detailData?.broadcastMode ?? false}
+        broadcastPending={toggleBroadcast.isPending}
+        onToggleBroadcast={onToggleBroadcast}
       />
     </motion.div>
   )
@@ -2997,6 +3755,8 @@ interface MessageRowProps {
   readBy: { members: Array<{ id: string; name: string; color: string }>; all: boolean } | null
   /** search/reply jump flash — ring-pulse this bubble briefly */
   highlighted: boolean
+  /** live Slack/Zulip reply count for THIS thread root (0 = none) */
+  threadCount: number
   onPress: (message: ChatMessage) => void
   onStartLongPress: (message: ChatMessage) => void
   onEndLongPress: () => void
@@ -3004,13 +3764,18 @@ interface MessageRowProps {
   onReply: (message: ChatMessage) => void
   /** long-press a chip → who-reacted sheet */
   onReactionInfo: (message: ChatMessage, emoji: string) => void
-  onOpenImage: (src: string) => void
+  /** open photo lightbox — consumes a view-once gate transparently */
+  onOpenImageGated: (message: ChatMessage) => void
   /** tap the quoted block → scroll to the parent message + flash */
   onJumpToReply: (parentMessageId: string) => void
   /** tap the read-by stack → seen-by detail sheet (groups only) */
   onOpenSeenBy: () => void
   /** bubble <img> finished decoding → caller re-anchors scroll */
   onImageLoad: () => void
+  /** open this message's thread sheet */
+  onOpenThread: (message: ChatMessage) => void
+  onVote: (pollId: string, optionId: string) => void
+  onClosePoll: (pollId: string) => void
 }
 
 /** Renders text with the first case-insensitive occurrence of `query` highlighted. */
@@ -3225,6 +3990,195 @@ function BubbleText({
   )
 }
 
+/** Live-poll card rendered INSIDE a bubble (Discord-style bars + tallies). */
+function PollCard({
+  poll,
+  mine,
+  myId,
+  onVote,
+  onClose,
+}: {
+  poll: NonNullable<ChatMessage['poll']>
+  mine: boolean
+  myId: string
+  onVote: (pollId: string, optionId: string) => void
+  onClose: (pollId: string) => void
+}) {
+  const total = Math.max(poll.totalVotes, 0)
+  return (
+    <div className="min-w-[210px] py-0.5">
+      <p
+        className={cn(
+          'mb-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider',
+          mine ? 'text-white/75' : 'text-emerald-600 dark:text-emerald-400',
+        )}
+      >
+        <Vote className="size-3" aria-hidden />
+        {poll.closed ? 'Poll · Final results' : 'Live poll'}
+      </p>
+      <p className={cn('text-[14px] font-semibold leading-snug', mine ? 'text-white' : 'text-zinc-900 dark:text-zinc-100')}>
+        {poll.question}
+      </p>
+      <div className="mt-1.5 space-y-1" role={poll.closed ? undefined : 'radiogroup'} aria-label="Poll options">
+        {poll.options.map((option) => {
+          const pct = total > 0 ? Math.round((option.voteCount / total) * 100) : 0
+          const picked = option.votedBy.includes(myId)
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role={poll.closed ? undefined : 'radio'}
+              aria-checked={picked || undefined}
+              aria-label={`${option.text} — ${option.voteCount} ${option.voteCount === 1 ? 'vote' : 'votes'}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!poll.closed && !picked) onVote(poll.id, option.id)
+              }}
+              className={cn(
+                'relative block w-full overflow-hidden rounded-lg border px-2 py-1.5 text-left outline-none transition-colors',
+                mine
+                  ? 'border-white/25 hover:bg-white/10'
+                  : 'border-zinc-200 hover:border-emerald-300 hover:bg-emerald-500/5 dark:border-zinc-600 dark:hover:border-emerald-500/60 dark:hover:bg-emerald-500/10',
+                picked && (mine ? 'border-white bg-black/15' : 'border-emerald-400 bg-emerald-500/10'),
+                poll.closed && 'cursor-default',
+              )}
+            >
+              <span
+                aria-hidden
+                style={{ width: `${pct}%` }}
+                className={cn(
+                  'absolute inset-y-0 left-0 transition-all duration-500',
+                  mine ? 'bg-black/25' : 'bg-emerald-500/15 dark:bg-emerald-400/20',
+                )}
+              />
+              <span className="relative flex items-center justify-between gap-2">
+                <span className={cn('flex min-w-0 items-center gap-1 text-[13px]', mine ? 'text-white' : 'text-zinc-800 dark:text-zinc-100')}>
+                  <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold', picked ? (mine ? 'border-white bg-white text-emerald-600' : 'border-emerald-500 bg-emerald-500 text-white') : mine ? 'border-white/50 text-transparent' : 'border-zinc-400 text-transparent dark:border-zinc-500')}>
+                    ✓
+                  </span>
+                  <span className="truncate font-medium">{option.text}</span>
+                </span>
+                <span className={cn('shrink-0 text-[11px] font-bold tabular-nums', mine ? 'text-white/85' : 'text-zinc-500 dark:text-zinc-300')}>
+                  {pct}%
+                </span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <p className={cn('text-[10px]', mine ? 'text-white/70' : 'text-zinc-400 dark:text-zinc-500')}>
+          {total === 0 ? 'No votes yet' : `${total} ${total === 1 ? 'vote' : 'votes'}`} · {poll.closed ? 'closed' : 'tap an option to vote'}
+        </p>
+        {mine && !poll.closed ? (
+          <button
+            type="button"
+            aria-label="Close this poll"
+            onClick={(e) => {
+              e.stopPropagation()
+              onClose(poll.id)
+            }}
+            className={cn(
+              'rounded-full px-2 py-0.5 text-[10px] font-bold outline-none transition-colors',
+              mine ? 'text-white/85 hover:bg-white/15' : 'text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700',
+            )}
+          >
+            End
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** Cached Open-Graph link card under link messages. */
+function LinkPreviewCard({
+  preview,
+  mine,
+}: {
+  preview: NonNullable<ChatMessage['linkPreview']>
+  mine: boolean
+}) {
+  return (
+    <a
+      href={preview.url.startsWith('www.') ? `https://${preview.url}` : preview.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className={cn(
+        'mt-1 block rounded-xl border p-2 outline-none transition-transform active:scale-[0.99]',
+        mine ? 'border-white/25 bg-black/15 hover:bg-black/25' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/70 dark:hover:bg-zinc-800',
+      )}
+    >
+      {preview.imageUrl ? (
+        <img
+          src={preview.imageUrl}
+          alt={preview.title ?? 'Link preview image'}
+          loading="lazy"
+          className="mb-1.5 max-h-32 w-full rounded-lg object-cover"
+        />
+      ) : null}
+      <p className={cn('truncate text-[12px] font-bold', mine ? 'text-white' : 'text-zinc-800 dark:text-zinc-100')}>
+        {preview.title ?? preview.url}
+      </p>
+      {preview.description ? (
+        <p className={cn('mt-0.5 line-clamp-2 text-[11.5px] leading-snug', mine ? 'text-white/80' : 'text-zinc-500 dark:text-zinc-400')}>
+          {preview.description}
+        </p>
+      ) : null}
+      <p className={cn('mt-1 flex items-center gap-1 truncate text-[10px]', mine ? 'text-white/65' : 'text-zinc-400 dark:text-zinc-500')}>
+        <Link2 className="size-3 shrink-0" aria-hidden />
+        {preview.siteName ?? (() => { try { return new URL(preview.url.startsWith('www.') ? `https://${preview.url}` : preview.url).hostname } catch { return preview.url } })()}
+      </p>
+    </a>
+  )
+}
+/** Per-message LLM translation — collapsed by default, tap to reveal. */
+function TranslationLine({
+  translations,
+  mine,
+}: {
+  translations: Array<{ lang: string; text: string }>
+  mine: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const first = translations[0]
+  if (!first) return null
+  return (
+    <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(true)
+            haptic(6)
+          }}
+          className={cn(
+            'flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold outline-none transition-colors',
+            mine
+              ? 'bg-white/20 text-white/90 hover:bg-white/30'
+              : 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400',
+          )}
+        >
+          <Globe className="size-3" aria-hidden />
+          See translation
+        </button>
+      ) : (
+        <p
+          className={cn(
+            'mt-0.5 rounded-lg border-l-2 px-2 py-1 text-[12.5px] italic leading-snug',
+            mine
+              ? 'border-white/50 bg-black/15 text-white/90'
+              : 'border-emerald-400 bg-emerald-500/5 text-zinc-600 dark:border-emerald-500/70 dark:bg-emerald-500/10 dark:text-zinc-300',
+          )}
+        >
+          {first.text}
+        </p>
+      )}
+    </div>
+  )
+}
+
 const MessageRow = memo(function MessageRow({
   message,
   head,
@@ -3236,16 +4190,20 @@ const MessageRow = memo(function MessageRow({
   memberNames,
   readBy,
   highlighted,
+  threadCount,
   onPress,
   onStartLongPress,
   onEndLongPress,
   onToggleReaction,
   onReply,
   onReactionInfo,
-  onOpenImage,
+  onOpenImageGated,
   onJumpToReply,
   onOpenSeenBy,
   onImageLoad,
+  onOpenThread,
+  onVote,
+  onClosePoll,
 }: MessageRowProps) {
   const deleted = message.deletedAt !== null
   const pending = message.id.startsWith('temp-')
@@ -3253,10 +4211,14 @@ const MessageRow = memo(function MessageRow({
   const createdMs = Date.parse(message.createdAt)
   const isRead = !Number.isNaN(createdMs) && createdMs <= readMs
   const interactive = !deleted && !pending
-  const jumbo = !deleted && !message.imagePath && !message.audioPath && isJumboEmoji(message.content)
+  const jumbo = !deleted && !message.imagePath && !message.audioPath && !message.poll && isJumboEmoji(message.content)
   const hasReactions = message.reactions.length > 0
   const isImage = !deleted && message.imagePath !== null
   const isVoice = !deleted && !isImage && message.audioPath !== null
+  const isPoll = !deleted && message.poll !== null
+  /** Snapchat/WhatsApp view-once gates */
+  const viewGated = isImage && message.viewOnce && !mine && message.viewedAt === null
+  const viewBurned = isImage && message.viewOnce && !mine && message.viewedAt !== null
   const edited = message.editedAt !== null && !deleted
   const pinned = message.pinnedAt !== null && !deleted
   /** someone @mentioned the viewer → amber attention ring (WhatsApp/Telegram-style) */
@@ -3375,7 +4337,7 @@ const MessageRow = memo(function MessageRow({
             highlighted && !deleted && 'animate-[pulse-message-flash_1.5s_ease-out_1]',
             jumbo
               ? 'px-1 py-0.5'
-              : isImage
+              : isPoll || (isImage && !viewBurned)
                 ? 'rounded-2xl p-1 shadow-sm'
                 : isVoice
                   ? 'rounded-2xl px-2.5 py-2 shadow-sm'
@@ -3459,33 +4421,59 @@ const MessageRow = memo(function MessageRow({
                   </p>
                 </button>
               ) : null}
-              {isImage ? (
+              {isPoll && message.poll ? (
+                <PollCard
+                  poll={message.poll}
+                  mine={mine}
+                  myId={myId}
+                  onVote={onVote}
+                  onClose={(pollId) => onClosePoll(pollId)}
+                />
+              ) : isImage ? (
                 <>
-                  <button
-                    type="button"
-                    aria-label="Open photo"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (message.imagePath) {
-                        onOpenImage(`/api/uploads/${encodeURIComponent(message.imagePath)}`)
-                      }
-                    }}
-                    className={cn(
-                      'block overflow-hidden rounded-xl outline-none',
-                      mine ? '' : '',
-                    )}
-                  >
-                    <img
-                      src={`/api/uploads/${encodeURIComponent(message.imagePath as string)}`}
-                      alt="Shared photo"
-                      loading="lazy"
-                      onLoad={onImageLoad}
+                  {viewBurned ? (
+                    <div
+                      aria-label="View-once photo already opened"
                       className={cn(
-                        'block max-h-[300px] w-auto max-w-full rounded-xl object-cover transition-transform active:scale-[0.985]',
-                        pending && 'opacity-80',
+                        'flex h-[168px] w-[220px] items-center justify-center gap-2 rounded-xl border border-dashed text-xs font-semibold',
+                        mine ? 'border-white/40 text-white/85' : 'border-zinc-300 bg-zinc-100/70 text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-400',
                       )}
-                    />
-                  </button>
+                    >
+                      <EyeOff className="size-4" aria-hidden />
+                      Photo opened · gone forever
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label={viewGated ? 'Tap to view this photo once' : 'Open photo'}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (message.imagePath) onOpenImageGated(message)
+                      }}
+                      className="relative block overflow-hidden rounded-xl outline-none"
+                    >
+                      <img
+                        src={`/api/uploads/${encodeURIComponent(message.imagePath as string)}`}
+                        alt="Shared photo"
+                        loading="lazy"
+                        onLoad={onImageLoad}
+                        className={cn(
+                          'block max-h-[300px] w-auto max-w-full rounded-xl object-cover transition-transform active:scale-[0.985]',
+                          pending && 'opacity-80',
+                          viewGated && 'blur-2xl brightness-75 select-none',
+                        )}
+                      />
+                      {viewGated ? (
+                        <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-white">
+                          <EyeOff className="size-6 drop-shadow" aria-hidden />
+                          <span className="rounded-full bg-black/55 px-3 py-1 text-[11px] font-bold backdrop-blur-sm">
+                            Tap to view once
+                          </span>
+                          <span className="text-[9px] font-medium opacity-80">it disappears after opening</span>
+                        </span>
+                      ) : null}
+                    </button>
+                  )}
                   {message.content.trim().length > 0 ? (
                     <div className="px-0.5 pb-0.5">
                       <BubbleText content={message.content} mine={mine} memberNames={memberNames} />
@@ -3504,6 +4492,12 @@ const MessageRow = memo(function MessageRow({
               ) : (
                 <BubbleText content={message.content} mine={mine} memberNames={memberNames} />
               )}
+              {!isPoll && message.linkPreview && !deleted ? (
+                <LinkPreviewCard preview={message.linkPreview} mine={mine} />
+              ) : null}
+              {!mine && !deleted && message.translations.length > 0 ? (
+                <TranslationLine translations={message.translations} mine={mine} />
+              ) : null}
             </>
           )}
           <div
@@ -3517,6 +4511,12 @@ const MessageRow = memo(function MessageRow({
             )}
           >
             <span className={jumbo ? 'opacity-70' : undefined}>{formatTime(message.createdAt)}</span>
+            {message.expiresAt && !deleted ? (
+              <Timer
+                className="size-3 animate-pulse opacity-80"
+                aria-label={`disappears at ${formatListStamp(message.expiresAt)}`}
+              />
+            ) : null}
             {pinned ? <Pin className="size-3 rotate-45 opacity-80" aria-label="pinned" /> : null}
             {edited ? (
               <span className="italic opacity-80" aria-label="message was edited">
@@ -3606,6 +4606,30 @@ const MessageRow = memo(function MessageRow({
           </motion.div>
         ) : null}
 
+        {threadCount > 0 && !deleted ? (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, y: 2 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.16 }}
+            onClick={(e) => {
+              e.stopPropagation()
+              haptic(8)
+              onOpenThread(message)
+            }}
+            aria-label={`Open thread — ${threadCount} ${threadCount === 1 ? 'reply' : 'replies'}`}
+            className={cn(
+              'mt-0.5 flex max-w-[78%] items-center gap-1 rounded-full border bg-white/95 px-2 py-0.5 text-[10.5px] font-semibold shadow-sm outline-none transition-colors active:scale-95',
+              mine
+                ? 'mr-auto ml-0 border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-400 dark:hover:bg-emerald-500/10'
+                : 'ml-auto mr-0 border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-400 dark:hover:bg-emerald-500/10',
+            )}
+          >
+            <CornerDownRight className="size-3" aria-hidden />
+            {threadCount} {threadCount === 1 ? 'reply' : 'replies'}
+          </motion.button>
+        ) : null}
+
         {mine && !deleted && !pending && isGroup && readBy !== null && readBy.members.length > 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 2 }}
@@ -3657,6 +4681,7 @@ function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
     prev.readMs === next.readMs &&
     prev.myId === next.myId &&
     prev.myName === next.myName &&
+    prev.threadCount === next.threadCount &&
     prev.readBy === next.readBy &&
     prev.highlighted === next.highlighted &&
     prev.onPress === next.onPress &&
@@ -3665,10 +4690,13 @@ function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
     prev.onToggleReaction === next.onToggleReaction &&
     prev.onReply === next.onReply &&
     prev.onReactionInfo === next.onReactionInfo &&
-    prev.onOpenImage === next.onOpenImage &&
+    prev.onOpenImageGated === next.onOpenImageGated &&
     prev.onJumpToReply === next.onJumpToReply &&
     prev.onOpenSeenBy === next.onOpenSeenBy &&
-    prev.onImageLoad === next.onImageLoad
+    prev.onImageLoad === next.onImageLoad &&
+    prev.onOpenThread === next.onOpenThread &&
+    prev.onVote === next.onVote &&
+    prev.onClosePoll === next.onClosePoll
   )
 }
 
@@ -3689,6 +4717,9 @@ function InfoDialog({
   onRemoveMember,
   invitePending,
   onInvite,
+  broadcastMode,
+  broadcastPending,
+  onToggleBroadcast,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -3706,6 +4737,10 @@ function InfoDialog({
   onRemoveMember: (userId: string) => void
   invitePending: boolean
   onInvite: (regenerate: boolean) => void
+  /** announcement mode state + admin toggle */
+  broadcastMode: boolean
+  broadcastPending: boolean
+  onToggleBroadcast: (broadcast: boolean) => void
 }) {
   // group-management local state (all resets happen in event handlers)
   const [editingName, setEditingName] = useState(false)
@@ -4038,6 +5073,34 @@ function InfoDialog({
             {detail.isGroup ? (
               <div className="flex flex-col gap-1.5">
                 {isAdmin ? (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={broadcastMode}
+                    disabled={broadcastPending}
+                    onClick={() => onToggleBroadcast(!broadcastMode)}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-xl border p-3 text-left outline-none transition-colors disabled:opacity-60',
+                      broadcastMode
+                        ? 'border-emerald-400 bg-emerald-500/10'
+                        : 'border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/60',
+                    )}
+                  >
+                    <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', broadcastMode ? 'bg-emerald-500 text-white' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300')}>
+                      <Megaphone className="size-4" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Announcement mode</span>
+                      <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                        {broadcastMode ? 'Only admins can send — everyone else reads' : 'Everyone can post messages and polls'}
+                      </span>
+                    </span>
+                    <span aria-hidden className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', broadcastMode ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600')}>
+                      <span className={cn('absolute top-0.5 size-4 rounded-full bg-white shadow transition-all', broadcastMode ? 'left-[18px]' : 'left-0.5')} />
+                    </span>
+                  </button>
+                ) : null}
+                {isAdmin ? (
                   <div className="rounded-xl border border-dashed border-emerald-500/40 bg-emerald-500/5 p-3">
                     <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                       <Link2 className="size-3" aria-hidden />
@@ -4172,5 +5235,483 @@ function InfoDialog({
       </AlertDialogContent>
     </AlertDialog>
     </>
+  )
+}
+
+// ── poll builder sheet ───────────────────────────────────────
+
+const POLL_OPTIONS_MAX = 6
+
+function PollBuilderSheet({
+  open,
+  onOpenChange,
+  submitting,
+  onSubmit,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  submitting: boolean
+  onSubmit: (question: string, options: string[]) => void
+}) {
+  const [question, setQuestion] = useState('')
+  const [options, setOptions] = useState<string[]>(['', ''])
+
+  const reset = () => {
+    setQuestion('')
+    setOptions(['', ''])
+  }
+  const trimmedOptions = options.map((o) => o.trim()).filter((o) => o.length > 0)
+  const valid = question.trim().length > 0 && trimmedOptions.length >= 2
+
+  return (
+    <Drawer
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) {
+          reset()
+          onOpenChange(false)
+        }
+      }}
+    >
+      <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-4 pb-[max(0.9rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+        <div className="pb-2">
+          <DrawerTitle className="sr-only">Create a poll</DrawerTitle>
+          <DrawerDescription className="sr-only">Ask the chat and collect live votes</DrawerDescription>
+          <p className="flex items-center justify-center gap-1.5 pb-2 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+            <Vote className="size-4 text-violet-500" aria-hidden />
+            Create a live poll
+          </p>
+          <Input
+            autoFocus
+            value={question}
+            maxLength={140}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Ask a question…"
+            aria-label="Poll question"
+            className="h-11 rounded-2xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <p className="px-1 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+            Options (2–{POLL_OPTIONS_MAX})
+          </p>
+          <ul className="pulse-scroll max-h-[30dvh] space-y-1.5 overflow-y-auto pr-0.5">
+            {options.map((opt, i) => (
+              <li key={i} className="flex items-center gap-1.5">
+                <Input
+                  value={opt}
+                  maxLength={80}
+                  onChange={(e) =>
+                    setOptions((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (i === options.length - 1 && options.length < POLL_OPTIONS_MAX) {
+                        setOptions((prev) => [...prev, ''])
+                      }
+                    }
+                  }}
+                  placeholder={`Option ${i + 1}`}
+                  aria-label={`Poll option ${i + 1}`}
+                  className="h-10 flex-1 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+                {options.length > 2 ? (
+                  <button
+                    type="button"
+                    aria-label={`Remove option ${i + 1}`}
+                    onClick={() => setOptions((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 active:scale-90"
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {options.length < POLL_OPTIONS_MAX ? (
+            <button
+              type="button"
+              onClick={() => setOptions((prev) => [...prev, ''])}
+              className="mt-1.5 flex h-8 w-full items-center justify-center gap-1 rounded-xl border border-dashed border-emerald-400/60 text-xs font-semibold text-emerald-600 outline-none transition-colors hover:bg-emerald-500/5 active:scale-[0.99] dark:text-emerald-400"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              Add option
+            </button>
+          ) : null}
+          <div className="mt-3 flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                reset()
+                onOpenChange(false)
+              }}
+              className="h-11 flex-1 rounded-2xl text-sm font-medium"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!valid || submitting}
+              onClick={() => {
+                onSubmit(question.trim(), trimmedOptions)
+                reset()
+              }}
+              className="h-11 flex-[1.4] gap-1.5 rounded-2xl bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90"
+            >
+              {submitting ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : <Vote className="size-4" aria-hidden />}
+              Post poll
+            </Button>
+          </div>
+        </div>
+      </DrawerContent>
+    </Drawer>
+  )
+}
+
+// ── schedule sheet ───────────────────────────────────────────
+
+function ScheduleSheet({
+  draft,
+  onDraftChange,
+  open,
+  onOpenChange,
+  chatTitle,
+  pendingCount,
+  sending,
+  onShowPending,
+  onSubmit,
+}: {
+  draft: string | null
+  onDraftChange: (value: string | null) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  chatTitle: string
+  pendingCount: number
+  sending: boolean
+  onShowPending: () => void
+  onSubmit: (whenIso: string) => void
+}) {
+  const [whenLocal, setWhenLocal] = useState('')
+
+  /** local datetime-local value → ISO if it satisfies the 30s..30d window */
+  const computedIso = (): string | null => {
+    if (whenLocal.length === 0) return null
+    const ms = Date.parse(whenLocal)
+    if (Number.isNaN(ms)) return null
+    const now = Date.now()
+    if (ms < now + 30_000 || ms > now + 30 * 24 * 3600 * 1000) return null
+    return new Date(ms).toISOString()
+  }
+  const iso = computedIso()
+
+  const preset = (msAhead: number): void => {
+    const target = new Date(Date.now() + msAhead)
+    // snap to next clean five-minute mark for hour-scale presets
+    if (msAhead >= 3600000) {
+      target.setSeconds(0, 0)
+      target.setMinutes(Math.round(target.getMinutes() / 5) * 5 % 60)
+    }
+    const pad = (n: number) => String(n).padStart(2, '0')
+    setWhenLocal(
+      `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`,
+    )
+  }
+
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-4 pb-[max(0.9rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+        <div className="pb-2">
+          <DrawerTitle className="sr-only">Schedule message</DrawerTitle>
+          <DrawerDescription className="sr-only">Send this message automatically later</DrawerDescription>
+          <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+            <CalendarClock className="size-4 text-amber-500" aria-hidden />
+            Schedule for {chatTitle}
+          </p>
+          <Textarea
+            value={draft ?? ''}
+            rows={2}
+            maxLength={2000}
+            onChange={(e) => onDraftChange(e.target.value)}
+            placeholder="Message to send…"
+            aria-label="Scheduled message text"
+            className="pulse-scroll mt-1 resize-none rounded-2xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {[
+              { label: '+1h', ms: 3600_000 },
+              { label: 'Tomorrow 9:00', ms: (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d.getTime() - Date.now() })() },
+              { label: '+7d', ms: 7 * 24 * 3600_000 },
+            ].map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => preset(p.ms)}
+                className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-semibold text-zinc-600 outline-none transition-colors hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:text-emerald-400"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <label className="mt-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500" htmlFor="schedule-at">
+            Send at
+          </label>
+          <input
+            id="schedule-at"
+            type="datetime-local"
+            value={whenLocal}
+            onChange={(e) => setWhenLocal(e.target.value)}
+            className="mt-1 h-11 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 font-mono text-sm outline-none transition-colors focus:border-emerald-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+          />
+          {iso ? (
+            <p className="mt-1.5 flex items-center gap-1 px-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              <CheckCheck className="size-3.5" aria-hidden />
+              Sends itself {formatListStamp(iso)} · {formatTime(iso)}
+            </p>
+          ) : whenLocal.length > 0 ? (
+            <p className="mt-1.5 px-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+              Pick a moment between 30 seconds and 30 days from now.
+            </p>
+          ) : null}
+          <div className="mt-3 flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)} className="h-11 flex-1 rounded-2xl text-sm font-medium">
+              Cancel
+            </Button>
+            <Button
+              disabled={!iso || !draft || draft.trim().length === 0 || sending}
+              onClick={() => iso && onSubmit(iso)}
+              className="h-11 flex-[1.5] gap-1.5 rounded-2xl bg-amber-500 text-sm font-bold text-white shadow-md shadow-amber-600/20 hover:bg-amber-500/90"
+            >
+              {sending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : <CalendarClock className="size-4" aria-hidden />}
+              Schedule send
+            </Button>
+          </div>
+          {pendingCount > 0 ? (
+            <button
+              type="button"
+              onClick={onShowPending}
+              className="mt-2 w-full text-center text-[11px] font-semibold text-zinc-400 underline-offset-2 outline-none hover:text-zinc-600 hover:underline dark:hover:text-zinc-200"
+            >
+              Manage {pendingCount} pending scheduled {pendingCount === 1 ? 'message' : 'messages'}
+            </button>
+          ) : null}
+        </div>
+      </DrawerContent>
+    </Drawer>
+  )
+}
+
+// ── scheduled sends manager ─────────────────────────────────
+
+function ScheduledListDrawer({
+  open,
+  onOpenChange,
+  items,
+  loading,
+  onCancel,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  items: ScheduledItem[]
+  loading: boolean
+  onCancel: (id: string) => void
+}) {
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+        <DrawerTitle className="sr-only">Pending scheduled messages</DrawerTitle>
+        <DrawerDescription className="sr-only">Delayed sends still waiting to fire</DrawerDescription>
+        <div className="pb-2">
+          <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+            <CalendarClock className="size-4 text-amber-500" aria-hidden />
+            {items.length === 0 ? 'Nothing scheduled' : `${items.length} scheduled ${items.length === 1 ? 'message' : 'messages'}`}
+          </p>
+          {loading ? (
+            <div className="space-y-2 py-3" role="status" aria-label="Loading scheduled messages">
+              <Skeleton className="h-14 w-full rounded-2xl" />
+              <Skeleton className="h-14 w-full rounded-2xl" />
+            </div>
+          ) : items.length === 0 ? (
+            <p className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
+              Draft a message and choose “Schedule message” — it sends itself later.
+            </p>
+          ) : (
+            <ul className="pulse-scroll max-h-[44dvh] space-y-2 overflow-y-auto py-1">
+              {items.map((item) => (
+                <li key={item.id} className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
+                  <div className="flex items-center gap-2">
+                    <CalendarClock className="size-3.5 shrink-0 text-amber-500" aria-hidden />
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                      {formatListStamp(item.scheduledAt)} · {formatTime(item.scheduledAt)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onCancel(item.id)}
+                      className="ml-auto rounded-full p-1 text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 active:scale-90"
+                      aria-label="Cancel this scheduled message"
+                    >
+                      <Trash2 className="size-3.5" aria-hidden />
+                    </button>
+                  </div>
+                  <p className="mt-1 line-clamp-3 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
+                    {item.content.replace(/\s+/g, ' ').trim()}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="mt-2 flex h-11 w-full items-center justify-center rounded-2xl bg-zinc-100 text-sm font-semibold text-zinc-600 outline-none transition-transform hover:bg-zinc-200 active:scale-[0.98] dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          >
+            Close
+          </button>
+        </div>
+      </DrawerContent>
+    </Drawer>
+  )
+}
+
+// ── thread sheet (Slack/Zulip-style side discussion) ─────────
+
+function ThreadSheet({
+  root,
+  onClose,
+  myId,
+  sending,
+  text,
+  onTextChange,
+  onSend,
+}: {
+  root: ChatMessage | null
+  onClose: () => void
+  myId: string
+  sending: boolean
+  /** lifted draft so hot reloads / polls never eat the composer text */
+  text: string
+  onTextChange: (value: string) => void
+  onSend: () => void
+}) {
+  const listRef = useRef<HTMLDivElement>(null)
+
+  const threadQuery = useQuery({
+    queryKey: ['thread', root?.id ?? '-'],
+    enabled: root !== null,
+    staleTime: 15_000,
+    queryFn: async (): Promise<{ parent: ChatMessage; replies: ChatMessage[] }> => {
+      return apiJson(`/api/messages/${encodeURIComponent(root!.id)}/thread?userId=${encodeURIComponent(myId)}`)
+    },
+  })
+
+  useEffect(() => {
+    const el = listRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [threadQuery.data?.replies.length])
+
+  const submit = () => {
+    const content = text.trim()
+    if (content.length === 0 || sending) return
+    onSend()
+  }
+
+  const isOpen = root !== null
+  return (
+    <Drawer open={isOpen} onOpenChange={(next) => !next && onClose()}>
+      <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+        <DrawerTitle className="sr-only">Thread</DrawerTitle>
+        <DrawerDescription className="sr-only">Replies kept tidy under one message</DrawerDescription>
+        <div className="pb-2">
+          <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+            <MessageSquare className="size-4 text-violet-500" aria-hidden />
+            Thread
+            {(threadQuery.data?.replies.length ?? 0) > 0 ? (
+              <span className="rounded-full bg-violet-500/10 px-1.5 text-[10px] font-bold text-violet-600 dark:text-violet-300">
+                {threadQuery.data?.replies.length}
+              </span>
+            ) : null}
+          </p>
+
+          {root ? (
+            <div className="mb-2 rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
+              <div className="flex items-center gap-2">
+                <UserAvatar name={root.sender.name} color={root.sender.color} size={22} />
+                <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                  {root.sender.id === myId ? 'You' : root.sender.name}
+                </span>
+                <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatListStamp(root.createdAt)}</span>
+              </div>
+              <p className="mt-1 line-clamp-4 whitespace-pre-wrap break-words text-[13px] leading-snug text-zinc-700 dark:text-zinc-200">
+                {root.content.replace(/\s+/g, ' ').trim() || (root.imagePath ? '📷 Photo' : root.audioPath ? '🎤 Voice note' : '')}
+              </p>
+            </div>
+          ) : null}
+
+          <div ref={listRef} className="pulse-scroll min-h-[120px] max-h-[38dvh] space-y-2 overflow-y-auto py-1">
+            {threadQuery.isPending && root ? (
+              <div className="space-y-2" role="status" aria-label="Loading thread replies">
+                <Skeleton className="h-12 w-3/4 rounded-2xl" />
+                <Skeleton className="ml-auto h-12 w-2/3 rounded-2xl" />
+              </div>
+            ) : (threadQuery.data?.replies.length ?? 0) === 0 ? (
+              <p className="py-4 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                No replies yet — start the discussion.
+              </p>
+            ) : (
+              (threadQuery.data?.replies ?? []).map((m) => {
+                const mine = m.senderId === myId
+                return m.deletedAt ? (
+                  <p key={m.id} className="pl-1 text-[11px] italic text-zinc-400">reply was deleted</p>
+                ) : (
+                  <div key={m.id} className={cn('flex items-start gap-2', mine && 'flex-row-reverse')}>
+                    <UserAvatar name={m.sender.name} color={m.sender.color} size={26} />
+                    <div className={cn('max-w-[76%]', mine && 'text-right')}>
+                      <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
+                        {mine ? 'You' : m.sender.name}
+                        <span className="ml-1.5 font-normal text-zinc-400">{formatTime(m.createdAt)}</span>
+                      </p>
+                      <div
+                        className={cn(
+                          'mt-0.5 inline-block rounded-2xl px-3 py-1.5 text-left',
+                          mine
+                            ? 'bg-emerald-500 text-white'
+                            : 'border border-zinc-100 bg-white text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100',
+                        )}
+                      >
+                        <BubbleText content={m.content} mine={mine} memberNames={[m.sender.name]} />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          <div className="mt-2 flex items-end gap-1.5">
+            <textarea
+              value={text}
+              rows={1}
+              aria-label="Reply in thread"
+              placeholder="Reply in thread…"
+              maxLength={2000}
+              onChange={(e) => onTextChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  submit()
+                }
+              }}
+              className="pulse-scroll max-h-[96px] min-h-[42px] flex-1 resize-none rounded-2xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-emerald-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+            <button
+              type="button"
+              aria-label="Send thread reply"
+              disabled={text.trim().length === 0 || sending}
+              onClick={submit}
+              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-90 disabled:opacity-40"
+            >
+              {sending ? <LoaderCircle className="size-5 animate-spin" aria-hidden /> : <SendHorizontal className="size-5" aria-hidden />}
+            </button>
+          </div>
+        </div>
+      </DrawerContent>
+    </Drawer>
   )
 }

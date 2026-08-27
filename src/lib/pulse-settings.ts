@@ -8,6 +8,8 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
+export type ChatsListFilter = 'all' | 'unread' | 'groups'
+
 interface PulseSettingsState {
   soundOn: boolean
   hapticsOn: boolean
@@ -17,11 +19,14 @@ interface PulseSettingsState {
   quietStart: string
   /** 'HH:MM' 24h local time — window end (may be < start → overnight) */
   quietEnd: string
+  /** Telegram-style folder filter on the chats list */
+  listFilter: ChatsListFilter
   setSoundOn: (on: boolean) => void
   setHapticsOn: (on: boolean) => void
   setQuietHoursOn: (on: boolean) => void
   setQuietStart: (value: string) => void
   setQuietEnd: (value: string) => void
+  setListFilter: (value: ChatsListFilter) => void
 }
 
 export const pulseSettingsStore = create<PulseSettingsState>()(
@@ -32,11 +37,13 @@ export const pulseSettingsStore = create<PulseSettingsState>()(
       quietHoursOn: false,
       quietStart: '22:00',
       quietEnd: '07:00',
+      listFilter: 'all',
       setSoundOn: (on) => set({ soundOn: on }),
       setHapticsOn: (on) => set({ hapticsOn: on }),
       setQuietHoursOn: (on) => set({ quietHoursOn: on }),
       setQuietStart: (value) => set({ quietStart: value }),
       setQuietEnd: (value) => set({ quietEnd: value }),
+      setListFilter: (value) => set({ listFilter: value }),
     }),
     {
       name: 'pulse.settings.v1',

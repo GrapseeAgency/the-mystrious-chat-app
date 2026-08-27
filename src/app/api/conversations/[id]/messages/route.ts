@@ -19,6 +19,7 @@ import {
   safeJson,
   strField,
 } from '@/lib/serializers'
+import { maybeAiReply } from '@/lib/ai-bot'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,6 +47,11 @@ export async function GET(req: Request, { params }: RouteCtx) {
   if (!conv) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
+
+  // Disappearing-message purge: hard-delete anything past its deadline before reading.
+  await db.message.deleteMany({
+    where: { conversationId: id, expiresAt: { lte: new Date() } },
+  })
 
   const url = new URL(req.url)
 
@@ -95,7 +101,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     const total = matched.length
     const window = matched.slice(0, searchLimit)
     window.reverse()
-    return NextResponse.json({ messages: window.map(mapMessage), hasMore: false, total })
+    return NextResponse.json({ messages: window.map((m) => mapMessage(m)), hasMore: false, total })
   }
 
   if (before) {
@@ -110,7 +116,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
       db.message.count({ where: { conversationId: id } }),
     ])
     rows.reverse()
-    return NextResponse.json({ messages: rows.map(mapMessage), hasMore: rows.length === limit, total })
+    return NextResponse.json({ messages: rows.map((m) => mapMessage(m)), hasMore: rows.length === limit, total })
   }
 
   // Newest window (also the polling path — `after` narrows it when supplied).
@@ -127,7 +133,11 @@ export async function GET(req: Request, { params }: RouteCtx) {
     db.message.count({ where: { conversationId: id } }),
   ])
   messages.reverse()
-  return NextResponse.json({ messages: messages.map(mapMessage), hasMore: messages.length === limit, total })
+  return NextResponse.json({
+    messages: messages.map((m) => mapMessage(m)),
+    hasMore: messages.length === limit,
+    total,
+  })
 }
 
 /**
@@ -216,10 +226,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
   // Existence + membership checks up-front → clean 404 / 403 semantics.
   const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id }, select: { id: true } }),
+    db.conversation.findUnique({ where: { id } }),
     db.conversationParticipant.findUnique({
       where: { userId_conversationId: { userId: senderId, conversationId: id } },
-      select: { id: true },
+      select: { id: true, role: true },
     }),
   ])
   if (!conv) {
@@ -232,7 +242,46 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
+  // Broadcast mode (Discord stage / Telegram channel): admins only post.
+  if (conv.isGroup && conv.broadcastMode && participant.role !== 'admin') {
+    return NextResponse.json(
+      { error: 'Only admins can send messages while announcement mode is on.' },
+      { status: 403 },
+    )
+  }
+
+  // Optional thread parent (Slack/Zulip): must be a top-level, alive message here.
+  const parentId = strField(body.parentId)
+  if (parentId) {
+    const root = await db.message.findUnique({
+      where: { id: parentId },
+      select: { conversationId: true, deletedAt: true, parentId: true },
+    })
+    if (!root || root.conversationId !== id || root.deletedAt) {
+      return NextResponse.json(
+        { error: 'parentId must reference an existing message in this conversation.' },
+        { status: 400 },
+      )
+    }
+    if (root.parentId !== null) {
+      return NextResponse.json(
+        { error: 'Threads are one level deep — reply to the thread root instead.' },
+        { status: 400 },
+      )
+    }
+  }
+
+  // View-once is only meaningful on image messages.
+  const viewOnce = body.viewOnce === true
+  if (viewOnce && !imagePath) {
+    return NextResponse.json(
+      { error: 'viewOnce requires an image attachment.' },
+      { status: 400 },
+    )
+  }
+
   const now = new Date()
+  const expiresAt = conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
   const message = await db.$transaction(async (tx) => {
     const created = await tx.message.create({
       data: {
@@ -240,6 +289,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
         senderId,
         content,
         ...(replyToId ? { replyToId } : {}),
+        ...(parentId ? { parentId } : {}),
+        ...(viewOnce ? { viewOnce: true } : {}),
+        ...(expiresAt ? { expiresAt } : {}),
         ...(imagePath ? { imagePath } : {}),
         ...(audioPath ? { audioPath, ...(durationMs !== null ? { durationMs } : {}) } : {}),
       },
@@ -263,13 +315,16 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
   // Realtime relay to every OTHER member (sender handles self via response).
   const recipients = (await memberIdsOf(id)).filter((memberId) => memberId !== senderId)
-  const mapped = mapMessage(message)
+  const mapped = mapMessage(message, senderId)
   await notifySocket('message:new', recipients, {
     type: 'message:new',
     message: mapped,
     recipientIds: recipients,
     conversationId: id,
   })
+
+  // Pulse AI companion: fire-and-forget evaluation (DMs + @mentions in groups).
+  maybeAiReply(id, mapped)
 
   return NextResponse.json({ message: mapped }, { status: 201 })
 }

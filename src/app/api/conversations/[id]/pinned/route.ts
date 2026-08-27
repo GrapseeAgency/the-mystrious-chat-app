@@ -42,5 +42,5 @@ export async function GET(req: Request, { params }: RouteCtx) {
     include: MESSAGE_FULL_INCLUDE,
   })
 
-  return NextResponse.json({ messages: rows.map(mapMessage) })
+  return NextResponse.json({ messages: rows.map((m) => mapMessage(m, userId)) })
 }

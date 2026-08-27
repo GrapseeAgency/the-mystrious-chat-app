@@ -8,9 +8,9 @@ import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
-import { BadgeCheck, Check, Copy, LogOut, LoaderCircle, Moon, MoonStar, Smartphone, Sun, Volume2, Vibrate } from 'lucide-react'
+import { BadgeCheck, Check, Copy, LogOut, LoaderCircle, Moon, MoonStar, Smartphone, Star, Sun, Volume2, Vibrate } from 'lucide-react'
 import { toast } from 'sonner'
-import type { AppUser, ConversationSummary } from '@/lib/types'
+import type { AppUser, ConversationSummary, SavedItem } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
 import {
   AVATAR_GRADIENTS,
@@ -37,6 +37,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { pulseSettingsStore, haptic, isQuietHoursNow, primeSound } from '@/lib/pulse-settings'
 import { promptPwaInstall, usePulsePwa } from '@/lib/pwa-store'
@@ -51,15 +52,34 @@ interface ConversationsResponse {
 
 const NAME_MAX = 32
 const ABOUT_MAX = 140
+/** Discord-flavored custom-status glyph choices. */
+const STATUS_EMOJIS = ['🔥', '✨', '🎯', '☕', '🎧', '🌙', '💡', '🚀', '😴', '🍽️', ' vacation'.trim(), '💼'] as const
 
-export function ProfileTab({ me }: { me: AppUser }) {
+export function ProfileTab({
+  me,
+  onOpenSavedMessage,
+}: {
+  me: AppUser
+  /** saved-library row tap → open that chat and flash the message */
+  onOpenSavedMessage?: (conversationId: string, messageId: string) => void
+}) {
+  return <ProfileTabInner me={me} onOpenSavedMessage={onOpenSavedMessage} />
+}
+
+function ProfileTabInner({
+  me,
+  onOpenSavedMessage,
+}: {
+  me: AppUser
+  onOpenSavedMessage?: (conversationId: string, messageId: string) => void
+}) {
   // remount the editor whenever the underlying identity changes,
   // which re-initializes all local field state (no sync effects)
   const identityKey = `${me.id}|${me.name}|${me.about}|${me.color}`
-  return <ProfileEditor key={identityKey} me={me} />
+  return <ProfileEditor key={identityKey} me={me} onOpenSavedMessage={onOpenSavedMessage} />
 }
 
-function ProfileEditor({ me }: { me: AppUser }) {
+function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMessage?: (conversationId: string, messageId: string) => void }) {
   const queryClient = useQueryClient()
   const setUser = usePulseSession((s) => s.setUser)
   const { resolvedTheme, setTheme } = useTheme()
@@ -79,6 +99,11 @@ function ProfileEditor({ me }: { me: AppUser }) {
   const [name, setName] = useState(me.name)
   const [about, setAbout] = useState(me.about)
   const [color, setColor] = useState<AvatarColor>((me.color as AvatarColor) ?? 'emerald')
+  // Discord-style custom status
+  const [statusEmoji, setStatusEmoji] = useState(me.statusEmoji ?? '')
+  const [statusText, setStatusText] = useState(me.statusText ?? '')
+  /** saved-messages library drawer */
+  const [savedOpen, setSavedOpen] = useState(false)
   const [switchOpen, setSwitchOpen] = useState(false)
 
   const handleInstall = async () => {
@@ -114,18 +139,33 @@ function ProfileEditor({ me }: { me: AppUser }) {
   const dirty =
     name.trim() !== me.name.trim() ||
     about.trim() !== me.about.trim() ||
-    color !== me.color
+    color !== me.color ||
+    statusEmoji.trim() !== (me.statusEmoji ?? '') ||
+    statusText.trim() !== (me.statusText ?? '')
 
   const saveProfile = useMutation({
     mutationFn: async () => {
       return apiJson<UsersResponse>(`/api/users/${encodeURIComponent(me.id)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name: name.trim(), about: about.trim(), color }),
+        body: JSON.stringify({
+          name: name.trim(),
+          about: about.trim(),
+          color,
+          statusEmoji: statusEmoji.trim(),
+          statusText: statusText.trim(),
+        }),
       })
     },
     onMutate: async () => {
       // optimistic update across session store + query caches
-      const optimistic: AppUser = { ...me, name: name.trim(), about: about.trim(), color }
+      const optimistic: AppUser = {
+        ...me,
+        name: name.trim(),
+        about: about.trim(),
+        color,
+        statusEmoji: statusEmoji.trim() || null,
+        statusText: statusText.trim() || null,
+      }
       setUser(optimistic)
       queryClient.setQueryData(['me', me.id], optimistic)
       queryClient.setQueryData<AppUser[]>(['users'], (old) =>
@@ -160,6 +200,16 @@ function ProfileEditor({ me }: { me: AppUser }) {
       toast.error('Clipboard is unavailable here')
     }
   }
+
+  /** Telegram-style saved/starred library */
+  const savedQuery = useQuery({
+    queryKey: ['saved', me.id],
+    queryFn: async (): Promise<SavedItem[]> => {
+      const res = await apiJson<{ items: SavedItem[] }>(`/api/users/${encodeURIComponent(me.id)}/saved`)
+      return res.items
+    },
+    enabled: savedOpen,
+  })
 
   const toggleDarkMode = (checked: boolean) => setTheme(checked ? 'dark' : 'light')
   const switchAccount = () => {
@@ -204,6 +254,48 @@ function ProfileEditor({ me }: { me: AppUser }) {
                 placeholder="Hey there! I'm using Pulse."
                 onChange={(e) => setAbout(e.target.value.slice(0, ABOUT_MAX))}
                 className="resize-none rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+              />
+            </div>
+
+            {/* Discord-style custom status */}
+            <div className="space-y-2 py-1">
+              <Label htmlFor="profile-status" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                Custom status <span className="text-zinc-400">(Discord-style · shown on your presence)</span>
+              </Label>
+              <div role="radiogroup" aria-label="Status emoji" className="flex flex-wrap items-center gap-1">
+                {STATUS_EMOJIS.map((e) => {
+                  const selected = statusEmoji === e
+                  return (
+                    <button
+                      key={e}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-label={`Set status emoji ${e}`}
+                      onClick={() => {
+                        haptic(6)
+                        setStatusEmoji(selected ? '' : e)
+                      }}
+                      className={cn(
+                        'flex size-8 items-center justify-center rounded-full text-base outline-none transition-transform',
+                        selected
+                          ? 'bg-emerald-500/15 ring-2 ring-emerald-500 scale-105'
+                          : 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700',
+                      )}
+                    >
+                      {e}
+                    </button>
+                  )
+                })}
+              </div>
+              <Input
+                id="profile-status"
+                value={statusText}
+                maxLength={48}
+                placeholder="What's happening? (optional)"
+                onChange={(e) => setStatusText(e.target.value.slice(0, 48))}
+                autoComplete="off"
+                className="h-10 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
               />
             </div>
 
@@ -273,6 +365,26 @@ function ProfileEditor({ me }: { me: AppUser }) {
           <StatChip label="Unread" value={stats.unread > 99 ? '99+' : String(stats.unread)} accent />
           <StatChip label="Member since" value={stats.memberSince} />
         </section>
+
+        {/* saved / starred library (Telegram parity) */}
+        <Section title="Library">
+          <button
+            type="button"
+            onClick={() => {
+              haptic(8)
+              setSavedOpen(true)
+            }}
+            className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
+              <Star className="size-4 fill-amber-400 text-amber-500" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Saved messages</span>
+              <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">Long-press any message → Save message</span>
+            </span>
+          </button>
+        </Section>
 
         {/* notifications */}
         <Section title="Notifications">
@@ -441,6 +553,55 @@ function ProfileEditor({ me }: { me: AppUser }) {
           </Button>
         </Section>
       </div>
+
+      {/* saved-messages library drawer */}
+      <Drawer open={savedOpen} onOpenChange={setSavedOpen}>
+        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+          <DrawerTitle className="sr-only">Saved messages</DrawerTitle>
+          <DrawerDescription className="sr-only">Messages you starred across every chat</DrawerDescription>
+          <div className="pb-2">
+            <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+              <Star className="size-4 fill-amber-400 text-amber-500" aria-hidden />
+              {savedQuery.isPending ? 'Loading…' : `${(savedQuery.data ?? []).length} saved ${(savedQuery.data ?? []).length === 1 ? 'message' : 'messages'}`}
+            </p>
+            {(savedQuery.data ?? []).length === 0 && !savedQuery.isPending ? (
+              <p className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                Long-press a message in any chat and choose “Save message”.
+              </p>
+            ) : (
+              <ul className="pulse-scroll max-h-[52dvh] space-y-2 overflow-y-auto py-1">
+                {(savedQuery.data ?? []).map((item) => (
+                  <li key={`${item.message.id}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        haptic(8)
+                        setSavedOpen(false)
+                        onOpenSavedMessage?.(item.message.conversationId, item.message.id)
+                      }}
+                      className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 text-left outline-none transition-colors hover:border-emerald-300 active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800/60 dark:hover:border-emerald-500/50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <UserAvatar name={item.message.sender.name} color={item.message.sender.color} size={22} />
+                        <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                          {item.message.sender.id === me.id ? 'You' : item.message.sender.name}
+                          <span className="ml-1.5 font-medium text-zinc-400">in {item.conversation.name ?? 'chat'}</span>
+                        </span>
+                        <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{item.savedAt.slice(0, 10)}</span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
+                        {item.message.imagePath ? '📷 ' : ''}
+                        {item.message.audioPath ? '🎤 ' : ''}
+                        {item.message.content.replace(/\s+/g, ' ').trim() || '(media)'}
+                      </p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </DrawerContent>
+      </Drawer>
 
       <AlertDialog open={switchOpen} onOpenChange={setSwitchOpen}>
         <AlertDialogContent className="max-w-[320px] rounded-2xl border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">

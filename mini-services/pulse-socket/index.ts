@@ -135,7 +135,7 @@ function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unkno
 // ---------------------------------------------------------------------------
 // Internal HTTP relay endpoints (called by Next.js API routes)
 // ---------------------------------------------------------------------------
-const NOTIFY_EVENTS = new Set(['message:new', 'message:deleted', 'message:read', 'message:react', 'message:edited', 'message:pinned', 'conversation:updated'])
+const NOTIFY_EVENTS = new Set(['message:new', 'message:deleted', 'message:read', 'message:react', 'message:edited', 'message:pinned', 'message:viewed', 'poll:voted', 'link:preview', 'translation:added', 'conversation:updated'])
 
 type NotifyBody = { event?: unknown; recipients?: unknown; payload?: unknown }
 
@@ -371,6 +371,36 @@ io.on('connection', (socket: Socket) => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// Scheduled-send dispatcher ticker.
+// This service intentionally has NO database access; it simply pokes the
+// Next.js maintenance endpoint on an interval, which flushes due Telegram-style
+// delayed messages through the exact same pipeline as a live send.
+// ---------------------------------------------------------------------------
+const NEXT_APP_URL = process.env.PULSE_ORIGIN ?? 'http://localhost:3000'
+const DISPATCH_INTERVAL_MS = 20_000
+const DISPATCH_KEY = process.env.CRON_SECRET ?? 'pulse-dispatch-key'
+
+async function tickDispatch(): Promise<void> {
+  try {
+    const res = await fetch(`${NEXT_APP_URL}/api/maintenance/dispatch`, {
+      method: 'POST',
+      headers: { 'x-pulse-key': DISPATCH_KEY },
+      signal: AbortSignal.timeout(8000),
+    })
+    const body = (await res.json().catch(() => null)) as { dispatched?: number } | null
+    if (body && typeof body.dispatched === 'number' && body.dispatched > 0) {
+      console.log(`[cron] dispatched ${body.dispatched} scheduled message(s)`)
+    }
+  } catch (error) {
+    // app may be mid-restart — the next tick retries silently
+    if (process.env.PULSE_DISPATCH_DEBUG === '1') {
+      console.log('[cron] dispatch probe failed:', error instanceof Error ? error.message : error)
+    }
+  }
+}
+setInterval(() => void tickDispatch(), DISPATCH_INTERVAL_MS)
 
 // ---------------------------------------------------------------------------
 // Safety nets + start + graceful shutdown

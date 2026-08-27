@@ -26,7 +26,14 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params
   const body = await safeJson(req)
 
-  const data: { name?: string; about?: string; color?: string; lastSeenAt: Date } = {
+  const data: {
+    name?: string
+    about?: string
+    color?: string
+    statusEmoji?: string | null
+    statusText?: string | null
+    lastSeenAt: Date
+  } = {
     lastSeenAt: new Date(), // any successful profile touch counts as "last active"
   }
 
@@ -54,6 +61,22 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 
   if (body.color !== undefined) {
     data.color = normalizeColor(body.color) // unknown colors fall back to 'emerald'
+  }
+
+  // Discord-style custom status — explicit keys only; null clears.
+  if (body.statusEmoji !== undefined) {
+    const emoji = strField(body.statusEmoji)
+    if (emoji.length > 8) {
+      return NextResponse.json({ error: 'statusEmoji must be 8 characters or fewer.' }, { status: 400 })
+    }
+    data.statusEmoji = emoji.length === 0 ? null : emoji
+  }
+  if (body.statusText !== undefined) {
+    const text = strField(body.statusText)
+    if (text.length > 48) {
+      return NextResponse.json({ error: 'statusText must be 48 characters or fewer.' }, { status: 400 })
+    }
+    data.statusText = text.length === 0 ? null : text
   }
 
   const existing = await db.user.findUnique({ where: { id }, select: { id: true } })

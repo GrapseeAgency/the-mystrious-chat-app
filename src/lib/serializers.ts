@@ -81,6 +81,8 @@ interface UserRow {
   name: string
   about: string
   color: string
+  statusEmoji: string | null
+  statusText: string | null
   createdAt: Date
   lastSeenAt: Date
 }
@@ -95,6 +97,8 @@ export function mapUser(user: UserRow): AppUser {
     name: user.name,
     about: user.about,
     color: user.color,
+    statusEmoji: user.statusEmoji ?? null,
+    statusText: user.statusText ?? null,
     createdAt: user.createdAt.toISOString(),
     lastSeenAt: user.lastSeenAt.toISOString(),
   }
@@ -128,11 +132,21 @@ export const MESSAGE_FULL_INCLUDE = {
   sender: true,
   reactions: { select: { emoji: true, userId: true } },
   replyTo: { select: { id: true, content: true, deletedAt: true, sender: { select: { name: true } } } },
+  poll: {
+    include: {
+      options: {
+        orderBy: { position: 'asc' as const },
+        include: { votes: { select: { userId: true, optionId: true } } },
+      },
+    },
+  },
+  translations: { select: { lang: true, text: true } },
+  linkPreview: true,
 } satisfies Prisma.MessageInclude
 
 export type MessageRowWithRelations = Prisma.MessageGetPayload<{ include: typeof MESSAGE_FULL_INCLUDE }>
 
-export function mapMessage(message: MessageRowWithRelations): ChatMessage {
+export function mapMessage(message: MessageRowWithRelations, viewerId?: string): ChatMessage {
   const parent = message.replyTo
   const replyTo = parent
     ? {
@@ -142,6 +156,33 @@ export function mapMessage(message: MessageRowWithRelations): ChatMessage {
         deleted: parent.deletedAt !== null,
       }
     : null
+
+  // Poll tally (viewer-aware my vote)
+  let poll: ChatMessage['poll'] = null
+  if (message.poll) {
+    let totalVotes = 0
+    let myOptionId: string | null = null
+    const options = message.poll.options.map((option) => {
+      totalVotes += option.votes.length
+      if (viewerId && option.votes.some((v) => v.userId === viewerId)) myOptionId = option.id
+      return {
+        id: option.id,
+        text: option.text,
+        position: option.position,
+        voteCount: option.votes.length,
+        votedBy: option.votes.map((v) => v.userId),
+      }
+    })
+    poll = {
+      id: message.poll.id,
+      question: message.poll.question,
+      closed: message.poll.closedAt !== null,
+      options,
+      totalVotes,
+      myOptionId,
+    }
+  }
+
   return {
     id: message.id,
     conversationId: message.conversationId,
@@ -158,6 +199,24 @@ export function mapMessage(message: MessageRowWithRelations): ChatMessage {
     editedAt: message.editedAt ? message.editedAt.toISOString() : null,
     pinnedAt: message.pinnedAt ? message.pinnedAt.toISOString() : null,
     pinnedBy: message.pinnedBy ?? null,
+    parentId: message.parentId ?? null,
+    viewOnce: message.viewOnce,
+    viewedAt: message.viewedAt ? message.viewedAt.toISOString() : null,
+    viewedBy: message.viewedBy ?? null,
+    expiresAt: message.expiresAt ? message.expiresAt.toISOString() : null,
+    linkUrl: message.linkUrl ?? null,
+    linkPreview:
+      message.linkPreview !== null
+        ? {
+            url: message.linkPreview.url,
+            title: message.linkPreview.title,
+            description: message.linkPreview.description,
+            imageUrl: message.linkPreview.imageUrl,
+            siteName: message.linkPreview.siteName,
+          }
+        : null,
+    poll,
+    translations: message.translations.map((t) => ({ lang: t.lang, text: t.text })),
   }
 }
 
@@ -216,11 +275,13 @@ export async function buildConversationSummary(
     createdAt: conv.createdAt.toISOString(),
     updatedAt: conv.updatedAt.toISOString(),
     members: conv.participants.map(mapMember).sort(byName),
-    lastMessage: lastRow ? mapMessage(lastRow) : null,
+    lastMessage: lastRow ? mapMessage(lastRow, viewerId) : null,
     unreadCount,
     pinnedAt: mine?.pinnedAt ? mine.pinnedAt.toISOString() : null,
     mutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
     archivedAt: mine?.archivedAt ? mine.archivedAt.toISOString() : null,
+    ttlSeconds: conv.ttlSeconds,
+    broadcastMode: conv.broadcastMode,
   }
 }
 
@@ -239,6 +300,8 @@ export function buildConversationDetail(
     members: conv.participants.map(mapMember).sort(byName),
     myMutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
     inviteCode: conv.isGroup ? (conv.inviteCode ?? null) : null,
+    ttlSeconds: conv.ttlSeconds,
+    broadcastMode: conv.broadcastMode,
   }
 }
 
@@ -305,6 +368,10 @@ export type PulseSocketEvent =
   | 'message:react'
   | 'message:edited'
   | 'message:pinned'
+  | 'message:viewed'
+  | 'poll:voted'
+  | 'link:preview'
+  | 'translation:added'
   | 'conversation:updated'
 
 /**

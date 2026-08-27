@@ -8,6 +8,8 @@ export interface AppUser {
   name: string
   about: string
   color: string // emerald|rose|amber|violet|teal|orange|pink|cyan
+  statusEmoji: string | null // Discord-style custom status glyph
+  statusText: string | null // Discord-style custom status line
   createdAt: string // ISO
   lastSeenAt: string // ISO — updated when socket connects/disconnects is NOT possible (separate svc), so treat as "profile last active"; presence comes from socket events
 }
@@ -36,6 +38,41 @@ export interface ReplySnippet {
   deleted: boolean
 }
 
+/** Cached Open-Graph metadata attached to a message containing a link. */
+export interface LinkPreviewData {
+  url: string
+  title: string | null
+  description: string | null
+  imageUrl: string | null
+  siteName: string | null
+}
+
+/** One live-poll option with its current tally (includes who voted). */
+export interface PollOptionTally {
+  id: string
+  text: string
+  position: number
+  voteCount: number
+  /** userIds of voters — clients derive their own pick, reaction-style */
+  votedBy: string[]
+}
+
+/** Full poll card state embedded on the owning message. */
+export interface PollData {
+  id: string
+  question: string
+  closed: boolean
+  options: PollOptionTally[]
+  totalVotes: number
+  /** option the viewer picked (null = not voted / no viewer) */
+  myOptionId: string | null
+}
+
+export interface MessageTranslationEntry {
+  lang: string
+  text: string
+}
+
 export interface ChatMessage {
   id: string
   conversationId: string
@@ -52,6 +89,15 @@ export interface ChatMessage {
   editedAt: string | null // ISO or null — set when the sender edited the text
   pinnedAt: string | null // ISO or null — pinned within the conversation
   pinnedBy: string | null // userId of whoever pinned (null when unpinned)
+  parentId: string | null // Slack/Zulip thread root this reply belongs to
+  viewOnce: boolean // view-once media gate (sender's own copies always render)
+  viewedAt: string | null // when a non-sender consumed a view-once attachment
+  viewedBy: string | null
+  expiresAt: string | null // disappearing-message deadline (hard-purged after)
+  linkUrl: string | null // canonical unfurl target
+  linkPreview: LinkPreviewData | null
+  poll: PollData | null
+  translations: MessageTranslationEntry[] // persisted LLM translations by lang
   /** client-only marker: message is held in the offline outbox (never sent by server) */
   _queued?: boolean
 }
@@ -69,6 +115,8 @@ export interface ConversationSummary {
   pinnedAt: string | null // viewer's pin watermark (null = not pinned)
   mutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
   archivedAt: string | null // viewer's archive watermark (null = active chat)
+  ttlSeconds: number // disappearing-message TTL for THIS chat (0 = off)
+  broadcastMode: boolean // admin-only posting (groups/stage channels)
 }
 
 export type GroupRole = 'admin' | 'member'
@@ -84,6 +132,8 @@ export interface ConversationDetail {
   members: Array<AppUser & { lastReadAt: string; role: GroupRole }>
   myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
   inviteCode: string | null // shareable join code (groups only; null = no active link)
+  ttlSeconds: number // disappearing-message TTL (0 = off)
+  broadcastMode: boolean // admin-only posting
 }
 
 /** Public preview of an invite code before joining (GET /api/invite/[code]). */
@@ -102,6 +152,22 @@ export interface SearchResultMessage extends ChatMessage {
   /** resolved display title (group name or DM partner name) */
   conversationName: string
   isGroup: boolean
+}
+
+/** Telegram-style saved/starred bookmark row. */
+export interface SavedItem {
+  savedAt: string // ISO
+  conversation: { id: string; isGroup: boolean; name: string | null }
+  message: ChatMessage
+}
+
+/** Pending delayed-send row (scheduler). */
+export interface ScheduledItem {
+  id: string
+  conversationId: string
+  content: string
+  scheduledAt: string // ISO
+  sentAt: string | null
 }
 
 // ── Socket event payloads (port 3003 mini service) ────────────
@@ -124,7 +190,16 @@ export interface ReadEvent {
 }
 
 export interface SocketMessageEvent {
-  type: 'message:new' | 'message:deleted' | 'message:react' | 'message:edited' | 'message:pinned'
+  type:
+    | 'message:new'
+    | 'message:deleted'
+    | 'message:react'
+    | 'message:edited'
+    | 'message:pinned'
+    | 'poll:voted' // full fresh message arrives (updated tally)
+    | 'link:preview' // full fresh message arrives (unfurl attached)
+    | 'translation:added' // full fresh message arrives (+1 translation)
+    | 'message:viewed' // view-once media consumed → re-render gate
   message: ChatMessage
   /** ids of all members except sender */
   recipientIds: string[]

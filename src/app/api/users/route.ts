@@ -4,6 +4,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapUser, normalizeColor, safeJson, strField, USER_NAME_MAX } from '@/lib/serializers'
+import { ensurePulseBot } from '@/lib/ai-bot'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,6 +73,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ user: mapUser(user) })
   }
 
+  // ensure the AI companion exists so it is addable like any user
+  await ensurePulseBot()
   const users = await db.user.findMany({ orderBy: { name: 'asc' } })
   return NextResponse.json({ users: users.map(mapUser) })
 }

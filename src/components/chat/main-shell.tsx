@@ -100,7 +100,17 @@ export function MainShell({ me }: { me: AppUser }) {
                 onRequestNewGroup={() => openNewChat('group')}
               />
             ) : null}
-            {tab === 'profile' ? <ProfileTab me={me} /> : null}
+            {tab === 'profile' ? (
+              <ProfileTab
+                me={me}
+                onOpenSavedMessage={(conversationId, messageId) => {
+                  setTab('chats')
+                  setOpenConversationAnchorMs(null)
+                  setJumpMessageId(messageId)
+                  setOpenConversationId(conversationId)
+                }}
+              />
+            ) : null}
           </motion.div>
         </AnimatePresence>
 

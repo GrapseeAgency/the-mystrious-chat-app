@@ -179,7 +179,11 @@ function PersonRow({
                 </Badge>
               ) : null}
             </span>
-            <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{person.about}</span>
+            <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
+              {person.statusEmoji || person.statusText
+                ? [person.statusEmoji, person.statusText].filter(Boolean).join(' ')
+                : person.about}
+            </span>
           </span>
         </button>
         <Button

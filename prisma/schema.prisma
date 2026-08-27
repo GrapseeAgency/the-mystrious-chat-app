@@ -12,42 +12,63 @@ datasource db {
 // ─────────────────────────────────────────────────────────────
 
 model User {
-  id              String   @id @default(cuid())
-  name            String
-  about           String   @default("Hey there! I'm using Pulse.")
-  color           String   @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
-  createdAt       DateTime @default(now())
-  lastSeenAt      DateTime @default(now())
-  participations  ConversationParticipant[]
-  messages        Message[]
+  id             String                    @id @default(cuid())
+  name           String
+  about          String                    @default("Hey there! I'm using Pulse.")
+  color          String                    @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
+  statusEmoji    String? // Discord-style custom status glyph (null = none)
+  statusText     String? // Discord-style custom status line (null = none)
+  createdAt      DateTime                  @default(now())
+  lastSeenAt     DateTime                  @default(now())
+  participations ConversationParticipant[]
+  messages       Message[]
+  savedMessages  SavedMessage[]
+  quickPhrases   QuickPhrase[]
 
   @@index([name])
 }
 
+/**
+ * User-authored one-tap phrases (Among Us wheel / canned responses — real data).
+ */
+model QuickPhrase {
+  id        String   @id @default(cuid())
+  userId    String
+  text      String
+  position  Int      @default(0) // sort order within the user's rail
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, position])
+}
+
 model Conversation {
-  id           String   @id @default(cuid())
-  isGroup      Boolean  @default(false)
-  name         String? // group title; null for DMs
-  inviteCode   String?  @unique // shareable join code (groups only; null = no active link)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt // bumped on every new message → list sort
-  participants ConversationParticipant[]
-  messages     Message[]
+  id                String                    @id @default(cuid())
+  isGroup           Boolean                   @default(false)
+  name              String? // group title; null for DMs
+  inviteCode        String?                   @unique // shareable join code (groups only; null = no active link)
+  ttlSeconds        Int                       @default(0) // disappearing-message TTL (0 = off; applied at send time)
+  broadcastMode     Boolean                   @default(false) // Discord-stage/Telegram-channel style admin-only posting
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt // bumped on every new message → list sort
+  participants      ConversationParticipant[]
+  messages          Message[]
+  scheduledMessages ScheduledMessage[]
 
   @@index([updatedAt])
 }
 
 model ConversationParticipant {
-  id             String    @id @default(cuid())
+  id             String       @id @default(cuid())
   userId         String
   conversationId String
-  role           String    @default("member") // "admin" | "member" (groups: creator is admin)
-  joinedAt       DateTime  @default(now()) // join watermark (tie-breaker for admin succession)
-  lastReadAt     DateTime  @default(now()) // read receipts / unread counts
+  role           String       @default("member") // "admin" | "member" (groups: creator is admin)
+  joinedAt       DateTime     @default(now()) // join watermark (tie-breaker for admin succession)
+  lastReadAt     DateTime     @default(now()) // read receipts / unread counts
   pinnedAt       DateTime? // per-user pinned-to-top
   mutedUntil     DateTime? // per-user notification mute watermark (null = unmuted)
   archivedAt     DateTime? // per-user archive watermark (null = active; cleared when others send new msgs)
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@unique([userId, conversationId])
@@ -56,27 +77,135 @@ model ConversationParticipant {
 }
 
 model Message {
-  id             String    @id @default(cuid())
+  id             String               @id @default(cuid())
   conversationId String
   senderId       String
   content        String
   deletedAt      DateTime? // soft delete → "message deleted" tombstone
-  replyToId      String?   // quoted message (reply feature)
-  imagePath      String?   // stored image filename via /api/uploads (image message)
-  audioPath      String?   // stored voice-note filename via /api/uploads (audio message)
-  durationMs     Int?      // voice-note length in milliseconds
+  replyToId      String? // quoted message (reply feature)
+  imagePath      String? // stored image filename via /api/uploads (image message)
+  audioPath      String? // stored voice-note filename via /api/uploads (audio message)
+  durationMs     Int? // voice-note length in milliseconds
   editedAt       DateTime? // last edit timestamp (null = never edited → "edited" label)
   pinnedAt       DateTime? // pinned within the conversation (null = not pinned)
-  pinnedBy       String?   // userId who pinned (display attribution)
-  createdAt      DateTime  @default(now())
-  sender         User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  replyTo        Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies        Message[] @relation("MessageReplies")
+  pinnedBy       String? // userId who pinned (display attribution)
+  parentId       String? // Slack/Zulip thread root this reply belongs to (null = top-level)
+  viewOnce       Boolean              @default(false) // Snapchat/WhatsApp view-once media gate
+  viewedAt       DateTime? // when the non-sender consumed a view-once attachment
+  viewedBy       String? // who consumed it
+  expiresAt      DateTime? // disappearing-message deadline (hard-purged after)
+  linkUrl        String? // canonical preview link (og unfurl) attached to this message
+  createdAt      DateTime             @default(now())
+  sender         User                 @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  conversation   Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo        Message?             @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        Message[]            @relation("MessageReplies")
+  parent         Message?             @relation("MessageThreads", fields: [parentId], references: [id], onDelete: Cascade)
+  threadReplies  Message[]            @relation("MessageThreads")
   reactions      Reaction[]
+  poll           Poll?
+  translations   MessageTranslation[]
+  linkPreview    LinkPreview?         @relation(fields: [linkUrl], references: [url])
+  savedBy        SavedMessage[]
 
   @@index([conversationId, createdAt])
   @@index([replyToId])
+  @@index([parentId])
+}
+
+/**
+ * Live poll card attached to exactly one message (Discord/Slack-style).
+ */
+model Poll {
+  id        String       @id @default(cuid())
+  messageId String       @unique
+  question  String
+  closedAt  DateTime? // null = voting open; set by the creator → final results frozen
+  createdAt DateTime     @default(now())
+  message   Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  options   PollOption[]
+}
+
+model PollOption {
+  id       String     @id @default(cuid())
+  pollId   String
+  text     String
+  position Int        @default(0) // display order (stable across tally updates)
+  poll     Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes    PollVote[]
+
+  @@index([pollId, position])
+}
+
+model PollVote {
+  id        String     @id @default(cuid())
+  pollId    String
+  optionId  String
+  userId    String
+  createdAt DateTime   @default(now())
+  option    PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId]) // single-choice polls — revote moves the vote
+}
+
+/**
+ * Telegram-style saved/starred messages (per-user bookmarks).
+ */
+model SavedMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  messageId String
+  savedAt   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@index([userId, savedAt])
+}
+
+/**
+ * Telegram/WhatsApp-style delayed send — flushed to a real message by the dispatch sweep.
+ */
+model ScheduledMessage {
+  id             String       @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String
+  scheduledAt    DateTime
+  sentAt         DateTime? // null = pending
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledAt, sentAt])
+  @@index([conversationId, senderId])
+}
+
+/**
+ * Per-language LLM translation persisted on demand (Webex-style caption translation).
+ */
+model MessageTranslation {
+  id        String   @id @default(cuid())
+  messageId String
+  lang      String
+  text      String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, lang])
+  @@index([messageId])
+}
+
+/**
+ * Cached OG/link metadata — fetched live from the web, keyed by canonical URL.
+ */
+model LinkPreview {
+  url         String    @id
+  title       String?
+  description String?
+  imageUrl    String?
+  siteName    String?
+  fetchedAt   DateTime  @default(now())
+  messages    Message[]
 }
 
 model Reaction {
