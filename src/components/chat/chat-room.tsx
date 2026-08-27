@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
 import {
   ArrowDown,
+  BellOff,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -43,6 +44,7 @@ import {
   Smile,
   Trash2,
   UserPlus,
+  VolumeX,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -85,7 +87,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Drawer, DrawerContent } from '@/components/ui/drawer'
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import {
   Dialog,
   DialogContent,
@@ -157,6 +159,8 @@ export function ChatRoom({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
+  /** header menu → inline mute preset choices */
+  const [muteChoicesOpen, setMuteChoicesOpen] = useState(false)
   const [selected, setSelected] = useState<ChatMessage | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [showJump, setShowJump] = useState(false)
@@ -165,6 +169,9 @@ export function ChatRoom({
   /** {message, emoji} → who-reacted sheet */
   const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
   const [sendingImage, setSendingImage] = useState(false)
+  /** uploaded image awaiting an optional caption → caption sheet */
+  const [pendingImage, setPendingImage] = useState<{ imagePath: string; preview: string } | null>(null)
+  const [captionDraft, setCaptionDraft] = useState('')
   const [hasMoreHistory, setHasMoreHistory] = useState(false)
   /** mirror of hasMoreHistory readable from stable callbacks without re-creating them */
   const hasMoreHistoryRef = useRef(false)
@@ -530,6 +537,30 @@ export function ChatRoom({
     return max
   }, [detailData, me.id])
 
+  // ── group read-by stack (last own message) ────────────
+
+  /** newest own non-pending message still in the loaded window */
+  const lastOwnMessage = useMemo(() => {
+    const list = messages.data ?? []
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const m = list[i]
+      if (m.senderId === me.id && m.deletedAt === null && !m.id.startsWith('temp-')) return m
+    }
+    return null
+  }, [messages.data, me.id])
+
+  /** members (≠ me) who have read the last own message → tiny avatar stack */
+  const readByLast = useMemo(() => {
+    if (!lastOwnMessage || !detailData) return null
+    const createdMs = Date.parse(lastOwnMessage.createdAt)
+    if (Number.isNaN(createdMs)) return null
+    const members = detailData.members
+      .filter((m) => m.id !== me.id && Date.parse(m.lastReadAt) >= createdMs)
+      .map((m) => ({ id: m.id, name: m.name, color: m.color }))
+    const others = detailData.members.length - 1
+    return members.length > 0 ? { members, all: members.length >= others } : null
+  }, [lastOwnMessage, detailData, me.id])
+
   const items = useMemo<ClusterItem[]>(() => {
     const list = messages.data ?? []
     const now = new Date()
@@ -590,6 +621,13 @@ export function ChatRoom({
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
   }, [])
+
+  /** a bubble image finished loading → re-anchor to bottom if we were there */
+  const handleImageLoaded = useCallback(() => {
+    if (nearBottomRef.current) {
+      requestAnimationFrame(() => scrollToBottom(true))
+    }
+  }, [scrollToBottom])
 
   useEffect(() => {
     if (lastMessageId === null || !historyLoaded) return
@@ -797,6 +835,44 @@ export function ChatRoom({
     },
   })
 
+  // ── notification mute (per-user watermark) ─────────────
+
+  const isRoomMuted =
+    detailData != null &&
+    detailData.myMutedUntil !== null &&
+    Date.parse(detailData.myMutedUntil) > Date.now()
+
+  const toggleRoomMute = useMutation({
+    mutationFn: async (until: '8h' | '1w' | 'always' | null) => {
+      return apiJson<{ ok: boolean; mutedUntil: string | null }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/mute`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me.id, until }),
+        },
+      )
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+        old ? { ...old, myMutedUntil: data.mutedUntil } : old,
+      )
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      setMenuOpen(false)
+      setMuteChoicesOpen(false)
+      toast.success(
+        data.mutedUntil === null
+          ? 'Notifications unmuted'
+          : Date.parse(data.mutedUntil) - Date.now() > 20 * 365 * 24 * 3600 * 1000
+            ? 'Muted — always'
+            : `Muted until ${formatListStamp(data.mutedUntil)}`,
+      )
+    },
+    onError: () => {
+      toast.error('Could not update the mute')
+    },
+  })
+
   // ── composer behaviour ─────────────────────────────────────
 
   const autosize = useCallback(() => {
@@ -847,7 +923,7 @@ export function ChatRoom({
     }
   }
 
-  /** Pick → compress → upload → send as an image message. */
+  /** Pick → compress → upload → open the caption sheet (send from there). */
   const handleImagePicked = async (file: File | undefined) => {
     if (!file || sendingImage) return
     setSendingImage(true)
@@ -859,12 +935,8 @@ export function ChatRoom({
         body: JSON.stringify({ dataUrl }),
       })
       haptic(12)
-      sendMessage.mutate({
-        clientId: uid(),
-        content: '',
-        imagePath: up.imagePath,
-        ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
-      })
+      setCaptionDraft('')
+      setPendingImage({ imagePath: up.imagePath, preview: dataUrl })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not send the image')
     } finally {
@@ -872,6 +944,22 @@ export function ChatRoom({
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
+
+  /** Send the staged image with its (optional) caption. */
+  const sendCaptionedImage = useCallback(() => {
+    if (pendingImage === null || sendMessage.isPending) return
+    const caption = captionDraft.trim().slice(0, 500)
+    stopTyping()
+    const imagePath = pendingImage.imagePath
+    setPendingImage(null)
+    setCaptionDraft('')
+    sendMessage.mutate({
+      clientId: uid(),
+      content: caption,
+      imagePath,
+      ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+    })
+  }, [pendingImage, captionDraft, sendMessage, stopTyping, replyTo])
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (
@@ -1151,8 +1239,11 @@ export function ChatRoom({
           aria-label="Show info"
           className="ml-1.5 min-w-0 flex-1 text-left outline-none"
         >
-          <p className="truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {headerTitle}
+          <p className="flex items-center gap-1 truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            <span className="truncate">{headerTitle}</span>
+            {isRoomMuted ? (
+              <BellOff className="size-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" aria-label="Notifications muted" />
+            ) : null}
           </p>
           <AnimatePresence mode="wait" initial={false}>
             <motion.p
@@ -1179,7 +1270,10 @@ export function ChatRoom({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-label="Conversation menu"
-          onClick={() => setMenuOpen((v) => !v)}
+          onClick={() => {
+            setMuteChoicesOpen(false)
+            setMenuOpen((v) => !v)
+          }}
           className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
         >
           <EllipsisVertical className="size-5" aria-hidden />
@@ -1229,6 +1323,52 @@ export function ChatRoom({
                   <Info className="size-4 text-zinc-400" aria-hidden />
                   {isGroup ? 'Group info' : 'Contact info'}
                 </button>
+                {isRoomMuted ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={toggleRoomMute.isPending}
+                    onClick={() => toggleRoomMute.mutate(null)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  >
+                    <VolumeX className="size-4 text-emerald-500" aria-hidden />
+                    Unmute notifications
+                  </button>
+                ) : muteChoicesOpen ? (
+                  <div className="px-1 pb-1 pt-0.5" role="group" aria-label="Mute duration">
+                    <p className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                      Mute for
+                    </p>
+                    <div className="flex gap-1">
+                      {([
+                        { until: '8h', label: '8h' },
+                        { until: '1w', label: '1w' },
+                        { until: 'always', label: 'Always' },
+                      ] as const).map((preset) => (
+                        <button
+                          key={preset.until}
+                          type="button"
+                          role="menuitem"
+                          disabled={toggleRoomMute.isPending}
+                          onClick={() => toggleRoomMute.mutate(preset.until)}
+                          className="h-8 flex-1 rounded-lg bg-zinc-100 text-xs font-semibold text-zinc-700 outline-none transition-colors hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-emerald-500/20 dark:hover:text-emerald-400"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => setMuteChoicesOpen(true)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  >
+                    <BellOff className="size-4 text-zinc-400" aria-hidden />
+                    Mute notifications
+                  </button>
+                )}
               </motion.div>
             </>
           ) : null}
@@ -1311,6 +1451,11 @@ export function ChatRoom({
                   isGroup={isGroup}
                   readMs={othersMaxReadMs}
                   myId={me.id}
+                  readBy={
+                    isGroup && lastOwnMessage !== null && item.message.id === lastOwnMessage.id
+                      ? readByLast
+                      : null
+                  }
                   onPress={setSelected}
                   onStartLongPress={startLongPress}
                   onEndLongPress={clearLongPress}
@@ -1322,6 +1467,7 @@ export function ChatRoom({
                   onReactionInfo={(m, emoji) => setReactionInfo({ message: m, emoji })}
                   onOpenImage={setLightboxSrc}
                   onJumpToReply={jumpToReply}
+                  onImageLoad={handleImageLoaded}
                   highlighted={highlight !== null && highlight.id === item.message.id}
                 />
               ),
@@ -1706,6 +1852,85 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
+      {/* caption sheet — staged image awaiting an optional caption */}
+      <Drawer
+        open={pendingImage !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingImage(null)
+            setCaptionDraft('')
+          }
+        }}
+      >
+        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-4 pb-[max(0.9rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+          {pendingImage !== null ? (
+            <div className="pb-2">
+              <DrawerTitle className="sr-only">Send photo</DrawerTitle>
+              <p className="pb-2 pt-1 text-center text-xs font-medium text-zinc-400 dark:text-zinc-500">
+                Send to {headerTitle}
+              </p>
+              <div className="flex justify-center">
+                <img
+                  src={pendingImage.preview}
+                  alt="Photo to send"
+                  className="max-h-44 w-auto max-w-full rounded-2xl shadow-md"
+                />
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <Input
+                  autoFocus
+                  value={captionDraft}
+                  maxLength={500}
+                  onChange={(e) => setCaptionDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      sendCaptionedImage()
+                    }
+                  }}
+                  placeholder="Add a caption…"
+                  aria-label="Photo caption"
+                  className="h-11 flex-1 rounded-2xl border-zinc-200 bg-zinc-100 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+                <span
+                  aria-hidden
+                  className={cn(
+                    'w-9 shrink-0 text-right text-[10px] tabular-nums',
+                    captionDraft.length > 450 ? 'text-amber-500' : 'text-zinc-300 dark:text-zinc-600',
+                  )}
+                >
+                  {500 - captionDraft.length}
+                </span>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPendingImage(null)
+                    setCaptionDraft('')
+                  }}
+                  className="h-11 flex-1 rounded-2xl text-sm font-medium"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={sendMessage.isPending}
+                  onClick={sendCaptionedImage}
+                  className="h-11 flex-[1.6] gap-1.5 rounded-2xl bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90"
+                >
+                  {sendMessage.isPending ? (
+                    <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <SendHorizontal className="size-4" aria-hidden />
+                  )}
+                  Send
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DrawerContent>
+      </Drawer>
+
       {/* who-reacted sheet */}
       <Drawer open={reactionInfo !== null} onOpenChange={(open) => !open && setReactionInfo(null)}>
         <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
@@ -2070,6 +2295,8 @@ interface MessageRowProps {
   isGroup: boolean
   readMs: number
   myId: string
+  /** group read-by stack for the last own message (null otherwise) */
+  readBy: { members: Array<{ id: string; name: string; color: string }>; all: boolean } | null
   /** search/reply jump flash — ring-pulse this bubble briefly */
   highlighted: boolean
   onPress: (message: ChatMessage) => void
@@ -2082,6 +2309,8 @@ interface MessageRowProps {
   onOpenImage: (src: string) => void
   /** tap the quoted block → scroll to the parent message + flash */
   onJumpToReply: (parentMessageId: string) => void
+  /** bubble <img> finished decoding → caller re-anchors scroll */
+  onImageLoad: () => void
 }
 
 /** Renders text with the first case-insensitive occurrence of `query` highlighted. */
@@ -2141,6 +2370,7 @@ const MessageRow = memo(function MessageRow({
   isGroup,
   readMs,
   myId,
+  readBy,
   highlighted,
   onPress,
   onStartLongPress,
@@ -2150,6 +2380,7 @@ const MessageRow = memo(function MessageRow({
   onReactionInfo,
   onOpenImage,
   onJumpToReply,
+  onImageLoad,
 }: MessageRowProps) {
   const deleted = message.deletedAt !== null
   const pending = message.id.startsWith('temp-')
@@ -2337,30 +2568,38 @@ const MessageRow = memo(function MessageRow({
                 </button>
               ) : null}
               {isImage ? (
-                <button
-                  type="button"
-                  aria-label="Open photo"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (message.imagePath) {
-                      onOpenImage(`/api/uploads/${encodeURIComponent(message.imagePath)}`)
-                    }
-                  }}
-                  className={cn(
-                    'block overflow-hidden rounded-xl outline-none',
-                    mine ? '' : '',
-                  )}
-                >
-                  <img
-                    src={`/api/uploads/${encodeURIComponent(message.imagePath as string)}`}
-                    alt="Shared photo"
-                    loading="lazy"
+                <>
+                  <button
+                    type="button"
+                    aria-label="Open photo"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (message.imagePath) {
+                        onOpenImage(`/api/uploads/${encodeURIComponent(message.imagePath)}`)
+                      }
+                    }}
                     className={cn(
-                      'block max-h-[300px] w-auto max-w-full rounded-xl object-cover transition-transform active:scale-[0.985]',
-                      pending && 'opacity-80',
+                      'block overflow-hidden rounded-xl outline-none',
+                      mine ? '' : '',
                     )}
-                  />
-                </button>
+                  >
+                    <img
+                      src={`/api/uploads/${encodeURIComponent(message.imagePath as string)}`}
+                      alt="Shared photo"
+                      loading="lazy"
+                      onLoad={onImageLoad}
+                      className={cn(
+                        'block max-h-[300px] w-auto max-w-full rounded-xl object-cover transition-transform active:scale-[0.985]',
+                        pending && 'opacity-80',
+                      )}
+                    />
+                  </button>
+                  {message.content.trim().length > 0 ? (
+                    <div className="px-0.5 pb-0.5">
+                      <BubbleText content={message.content} mine={mine} />
+                    </div>
+                  ) : null}
+                </>
               ) : isVoice && message.audioPath ? (
                 <VoiceBubble
                   src={`/api/uploads/${encodeURIComponent(message.audioPath)}`}
@@ -2466,6 +2705,29 @@ const MessageRow = memo(function MessageRow({
             })}
           </motion.div>
         ) : null}
+
+        {mine && !deleted && !pending && isGroup && readBy !== null && readBy.members.length > 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 2 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18 }}
+            className="mt-0.5 flex items-center justify-end gap-1.5 pr-1"
+          >
+            <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+              {readBy.all ? 'Seen' : `Read by ${readBy.members.length}`}
+            </span>
+            <span className="flex -space-x-1.5">
+              {readBy.members.map((member) => (
+                <span
+                  key={member.id}
+                  className="overflow-hidden rounded-full ring-2 ring-zinc-50 dark:ring-zinc-900"
+                >
+                  <UserAvatar name={member.name} color={member.color} size={14} />
+                </span>
+              ))}
+            </span>
+          </motion.div>
+        ) : null}
       </div>
     </div>
   )
@@ -2479,6 +2741,7 @@ function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
     prev.isGroup === next.isGroup &&
     prev.readMs === next.readMs &&
     prev.myId === next.myId &&
+    prev.readBy === next.readBy &&
     prev.highlighted === next.highlighted &&
     prev.onPress === next.onPress &&
     prev.onStartLongPress === next.onStartLongPress &&
@@ -2487,7 +2750,8 @@ function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
     prev.onReply === next.onReply &&
     prev.onReactionInfo === next.onReactionInfo &&
     prev.onOpenImage === next.onOpenImage &&
-    prev.onJumpToReply === next.onJumpToReply
+    prev.onJumpToReply === next.onJumpToReply &&
+    prev.onImageLoad === next.onImageLoad
   )
 }
 

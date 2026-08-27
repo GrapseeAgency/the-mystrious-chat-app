@@ -92,7 +92,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!updated) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
-  return NextResponse.json({ conversation: buildConversationDetail(updated), added: toAdd })
+  return NextResponse.json({ conversation: buildConversationDetail(updated, requesterId), added: toAdd })
 }
 
 /**

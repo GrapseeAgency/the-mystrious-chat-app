@@ -211,11 +211,16 @@ export async function buildConversationSummary(
     lastMessage: lastRow ? mapMessage(lastRow) : null,
     unreadCount,
     pinnedAt: mine?.pinnedAt ? mine.pinnedAt.toISOString() : null,
+    mutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
   }
 }
 
 /** Meta + members-with-watermark for a chat room header. */
-export function buildConversationDetail(conv: ConversationRowWithRelations): ConversationDetail {
+export function buildConversationDetail(
+  conv: ConversationRowWithRelations,
+  viewerId?: string,
+): ConversationDetail {
+  const mine = viewerId ? conv.participants.find((p) => p.userId === viewerId) : undefined
   return {
     id: conv.id,
     isGroup: conv.isGroup,
@@ -223,6 +228,7 @@ export function buildConversationDetail(conv: ConversationRowWithRelations): Con
     createdAt: conv.createdAt.toISOString(),
     updatedAt: conv.updatedAt.toISOString(),
     members: conv.participants.map(mapMember).sort(byName),
+    myMutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
   }
 }
 

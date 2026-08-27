@@ -381,8 +381,14 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
         scheduleRead(evt.message.conversationId)
       } else {
         // attention: gentle ping + buzz while backgrounded / elsewhere
-        playIncomingPing()
-        haptic(20)
+        // (respected per-conversation mute watermark — synced by the 6s list poll)
+        const summaries = queryClient.getQueryData<ConversationSummary[]>(['conversations', myId])
+        const until = summaries?.find((c) => c.id === evt.message.conversationId)?.mutedUntil
+        const muted = typeof until === 'string' && Date.parse(until) > Date.now()
+        if (!muted) {
+          playIncomingPing()
+          haptic(20)
+        }
       }
     }
 

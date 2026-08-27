@@ -7,7 +7,7 @@ import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, MoreVertical, Pin, PinOff, Search, SquarePen, X } from 'lucide-react'
+import { ArrowRight, BellOff, MoreVertical, Pin, PinOff, Search, SquarePen, VolumeX, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -47,6 +47,8 @@ interface ConversationRowProps {
   groupTitle: string
   online: boolean
   pinned: boolean
+  /** viewer muted this conversation (watermark in the future) */
+  muted: boolean
   /** someone is typing in this conversation right now */
   typing: boolean
   onPress: () => void
@@ -69,6 +71,7 @@ const ConversationRow = memo(function ConversationRow({
   groupTitle,
   online,
   pinned,
+  muted,
   typing,
   onPress,
   onLongPress,
@@ -176,7 +179,7 @@ const ConversationRow = memo(function ConversationRow({
                 <span className={previewDeleted ? 'italic' : undefined}>{preview}</span>
               </p>
             )}
-            {hasUnread ? (
+            {hasUnread && !muted ? (
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
@@ -184,6 +187,22 @@ const ConversationRow = memo(function ConversationRow({
                 className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
               >
                 {unreadCount > 99 ? '99+' : unreadCount}
+              </motion.span>
+            ) : muted ? (
+              <motion.span
+                initial={{ scale: 0.6, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 520, damping: 24 }}
+                aria-label={hasUnread ? `Muted — ${unreadCount} unread` : 'Muted'}
+                className={cn(
+                  'flex h-[18px] shrink-0 items-center gap-1 rounded-full px-1.5 text-[10px] font-bold ring-2 ring-white dark:ring-zinc-900',
+                  hasUnread
+                    ? 'bg-zinc-300 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300'
+                    : 'bg-transparent text-zinc-400 ring-0 dark:text-zinc-500',
+                )}
+              >
+                <BellOff className="size-3.5" aria-hidden />
+                {hasUnread ? (unreadCount > 99 ? '99+' : unreadCount) : null}
               </motion.span>
             ) : null}
           </div>
@@ -272,6 +291,7 @@ export function ChatsTab({
           groupTitle: groupName,
           online: !conv.isGroup && other !== null && onlineIds.has(other.id),
           pinned: conv.pinnedAt !== null,
+          muted: conv.mutedUntil !== null && Date.parse(conv.mutedUntil) > Date.now(),
           typing: typersIn(conv.id, me.id).length > 0,
         },
       }
@@ -331,7 +351,40 @@ export function ChatsTab({
     },
   })
 
+  /** per-user notification mute — '8h' | '1w' | 'always' | null */
+  const toggleMute = useMutation({
+    mutationFn: async ({ conv, until }: { conv: ConversationSummary; until: '8h' | '1w' | 'always' | null }) => {
+      return apiJson<{ ok: boolean; mutedUntil: string | null }>(
+        `/api/conversations/${encodeURIComponent(conv.id)}/mute`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me.id, until }),
+        },
+      )
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success(
+        data.mutedUntil === null
+          ? 'Notifications unmuted'
+          : data.mutedUntil !== null && Date.parse(data.mutedUntil) - Date.now() > 20 * 365 * 24 * 3600 * 1000
+            ? 'Muted — always'
+            : `Muted until ${formatListStamp(data.mutedUntil as string)}`,
+      )
+      setSheetConv(null)
+    },
+    onError: () => {
+      toast.error('Could not update the mute')
+    },
+  })
+
   const openSheetFor = useCallback((conv: ConversationSummary) => setSheetConv(conv), [])
+
+  const sheetMuted =
+    sheetConv !== null &&
+    sheetConv.mutedUntil !== null &&
+    Date.parse(sheetConv.mutedUntil) > Date.now()
 
   const data = conversations.data ?? []
 
@@ -457,6 +510,48 @@ export function ChatsTab({
                   </>
                 )}
               </button>
+              {sheetMuted ? (
+                <>
+                  <p className="flex items-center gap-1.5 px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                    <BellOff className="size-3" aria-hidden />
+                    Muted until {formatListStamp(sheetConv.mutedUntil as string)}
+                  </p>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={toggleMute.isPending}
+                    onClick={() => toggleMute.mutate({ conv: sheetConv, until: null })}
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-sm font-semibold text-zinc-800 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    <VolumeX className="size-5 text-emerald-500" aria-hidden />
+                    Unmute notifications
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                    Mute notifications
+                  </p>
+                  <div className="flex gap-1.5 px-1 pb-1">
+                    {([
+                      { until: '8h', label: '8 hours' },
+                      { until: '1w', label: '1 week' },
+                      { until: 'always', label: 'Always' },
+                    ] as const).map((preset) => (
+                      <button
+                        key={preset.until}
+                        type="button"
+                        role="menuitem"
+                        disabled={toggleMute.isPending}
+                        onClick={() => toggleMute.mutate({ conv: sheetConv, until: preset.until })}
+                        className="h-10 flex-1 rounded-xl bg-zinc-100 text-[13px] font-semibold text-zinc-700 outline-none transition-colors hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-emerald-500/15 dark:hover:text-emerald-400"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
               <button
                 type="button"
                 role="menuitem"

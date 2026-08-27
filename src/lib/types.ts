@@ -62,6 +62,7 @@ export interface ConversationSummary {
   lastMessage: ChatMessage | null
   unreadCount: number // count of non-deleted messages from others newer than my lastReadAt
   pinnedAt: string | null // viewer's pin watermark (null = not pinned)
+  mutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
 }
 
 /** Full detail for a chat room */
@@ -72,6 +73,7 @@ export interface ConversationDetail {
   createdAt: string
   updatedAt: string
   members: Array<AppUser & { lastReadAt: string }> // includes per-member read watermark → double ticks
+  myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
 }
 
 // ── Socket event payloads (port 3003 mini service) ────────────

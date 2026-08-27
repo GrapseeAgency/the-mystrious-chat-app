@@ -42,6 +42,7 @@ model ConversationParticipant {
   conversationId String
   lastReadAt     DateTime  @default(now()) // read receipts / unread counts
   pinnedAt       DateTime? // per-user pinned-to-top
+  mutedUntil     DateTime? // per-user notification mute watermark (null = unmuted)
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
