@@ -235,6 +235,7 @@ export function buildConversationDetail(
     updatedAt: conv.updatedAt.toISOString(),
     members: conv.participants.map(mapMember).sort(byName),
     myMutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
+    inviteCode: conv.isGroup ? (conv.inviteCode ?? null) : null,
   }
 }
 
@@ -269,6 +270,26 @@ export const UPLOAD_MIME: Record<string, string> = {
 
 /** Extensions accepted for voice notes. */
 export const AUDIO_EXT_REGEX = /^[A-Za-z0-9-]+\.(webm|mp3|ogg|wav|m4a|aac)$/
+
+// ── Invite codes ────────────────────────────────────────
+
+/** Unambiguous alphabet for invite codes (no 0/O/1/I confusion). */
+const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+export const INVITE_CODE_LENGTH = 8
+
+/** Random invite code, e.g. "K7MQX2AB" (crypto-free is fine at this scale). */
+export function generateInviteCode(): string {
+  let code = ''
+  for (let i = 0; i < INVITE_CODE_LENGTH; i += 1) {
+    code += INVITE_ALPHABET[Math.floor(Math.random() * INVITE_ALPHABET.length)]
+  }
+  return code
+}
+
+/** Normalize an invite code from user input (uppercase, strip separators). */
+export function normalizeInviteCode(value: unknown): string {
+  return strField(value).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16)
+}
 
 // ── Socket relay (best-effort — never fails the API call) ──
 

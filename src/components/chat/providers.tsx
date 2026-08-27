@@ -8,6 +8,7 @@ import { useState, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from 'next-themes'
 import { PulseRealtimeProvider } from '@/components/chat/pulse-realtime-provider'
+import { PwaProvider } from '@/components/chat/pwa-provider'
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -26,6 +27,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
+        <PwaProvider />
         <PulseRealtimeProvider>{children}</PulseRealtimeProvider>
       </ThemeProvider>
     </QueryClientProvider>

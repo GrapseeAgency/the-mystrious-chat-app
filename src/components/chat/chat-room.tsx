@@ -31,6 +31,7 @@ import {
   Forward,
   ImagePlus,
   Info,
+  Link2,
   LoaderCircle,
   Lock,
   LogOut,
@@ -40,6 +41,7 @@ import {
   Play,
   Plus,
   Reply,
+  RotateCcw,
   Search,
   SearchX,
   SendHorizontal,
@@ -1230,6 +1232,28 @@ export function ChatRoom({
     },
   })
 
+  const inviteLink = useMutation({
+    mutationFn: async (regenerate: boolean) => {
+      return apiJson<{ inviteCode: string }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/invite`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requesterId: me.id, regenerate }),
+        },
+      )
+    },
+    onSuccess: (res, regenerate) => {
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (prev) =>
+        prev ? { ...prev, inviteCode: res.inviteCode } : prev,
+      )
+      toast.success(regenerate ? 'Link replaced — old links no longer work' : 'Invite link ready to share')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not create the invite link')
+    },
+  })
+
   // ── long-press helpers ─────────────────────────────────────
 
   const clearLongPress = useCallback(() => {
@@ -1276,6 +1300,9 @@ export function ChatRoom({
           : 'offline'
 
   const dotColor = themeMounted && resolvedTheme === 'dark' ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.05)'
+  // layered wallpaper: soft emerald glows top/bottom over the dot grid
+  const glowTop = themeMounted && resolvedTheme === 'dark' ? 'rgba(16,185,129,0.055)' : 'rgba(16,185,129,0.05)'
+  const glowBottom = themeMounted && resolvedTheme === 'dark' ? 'rgba(20,184,166,0.04)' : 'rgba(20,184,166,0.035)'
 
   return (
     <motion.div
@@ -1460,8 +1487,9 @@ export function ChatRoom({
         onScroll={handleScroll}
         className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-zinc-50 px-3 pt-3 pb-2 dark:bg-black/25"
         style={{
-          backgroundImage: `radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
-          backgroundSize: '16px 16px',
+          backgroundImage: `radial-gradient(ellipse 90% 34% at 50% -8%, ${glowTop}, transparent 62%), radial-gradient(ellipse 110% 40% at 50% 110%, ${glowBottom}, transparent 62%), radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
+          backgroundSize: '100% 100%, 100% 100%, 16px 16px',
+          backgroundAttachment: 'local, local, scroll',
         }}
       >
         {messages.isPending && !historyLoaded ? (
@@ -2347,6 +2375,8 @@ export function ChatRoom({
         setRolePending={setMemberRole.isPending || removeMember.isPending}
         onSetRole={(userId, promote) => setMemberRole.mutate({ userId, promote })}
         onRemoveMember={(userId) => removeMember.mutate(userId)}
+        invitePending={inviteLink.isPending}
+        onInvite={(regenerate) => inviteLink.mutate(regenerate)}
       />
     </motion.div>
   )
@@ -2979,6 +3009,8 @@ function InfoDialog({
   setRolePending,
   onSetRole,
   onRemoveMember,
+  invitePending,
+  onInvite,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -2994,6 +3026,8 @@ function InfoDialog({
   setRolePending: boolean
   onSetRole: (userId: string, promote: boolean) => void
   onRemoveMember: (userId: string) => void
+  invitePending: boolean
+  onInvite: (regenerate: boolean) => void
 }) {
   // group-management local state (all resets happen in event handlers)
   const [editingName, setEditingName] = useState(false)
@@ -3035,6 +3069,17 @@ function InfoDialog({
 
   const memberIds = new Set(detail.members.map((m) => m.id))
   const addableUsers = (usersQuery.data ?? []).filter((u) => !memberIds.has(u.id))
+
+  const copyInvite = async () => {
+    if (!detail.inviteCode) return
+    const link = `${window.location.origin}/?join=${detail.inviteCode}`
+    try {
+      await navigator.clipboard.writeText(link)
+      toast.success('Invite link copied to clipboard')
+    } catch {
+      toast.error('Could not copy the link')
+    }
+  }
 
   const closeDialog = () => {
     onOpenChange(false)
@@ -3314,6 +3359,59 @@ function InfoDialog({
             </ul>
             {detail.isGroup ? (
               <div className="flex flex-col gap-1.5">
+                {isAdmin ? (
+                  <div className="rounded-xl border border-dashed border-emerald-500/40 bg-emerald-500/5 p-3">
+                    <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                      <Link2 className="size-3" aria-hidden />
+                      Invite link
+                    </p>
+                    {detail.inviteCode ? (
+                      <>
+                        <div className="mt-2 flex items-center gap-2">
+                          <code className="min-w-0 flex-1 truncate rounded-lg bg-white px-2.5 py-1.5 font-mono text-[13px] font-bold tracking-[0.18em] text-zinc-800 ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:ring-zinc-700">
+                            {detail.inviteCode}
+                          </code>
+                          <button
+                            type="button"
+                            aria-label="Copy invite link"
+                            title="Copy invite link"
+                            onClick={copyInvite}
+                            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-90"
+                          >
+                            <Copy className="size-3.5" aria-hidden />
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={invitePending}
+                          onClick={() => onInvite(true)}
+                          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] font-semibold text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-700 active:scale-[0.98] disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                        >
+                          {invitePending ? (
+                            <LoaderCircle className="size-3 animate-spin" aria-hidden />
+                          ) : (
+                            <RotateCcw className="size-3" aria-hidden />
+                          )}
+                          Reset link (old links stop working)
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={invitePending}
+                        onClick={() => onInvite(false)}
+                        className="mt-2 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-500 text-sm font-semibold text-white outline-none transition-all hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-50"
+                      >
+                        {invitePending ? (
+                          <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                        ) : (
+                          <Link2 className="size-4" aria-hidden />
+                        )}
+                        Create invite link
+                      </button>
+                    )}
+                  </div>
+                ) : null}
                 {isAdmin ? (
                   <Button
                     variant="outline"

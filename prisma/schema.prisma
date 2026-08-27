@@ -28,6 +28,7 @@ model Conversation {
   id           String   @id @default(cuid())
   isGroup      Boolean  @default(false)
   name         String? // group title; null for DMs
+  inviteCode   String?  @unique // shareable join code (groups only; null = no active link)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt // bumped on every new message → list sort
   participants ConversationParticipant[]

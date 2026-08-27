@@ -78,6 +78,18 @@ export interface ConversationDetail {
   // per-member read watermark (→ double ticks) + group role (groups only)
   members: Array<AppUser & { lastReadAt: string; role: GroupRole }>
   myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
+  inviteCode: string | null // shareable join code (groups only; null = no active link)
+}
+
+/** Public preview of an invite code before joining (GET /api/invite/[code]). */
+export interface InvitePreview {
+  code: string
+  conversationId: string
+  isGroup: boolean
+  name: string | null
+  memberCount: number
+  /** true when ?userId= is already a participant (join is then idempotent) */
+  alreadyMember: boolean
 }
 
 /** Global search hit — a message plus the conversation it lives in. */

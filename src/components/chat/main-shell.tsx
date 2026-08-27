@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { AppUser } from '@/lib/types'
 import { BottomNav, type PulseTab } from '@/components/chat/bottom-nav'
@@ -13,6 +13,7 @@ import { ContactsTab } from '@/components/chat/contacts-tab'
 import { ProfileTab } from '@/components/chat/profile-tab'
 import { ChatRoom } from '@/components/chat/chat-room'
 import { NewChatSheet } from '@/components/chat/new-chat-sheet'
+import { JoinGroupSheet } from '@/components/chat/join-sheet'
 
 export function MainShell({ me }: { me: AppUser }) {
   const [tab, setTab] = useState<PulseTab>('chats')
@@ -27,6 +28,24 @@ export function MainShell({ me }: { me: AppUser }) {
   // sheetMounted keeps it rendered through the vaul close animation
   const [newChatGeneration, setNewChatGeneration] = useState(0)
   const [sheetMounted, setSheetMounted] = useState(false)
+  /** invite deep-link code lifted from ?join= (null = none pending) */
+  const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(() => {
+    // pure read — consumed on first render, cleaned up just after mount
+    if (typeof window === 'undefined') return null
+    const code = new URLSearchParams(window.location.search).get('join')?.trim().toUpperCase() ?? ''
+    return code.length > 0 ? code.slice(0, 16) : null
+  })
+
+  // strip ?join= from the URL once the sheet is up (history-only side
+  // effect — no setState here, so refresh never re-prompts)
+  useEffect(() => {
+    if (pendingInviteCode === null) return
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has('join')) return
+    params.delete('join')
+    const rest = params.toString()
+    window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''))
+  }, [pendingInviteCode])
 
   const openNewChat = (mode: 'dm' | 'group') => {
     setNewChatMode(mode)
@@ -110,6 +129,21 @@ export function MainShell({ me }: { me: AppUser }) {
           initialMode={newChatMode}
           onConversationOpened={(conversationId) => {
             setNewChatOpen(false)
+            setOpenConversationAnchorMs(null)
+            setJumpMessageId(null)
+            setOpenConversationId(conversationId)
+          }}
+        />
+      ) : null}
+
+      {pendingInviteCode !== null ? (
+        <JoinGroupSheet
+          me={me}
+          code={pendingInviteCode}
+          open
+          onClose={() => setPendingInviteCode(null)}
+          onJoined={(conversationId) => {
+            setPendingInviteCode(null)
             setOpenConversationAnchorMs(null)
             setJumpMessageId(null)
             setOpenConversationId(conversationId)

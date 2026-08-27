@@ -44,8 +44,34 @@ export async function POST(req: Request) {
   return NextResponse.json({ user: mapUser(user) }, { status: 201 })
 }
 
-/** GET /api/users → { users: AppUser[] } sorted by name asc */
-export async function GET() {
+/**
+ * GET /api/users                     → { users: AppUser[] } sorted by name asc
+ * GET /api/users?name=Alice%20Chen   → { user: AppUser } | 404
+ * Case-insensitive exact match lookup powering the ?login= deep-link and the
+ * onboarding "that's you? log in" affordance (Pulse identities are name-keyed).
+ */
+export async function GET(req: Request) {
+  const url = new URL(req.url)
+  const name = url.searchParams.get('name')?.trim() ?? ''
+
+  if (name.length > 0) {
+    if (name.length > USER_NAME_MAX) {
+      return NextResponse.json(
+        { error: `Name must be 1–${USER_NAME_MAX} characters.` },
+        { status: 400 },
+      )
+    }
+    const first = name.charAt(0).toLowerCase()
+    const candidates = await db.user.findMany({
+      where: { OR: [{ name: { startsWith: first } }, { name: { startsWith: first.toUpperCase() } }] },
+    })
+    const user = candidates.find((u) => u.name.toLowerCase() === name.toLowerCase())
+    if (!user) {
+      return NextResponse.json({ error: 'No Pulse account with that name.' }, { status: 404 })
+    }
+    return NextResponse.json({ user: mapUser(user) })
+  }
+
   const users = await db.user.findMany({ orderBy: { name: 'asc' } })
   return NextResponse.json({ users: users.map(mapUser) })
 }

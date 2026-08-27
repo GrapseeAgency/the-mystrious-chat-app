@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
-import { BadgeCheck, Check, Copy, LogOut, LoaderCircle, Moon, MoonStar, Sun, Volume2, Vibrate } from 'lucide-react'
+import { BadgeCheck, Check, Copy, LogOut, LoaderCircle, Moon, MoonStar, Smartphone, Sun, Volume2, Vibrate } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
@@ -39,6 +39,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { pulseSettingsStore, haptic, isQuietHoursNow, primeSound } from '@/lib/pulse-settings'
+import { promptPwaInstall, usePulsePwa } from '@/lib/pwa-store'
 import { useMounted } from '@/hooks/use-mounted'
 
 interface UsersResponse {
@@ -72,12 +73,22 @@ function ProfileEditor({ me }: { me: AppUser }) {
   const setQuietHoursOn = pulseSettingsStore((s) => s.setQuietHoursOn)
   const setQuietStart = pulseSettingsStore((s) => s.setQuietStart)
   const setQuietEnd = pulseSettingsStore((s) => s.setQuietEnd)
+  const installEvent = usePulsePwa((s) => s.installEvent)
   const mounted = useMounted()
 
   const [name, setName] = useState(me.name)
   const [about, setAbout] = useState(me.about)
   const [color, setColor] = useState<AvatarColor>((me.color as AvatarColor) ?? 'emerald')
   const [switchOpen, setSwitchOpen] = useState(false)
+
+  const handleInstall = async () => {
+    const outcome = await promptPwaInstall()
+    if (outcome === 'accepted') {
+      toast.success('Installing Pulse…', { description: 'Find it on your home screen.' })
+    } else if (outcome === 'unavailable') {
+      toast.error('Install is not available right now')
+    }
+  }
 
   const conversations = useQuery({
     queryKey: ['conversations', me.id],
@@ -374,6 +385,30 @@ function ProfileEditor({ me }: { me: AppUser }) {
             />
           </div>
         </Section>
+
+        {/* app install (visible when the browser offers the prompt) */}
+        {installEvent ? (
+          <Section title="App">
+            <div className="flex items-center justify-between gap-2 px-1 py-1.5">
+              <div className="min-w-0">
+                <p className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                  <Smartphone className="size-4 shrink-0 text-emerald-500" aria-hidden />
+                  Install Pulse
+                </p>
+                <p className="mt-0.5 pl-7 text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
+                  Add to your home screen — opens instantly, works offline.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleInstall}
+                className="h-9 shrink-0 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-500 active:scale-95"
+              >
+                Install
+              </Button>
+            </div>
+          </Section>
+        ) : null}
 
         {/* account */}
         <Section title="Account">
