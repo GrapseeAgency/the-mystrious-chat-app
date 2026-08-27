@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
-import { BadgeCheck, Check, Copy, LogOut, LoaderCircle, Moon, Sun, Volume2, Vibrate } from 'lucide-react'
+import { BadgeCheck, Check, Copy, LogOut, LoaderCircle, Moon, MoonStar, Sun, Volume2, Vibrate } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
@@ -38,7 +38,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { UserAvatar } from '@/components/chat/user-avatar'
-import { pulseSettingsStore, haptic, primeSound } from '@/lib/pulse-settings'
+import { pulseSettingsStore, haptic, isQuietHoursNow, primeSound } from '@/lib/pulse-settings'
 import { useMounted } from '@/hooks/use-mounted'
 
 interface UsersResponse {
@@ -66,6 +66,12 @@ function ProfileEditor({ me }: { me: AppUser }) {
   const hapticsOn = pulseSettingsStore((s) => s.hapticsOn)
   const setSoundOn = pulseSettingsStore((s) => s.setSoundOn)
   const setHapticsOn = pulseSettingsStore((s) => s.setHapticsOn)
+  const quietHoursOn = pulseSettingsStore((s) => s.quietHoursOn)
+  const quietStart = pulseSettingsStore((s) => s.quietStart)
+  const quietEnd = pulseSettingsStore((s) => s.quietEnd)
+  const setQuietHoursOn = pulseSettingsStore((s) => s.setQuietHoursOn)
+  const setQuietStart = pulseSettingsStore((s) => s.setQuietStart)
+  const setQuietEnd = pulseSettingsStore((s) => s.setQuietEnd)
   const mounted = useMounted()
 
   const [name, setName] = useState(me.name)
@@ -289,6 +295,63 @@ function ProfileEditor({ me }: { me: AppUser }) {
               className="data-[state=checked]:bg-emerald-500"
             />
           </div>
+          <div className="flex items-center justify-between px-1 py-1.5">
+            <span className="flex min-w-0 items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              <MoonStar
+                className={cn('size-4 shrink-0', quietHoursOn ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-500')}
+                aria-hidden
+              />
+              <span className="min-w-0">
+                Quiet hours
+                {quietHoursOn && !mounted ? null : (
+                  <span className="mt-0.5 block text-[11px] font-normal text-zinc-400 dark:text-zinc-500">
+                    {quietHoursOn
+                      ? mounted && isQuietHoursNow({ quietHoursOn, quietStart, quietEnd })
+                        ? `Silenced until ${quietEnd}`
+                        : `Silent ${quietStart} – ${quietEnd}`
+                      : 'Pings stay on around the clock'}
+                  </span>
+                )}
+              </span>
+            </span>
+            <Switch
+              checked={quietHoursOn}
+              onCheckedChange={setQuietHoursOn}
+              disabled={!mounted}
+              aria-label="Toggle quiet hours"
+              className="data-[state=checked]:bg-emerald-500"
+            />
+          </div>
+          {quietHoursOn ? (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              transition={{ duration: 0.18 }}
+              className="overflow-hidden"
+            >
+              <div className="mx-1 mb-1.5 mt-1 flex items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/60">
+                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">From</span>
+                <input
+                  type="time"
+                  value={quietStart}
+                  onChange={(e) => e.target.value && setQuietStart(e.target.value)}
+                  aria-label="Quiet hours start time"
+                  className="h-8 rounded-lg border border-zinc-200 bg-white px-2 font-mono text-xs text-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                />
+                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">to</span>
+                <input
+                  type="time"
+                  value={quietEnd}
+                  onChange={(e) => e.target.value && setQuietEnd(e.target.value)}
+                  aria-label="Quiet hours end time"
+                  className="h-8 rounded-lg border border-zinc-200 bg-white px-2 font-mono text-xs text-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                />
+                <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                  {quietStart < quietEnd || quietStart === quietEnd ? 'same day' : 'overnight'}
+                </span>
+              </div>
+            </motion.div>
+          ) : null}
         </Section>
 
         {/* appearance */}

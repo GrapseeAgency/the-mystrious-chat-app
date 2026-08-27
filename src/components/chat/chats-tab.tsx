@@ -7,9 +7,9 @@ import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, BellOff, MoreVertical, Pin, PinOff, Search, SquarePen, VolumeX, X } from 'lucide-react'
+import { ArrowRight, BellOff, LoaderCircle, MoreVertical, Pin, PinOff, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
 import { toast } from 'sonner'
-import type { AppUser, ConversationSummary } from '@/lib/types'
+import type { AppUser, ConversationSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import {
   apiJson,
@@ -30,6 +30,11 @@ import { ThemeToggleButton } from '@/components/chat/theme-toggle'
 
 interface ConversationsResponse {
   conversations: ConversationSummary[]
+}
+
+interface SearchResponse {
+  messages: SearchResultMessage[]
+  total: number
 }
 
 interface ConversationRowProps {
@@ -224,6 +229,92 @@ const ConversationRow = memo(function ConversationRow({
   )
 })
 
+/**
+ * Snippet with the first match highlighted — clips a ≤64-char window
+ * around the hit so long messages stay one tidy line.
+ */
+function SearchSnippet({ content, query }: { content: string; query: string }) {
+  const lower = content.toLowerCase()
+  const q = query.toLowerCase()
+  const idx = q.length > 0 ? lower.indexOf(q) : -1
+  let from = 0
+  let clippedHead = false
+  if (idx > 28) {
+    from = idx - 24
+    clippedHead = true
+  }
+  const end = Math.min(content.length, idx + q.length + 28)
+  const clippedTail = end < content.length
+  const body = content.slice(from, end)
+  const localIdx = idx - from
+  return (
+    <p className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">
+      {clippedHead ? <span className="text-zinc-300 dark:text-zinc-600">…</span> : null}
+      {idx >= 0 ? (
+        <>
+          {body.slice(0, localIdx)}
+          <mark className="rounded bg-emerald-500/20 px-0.5 font-semibold text-emerald-700 dark:bg-emerald-500/25 dark:text-emerald-300">
+            {body.slice(localIdx, localIdx + q.length)}
+          </mark>
+          {body.slice(localIdx + q.length)}
+        </>
+      ) : (
+        body
+      )}
+      {clippedTail ? <span className="text-zinc-300 dark:text-zinc-600">…</span> : null}
+    </p>
+  )
+}
+
+/** One server-side message hit — sender avatar, chat title, highlighted snippet. */
+const SearchMessageRow = memo(function SearchMessageRow({
+  hit,
+  query,
+  onPress,
+}: {
+  hit: SearchResultMessage
+  query: string
+  onPress: (hit: SearchResultMessage) => void
+}) {
+  const deleted = hit.deletedAt !== null
+  return (
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16 }}
+      onClick={() => onPress(hit)}
+      className="flex w-full touch-manipulation items-center gap-3 rounded-2xl px-2 py-2.5 text-left outline-none transition-colors active:bg-zinc-100 dark:active:bg-zinc-800"
+    >
+      <span className="relative shrink-0">
+        <UserAvatar name={hit.sender.name} color={hit.sender.color} size={40} />
+        {hit.isGroup ? (
+          <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-zinc-200 ring-2 ring-white dark:bg-zinc-700 dark:ring-zinc-900">
+            <Users className="size-2.5 text-zinc-500 dark:text-zinc-300" aria-hidden />
+          </span>
+        ) : null}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline justify-between gap-2">
+          <span className="min-w-0 truncate text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">
+            {hit.conversationName}
+          </span>
+          <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">
+            {formatListStamp(hit.createdAt)}
+          </span>
+        </span>
+        {deleted ? (
+          <p className="truncate text-[13px] italic text-zinc-400 dark:text-zinc-500">Deleted message</p>
+        ) : hit.imagePath && hit.content.length === 0 ? (
+          <p className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">📷 Photo</p>
+        ) : (
+          <SearchSnippet content={hit.content} query={query} />
+        )}
+      </span>
+    </motion.button>
+  )
+})
+
 function RowSkeleton() {
   return (
     <div className="flex items-center gap-3 px-4 py-3">
@@ -236,6 +327,21 @@ function RowSkeleton() {
   )
 }
 
+/** Tiny uppercase section header with an emerald count chip. */
+function SearchSection({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="flex items-center gap-2 px-3 pb-0.5 pt-3">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+        {label}
+      </span>
+      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500/15 px-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+        {count > 99 ? '99+' : count}
+      </span>
+      <span aria-hidden className="h-px flex-1 bg-zinc-100 dark:bg-zinc-800" />
+    </div>
+  )
+}
+
 export function ChatsTab({
   me,
   onOpenConversation,
@@ -244,7 +350,7 @@ export function ChatsTab({
   onGoProfile,
 }: {
   me: AppUser
-  onOpenConversation: (conversationId: string, unreadAnchorMs: number | null) => void
+  onOpenConversation: (conversationId: string, unreadAnchorMs: number | null, jumpMessageId?: string) => void
   onOpenContacts: () => void
   onRequestNewChat: () => void
   onGoProfile: () => void
@@ -254,6 +360,9 @@ export function ChatsTab({
   const onlineIds = realtime.onlineIds
   const [searching, setSearching] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  /** debounced mirror of searchQuery feeding the server message search */
+  const [deferredQuery, setDeferredQuery] = useState('')
+  const deferredTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const conversations = useQuery({
     queryKey: ['conversations', me.id],
@@ -322,9 +431,36 @@ export function ChatsTab({
   )
 
   const closeSearch = useCallback(() => {
+    if (deferredTimerRef.current !== null) {
+      clearTimeout(deferredTimerRef.current)
+      deferredTimerRef.current = null
+    }
     setSearching(false)
     setSearchQuery('')
+    setDeferredQuery('')
   }, [])
+
+  /** typing in the search field: instant local filter + 250ms-debounced server search */
+  const handleSearchInput = useCallback((value: string) => {
+    setSearchQuery(value)
+    if (deferredTimerRef.current !== null) clearTimeout(deferredTimerRef.current)
+    const v = value.trim()
+    deferredTimerRef.current = setTimeout(() => {
+      deferredTimerRef.current = null
+      setDeferredQuery(v)
+    }, 250)
+  }, [])
+
+  const serverSearch = useQuery({
+    queryKey: ['global-search', me.id, deferredQuery],
+    enabled: searching && deferredQuery.length >= 2,
+    staleTime: 15_000,
+    queryFn: async (): Promise<SearchResponse> =>
+      apiJson<SearchResponse>(
+        `/api/search?userId=${encodeURIComponent(me.id)}&q=${encodeURIComponent(deferredQuery)}`,
+      ),
+  })
+  const serverHits = searching && deferredQuery.length >= 2 ? (serverSearch.data?.messages ?? []) : []
 
   // ── row long-press action sheet (pin/unpin) ───────────────
   const [sheetConv, setSheetConv] = useState<ConversationSummary | null>(null)
@@ -397,7 +533,7 @@ export function ChatsTab({
             <Input
               autoFocus
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchInput(e.target.value)}
               placeholder="Search chats and messages…"
               aria-label="Search conversations"
               className="h-10 flex-1 rounded-full border-zinc-200 bg-zinc-100 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
@@ -438,6 +574,19 @@ export function ChatsTab({
             <ThemeToggleButton />
           </div>
         )}
+        {!searching ? (
+          <div className="px-3 pb-2.5">
+            <button
+              type="button"
+              aria-label="Start searching"
+              onClick={() => setSearching(true)}
+              className="flex h-10 w-full items-center gap-2.5 rounded-full bg-zinc-100 px-4 text-left outline-none ring-emerald-500/60 transition-colors hover:bg-zinc-200/70 focus-visible:ring-2 active:scale-[0.99] dark:bg-zinc-800 dark:hover:bg-zinc-700/70"
+            >
+              <Search className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
+              <span className="text-sm text-zinc-400 dark:text-zinc-500">Search chats and messages</span>
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {/* list */}
@@ -447,26 +596,57 @@ export function ChatsTab({
             <RowSkeleton /><RowSkeleton /><RowSkeleton /><RowSkeleton /><RowSkeleton /><RowSkeleton />
           </div>
         ) : searching ? (
-          filteredRows.length > 0 ? (
-            <div className="py-1">
-              {filteredRows.map(({ conv, props }) => (
-                <ConversationRow
-                  key={props.id}
-                  {...props}
-                  onPress={() => handlePress(conv)}
-                  onLongPress={() => openSheetFor(conv)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center gap-2 px-8 pt-24 text-center">
-              <Search className="size-8 text-zinc-300 dark:text-zinc-600" aria-hidden />
-              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">No matches</p>
-              <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                Nothing here for “{searchQuery}”.
+          <div className="py-1">
+            {filteredRows.length > 0 ? (
+              <>
+                <SearchSection label="Chats" count={filteredRows.length} />
+                {filteredRows.map(({ conv, props }) => (
+                  <ConversationRow
+                    key={props.id}
+                    {...props}
+                    onPress={() => handlePress(conv)}
+                    onLongPress={() => openSheetFor(conv)}
+                  />
+                ))}
+              </>
+            ) : null}
+
+            {deferredQuery.length >= 2 ? (
+              serverSearch.isPending ? (
+                <div className="flex items-center justify-center gap-2 py-6" role="status" aria-label="Searching messages">
+                  <LoaderCircle className="size-4 animate-spin text-emerald-500" aria-hidden />
+                  <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Searching messages…</span>
+                </div>
+              ) : serverHits.length > 0 ? (
+                <>
+                  <SearchSection label="Messages" count={serverSearch.data?.total ?? serverHits.length} />
+                  {serverHits.map((hit) => (
+                    <SearchMessageRow
+                      key={hit.id}
+                      hit={hit}
+                      query={deferredQuery}
+                      onPress={(h) => onOpenConversation(h.conversationId, null, h.id)}
+                    />
+                  ))}
+                </>
+              ) : null
+            ) : deferredQuery.length > 0 ? (
+              <p className="px-4 pt-3 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                Keep typing to search inside messages…
               </p>
-            </div>
-          )
+            ) : null}
+
+            {filteredRows.length === 0 &&
+            (deferredQuery.length < 2 || (!serverSearch.isPending && serverHits.length === 0)) ? (
+              <div className="flex flex-col items-center justify-center gap-2 px-8 pt-24 text-center">
+                <Search className="size-8 text-zinc-300 dark:text-zinc-600" aria-hidden />
+                <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">No matches</p>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                  Nothing here for “{searchQuery}”.
+                </p>
+              </div>
+            ) : null}
+          </div>
         ) : data.length === 0 ? (
           <EmptyChats onSayHi={onOpenContacts} />
         ) : (

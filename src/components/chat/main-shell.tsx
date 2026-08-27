@@ -19,6 +19,8 @@ export function MainShell({ me }: { me: AppUser }) {
   const [openConversationId, setOpenConversationId] = useState<string | null>(null)
   /** frozen pre-open read watermark for the open conversation (unread divider) */
   const [openConversationAnchorMs, setOpenConversationAnchorMs] = useState<number | null>(null)
+  /** message to scroll-to + flash once the room's history is rendered (global-search hit) */
+  const [jumpMessageId, setJumpMessageId] = useState<string | null>(null)
   const [newChatOpen, setNewChatOpen] = useState(false)
   const [newChatMode, setNewChatMode] = useState<'dm' | 'group'>('dm')
   // generation bumps per open-session so the sheet remounts with fresh state;
@@ -57,8 +59,9 @@ export function MainShell({ me }: { me: AppUser }) {
             {tab === 'chats' ? (
               <ChatsTab
                 me={me}
-                onOpenConversation={(conversationId, anchorMs) => {
+                onOpenConversation={(conversationId, anchorMs, jumpTargetId) => {
                   setOpenConversationAnchorMs(anchorMs)
+                  setJumpMessageId(jumpTargetId ?? null)
                   setOpenConversationId(conversationId)
                 }}
                 onOpenContacts={() => setTab('contacts')}
@@ -71,6 +74,7 @@ export function MainShell({ me }: { me: AppUser }) {
                 me={me}
                 onOpenConversation={(conversationId) => {
                   setOpenConversationAnchorMs(null)
+                  setJumpMessageId(null)
                   setOpenConversationId(conversationId)
                 }}
                 onGoProfile={() => setTab('profile')}
@@ -88,6 +92,7 @@ export function MainShell({ me }: { me: AppUser }) {
               me={me}
               conversationId={openConversationId}
               unreadAnchorMs={openConversationAnchorMs}
+              initialJumpMessageId={jumpMessageId}
               onClose={() => setOpenConversationId(null)}
             />
           ) : null}
@@ -106,6 +111,7 @@ export function MainShell({ me }: { me: AppUser }) {
           onConversationOpened={(conversationId) => {
             setNewChatOpen(false)
             setOpenConversationAnchorMs(null)
+            setJumpMessageId(null)
             setOpenConversationId(conversationId)
           }}
         />

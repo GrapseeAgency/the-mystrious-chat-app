@@ -140,12 +140,15 @@ export function ChatRoom({
   me,
   conversationId,
   unreadAnchorMs = null,
+  initialJumpMessageId = null,
   onClose,
 }: {
   me: AppUser
   conversationId: string
   /** pre-open read watermark frozen by the chats list at tap time (unread divider) */
   unreadAnchorMs?: number | null
+  /** global-search hit — jump + flash this message once history renders */
+  initialJumpMessageId?: string | null
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -168,6 +171,8 @@ export function ChatRoom({
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   /** {message, emoji} → who-reacted sheet */
   const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
+  /** seen-by detail sheet (group read receipts on the last own message) */
+  const [seenByOpen, setSeenByOpen] = useState(false)
   const [sendingImage, setSendingImage] = useState(false)
   /** uploaded image awaiting an optional caption → caption sheet */
   const [pendingImage, setPendingImage] = useState<{ imagePath: string; preview: string } | null>(null)
@@ -561,6 +566,12 @@ export function ChatRoom({
     return members.length > 0 ? { members, all: members.length >= others } : null
   }, [lastOwnMessage, detailData, me.id])
 
+  /** tap the read-by stack → seen-by detail sheet */
+  const openSeenBy = useCallback(() => {
+    haptic(8)
+    setSeenByOpen(true)
+  }, [])
+
   const items = useMemo<ClusterItem[]>(() => {
     const list = messages.data ?? []
     const now = new Date()
@@ -631,6 +642,8 @@ export function ChatRoom({
 
   useEffect(() => {
     if (lastMessageId === null || !historyLoaded) return
+    // initial search-jump owns the first positioning — no bottom auto-scroll race
+    if (initialJumpMessageId !== null) return
     requestAnimationFrame(() => {
       if (nearBottomRef.current) {
         scrollToBottom(true)
@@ -639,10 +652,20 @@ export function ChatRoom({
         haptic(10)
       }
     })
-  }, [lastMessageId, historyLoaded, scrollToBottom])
+  }, [lastMessageId, historyLoaded, scrollToBottom, initialJumpMessageId])
 
   useEffect(() => {
     if (messages.isSuccess && !historyLoaded) {
+      // global-search hit: skip the plain bottom anchor, land on the hit instead.
+      // Deferred until the room's slide-in spring has mostly settled — running the
+      // centering math mid-flight measures a transformed layout and mis-aims.
+      if (initialJumpMessageId !== null) {
+        const t = setTimeout(() => {
+          void jumpToMessage(initialJumpMessageId)
+        }, 420)
+        setHistoryLoaded(true)
+        return () => clearTimeout(t)
+      }
       const frame = requestAnimationFrame(() => {
         scrollToBottom(false)
         setHistoryLoaded(true)
@@ -650,7 +673,7 @@ export function ChatRoom({
       return () => cancelAnimationFrame(frame)
     }
     return undefined
-  }, [messages.isSuccess, historyLoaded, scrollToBottom])
+  }, [messages.isSuccess, historyLoaded, scrollToBottom, initialJumpMessageId, jumpToMessage])
 
   const handleScroll = useCallback(() => {
     const el = viewportRef.current
@@ -1467,6 +1490,7 @@ export function ChatRoom({
                   onReactionInfo={(m, emoji) => setReactionInfo({ message: m, emoji })}
                   onOpenImage={setLightboxSrc}
                   onJumpToReply={jumpToReply}
+                  onOpenSeenBy={openSeenBy}
                   onImageLoad={handleImageLoaded}
                   highlighted={highlight !== null && highlight.id === item.message.id}
                 />
@@ -1986,6 +2010,79 @@ export function ChatRoom({
         </DrawerContent>
       </Drawer>
 
+      {/* seen-by sheet — per-member read receipts for the last own message */}
+      <Drawer open={seenByOpen} onOpenChange={(open) => !open && setSeenByOpen(false)}>
+        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+          <DrawerTitle className="sr-only">Message read receipts</DrawerTitle>
+          {lastOwnMessage ? (
+            <div className="pb-2">
+              <div className="flex items-center justify-center gap-2 pb-1 pt-1">
+                <CheckCheck className="size-4 text-emerald-500" aria-hidden />
+                <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                  {readByLast?.all ? 'Seen by everyone' : 'Message info'}
+                </p>
+              </div>
+              <p className="mx-auto mb-2 max-w-[300px] truncate text-center text-xs text-zinc-400 dark:text-zinc-500">
+                {lastOwnMessage.imagePath && !lastOwnMessage.content
+                  ? 'Photo'
+                  : lastOwnMessage.audioPath
+                    ? 'Voice message'
+                    : lastOwnMessage.content}
+              </p>
+              <ul className="pulse-scroll max-h-64 overflow-y-auto py-1">
+                {(detailData?.members ?? [])
+                  .filter((m) => m.id !== me.id)
+                  .map((member) => {
+                    const readMs = Date.parse(member.lastReadAt)
+                    const msgMs = Date.parse(lastOwnMessage.createdAt)
+                    const read = !Number.isNaN(readMs) && !Number.isNaN(msgMs) && readMs >= msgMs
+                    return (
+                      <li
+                        key={member.id}
+                        className="flex items-center gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                      >
+                        <span className="relative">
+                          <UserAvatar name={member.name} color={member.color} size={36} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                            {member.name}
+                            {realtime.onlineIds.has(member.id) ? (
+                              <span
+                                aria-label="Online now"
+                                className="ml-1.5 inline-block size-1.5 rounded-full bg-emerald-500 align-middle"
+                              />
+                            ) : null}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] text-zinc-400 dark:text-zinc-500">
+                            {read ? `Read at ${formatTime(member.lastReadAt)}` : 'Delivered'}
+                          </span>
+                        </span>
+                        {read ? (
+                          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
+                            <CheckCheck className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                          </span>
+                        ) : (
+                          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
+                            <Check className="size-3.5 text-zinc-400 dark:text-zinc-500" aria-hidden />
+                          </span>
+                        )}
+                      </li>
+                    )
+                  })}
+              </ul>
+              <button
+                type="button"
+                onClick={() => setSeenByOpen(false)}
+                className="mt-1 flex h-11 w-full items-center justify-center rounded-2xl bg-zinc-100 text-sm font-semibold text-zinc-600 outline-none transition-transform hover:bg-zinc-200 active:scale-[0.98] dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Close
+              </button>
+            </div>
+          ) : null}
+        </DrawerContent>
+      </Drawer>
+
       {/* full-screen message-search overlay */}
       <AnimatePresence>
         {searchOpen ? (
@@ -2309,6 +2406,8 @@ interface MessageRowProps {
   onOpenImage: (src: string) => void
   /** tap the quoted block → scroll to the parent message + flash */
   onJumpToReply: (parentMessageId: string) => void
+  /** tap the read-by stack → seen-by detail sheet (groups only) */
+  onOpenSeenBy: () => void
   /** bubble <img> finished decoding → caller re-anchors scroll */
   onImageLoad: () => void
 }
@@ -2380,6 +2479,7 @@ const MessageRow = memo(function MessageRow({
   onReactionInfo,
   onOpenImage,
   onJumpToReply,
+  onOpenSeenBy,
   onImageLoad,
 }: MessageRowProps) {
   const deleted = message.deletedAt !== null
@@ -2711,21 +2811,30 @@ const MessageRow = memo(function MessageRow({
             initial={{ opacity: 0, y: 2 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.18 }}
-            className="mt-0.5 flex items-center justify-end gap-1.5 pr-1"
+            className="mt-0.5 flex justify-end pr-1"
           >
-            <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
-              {readBy.all ? 'Seen' : `Read by ${readBy.members.length}`}
-            </span>
-            <span className="flex -space-x-1.5">
-              {readBy.members.map((member) => (
-                <span
-                  key={member.id}
-                  className="overflow-hidden rounded-full ring-2 ring-zinc-50 dark:ring-zinc-900"
-                >
-                  <UserAvatar name={member.name} color={member.color} size={14} />
-                </span>
-              ))}
-            </span>
+            <button
+              type="button"
+              onClick={onOpenSeenBy}
+              aria-label={
+                readBy.all ? 'Seen by everyone — show details' : `Read by ${readBy.members.length} — show details`
+              }
+              className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 outline-none transition-colors hover:bg-zinc-100/80 active:scale-95 dark:hover:bg-zinc-800/80"
+            >
+              <span className="text-[10px] font-medium text-zinc-400 transition-colors hover:text-zinc-500 dark:text-zinc-500 dark:hover:text-zinc-400">
+                {readBy.all ? 'Seen' : `Read by ${readBy.members.length}`}
+              </span>
+              <span className="flex -space-x-1.5">
+                {readBy.members.map((member) => (
+                  <span
+                    key={member.id}
+                    className="overflow-hidden rounded-full ring-2 ring-zinc-50 dark:ring-zinc-900"
+                  >
+                    <UserAvatar name={member.name} color={member.color} size={14} />
+                  </span>
+                ))}
+              </span>
+            </button>
           </motion.div>
         ) : null}
       </div>
@@ -2751,6 +2860,7 @@ function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
     prev.onReactionInfo === next.onReactionInfo &&
     prev.onOpenImage === next.onOpenImage &&
     prev.onJumpToReply === next.onJumpToReply &&
+    prev.onOpenSeenBy === next.onOpenSeenBy &&
     prev.onImageLoad === next.onImageLoad
   )
 }
@@ -2800,7 +2910,11 @@ function InfoDialog({
   if (!detail) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-[320px] rounded-2xl sm:left-1/2 sm:translate-x-[-50%]" />
+        <DialogContent className="max-w-[320px] rounded-2xl sm:left-1/2 sm:translate-x-[-50%]">
+          <DialogTitle className="sr-only">Chat info</DialogTitle>
+          <DialogDescription className="sr-only">Loading chat details…</DialogDescription>
+          <Skeleton className="h-40 w-full rounded-xl" />
+        </DialogContent>
       </Dialog>
     )
   }

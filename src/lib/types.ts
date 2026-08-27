@@ -76,6 +76,13 @@ export interface ConversationDetail {
   myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
 }
 
+/** Global search hit — a message plus the conversation it lives in. */
+export interface SearchResultMessage extends ChatMessage {
+  /** resolved display title (group name or DM partner name) */
+  conversationName: string
+  isGroup: boolean
+}
+
 // ── Socket event payloads (port 3003 mini service) ────────────
 
 export interface PresenceSnapshot {

@@ -18,7 +18,7 @@ import type {
   TypingEvent,
 } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
-import { haptic, playIncomingPing, primeSound } from '@/lib/pulse-settings'
+import { haptic, isQuietHoursNow, playIncomingPing, primeSound, pulseSettingsStore } from '@/lib/pulse-settings'
 import {
   PulseRealtimeContext,
   type PulseRealtimeValue,
@@ -381,11 +381,13 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
         scheduleRead(evt.message.conversationId)
       } else {
         // attention: gentle ping + buzz while backgrounded / elsewhere
-        // (respected per-conversation mute watermark — synced by the 6s list poll)
+        // (respected per-conversation mute watermark — synced by the 6s list poll —
+        // and the global client-side quiet-hours window)
         const summaries = queryClient.getQueryData<ConversationSummary[]>(['conversations', myId])
         const until = summaries?.find((c) => c.id === evt.message.conversationId)?.mutedUntil
         const muted = typeof until === 'string' && Date.parse(until) > Date.now()
-        if (!muted) {
+        const quiet = isQuietHoursNow(pulseSettingsStore.getState())
+        if (!muted && !quiet) {
           playIncomingPing()
           haptic(20)
         }

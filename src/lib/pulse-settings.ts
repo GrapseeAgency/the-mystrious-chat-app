@@ -11,8 +11,17 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 interface PulseSettingsState {
   soundOn: boolean
   hapticsOn: boolean
+  /** quiet hours — silence incoming pings/haptics inside the window */
+  quietHoursOn: boolean
+  /** 'HH:MM' 24h local time — window start */
+  quietStart: string
+  /** 'HH:MM' 24h local time — window end (may be < start → overnight) */
+  quietEnd: string
   setSoundOn: (on: boolean) => void
   setHapticsOn: (on: boolean) => void
+  setQuietHoursOn: (on: boolean) => void
+  setQuietStart: (value: string) => void
+  setQuietEnd: (value: string) => void
 }
 
 export const pulseSettingsStore = create<PulseSettingsState>()(
@@ -20,8 +29,14 @@ export const pulseSettingsStore = create<PulseSettingsState>()(
     (set) => ({
       soundOn: true,
       hapticsOn: true,
+      quietHoursOn: false,
+      quietStart: '22:00',
+      quietEnd: '07:00',
       setSoundOn: (on) => set({ soundOn: on }),
       setHapticsOn: (on) => set({ hapticsOn: on }),
+      setQuietHoursOn: (on) => set({ quietHoursOn: on }),
+      setQuietStart: (value) => set({ quietStart: value }),
+      setQuietEnd: (value) => set({ quietEnd: value }),
     }),
     {
       name: 'pulse.settings.v1',
@@ -29,6 +44,31 @@ export const pulseSettingsStore = create<PulseSettingsState>()(
     },
   ),
 )
+
+/** 'HH:MM' → minutes since midnight; NaN-safe (falls back to 0). */
+function minutesOf(hhmm: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim())
+  if (!m) return 0
+  const h = Math.min(Math.max(Number.parseInt(m[1], 10), 0), 23)
+  const min = Math.min(Math.max(Number.parseInt(m[2], 10), 0), 59)
+  return h * 60 + min
+}
+
+/**
+ * True when the current LOCAL time sits inside the quiet window.
+ * Supports overnight windows (e.g. 22:00 → 07:00).
+ */
+export function isQuietHoursNow(
+  state: Pick<PulseSettingsState, 'quietHoursOn' | 'quietStart' | 'quietEnd'>,
+): boolean {
+  if (!state.quietHoursOn) return false
+  const now = new Date()
+  const cur = now.getHours() * 60 + now.getMinutes()
+  const start = minutesOf(state.quietStart)
+  const end = minutesOf(state.quietEnd)
+  if (start === end) return false // degenerate window = off
+  return start < end ? cur >= start && cur < end : cur >= start || cur < end
+}
 
 /** Haptic ping honoring the user's haptics preference. */
 export function haptic(pattern: number = 20): void {
