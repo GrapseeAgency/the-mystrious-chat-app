@@ -27,13 +27,17 @@ interface RouteCtx {
 }
 
 /**
- * GET /api/conversations/[id]/messages?limit=200&before=<ISO>
+ * GET /api/conversations/[id]/messages?limit=200&before=<ISO>&q=<text>
  * → { messages: ChatMessage[], hasMore: boolean, total: number }
  *
  * Default window: the NEWEST `limit` messages, returned ascending.
  * `before=<ISO>` pages further back (messages strictly older than the ISO
  * timestamp — use the oldest message's createdAt as the cursor).
- * Soft-deleted rows are included (client renders tombstones).
+ * `q=<text>` switches into SEARCH mode: newest-first scan of the whole
+ * conversation, case-insensitive substring match on text content,
+ * soft-deleted rows excluded, capped at `limit` (max 100) returned
+ * ascending with the FULL match count as `total`.
+ * Soft-deleted rows are included (client renders tombstones) outside of search.
  */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params
@@ -74,6 +78,24 @@ export async function GET(req: Request, { params }: RouteCtx) {
       { error: 'after must be a valid ISO date string.' },
       { status: 400 },
     )
+  }
+
+  // Search mode — case-insensitive substring scan (SQLite has no ICU collation,
+  // so matching happens in Node over the conversation's rows).
+  const q = (url.searchParams.get('q') ?? '').trim()
+  if (q.length > 0) {
+    const searchLimit = Math.min(limit, 100)
+    const needle = q.toLowerCase()
+    const rows = await db.message.findMany({
+      where: { conversationId: id, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      include: MESSAGE_FULL_INCLUDE,
+    })
+    const matched = rows.filter((row) => row.content.toLowerCase().includes(needle))
+    const total = matched.length
+    const window = matched.slice(0, searchLimit)
+    window.reverse()
+    return NextResponse.json({ messages: window.map(mapMessage), hasMore: false, total })
   }
 
   if (before) {

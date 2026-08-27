@@ -26,7 +26,9 @@ import {
   Clock,
   Copy,
   EllipsisVertical,
+  Forward,
   ImagePlus,
+  Info,
   LoaderCircle,
   LogOut,
   Mic,
@@ -35,6 +37,8 @@ import {
   Play,
   Plus,
   Reply,
+  Search,
+  SearchX,
   SendHorizontal,
   Smile,
   Trash2,
@@ -65,8 +69,10 @@ import {
 } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
+import { ForwardSheet } from '@/components/chat/forward-sheet'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import { cn } from '@/lib/utils'
+import { Input } from '@/components/ui/input'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -104,6 +110,10 @@ interface SendResponse {
 }
 interface DeleteResponse {
   message: ChatMessage
+}
+interface SearchResponse {
+  messages: ChatMessage[]
+  total?: number
 }
 
 const CLUSTER_WINDOW_MS = 5 * 60 * 1000
@@ -156,14 +166,36 @@ export function ChatRoom({
   const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
   const [sendingImage, setSendingImage] = useState(false)
   const [hasMoreHistory, setHasMoreHistory] = useState(false)
+  /** mirror of hasMoreHistory readable from stable callbacks without re-creating them */
+  const hasMoreHistoryRef = useRef(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recordMs, setRecordMs] = useState(0)
   const [sendingVoice, setSendingVoice] = useState(false)
 
+  // ── search overlay + jump-to-message ───────────────────────
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchDraft, setSearchDraft] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** message currently flashing (search hit / quoted-reply jump) */
+  const [highlight, setHighlight] = useState<{ id: string; nonce: number } | null>(null)
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── forward-message sheet (fresh mount per open) ──────────
+  const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null)
+  const [forwardGeneration, setForwardGeneration] = useState(0)
+  const [forwardMounted, setForwardMounted] = useState(false)
+  const [forwardOpen, setForwardOpen] = useState(false)
+
   const viewportRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const nearBottomRef = useRef(true)
+
+  const applyHasMore = useCallback((next: boolean) => {
+    hasMoreHistoryRef.current = next
+    setHasMoreHistory(next)
+  }, [])
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** flipped (inside rAF) after the first history fetch so render stays ref-free */
   const [historyLoaded, setHistoryLoaded] = useState(false)
@@ -200,12 +232,12 @@ export function ChatRoom({
       // so a background refetch never amputates already-loaded history.
       const previous = queryClient.getQueryData<ChatMessage[]>(['messages', conversationId])
       if (!previous || previous.length === 0) {
-        setHasMoreHistory(res.total !== undefined ? res.messages.length < res.total : res.hasMore === true)
+        applyHasMore(res.total !== undefined ? res.messages.length < res.total : res.hasMore === true)
         return res.messages
       }
       const byId = new Map(previous.map((m) => [m.id, m]))
       for (const m of res.messages) byId.set(m.id, m)
-      setHasMoreHistory(res.total !== undefined ? byId.size < res.total : res.hasMore === true)
+      applyHasMore(res.total !== undefined ? byId.size < res.total : res.hasMore === true)
       return [...byId.values()].sort(
         (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
       )
@@ -238,14 +270,14 @@ export function ChatRoom({
         cachedCount = old.length + additions.length
         return [...additions, ...old]
       })
-      setHasMoreHistory(res.total !== undefined ? cachedCount < res.total : res.hasMore === true)
+      applyHasMore(res.total !== undefined ? cachedCount < res.total : res.hasMore === true)
       haptic(6)
     } catch {
       toast.error('Could not load older messages')
     } finally {
       setLoadingOlder(false)
     }
-  }, [messages.data, loadingOlder, conversationId, queryClient])
+  }, [messages.data, loadingOlder, conversationId, queryClient, applyHasMore])
 
   // scroll anchor: after prepending, keep the viewport pinned to the same content
   useLayoutEffect(() => {
@@ -255,6 +287,155 @@ export function ChatRoom({
     scrollRestoreRef.current = null
     el.scrollTop = el.scrollHeight - pending.prevHeight + pending.prevTop
   })
+
+  // ── jump-to-message machinery (search hits + quoted replies) ─
+
+  /** Smooth-scroll the thread so the target message sits mid-viewport. */
+  const scrollToMessageEl = useCallback((messageId: string): boolean => {
+    const vp = viewportRef.current
+    if (!vp) return false
+    const node = vp.querySelector<HTMLElement>(`[data-mid="${CSS.escape(messageId)}"]`)
+    if (!node) return false
+    const rect = node.getBoundingClientRect()
+    const vpRect = vp.getBoundingClientRect()
+    const target =
+      vp.scrollTop + (rect.top - vpRect.top) - vp.clientHeight / 2 + rect.height / 2
+    vp.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+    return true
+  }, [])
+
+  const flashHighlight = useCallback((messageId: string) => {
+    if (highlightTimerRef.current !== null) clearTimeout(highlightTimerRef.current)
+    setHighlight({ id: messageId, nonce: Date.now() })
+    highlightTimerRef.current = setTimeout(() => {
+      highlightTimerRef.current = null
+      setHighlight(null)
+    }, 1500)
+  }, [])
+
+  /**
+   * Jump the thread to any message. When it predates the loaded window,
+   * silently page back through history (bounded) until it shows up.
+   */
+  const jumpToMessage = useCallback(
+    async (messageId: string) => {
+      const readCache = () =>
+        queryClient.getQueryData<ChatMessage[]>(['messages', conversationId]) ?? []
+      haptic(8)
+      if (readCache().some((m) => m.id === messageId)) {
+        scrollToMessageEl(messageId)
+        flashHighlight(messageId)
+        return
+      }
+      let cached = readCache()
+      let more = hasMoreHistoryRef.current
+      let paged = 0
+      while (more && cached.length > 0 && paged < 14) {
+        paged += 1
+        try {
+          const res = await apiJson<SearchResponse>(
+            `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=60&before=${encodeURIComponent(cached[0].createdAt)}`,
+          )
+          if (res.messages.length === 0) break
+          // Plain prepend; no scroll-restore arm — we re-anchor on the hit below.
+          queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
+            const base = old ?? cached
+            const known = new Set(base.map((m) => m.id))
+            return [...res.messages.filter((m) => !known.has(m.id)), ...base].sort(
+              (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+            )
+          })
+          const byId = new Map<string, ChatMessage>()
+          for (const m of [...cached, ...res.messages]) byId.set(m.id, m)
+          cached = [...byId.values()].sort(
+            (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+          )
+          more =
+            res.total !== undefined ? cached.length < res.total : res.messages.length >= 60
+          hasMoreHistoryRef.current = more
+          if (cached.some((m) => m.id === messageId)) break
+        } catch {
+          toast.error('Could not page back through history')
+          return
+        }
+      }
+      if (paged > 0) applyHasMore(hasMoreHistoryRef.current)
+      if (cached.some((m) => m.id === messageId)) {
+        requestAnimationFrame(() => {
+          scrollToMessageEl(messageId)
+          flashHighlight(messageId)
+        })
+      } else {
+        toast.info('That message could not be found in this chat')
+      }
+    },
+    [conversationId, queryClient, scrollToMessageEl, flashHighlight, applyHasMore],
+  )
+
+  const jumpToReply = useCallback(
+    (parentId: string) => {
+      void jumpToMessage(parentId)
+    },
+    [jumpToMessage],
+  )
+
+  // ── search overlay plumbing ────────────────────────────────
+
+  /** Debounced commit of the search draft (same pattern as drafts). */
+  const handleSearchChange = (value: string) => {
+    setSearchDraft(value)
+    if (searchTimerRef.current !== null) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => {
+      searchTimerRef.current = null
+      setSearchQuery(value.trim())
+    }, 220)
+  }
+
+  const closeSearch = useCallback(() => {
+    if (searchTimerRef.current !== null) {
+      clearTimeout(searchTimerRef.current)
+      searchTimerRef.current = null
+    }
+    setSearchOpen(false)
+  }, [])
+
+  const searchResults = useQuery({
+    queryKey: ['message-search', conversationId, searchQuery],
+    enabled: searchOpen && searchQuery.length > 0,
+    staleTime: 20_000,
+    queryFn: async (): Promise<{ items: ChatMessage[]; total: number }> => {
+      const res = await apiJson<SearchResponse>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=100&q=${encodeURIComponent(searchQuery)}`,
+      )
+      return { items: res.messages, total: res.total ?? res.messages.length }
+    },
+  })
+
+  // ── forward-message sheet ─────────────────────────────────
+
+  const startForward = useCallback((message: ChatMessage | null) => {
+    if (!message || message.deletedAt) return
+    setForwardTarget(message)
+    setForwardGeneration((g) => g + 1)
+    setForwardMounted(true)
+    setForwardOpen(false)
+    setTimeout(() => setForwardOpen(true), 30)
+  }, [])
+
+  const handleForwardClose = useCallback((next: boolean) => {
+    setForwardOpen(next)
+    if (!next) setTimeout(() => setForwardMounted(false), 300)
+  }, [])
+
+  // unmount safety: clear search/highlight timers
+  useEffect(
+    () => () => {
+      if (searchTimerRef.current !== null) clearTimeout(searchTimerRef.current)
+      if (highlightTimerRef.current !== null) clearTimeout(highlightTimerRef.current)
+    },
+    [],
+  )
+
 
   // ── realtime registration + read receipts ──────────────────
 
@@ -1027,10 +1208,25 @@ export function ChatRoom({
                   role="menuitem"
                   onClick={() => {
                     setMenuOpen(false)
+                    setSearchDraft('')
+                    setSearchQuery('')
+                    setSearchOpen(true)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  <Search className="size-4 text-emerald-500" aria-hidden />
+                  Search messages
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
                     setInfoOpen(true)
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
                 >
+                  <Info className="size-4 text-zinc-400" aria-hidden />
                   {isGroup ? 'Group info' : 'Contact info'}
                 </button>
               </motion.div>
@@ -1125,6 +1321,8 @@ export function ChatRoom({
                   }}
                   onReactionInfo={(m, emoji) => setReactionInfo({ message: m, emoji })}
                   onOpenImage={setLightboxSrc}
+                  onJumpToReply={jumpToReply}
+                  highlighted={highlight !== null && highlight.id === item.message.id}
                 />
               ),
             )}
@@ -1425,6 +1623,19 @@ export function ChatRoom({
             </Button>
             <Button
               variant="outline"
+              disabled={!!selected?.deletedAt}
+              onClick={() => {
+                const target = selected
+                setSelected(null)
+                startForward(target)
+              }}
+              className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+            >
+              <Forward className="size-4" aria-hidden />
+              Forward to chat…
+            </Button>
+            <Button
+              variant="outline"
               disabled={!canDeleteSelected}
               onClick={() => setConfirmingDelete(true)}
               className="h-10 justify-start gap-2 rounded-xl border-destructive/40 text-sm font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
@@ -1549,6 +1760,168 @@ export function ChatRoom({
           ) : null}
         </DrawerContent>
       </Drawer>
+
+      {/* full-screen message-search overlay */}
+      <AnimatePresence>
+        {searchOpen ? (
+          <motion.div
+            key="search-overlay"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 340, damping: 34 }}
+            role="dialog"
+            aria-label={`Search messages in ${headerTitle}`}
+            className="absolute inset-0 z-50 flex flex-col bg-white dark:bg-zinc-900"
+          >
+            <div className="flex min-h-14 shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-zinc-800 dark:bg-zinc-900">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Back to conversation"
+                onClick={closeSearch}
+                className="size-10 shrink-0 rounded-full text-zinc-600 hover:bg-transparent hover:text-zinc-900 active:scale-95 dark:text-zinc-300 dark:hover:text-white"
+              >
+                <ChevronLeft className="size-6" aria-hidden />
+              </Button>
+              <div className="relative min-w-0 flex-1">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400"
+                  aria-hidden
+                />
+                <Input
+                  autoFocus
+                  value={searchDraft}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  placeholder={`Search in ${headerTitle}`}
+                  aria-label="Search messages"
+                  autoComplete="off"
+                  className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pr-9 pl-9 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+                {searchDraft.length > 0 ? (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onClick={() => handleSearchChange('')}
+                    className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-1 text-zinc-400 outline-none transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain bg-zinc-50 px-3 pt-4 pb-4 dark:bg-black/25">
+              {searchQuery.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+                  <div
+                    aria-hidden
+                    className="flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/15 to-emerald-600/10 text-emerald-500 dark:from-emerald-400/10 dark:to-emerald-600/5"
+                  >
+                    <Search className="size-7" aria-hidden />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+                      Search this conversation
+                    </p>
+                    <p className="mt-1 max-w-[220px] text-xs text-zinc-400 dark:text-zinc-500">
+                      Find any message by its text — jump straight back to it.
+                    </p>
+                  </div>
+                </div>
+              ) : searchResults.isPending ? (
+                <div role="status" aria-label="Searching messages" className="flex justify-center py-10">
+                  <LoaderCircle className="size-5 animate-spin text-zinc-400" aria-hidden />
+                </div>
+              ) : !searchResults.data || searchResults.data.items.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                  <div
+                    aria-hidden
+                    className="flex size-14 items-center justify-center rounded-2xl bg-zinc-200/60 text-zinc-400 dark:bg-zinc-800"
+                  >
+                    <SearchX className="size-6" aria-hidden />
+                  </div>
+                  <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+                    No matches for “{searchQuery}”
+                  </p>
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                    Try a shorter or different phrase.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-2.5 flex justify-center">
+                    <span className="rounded-full bg-zinc-200/70 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-white/5">
+                      {(() => {
+                        const n = searchResults.data.total
+                        return `${n === 1 ? '1 match' : `${n} matches`} for “${searchQuery}”`
+                      })()}
+                    </span>
+                  </div>
+                  {[...searchResults.data.items].reverse().map((m, idx) => (
+                    <motion.button
+                      key={m.id}
+                      type="button"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.16, delay: Math.min(idx * 0.02, 0.24) }}
+                      onClick={() => {
+                        closeSearch()
+                        void jumpToMessage(m.id)
+                      }}
+                      className="mb-1.5 flex w-full items-start gap-2.5 rounded-xl border border-zinc-200 bg-white p-2.5 text-left shadow-sm outline-none transition-colors hover:border-emerald-300 active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800"
+                    >
+                      <UserAvatar name={m.sender.name} color={m.sender.color} size={30} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                            {m.sender.id === me.id ? 'You' : m.sender.name}
+                          </span>
+                          <span className="shrink-0 text-[10px] tabular-nums text-zinc-400 dark:text-zinc-500">
+                            {(() => {
+                              const stamp = formatListStamp(m.createdAt)
+                              const time = formatTime(m.createdAt)
+                              return stamp === time ? time : `${stamp} · ${time}`
+                            })()}
+                          </span>
+                        </span>
+                        <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug break-words text-zinc-600 dark:text-zinc-300">
+                          {m.imagePath ? '📷 ' : ''}
+                          {m.audioPath ? '🎤 ' : ''}
+                          <MatchedText
+                            content={
+                              m.content.replace(/\s+/g, ' ').trim() ||
+                              (m.imagePath ? 'Photo' : 'Voice message')
+                            }
+                            query={searchQuery}
+                          />
+                        </span>
+                      </span>
+                    </motion.button>
+                  ))}
+                </>
+              )}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* forward-message sheet */}
+      {forwardMounted && forwardTarget ? (
+        <ForwardSheet
+          key={forwardGeneration}
+          me={me}
+          open={forwardOpen}
+          onOpenChange={handleForwardClose}
+          originId={conversationId}
+          payload={{
+            content: forwardTarget.content,
+            imagePath: forwardTarget.imagePath,
+            audioPath: forwardTarget.audioPath,
+            durationMs: forwardTarget.durationMs,
+          }}
+        />
+      ) : null}
 
       {/* info dialog */}
       <InfoDialog
@@ -1697,6 +2070,8 @@ interface MessageRowProps {
   isGroup: boolean
   readMs: number
   myId: string
+  /** search/reply jump flash — ring-pulse this bubble briefly */
+  highlighted: boolean
   onPress: (message: ChatMessage) => void
   onStartLongPress: (message: ChatMessage) => void
   onEndLongPress: () => void
@@ -1705,6 +2080,23 @@ interface MessageRowProps {
   /** long-press a chip → who-reacted sheet */
   onReactionInfo: (message: ChatMessage, emoji: string) => void
   onOpenImage: (src: string) => void
+  /** tap the quoted block → scroll to the parent message + flash */
+  onJumpToReply: (parentMessageId: string) => void
+}
+
+/** Renders text with the first case-insensitive occurrence of `query` highlighted. */
+function MatchedText({ content, query }: { content: string; query: string }) {
+  const idx = query.length > 0 ? content.toLowerCase().indexOf(query.toLowerCase()) : -1
+  if (idx < 0) return <>{content}</>
+  return (
+    <>
+      {content.slice(0, idx)}
+      <mark className="rounded bg-emerald-500/20 px-0.5 font-semibold text-emerald-700 dark:text-emerald-300">
+        {content.slice(idx, idx + query.length)}
+      </mark>
+      {content.slice(idx + query.length)}
+    </>
+  )
 }
 
 /** Bubble body text with URL auto-linking (safe anchors, no HTML injection). */
@@ -1749,6 +2141,7 @@ const MessageRow = memo(function MessageRow({
   isGroup,
   readMs,
   myId,
+  highlighted,
   onPress,
   onStartLongPress,
   onEndLongPress,
@@ -1756,6 +2149,7 @@ const MessageRow = memo(function MessageRow({
   onReply,
   onReactionInfo,
   onOpenImage,
+  onJumpToReply,
 }: MessageRowProps) {
   const deleted = message.deletedAt !== null
   const pending = message.id.startsWith('temp-')
@@ -1782,8 +2176,9 @@ const MessageRow = memo(function MessageRow({
 
   return (
     <div
+      data-mid={message.id}
       className={cn(
-        'flex w-full',
+        'flex w-full scroll-mt-24',
         mine ? 'justify-end' : 'justify-start',
         head ? 'mt-2.5' : 'mt-0.5',
       )}
@@ -1863,6 +2258,7 @@ const MessageRow = memo(function MessageRow({
           }}
           className={cn(
             'relative select-none',
+            highlighted && !deleted && 'animate-[pulse-message-flash_1.5s_ease-out_1]',
             jumbo
               ? 'px-1 py-0.5'
               : isImage
@@ -1892,12 +2288,28 @@ const MessageRow = memo(function MessageRow({
           ) : (
             <>
               {message.replyTo ? (
-                <div
+                <button
+                  type="button"
+                  aria-label={
+                    message.replyTo.deleted
+                      ? 'Original message was deleted'
+                      : 'Jump to quoted message'
+                  }
+                  disabled={message.replyTo.deleted}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const parent = message.replyTo
+                    if (parent && !parent.deleted) {
+                      haptic(8)
+                      onJumpToReply(parent.id)
+                    }
+                  }}
                   className={cn(
-                    'mb-1 rounded-md border-l-[3px] px-2 py-1',
+                    'mb-1 block w-full rounded-md border-l-[3px] px-2 py-1 text-left outline-none transition-colors',
                     mine
-                      ? 'border-white/70 bg-black/10'
-                      : 'border-emerald-400 bg-zinc-100 dark:border-emerald-500/80 dark:bg-zinc-700/60',
+                      ? 'border-white/70 bg-black/10 hover:bg-black/15'
+                      : 'border-emerald-400 bg-zinc-100 hover:bg-zinc-200/70 dark:border-emerald-500/80 dark:bg-zinc-700/60 dark:hover:bg-zinc-700',
+                    message.replyTo.deleted ? '' : 'cursor-pointer active:scale-[0.99]',
                   )}
                 >
                   <p
@@ -1922,7 +2334,7 @@ const MessageRow = memo(function MessageRow({
                       ? 'This message was deleted'
                       : message.replyTo.content.replace(/\s+/g, ' ').slice(0, 120)}
                   </p>
-                </div>
+                </button>
               ) : null}
               {isImage ? (
                 <button
@@ -2067,13 +2479,15 @@ function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
     prev.isGroup === next.isGroup &&
     prev.readMs === next.readMs &&
     prev.myId === next.myId &&
+    prev.highlighted === next.highlighted &&
     prev.onPress === next.onPress &&
     prev.onStartLongPress === next.onStartLongPress &&
     prev.onEndLongPress === next.onEndLongPress &&
     prev.onToggleReaction === next.onToggleReaction &&
     prev.onReply === next.onReply &&
     prev.onReactionInfo === next.onReactionInfo &&
-    prev.onOpenImage === next.onOpenImage
+    prev.onOpenImage === next.onOpenImage &&
+    prev.onJumpToReply === next.onJumpToReply
   )
 }
 

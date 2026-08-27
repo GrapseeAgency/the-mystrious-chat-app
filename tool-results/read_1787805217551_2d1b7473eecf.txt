@@ -1,0 +1,502 @@
+  1061→  1061→          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+  1062→  1062→            <div
+  1063→  1063→              aria-hidden
+  1064→  1064→              className="flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/15 to-emerald-600/10 text-emerald-500 dark:from-emerald-400/10 dark:to-emerald-600/5"
+  1065→  1065→            >
+  1066→  1066→              <SendHorizontal className="size-7 -rotate-45" />
+  1067→  1067→            </div>
+  1068→  1068→            <div>
+  1069→  1069→              <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
+  1070→  1070→              <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+  1071→  1071→                Say hello — your words travel in real time.
+  1072→  1072→              </p>
+  1073→  1073→            </div>
+  1074→  1074→          </div>
+  1075→  1075→        ) : (
+  1076→  1076→          <div className="flex flex-col">
+  1077→  1077→            {hasMoreHistory ? (
+  1078→  1078→              <div className="flex justify-center pb-3">
+  1079→  1079→                <button
+  1080→  1080→                  type="button"
+  1081→  1081→                  disabled={loadingOlder}
+  1082→  1082→                  onClick={() => void loadOlder()}
+  1083→  1083→                  className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-zinc-500 shadow-sm outline-none backdrop-blur transition-colors hover:border-emerald-300 hover:text-emerald-600 active:scale-95 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-400 dark:hover:border-emerald-500/50 dark:hover:text-emerald-400"
+  1084→  1084→                >
+  1085→  1085→                  {loadingOlder ? (
+  1086→  1086→                    <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+  1087→  1087→                  ) : (
+  1088→  1088→                    <ChevronUp className="size-3.5" aria-hidden />
+  1089→  1089→                  )}
+  1090→  1090→                  {loadingOlder ? 'Loading…' : 'Load older messages'}
+  1091→  1091→                </button>
+  1092→  1092→              </div>
+  1093→  1093→            ) : null}
+  1094→  1094→            {items.map((item) =>
+  1095→  1095→              item.kind === 'day' ? (
+  1096→  1096→                <div key={item.key} className="my-3 flex justify-center">
+  1097→  1097→                  <span className="rounded-full bg-zinc-200/70 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-white/5">
+  1098→  1098→                    {item.label}
+  1099→  1099→                  </span>
+  1100→  1100→                </div>
+  1101→  1101→              ) : item.kind === 'unread' ? (
+  1102→  1102→                <div key={item.key} className="my-3 flex items-center gap-2 px-1" role="separator" aria-label="Unread messages">
+  1103→  1103→                  <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
+  1104→  1104→                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-emerald-600 dark:text-emerald-400">
+  1105→  1105→                    UNREAD
+  1106→  1106→                  </span>
+  1107→  1107→                  <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
+  1108→  1108→                </div>
+  1109→  1109→              ) : (
+  1110→  1110→                <MessageRow
+  1111→  1111→                  key={item.key}
+  1112→  1112→                  message={item.message}
+  1113→  1113→                  head={item.head}
+  1114→  1114→                  mine={item.message.senderId === me.id}
+  1115→  1115→                  isGroup={isGroup}
+  1116→  1116→                  readMs={othersMaxReadMs}
+  1117→  1117→                  myId={me.id}
+  1118→  1118→                  onPress={setSelected}
+  1119→  1119→                  onStartLongPress={startLongPress}
+  1120→  1120→                  onEndLongPress={clearLongPress}
+  1121→  1121→                  onToggleReaction={handleToggleReaction}
+  1122→  1122→                  onReply={(m) => {
+  1123→  1123→                    setReplyTo(m)
+  1124→  1124→                    requestAnimationFrame(() => textareaRef.current?.focus())
+  1125→  1125→                  }}
+  1126→  1126→                  onReactionInfo={(m, emoji) => setReactionInfo({ message: m, emoji })}
+  1127→  1127→                  onOpenImage={setLightboxSrc}
+  1128→  1128→                />
+  1129→  1129→              ),
+  1130→  1130→            )}
+  1131→  1131→
+  1132→  1132→            <AnimatePresence>
+  1133→  1133→              {typers.length > 0 ? (
+  1134→  1134→                <motion.div
+  1135→  1135→                  key="typing-bubble"
+  1136→  1136→                  initial={{ opacity: 0, y: 6 }}
+  1137→  1137→                  animate={{ opacity: 1, y: 0 }}
+  1138→  1138→                  exit={{ opacity: 0, y: 4 }}
+  1139→  1139→                  transition={{ duration: 0.15 }}
+  1140→  1140→                  className="mt-1.5 flex items-end gap-1.5"
+  1141→  1141→                >
+  1142→  1142→                  {isGroup ? (
+  1143→  1143→                    (() => {
+  1144→  1144→                      const typer =
+  1145→  1145→                        typers.find((t) => detailData?.members.some((m) => m.id === t.userId)) ??
+  1146→  1146→                        typers[0]
+  1147→  1147→                      return (
+  1148→  1148→                        <UserAvatar
+  1149→  1149→                          name={typer.userName}
+  1150→  1150→                          color={
+  1151→  1151→                            detailData?.members.find((m) => m.id === typer.userId)?.color ?? 'emerald'
+  1152→  1152→                          }
+  1153→  1153→                          size={28}
+  1154→  1154→                        />
+  1155→  1155→                      )
+  1156→  1156→                    })()
+  1157→  1157→                  ) : other ? (
+  1158→  1158→                    <UserAvatar name={other.name} color={other.color} size={28} />
+  1159→  1159→                  ) : null}
+  1160→  1160→                  <div className="rounded-2xl rounded-bl-md border border-zinc-100 bg-white px-3 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800">
+  1161→  1161→                    <TypingDots />
+  1162→  1162→                  </div>
+  1163→  1163→                </motion.div>
+  1164→  1164→              ) : null}
+  1165→  1165→            </AnimatePresence>
+  1166→  1166→          </div>
+  1167→  1167→        )}
+  1168→  1168→
+  1169→  1169→        <AnimatePresence>
+  1170→  1170→          {showJump ? (
+  1171→  1171→            <motion.button
+  1172→  1172→              type="button"
+  1173→  1173→              aria-label="Jump to newest messages"
+  1174→  1174→              initial={{ opacity: 0, y: 10, scale: 0.85 }}
+  1175→  1175→              animate={{ opacity: 1, y: 0, scale: 1 }}
+  1176→  1176→              exit={{ opacity: 0, y: 8, scale: 0.9 }}
+  1177→  1177→              transition={{ type: 'spring', stiffness: 420, damping: 22 }}
+  1178→  1178→              onClick={() => {
+  1179→  1179→                setShowJump(false)
+  1180→  1180→                haptic(8)
+  1181→  1181→                scrollToBottom(true)
+  1182→  1182→              }}
+  1183→  1183→              className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-emerald-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 active:scale-95"
+  1184→  1184→            >
+  1185→  1185→              New messages
+  1186→  1186→              <ArrowDown className="size-3.5" aria-hidden />
+  1187→  1187→            </motion.button>
+  1188→  1188→          ) : null}
+  1189→  1189→        </AnimatePresence>
+  1190→  1190→      </div>
+  1191→  1191→
+  1192→  1192→      {/* composer */}
+  1193→  1193→      <div className="shrink-0 border-t border-zinc-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:border-zinc-800 dark:bg-zinc-900">
+  1194→  1194→        <AnimatePresence initial={false}>
+  1195→  1195→          {replyTo ? (
+  1196→  1196→            <motion.div
+  1197→  1197→              key="reply-bar"
+  1198→  1198→              initial={{ height: 0, opacity: 0 }}
+  1199→  1199→              animate={{ height: 'auto', opacity: 1 }}
+  1200→  1200→              exit={{ height: 0, opacity: 0 }}
+  1201→  1201→              transition={{ duration: 0.18, ease: 'easeOut' }}
+  1202→  1202→              className="overflow-hidden"
+  1203→  1203→            >
+  1204→  1204→              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-emerald-500 bg-zinc-100 py-2 pr-2 pl-2.5 dark:bg-zinc-800">
+  1205→  1205→                <div className="min-w-0 flex-1">
+  1206→  1206→                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+  1207→  1207→                    Replying to {replyTo.sender.id === me.id ? 'yourself' : replyTo.sender.name}
+  1208→  1208→                  </p>
+  1209→  1209→                  <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+  1210→  1210→                    {replyTo.deletedAt
+  1211→  1211→                      ? 'Deleted message'
+  1212→  1212→                      : replyTo.content.replace(/\s+/g, ' ').slice(0, 120)}
+  1213→  1213→                  </p>
+  1214→  1214→                </div>
+  1215→  1215→                <button
+  1216→  1216→                  type="button"
+  1217→  1217→                  aria-label="Cancel reply"
+  1218→  1218→                  onClick={() => setReplyTo(null)}
+  1219→  1219→                  className="rounded-full p-1.5 text-zinc-400 outline-none transition-colors hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+  1220→  1220→                >
+  1221→  1221→                  <X className="size-4" aria-hidden />
+  1222→  1222→                </button>
+  1223→  1223→              </div>
+  1224→  1224→            </motion.div>
+  1225→  1225→          ) : null}
+  1226→  1226→        </AnimatePresence>
+  1227→  1227→
+  1228→  1228→        <div className="flex items-end gap-2">
+  1229→  1229→          <input
+  1230→  1230→            ref={fileInputRef}
+  1231→  1231→            type="file"
+  1232→  1232→            accept="image/*"
+  1233→  1233→            className="hidden"
+  1234→  1234→            aria-hidden
+  1235→  1235→            tabIndex={-1}
+  1236→  1236→            onChange={(e) => void handleImagePicked(e.target.files?.[0])}
+  1237→  1237→          />
+  1238→  1238→          {recording ? (
+  1239→  1239→            <>
+  1240→  1240→              <button
+  1241→  1241→                type="button"
+  1242→  1242→                aria-label="Cancel recording"
+  1243→  1243→                onClick={() => finishRecording(false)}
+  1244→  1244→                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 outline-none transition-transform hover:bg-rose-200 active:scale-90 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-500/25"
+  1245→  1245→              >
+  1246→  1246→                <X className="size-5" aria-hidden />
+  1247→  1247→              </button>
+  1248→  1248→              <div
+  1249→  1249→                role="status"
+  1250→  1250→                aria-label="Recording voice note"
+  1251→  1251→                className="flex h-11 flex-1 items-center gap-2.5 rounded-full border border-rose-200 bg-rose-50 px-4 dark:border-rose-500/30 dark:bg-rose-500/10"
+  1252→  1252→              >
+  1253→  1253→                <span className="relative flex size-2.5 shrink-0" aria-hidden>
+  1254→  1254→                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+  1255→  1255→                  <span className="relative inline-flex size-2.5 rounded-full bg-rose-500" />
+  1256→  1256→                </span>
+  1257→  1257→                <span className="text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+  1258→  1258→                  {formatVoicems(recordMs)}
+  1259→  1259→                </span>
+  1260→  1260→                <span className="ml-auto truncate text-xs text-zinc-400 dark:text-zinc-500">
+  1261→  1261→                  Recording voice note…
+  1262→  1262→                </span>
+  1263→  1263→              </div>
+  1264→  1264→              <button
+  1265→  1265→                type="button"
+  1266→  1266→                aria-label="Stop and send voice note"
+  1267→  1267→                disabled={sendingVoice}
+  1268→  1268→                onClick={() => finishRecording(true)}
+  1269→  1269→                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-90 disabled:opacity-60"
+  1270→  1270→              >
+  1271→  1271→                {sendingVoice ? (
+  1272→  1272→                  <LoaderCircle className="size-5 animate-spin" aria-hidden />
+  1273→  1273→                ) : (
+  1274→  1274→                  <SendHorizontal className="size-5" aria-hidden />
+  1275→  1275→                )}
+  1276→  1276→              </button>
+  1277→  1277→            </>
+  1278→  1278→          ) : (
+  1279→  1279→            <>
+  1280→  1280→              <button
+  1281→  1281→                type="button"
+  1282→  1282→                aria-label="Send a photo"
+  1283→  1283→                disabled={sendingImage}
+  1284→  1284→                onClick={() => fileInputRef.current?.click()}
+  1285→  1285→                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 disabled:opacity-50 dark:hover:bg-zinc-800"
+  1286→  1286→              >
+  1287→  1287→                {sendingImage ? (
+  1288→  1288→                  <LoaderCircle className="size-5 animate-spin" aria-hidden />
+  1289→  1289→                ) : (
+  1290→  1290→                  <ImagePlus className="size-[22px]" aria-hidden />
+  1291→  1291→                )}
+  1292→  1292→              </button>
+  1293→  1293→              <Popover>
+  1294→  1294→                <PopoverTrigger asChild>
+  1295→  1295→                  <button
+  1296→  1296→                    type="button"
+  1297→  1297→                    aria-label="Insert emoji"
+  1298→  1298→                    className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-500 active:scale-90 dark:hover:bg-zinc-800"
+  1299→  1299→                  >
+  1300→  1300→                    <Smile className="size-6" aria-hidden />
+  1301→  1301→                  </button>
+  1302→  1302→                </PopoverTrigger>
+  1303→  1303→                <PopoverContent
+  1304→  1304→                  side="top"
+  1305→  1305→                  align="start"
+  1306→  1306→                  sideOffset={10}
+  1307→  1307→                  className="w-[272px] rounded-2xl p-2 dark:bg-zinc-800"
+  1308→  1308→                >
+  1309→  1309→                  <div className="grid grid-cols-8 gap-0.5">
+  1310→  1310→                    {EMOJI_PICKER_CHOICES.map((emoji) => (
+  1311→  1311→                      <button
+  1312→  1312→                        key={emoji}
+  1313→  1313→                        type="button"
+  1314→  1314→                        aria-label={`Insert ${emoji}`}
+  1315→  1315→                        onClick={() => {
+  1316→  1316→                          setInput((prev) => prev + emoji)
+  1317→  1317→                          requestAnimationFrame(() => {
+  1318→  1318→                            autosize()
+  1319→  1319→                            textareaRef.current?.focus()
+  1320→  1320→                          })
+  1321→  1321→                        }}
+  1322→  1322→                        className="rounded-lg py-1 text-xl outline-none transition-transform hover:bg-zinc-100 hover:scale-125 active:scale-95 dark:hover:bg-zinc-700"
+  1323→  1323→                      >
+  1324→  1324→                        {emoji}
+  1325→  1325→                      </button>
+  1326→  1326→                    ))}
+  1327→  1327→                  </div>
+  1328→  1328→                </PopoverContent>
+  1329→  1329→              </Popover>
+  1330→  1330→              <textarea
+  1331→  1331→                ref={textareaRef}
+  1332→  1332→                value={input}
+  1333→  1333→                rows={1}
+  1334→  1334→                aria-label="Message input"
+  1335→  1335→                placeholder="Type a message"
+  1336→  1336→                maxLength={2000}
+  1337→  1337→                enterKeyHint="send"
+  1338→  1338→                onChange={(e) => handleInputChange(e.target.value)}
+  1339→  1339→                onKeyDown={handleKeyDown}
+  1340→  1340→                onBlur={stopTyping}
+  1341→  1341→                className="pulse-scroll max-h-[120px] flex-1 resize-none rounded-3xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-colors focus:border-emerald-400 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-emerald-500/70"
+  1342→  1342→              />
+  1343→  1343→              {input.trim().length === 0 ? (
+  1344→  1344→                <button
+  1345→  1345→                  type="button"
+  1346→  1346→                  aria-label="Record voice note"
+  1347→  1347→                  onClick={() => void startRecording()}
+  1348→  1348→                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 outline-none transition-all hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-90 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-emerald-400"
+  1349→  1349→                >
+  1350→  1350→                  <Mic className="size-5" aria-hidden />
+  1351→  1351→                </button>
+  1352→  1352→              ) : (
+  1353→  1353→                <button
+  1354→  1354→                  type="button"
+  1355→  1355→                  aria-label="Send message"
+  1356→  1356→                  disabled={input.trim().length === 0 || sendMessage.isPending}
+  1357→  1357→                  onClick={submit}
+  1358→  1358→                  className={cn(
+  1359→  1359→                    'flex size-11 shrink-0 items-center justify-center rounded-full transition-all active:scale-90',
+  1360→  1360→                    input.trim().length > 0
+  1361→  1361→                      ? 'bg-emerald-500 text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90'
+  1362→  1362→                      : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500',
+  1363→  1363→                  )}
+  1364→  1364→                >
+  1365→  1365→                  <SendHorizontal className="size-5" aria-hidden />
+  1366→  1366→                </button>
+  1367→  1367→              )}
+  1368→  1368→            </>
+  1369→  1369→          )}
+  1370→  1370→        </div>
+  1371→  1371→      </div>
+  1372→  1372→
+  1373→  1373→      {/* message actions */}
+  1374→  1374→      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
+  1375→  1375→        <DialogContent className="max-w-[300px] gap-3 rounded-2xl p-4 sm:left-1/2 sm:translate-x-[-50%] dark:bg-zinc-900">
+  1376→  1376→          <DialogHeader className="text-left">
+  1377→  1377→            <DialogTitle className="text-sm font-bold tracking-tight">Message options</DialogTitle>
+  1378→  1378→            <DialogDescription className="text-xs leading-relaxed">
+  1379→  1379→              {selected?.deletedAt
+  1380→  1380→                ? 'This message was deleted.'
+  1381→  1381→                : selected?.content.replace(/\s+/g, ' ').slice(0, 140)}
+  1382→  1382→            </DialogDescription>
+  1383→  1383→          </DialogHeader>
+  1384→  1384→          {selected && !selected.deletedAt ? (
+  1385→  1385→            <div className="flex items-center justify-between gap-0.5" role="group" aria-label="React with an emoji">
+  1386→  1386→              {REACTION_CHOICES.map((emoji) => (
+  1387→  1387→                <button
+  1388→  1388→                  key={emoji}
+  1389→  1389→                  type="button"
+  1390→  1390→                  aria-label={`React with ${emoji}`}
+  1391→  1391→                  onClick={() => {
+  1392→  1392→                    handleToggleReaction(selected.id, emoji)
+  1393→  1393→                    setSelected(null)
+  1394→  1394→                  }}
+  1395→  1395→                  className="flex size-10 items-center justify-center rounded-full text-xl outline-none transition-transform hover:scale-125 hover:bg-zinc-100 active:scale-95 dark:hover:bg-zinc-800"
+  1396→  1396→                >
+  1397→  1397→                  {emoji}
+  1398→  1398→                </button>
+  1399→  1399→              ))}
+  1400→  1400→            </div>
+  1401→  1401→          ) : null}
+  1402→  1402→          <div className="flex flex-col gap-1.5">
+  1403→  1403→            <Button
+  1404→  1404→              variant="outline"
+  1405→  1405→              onClick={() => {
+  1406→  1406→                if (!selected) return
+  1407→  1407→                setReplyTo(selected)
+  1408→  1408→                setSelected(null)
+  1409→  1409→                requestAnimationFrame(() => textareaRef.current?.focus())
+  1410→  1410→              }}
+  1411→  1411→              disabled={!!selected?.deletedAt}
+  1412→  1412→              className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+  1413→  1413→            >
+  1414→  1414→              <Reply className="size-4" aria-hidden />
+  1415→  1415→              Reply
+  1416→  1416→            </Button>
+  1417→  1417→            <Button
+  1418→  1418→              variant="outline"
+  1419→  1419→              onClick={copySelected}
+  1420→  1420→              disabled={!!selected?.deletedAt}
+  1421→  1421→              className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+  1422→  1422→            >
+  1423→  1423→              <Copy className="size-4" aria-hidden />
+  1424→  1424→              Copy text
+  1425→  1425→            </Button>
+  1426→  1426→            <Button
+  1427→  1427→              variant="outline"
+  1428→  1428→              disabled={!canDeleteSelected}
+  1429→  1429→              onClick={() => setConfirmingDelete(true)}
+  1430→  1430→              className="h-10 justify-start gap-2 rounded-xl border-destructive/40 text-sm font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+  1431→  1431→            >
+  1432→  1432→              <Trash2 className="size-4" aria-hidden />
+  1433→  1433→              Delete for everyone
+  1434→  1434→            </Button>
+  1435→  1435→          </div>
+  1436→  1436→        </DialogContent>
+  1437→  1437→      </Dialog>
+  1438→  1438→
+  1439→  1439→      <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+  1440→  1440→        <AlertDialogContent className="max-w-[320px] rounded-2xl bg-white dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">
+  1441→  1441→          <AlertDialogHeader>
+  1442→  1442→            <AlertDialogTitle className="tracking-tight">Delete this message?</AlertDialogTitle>
+  1443→  1443→            <AlertDialogDescription className="text-[13px] leading-relaxed">
+  1444→  1444→              It will be replaced with a tombstone for everyone here. This can&apos;t be undone.
+  1445→  1445→            </AlertDialogDescription>
+  1446→  1446→          </AlertDialogHeader>
+  1447→  1447→          <AlertDialogFooter className="gap-2">
+  1448→  1448→            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+  1449→  1449→            <AlertDialogAction
+  1450→  1450→              disabled={deleteMessage.isPending}
+  1451→  1451→              onClick={() => {
+  1452→  1452→                if (selected) deleteMessage.mutate(selected.id)
+  1453→  1453→              }}
+  1454→  1454→              className="rounded-xl bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40"
+  1455→  1455→            >
+  1456→  1456→              Delete
+  1457→  1457→            </AlertDialogAction>
+  1458→  1458→          </AlertDialogFooter>
+  1459→  1459→        </AlertDialogContent>
+  1460→  1460→      </AlertDialog>
+  1461→  1461→
+  1462→  1462→      {/* photo lightbox */}
+  1463→  1463→      <AnimatePresence>
+  1464→  1464→        {lightboxSrc ? (
+  1465→  1465→          <motion.div
+  1466→  1466→            key="lightbox"
+  1467→  1467→            initial={{ opacity: 0 }}
+  1468→  1468→            animate={{ opacity: 1 }}
+  1469→  1469→            exit={{ opacity: 0 }}
+  1470→  1470→            transition={{ duration: 0.18 }}
+  1471→  1471→            role="dialog"
+  1472→  1472→            aria-label="Photo viewer"
+  1473→  1473→            className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm"
+  1474→  1474→            onClick={() => setLightboxSrc(null)}
+  1475→  1475→          >
+  1476→  1476→            <motion.img
+  1477→  1477→              src={lightboxSrc}
+  1478→  1478→              alt="Shared photo enlarged"
+  1479→  1479→              initial={{ scale: 0.88, opacity: 0 }}
+  1480→  1480→              animate={{ scale: 1, opacity: 1 }}
+  1481→  1481→              exit={{ scale: 0.94, opacity: 0 }}
+  1482→  1482→              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+  1483→  1483→              className="max-h-[74%] max-w-[92%] rounded-2xl shadow-2xl"
+  1484→  1484→              onClick={(e) => e.stopPropagation()}
+  1485→  1485→            />
+  1486→  1486→            <button
+  1487→  1487→              type="button"
+  1488→  1488→              aria-label="Close photo viewer"
+  1489→  1489→              onClick={() => setLightboxSrc(null)}
+  1490→  1490→              className="absolute right-3 top-3 rounded-full bg-white/10 p-2 text-white outline-none transition-colors hover:bg-white/20"
+  1491→  1491→            >
+  1492→  1492→              <X className="size-5" aria-hidden />
+  1493→  1493→            </button>
+  1494→  1494→          </motion.div>
+  1495→  1495→        ) : null}
+  1496→  1496→      </AnimatePresence>
+  1497→  1497→
+  1498→  1498→      {/* who-reacted sheet */}
+  1499→  1499→      <Drawer open={reactionInfo !== null} onOpenChange={(open) => !open && setReactionInfo(null)}>
+  1500→  1500→        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+  1501→  1501→          {reactionInfo ? (
+  1502→  1502→            <div className="pb-2">
+  1503→  1503→              <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+  1504→  1504→                <span className="text-lg leading-none">{reactionInfo.emoji}</span>
+  1505→  1505→                {(() => {
+  1506→  1506→                  const group = reactionInfo.message.reactions.find((g) => g.emoji === reactionInfo.emoji)
+  1507→  1507→                  const n = group?.count ?? 0
+  1508→  1508→                  return n === 1 ? '1 reaction' : `${n} reactions`
+  1509→  1509→                })()}
+  1510→  1510→              </p>
+  1511→  1511→              <ul className="pulse-scroll max-h-56 overflow-y-auto py-1">
+  1512→  1512→                {(reactionInfo.message.reactions
+  1513→  1513→                  .find((g) => g.emoji === reactionInfo.emoji)
+  1514→  1514→                  ?.userIds.map((userId) => ({
+  1515→  1515→                    id: userId,
+  1516→  1516→                    member: detailData?.members.find((m) => m.id === userId),
+  1517→  1517→                  })) ?? [])
+  1518→  1518→                  .map(({ id, member }) => (
+  1519→  1519→                    <li key={id} className="flex items-center gap-3 rounded-xl px-2 py-2">
+  1520→  1520→                      <UserAvatar
+  1521→  1521→                        name={member?.name ?? 'Unknown'}
+  1522→  1522→                        color={member?.color ?? 'emerald'}
+  1523→  1523→                        size={34}
+  1524→  1524→                      />
+  1525→  1525→                      <span className="flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+  1526→  1526→                        {member?.name ?? 'Unknown'}
+  1527→  1527→                        {id === me.id ? <span className="ml-1 text-xs text-zinc-400">(you)</span> : null}
+  1528→  1528→                      </span>
+  1529→  1529→                    </li>
+  1530→  1530→                  ))}
+  1531→  1531→              </ul>
+  1532→  1532→              <button
+  1533→  1533→                type="button"
+  1534→  1534→                disabled={toggleReaction.isPending}
+  1535→  1535→                onClick={() => {
+  1536→  1536→                  handleToggleReaction(reactionInfo.message.id, reactionInfo.emoji)
+  1537→  1537→                  setReactionInfo(null)
+  1538→  1538→                }}
+  1539→  1539→                className="mt-1 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-bold text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-60"
+  1540→  1540→              >
+  1541→  1541→                <span className="text-base leading-none">{reactionInfo.emoji}</span>
+  1542→  1542→                {reactionInfo.message.reactions
+  1543→  1543→                  .find((g) => g.emoji === reactionInfo.emoji)
+  1544→  1544→                  ?.userIds.includes(me.id)
+  1545→  1545→                  ? 'Remove your reaction'
+  1546→  1546→                  : `React ${reactionInfo.emoji}`}
+  1547→  1547→              </button>
+  1548→  1548→            </div>
+  1549→  1549→          ) : null}
+  1550→  1550→        </DrawerContent>
+  1551→  1551→      </Drawer>
+  1552→  1552→
+  1553→  1553→      {/* info dialog */}
+  1554→  1554→      <InfoDialog
+  1555→  1555→        open={infoOpen}
+  1556→  1556→        onOpenChange={setInfoOpen}
+  1557→  1557→        detail={detailData ?? null}
+  1558→  1558→        me={me}
+  1559→  1559→        onlineIds={realtime.onlineIds}
+  1560→  1560→        renamePending={renameGroup.isPending}
+
+[showing lines 1061-1560 of 2002; use offset=1561 with limit to continue reading]

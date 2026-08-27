@@ -141,7 +141,21 @@
   .dark .pulse-scroll::-webkit-scrollbar-thumb {
     background-color: rgb(113 113 122 / 0.45);
   }
-  .no-scrollbar::-webkit-scrollbar {
+  
+  /* Jump-to-message flash highlight (search hit / reply-quote jump). */
+  @keyframes pulse-message-flash {
+    0% {
+      box-shadow: 0 0 0 3px rgb(16 185 129 / 0.8);
+      filter: brightness(1.08);
+    }
+    60% {
+      box-shadow: 0 0 0 3px rgb(16 185 129 / 0.35);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgb(16 185 129 / 0);
+    }
+  }
+.no-scrollbar::-webkit-scrollbar {
     display: none;
   }
   .no-scrollbar {
