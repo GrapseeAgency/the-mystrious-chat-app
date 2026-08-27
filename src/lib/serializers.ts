@@ -1,0 +1,217 @@
+// ─────────────────────────────────────────────────────────────
+// Pulse Chat — shared server-side helpers (used by REST routes)
+// Prisma row → DTO serializers matching src/lib/types.ts,
+// input normalization, safe JSON parsing, socket relay.
+// Server-only — never import from client components.
+// ─────────────────────────────────────────────────────────────
+import type { Prisma } from '@prisma/client'
+import { db } from '@/lib/db'
+import type {
+  AppUser,
+  ChatMessage,
+  ConversationDetail,
+  ConversationSummary,
+  MessageAuthor,
+} from '@/lib/types'
+
+// ── Validation constants ────────────────────────────────────
+export const USER_NAME_MAX = 32
+export const ABOUT_MAX = 140
+export const MESSAGE_MAX = 2000
+export const GROUP_NAME_MAX = 48
+export const MESSAGES_DEFAULT_LIMIT = 200
+export const MESSAGES_MAX_LIMIT = 500
+
+export const AVATAR_COLORS = [
+  'emerald',
+  'rose',
+  'amber',
+  'violet',
+  'teal',
+  'orange',
+  'pink',
+  'cyan',
+] as const
+
+// ── Input helpers ───────────────────────────────────────────
+
+/** Trimmed string field or '' when absent / wrong type. */
+export function strField(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * Robust JSON body parser — returns {} on any failure.
+ * Callers validate individual fields and return 400 on bad input.
+ */
+export async function safeJson(req: Request): Promise<Record<string, unknown>> {
+  try {
+    const parsed: unknown = await req.json()
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+/** Whitelisted avatar color; falls back to 'emerald'. */
+export function normalizeColor(value: unknown): string {
+  const candidate = strField(value)
+  return (AVATAR_COLORS as readonly string[]).includes(candidate) ? candidate : 'emerald'
+}
+
+/** Parse an ISO date string; null when invalid. */
+export function parseIsoDate(value: unknown): Date | null {
+  if (typeof value !== 'string') return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+// ── Serializers ─────────────────────────────────────────────
+
+interface UserRow {
+  id: string
+  name: string
+  about: string
+  color: string
+  createdAt: Date
+  lastSeenAt: Date
+}
+
+function mapAuthor(user: UserRow): MessageAuthor {
+  return { id: user.id, name: user.name, color: user.color }
+}
+
+export function mapUser(user: UserRow): AppUser {
+  return {
+    id: user.id,
+    name: user.name,
+    about: user.about,
+    color: user.color,
+    createdAt: user.createdAt.toISOString(),
+    lastSeenAt: user.lastSeenAt.toISOString(),
+  }
+}
+
+interface MessageRow {
+  id: string
+  conversationId: string
+  senderId: string
+  content: string
+  deletedAt: Date | null
+  createdAt: Date
+  sender: UserRow
+}
+
+export function mapMessage(message: MessageRow): ChatMessage {
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    senderId: message.senderId,
+    content: message.content,
+    deletedAt: message.deletedAt ? message.deletedAt.toISOString() : null,
+    createdAt: message.createdAt.toISOString(),
+    sender: mapAuthor(message.sender),
+  }
+}
+
+/** Participant row (+user) → AppUser with read watermark. */
+export function mapMember(participant: { lastReadAt: Date; user: UserRow }): AppUser & { lastReadAt: string } {
+  return { ...mapUser(participant.user), lastReadAt: participant.lastReadAt.toISOString() }
+}
+
+const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
+
+/** Reusable deep include for "conversation + members + newest message". */
+export const CONVERSATION_FULL_INCLUDE = {
+  participants: { include: { user: true } },
+  messages: { orderBy: { createdAt: 'desc' as const }, take: 1, include: { sender: true } },
+} satisfies Prisma.ConversationInclude
+
+export type ConversationRowWithRelations = Prisma.ConversationGetPayload<{
+  include: typeof CONVERSATION_FULL_INCLUDE
+}>
+
+type MemberWithWatermark = AppUser & { lastReadAt: string }
+
+/**
+ * Build a ConversationSummary for ONE viewer.
+ * `viewerId` must be a participant of `conv` (unread watermark lookup).
+ */
+export async function buildConversationSummary(
+  conv: ConversationRowWithRelations,
+  viewerId: string,
+): Promise<ConversationSummary> {
+  const myReadAt =
+    conv.participants.find((p) => p.userId === viewerId)?.lastReadAt ?? new Date(0)
+  const unreadCount = await db.message.count({
+    where: {
+      conversationId: conv.id,
+      senderId: { not: viewerId },
+      deletedAt: null,
+      createdAt: { gt: myReadAt },
+    },
+  })
+  const lastRow = conv.messages[0] ?? null
+  return {
+    id: conv.id,
+    isGroup: conv.isGroup,
+    name: conv.name,
+    createdAt: conv.createdAt.toISOString(),
+    updatedAt: conv.updatedAt.toISOString(),
+    members: conv.participants.map(mapMember).sort(byName),
+    lastMessage: lastRow ? mapMessage(lastRow) : null,
+    unreadCount,
+  }
+}
+
+/** Meta + members-with-watermark for a chat room header. */
+export function buildConversationDetail(conv: ConversationRowWithRelations): ConversationDetail {
+  return {
+    id: conv.id,
+    isGroup: conv.isGroup,
+    name: conv.name,
+    createdAt: conv.createdAt.toISOString(),
+    updatedAt: conv.updatedAt.toISOString(),
+    members: conv.participants.map(mapMember).sort(byName),
+  }
+}
+
+/** All member userIds of a conversation. */
+export async function memberIdsOf(conversationId: string): Promise<string[]> {
+  const rows = await db.conversationParticipant.findMany({
+    where: { conversationId },
+    select: { userId: true },
+  })
+  return rows.map((r) => r.userId)
+}
+
+// ── Socket relay (best-effort — never fails the API call) ──
+
+const SOCKET_URL = 'http://localhost:3003'
+
+export type PulseSocketEvent = 'message:new' | 'message:deleted' | 'message:read'
+
+/**
+ * Relay a realtime event to the socket.io mini service so it can fan out
+ * to each recipient's room (`user:{id}`). Silent no-op on failure.
+ */
+export async function notifySocket(
+  event: PulseSocketEvent,
+  recipientIds: string[],
+  payload: unknown,
+): Promise<void> {
+  if (recipientIds.length === 0) return
+  try {
+    await fetch(`${SOCKET_URL}/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, recipients: recipientIds, payload }),
+      signal: AbortSignal.timeout(2500),
+    })
+  } catch {
+    // Socket mini-service may be down; realtime delivery is best-effort.
+  }
+}

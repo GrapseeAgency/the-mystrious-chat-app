@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,20 +7,57 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─────────────────────────────────────────────────────────────
+// Pulse Chat — mobile messenger schema (no mocks, all real data)
+// ─────────────────────────────────────────────────────────────
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  about           String   @default("Hey there! I'm using Pulse.")
+  color           String   @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
+  createdAt       DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+  participations  ConversationParticipant[]
+  messages        Message[]
+
+  @@index([name])
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Conversation {
+  id           String   @id @default(cuid())
+  isGroup      Boolean  @default(false)
+  name         String? // group title; null for DMs
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt // bumped on every new message → list sort
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([updatedAt])
+}
+
+model ConversationParticipant {
+  id             String    @id @default(cuid())
+  userId         String
+  conversationId String
+  lastReadAt     DateTime  @default(now()) // read receipts / unread counts
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, conversationId])
+  @@index([conversationId])
+  @@index([userId])
+}
+
+model Message {
+  id             String    @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String
+  deletedAt      DateTime? // soft delete → "message deleted" tombstone
+  createdAt      DateTime  @default(now())
+  sender         User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }
