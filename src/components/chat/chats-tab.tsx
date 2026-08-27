@@ -6,8 +6,9 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
+import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, LoaderCircle, MoreVertical, Pin, PinOff, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, LoaderCircle, MoreVertical, PencilLine, Pin, PinOff, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -21,6 +22,7 @@ import {
 } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
 import { haptic } from '@/lib/pulse-settings'
+import { pulseDraftsStore } from '@/lib/pulse-drafts'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -45,6 +47,8 @@ interface ConversationRowProps {
   preview: string
   previewPrefix: string
   previewDeleted: boolean
+  /** unsent composer draft persisted for this conversation (null = none) */
+  draft: string | null
   unreadCount: number
   // avatar inputs
   dmName: string | null
@@ -70,6 +74,7 @@ const ConversationRow = memo(function ConversationRow({
   preview,
   previewPrefix,
   previewDeleted,
+  draft,
   unreadCount,
   dmName,
   dmColor,
@@ -170,6 +175,12 @@ const ConversationRow = memo(function ConversationRow({
                   ))}
                 </span>
                 typing…
+              </p>
+            ) : draft ? (
+              <p className="flex min-w-0 items-center gap-1 truncate text-[13px]">
+                <PencilLine className="size-3 shrink-0 text-amber-500" aria-hidden />
+                <span className="shrink-0 font-semibold text-amber-600 dark:text-amber-400">Draft:</span>
+                <span className="truncate italic text-zinc-500 dark:text-zinc-400">{draft}</span>
               </p>
             ) : (
               <p
@@ -375,6 +386,9 @@ export function ChatsTab({
     refetchInterval: 6_000,
   })
 
+  // live drafts → "Draft: …" previews in the list (zustand external store)
+  const allDrafts = useStore(pulseDraftsStore, (s) => s.drafts)
+
   const rows = useMemo(() => {
     return (conversations.data ?? []).map((conv) => {
       const previewInfo = conversationPreview(conv, me.id)
@@ -394,6 +408,7 @@ export function ChatsTab({
           preview: previewInfo.text,
           previewPrefix: conversationPreviewPrefix(previewInfo, conv.isGroup),
           previewDeleted: previewInfo.deleted,
+          draft: allDrafts[conv.id] ?? null,
           unreadCount: conv.unreadCount,
           dmName: other?.name ?? null,
           dmColor: other?.color ?? 'emerald',
@@ -405,13 +420,14 @@ export function ChatsTab({
         },
       }
     })
-  }, [conversations.data, me.id, onlineIds, typersIn])
+  }, [conversations.data, me.id, onlineIds, typersIn, allDrafts])
 
   const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return rows
     return rows.filter(({ conv, props }) => {
       if (props.name.toLowerCase().includes(q)) return true
+      if (props.draft?.toLowerCase().includes(q)) return true
       if (conv.lastMessage && !conv.lastMessage.deletedAt && conv.lastMessage.content.toLowerCase().includes(q)) return true
       return false
     })

@@ -23,6 +23,7 @@ import {
   Check,
   CheckCheck,
   ChevronLeft,
+  CloudOff,
   ChevronUp,
   Clock,
   Copy,
@@ -76,6 +77,7 @@ import {
 } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
+import { pulseOutboxStore, outboxCount } from '@/lib/pulse-outbox'
 import { ForwardSheet } from '@/components/chat/forward-sheet'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import { cn } from '@/lib/utils'
@@ -160,6 +162,19 @@ export function ChatRoom({
   const realtime = usePulseRealtime()
   const { resolvedTheme } = useTheme()
   const themeMounted = useMounted()
+
+  // device connectivity → offline texts are queued in the outbox
+  const [isOffline, setIsOffline] = useState(false)
+  useEffect(() => {
+    const sync = () => setIsOffline(!navigator.onLine)
+    sync()
+    window.addEventListener('online', sync)
+    window.addEventListener('offline', sync)
+    return () => {
+      window.removeEventListener('online', sync)
+      window.removeEventListener('offline', sync)
+    }
+  }, [])
 
   // restore persisted draft once per opened conversation
   const [input, setInput] = useState(() => pulseDraftsStore.getState().drafts[conversationId] ?? '')
@@ -936,12 +951,58 @@ export function ChatRoom({
     setInput('')
     pulseDraftsStore.getState().clearDraft(conversationId)
     requestAnimationFrame(autosize)
+
+    const clientId = uid()
+    const replyTarget = replyTo && !replyTo.deletedAt ? replyTo : null
+
+    // Offline → hold in the persisted outbox; the realtime provider
+    // flushes it (FIFO) as soon as connectivity returns.
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const queuedTemp: ChatMessage = {
+        id: `temp-${clientId}`,
+        conversationId,
+        senderId: me.id,
+        content,
+        deletedAt: null,
+        createdAt: new Date().toISOString(),
+        sender: { id: me.id, name: me.name, color: me.color },
+        reactions: [],
+        replyTo: replyTarget
+          ? {
+              id: replyTarget.id,
+              content: replyTarget.content,
+              senderName: replyTarget.sender.name,
+              deleted: false,
+            }
+          : null,
+        imagePath: null,
+        audioPath: null,
+        durationMs: null,
+        _queued: true,
+      }
+      pulseOutboxStore.getState().enqueue({
+        clientId,
+        conversationId,
+        content,
+        ...(replyTarget ? { replyToId: replyTarget.id } : {}),
+        sender: { id: me.id, name: me.name, color: me.color },
+        replySnapshot: queuedTemp.replyTo,
+        queuedAt: queuedTemp.createdAt,
+      })
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+        old ? [...old, queuedTemp] : [queuedTemp],
+      )
+      toast('Queued — sends when you’re back online')
+      haptic(10)
+      return
+    }
+
     sendMessage.mutate({
-      clientId: uid(),
+      clientId,
       content,
-      ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+      ...(replyTarget ? { replyToId: replyTarget.id } : {}),
     })
-  }, [input, sendMessage, stopTyping, autosize, replyTo, conversationId])
+  }, [input, sendMessage, stopTyping, autosize, replyTo, conversationId, me, queryClient])
 
   const handleInputChange = (value: string) => {
     setInput(value)
@@ -1536,8 +1597,8 @@ export function ChatRoom({
             ) : null}
             {items.map((item) =>
               item.kind === 'day' ? (
-                <div key={item.key} className="my-3 flex justify-center">
-                  <span className="rounded-full bg-zinc-200/70 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-white/5">
+                <div key={item.key} className="sticky top-1 z-20 my-3 flex justify-center">
+                  <span className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-zinc-800/85 dark:text-zinc-300 dark:ring-white/10">
                     {item.label}
                   </span>
                 </div>
@@ -1643,6 +1704,27 @@ export function ChatRoom({
 
       {/* composer */}
       <div className="shrink-0 border-t border-zinc-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:border-zinc-800 dark:bg-zinc-900">
+        <AnimatePresence initial={false}>
+          {isOffline ? (
+            <motion.div
+              key="offline-pill"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div className="mb-2 flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30">
+                <CloudOff className="size-3.5 shrink-0" aria-hidden />
+                <span>
+                  Offline — messages you send will be queued
+                  {outboxCount() > 0 ? ` (${outboxCount()} waiting)` : ''}
+                </span>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
         <AnimatePresence initial={false}>
           {replyTo ? (
             <motion.div
@@ -2603,6 +2685,7 @@ const MessageRow = memo(function MessageRow({
 }: MessageRowProps) {
   const deleted = message.deletedAt !== null
   const pending = message.id.startsWith('temp-')
+  const queued = pending && message._queued === true // held in the offline outbox
   const createdMs = Date.parse(message.createdAt)
   const isRead = !Number.isNaN(createdMs) && createdMs <= readMs
   const interactive = !deleted && !pending
@@ -2733,7 +2816,10 @@ const MessageRow = memo(function MessageRow({
                 mine ? 'rounded-br-md opacity-80' : 'rounded-bl-md',
               ),
             !deleted && !jumbo && (mine
-              ? 'rounded-2xl rounded-br-md bg-emerald-500 text-white'
+              ? cn(
+                  'rounded-2xl rounded-br-md bg-emerald-500 text-white',
+                  queued && 'ring-1 ring-inset ring-white/40 opacity-95', // queued: dashed-feel cue
+                )
               : 'rounded-2xl rounded-bl-md border border-zinc-100 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100'),
             interactive
               ? cn(
@@ -2855,7 +2941,9 @@ const MessageRow = memo(function MessageRow({
           >
             <span className={jumbo ? 'opacity-70' : undefined}>{formatTime(message.createdAt)}</span>
             {mine && !deleted ? (
-              pending ? (
+              queued ? (
+                <CloudOff className="size-3 text-amber-200" aria-label="queued — sends when online" />
+              ) : pending ? (
                 <Clock className="size-3 opacity-90" aria-label="sending…" />
               ) : isRead ? (
                 <CheckCheck className="size-3.5 text-white/90" aria-label="read" />

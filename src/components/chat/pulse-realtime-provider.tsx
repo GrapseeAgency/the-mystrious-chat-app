@@ -19,6 +19,8 @@ import type {
 } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
 import { haptic, isQuietHoursNow, playIncomingPing, primeSound, pulseSettingsStore } from '@/lib/pulse-settings'
+import { flushPulseOutbox, pulseOutboxStore } from '@/lib/pulse-outbox'
+import { toast } from 'sonner'
 import {
   PulseRealtimeContext,
   type PulseRealtimeValue,
@@ -320,6 +322,45 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     const interval = setInterval(sweep, 1000)
     return () => clearInterval(interval)
   }, [])
+
+  // ── offline outbox flushing ──────────────────────────────
+  // Triggers: mount-with-pending · connectivity restored · app
+  // becomes visible again · 20s self-heal while work is queued.
+  const flushingRef = useRef(false)
+  useEffect(() => {
+    const runFlush = async () => {
+      if (flushingRef.current || !navigator.onLine) return
+      if (pulseOutboxStore.getState().queue.length === 0) return
+      flushingRef.current = true
+      try {
+        const sent = await flushPulseOutbox(queryClient)
+        if (sent > 0) {
+          toast.success(sent === 1 ? 'Queued message delivered' : `${sent} queued messages delivered`)
+          haptic(12)
+        }
+      } finally {
+        flushingRef.current = false
+      }
+    }
+
+    // catch the "app was reloaded while messages were still queued" case
+    void runFlush()
+
+    window.addEventListener('online', runFlush)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void runFlush()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    const heal = setInterval(() => {
+      if (navigator.onLine && pulseOutboxStore.getState().queue.length > 0) void runFlush()
+    }, 20_000)
+
+    return () => {
+      window.removeEventListener('online', runFlush)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(heal)
+    }
+  }, [queryClient])
 
   // ── socket lifecycle ───────────────────────────────────────
   useEffect(() => {

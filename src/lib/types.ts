@@ -49,6 +49,8 @@ export interface ChatMessage {
   imagePath: string | null // served via GET /api/uploads/[imagePath]
   audioPath: string | null // voice-note file served via GET /api/uploads/[audioPath]
   durationMs: number | null // voice-note length in milliseconds
+  /** client-only marker: message is held in the offline outbox (never sent by server) */
+  _queued?: boolean
 }
 
 /** Row of the conversations list */
