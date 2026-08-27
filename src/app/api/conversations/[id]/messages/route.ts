@@ -252,6 +252,12 @@ export async function POST(req: Request, { params }: RouteCtx) {
       where: { userId_conversationId: { userId: senderId, conversationId: id } },
       data: { lastReadAt: now },
     })
+    // A new message from the sender pulls the chat out of every OTHER
+    // member's archive (WhatsApp behaviour — archive ≠ mute).
+    await tx.conversationParticipant.updateMany({
+      where: { conversationId: id, userId: { not: senderId }, archivedAt: { not: null } },
+      data: { archivedAt: null },
+    })
     return created
   })
 

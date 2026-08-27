@@ -212,6 +212,7 @@ export async function buildConversationSummary(
     unreadCount,
     pinnedAt: mine?.pinnedAt ? mine.pinnedAt.toISOString() : null,
     mutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
+    archivedAt: mine?.archivedAt ? mine.archivedAt.toISOString() : null,
   }
 }
 

@@ -87,7 +87,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 import {
   Dialog,
   DialogContent,
@@ -171,8 +171,10 @@ export function ChatRoom({
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   /** {message, emoji} → who-reacted sheet */
   const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
-  /** seen-by detail sheet (group read receipts on the last own message) */
+  /** seen-by detail sheet (read receipts) */
   const [seenByOpen, setSeenByOpen] = useState(false)
+  /** message whose info the sheet shows — null = the latest own message (read-by stack tap) */
+  const [infoMessage, setInfoMessage] = useState<ChatMessage | null>(null)
   const [sendingImage, setSendingImage] = useState(false)
   /** uploaded image awaiting an optional caption → caption sheet */
   const [pendingImage, setPendingImage] = useState<{ imagePath: string; preview: string } | null>(null)
@@ -566,9 +568,18 @@ export function ChatRoom({
     return members.length > 0 ? { members, all: members.length >= others } : null
   }, [lastOwnMessage, detailData, me.id])
 
-  /** tap the read-by stack → seen-by detail sheet */
+  /** tap the read-by stack → seen-by detail sheet (latest own message) */
   const openSeenBy = useCallback(() => {
     haptic(8)
+    setInfoMessage(null)
+    setSeenByOpen(true)
+  }, [])
+
+  /** options dialog → per-message info sheet (any own message) */
+  const openMessageInfo = useCallback((message: ChatMessage) => {
+    haptic(8)
+    setInfoMessage(message)
+    setSelected(null)
     setSeenByOpen(true)
   }, [])
 
@@ -1804,6 +1815,17 @@ export function ChatRoom({
               <Forward className="size-4" aria-hidden />
               Forward to chat…
             </Button>
+            {selected && selected.senderId === me.id ? (
+              <Button
+                variant="outline"
+                disabled={!!selected?.deletedAt}
+                onClick={() => openMessageInfo(selected)}
+                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+              >
+                <Info className="size-4" aria-hidden />
+                Message info
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               disabled={!canDeleteSelected}
@@ -1958,6 +1980,8 @@ export function ChatRoom({
       {/* who-reacted sheet */}
       <Drawer open={reactionInfo !== null} onOpenChange={(open) => !open && setReactionInfo(null)}>
         <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+          <DrawerTitle className="sr-only">Reaction details</DrawerTitle>
+          <DrawerDescription className="sr-only">Who reacted to this message</DrawerDescription>
           {reactionInfo ? (
             <div className="pb-2">
               <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
@@ -2010,31 +2034,47 @@ export function ChatRoom({
         </DrawerContent>
       </Drawer>
 
-      {/* seen-by sheet — per-member read receipts for the last own message */}
+      {/* seen-by sheet — per-member read receipts for the latest or a picked own message */}
       <Drawer open={seenByOpen} onOpenChange={(open) => !open && setSeenByOpen(false)}>
         <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
           <DrawerTitle className="sr-only">Message read receipts</DrawerTitle>
-          {lastOwnMessage ? (
+          <DrawerDescription className="sr-only">Per-member delivered and read times</DrawerDescription>
+          {(() => {
+            const infoTarget = infoMessage ?? lastOwnMessage
+            if (!infoTarget) return null
+            const othersCount = (detailData?.members.length ?? 1) - 1
+            const readNow =
+              detailData !== undefined && othersCount > 0
+                ? detailData.members.filter(
+                    (m) => m.id !== me.id && Date.parse(m.lastReadAt) >= Date.parse(infoTarget.createdAt),
+                  ).length
+                : 0
+            const allRead = readNow >= othersCount && othersCount > 0
+            return (
             <div className="pb-2">
               <div className="flex items-center justify-center gap-2 pb-1 pt-1">
                 <CheckCheck className="size-4 text-emerald-500" aria-hidden />
                 <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
-                  {readByLast?.all ? 'Seen by everyone' : 'Message info'}
+                  {allRead ? 'Seen by everyone' : 'Message info'}
                 </p>
               </div>
               <p className="mx-auto mb-2 max-w-[300px] truncate text-center text-xs text-zinc-400 dark:text-zinc-500">
-                {lastOwnMessage.imagePath && !lastOwnMessage.content
+                {infoTarget.imagePath && !infoTarget.content
                   ? 'Photo'
-                  : lastOwnMessage.audioPath
+                  : infoTarget.audioPath
                     ? 'Voice message'
-                    : lastOwnMessage.content}
+                    : infoTarget.content}
+              </p>
+              <p className="mb-1 text-center text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+                Sent {formatTime(infoTarget.createdAt)}
+                {othersCount > 0 ? ` · ${readNow}/${othersCount} read` : ''}
               </p>
               <ul className="pulse-scroll max-h-64 overflow-y-auto py-1">
                 {(detailData?.members ?? [])
                   .filter((m) => m.id !== me.id)
                   .map((member) => {
                     const readMs = Date.parse(member.lastReadAt)
-                    const msgMs = Date.parse(lastOwnMessage.createdAt)
+                    const msgMs = Date.parse(infoTarget.createdAt)
                     const read = !Number.isNaN(readMs) && !Number.isNaN(msgMs) && readMs >= msgMs
                     return (
                       <li
@@ -2079,7 +2119,8 @@ export function ChatRoom({
                 Close
               </button>
             </div>
-          ) : null}
+            )
+          })()}
         </DrawerContent>
       </Drawer>
 

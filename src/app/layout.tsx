@@ -18,8 +18,22 @@ export const metadata: Metadata = {
   title: 'Pulse — Chat',
   description: 'Pulse is a real-time messenger: instant delivery, presence, typing indicators, read receipts, groups and more.',
   keywords: ['Pulse', 'chat', 'messenger', 'real-time'],
+  manifest: '/manifest.json',
+  applicationName: 'Pulse',
+  appleWebApp: {
+    capable: true,
+    title: 'Pulse',
+    statusBarStyle: 'default',
+  },
+  formatDetection: {
+    telephone: false,
+  },
   icons: {
-    icon: '/logo.svg',
+    icon: [
+      { url: '/favicon.png', type: 'image/png', sizes: '64x64' },
+      { url: '/pwa-icon-192.png', type: 'image/png', sizes: '192x192' },
+    ],
+    apple: '/apple-touch-icon.png',
   },
 }
 
@@ -29,7 +43,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: 'cover',
-  themeColor: '#fafafa',
+  themeColor: '#10b981',
 }
 
 export default function RootLayout({

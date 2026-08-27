@@ -7,7 +7,7 @@ import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, BellOff, LoaderCircle, MoreVertical, Pin, PinOff, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, LoaderCircle, MoreVertical, Pin, PinOff, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -24,7 +24,7 @@ import { haptic } from '@/lib/pulse-settings'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Drawer, DrawerContent } from '@/components/ui/drawer'
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 import { ThemeToggleButton } from '@/components/chat/theme-toggle'
 
@@ -417,6 +417,16 @@ export function ChatsTab({
     })
   }, [rows, searchQuery])
 
+  /** main-list rows exclude the viewer's archived chats */
+  const activeRows = useMemo(() => rows.filter(({ conv }) => conv.archivedAt === null), [rows])
+  const archivedRows = useMemo(() => rows.filter(({ conv }) => conv.archivedAt !== null), [rows])
+  const archivedUnread = useMemo(
+    () => archivedRows.reduce((sum, { conv }) => sum + conv.unreadCount, 0),
+    [archivedRows],
+  )
+  /** archived-chats drawer (WhatsApp-style) */
+  const [archivedOpen, setArchivedOpen] = useState(false)
+
   /** Freeze "where was I" from the list summary AT TAP TIME (pre-read watermark). */
   const handlePress = useCallback(
     (conv: ConversationSummary) => {
@@ -512,6 +522,49 @@ export function ChatsTab({
     },
     onError: () => {
       toast.error('Could not update the mute')
+    },
+  })
+
+  /** archive / unarchive — optimistic so the row moves instantly */
+  const toggleArchive = useMutation({
+    mutationFn: async ({ conv, archived }: { conv: ConversationSummary; archived: boolean }) => {
+      return apiJson<{ ok: boolean; archived: boolean }>(
+        `/api/conversations/${encodeURIComponent(conv.id)}/archive`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me.id, archived }),
+        },
+      )
+    },
+    onMutate: async ({ conv, archived }) => {
+      await queryClient.cancelQueries({ queryKey: ['conversations', me.id] })
+      const previous = queryClient.getQueryData<ConversationSummary[]>(['conversations', me.id])
+      if (previous) {
+        queryClient.setQueryData<ConversationSummary[]>(
+          ['conversations', me.id],
+          previous.map((c) =>
+            c.id === conv.id ? { ...c, archivedAt: archived ? new Date().toISOString() : null } : c,
+          ),
+        )
+      }
+      return { previous }
+    },
+    onSuccess: (data) => {
+      haptic(10)
+      toast.success(data.archived ? 'Chat archived' : 'Chat unarchived')
+      setSheetConv(null)
+      // unarchive → the chat went back to the inbox; leave the archived drawer
+      if (!data.archived) setArchivedOpen(false)
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<ConversationSummary[]>(['conversations', me.id], context.previous)
+      }
+      toast.error('Could not update the archive')
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
     },
   })
 
@@ -651,7 +704,29 @@ export function ChatsTab({
           <EmptyChats onSayHi={onOpenContacts} />
         ) : (
           <div className="py-1">
-            {rows.map(({ conv, props }) => (
+            {archivedRows.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  haptic(6)
+                  setArchivedOpen(true)
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 pl-[26px] text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800"
+              >
+                <Archive className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">Archived</span>
+                {archivedUnread > 0 ? (
+                  <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+                    {archivedUnread > 99 ? '99+' : archivedUnread}
+                  </span>
+                ) : null}
+                <span className="ml-auto flex items-center gap-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                  {archivedRows.length}
+                  <ChevronRight className="size-3.5" aria-hidden />
+                </span>
+              </button>
+            ) : null}
+            {activeRows.map(({ conv, props }) => (
               <ConversationRow
                 key={props.id}
                 {...props}
@@ -659,13 +734,22 @@ export function ChatsTab({
                 onLongPress={() => openSheetFor(conv)}
               />
             ))}
+            {activeRows.length === 0 && archivedRows.length > 0 ? (
+              <p className="px-8 pb-4 pt-10 text-center text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+                Every chat is archived.
+                <br />
+                New messages bring chats back here.
+              </p>
+            ) : null}
           </div>
         )}
       </div>
 
-      {/* long-press action sheet — pin / unpin */}
+      {/* long-press action sheet — pin / archive / mute */}
       <Drawer open={sheetConv !== null} onOpenChange={(open) => !open && setSheetConv(null)}>
         <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+          <DrawerTitle className="sr-only">Conversation options</DrawerTitle>
+          <DrawerDescription className="sr-only">Pin, archive or mute this chat</DrawerDescription>
           {sheetConv ? (
             <div className="pb-2">
               <p className="px-2 pb-2 pt-1 text-center text-xs font-medium text-zinc-400 dark:text-zinc-500">
@@ -687,6 +771,25 @@ export function ChatsTab({
                   <>
                     <Pin className="size-5 text-emerald-500" aria-hidden />
                     Pin to top
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={toggleArchive.isPending}
+                onClick={() => toggleArchive.mutate({ conv: sheetConv, archived: sheetConv.archivedAt === null })}
+                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-sm font-semibold text-zinc-800 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              >
+                {sheetConv.archivedAt !== null ? (
+                  <>
+                    <ArchiveRestore className="size-5 text-amber-500" aria-hidden />
+                    Unarchive chat
+                  </>
+                ) : (
+                  <>
+                    <Archive className="size-5 text-zinc-500 dark:text-zinc-400" aria-hidden />
+                    Archive chat
                   </>
                 )}
               </button>
@@ -742,6 +845,36 @@ export function ChatsTab({
               </button>
             </div>
           ) : null}
+        </DrawerContent>
+      </Drawer>
+
+      {/* archived chats drawer — WhatsApp-style inbox */}
+      <Drawer open={archivedOpen} onOpenChange={(open) => !open && setArchivedOpen(false)}>
+        <DrawerContent className="mx-auto flex max-h-[82dvh] max-w-[420px] flex-col rounded-t-3xl bg-white px-1.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 dark:bg-zinc-900">
+          <DrawerDescription className="sr-only">Your archived conversations</DrawerDescription>
+          <DrawerTitle className="flex items-center gap-2 px-4 pb-1.5 pt-2 text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+            <Archive className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+            Archived
+            <span className="ml-auto text-xs font-medium text-zinc-400 dark:text-zinc-500">
+              {archivedRows.length === 1 ? '1 chat' : `${archivedRows.length} chats`}
+            </span>
+          </DrawerTitle>
+          <p className="px-4 pb-1 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+            Muted here — a new message moves a chat back to your inbox.
+          </p>
+          <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {archivedRows.map(({ conv, props }) => (
+              <ConversationRow
+                key={props.id}
+                {...props}
+                onPress={() => {
+                  setArchivedOpen(false)
+                  handlePress(conv)
+                }}
+                onLongPress={() => openSheetFor(conv)}
+              />
+            ))}
+          </div>
         </DrawerContent>
       </Drawer>
     </div>

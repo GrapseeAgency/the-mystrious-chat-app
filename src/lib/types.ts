@@ -63,6 +63,7 @@ export interface ConversationSummary {
   unreadCount: number // count of non-deleted messages from others newer than my lastReadAt
   pinnedAt: string | null // viewer's pin watermark (null = not pinned)
   mutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
+  archivedAt: string | null // viewer's archive watermark (null = active chat)
 }
 
 /** Full detail for a chat room */
