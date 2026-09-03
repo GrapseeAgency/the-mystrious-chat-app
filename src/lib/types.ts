@@ -6,6 +6,7 @@
 export interface AppUser {
   id: string
   name: string
+  username: string | null // unique @handle — shown instead of raw IDs everywhere
   about: string
   color: string // emerald|rose|amber|violet|teal|orange|pink|cyan
   statusEmoji: string | null // Discord-style custom status glyph
@@ -18,6 +19,7 @@ export interface AppUser {
 export interface MessageAuthor {
   id: string
   name: string
+  username: string | null
   color: string
 }
 
