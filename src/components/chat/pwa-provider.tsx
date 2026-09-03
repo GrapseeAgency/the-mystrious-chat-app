@@ -36,8 +36,20 @@ export function PwaProvider() {
         })
       }
     }
+    // Auto-heal: when a new service worker activates it broadcasts
+    // PULSE_SW_UPDATED — hard-reload ONCE per version so a stale
+    // bundle can never linger in the tab.
+    const onSwMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; cache?: string } | null
+      if (data?.type !== 'PULSE_SW_UPDATED') return
+      const flagKey = `pulse.sw.reloaded.${data.cache || 'v'}`
+      if (sessionStorage.getItem(flagKey)) return
+      sessionStorage.setItem(flagKey, '1')
+      window.location.reload()
+    }
 
     if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', onSwMessage)
       navigator.serviceWorker
         .register('/sw.js', { scope: '/' })
         .then((registration) => {
@@ -54,6 +66,7 @@ export function PwaProvider() {
       window.removeEventListener('offline', onOffline)
       window.removeEventListener('online', onOnline)
       navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange)
+      navigator.serviceWorker?.removeEventListener('message', onSwMessage)
       swRegistration = null
     }
   }, [])

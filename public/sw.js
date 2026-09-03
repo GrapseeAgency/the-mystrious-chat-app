@@ -1,12 +1,14 @@
 /* ─────────────────────────────────────────────────────────────
-   Pulse service worker — offline app shell.
-   Strategy (dev-safe):
-   - navigations: network-first → cached latest shell ('/') → built-in
-     offline page (dev HTML is dynamic; only the LAST GOOD shell is kept)
-   - /_next/static/* + precached icons/manifest: cache-first (immutable)
-   - API + socket.io traffic: never intercepted (always network)
+   Pulse service worker — offline app shell (v3, dev-safe).
+   Strategy:
+   - ALL same-origin GETs: NETWORK-FIRST (fresh always wins).
+     Cache is ONLY a fallback when the network fails → it is
+     impossible to serve stale JS/CSS while online.
+   - API + socket.io traffic: never intercepted (always network).
+   - activate: purge every legacy cache, claim clients, and tell
+     them to hard-reload once so no stale bundle survives.
    ───────────────────────────────────────────────────────────── */
-const CACHE = 'pulse-shell-v2'
+const CACHE = 'pulse-shell-v3'
 const PRECACHE = [
   '/manifest.json',
   '/onboarding-hero.png',
@@ -32,9 +34,32 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      .then(() =>
+        self.clients.matchAll({ type: 'window' }).then((clients) => {
+          for (const client of clients) {
+            client.postMessage({ type: 'PULSE_SW_UPDATED', cache: CACHE })
+          }
+        }),
+      ),
   )
 })
+
+async function networkFirst(request) {
+  try {
+    const fresh = await fetch(request)
+    if (fresh && fresh.ok && request.method === 'GET') {
+      const copy = fresh.clone()
+      caches.open(CACHE).then((cache) => cache.put(request, copy)).catch(() => {})
+    }
+    return fresh
+  } catch (err) {
+    const hit = (await caches.match(request)) || (await caches.match('/'))
+    if (hit) return hit
+    if (request.mode === 'navigate') return offlineResponse()
+    throw err
+  }
+}
 
 self.addEventListener('fetch', (event) => {
   const req = event.request
@@ -46,39 +71,9 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io')) return
   if (url.searchParams.has('EIO') || url.searchParams.has('XTransformPort')) return
 
-  if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          // keep the freshest good shell under '/' for offline fallback
-          if (res.ok) {
-            const copy = res.clone()
-            caches.open(CACHE).then((cache) => cache.put('/', copy)).catch(() => {})
-          }
-          return res
-        })
-        .catch(async () => (await caches.match(req)) || (await caches.match('/')) || offlineResponse()),
-    )
-    return
-  }
-
-  const immutable =
-    url.pathname.startsWith('/_next/static/') || PRECACHE.includes(url.pathname)
-  if (immutable) {
-    event.respondWith(
-      caches.match(req).then(
-        (hit) =>
-          hit ||
-          fetch(req).then((res) => {
-            if (res.ok) {
-              const copy = res.clone()
-              caches.open(CACHE).then((cache) => cache.put(req, copy)).catch(() => {})
-            }
-            return res
-          }),
-      ),
-    )
-  }
+  // network-first for everything (navigations, JS chunks, assets):
+  // online → always fresh; offline → best cached copy available
+  event.respondWith(networkFirst(req))
 })
 
 function offlineResponse() {

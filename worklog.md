@@ -443,3 +443,20 @@ Stage Summary:
 - App fully restored and verified; user data intact in SQLite (Alice/Bob/Cara/JOhn/Dora all present)
 - USER ACTION: hard-refresh the preview tab (Ctrl+Shift+R); if onboarding shows, type the same display name → identity + conversations are reclaimed by name lookup
 - Next: continue R16 queue (usernames-not-IDs, other-user profile view, group features, hub/chat-inside-chat, surface dock/apps/settings, Batches 1–5)
+
+---
+Task ID: R16-1
+Agent: Z.ai Code (main)
+Task: Root-cause fix — stale PWA service worker kept serving old bundle to user ("caches isn't gone")
+
+Work Log:
+- Root cause found: public/sw.js v2 used CACHE-FIRST for /_next/static/* — correct in prod (hashed URLs) but poisonous in dev (stable chunk URLs, changing content) → user's browser executed old JS forever, refresh-proof
+- Rewrote public/sw.js → v3: NETWORK-FIRST for ALL same-origin GETs (cache only as offline fallback — staleness now impossible while online); API/socket.io still bypassed; activate purges ALL legacy caches, claims clients, broadcasts PULSE_SW_UPDATED
+- pwa-provider.tsx: listens for PULSE_SW_UPDATED → one-time guarded auto-reload (sessionStorage flag pulse.sw.reloaded.<cache>) → stale tab heals itself, no reload loops
+- E2E verified in agent-browser (had old v2 SW controlling): reopened page → v3 installed, v2 cache deleted (caches.keys() = only pulse-shell-v3), 1 SW controlling, auto-reload fired, main shell rendered with session intact
+- Evidence: download/qa-r16-sw-healed.png · lint clean · 0 console/server errors
+
+Stage Summary:
+- Stale-cache trap eliminated permanently: SW can never serve stale bundles while online; future deploys auto-heal in one beat
+- User instruction: single normal refresh is enough now; even that is mostly automatic (auto-reload on SW takeover)
+- Next: continue R16 feature queue (usernames-not-IDs → other-user profiles → groups → hub/chat-inside-chat → surface dock/apps/settings → Batches 1–5)
