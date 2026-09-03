@@ -424,3 +424,22 @@ Stage Summary:
 - UNRESOLVED/RISKS: (a) announcements lockout verified visually only in Alice-as-admin=false path? — actually tested non-admin via groups where role member exists implicitly; advise cron-QA click-through again; (b) one-off observed group-filter visual mis-filter traceable to duplicated stale framer layers under rapid automation nav (real-user single-instance flow unaffected by design; components use mode='wait'); if it reproduces in fresh session, check AnimatePresence exit completion; (c) bot reply cadence gated by SDK latency (~2–10s typical); typing events give feedback meanwhile; (d) unfurl external-host reachability depends on sandbox egress (localhost target proven; og extraction regex-grade HTML parsing by design/no cheerio).
 - NEXT-PHASE CANDIDATES: PIN app-lock (Signal parity) · WhatsApp view-once for video + Telegram auto-delete timers per-message · Zulip-style topic headers within threads · Telegram 'Saved Messages' cloud chat clone · LINE/Kakao sticker economy (user-uploaded packs table) · Gather.town-ish proximity rooms via presence heat · E2E-ish sealed sender illusion + Discord webhooks inbound (/api/webhooks/{code}).
 
+
+---
+Task ID: R16-0
+Agent: Z.ai Code (main)
+Task: Emergency fix — user saw "reverted old design" + AtSign HMR runtime error
+
+Work Log:
+- git status: clean at HEAD 19409b3 (11:07) — NO code was lost, no revert happened
+- Verified on disk: all new components (profile-tab, chats-tab, contacts-tab, chat-room...) and APIs (conversations, polls, scheduled, invite, search, uploads...) present
+- Root cause: corrupted Turbopack HMR module graph ("module factory is not available... deleted in an HMR update"); AtSign not even in source — pure stale cache; browser kept a dead bundle + session lost → user landed on onboarding and believed everything reverted
+- Fix: touched page.tsx / app-root.tsx / main-shell.tsx / profile-tab.tsx → forced clean recompile (GET / 200, compile 7ms)
+- agent-browser verification: onboarding renders → injected Alice session (pulse.session.v1, version:1) → main shell renders full latest UI (search, filter chips, real chats Bob/Pulse AI/Group of 12 with unread badges, bottom nav)
+- Evidence: download/qa-r16-restored.png, download/qa-r16-main-restored.png
+- Console errors: 0 · Server errors: 0
+
+Stage Summary:
+- App fully restored and verified; user data intact in SQLite (Alice/Bob/Cara/JOhn/Dora all present)
+- USER ACTION: hard-refresh the preview tab (Ctrl+Shift+R); if onboarding shows, type the same display name → identity + conversations are reclaimed by name lookup
+- Next: continue R16 queue (usernames-not-IDs, other-user profile view, group features, hub/chat-inside-chat, surface dock/apps/settings, Batches 1–5)
