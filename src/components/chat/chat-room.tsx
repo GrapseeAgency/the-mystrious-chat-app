@@ -905,7 +905,7 @@ export function ChatRoom({
         content,
         deletedAt: null,
         createdAt: new Date().toISOString(),
-        sender: { id: me.id, name: me.name, color: me.color },
+        sender: { id: me.id, name: me.name, username: me.username, color: me.color },
         reactions: [],
         replyTo: parentSnapshot,
         imagePath: imagePath ?? null,
@@ -1589,7 +1589,7 @@ export function ChatRoom({
         content,
         deletedAt: null,
         createdAt: new Date().toISOString(),
-        sender: { id: me.id, name: me.name, color: me.color },
+        sender: { id: me.id, name: me.name, username: me.username, color: me.color },
         reactions: [],
         replyTo: replyTarget
           ? {
@@ -1621,7 +1621,7 @@ export function ChatRoom({
         conversationId,
         content,
         ...(replyTarget ? { replyToId: replyTarget.id } : {}),
-        sender: { id: me.id, name: me.name, color: me.color },
+        sender: { id: me.id, name: me.name, username: me.username, color: me.color },
         replySnapshot: queuedTemp.replyTo,
         queuedAt: queuedTemp.createdAt,
       })

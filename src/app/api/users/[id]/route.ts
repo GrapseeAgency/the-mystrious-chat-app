@@ -3,7 +3,16 @@
 // ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { mapUser, normalizeColor, safeJson, strField, ABOUT_MAX, USER_NAME_MAX } from '@/lib/serializers'
+import {
+  mapUser,
+  normalizeColor,
+  normalizeUsername,
+  safeJson,
+  strField,
+  suggestUsername,
+  ABOUT_MAX,
+  USER_NAME_MAX,
+} from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +37,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 
   const data: {
     name?: string
+    username?: string | null
     about?: string
     color?: string
     statusEmoji?: string | null
@@ -46,6 +56,34 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
       )
     }
     data.name = name
+  }
+
+  // @handle edit — explicit key; '' clears, otherwise validate + clash-check
+  if (body.username !== undefined) {
+    const raw = strField(body.username)
+    if (raw.length === 0) {
+      data.username = null
+    } else {
+      const candidate = normalizeUsername(raw)
+      if (!candidate) {
+        return NextResponse.json(
+          { error: 'Handle must be 3–20 chars: lowercase letters, digits, underscore.' },
+          { status: 400 },
+        )
+      }
+      const clash = await db.user.findUnique({
+        where: { username: candidate },
+        select: { id: true },
+      })
+      if (clash && clash.id !== id) {
+        const suggestion = await suggestUsername(candidate)
+        return NextResponse.json(
+          { error: `@${candidate} is already taken.`, code: 'username_taken', suggestion },
+          { status: 409 },
+        )
+      }
+      data.username = candidate
+    }
   }
 
   if (body.about !== undefined) {

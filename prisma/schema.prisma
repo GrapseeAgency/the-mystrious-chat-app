@@ -23,6 +23,10 @@ model User {
   lastSeenAt     DateTime                  @default(now())
   wallet         UserWallet?
   ledger         WalletLedger[]
+  hubTasks       HubTask[]
+  logEvents      LogEvent[]
+  marketListings MarketListing[] @relation("MarketSeller")
+  marketPurchases MarketListing[] @relation("MarketBuyer")
   participations ConversationParticipant[]
   messages       Message[]
   savedMessages  SavedMessage[]
@@ -71,6 +75,7 @@ model HubTask {
   status    String   @default("todo") // "todo" | "doing" | "done"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@index([ownerId, status])
 }
@@ -88,6 +93,8 @@ model MarketListing {
   status      String   @default("open") // "open" | "sold"
   buyerId     String?
   createdAt   DateTime @default(now())
+  seller      User     @relation("MarketSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  buyer       User?    @relation("MarketBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
 }
@@ -102,6 +109,7 @@ model LogEvent {
   message   String
   meta      String? // optional JSON blob
   createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
 }

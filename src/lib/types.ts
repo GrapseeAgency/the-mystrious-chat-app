@@ -215,3 +215,78 @@ export interface ConversationUpdatedEvent {
   /** ids of ALL current members (after the change) */
   recipientIds: string[]
 }
+
+// ── Hub economy (wallet / tasks / market / logs / swap) ──────
+
+export interface WalletState {
+  userId: string
+  coins: number
+  gems: number
+  streak: number
+  lastCheckIn: string | null
+  checkedInToday: boolean
+}
+
+export interface LedgerEntry {
+  id: string
+  kind: string
+  asset: string
+  amount: number // signed from the owner's perspective
+  note: string
+  counterpartyId: string | null
+  createdAt: string
+}
+
+export interface HubTaskItem {
+  id: string
+  title: string
+  status: 'todo' | 'doing' | 'done'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MarketListingItem {
+  id: string
+  title: string
+  description: string
+  price: number
+  asset: string
+  status: 'open' | 'sold'
+  createdAt: string
+  seller?: { id: string; name: string; username: string | null; color: string }
+  buyer?: { id: string; name: string; username: string | null; color: string } | null
+  mine: boolean
+}
+
+export interface LogEntry {
+  id: string
+  kind: string
+  message: string
+  meta: string | null
+  createdAt: string
+  user: { id: string; name: string; username: string | null; color: string } | null
+}
+
+export interface SwapInfo {
+  rates: { pcPerGemBuy: number; pcPerGemSell: number }
+  stats: {
+    swaps: number
+    pcBought: number
+    pcSold: number
+    circulatingCoins: number
+    circulatingGems: number
+  }
+}
+
+/** Real profile statistics behind the user profile sheet. */
+export interface UserStats {
+  messages: number
+  reactions: number
+  photos: number
+  voiceNotes: number
+  chats: number
+  groups: number
+  days: number
+  joinedAt: string
+  lastSeenAt: string
+}

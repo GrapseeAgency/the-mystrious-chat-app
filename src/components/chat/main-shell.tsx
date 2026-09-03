@@ -7,16 +7,19 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { AppUser } from '@/lib/types'
-import { BottomNav, type PulseTab } from '@/components/chat/bottom-nav'
+import { PulseNav, useNavStyle, type PulseTab } from '@/components/chat/nav-router'
 import { ChatsTab } from '@/components/chat/chats-tab'
 import { ContactsTab } from '@/components/chat/contacts-tab'
 import { ProfileTab } from '@/components/chat/profile-tab'
+import { HubTab } from '@/components/hub/hub-tab'
 import { ChatRoom } from '@/components/chat/chat-room'
 import { NewChatSheet } from '@/components/chat/new-chat-sheet'
 import { JoinGroupSheet } from '@/components/chat/join-sheet'
 
 export function MainShell({ me }: { me: AppUser }) {
   const [tab, setTab] = useState<PulseTab>('chats')
+  const [navStyle] = useNavStyle()
+  const railMode = navStyle === 'rail'
   const [openConversationId, setOpenConversationId] = useState<string | null>(null)
   /** frozen pre-open read watermark for the open conversation (unread divider) */
   const [openConversationAnchorMs, setOpenConversationAnchorMs] = useState<number | null>(null)
@@ -65,7 +68,9 @@ export function MainShell({ me }: { me: AppUser }) {
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
-      <div className="relative min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1">
+        {railMode ? <PulseNav me={me} active={tab} onChange={setTab} /> : null}
+        <div className="relative min-h-0 flex-1">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={tab}
@@ -88,6 +93,7 @@ export function MainShell({ me }: { me: AppUser }) {
                 onGoProfile={() => setTab('profile')}
               />
             ) : null}
+            {tab === 'hub' ? <HubTab me={me} /> : null}
             {tab === 'contacts' ? (
               <ContactsTab
                 me={me}
@@ -126,9 +132,10 @@ export function MainShell({ me }: { me: AppUser }) {
             />
           ) : null}
         </AnimatePresence>
+        </div>
       </div>
 
-      <BottomNav me={me} active={tab} onChange={setTab} />
+      {!railMode ? <PulseNav me={me} active={tab} onChange={setTab} /> : null}
 
       {sheetMounted ? (
         <NewChatSheet

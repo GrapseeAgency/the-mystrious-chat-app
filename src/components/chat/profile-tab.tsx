@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
-import { BadgeCheck, Check, Copy, LogOut, LoaderCircle, Moon, MoonStar, Smartphone, Star, Sun, Volume2, Vibrate } from 'lucide-react'
+import { BadgeCheck, Check, Compass, Copy, LayoutDashboard, LayoutGrid, LogOut, LoaderCircle, Moon, MoonStar, PanelRight, Smartphone, Star, Sun, Volume2, Vibrate } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, SavedItem } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
@@ -42,6 +42,7 @@ import { UserAvatar } from '@/components/chat/user-avatar'
 import { pulseSettingsStore, haptic, isQuietHoursNow, primeSound } from '@/lib/pulse-settings'
 import { promptPwaInstall, usePulsePwa } from '@/lib/pwa-store'
 import { useMounted } from '@/hooks/use-mounted'
+import { NAV_STYLE_META, useNavStyle, type NavStyleId } from '@/components/chat/nav-router'
 
 interface UsersResponse {
   user: AppUser
@@ -366,6 +367,11 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
           <StatChip label="Member since" value={stats.memberSince} />
         </section>
 
+        {/* navigation architecture — 4 swappable styles */}
+        <Section title="Navigation">
+          <NavStyleGrid />
+        </Section>
+
         {/* saved / starred library (Telegram parity) */}
         <Section title="Library">
           <button
@@ -664,5 +670,51 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {children}
       </div>
     </section>
+  )
+}
+
+/** Icons for the four nav architectures (verbatim strings for JIT). */
+const NAV_ICONS: Record<NavStyleId, typeof Compass> = {
+  acrylic: LayoutDashboard,
+  rail: PanelRight,
+  edge: Compass,
+  radial: LayoutGrid,
+}
+
+/** Switch the whole shell between the 4 navigation architectures live. */
+function NavStyleGrid() {
+  const [style, apply] = useNavStyle()
+  return (
+    <div className="grid grid-cols-2 gap-2 p-1">
+      {NAV_STYLE_META.map((opt) => {
+        const Icon = NAV_ICONS[opt.id]
+        const isActive = style === opt.id
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => {
+              apply(opt.id)
+              haptic(12)
+              toast.success(`${opt.label} navigation active`)
+            }}
+            className={cn(
+              'rounded-xl border p-3 text-left transition-all active:scale-[0.98]',
+              isActive
+                ? 'border-emerald-500 bg-emerald-500/10'
+                : 'border-zinc-200 hover:border-emerald-300 dark:border-zinc-700',
+            )}
+          >
+            <Icon className={cn('size-5', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500')} aria-hidden />
+            <p className="mt-1.5 flex items-center gap-1 text-[13px] font-bold text-zinc-800 dark:text-zinc-100">
+              {opt.label}
+              {isActive ? <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden /> : null}
+            </p>
+            <p className="mt-0.5 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">{opt.hint}</p>
+          </button>
+        )
+      })}
+    </div>
   )
 }

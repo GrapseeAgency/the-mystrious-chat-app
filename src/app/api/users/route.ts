@@ -3,16 +3,24 @@
 // ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { mapUser, normalizeColor, safeJson, strField, USER_NAME_MAX } from '@/lib/serializers'
+import {
+  mapUser,
+  normalizeColor,
+  normalizeUsername,
+  safeJson,
+  strField,
+  suggestUsername,
+  USER_NAME_MAX,
+} from '@/lib/serializers'
 import { ensurePulseBot } from '@/lib/ai-bot'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * POST /api/users { name, color? } → 201 { user: AppUser }
- * Names are unique case-insensitively (Pulse identities are name-keyed —
- * contacts/search/list rows would otherwise be ambiguous).
- * → 409 when the exact-insensitive name is already taken.
+ * POST /api/users { name, color?, username? } → 201 { user: AppUser }
+ * Names are unique case-insensitively; @handles are unique exactly and
+ * lowercase-normalized (3–20 chars, a-z0-9_).
+ * → 409 { error, code: 'username_taken', suggestion } when the handle clashes.
  */
 export async function POST(req: Request) {
   const body = await safeJson(req)
@@ -22,6 +30,27 @@ export async function POST(req: Request) {
       { error: `Name is required and must be 1–${USER_NAME_MAX} characters.` },
       { status: 400 },
     )
+  }
+
+  // optional @handle — validated + collision-checked up front
+  let username: string | null = null
+  if (body.username !== undefined && strField(body.username).length > 0) {
+    const candidate = normalizeUsername(body.username)
+    if (!candidate) {
+      return NextResponse.json(
+        { error: 'Handle must be 3–20 chars: lowercase letters, digits, underscore.' },
+        { status: 400 },
+      )
+    }
+    const clash = await db.user.findUnique({ where: { username: candidate }, select: { id: true } })
+    if (clash) {
+      const suggestion = await suggestUsername(candidate)
+      return NextResponse.json(
+        { error: `@${candidate} is already taken.`, code: 'username_taken', suggestion },
+        { status: 409 },
+      )
+    }
+    username = candidate
   }
 
   // SQLite has no insensitive filter in Prisma — scan same-letter candidates and
@@ -39,8 +68,11 @@ export async function POST(req: Request) {
   }
 
   const user = await db.user.create({
-    data: { name, color: normalizeColor(body.color) },
+    data: { name, username, color: normalizeColor(body.color) },
   })
+
+  // every new identity gets a Hub wallet (starting balance 100 PC / 5 GEM)
+  await db.userWallet.upsert({ where: { userId: user.id }, create: { userId: user.id }, update: {} })
 
   return NextResponse.json({ user: mapUser(user) }, { status: 201 })
 }
@@ -48,12 +80,23 @@ export async function POST(req: Request) {
 /**
  * GET /api/users                     → { users: AppUser[] } sorted by name asc
  * GET /api/users?name=Alice%20Chen   → { user: AppUser } | 404
+ * GET /api/users?username=alice      → { user: AppUser } | 404  (@handle lookup)
  * Case-insensitive exact match lookup powering the ?login= deep-link and the
  * onboarding "that's you? log in" affordance (Pulse identities are name-keyed).
  */
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const name = url.searchParams.get('name')?.trim() ?? ''
+  const username = url.searchParams.get('username')?.trim() ?? ''
+
+  if (username.length > 0) {
+    const handle = username.toLowerCase().replace(/^@/, '')
+    const user = await db.user.findUnique({ where: { username: handle } })
+    if (!user) {
+      return NextResponse.json({ error: 'No Pulse account with that handle.' }, { status: 404 })
+    }
+    return NextResponse.json({ user: mapUser(user) })
+  }
 
   if (name.length > 0) {
     if (name.length > USER_NAME_MAX) {

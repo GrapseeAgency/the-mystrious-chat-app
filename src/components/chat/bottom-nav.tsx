@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-// Pulse Chat — bottom navigation (Chats / Contacts / Profile)
+// Pulse Chat — bottom navigation (Chats / Hub / Contacts / Profile)
 // with a framer-motion sliding pill highlight + total unread.
 // ─────────────────────────────────────────────────────────────
 'use client'
@@ -7,12 +7,12 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
-import { CircleUserRound, MessageCircle, Users } from 'lucide-react'
+import { CircleUserRound, Flame, MessageCircle, Users } from 'lucide-react'
 import type { AppUser, ConversationSummary } from '@/lib/types'
 import { apiJson } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
 
-export type PulseTab = 'chats' | 'contacts' | 'profile'
+export type PulseTab = 'chats' | 'hub' | 'contacts' | 'profile'
 
 interface ConversationsResponse {
   conversations: ConversationSummary[]
@@ -20,6 +20,7 @@ interface ConversationsResponse {
 
 const TABS: Array<{ id: PulseTab; label: string; Icon: typeof MessageCircle }> = [
   { id: 'chats', label: 'Chats', Icon: MessageCircle },
+  { id: 'hub', label: 'Hub', Icon: Flame },
   { id: 'contacts', label: 'Contacts', Icon: Users },
   { id: 'profile', label: 'Profile', Icon: CircleUserRound },
 ]
@@ -65,7 +66,7 @@ export const BottomNav = memo(function BottomNav({
       aria-label="Main navigation"
       className="mt-auto shrink-0 border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95"
     >
-      <div className="grid grid-cols-3 px-3 py-1.5">
+      <div className="grid grid-cols-4 px-3 py-1.5">
         {TABS.map(({ id, label, Icon }) => {
           const isActive = active === id
           return (

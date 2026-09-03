@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { UserAvatar } from '@/components/chat/user-avatar'
+import { UserProfileSheet } from '@/components/chat/user-profile-sheet'
 
 interface UsersResponse {
   users: AppUser[]
@@ -37,6 +38,7 @@ export function ContactsTab({
 }) {
   const queryClient = useQueryClient()
   const [nowTick, setNowTick] = useState(() => Date.now())
+  const [profileUser, setProfileUser] = useState<AppUser | null>(null)
 
   // lightweight ticker so the "NEW" badge expires itself
   useEffect(() => {
@@ -137,11 +139,24 @@ export function ContactsTab({
                 isNew={nowTick - new Date(person.createdAt).getTime() < IS_NEW_WINDOW_MS}
                 disabled={startDm.isPending}
                 onPress={() => startDm.mutate(person)}
+                onAvatarPress={() => setProfileUser(person)}
               />
             ))}
           </ul>
         )}
       </div>
+
+      <UserProfileSheet
+        user={profileUser}
+        open={profileUser !== null}
+        onOpenChange={(v) => {
+          if (!v) setProfileUser(null)
+        }}
+        onMessage={(userId) => {
+          const person = others.find((u) => u.id === userId)
+          if (person) startDm.mutate(person)
+        }}
+      />
     </div>
   )
 }
@@ -151,15 +166,25 @@ function PersonRow({
   isNew,
   disabled,
   onPress,
+  onAvatarPress,
 }: {
   person: AppUser
   isNew: boolean
   disabled: boolean
   onPress: () => void
+  onAvatarPress: () => void
 }) {
   return (
     <li className="px-2">
       <div className="flex w-full touch-manipulation items-center gap-3 rounded-2xl px-2 py-2.5 transition-colors active:bg-zinc-100 dark:active:bg-zinc-800">
+        <button
+          type="button"
+          onClick={onAvatarPress}
+          aria-label={`View ${person.name}'s profile`}
+          className="shrink-0 rounded-full outline-none active:scale-95"
+        >
+          <UserAvatar name={person.name} color={person.color} size={44} showPresence />
+        </button>
         <button
           type="button"
           onClick={onPress}
@@ -167,12 +192,16 @@ function PersonRow({
           aria-label={`Chat with ${person.name}`}
           className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none"
         >
-          <UserAvatar name={person.name} color={person.color} size={44} showPresence />
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               <span className="truncate text-sm font-medium tracking-tight text-zinc-900 dark:text-zinc-100">
                 {person.name}
               </span>
+              {person.username ? (
+                <span className="truncate text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  @{person.username}
+                </span>
+              ) : null}
               {isNew ? (
                 <Badge className="h-4 border-none bg-emerald-100 px-1.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
                   New

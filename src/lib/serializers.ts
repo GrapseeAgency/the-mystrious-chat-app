@@ -18,11 +18,39 @@ import type {
 
 // ── Validation constants ────────────────────────────────────
 export const USER_NAME_MAX = 32
+export const USERNAME_MIN = 3
+export const USERNAME_MAX = 20
 export const ABOUT_MAX = 140
 export const MESSAGE_MAX = 2000
 export const GROUP_NAME_MAX = 48
 export const MESSAGES_DEFAULT_LIMIT = 200
 export const MESSAGES_MAX_LIMIT = 500
+
+/**
+ * Validate + normalize a @handle: 3–20 chars, lowercase letters, digits,
+ * underscores. Returns null when the candidate is unusable.
+ */
+export function normalizeUsername(value: unknown): string | null {
+  const raw = strField(value).toLowerCase()
+  if (raw.length < USERNAME_MIN || raw.length > USERNAME_MAX) return null
+  if (!/^[a-z0-9_]+$/.test(raw)) return null
+  return raw
+}
+
+/** UTC-day key ("2026-02-03") for daily gating (check-in streaks). */
+export function dayKey(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+/** Suggest the nearest free variant of a taken handle (append 2..99). */
+export async function suggestUsername(base: string): Promise<string> {
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = `${base}${n}`
+    const clash = await db.user.findUnique({ where: { username: candidate }, select: { id: true } })
+    if (!clash) return candidate
+  }
+  return `${base}${Date.now().toString(36)}`
+}
 
 /** Emoji allowed as reactions (keeps bubbles tidy). */
 export const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉'] as const
@@ -79,6 +107,7 @@ export function parseIsoDate(value: unknown): Date | null {
 interface UserRow {
   id: string
   name: string
+  username?: string | null
   about: string
   color: string
   statusEmoji: string | null
@@ -88,13 +117,14 @@ interface UserRow {
 }
 
 function mapAuthor(user: UserRow): MessageAuthor {
-  return { id: user.id, name: user.name, color: user.color }
+  return { id: user.id, name: user.name, username: user.username ?? null, color: user.color }
 }
 
 export function mapUser(user: UserRow): AppUser {
   return {
     id: user.id,
     name: user.name,
+    username: user.username ?? null,
     about: user.about,
     color: user.color,
     statusEmoji: user.statusEmoji ?? null,

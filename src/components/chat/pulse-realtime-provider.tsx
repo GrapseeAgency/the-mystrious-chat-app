@@ -137,9 +137,10 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
           ? {
               id: sender.id,
               name: sender.name,
+              username: typeof sender.username === 'string' ? sender.username : null,
               color: typeof sender.color === 'string' ? sender.color : 'emerald',
             }
-          : { id: msg.senderId, name: 'Unknown', color: 'emerald' },
+          : { id: msg.senderId, name: 'Unknown', username: null, color: 'emerald' },
       reactions,
       replyTo,
       imagePath,
