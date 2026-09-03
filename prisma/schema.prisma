@@ -14,18 +14,96 @@ datasource db {
 model User {
   id             String                    @id @default(cuid())
   name           String
+  username      String? // unique @handle (3-20 chars) — replaces raw IDs everywhere in the UI
   about          String                    @default("Hey there! I'm using Pulse.")
   color          String                    @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
   statusEmoji    String? // Discord-style custom status glyph (null = none)
   statusText     String? // Discord-style custom status line (null = none)
   createdAt      DateTime                  @default(now())
   lastSeenAt     DateTime                  @default(now())
+  wallet         UserWallet?
+  ledger         WalletLedger[]
   participations ConversationParticipant[]
   messages       Message[]
   savedMessages  SavedMessage[]
   quickPhrases   QuickPhrase[]
 
   @@index([name])
+}
+
+/**
+ * Hub economy wallet — real balances moved by check-ins, transfers, swaps,
+ * red packets and marketplace trades (every change writes a ledger row).
+ */
+model UserWallet {
+  userId      String        @id
+  coins       Int           @default(0) // Pulse Coins (PC)
+  gems        Int           @default(0) // Gems (GEM)
+  streak      Int           @default(0) // consecutive daily check-ins
+  lastCheckIn DateTime? // last daily check-in watermark (UTC day gate)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/**
+ * Immutable money trail — every balance mutation appends exactly one row.
+ */
+model WalletLedger {
+  id             String     @id @default(cuid())
+  userId         String
+  kind           String // checkin|transfer_in|transfer_out|swap|gift|redpacket_send|redpacket_claim|market_sell|market_buy
+  asset          String // "PC" | "GEM"
+  amount         Int // signed from the owner's perspective (+in / -out)
+  note           String     @default("")
+  counterpartyId String? // other user in transfers / red packets / trades
+  createdAt      DateTime   @default(now())
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/**
+ * Hub personal kanban task (Chanty/Ryver parity) — three real columns.
+ */
+model HubTask {
+  id        String   @id @default(cuid())
+  ownerId   String
+  title     String
+  status    String   @default("todo") // "todo" | "doing" | "done"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId, status])
+}
+
+/**
+ * Hub marketplace listing — real coin-priced offers between users.
+ */
+model MarketListing {
+  id          String   @id @default(cuid())
+  sellerId    String
+  title       String
+  description String   @default("")
+  price       Int
+  asset       String   @default("PC")
+  status      String   @default("open") // "open" | "sold"
+  buyerId     String?
+  createdAt   DateTime @default(now())
+
+  @@index([status, createdAt])
+}
+
+/**
+ * DevOps terminal stream — every economy/social action appends a real event.
+ */
+model LogEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  kind      String // checkin|transfer|swap|redpacket|market|hand|system|message
+  message   String
+  meta      String? // optional JSON blob
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 /**
@@ -68,6 +146,7 @@ model ConversationParticipant {
   pinnedAt       DateTime? // per-user pinned-to-top
   mutedUntil     DateTime? // per-user notification mute watermark (null = unmuted)
   archivedAt     DateTime? // per-user archive watermark (null = active; cleared when others send new msgs)
+  handRaisedAt   DateTime? // Clubhouse-style raised hand (null = lowered)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -95,6 +174,8 @@ model Message {
   viewedBy       String? // who consumed it
   expiresAt      DateTime? // disappearing-message deadline (hard-purged after)
   linkUrl        String? // canonical preview link (og unfurl) attached to this message
+  kind           String               @default("text") // text|image|audio|sticker|location|code|task|redpacket
+  payload        String? // JSON payload for rich kinds (sticker pack/glyph, lat/lng, code lang/source, tx data)
   createdAt      DateTime             @default(now())
   sender         User                 @relation(fields: [senderId], references: [id], onDelete: Cascade)
   conversation   Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
