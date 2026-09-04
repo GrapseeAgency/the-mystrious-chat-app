@@ -923,8 +923,8 @@ function LeaderboardSection({
               key={row.userId}
               className="flex min-h-[44px] items-center gap-2.5 rounded-xl px-2 py-1.5"
             >
-              <span aria-hidden className="w-6 shrink-0 text-center text-[13px]">
-                {['🥇', '🥈', '🥉'][i]}
+              <span aria-hidden className={cn('w-6 shrink-0 text-center text-[13px] font-bold', i === 0 ? 'text-amber-500' : i === 1 ? 'text-zinc-400' : i === 2 ? 'text-orange-400' : 'text-zinc-400 dark:text-zinc-500')}>
+                {i + 1}
               </span>
               <span
                 aria-hidden
@@ -1045,8 +1045,8 @@ function TournamentSection({
                 key={season.id}
                 className="flex min-h-[52px] items-center gap-3 rounded-xl px-2 py-1.5"
               >
-                <span aria-hidden className="shrink-0 text-lg">
-                  🏆
+                <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600">
+                  <Trophy className="size-4 text-white" aria-hidden />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">

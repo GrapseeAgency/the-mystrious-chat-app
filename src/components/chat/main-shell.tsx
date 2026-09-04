@@ -18,8 +18,14 @@ import type { AppUser } from '@/lib/types'
 import { apiJson } from '@/lib/pulse-utils'
 import { usePrefs } from '@/lib/prefs'
 import { ease, pressSpring, pressTap } from '@/lib/motion'
-import { PulseNav, useNavStyle, type PulseTab } from '@/components/chat/nav-router'
-import { BottomNav } from '@/components/chat/bottom-nav'
+import { useUiTheme } from '@/lib/ui-theme'
+import {
+  PulseNavBar,
+  zoneFor,
+  useNavStyle,
+  type PulseTab,
+  type NavContextAction,
+} from '@/components/chat/nav-router'
 import { ChatsTab } from '@/components/chat/chats-tab'
 import { ContactsTab } from '@/components/chat/contacts-tab'
 import { ProfileTab } from '@/components/chat/profile-tab'
@@ -66,7 +72,10 @@ export function MainShell({ me }: { me: AppUser }) {
     })
   }, [])
   const [navStyle] = useNavStyle()
-  const railMode = navStyle === 'rail'
+  const navZone = zoneFor(navStyle)
+  /** floating-top / command-bar render their own top bar — the default header hides */
+  const headerOwnedByNav = navZone === 'top'
+  const [uiTheme] = useUiTheme()
   const [openConversationId, setOpenConversationId] = useState<string | null>(null)
   /** frozen pre-open read watermark for the open conversation (unread divider) */
   const [openConversationAnchorMs, setOpenConversationAnchorMs] = useState<number | null>(null)
@@ -133,6 +142,14 @@ export function MainShell({ me }: { me: AppUser }) {
     setNewChatOpen(false)
     setTimeout(() => setNewChatOpen(true), 30)
   }
+
+  /** contextual-dock chip — per-tab action wired to the same flows as the shell */
+  const handleContextAction = useCallback((action: NavContextAction) => {
+    if (action === 'new-chat') openNewChat('dm')
+    else if (action === 'new-group') openNewChat('group')
+    else if (action === 'search') setSpotlightOpen(true)
+    else setSettingsOpen(true)
+  }, [])
 
   const handleSheetClose = (next: boolean) => {
     setNewChatOpen(next)
@@ -204,11 +221,12 @@ export function MainShell({ me }: { me: AppUser }) {
   )
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden">
-      {/* system command bar — Spotlight trigger (⌘K) + Settings; hidden while a chat room owns the screen */}
-      {openConversationId === null ? (
+    <div data-ui={`ui-${uiTheme}`} className="ui-root relative flex h-full flex-col overflow-hidden">
+      {/* system command bar — floating capsule top bar (Spotlight ⌘K + Settings).
+          Hidden while a chat room owns the screen or the nav style brings its own. */}
+      {openConversationId === null && !headerOwnedByNav ? (
         <header
-          className="sticky top-0 z-[65] flex h-11 shrink-0 items-center gap-1 border-b border-zinc-200/70 bg-white/70 px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] backdrop-blur-2xl backdrop-saturate-150 [will-change:transform] dark:border-white/10 dark:bg-zinc-900/65 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+          className="sticky top-0 z-[65] mx-2 mt-1.5 flex h-11 shrink-0 items-center gap-1 rounded-full border border-zinc-200/70 bg-white/70 px-3 shadow-[0_6px_24px_-8px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.55)] backdrop-blur-2xl backdrop-saturate-150 [will-change:transform] dark:border-white/10 dark:bg-zinc-900/65 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_6px_24px_-8px_rgba(0,0,0,0.5)]"
         >
           <span
             aria-hidden
@@ -242,7 +260,16 @@ export function MainShell({ me }: { me: AppUser }) {
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        {railMode && !settingsOpen ? <PulseNav me={me} active={tab} onChange={changeTab} /> : null}
+        {navZone === 'side' && !settingsOpen ? (
+          <PulseNavBar
+            me={me}
+            active={tab}
+            onChange={changeTab}
+            onSearch={() => setSpotlightOpen(true)}
+            onSettings={() => setSettingsOpen(true)}
+            onContextAction={handleContextAction}
+          />
+        ) : null}
         <div
           className="relative min-h-0 flex-1"
           onTouchStart={onContentTouchStart}
@@ -252,7 +279,10 @@ export function MainShell({ me }: { me: AppUser }) {
             swipeAnchor.current = null
           }}
         >
-        <AnimatePresence mode="popLayout" initial={false} custom={navState.dir}>
+        {/* sync crossfade: both panels are absolute inset-0 already, so the
+            outgoing and incoming overlap for 220ms (slide+fade swap).
+            (popLayout stalled the enter tween at its first keyframe here.) */}
+        <AnimatePresence initial={false} custom={navState.dir}>
           <motion.div
             key={tab}
             role="tabpanel"
@@ -263,7 +293,7 @@ export function MainShell({ me }: { me: AppUser }) {
             animate="center"
             exit="exit"
             transition={{ duration: reducedMotion ? 0 : 0.22, ease: ease.out }}
-            className="absolute inset-0"
+            className="absolute inset-0 z-[1]"
             style={reducedMotion ? undefined : { willChange: 'transform' }}
           >
             {tab === 'chats' ? (
@@ -330,16 +360,20 @@ export function MainShell({ me }: { me: AppUser }) {
         </div>
       </div>
 
-      {/* liquid-glass floating dock (acrylic) · PulseNav keeps the other
-          nav styles (rail/edge/radial). Hidden while a chat room, Settings
-          or a blocking sheet owns the screen — slides away via AnimatePresence. */}
+      {/* R25 nav system — 12 architectures, one mount point. Bottom/top/overlay
+          zones float here; the side rail renders in the flex row above. Hidden
+          while a chat room, Settings or a blocking sheet owns the screen. */}
       <AnimatePresence>
-        {openConversationId === null && !railMode && !settingsOpen && !sheetMounted && pendingInviteCode === null ? (
-          navStyle === 'acrylic' ? (
-            <BottomNav key="dock-acrylic" me={me} active={tab} onChange={changeTab} />
-          ) : (
-            <PulseNav key="nav-overlay" me={me} active={tab} onChange={changeTab} />
-          )
+        {openConversationId === null && navZone !== 'side' && !settingsOpen && !sheetMounted && pendingInviteCode === null ? (
+          <PulseNavBar
+            key={`nav-${navStyle}`}
+            me={me}
+            active={tab}
+            onChange={changeTab}
+            onSearch={() => setSpotlightOpen(true)}
+            onSettings={() => setSettingsOpen(true)}
+            onContextAction={handleContextAction}
+          />
         ) : null}
       </AnimatePresence>
 

@@ -17,7 +17,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { LoaderCircle, Swords, Users } from 'lucide-react'
+import { LoaderCircle, Swords, Trophy, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiJson, gradientFor, jsonBody } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
@@ -38,7 +38,7 @@ interface JoinResponse {
   entry: { id: string; tournamentId: string; userId: string; points: number }
 }
 
-const MEDALS = ['🥇', '🥈', '🥉'] as const
+const MEDALS = ['1', '2', '3'] as const
 
 /** Compact initial-circle avatar keyed by the user's palette color. */
 function StandingsAvatar({ name, color }: { name: string; color: string }) {
@@ -96,7 +96,7 @@ export default function TournamentCard({
       )
       haptic(20)
       fireParticles({ kind: 'stars', count: 44 })
-      toast.success('🏆 Joined the season — wins now score points')
+      toast.success('Joined the season — wins now score points')
       void qc.invalidateQueries({ queryKey: ['tournament', tournamentId] })
       void qc.invalidateQueries({ queryKey: ['tournaments'] })
       void qc.invalidateQueries({ queryKey: ['leaderboard'] })
@@ -114,9 +114,7 @@ export default function TournamentCard({
         aria-label="Tournament"
         className={cn(glassSurface, 'flex w-60 items-center gap-3 rounded-3xl px-4 py-3.5 sm:w-64')}
       >
-        <span className="text-2xl opacity-40" aria-hidden>
-          🏆
-        </span>
+        <Trophy className="size-6 text-zinc-400 opacity-40" aria-hidden />
         <p className="text-[12.5px] font-medium text-zinc-500 dark:text-zinc-400">
           Tournament unavailable
         </p>
@@ -131,9 +129,9 @@ export default function TournamentCard({
         <div className="flex items-center gap-2.5 px-3.5 pb-2.5 pt-3">
           <span
             aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-lg shadow-[0_8px_20px_-8px_rgba(16,185,129,0.7)]"
+            className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_8px_20px_-8px_rgba(16,185,129,0.7)]"
           >
-            🏆
+            <Trophy className="size-4.5 text-white" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[13.5px] font-bold leading-tight text-zinc-900 dark:text-zinc-50">
@@ -198,7 +196,10 @@ export default function TournamentCard({
               >
                 <span
                   aria-hidden
-                  className="w-6 shrink-0 text-center text-[13px] font-bold tabular-nums text-zinc-400 dark:text-zinc-500"
+                  className={cn(
+                    'w-6 shrink-0 text-center text-[13px] font-bold tabular-nums',
+                    i === 0 ? 'text-amber-500' : i === 1 ? 'text-zinc-400' : i === 2 ? 'text-orange-400' : 'text-zinc-400 dark:text-zinc-500',
+                  )}
                 >
                   {i < 3 ? MEDALS[i] : i + 1}
                 </span>

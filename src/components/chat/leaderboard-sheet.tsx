@@ -34,7 +34,7 @@ interface LeaderboardResponse {
   rows: LeaderboardRow[]
 }
 
-const MEDALS = ['🥇', '🥈', '🥉'] as const
+const MEDALS = ['1', '2', '3'] as const
 
 function Sheet({ open, onClose, conversationId, meId }: {
   open: boolean
@@ -85,9 +85,9 @@ function Sheet({ open, onClose, conversationId, meId }: {
           <header className="flex items-center gap-2.5">
             <span
               aria-hidden
-              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-xl shadow-[0_10px_24px_-10px_rgba(16,185,129,0.8)]"
+              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_10px_24px_-10px_rgba(16,185,129,0.8)]"
             >
-              🏆
+              <Trophy className="size-5 text-white" aria-hidden />
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[15px] font-bold leading-tight text-zinc-50">Leaderboard</p>
@@ -159,7 +159,10 @@ function Sheet({ open, onClose, conversationId, meId }: {
                     <div className="flex items-center gap-2.5">
                       <span
                         aria-hidden
-                        className="w-6 shrink-0 text-center text-[13px] font-bold tabular-nums text-zinc-400"
+                        className={cn(
+                          'w-6 shrink-0 text-center text-[13px] font-bold tabular-nums',
+                          i === 0 ? 'text-amber-500' : i === 1 ? 'text-zinc-400' : i === 2 ? 'text-orange-400' : 'text-zinc-400',
+                        )}
                       >
                         {i < 3 ? MEDALS[i] : i + 1}
                       </span>

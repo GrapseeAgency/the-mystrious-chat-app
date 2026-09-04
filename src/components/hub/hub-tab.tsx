@@ -28,6 +28,7 @@ import {
   ShoppingBag,
   Terminal,
   Repeat,
+  X,
 } from 'lucide-react'
 import type { AppUser, HubTaskItem, LedgerEntry, LogEntry, MarketListingItem, SwapInfo, WalletState } from '@/lib/types'
 import { apiJson, buzz } from '@/lib/pulse-utils'
@@ -83,7 +84,7 @@ function WalletPanel({ me }: { me: AppUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: me.id }),
       }),
-    onSuccess: (data) => toast.success(`Checked in — +${data.reward} PC · ${data.streak}-day streak 🔥`),
+    onSuccess: (data) => toast.success(`Checked in — +${data.reward} PC · ${data.streak}-day streak`),
     onError: (err: Error) => toast.error(err.message),
     onSettled: invalidate,
   })
@@ -312,7 +313,7 @@ function TasksPanel({ me }: { me: AppUser }) {
                       className="text-[10px] text-zinc-400 hover:text-rose-500"
                       onClick={() => remove.mutate(t.id)}
                     >
-                      ✕
+                      <X className="size-4" aria-hidden />
                     </button>
                   </div>
                 </motion.li>

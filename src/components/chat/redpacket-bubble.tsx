@@ -21,7 +21,7 @@ import { toast } from 'sonner'
 import { apiJson, jsonBody } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
 import { cn } from '@/lib/utils'
-import { fireParticles, spring } from '@/lib/motion'
+import { ease, fireParticles, spring } from '@/lib/motion'
 
 // ── wire types (mirror of the REST contract) ─────────────────
 
@@ -200,7 +200,11 @@ export default function RedPacketBubble({
                     : { opacity: 1, rotateY: 0, scale: 1 }
                 }
                 exit={reducedMotion ? { opacity: 0 } : { opacity: 0, rotateY: 90, scale: 0.7 }}
-                transition={spring.bouncy}
+                transition={
+                  grabbing && !reducedMotion
+                    ? { duration: 0.5, ease: ease.overshoot }
+                    : spring.bouncy
+                }
                 style={{ willChange: 'transform' }}
                 className="flex size-12 shrink-0 items-center justify-center"
                 aria-hidden

@@ -121,6 +121,146 @@
   }
 }
 
+/* ── R25 UI Theme Languages — applied via [data-ui="ui-*"] on the shell root.
+   Each block drives the ambient backdrop + shared panel/glass tokens so every
+   surface inherits the selected design language. Light/dark remains orthogonal
+   (next-themes). ─────────────────────────────────────────────────────────── */
+
+[data-ui] {
+  --ui-accent: #10b981;
+  --ui-accent-2: #14b8a6;
+  --ui-radius-panel: 28px;
+  --ui-blur: 28px;
+  --ui-panel-alpha: 0.7;
+}
+
+/* Immersive Glassmorphic Chat UI — aurora backdrop, deep frost, specular rims */
+[data-ui='ui-glass'] {
+  --ui-page-bg:
+    radial-gradient(120% 90% at 12% -8%, rgba(16, 185, 129, 0.16) 0%, transparent 52%),
+    radial-gradient(100% 80% at 96% 12%, rgba(14, 165, 233, 0.13) 0%, transparent 48%),
+    radial-gradient(90% 90% at 50% 112%, rgba(20, 184, 166, 0.12) 0%, transparent 55%),
+    #f6faf8;
+  --ui-panel-bg: rgba(255, 255, 255, 0.68);
+  --ui-panel-border: rgba(0, 0, 0, 0.08);
+  --ui-specular: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+.dark [data-ui='ui-glass'] {
+  --ui-page-bg:
+    radial-gradient(120% 90% at 12% -8%, rgba(16, 185, 129, 0.13) 0%, transparent 52%),
+    radial-gradient(100% 80% at 96% 12%, rgba(56, 189, 248, 0.1) 0%, transparent 48%),
+    radial-gradient(90% 90% at 50% 112%, rgba(20, 184, 166, 0.1) 0%, transparent 55%),
+    #09090b;
+  --ui-panel-bg: rgba(24, 24, 27, 0.62);
+  --ui-panel-border: rgba(255, 255, 255, 0.09);
+  --ui-specular: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Kinetic UI — ink on paper, hard edges, high contrast */
+[data-ui='ui-kinetic'] {
+  --ui-page-bg:
+    linear-gradient(180deg, #fafafa 0%, #f4f4f5 100%);
+  --ui-panel-bg: #ffffff;
+  --ui-panel-border: rgba(0, 0, 0, 0.82);
+  --ui-accent: #18181b;
+  --ui-accent-2: #f43f5e;
+  --ui-radius-panel: 14px;
+  --ui-blur: 0px;
+  --ui-specular: none;
+}
+.dark [data-ui='ui-kinetic'] {
+  --ui-page-bg: linear-gradient(180deg, #0a0a0a 0%, #111113 100%);
+  --ui-panel-bg: #101012;
+  --ui-panel-border: rgba(255, 255, 255, 0.85);
+  --ui-accent: #fafafa;
+  --ui-accent-2: #f43f5e;
+}
+
+/* Motion-Driven Minimalist UI — hairlines, whitespace, whisper motion */
+[data-ui='ui-minimal'] {
+  --ui-page-bg: #fbfbfc;
+  --ui-panel-bg: rgba(255, 255, 255, 0.92);
+  --ui-panel-border: rgba(0, 0, 0, 0.06);
+  --ui-accent: #52525b;
+  --ui-accent-2: #a1a1aa;
+  --ui-radius-panel: 22px;
+  --ui-blur: 14px;
+  --ui-specular: none;
+}
+.dark [data-ui='ui-minimal'] {
+  --ui-page-bg: #0c0c0e;
+  --ui-panel-bg: rgba(20, 20, 23, 0.9);
+  --ui-panel-border: rgba(255, 255, 255, 0.07);
+}
+
+/* Dynamic Minimalism — soft neutrals + vivid gradient accents, playful */
+[data-ui='ui-dynamic'] {
+  --ui-page-bg:
+    radial-gradient(110% 70% at 8% 0%, rgba(245, 158, 11, 0.1) 0%, transparent 50%),
+    radial-gradient(110% 70% at 92% 100%, rgba(236, 72, 153, 0.1) 0%, transparent 50%),
+    #faf9f7;
+  --ui-panel-bg: rgba(255, 255, 255, 0.82);
+  --ui-panel-border: rgba(0, 0, 0, 0.06);
+  --ui-accent: #f59e0b;
+  --ui-accent-2: #ec4899;
+  --ui-radius-panel: 26px;
+  --ui-blur: 22px;
+  --ui-specular: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.dark [data-ui='ui-dynamic'] {
+  --ui-page-bg:
+    radial-gradient(110% 70% at 8% 0%, rgba(245, 158, 11, 0.08) 0%, transparent 50%),
+    radial-gradient(110% 70% at 92% 100%, rgba(236, 72, 153, 0.09) 0%, transparent 50%),
+    #0c0b0d;
+  --ui-panel-bg: rgba(24, 22, 26, 0.78);
+  --ui-panel-border: rgba(255, 255, 255, 0.08);
+}
+
+/* Kinetic Minimalist Interface — aero frost strokes on cool graphite */
+[data-ui='ui-aero'] {
+  --ui-page-bg:
+    radial-gradient(130% 100% at 50% 0%, rgba(56, 189, 248, 0.1) 0%, transparent 55%),
+    linear-gradient(180deg, #f4f7fa 0%, #eef1f6 100%);
+  --ui-panel-bg: rgba(255, 255, 255, 0.55);
+  --ui-panel-border: rgba(129, 140, 248, 0.22);
+  --ui-accent: #0ea5e9;
+  --ui-accent-2: #818cf8;
+  --ui-radius-panel: 24px;
+  --ui-blur: 34px;
+  --ui-specular: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.dark [data-ui='ui-aero'] {
+  --ui-page-bg:
+    radial-gradient(130% 100% at 50% 0%, rgba(56, 189, 248, 0.09) 0%, transparent 55%),
+    linear-gradient(180deg, #0b0e13 0%, #0e1118 100%);
+  --ui-panel-bg: rgba(17, 21, 30, 0.6);
+  --ui-panel-border: rgba(129, 140, 248, 0.2);
+}
+
+/* Shell root: theme backdrop + ambient sheen layer */
+.ui-root {
+  background: var(--ui-page-bg);
+  transition: background 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ui-root::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: var(--ui-specular-backdrop, none);
+}
+
+/* Shared theme-aware panel utility */
+.ui-panel {
+  background: var(--ui-panel-bg);
+  border: 1px solid var(--ui-panel-border);
+  border-radius: var(--ui-radius-panel);
+  -webkit-backdrop-filter: blur(var(--ui-blur)) saturate(1.5);
+  backdrop-filter: blur(var(--ui-blur)) saturate(1.5);
+  box-shadow: var(--ui-specular, none), 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
 /* ── Pulse chat additions: thin custom scrollbars + hide helper ── */
 @layer utilities {
   .pulse-scroll {

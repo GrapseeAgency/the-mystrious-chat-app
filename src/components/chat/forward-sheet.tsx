@@ -34,8 +34,8 @@ interface SendResponse {
 /** One-line human summary of what is being forwarded. */
 export function forwardPreviewLabel(payload: ForwardPayload): string {
   const text = payload.content.replace(/\s+/g, ' ').trim()
-  if (payload.imagePath !== null) return text.length > 0 ? `📷 ${text}` : '📷 Photo'
-  if (payload.audioPath !== null) return '🎤 Voice message'
+  if (payload.imagePath !== null) return text.length > 0 ? text : 'Photo'
+  if (payload.audioPath !== null) return 'Voice message'
   return text.length > 0 ? text : 'Message'
 }
 

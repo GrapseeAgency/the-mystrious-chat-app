@@ -1086,7 +1086,7 @@ export function ChatRoom({
         }),
       })
       window.dispatchEvent(new CustomEvent<ChatMessage>('pulse:external-message', { detail: res.message }))
-      toast.success('⚔️ Tic-tac-toe challenge sent')
+      toast.success('Tic-tac-toe challenge sent')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not start the game')
     }
@@ -1867,7 +1867,7 @@ export function ChatRoom({
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['saved', me.id] })
-      toast.success(data.saved ? 'Saved to your library ⭐' : 'Removed from saved')
+      toast.success(data.saved ? 'Saved to your library' : 'Removed from saved')
       haptic(10)
     },
     onError: () => toast.error('Could not update saved state'),
@@ -1887,7 +1887,7 @@ export function ChatRoom({
       )
     },
     onSuccess: (data) => {
-      toast.success('📌 Task created from message')
+      toast.success('Task created from message')
       fireParticles({ kind: 'burst', count: 40 })
       haptic(12)
       // refresh the board if the kanban sheet has ever cached it
@@ -3080,7 +3080,7 @@ export function ChatRoom({
   const subtitle = typerLabel.length > 0
     ? typerLabel
     : isGroup
-      ? `${detailData?.members.length ?? 0} members · ${onlineOthers} online${isBroadcast ? ' · 📣 announcements' : ''}${ttlSeconds > 0 ? ' · ⏱ disappearing' : ''}`
+      ? `${detailData?.members.length ?? 0} members · ${onlineOthers} online${isBroadcast ? ' · announcements' : ''}${ttlSeconds > 0 ? ' · disappearing' : ''}`
       : !other
         ? ''
         : dmStatus.length > 0
@@ -4729,7 +4729,7 @@ export function ChatRoom({
                       </span>
                     </div>
                     <p className="mt-1 line-clamp-3 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
-                      {m.content.replace(/\s+/g, ' ').trim() || '📷 Photo'}
+                      {m.content.replace(/\s+/g, ' ').trim() || 'Photo'}
                     </p>
                     <div className="mt-1.5 flex gap-1.5">
                       <Button
@@ -5035,8 +5035,8 @@ export function ChatRoom({
                           </span>
                         </span>
                         <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug break-words text-zinc-600 dark:text-zinc-300">
-                          {m.imagePath ? '📷 ' : ''}
-                          {m.audioPath ? '🎤 ' : ''}
+                          {m.imagePath ? 'Photo ' : ''}
+                          {m.audioPath ? 'Voice note ' : ''}
                           <MatchedText
                             content={
                               m.content.replace(/\s+/g, ' ').trim() ||
@@ -5696,8 +5696,8 @@ function PollCard({
               />
               <span className="relative flex items-center justify-between gap-2">
                 <span className={cn('flex min-w-0 items-center gap-1 text-[13px]', mine ? 'text-white' : 'text-zinc-800 dark:text-zinc-100')}>
-                  <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold', picked ? (mine ? 'border-white bg-white text-emerald-600' : 'border-emerald-500 bg-emerald-500 text-white') : mine ? 'border-white/50 text-transparent' : 'border-zinc-400 text-transparent dark:border-zinc-500')}>
-                    ✓
+                  <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-full border', picked ? (mine ? 'border-white bg-white text-emerald-600' : 'border-emerald-500 bg-emerald-500 text-white') : mine ? 'border-white/50 text-transparent' : 'border-zinc-400 text-transparent dark:border-zinc-500')}>
+                    <Check className="size-2.5" strokeWidth={4} aria-hidden />
                   </span>
                   <span className="truncate font-medium">{option.text}</span>
                 </span>
@@ -7391,7 +7391,7 @@ function ThreadSheet({
                 <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatListStamp(root.createdAt)}</span>
               </div>
               <p className="mt-1 line-clamp-4 whitespace-pre-wrap break-words text-[13px] leading-snug text-zinc-700 dark:text-zinc-200">
-                {root.content.replace(/\s+/g, ' ').trim() || (root.imagePath ? '📷 Photo' : root.audioPath ? '🎤 Voice note' : '')}
+                {root.content.replace(/\s+/g, ' ').trim() || (root.imagePath ? 'Photo' : root.audioPath ? 'Voice note' : '')}
               </p>
             </div>
           ) : null}

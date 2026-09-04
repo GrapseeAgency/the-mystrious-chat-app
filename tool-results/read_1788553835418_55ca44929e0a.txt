@@ -1,0 +1,1189 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse Chat — Profile/Settings tab: edit identity, appearance,
+     3→// account actions and switch-account flow.
+     4→// ─────────────────────────────────────────────────────────────
+     5→'use client'
+     6→
+     7→import { useEffect, useMemo, useState } from 'react'
+     8→import { AnimatePresence, motion, useMotionValue, useReducedMotion, useTransform, animate } from 'framer-motion'
+     9→import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+    10→import { useTheme } from 'next-themes'
+    11→import { ArrowDownFromLine, AtSign, BadgeCheck, Check, ChevronRight, Compass, Copy, Grip, Hand, Layers, LayoutDashboard, LayoutGrid, LoaderCircle, LogOut, Moon, MoonStar, PanelBottom, PanelBottomOpen, PanelRight, Settings, Smartphone, Star, Sun, Terminal, Volume2, Vibrate, Wand2, X } from 'lucide-react'
+    12→import { toast } from 'sonner'
+    13→import type { AppUser, ConversationSummary, SavedItem } from '@/lib/types'
+    14→import { usePulseSession } from '@/lib/pulse-store'
+    15→import {
+    16→  AVATAR_GRADIENTS,
+    17→  PULSE_COLORS,
+    18→  ApiError,
+    19→  apiJson,
+    20→  formatMemberSince,
+    21→  jsonBody,
+    22→  type AvatarColor,
+    23→} from '@/lib/pulse-utils'
+    24→import { cn } from '@/lib/utils'
+    25→import { ease, pressSpring, pressTap, spring } from '@/lib/motion'
+    26→import {
+    27→  AlertDialog,
+    28→  AlertDialogAction,
+    29→  AlertDialogCancel,
+    30→  AlertDialogContent,
+    31→  AlertDialogDescription,
+    32→  AlertDialogFooter,
+    33→  AlertDialogHeader,
+    34→  AlertDialogTitle,
+    35→} from '@/components/ui/alert-dialog'
+    36→import { Button } from '@/components/ui/button'
+    37→import { Input } from '@/components/ui/input'
+    38→import { Label } from '@/components/ui/label'
+    39→import { Separator } from '@/components/ui/separator'
+    40→import { Switch } from '@/components/ui/switch'
+    41→import { Textarea } from '@/components/ui/textarea'
+    42→import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
+    43→import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+    44→import { UserAvatar } from '@/components/chat/user-avatar'
+    45→import { SettingsScreen } from '@/components/chat/settings-screen'
+    46→import { pulseSettingsStore, haptic, isQuietHoursNow, primeSound } from '@/lib/pulse-settings'
+    47→import { promptPwaInstall, usePulsePwa } from '@/lib/pwa-store'
+    48→import { useMounted } from '@/hooks/use-mounted'
+    49→import { NAV_STYLE_META, useNavStyle, type NavStyleId } from '@/components/chat/nav-router'
+    50→
+    51→interface UsersResponse {
+    52→  user: AppUser
+    53→}
+    54→interface ConversationsResponse {
+    55→  conversations: ConversationSummary[]
+    56→}
+    57→
+    58→const NAME_MAX = 32
+    59→const ABOUT_MAX = 140
+    60→/** Discord-flavored custom-status glyph choices. */
+    61→const STATUS_EMOJIS = ['🔥', '✨', '🎯', '☕', '🎧', '🌙', '💡', '🚀', '😴', '🍽️', ' vacation'.trim(), '💼'] as const
+    62→
+    63→/** Row press: body scales 0.98 while the chevron nudges x+2 (variant propagation). */
+    64→const ROW_VARIANTS = { rest: { scale: 1 }, tap: { scale: 0.98 } } as const
+    65→const CHEVRON_VARIANTS = { rest: { x: 0 }, tap: { x: 2 } } as const
+    66→
+    67→/** Inline GlassCard recipe (R22 list surfaces — shared physical language). */
+    68→const GLASS_CARD =
+    69→  'rounded-3xl border border-zinc-200/70 bg-white/70 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:border-white/10 dark:bg-zinc-900/60 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+    70→
+    71→export function ProfileTab({
+    72→  me,
+    73→  onOpenSavedMessage,
+    74→}: {
+    75→  me: AppUser
+    76→  /** saved-library row tap → open that chat and flash the message */
+    77→  onOpenSavedMessage?: (conversationId: string, messageId: string) => void
+    78→}) {
+    79→  return <ProfileTabInner me={me} onOpenSavedMessage={onOpenSavedMessage} />
+    80→}
+    81→
+    82→function ProfileTabInner({
+    83→  me,
+    84→  onOpenSavedMessage,
+    85→}: {
+    86→  me: AppUser
+    87→  onOpenSavedMessage?: (conversationId: string, messageId: string) => void
+    88→}) {
+    89→  // remount the editor whenever the underlying identity changes,
+    90→  // which re-initializes all local field state (no sync effects)
+    91→  const identityKey = `${me.id}|${me.name}|${me.about}|${me.color}`
+    92→  return <ProfileEditor key={identityKey} me={me} onOpenSavedMessage={onOpenSavedMessage} />
+    93→}
+    94→
+    95→function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMessage?: (conversationId: string, messageId: string) => void }) {
+    96→  const queryClient = useQueryClient()
+    97→  const setUser = usePulseSession((s) => s.setUser)
+    98→  const reducedMotion = useReducedMotion()
+    99→  const { resolvedTheme, setTheme } = useTheme()
+   100→  const soundOn = pulseSettingsStore((s) => s.soundOn)
+   101→  const hapticsOn = pulseSettingsStore((s) => s.hapticsOn)
+   102→  const setSoundOn = pulseSettingsStore((s) => s.setSoundOn)
+   103→  const setHapticsOn = pulseSettingsStore((s) => s.setHapticsOn)
+   104→  const quietHoursOn = pulseSettingsStore((s) => s.quietHoursOn)
+   105→  const quietStart = pulseSettingsStore((s) => s.quietStart)
+   106→  const quietEnd = pulseSettingsStore((s) => s.quietEnd)
+   107→  const setQuietHoursOn = pulseSettingsStore((s) => s.setQuietHoursOn)
+   108→  const setQuietStart = pulseSettingsStore((s) => s.setQuietStart)
+   109→  const setQuietEnd = pulseSettingsStore((s) => s.setQuietEnd)
+   110→  const installEvent = usePulsePwa((s) => s.installEvent)
+   111→  const mounted = useMounted()
+   112→
+   113→  const [name, setName] = useState(me.name)
+   114→  const [about, setAbout] = useState(me.about)
+   115→  const [color, setColor] = useState<AvatarColor>((me.color as AvatarColor) ?? 'emerald')
+   116→  // Discord-style custom status
+   117→  const [statusEmoji, setStatusEmoji] = useState(me.statusEmoji ?? '')
+   118→  const [statusText, setStatusText] = useState(me.statusText ?? '')
+   119→  /** saved-messages library drawer */
+   120→  const [savedOpen, setSavedOpen] = useState(false)
+   121→  const [switchOpen, setSwitchOpen] = useState(false)
+   122→  /** @handle editor dialog */
+   123→  const [handleOpen, setHandleOpen] = useState(false)
+   124→  /** full settings-tree screen (owned by R19-d) */
+   125→  const [settingsOpen, setSettingsOpen] = useState(false)
+   126→
+   127→  const handleInstall = async () => {
+   128→    const outcome = await promptPwaInstall()
+   129→    if (outcome === 'accepted') {
+   130→      toast.success('Installing Pulse…', { description: 'Find it on your home screen.' })
+   131→    } else if (outcome === 'unavailable') {
+   132→      toast.error('Install is not available right now')
+   133→    }
+   134→  }
+   135→
+   136→  const conversations = useQuery({
+   137→    queryKey: ['conversations', me.id],
+   138→    queryFn: async (): Promise<ConversationSummary[]> => {
+   139→      const res = await apiJson<ConversationsResponse>(
+   140→        `/api/conversations?userId=${encodeURIComponent(me.id)}`,
+   141→      )
+   142→      return res.conversations
+   143→    },
+   144→    refetchInterval: 30_000,
+   145→    staleTime: 10_000,
+   146→  })
+   147→
+   148→  const stats = useMemo(() => {
+   149→    const list = conversations.data ?? []
+   150→    return {
+   151→      chats: list.length,
+   152→      unread: list.reduce((sum, c) => sum + c.unreadCount, 0),
+   153→      memberSince: formatMemberSince(me.createdAt),
+   154→    }
+   155→  }, [conversations.data, me.createdAt])
+   156→
+   157→  const dirty =
+   158→    name.trim() !== me.name.trim() ||
+   159→    about.trim() !== me.about.trim() ||
+   160→    color !== me.color ||
+   161→    statusEmoji.trim() !== (me.statusEmoji ?? '') ||
+   162→    statusText.trim() !== (me.statusText ?? '')
+   163→
+   164→  const saveProfile = useMutation({
+   165→    mutationFn: async () => {
+   166→      return apiJson<UsersResponse>(`/api/users/${encodeURIComponent(me.id)}`, {
+   167→        method: 'PATCH',
+   168→        body: JSON.stringify({
+   169→          name: name.trim(),
+   170→          about: about.trim(),
+   171→          color,
+   172→          statusEmoji: statusEmoji.trim(),
+   173→          statusText: statusText.trim(),
+   174→        }),
+   175→      })
+   176→    },
+   177→    onMutate: async () => {
+   178→      // optimistic update across session store + query caches
+   179→      const optimistic: AppUser = {
+   180→        ...me,
+   181→        name: name.trim(),
+   182→        about: about.trim(),
+   183→        color,
+   184→        statusEmoji: statusEmoji.trim() || null,
+   185→        statusText: statusText.trim() || null,
+   186→      }
+   187→      setUser(optimistic)
+   188→      queryClient.setQueryData(['me', me.id], optimistic)
+   189→      queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+   190→        old?.map((u) => (u.id === me.id ? optimistic : u)),
+   191→      )
+   192→      return null
+   193→    },
+   194→    onSuccess: (data) => {
+   195→      setUser(data.user)
+   196→      queryClient.setQueryData(['me', me.id], data.user)
+   197→      queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+   198→        old?.map((u) => (u.id === me.id ? data.user : u)),
+   199→      )
+   200→      toast.success('Profile updated')
+   201→    },
+   202→    onError: (error: Error) => {
+   203→      // rollback to the server-known snapshot
+   204→      setUser(me)
+   205→      queryClient.setQueryData(['me', me.id], me)
+   206→      queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+   207→        old?.map((u) => (u.id === me.id ? me : u)),
+   208→      )
+   209→      toast.error(error.message || 'Could not save your profile')
+   210→    },
+   211→  })
+   212→
+   213→  const copyId = async () => {
+   214→    try {
+   215→      await navigator.clipboard.writeText(me.id)
+   216→      toast.success('Account ID copied')
+   217→    } catch {
+   218→      toast.error('Clipboard is unavailable here')
+   219→    }
+   220→  }
+   221→
+   222→  /** copy the @handle chip in the hero (same clipboard pattern as Copy ID) */
+   223→  const copyHandle = async () => {
+   224→    if (!me.username) return
+   225→    try {
+   226→      await navigator.clipboard.writeText(`@${me.username}`)
+   227→      toast.success('Handle copied')
+   228→    } catch {
+   229→      toast.error('Clipboard is unavailable here')
+   230→    }
+   231→  }
+   232→
+   233→  /** Telegram-style saved/starred library */
+   234→  const savedQuery = useQuery({
+   235→    queryKey: ['saved', me.id],
+   236→    queryFn: async (): Promise<SavedItem[]> => {
+   237→      const res = await apiJson<{ items: SavedItem[] }>(`/api/users/${encodeURIComponent(me.id)}/saved`)
+   238→      return res.items
+   239→    },
+   240→    enabled: savedOpen,
+   241→  })
+   242→
+   243→  const toggleDarkMode = (checked: boolean) => setTheme(checked ? 'dark' : 'light')
+   244→  const switchAccount = () => {
+   245→    usePulseSession.getState().clear()
+   246→    window.location.reload()
+   247→  }
+   248→
+   249→  return (
+   250→    <div className="absolute inset-0 flex flex-col bg-white dark:bg-zinc-900">
+   251→      {/* soft emerald wash so the glass cards have something to refract */}
+   252→      <span
+   253→        aria-hidden
+   254→        className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(70%_60%_at_50%_0%,rgba(16,185,129,0.08),transparent_70%)]"
+   255→      />
+   256→      <header className="relative shrink-0 border-b border-zinc-200 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] dark:border-zinc-800">
+   257→        <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Settings</h1>
+   258→      </header>
+   259→
+   260→      <div className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+   261→        {/* hero + fields */}
+   262→        <section aria-label="Profile" className="flex flex-col items-center gap-4">
+   263→          {/* HERO — avatar floats over an emerald→teal gradient wash inside a glass card */}
+   264→          <div
+   265→            className={cn(
+   266→              GLASS_CARD,
+   267→              'relative flex w-full flex-col items-center gap-2 overflow-hidden px-4 pb-5 pt-6',
+   268→            )}
+   269→          >
+   270→            <span
+   271→              aria-hidden
+   272→              className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_75%_at_25%_0%,rgba(52,211,153,0.16),transparent_60%),radial-gradient(80%_65%_at_82%_6%,rgba(20,184,166,0.13),transparent_55%)]"
+   273→            />
+   274→            <motion.div
+   275→              initial={reducedMotion ? false : { scale: 0.8, opacity: 0 }}
+   276→              animate={{ scale: 1, opacity: 1 }}
+   277→              transition={spring.bouncy}
+   278→              className="relative"
+   279→            >
+   280→              <UserAvatar name={name || me.name} color={color} size={96} showPresence online />
+   281→            </motion.div>
+   282→            <motion.h2
+   283→              initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+   284→              animate={{ opacity: 1, y: 0 }}
+   285→              transition={{ duration: 0.3, ease: ease.out, delay: 0.06 }}
+   286→              className="relative text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
+   287→            >
+   288→              {name.trim() || me.name}
+   289→            </motion.h2>
+   290→            {me.statusEmoji || me.statusText ? (
+   291→              <motion.p
+   292→                initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+   293→                animate={{ opacity: 1, y: 0 }}
+   294→                transition={{ duration: 0.3, ease: ease.out, delay: 0.1 }}
+   295→                className="relative text-xs font-medium text-zinc-500 dark:text-zinc-400"
+   296→              >
+   297→                {[me.statusEmoji, me.statusText].filter(Boolean).join(' ')}
+   298→              </motion.p>
+   299→            ) : null}
+   300→            <motion.div
+   301→              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+   302→              animate={{ opacity: 1, y: 0 }}
+   303→              transition={{ duration: 0.3, ease: ease.out, delay: 0.14 }}
+   304→              className="relative"
+   305→            >
+   306→              <span className="flex items-center gap-0.5 rounded-full bg-emerald-500/10 py-1 pl-3 pr-1 ring-1 ring-emerald-500/20">
+   307→                <button
+   308→                  type="button"
+   309→                  onClick={() => {
+   310→                    haptic(8)
+   311→                    setHandleOpen(true)
+   312→                  }}
+   313→                  aria-label={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
+   314→                  className="flex items-center gap-1 rounded-full outline-none"
+   315→                >
+   316→                  <AtSign className="size-3 text-emerald-600 dark:text-emerald-400" aria-hidden />
+   317→                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+   318→                    {me.username ? `@${me.username}` : 'Set your handle'}
+   319→                  </span>
+   320→                </button>
+   321→                {me.username ? (
+   322→                  <motion.button
+   323→                    type="button"
+   324→                    whileTap={reducedMotion ? undefined : pressTap}
+   325→                    transition={pressSpring}
+   326→                    onClick={copyHandle}
+   327→                    aria-label="Copy your handle"
+   328→                    className="flex size-5 items-center justify-center rounded-full text-emerald-600/80 outline-none hover:bg-emerald-500/20 dark:text-emerald-400/80"
+   329→                  >
+   330→                    <Copy className="size-3" aria-hidden />
+   331→                  </motion.button>
+   332→                ) : null}
+   333→              </span>
+   334→            </motion.div>
+   335→          </div>
+   336→
+   337→          <div className="w-full space-y-3">
+   338→            <div className="space-y-1.5">
+   339→              <Label htmlFor="profile-name" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+   340→                Name
+   341→              </Label>
+   342→              <Input
+   343→                id="profile-name"
+   344→                value={name}
+   345→                maxLength={NAME_MAX}
+   346→                onChange={(e) => setName(e.target.value.slice(0, NAME_MAX))}
+   347→                autoComplete="off"
+   348→                className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+   349→              />
+   350→            </div>
+   351→            <div className="space-y-1.5">
+   352→              <Label htmlFor="profile-about" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+   353→                About
+   354→              </Label>
+   355→              <Textarea
+   356→                id="profile-about"
+   357→                value={about}
+   358→                rows={2}
+   359→                maxLength={ABOUT_MAX}
+   360→                placeholder="Hey there! I'm using Pulse."
+   361→                onChange={(e) => setAbout(e.target.value.slice(0, ABOUT_MAX))}
+   362→                className="resize-none rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+   363→              />
+   364→            </div>
+   365→
+   366→            {/* @handle editor row */}
+   367→            <motion.button
+   368→              type="button"
+   369→              onClick={() => {
+   370→                haptic(8)
+   371→                setHandleOpen(true)
+   372→              }}
+   373→              initial="rest"
+   374→              animate="rest"
+   375→              whileTap="tap"
+   376→              variants={ROW_VARIANTS}
+   377→              transition={pressSpring}
+   378→              aria-label={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
+   379→              className="flex min-h-[56px] w-full items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-left outline-none transition-colors hover:border-emerald-300 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-emerald-500/40"
+   380→            >
+   381→              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
+   382→                <AtSign className="size-4 text-emerald-500" aria-hidden />
+   383→              </span>
+   384→              <span className="min-w-0 flex-1">
+   385→                <span className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Handle</span>
+   386→                <span className="block truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+   387→                  {me.username ? `@${me.username}` : 'Set your handle'}
+   388→                </span>
+   389→              </span>
+   390→              <motion.span variants={CHEVRON_VARIANTS} className="shrink-0">
+   391→                <ChevronRight className="size-4 text-zinc-400 dark:text-zinc-500" aria-hidden />
+   392→              </motion.span>
+   393→            </motion.button>
+   394→
+   395→            {/* Discord-style custom status */}
+   396→            <div className="space-y-2 py-1">
+   397→              <Label htmlFor="profile-status" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+   398→                Custom status <span className="text-zinc-400">(Discord-style · shown on your presence)</span>
+   399→              </Label>
+   400→              <div role="radiogroup" aria-label="Status emoji" className="flex flex-wrap items-center gap-1">
+   401→                {STATUS_EMOJIS.map((e) => {
+   402→                  const selected = statusEmoji === e
+   403→                  return (
+   404→                    <motion.button
+   405→                      key={e}
+   406→                      type="button"
+   407→                      role="radio"
+   408→                      aria-checked={selected}
+   409→                      aria-label={`Set status emoji ${e}`}
+   410→                      onClick={() => {
+   411→                        haptic(6)
+   412→                        setStatusEmoji(selected ? '' : e)
+   413→                      }}
+   414→                      whileTap={reducedMotion ? undefined : pressTap}
+   415→                      transition={pressSpring}
+   416→                      className={cn(
+   417→                        'flex size-8 items-center justify-center rounded-full text-base outline-none transition-transform',
+   418→                        selected
+   419→                          ? 'bg-emerald-500/15 ring-2 ring-emerald-500 scale-105'
+   420→                          : 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700',
+   421→                      )}
+   422→                    >
+   423→                      {e}
+   424→                    </motion.button>
+   425→                  )
+   426→                })}
+   427→              </div>
+   428→              <Input
+   429→                id="profile-status"
+   430→                value={statusText}
+   431→                maxLength={48}
+   432→                placeholder="What's happening? (optional)"
+   433→                onChange={(e) => setStatusText(e.target.value.slice(0, 48))}
+   434→                autoComplete="off"
+   435→                className="h-10 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+   436→              />
+   437→            </div>
+   438→
+   439→            {/* colors */}
+   440→            <div className="space-y-2 py-1">
+   441→              <Label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Avatar color</Label>
+   442→              <div role="radiogroup" aria-label="Avatar color" className="flex items-center justify-between px-0.5">
+   443→                {PULSE_COLORS.map((c) => {
+   444→                  const selected = c === color
+   445→                  return (
+   446→                    <motion.button
+   447→                      key={c}
+   448→                      type="button"
+   449→                      role="radio"
+   450→                      aria-checked={selected}
+   451→                      aria-label={`${c} avatar`}
+   452→                      onClick={() => setColor(c)}
+   453→                      whileTap={reducedMotion ? undefined : pressTap}
+   454→                      transition={pressSpring}
+   455→                      className={cn(
+   456→                        'flex size-8 items-center justify-center rounded-full bg-gradient-to-br shadow-sm outline-none transition-transform',
+   457→                        AVATAR_GRADIENTS[c],
+   458→                        selected
+   459→                          ? 'ring-2 ring-emerald-600 ring-offset-2 ring-offset-white dark:ring-offset-zinc-900 scale-105'
+   460→                          : 'hover:scale-105',
+   461→                      )}
+   462→                    >
+   463→                      {selected ? <Check className="size-3.5 text-white" strokeWidth={3} /> : null}
+   464→                    </motion.button>
+   465→                  )
+   466→                })}
+   467→              </div>
+   468→            </div>
+   469→
+   470→            <AnimatePresence>
+   471→              {dirty ? (
+   472→                <motion.div
+   473→                  initial={{ opacity: 0, y: -6 }}
+   474→                  animate={{ opacity: 1, y: 0 }}
+   475→                  exit={{ opacity: 0, y: -6 }}
+   476→                  transition={{ duration: 0.18 }}
+   477→                >
+   478→                  <Button
+   479→                    onClick={() => saveProfile.mutate()}
+   480→                    disabled={saveProfile.isPending || name.trim().length === 0}
+   481→                    className="h-11 w-full rounded-xl bg-emerald-600 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500 active:scale-[0.98]"
+   482→                  >
+   483→                    {saveProfile.isPending ? (
+   484→                      <>
+   485→                        <LoaderCircle className="size-4 animate-spin" aria-hidden />
+   486→                        Saving…
+   487→                      </>
+   488→                    ) : (
+   489→                      <>
+   490→                        <BadgeCheck className="size-4" aria-hidden />
+   491→                        Save changes
+   492→                      </>
+   493→                    )}
+   494→                  </Button>
+   495→                </motion.div>
+   496→              ) : null}
+   497→            </AnimatePresence>
+   498→          </div>
+   499→        </section>
+   500→
+   501→        {/* stats */}
+   502→        <section aria-label="Stats" className="mt-5 grid grid-cols-3 gap-2">
+   503→          <StatChip label="Chats" value={<CountUp value={stats.chats} />} />
+   504→          <StatChip label="Unread" value={<CountUp value={stats.unread} cap />} accent />
+   505→          <StatChip label="Member since" value={stats.memberSince} />
+   506→        </section>
+   507→
+   508→        {/* general — full settings tree */}
+   509→        <Section title="General" delay={0.02}>
+   510→          <motion.button
+   511→            type="button"
+   512→            onClick={() => {
+   513→              haptic(8)
+   514→              setSettingsOpen(true)
+   515→            }}
+   516→            initial="rest"
+   517→            animate="rest"
+   518→            whileTap="tap"
+   519→            variants={ROW_VARIANTS}
+   520→            transition={pressSpring}
+   521→            aria-label="Open settings"
+   522→            className="flex min-h-[52px] w-full items-center gap-3 rounded-xl px-1 py-2 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
+   523→          >
+   524→            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
+   525→              <Settings className="size-4 text-emerald-500" aria-hidden />
+   526→            </span>
+   527→            <span className="min-w-0 flex-1">
+   528→              <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Settings</span>
+   529→              <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">Preferences, storage, privacy &amp; more</span>
+   530→            </span>
+   531→            <motion.span variants={CHEVRON_VARIANTS} className="shrink-0">
+   532→              <ChevronRight className="size-4 text-zinc-400 dark:text-zinc-500" aria-hidden />
+   533→            </motion.span>
+   534→          </motion.button>
+   535→        </Section>
+   536→
+   537→        {/* navigation architecture — 4 swappable styles */}
+   538→        <Section title="Navigation" delay={0.06}>
+   539→          <NavStyleGrid />
+   540→        </Section>
+   541→
+   542→        {/* saved / starred library (Telegram parity) */}
+   543→        <Section title="Library" delay={0.1}>
+   544→          <motion.button
+   545→            type="button"
+   546→            onClick={() => {
+   547→              haptic(8)
+   548→              setSavedOpen(true)
+   549→            }}
+   550→            initial="rest"
+   551→            animate="rest"
+   552→            whileTap="tap"
+   553→            variants={ROW_VARIANTS}
+   554→            transition={pressSpring}
+   555→            className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
+   556→          >
+   557→            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
+   558→              <Star className="size-4 fill-amber-400 text-amber-500" aria-hidden />
+   559→            </span>
+   560→            <span className="min-w-0 flex-1">
+   561→              <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Saved messages</span>
+   562→              <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">Long-press any message → Save message</span>
+   563→            </span>
+   564→            <motion.span variants={CHEVRON_VARIANTS} className="shrink-0">
+   565→              <ChevronRight className="size-4 text-zinc-400 dark:text-zinc-500" aria-hidden />
+   566→            </motion.span>
+   567→          </motion.button>
+   568→        </Section>
+   569→
+   570→        {/* notifications */}
+   571→        <Section title="Notifications" delay={0.14}>
+   572→          <div className="flex items-center justify-between px-1 py-1.5">
+   573→            <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+   574→              <Volume2 className="size-4 text-emerald-500" aria-hidden />
+   575→              In-app sounds
+   576→            </span>
+   577→            <Switch
+   578→              checked={soundOn}
+   579→              onCheckedChange={(on) => {
+   580→                setSoundOn(on)
+   581→                if (on) primeSound()
+   582→              }}
+   583→              aria-label="Toggle notification sounds"
+   584→              className="data-[state=checked]:bg-emerald-500"
+   585→            />
+   586→          </div>
+   587→          <div className="flex items-center justify-between px-1 py-1.5">
+   588→            <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+   589→              <Vibrate className="size-4 text-emerald-500" aria-hidden />
+   590→              Haptic feedback
+   591→            </span>
+   592→            <Switch
+   593→              checked={hapticsOn}
+   594→              onCheckedChange={(on) => {
+   595→                setHapticsOn(on)
+   596→                if (on) haptic(15)
+   597→              }}
+   598→              aria-label="Toggle haptic feedback"
+   599→              className="data-[state=checked]:bg-emerald-500"
+   600→            />
+   601→          </div>
+   602→          <div className="flex items-center justify-between px-1 py-1.5">
+   603→            <span className="flex min-w-0 items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+   604→              <MoonStar
+   605→                className={cn('size-4 shrink-0', quietHoursOn ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-500')}
+   606→                aria-hidden
+   607→              />
+   608→              <span className="min-w-0">
+   609→                Quiet hours
+   610→                {quietHoursOn && !mounted ? null : (
+   611→                  <span className="mt-0.5 block text-[11px] font-normal text-zinc-400 dark:text-zinc-500">
+   612→                    {quietHoursOn
+   613→                      ? mounted && isQuietHoursNow({ quietHoursOn, quietStart, quietEnd })
+   614→                        ? `Silenced until ${quietEnd}`
+   615→                        : `Silent ${quietStart} – ${quietEnd}`
+   616→                      : 'Pings stay on around the clock'}
+   617→                  </span>
+   618→                )}
+   619→              </span>
+   620→            </span>
+   621→            <Switch
+   622→              checked={quietHoursOn}
+   623→              onCheckedChange={setQuietHoursOn}
+   624→              disabled={!mounted}
+   625→              aria-label="Toggle quiet hours"
+   626→              className="data-[state=checked]:bg-emerald-500"
+   627→            />
+   628→          </div>
+   629→          {quietHoursOn ? (
+   630→            <motion.div
+   631→              initial={{ opacity: 0, height: 0 }}
+   632→              animate={{ opacity: 1, height: 'auto' }}
+   633→              transition={{ duration: 0.18 }}
+   634→              className="overflow-hidden"
+   635→            >
+   636→              <div className="mx-1 mb-1.5 mt-1 flex items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/60">
+   637→                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">From</span>
+   638→                <input
+   639→                  type="time"
+   640→                  value={quietStart}
+   641→                  onChange={(e) => e.target.value && setQuietStart(e.target.value)}
+   642→                  aria-label="Quiet hours start time"
+   643→                  className="h-8 rounded-lg border border-zinc-200 bg-white px-2 font-mono text-xs text-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+   644→                />
+   645→                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">to</span>
+   646→                <input
+   647→                  type="time"
+   648→                  value={quietEnd}
+   649→                  onChange={(e) => e.target.value && setQuietEnd(e.target.value)}
+   650→                  aria-label="Quiet hours end time"
+   651→                  className="h-8 rounded-lg border border-zinc-200 bg-white px-2 font-mono text-xs text-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+   652→                />
+   653→                <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+   654→                  {quietStart < quietEnd || quietStart === quietEnd ? 'same day' : 'overnight'}
+   655→                </span>
+   656→              </div>
+   657→            </motion.div>
+   658→          ) : null}
+   659→        </Section>
+   660→
+   661→        {/* appearance */}
+   662→        <Section title="Appearance" delay={0.18}>
+   663→          <div className="flex items-center justify-between px-1 py-1.5">
+   664→            <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+   665→              {mounted && resolvedTheme === 'dark' ? (
+   666→                <Moon className="size-4 text-emerald-500" aria-hidden />
+   667→              ) : (
+   668→                <Sun className="size-4 text-emerald-500" aria-hidden />
+   669→              )}
+   670→              Dark mode
+   671→            </span>
+   672→            <Switch
+   673→              checked={mounted && resolvedTheme === 'dark'}
+   674→              onCheckedChange={toggleDarkMode}
+   675→              disabled={!mounted}
+   676→              aria-label="Toggle dark mode"
+   677→              className="data-[state=checked]:bg-emerald-500"
+   678→            />
+   679→          </div>
+   680→        </Section>
+   681→
+   682→        {/* app install (visible when the browser offers the prompt) */}
+   683→        {installEvent ? (
+   684→          <Section title="App" delay={0.2}>
+   685→            <div className="flex items-center justify-between gap-2 px-1 py-1.5">
+   686→              <div className="min-w-0">
+   687→                <p className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+   688→                  <Smartphone className="size-4 shrink-0 text-emerald-500" aria-hidden />
+   689→                  Install Pulse
+   690→                </p>
+   691→                <p className="mt-0.5 pl-7 text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
+   692→                  Add to your home screen — opens instantly, works offline.
+   693→                </p>
+   694→              </div>
+   695→              <Button
+   696→                size="sm"
+   697→                onClick={handleInstall}
+   698→                className="h-9 shrink-0 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-500 active:scale-95"
+   699→              >
+   700→                Install
+   701→              </Button>
+   702→            </div>
+   703→          </Section>
+   704→        ) : null}
+   705→
+   706→        {/* account */}
+   707→        <Section title="Account" delay={0.22}>
+   708→          <div className="flex items-center justify-between gap-2 px-1 py-1.5">
+   709→            <div className="min-w-0">
+   710→              <p className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">{me.name}</p>
+   711→              <p className="mt-0.5 truncate font-mono text-xs text-zinc-400 dark:text-zinc-500">{me.id}</p>
+   712→            </div>
+   713→            <Button
+   714→              variant="outline"
+   715→              size="sm"
+   716→              onClick={copyId}
+   717→              className="h-9 shrink-0 gap-1.5 rounded-full px-3 text-xs font-semibold text-zinc-600 dark:text-zinc-300"
+   718→            >
+   719→              <Copy className="size-3.5" aria-hidden />
+   720→              Copy ID
+   721→            </Button>
+   722→          </div>
+   723→        </Section>
+   724→
+   725→        {/* danger zone */}
+   726→        <Section title="Danger zone" delay={0.26}>
+   727→          <Button
+   728→            variant="outline"
+   729→            onClick={() => setSwitchOpen(true)}
+   730→            className="h-11 w-full gap-2 rounded-xl border-destructive/40 text-sm font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive active:scale-[0.98]"
+   731→          >
+   732→            <LogOut className="size-4" aria-hidden />
+   733→            Switch account
+   734→          </Button>
+   735→        </Section>
+   736→      </div>
+   737→
+   738→      {/* saved-messages library drawer */}
+   739→      <Drawer open={savedOpen} onOpenChange={setSavedOpen}>
+   740→        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+   741→          <DrawerTitle className="sr-only">Saved messages</DrawerTitle>
+   742→          <DrawerDescription className="sr-only">Messages you starred across every chat</DrawerDescription>
+   743→          <div className="pb-2">
+   744→            <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+   745→              <Star className="size-4 fill-amber-400 text-amber-500" aria-hidden />
+   746→              {savedQuery.isPending ? 'Loading…' : `${(savedQuery.data ?? []).length} saved ${(savedQuery.data ?? []).length === 1 ? 'message' : 'messages'}`}
+   747→            </p>
+   748→            {(savedQuery.data ?? []).length === 0 && !savedQuery.isPending ? (
+   749→              <p className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
+   750→                Long-press a message in any chat and choose “Save message”.
+   751→              </p>
+   752→            ) : (
+   753→              <ul className="pulse-scroll max-h-[52dvh] space-y-2 overflow-y-auto py-1">
+   754→                {(savedQuery.data ?? []).map((item) => (
+   755→                  <li key={`${item.message.id}`}>
+   756→                    <button
+   757→                      type="button"
+   758→                      onClick={() => {
+   759→                        haptic(8)
+   760→                        setSavedOpen(false)
+   761→                        onOpenSavedMessage?.(item.message.conversationId, item.message.id)
+   762→                      }}
+   763→                      className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 text-left outline-none transition-colors hover:border-emerald-300 active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800/60 dark:hover:border-emerald-500/50"
+   764→                    >
+   765→                      <div className="flex items-center gap-2">
+   766→                        <UserAvatar name={item.message.sender.name} color={item.message.sender.color} size={22} />
+   767→                        <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
+   768→                          {item.message.sender.id === me.id ? 'You' : item.message.sender.name}
+   769→                          <span className="ml-1.5 font-medium text-zinc-400">in {item.conversation.name ?? 'chat'}</span>
+   770→                        </span>
+   771→                        <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{item.savedAt.slice(0, 10)}</span>
+   772→                      </div>
+   773→                      <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
+   774→                        {item.message.imagePath ? '📷 ' : ''}
+   775→                        {item.message.audioPath ? '🎤 ' : ''}
+   776→                        {item.message.content.replace(/\s+/g, ' ').trim() || '(media)'}
+   777→                      </p>
+   778→                    </button>
+   779→                  </li>
+   780→                ))}
+   781→              </ul>
+   782→            )}
+   783→          </div>
+   784→        </DrawerContent>
+   785→      </Drawer>
+   786→
+   787→      {/* @handle editor dialog */}
+   788→      <HandleEditorDialog
+   789→        open={handleOpen}
+   790→        onOpenChange={setHandleOpen}
+   791→        me={me}
+   792→        onSaved={(user) => {
+   793→          setUser(user)
+   794→          queryClient.setQueryData(['me', me.id], user)
+   795→          queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+   796→            old?.map((u) => (u.id === user.id ? user : u)),
+   797→          )
+   798→        }}
+   799→      />
+   800→
+   801→      {/* full settings tree (owned by crew R19-d) */}
+   802→      <SettingsScreen open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+   803→
+   804→      <AlertDialog open={switchOpen} onOpenChange={setSwitchOpen}>
+   805→        <AlertDialogContent className="max-w-[320px] rounded-2xl border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">
+   806→          <AlertDialogHeader>
+   807→            <AlertDialogTitle className="tracking-tight">Sign out of this account?</AlertDialogTitle>
+   808→            <AlertDialogDescription className="text-[13px] leading-relaxed">
+   809→              You&apos;ll return to the welcome screen. Nothing is deleted — you can always create or join back in later.
+   810→            </AlertDialogDescription>
+   811→          </AlertDialogHeader>
+   812→          <AlertDialogFooter className="gap-2">
+   813→            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+   814→            <AlertDialogAction
+   815→              onClick={switchAccount}
+   816→              className="rounded-xl bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40"
+   817→            >
+   818→              Sign out
+   819→            </AlertDialogAction>
+   820→          </AlertDialogFooter>
+   821→        </AlertDialogContent>
+   822→      </AlertDialog>
+   823→    </div>
+   824→  )
+   825→}
+   826→
+   827→function StatChip({ label, value, accent = false }: { label: string; value: React.ReactNode; accent?: boolean }) {
+   828→  return (
+   829→    <div
+   830→      className={cn(
+   831→        'flex flex-col items-center gap-0.5 rounded-2xl border p-3 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
+   832→        accent
+   833→          ? 'border-emerald-500/25 bg-emerald-500/10'
+   834→          : 'border-zinc-200/70 bg-white/70 dark:border-white/10 dark:bg-zinc-900/60',
+   835→      )}
+   836→    >
+   837→      <span
+   838→        className={cn(
+   839→          'text-base font-bold tracking-tight',
+   840→          accent ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-800 dark:text-zinc-100',
+   841→        )}
+   842→      >
+   843→        {value}
+   844→      </span>
+   845→      <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+   846→        {label}
+   847→      </span>
+   848→    </div>
+   849→  )
+   850→}
+   851→
+   852→/**
+   853→ * CountUp-style spring counter — the motion value renders straight to the DOM
+   854→ * (no per-frame React state), spring-popping on mount and retargeting on change.
+   855→ */
+   856→function CountUp({ value, cap = false }: { value: number; cap?: boolean }) {
+   857→  const reducedMotion = useReducedMotion()
+   858→  const count = useMotionValue(0)
+   859→  const text = useTransform(count, (v) => {
+   860→    const n = Math.round(v)
+   861→    return cap && n > 99 ? '99+' : n.toLocaleString('en-US')
+   862→  })
+   863→
+   864→  useEffect(() => {
+   865→    if (reducedMotion) {
+   866→      count.set(value)
+   867→      return
+   868→    }
+   869→    const controls = animate(count, value, { type: 'spring', stiffness: 140, damping: 26 })
+   870→    return () => controls.stop()
+   871→  }, [value, reducedMotion, count])
+   872→
+   873→  return <motion.span>{text}</motion.span>
+   874→}
+   875→
+   876→function Section({ title, delay = 0, children }: { title: string; delay?: number; children: React.ReactNode }) {
+   877→  const reducedMotion = useReducedMotion()
+   878→  return (
+   879→    <motion.section
+   880→      aria-label={title}
+   881→      initial={reducedMotion ? false : { opacity: 0, y: 14 }}
+   882→      animate={{ opacity: 1, y: 0 }}
+   883→      transition={{ duration: 0.32, ease: ease.out, delay }}
+   884→      className="mt-6"
+   885→    >
+   886→      <div className="mb-2 flex items-center gap-2">
+   887→        <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+   888→          {title}
+   889→        </h2>
+   890→        <Separator className="flex-1" />
+   891→      </div>
+   892→      <div className={cn(GLASS_CARD, 'p-2')}>
+   893→        {children}
+   894→      </div>
+   895→    </motion.section>
+   896→  )
+   897→}
+   898→
+   899→/** Icons for the nav architectures (verbatim strings for JIT). */
+   900→const NAV_ICONS: Record<NavStyleId, typeof Compass> = {
+   901→  capsule: Compass,
+   902→  'floating-top': ArrowDownFromLine,
+   903→  'floating-dock': LayoutDashboard,
+   904→  pill: Grip,
+   905→  'bottom-bar': PanelBottom,
+   906→  'tab-bar': PanelBottomOpen,
+   907→  'floating-tab-bar': Layers,
+   908→  'command-bar': Terminal,
+   909→  rail: PanelRight,
+   910→  island: MoonStar,
+   911→  radial: LayoutGrid,
+   912→  gesture: Hand,
+   913→  'contextual-dock': Wand2,
+   914→}
+   915→
+   916→/** Switch the whole shell between the 4 navigation architectures live. */
+   917→function NavStyleGrid() {
+   918→  const [style, apply] = useNavStyle()
+   919→  return (
+   920→    <div className="grid grid-cols-2 gap-2 p-1">
+   921→      {NAV_STYLE_META.map((opt) => {
+   922→        const Icon = NAV_ICONS[opt.id]
+   923→        const isActive = style === opt.id
+   924→        return (
+   925→          <button
+   926→            key={opt.id}
+   927→            type="button"
+   928→            aria-pressed={isActive}
+   929→            onClick={() => {
+   930→              apply(opt.id)
+   931→              haptic(12)
+   932→              toast.success(`${opt.label} navigation active`)
+   933→            }}
+   934→            className={cn(
+   935→              'rounded-xl border p-3 text-left transition-all active:scale-[0.98]',
+   936→              isActive
+   937→                ? 'border-emerald-500 bg-emerald-500/10'
+   938→                : 'border-zinc-200 hover:border-emerald-300 dark:border-zinc-700',
+   939→            )}
+   940→          >
+   941→            <Icon className={cn('size-5', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500')} aria-hidden />
+   942→            <p className="mt-1.5 flex items-center gap-1 text-[13px] font-bold text-zinc-800 dark:text-zinc-100">
+   943→              {opt.label}
+   944→              {isActive ? <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden /> : null}
+   945→            </p>
+   946→            <p className="mt-0.5 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">{opt.hint}</p>
+   947→          </button>
+   948→        )
+   949→      })}
+   950→    </div>
+   951→  )
+   952→}
+   953→
+   954→// ── @handle editor ───────────────────────────────────────────
+   955→
+   956→const HANDLE_MIN = 3
+   957→const HANDLE_MAX = 20
+   958→const HANDLE_RE = /^[a-z0-9_]+$/
+   959→const HANDLE_DEBOUNCE_MS = 350
+   960→
+   961→/** Mirrors normalizeUsername on the server: 3–20 chars, a-z0-9_ */
+   962→function isValidHandle(value: string): boolean {
+   963→  return value.length >= HANDLE_MIN && value.length <= HANDLE_MAX && HANDLE_RE.test(value)
+   964→}
+   965→
+   966→/** Keep only characters the server would accept. */
+   967→function sanitizeHandleInput(value: string): string {
+   968→  return value
+   969→    .toLowerCase()
+   970→    .replace(/[^a-z0-9_]/g, '')
+   971→    .slice(0, HANDLE_MAX)
+   972→}
+   973→
+   974→function HandleEditorDialog({
+   975→  open,
+   976→  onOpenChange,
+   977→  me,
+   978→  onSaved,
+   979→}: {
+   980→  open: boolean
+   981→  onOpenChange: (v: boolean) => void
+   982→  me: AppUser
+   983→  onSaved: (user: AppUser) => void
+   984→}) {
+   985→  // body mounts only while open → its state resets naturally on every open
+   986→  if (!open) return null
+   987→  return (
+   988→    <Dialog open onOpenChange={onOpenChange}>
+   989→      <HandleEditorBody me={me} onSaved={onSaved} onClose={() => onOpenChange(false)} />
+   990→    </Dialog>
+   991→  )
+   992→}
+   993→
+   994→function HandleEditorBody({
+   995→  me,
+   996→  onSaved,
+   997→  onClose,
+   998→}: {
+   999→  me: AppUser
+  1000→  onSaved: (user: AppUser) => void
+  1001→  onClose: () => void
+  1002→}) {
+  1003→  const [value, setValue] = useState(me.username ?? '')
+  1004→  const [debounced, setDebounced] = useState(me.username ?? '')
+  1005→  /** suggestion captured from a 409 username_taken response */
+  1006→  const [clashSuggestion, setClashSuggestion] = useState<string | null>(null)
+  1007→
+  1008→  const trimmed = value.trim()
+  1009→  const changed = trimmed !== (me.username ?? '')
+  1010→  const valid = isValidHandle(trimmed)
+  1011→
+  1012→  // live availability — debounced, skipped while re-typing the current handle
+  1013→  const checkEnabled = valid && debounced !== (me.username ?? '')
+  1014→  const checkQ = useQuery({
+  1015→    queryKey: ['username-check', debounced],
+  1016→    queryFn: async (): Promise<{ available: boolean; suggestion: string | null }> => {
+  1017→      return apiJson<{ available: boolean; suggestion: string | null }>(
+  1018→        `/api/users/check-username?username=${encodeURIComponent(debounced)}`,
+  1019→      )
+  1020→    },
+  1021→    enabled: checkEnabled,
+  1022→    staleTime: 5_000,
+  1023→  })
+  1024→
+  1025→  const checkStale = !checkEnabled || debounced !== trimmed
+  1026→  const checking = valid && changed && (checkStale || checkQ.isFetching)
+  1027→  const available = valid && changed && !checkStale && checkQ.data?.available === true
+  1028→  const taken = valid && changed && !checkStale && checkQ.data?.available === false
+  1029→
+  1030→  useEffect(() => {
+  1031→    const timer = setTimeout(() => setDebounced(trimmed), HANDLE_DEBOUNCE_MS)
+  1032→    return () => clearTimeout(timer)
+  1033→  }, [trimmed])
+  1034→
+  1035→  const save = useMutation({
+  1036→    mutationFn: async (): Promise<AppUser> => {
+  1037→      const res = await apiJson<{ user: AppUser }>(
+  1038→        `/api/users/${encodeURIComponent(me.id)}`,
+  1039→        {
+  1040→          method: 'PATCH',
+  1041→          body: JSON.stringify({ username: trimmed }),
+  1042→        },
+  1043→      )
+  1044→      return res.user
+  1045→    },
+  1046→    onSuccess: (user) => {
+  1047→      onSaved(user)
+  1048→      toast.success(user.username ? `@${user.username} is yours now` : 'Handle saved')
+  1049→      onClose()
+  1050→    },
+  1051→    onError: async (error: Error) => {
+  1052→      toast.error(error.message || 'Could not save the handle')
+  1053→      if (error instanceof ApiError && error.status === 409) {
+  1054→        // the PATCH route's 409 carries a suggestion but ApiError drops it —
+  1055→        // re-ask the availability endpoint for the nearest free variant
+  1056→        try {
+  1057→          const res = await apiJson<{ available: boolean; suggestion: string | null }>(
+  1058→            `/api/users/check-username?username=${encodeURIComponent(trimmed)}`,
+  1059→          )
+  1060→          setClashSuggestion(res.suggestion)
+  1061→        } catch {
+  1062→          setClashSuggestion(null)
+  1063→        }
+  1064→      }
+  1065→    },
+  1066→  })
+  1067→
+  1068→  return (
+  1069→    <DialogContent className="max-w-[340px] gap-3 rounded-2xl border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+  1070→        <DialogHeader className="text-left">
+  1071→          <DialogTitle className="text-base tracking-tight">Your @handle</DialogTitle>
+  1072→          <DialogDescription className="text-xs leading-relaxed">
+  1073→            3–20 characters: lowercase letters, digits, underscore. Friends can find you by it.
+  1074→          </DialogDescription>
+  1075→        </DialogHeader>
+  1076→
+  1077→        <div className="space-y-1.5">
+  1078→          <div className="relative">
+  1079→            <span
+  1080→              aria-hidden
+  1081→              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[15px] font-semibold text-zinc-400 dark:text-zinc-500"
+  1082→            >
+  1083→              @
+  1084→            </span>
+  1085→            <Input
+  1086→              value={value}
+  1087→              onChange={(e) => {
+  1088→                setClashSuggestion(null)
+  1089→                setValue(sanitizeHandleInput(e.target.value))
+  1090→              }}
+  1091→              placeholder="e.g. alice_chen"
+  1092→              maxLength={HANDLE_MAX}
+  1093→              autoComplete="off"
+  1094→              autoCorrect="off"
+  1095→              autoCapitalize="none"
+  1096→              spellCheck={false}
+  1097→              enterKeyHint="done"
+  1098→              aria-label="Your handle"
+  1099→              aria-invalid={(taken || clashSuggestion !== null) || undefined}
+  1100→              aria-describedby="handle-editor-availability"
+  1101→              className={cn(
+  1102→                'h-11 rounded-xl border-zinc-200 bg-zinc-50 pl-8 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800',
+  1103→                (taken || clashSuggestion !== null) &&
+  1104→                  'border-amber-400 focus-visible:ring-amber-500/50 dark:border-amber-500/60',
+  1105→              )}
+  1106→            />
+  1107→          </div>
+  1108→
+  1109→          <p
+  1110→            id="handle-editor-availability"
+  1111→            role="status"
+  1112→            aria-live="polite"
+  1113→            className="flex min-h-[18px] flex-wrap items-center gap-1.5 text-xs font-medium"
+  1114→          >
+  1115→            {trimmed.length === 0 ? (
+  1116→              <span className="text-zinc-400 dark:text-zinc-500">Type a handle, or leave empty.</span>
+  1117→            ) : !valid ? (
+  1118→              <span className="text-zinc-500 dark:text-zinc-400">
+  1119→                {HANDLE_MIN}–{HANDLE_MAX} characters: a-z, 0-9, underscore.
+  1120→              </span>
+  1121→            ) : checking ? (
+  1122→              <span className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+  1123→                <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+  1124→                Checking @{trimmed}…
+  1125→              </span>
+  1126→            ) : available ? (
+  1127→              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+  1128→                <Check className="size-3.5" strokeWidth={3} aria-hidden />
+  1129→                @{trimmed} is free!
+  1130→              </span>
+  1131→            ) : trimmed === (me.username ?? '') ? (
+  1132→              <span className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+  1133→                <Check className="size-3.5" strokeWidth={3} aria-hidden />
+  1134→                That&apos;s your current handle
+  1135→              </span>
+  1136→            ) : taken ? (
+  1137→              <span className="flex flex-wrap items-center gap-1.5 text-amber-600 dark:text-amber-400">
+  1138→                <X className="size-3.5" strokeWidth={3} aria-hidden />
+  1139→                @{trimmed} is taken
+  1140→                {checkQ.data?.suggestion ? (
+  1141→                  <button
+  1142→                    type="button"
+  1143→                    onClick={() => setValue(sanitizeHandleInput(checkQ.data?.suggestion ?? ''))}
+  1144→                    className="ml-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-700 outline-none transition-colors hover:bg-amber-500/25 active:scale-95 dark:text-amber-300"
+  1145→                  >
+  1146→                    Use @{checkQ.data.suggestion}
+  1147→                  </button>
+  1148→                ) : null}
+  1149→              </span>
+  1150→            ) : clashSuggestion ? (
+  1151→              <span className="flex flex-wrap items-center gap-1.5 text-amber-600 dark:text-amber-400">
+  1152→                <X className="size-3.5" strokeWidth={3} aria-hidden />
+  1153→                @{trimmed} was just taken
+  1154→                <button
+  1155→                  type="button"
+  1156→                  onClick={() => setValue(sanitizeHandleInput(clashSuggestion))}
+  1157→                  className="ml-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-700 outline-none transition-colors hover:bg-amber-500/25 active:scale-95 dark:text-amber-300"
+  1158→                >
+  1159→                  Use @{clashSuggestion}
+  1160→                </button>
+  1161→              </span>
+  1162→            ) : null}
+  1163→          </p>
+  1164→        </div>
+  1165→
+  1166→        <div className="flex gap-2">
+  1167→          <Button
+  1168→            variant="outline"
+  1169→            onClick={onClose}
+  1170→            className="h-10 flex-1 rounded-xl text-sm font-semibold"
+  1171→          >
+  1172→            Cancel
+  1173→          </Button>
+  1174→          <Button
+  1175→            onClick={() => save.mutate()}
+  1176→            disabled={!valid || checking || taken || !changed || save.isPending}
+  1177→            className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+  1178→          >
+  1179→            {save.isPending ? (
+  1180→              <LoaderCircle className="size-4 animate-spin" aria-hidden />
+  1181→            ) : (
+  1182→              'Save handle'
+  1183→            )}
+  1184→          </Button>
+  1185→        </div>
+  1186→      </DialogContent>
+  1187→  )
+  1188→}
+  1189→

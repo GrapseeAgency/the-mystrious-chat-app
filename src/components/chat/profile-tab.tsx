@@ -1,72 +1,97 @@
 // ─────────────────────────────────────────────────────────────
-// Pulse Chat — Profile/Settings tab: edit identity, appearance,
-// account actions and switch-account flow.
+// Pulse — Profile tab (R25-b): social-media-grade profile.
+//
+// Structure: full-bleed hero (theme-accent cover + overlapping
+// presence avatar + name/handle/badge + status & bio), real stats
+// row (messages · rooms · coins · member-since), Customize editor,
+// Appearance (dark mode + five UI languages), Navigation (13
+// architectures), Library (saved messages), Preferences (sound /
+// haptics / quiet hours), Data & Storage (PWA install + real
+// browser storage), Account, About (real app version), Session
+// (sign out with confirm).
+//
+// Real data only: /api/users/[id]/stats, /api/hub/wallet,
+// PATCH /api/users/[id], /api/users/check-username,
+// /api/users/[id]/saved, PWA install prompt, navigator.storage.
+// Zero emojis — Lucide icons + framer-motion microinteractions.
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, motion, useMotionValue, useReducedMotion, useTransform, animate } from 'framer-motion'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
-import { AtSign, BadgeCheck, Check, ChevronRight, Compass, Copy, LayoutDashboard, LayoutGrid, LoaderCircle, LogOut, Moon, MoonStar, PanelRight, Settings, Smartphone, Star, Sun, Volume2, Vibrate, X } from 'lucide-react'
+import {
+  AtSign,
+  BadgeCheck,
+  CalendarDays,
+  Check,
+  Coins,
+  Copy,
+  Database,
+  Fingerprint,
+  Image as ImageIcon,
+  Info,
+  LoaderCircle,
+  LogOut,
+  Mic,
+  Moon,
+  MoonStar,
+  Pencil,
+  Settings,
+  Smartphone,
+  Star,
+  Sun,
+  Volume2,
+  Vibrate,
+} from 'lucide-react'
 import { toast } from 'sonner'
-import type { AppUser, ConversationSummary, SavedItem } from '@/lib/types'
+import { version as APP_VERSION } from '../../../package.json'
+import type { AppUser, SavedItem, UserStats } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
 import {
   AVATAR_GRADIENTS,
   PULSE_COLORS,
-  ApiError,
   apiJson,
   formatMemberSince,
-  jsonBody,
   type AvatarColor,
 } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
 import { ease, pressSpring, pressTap, spring } from '@/lib/motion'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { usePulseRealtime } from '@/hooks/use-pulse-socket'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { SettingsScreen } from '@/components/chat/settings-screen'
 import { pulseSettingsStore, haptic, isQuietHoursNow, primeSound } from '@/lib/pulse-settings'
 import { promptPwaInstall, usePulsePwa } from '@/lib/pwa-store'
 import { useMounted } from '@/hooks/use-mounted'
-import { NAV_STYLE_META, useNavStyle, type NavStyleId } from '@/components/chat/nav-router'
+import { ChevronRow, CountUp, ProfileSection, StatTile, SwitchRow } from '@/components/profile/profile-primitives'
+import { STATUS_GLYPH_CHOICES, StatusGlyph } from '@/components/profile/status-glyph'
+import { HandleEditorDialog } from '@/components/profile/handle-editor'
+import { UiLanguagePicker } from '@/components/profile/ui-language-picker'
+import { NavStylePicker } from '@/components/profile/nav-style-picker'
+
+const NAME_MAX = 32
+const ABOUT_MAX = 140
 
 interface UsersResponse {
   user: AppUser
 }
-interface ConversationsResponse {
-  conversations: ConversationSummary[]
+
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)))
+  return `${(n / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
-
-const NAME_MAX = 32
-const ABOUT_MAX = 140
-/** Discord-flavored custom-status glyph choices. */
-const STATUS_EMOJIS = ['🔥', '✨', '🎯', '☕', '🎧', '🌙', '💡', '🚀', '😴', '🍽️', ' vacation'.trim(), '💼'] as const
-
-/** Row press: body scales 0.98 while the chevron nudges x+2 (variant propagation). */
-const ROW_VARIANTS = { rest: { scale: 1 }, tap: { scale: 0.98 } } as const
-const CHEVRON_VARIANTS = { rest: { x: 0 }, tap: { x: 2 } } as const
-
-/** Inline GlassCard recipe (R22 list surfaces — shared physical language). */
-const GLASS_CARD =
-  'rounded-3xl border border-zinc-200/70 bg-white/70 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:border-white/10 dark:bg-zinc-900/60 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
 
 export function ProfileTab({
   me,
@@ -76,27 +101,24 @@ export function ProfileTab({
   /** saved-library row tap → open that chat and flash the message */
   onOpenSavedMessage?: (conversationId: string, messageId: string) => void
 }) {
-  return <ProfileTabInner me={me} onOpenSavedMessage={onOpenSavedMessage} />
+  // remount the editor whenever the underlying identity changes,
+  // which re-initializes all local field state (no sync effects)
+  const identityKey = `${me.id}|${me.name}|${me.about}|${me.color}|${me.username}`
+  return <ProfileEditor key={identityKey} me={me} onOpenSavedMessage={onOpenSavedMessage} />
 }
 
-function ProfileTabInner({
+function ProfileEditor({
   me,
   onOpenSavedMessage,
 }: {
   me: AppUser
   onOpenSavedMessage?: (conversationId: string, messageId: string) => void
 }) {
-  // remount the editor whenever the underlying identity changes,
-  // which re-initializes all local field state (no sync effects)
-  const identityKey = `${me.id}|${me.name}|${me.about}|${me.color}`
-  return <ProfileEditor key={identityKey} me={me} onOpenSavedMessage={onOpenSavedMessage} />
-}
-
-function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMessage?: (conversationId: string, messageId: string) => void }) {
   const queryClient = useQueryClient()
   const setUser = usePulseSession((s) => s.setUser)
   const reducedMotion = useReducedMotion()
   const { resolvedTheme, setTheme } = useTheme()
+  const { onlineIds } = usePulseRealtime()
   const soundOn = pulseSettingsStore((s) => s.soundOn)
   const hapticsOn = pulseSettingsStore((s) => s.hapticsOn)
   const setSoundOn = pulseSettingsStore((s) => s.setSoundOn)
@@ -113,46 +135,73 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
   const [name, setName] = useState(me.name)
   const [about, setAbout] = useState(me.about)
   const [color, setColor] = useState<AvatarColor>((me.color as AvatarColor) ?? 'emerald')
-  // Discord-style custom status
   const [statusEmoji, setStatusEmoji] = useState(me.statusEmoji ?? '')
   const [statusText, setStatusText] = useState(me.statusText ?? '')
-  /** saved-messages library drawer */
   const [savedOpen, setSavedOpen] = useState(false)
   const [switchOpen, setSwitchOpen] = useState(false)
-  /** @handle editor dialog */
   const [handleOpen, setHandleOpen] = useState(false)
-  /** full settings-tree screen (owned by R19-d) */
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /** real browser storage footprint (Data & Storage section) */
+  const [storage, setStorage] = useState<{ usage: number; quota: number; caches: number } | null>(null)
+
+  const customizeRef = useRef<HTMLDivElement>(null)
+
+  // ── real data: profile stats + hub wallet ──────────────────
+  const statsQ = useQuery({
+    queryKey: ['user-stats', me.id],
+    queryFn: async (): Promise<UserStats> => {
+      const res = await apiJson<{ stats: UserStats }>(`/api/users/${encodeURIComponent(me.id)}/stats`)
+      return res.stats
+    },
+    staleTime: 30_000,
+  })
+
+  const walletQ = useQuery({
+    queryKey: ['hub-wallet', me.id],
+    queryFn: async () => {
+      return apiJson<{ wallet: { coins: number } }>(
+        `/api/hub/wallet?userId=${encodeURIComponent(me.id)}`,
+      )
+    },
+    select: (d) => d.wallet,
+    staleTime: 30_000,
+  })
+
+  // real browser storage estimate + offline cache count (no mock data)
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const est = await navigator.storage?.estimate?.()
+        let cacheCount = 0
+        try {
+          if (typeof caches !== 'undefined') cacheCount = (await caches.keys()).length
+        } catch {
+          cacheCount = 0
+        }
+        if (!cancelled && est) {
+          setStorage({ usage: est.usage ?? 0, quota: est.quota ?? 0, caches: cacheCount })
+        }
+      } catch {
+        // storage estimates unavailable on this browser — row shows fallback
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const iAmOnline = onlineIds.has(me.id)
 
   const handleInstall = async () => {
     const outcome = await promptPwaInstall()
     if (outcome === 'accepted') {
-      toast.success('Installing Pulse…', { description: 'Find it on your home screen.' })
+      toast.success('Installing Pulse', { description: 'Find it on your home screen.' })
     } else if (outcome === 'unavailable') {
       toast.error('Install is not available right now')
     }
   }
-
-  const conversations = useQuery({
-    queryKey: ['conversations', me.id],
-    queryFn: async (): Promise<ConversationSummary[]> => {
-      const res = await apiJson<ConversationsResponse>(
-        `/api/conversations?userId=${encodeURIComponent(me.id)}`,
-      )
-      return res.conversations
-    },
-    refetchInterval: 30_000,
-    staleTime: 10_000,
-  })
-
-  const stats = useMemo(() => {
-    const list = conversations.data ?? []
-    return {
-      chats: list.length,
-      unread: list.reduce((sum, c) => sum + c.unreadCount, 0),
-      memberSince: formatMemberSince(me.createdAt),
-    }
-  }, [conversations.data, me.createdAt])
 
   const dirty =
     name.trim() !== me.name.trim() ||
@@ -219,7 +268,6 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
     }
   }
 
-  /** copy the @handle chip in the hero (same clipboard pattern as Copy ID) */
   const copyHandle = async () => {
     if (!me.username) return
     try {
@@ -241,498 +289,600 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
   })
 
   const toggleDarkMode = (checked: boolean) => setTheme(checked ? 'dark' : 'light')
-  const switchAccount = () => {
+  const signOut = () => {
     usePulseSession.getState().clear()
     window.location.reload()
   }
 
-  return (
-    <div className="absolute inset-0 flex flex-col bg-white dark:bg-zinc-900">
-      {/* soft emerald wash so the glass cards have something to refract */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(70%_60%_at_50%_0%,rgba(16,185,129,0.08),transparent_70%)]"
-      />
-      <header className="relative shrink-0 border-b border-zinc-200 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] dark:border-zinc-800">
-        <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Settings</h1>
-      </header>
+  const scrollToCustomize = () => {
+    haptic(8)
+    customizeRef.current?.scrollIntoView({
+      behavior: reducedMotion ? 'auto' : 'smooth',
+      block: 'start',
+    })
+  }
 
-      <div className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        {/* hero + fields */}
-        <section aria-label="Profile" className="flex flex-col items-center gap-4">
-          {/* HERO — avatar floats over an emerald→teal gradient wash inside a glass card */}
+  const memberSinceShort = useMemo(() => {
+    const d = new Date(me.createdAt)
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  }, [me.createdAt])
+
+  const accent = 'var(--ui-accent, #10b981)'
+  const accent2 = 'var(--ui-accent-2, #14b8a6)'
+
+  return (
+    <div className="absolute inset-0 flex flex-col">
+      {/* scroll body — generous bottom clearance for the floating capsule nav */}
+      <div className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(104px+env(safe-area-inset-bottom))]">
+        {/* ── HERO ──────────────────────────────────────────── */}
+        <section aria-label="Profile" className="relative">
+          {/* cover — paints with the active UI language accent tokens */}
           <div
-            className={cn(
-              GLASS_CARD,
-              'relative flex w-full flex-col items-center gap-2 overflow-hidden px-4 pb-5 pt-6',
-            )}
+            className="relative h-36 overflow-hidden rounded-b-[28px] sm:h-44"
+            style={{ background: `linear-gradient(118deg, ${accent}, ${accent2})` }}
           >
             <span
               aria-hidden
-              className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_75%_at_25%_0%,rgba(52,211,153,0.16),transparent_60%),radial-gradient(80%_65%_at_82%_6%,rgba(20,184,166,0.13),transparent_55%)]"
+              className="absolute inset-0 bg-[radial-gradient(80%_90%_at_18%_0%,rgba(255,255,255,0.32),transparent_55%),radial-gradient(70%_80%_at_88%_18%,rgba(255,255,255,0.16),transparent_50%)]"
             />
+            <motion.span
+              aria-hidden
+              className="absolute -right-10 -top-14 size-44 rounded-full bg-white/15 blur-2xl"
+              animate={reducedMotion ? undefined : { scale: [1, 1.12, 1], opacity: [0.7, 1, 0.7] }}
+              transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <motion.span
+              aria-hidden
+              className="absolute -left-12 -bottom-8 size-36 rounded-full bg-black/10 blur-2xl"
+              animate={reducedMotion ? undefined : { scale: [1, 1.18, 1], opacity: [0.5, 0.8, 0.5] }}
+              transition={{ duration: 11, delay: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </div>
+
+          <div className="relative px-4">
+            {/* overlapping avatar with gradient presence ring */}
             <motion.div
-              initial={reducedMotion ? false : { scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
+              initial={reducedMotion ? false : { scale: 0.8, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
               transition={spring.bouncy}
-              className="relative"
+              className="relative z-10 -mt-12 w-fit rounded-full p-[3px]"
+              style={{ background: `linear-gradient(135deg, ${accent}, ${accent2})` }}
             >
-              <UserAvatar name={name || me.name} color={color} size={96} showPresence online />
+              <div className="rounded-full bg-white p-[3px] dark:bg-zinc-900">
+                <UserAvatar name={name || me.name} color={color} size={92} showPresence online={iAmOnline} />
+              </div>
             </motion.div>
-            <motion.h2
-              initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+
+            {/* name + badge + handle */}
+            <motion.div
+              initial={reducedMotion ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: ease.out, delay: 0.06 }}
-              className="relative text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
+              transition={{ duration: 0.3, ease: ease.out, delay: 0.05 }}
+              className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1"
             >
-              {name.trim() || me.name}
-            </motion.h2>
+              <h1 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-zinc-50">
+                {name.trim() || me.name}
+              </h1>
+              <span
+                title="Registered member"
+                className="flex size-5 items-center justify-center rounded-full"
+                aria-label="Registered member"
+              >
+                <BadgeCheck className="size-5 fill-[var(--ui-accent,#10b981)] text-white dark:text-zinc-900" aria-hidden />
+              </span>
+            </motion.div>
+
+            {/* @handle chip — tap to edit, copy icon to copy */}
+            <motion.div
+              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: ease.out, delay: 0.09 }}
+              className="mt-1.5 flex items-center gap-1"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  haptic(8)
+                  setHandleOpen(true)
+                }}
+                aria-label={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
+                className="flex min-h-[32px] items-center gap-1 rounded-full bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)] py-1 pl-2.5 pr-2.5 outline-none ring-1 ring-[var(--ui-accent,#10b981)]/25 transition-transform active:scale-95"
+              >
+                <AtSign className="size-3.5 text-[var(--ui-accent,#10b981)]" aria-hidden />
+                <span className="text-xs font-bold text-[var(--ui-accent,#10b981)]">
+                  {me.username ? `@${me.username}` : 'Set your handle'}
+                </span>
+                <Pencil className="size-3 text-[var(--ui-accent,#10b981)]/70" aria-hidden />
+              </button>
+              {me.username ? (
+                <motion.button
+                  type="button"
+                  whileTap={reducedMotion ? undefined : pressTap}
+                  transition={pressSpring}
+                  onClick={copyHandle}
+                  aria-label="Copy your handle"
+                  className="flex size-8 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-zinc-300"
+                >
+                  <Copy className="size-3.5" aria-hidden />
+                </motion.button>
+              ) : null}
+            </motion.div>
+
+            {/* status + about (committed values — edit below) */}
             {me.statusEmoji || me.statusText ? (
               <motion.p
                 initial={reducedMotion ? false : { opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, ease: ease.out, delay: 0.1 }}
-                className="relative text-xs font-medium text-zinc-500 dark:text-zinc-400"
+                transition={{ duration: 0.3, ease: ease.out, delay: 0.12 }}
+                className="mt-2 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-700 dark:text-zinc-200"
               >
-                {[me.statusEmoji, me.statusText].filter(Boolean).join(' ')}
+                {me.statusEmoji ? <StatusGlyph value={me.statusEmoji} className="size-4 text-[var(--ui-accent,#10b981)]" /> : null}
+                {me.statusText}
               </motion.p>
             ) : null}
+            <motion.p
+              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: ease.out, delay: 0.15 }}
+              className="mt-1 max-w-md text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400"
+            >
+              {me.about}
+            </motion.p>
+
             <motion.div
               initial={reducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: ease.out, delay: 0.14 }}
-              className="relative"
+              transition={{ duration: 0.3, ease: ease.out, delay: 0.18 }}
+              className="mt-3"
             >
-              <span className="flex items-center gap-0.5 rounded-full bg-emerald-500/10 py-1 pl-3 pr-1 ring-1 ring-emerald-500/20">
-                <button
-                  type="button"
-                  onClick={() => {
-                    haptic(8)
-                    setHandleOpen(true)
-                  }}
-                  aria-label={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
-                  className="flex items-center gap-1 rounded-full outline-none"
-                >
-                  <AtSign className="size-3 text-emerald-600 dark:text-emerald-400" aria-hidden />
-                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                    {me.username ? `@${me.username}` : 'Set your handle'}
-                  </span>
-                </button>
-                {me.username ? (
-                  <motion.button
-                    type="button"
-                    whileTap={reducedMotion ? undefined : pressTap}
-                    transition={pressSpring}
-                    onClick={copyHandle}
-                    aria-label="Copy your handle"
-                    className="flex size-5 items-center justify-center rounded-full text-emerald-600/80 outline-none hover:bg-emerald-500/20 dark:text-emerald-400/80"
-                  >
-                    <Copy className="size-3" aria-hidden />
-                  </motion.button>
-                ) : null}
-              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={scrollToCustomize}
+                className="h-9 gap-1.5 rounded-full border-zinc-200 bg-white/70 px-4 text-xs font-bold text-zinc-700 backdrop-blur-xl hover:bg-white active:scale-95 dark:border-white/10 dark:bg-zinc-900/60 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                <Pencil className="size-3.5" aria-hidden />
+                Edit profile
+              </Button>
             </motion.div>
           </div>
+        </section>
 
-          <div className="w-full space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="profile-name" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                Name
-              </Label>
-              <Input
-                id="profile-name"
-                value={name}
-                maxLength={NAME_MAX}
-                onChange={(e) => setName(e.target.value.slice(0, NAME_MAX))}
-                autoComplete="off"
-                className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="profile-about" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                About
-              </Label>
-              <Textarea
-                id="profile-about"
-                value={about}
-                rows={2}
-                maxLength={ABOUT_MAX}
-                placeholder="Hey there! I'm using Pulse."
-                onChange={(e) => setAbout(e.target.value.slice(0, ABOUT_MAX))}
-                className="resize-none rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
-              />
-            </div>
-
-            {/* @handle editor row */}
-            <motion.button
-              type="button"
-              onClick={() => {
-                haptic(8)
-                setHandleOpen(true)
-              }}
-              initial="rest"
-              animate="rest"
-              whileTap="tap"
-              variants={ROW_VARIANTS}
-              transition={pressSpring}
-              aria-label={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
-              className="flex min-h-[56px] w-full items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-left outline-none transition-colors hover:border-emerald-300 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-emerald-500/40"
-            >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
-                <AtSign className="size-4 text-emerald-500" aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Handle</span>
-                <span className="block truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-                  {me.username ? `@${me.username}` : 'Set your handle'}
-                </span>
-              </span>
-              <motion.span variants={CHEVRON_VARIANTS} className="shrink-0">
-                <ChevronRight className="size-4 text-zinc-400 dark:text-zinc-500" aria-hidden />
-              </motion.span>
-            </motion.button>
-
-            {/* Discord-style custom status */}
-            <div className="space-y-2 py-1">
-              <Label htmlFor="profile-status" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                Custom status <span className="text-zinc-400">(Discord-style · shown on your presence)</span>
-              </Label>
-              <div role="radiogroup" aria-label="Status emoji" className="flex flex-wrap items-center gap-1">
-                {STATUS_EMOJIS.map((e) => {
-                  const selected = statusEmoji === e
-                  return (
-                    <motion.button
-                      key={e}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      aria-label={`Set status emoji ${e}`}
-                      onClick={() => {
-                        haptic(6)
-                        setStatusEmoji(selected ? '' : e)
-                      }}
-                      whileTap={reducedMotion ? undefined : pressTap}
-                      transition={pressSpring}
-                      className={cn(
-                        'flex size-8 items-center justify-center rounded-full text-base outline-none transition-transform',
-                        selected
-                          ? 'bg-emerald-500/15 ring-2 ring-emerald-500 scale-105'
-                          : 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700',
-                      )}
-                    >
-                      {e}
-                    </motion.button>
-                  )
-                })}
-              </div>
-              <Input
-                id="profile-status"
-                value={statusText}
-                maxLength={48}
-                placeholder="What's happening? (optional)"
-                onChange={(e) => setStatusText(e.target.value.slice(0, 48))}
-                autoComplete="off"
-                className="h-10 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
-              />
-            </div>
-
-            {/* colors */}
-            <div className="space-y-2 py-1">
-              <Label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Avatar color</Label>
-              <div role="radiogroup" aria-label="Avatar color" className="flex items-center justify-between px-0.5">
-                {PULSE_COLORS.map((c) => {
-                  const selected = c === color
-                  return (
-                    <motion.button
-                      key={c}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      aria-label={`${c} avatar`}
-                      onClick={() => setColor(c)}
-                      whileTap={reducedMotion ? undefined : pressTap}
-                      transition={pressSpring}
-                      className={cn(
-                        'flex size-8 items-center justify-center rounded-full bg-gradient-to-br shadow-sm outline-none transition-transform',
-                        AVATAR_GRADIENTS[c],
-                        selected
-                          ? 'ring-2 ring-emerald-600 ring-offset-2 ring-offset-white dark:ring-offset-zinc-900 scale-105'
-                          : 'hover:scale-105',
-                      )}
-                    >
-                      {selected ? <Check className="size-3.5 text-white" strokeWidth={3} /> : null}
-                    </motion.button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <AnimatePresence>
-              {dirty ? (
-                <motion.div
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.18 }}
-                >
-                  <Button
-                    onClick={() => saveProfile.mutate()}
-                    disabled={saveProfile.isPending || name.trim().length === 0}
-                    className="h-11 w-full rounded-xl bg-emerald-600 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500 active:scale-[0.98]"
-                  >
-                    {saveProfile.isPending ? (
-                      <>
-                        <LoaderCircle className="size-4 animate-spin" aria-hidden />
-                        Saving…
-                      </>
+        {/* ── STATS — real data only ────────────────────────── */}
+        <section aria-label="Your activity" className="mt-5 px-4">
+          <div className={cn('grid grid-cols-4 gap-1.5 rounded-3xl border border-zinc-200/70 bg-white/70 p-2 backdrop-blur-2xl dark:border-white/10 dark:bg-zinc-900/60')}>
+            {statsQ.isPending ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[58px] rounded-2xl" />
+              ))
+            ) : (
+              <>
+                <StatTile delay={0} label="Messages" value={statsQ.isError ? '—' : <CountUp value={statsQ.data?.messages ?? 0} />} />
+                <StatTile delay={1} label="Rooms" value={statsQ.isError ? '—' : <CountUp value={statsQ.data?.chats ?? 0} />} />
+                <StatTile
+                  delay={2}
+                  accent
+                  label="Coins"
+                  value={
+                    walletQ.isPending ? (
+                      <Skeleton className="h-5 w-10 rounded-md" />
+                    ) : walletQ.isError ? (
+                      '—'
                     ) : (
-                      <>
-                        <BadgeCheck className="size-4" aria-hidden />
-                        Save changes
-                      </>
-                    )}
-                  </Button>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
+                      <span className="inline-flex items-center gap-1">
+                        <Coins className="size-3.5" aria-hidden />
+                        <CountUp value={walletQ.data?.coins ?? 0} />
+                      </span>
+                    )
+                  }
+                />
+                <StatTile delay={3} label="Member since" value={memberSinceShort || '—'} />
+              </>
+            )}
           </div>
         </section>
 
-        {/* stats */}
-        <section aria-label="Stats" className="mt-5 grid grid-cols-3 gap-2">
-          <StatChip label="Chats" value={<CountUp value={stats.chats} />} />
-          <StatChip label="Unread" value={<CountUp value={stats.unread} cap />} accent />
-          <StatChip label="Member since" value={stats.memberSince} />
-        </section>
+        {/* ── CUSTOMIZE ─────────────────────────────────────── */}
+        <div ref={customizeRef} className="scroll-mt-3 px-4">
+          <ProfileSection title="Customize" delay={0.02}>
+            <div className="space-y-3 p-1.5">
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-name" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  Display name
+                </Label>
+                <Input
+                  id="profile-name"
+                  value={name}
+                  maxLength={NAME_MAX}
+                  onChange={(e) => setName(e.target.value.slice(0, NAME_MAX))}
+                  autoComplete="off"
+                  className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-about" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  Bio
+                </Label>
+                <Textarea
+                  id="profile-about"
+                  value={about}
+                  rows={2}
+                  maxLength={ABOUT_MAX}
+                  placeholder="Hey there! I'm using Pulse."
+                  onChange={(e) => setAbout(e.target.value.slice(0, ABOUT_MAX))}
+                  className="resize-none rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </div>
 
-        {/* general — full settings tree */}
-        <Section title="General" delay={0.02}>
-          <motion.button
-            type="button"
-            onClick={() => {
-              haptic(8)
-              setSettingsOpen(true)
-            }}
-            initial="rest"
-            animate="rest"
-            whileTap="tap"
-            variants={ROW_VARIANTS}
-            transition={pressSpring}
-            aria-label="Open settings"
-            className="flex min-h-[52px] w-full items-center gap-3 rounded-xl px-1 py-2 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
-              <Settings className="size-4 text-emerald-500" aria-hidden />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Settings</span>
-              <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">Preferences, storage, privacy &amp; more</span>
-            </span>
-            <motion.span variants={CHEVRON_VARIANTS} className="shrink-0">
-              <ChevronRight className="size-4 text-zinc-400 dark:text-zinc-500" aria-hidden />
-            </motion.span>
-          </motion.button>
-        </Section>
-
-        {/* navigation architecture — 4 swappable styles */}
-        <Section title="Navigation" delay={0.06}>
-          <NavStyleGrid />
-        </Section>
-
-        {/* saved / starred library (Telegram parity) */}
-        <Section title="Library" delay={0.1}>
-          <motion.button
-            type="button"
-            onClick={() => {
-              haptic(8)
-              setSavedOpen(true)
-            }}
-            initial="rest"
-            animate="rest"
-            whileTap="tap"
-            variants={ROW_VARIANTS}
-            transition={pressSpring}
-            className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
-              <Star className="size-4 fill-amber-400 text-amber-500" aria-hidden />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Saved messages</span>
-              <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">Long-press any message → Save message</span>
-            </span>
-            <motion.span variants={CHEVRON_VARIANTS} className="shrink-0">
-              <ChevronRight className="size-4 text-zinc-400 dark:text-zinc-500" aria-hidden />
-            </motion.span>
-          </motion.button>
-        </Section>
-
-        {/* notifications */}
-        <Section title="Notifications" delay={0.14}>
-          <div className="flex items-center justify-between px-1 py-1.5">
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              <Volume2 className="size-4 text-emerald-500" aria-hidden />
-              In-app sounds
-            </span>
-            <Switch
-              checked={soundOn}
-              onCheckedChange={(on) => {
-                setSoundOn(on)
-                if (on) primeSound()
-              }}
-              aria-label="Toggle notification sounds"
-              className="data-[state=checked]:bg-emerald-500"
-            />
-          </div>
-          <div className="flex items-center justify-between px-1 py-1.5">
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              <Vibrate className="size-4 text-emerald-500" aria-hidden />
-              Haptic feedback
-            </span>
-            <Switch
-              checked={hapticsOn}
-              onCheckedChange={(on) => {
-                setHapticsOn(on)
-                if (on) haptic(15)
-              }}
-              aria-label="Toggle haptic feedback"
-              className="data-[state=checked]:bg-emerald-500"
-            />
-          </div>
-          <div className="flex items-center justify-between px-1 py-1.5">
-            <span className="flex min-w-0 items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              <MoonStar
-                className={cn('size-4 shrink-0', quietHoursOn ? 'text-emerald-500' : 'text-zinc-400 dark:text-zinc-500')}
-                aria-hidden
+              {/* @handle editor row */}
+              <ChevronRow
+                icon={AtSign}
+                iconClassName="bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)] text-[var(--ui-accent,#10b981)]"
+                title="Handle"
+                description={me.username ? `@${me.username}` : 'Claim yours — friends can find you by it'}
+                onPress={() => setHandleOpen(true)}
+                aria-label={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
               />
-              <span className="min-w-0">
-                Quiet hours
-                {quietHoursOn && !mounted ? null : (
-                  <span className="mt-0.5 block text-[11px] font-normal text-zinc-400 dark:text-zinc-500">
-                    {quietHoursOn
+
+              {/* status glyph picker — Lucide glyphs, values persisted verbatim */}
+              <div className="space-y-2 py-1">
+                <Label htmlFor="profile-status" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  Status
+                </Label>
+                <div role="radiogroup" aria-label="Status glyph" className="flex flex-wrap items-center gap-1.5">
+                  {STATUS_GLYPH_CHOICES.map((g) => {
+                    const selected = statusEmoji === g.value
+                    const Icon = g.icon
+                    return (
+                      <motion.button
+                        key={g.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        aria-label={g.label}
+                        title={g.label}
+                        onClick={() => {
+                          haptic(6)
+                          setStatusEmoji(selected ? '' : g.value)
+                        }}
+                        whileTap={reducedMotion ? undefined : pressTap}
+                        transition={pressSpring}
+                        className={cn(
+                          'flex size-11 items-center justify-center rounded-2xl outline-none transition-all',
+                          selected
+                            ? 'scale-105 bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_16%,transparent)] ring-2 ring-[var(--ui-accent,#10b981)]'
+                            : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
+                        )}
+                      >
+                        <Icon className="size-4.5" aria-hidden />
+                      </motion.button>
+                    )
+                  })}
+                </div>
+                <Input
+                  id="profile-status"
+                  value={statusText}
+                  maxLength={48}
+                  placeholder="What's happening? (optional)"
+                  onChange={(e) => setStatusText(e.target.value.slice(0, 48))}
+                  autoComplete="off"
+                  className="h-10 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </div>
+
+              {/* avatar color */}
+              <div className="space-y-2 py-1">
+                <Label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Avatar color</Label>
+                <div role="radiogroup" aria-label="Avatar color" className="flex items-center justify-between px-0.5">
+                  {PULSE_COLORS.map((c) => {
+                    const selected = c === color
+                    return (
+                      <motion.button
+                        key={c}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        aria-label={`${c} avatar`}
+                        onClick={() => {
+                          haptic(6)
+                          setColor(c)
+                        }}
+                        whileTap={reducedMotion ? undefined : pressTap}
+                        transition={pressSpring}
+                        className={cn(
+                          'flex size-11 items-center justify-center rounded-full bg-gradient-to-br shadow-sm outline-none transition-transform',
+                          AVATAR_GRADIENTS[c],
+                          selected
+                            ? 'scale-105 ring-2 ring-[var(--ui-accent,#10b981)] ring-offset-2 ring-offset-white dark:ring-offset-zinc-900'
+                            : 'hover:scale-105',
+                        )}
+                      >
+                        {selected ? <Check className="size-4 text-white" strokeWidth={3} /> : null}
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <AnimatePresence>
+                {dirty ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.18 }}
+                  >
+                    <Button
+                      onClick={() => saveProfile.mutate()}
+                      disabled={saveProfile.isPending || name.trim().length === 0}
+                      className="h-11 w-full rounded-xl bg-[var(--ui-accent,#10b981)] text-sm font-bold text-white shadow-lg shadow-black/10 hover:opacity-90 active:scale-[0.98]"
+                    >
+                      {saveProfile.isPending ? (
+                        <>
+                          <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                          Saving
+                        </>
+                      ) : (
+                        <>
+                          <Check className="size-4" strokeWidth={3} aria-hidden />
+                          Save changes
+                        </>
+                      )}
+                    </Button>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          </ProfileSection>
+        </div>
+
+        {/* ── APPEARANCE ────────────────────────────────────── */}
+        <div className="px-4">
+          <ProfileSection title="Appearance" delay={0.06}>
+            <div className="p-1">
+              <SwitchRow
+                icon={mounted && resolvedTheme === 'dark' ? Moon : Sun}
+                iconClassName="text-[var(--ui-accent,#10b981)]"
+                title="Dark mode"
+                description="Comfort in low light — applies app-wide"
+                checked={mounted && resolvedTheme === 'dark'}
+                onCheckedChange={toggleDarkMode}
+                disabled={!mounted}
+                ariaLabel="Toggle dark mode"
+              />
+              <Separator className="my-1.5 opacity-60" />
+              <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                UI language
+              </p>
+              <UiLanguagePicker />
+            </div>
+          </ProfileSection>
+        </div>
+
+        {/* ── NAVIGATION ────────────────────────────────────── */}
+        <div className="px-4">
+          <ProfileSection title="Navigation" delay={0.1}>
+            <NavStylePicker />
+          </ProfileSection>
+        </div>
+
+        {/* ── LIBRARY ───────────────────────────────────────── */}
+        <div className="px-4">
+          <ProfileSection title="Library" delay={0.14}>
+            <ChevronRow
+              icon={Star}
+              iconClassName="bg-amber-500/12 text-amber-500"
+              title="Saved messages"
+              description="Long-press any message in a chat, then Save"
+              onPress={() => setSavedOpen(true)}
+            />
+          </ProfileSection>
+        </div>
+
+        {/* ── PREFERENCES ───────────────────────────────────── */}
+        <div className="px-4">
+          <ProfileSection title="Preferences" delay={0.18}>
+            <div className="p-1">
+              <SwitchRow
+                icon={Volume2}
+                iconClassName="text-[var(--ui-accent,#10b981)]"
+                title="In-app sounds"
+                description="Gentle pings for incoming messages"
+                checked={soundOn}
+                onCheckedChange={(on) => {
+                  setSoundOn(on)
+                  if (on) primeSound()
+                }}
+                ariaLabel="Toggle notification sounds"
+              />
+              <SwitchRow
+                icon={Vibrate}
+                iconClassName="text-[var(--ui-accent,#10b981)]"
+                title="Haptic feedback"
+                description="Tactile ticks on key interactions"
+                checked={hapticsOn}
+                onCheckedChange={(on) => {
+                  setHapticsOn(on)
+                  if (on) haptic(15)
+                }}
+                ariaLabel="Toggle haptic feedback"
+              />
+              <SwitchRow
+                icon={MoonStar}
+                iconClassName={cn(quietHoursOn ? 'text-[var(--ui-accent,#10b981)]' : 'text-zinc-400 dark:text-zinc-500')}
+                title="Quiet hours"
+                description={
+                  quietHoursOn && !mounted
+                    ? undefined
+                    : quietHoursOn
                       ? mounted && isQuietHoursNow({ quietHoursOn, quietStart, quietEnd })
                         ? `Silenced until ${quietEnd}`
                         : `Silent ${quietStart} – ${quietEnd}`
-                      : 'Pings stay on around the clock'}
+                      : 'Pings stay on around the clock'
+                }
+                checked={quietHoursOn}
+                onCheckedChange={setQuietHoursOn}
+                disabled={!mounted}
+                ariaLabel="Toggle quiet hours"
+              />
+              <AnimatePresence>
+                {quietHoursOn ? (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mx-2.5 mb-1.5 mt-1 flex flex-wrap items-center gap-2 rounded-xl bg-zinc-100/80 px-3 py-2.5 dark:bg-zinc-800/60">
+                      <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">From</span>
+                      <input
+                        type="time"
+                        value={quietStart}
+                        onChange={(e) => e.target.value && setQuietStart(e.target.value)}
+                        aria-label="Quiet hours start time"
+                        className="h-8 rounded-lg border border-zinc-200 bg-white px-2 font-mono text-xs text-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent,#10b981)]/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                      />
+                      <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">to</span>
+                      <input
+                        type="time"
+                        value={quietEnd}
+                        onChange={(e) => e.target.value && setQuietEnd(e.target.value)}
+                        aria-label="Quiet hours end time"
+                        className="h-8 rounded-lg border border-zinc-200 bg-white px-2 font-mono text-xs text-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent,#10b981)]/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                      />
+                      <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                        {quietStart < quietEnd || quietStart === quietEnd ? 'same day' : 'overnight'}
+                      </span>
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          </ProfileSection>
+        </div>
+
+        {/* ── DATA & STORAGE ────────────────────────────────── */}
+        <div className="px-4">
+          <ProfileSection title="Data & Storage" delay={0.22}>
+            <div className="p-1">
+              {installEvent ? (
+                <>
+                  <div className="flex min-h-[56px] items-center gap-3 px-2.5 py-2">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)] text-[var(--ui-accent,#10b981)]">
+                      <Smartphone className="size-4" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Install Pulse</span>
+                      <span className="mt-0.5 block text-[11px] text-zinc-400 dark:text-zinc-500">
+                        Add to your home screen — opens instantly, works offline
+                      </span>
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={handleInstall}
+                      className="h-9 shrink-0 rounded-full bg-[var(--ui-accent,#10b981)] px-4 text-xs font-bold text-white hover:opacity-90 active:scale-95"
+                    >
+                      Install
+                    </Button>
+                  </div>
+                  <Separator className="my-1.5 opacity-60" />
+                </>
+              ) : null}
+              {/* real browser storage footprint */}
+              <div className="flex min-h-[56px] items-center gap-3 px-2.5 py-2">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900/5 text-zinc-500 dark:bg-white/10 dark:text-zinc-300">
+                  <Database className="size-4" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Storage used</span>
+                  <span className="mt-0.5 block text-[11px] text-zinc-400 dark:text-zinc-500">
+                    {storage
+                      ? `${storage.caches} offline ${storage.caches === 1 ? 'cache' : 'caches'} on this device`
+                      : 'Checking this device'}
                   </span>
-                )}
-              </span>
-            </span>
-            <Switch
-              checked={quietHoursOn}
-              onCheckedChange={setQuietHoursOn}
-              disabled={!mounted}
-              aria-label="Toggle quiet hours"
-              className="data-[state=checked]:bg-emerald-500"
-            />
-          </div>
-          {quietHoursOn ? (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              transition={{ duration: 0.18 }}
-              className="overflow-hidden"
-            >
-              <div className="mx-1 mb-1.5 mt-1 flex items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/60">
-                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">From</span>
-                <input
-                  type="time"
-                  value={quietStart}
-                  onChange={(e) => e.target.value && setQuietStart(e.target.value)}
-                  aria-label="Quiet hours start time"
-                  className="h-8 rounded-lg border border-zinc-200 bg-white px-2 font-mono text-xs text-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                />
-                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">to</span>
-                <input
-                  type="time"
-                  value={quietEnd}
-                  onChange={(e) => e.target.value && setQuietEnd(e.target.value)}
-                  aria-label="Quiet hours end time"
-                  className="h-8 rounded-lg border border-zinc-200 bg-white px-2 font-mono text-xs text-zinc-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                />
-                <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                  {quietStart < quietEnd || quietStart === quietEnd ? 'same day' : 'overnight'}
+                </span>
+                <span className="shrink-0 text-xs font-bold tabular-nums text-zinc-500 dark:text-zinc-400">
+                  {storage ? formatBytes(storage.usage) : ''}
                 </span>
               </div>
-            </motion.div>
-          ) : null}
-        </Section>
+            </div>
+          </ProfileSection>
+        </div>
 
-        {/* appearance */}
-        <Section title="Appearance" delay={0.18}>
-          <div className="flex items-center justify-between px-1 py-1.5">
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              {mounted && resolvedTheme === 'dark' ? (
-                <Moon className="size-4 text-emerald-500" aria-hidden />
-              ) : (
-                <Sun className="size-4 text-emerald-500" aria-hidden />
-              )}
-              Dark mode
-            </span>
-            <Switch
-              checked={mounted && resolvedTheme === 'dark'}
-              onCheckedChange={toggleDarkMode}
-              disabled={!mounted}
-              aria-label="Toggle dark mode"
-              className="data-[state=checked]:bg-emerald-500"
-            />
-          </div>
-        </Section>
+        {/* ── ACCOUNT ───────────────────────────────────────── */}
+        <div className="px-4">
+          <ProfileSection title="Account" delay={0.26}>
+            <div className="p-1">
+              <ChevronRow
+                icon={Fingerprint}
+                title="Copy account ID"
+                description={me.id}
+                onPress={copyId}
+                ariaLabel={`Copy account ID ${me.id}`}
+              />
+              <ChevronRow
+                icon={Settings}
+                title="All settings"
+                description="Privacy, storage details, chat behavior & more"
+                onPress={() => setSettingsOpen(true)}
+              />
+            </div>
+          </ProfileSection>
+        </div>
 
-        {/* app install (visible when the browser offers the prompt) */}
-        {installEvent ? (
-          <Section title="App" delay={0.2}>
-            <div className="flex items-center justify-between gap-2 px-1 py-1.5">
-              <div className="min-w-0">
-                <p className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                  <Smartphone className="size-4 shrink-0 text-emerald-500" aria-hidden />
-                  Install Pulse
-                </p>
-                <p className="mt-0.5 pl-7 text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
-                  Add to your home screen — opens instantly, works offline.
-                </p>
+        {/* ── ABOUT ─────────────────────────────────────────── */}
+        <div className="px-4">
+          <ProfileSection title="About" delay={0.3}>
+            <div className="p-1">
+              <div className="flex min-h-[48px] items-center gap-3 px-2.5 py-2">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900/5 text-zinc-500 dark:bg-white/10 dark:text-zinc-300">
+                  <Info className="size-4" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Pulse</span>
+                  <span className="mt-0.5 block text-[11px] text-zinc-400 dark:text-zinc-500">
+                    Real-time messenger with presence, typing and read receipts
+                  </span>
+                </span>
+                <span className="shrink-0 rounded-full bg-zinc-900/5 px-2 py-0.5 text-[10px] font-bold tabular-nums text-zinc-500 dark:bg-white/10 dark:text-zinc-400">
+                  v{APP_VERSION}
+                </span>
               </div>
-              <Button
-                size="sm"
-                onClick={handleInstall}
-                className="h-9 shrink-0 rounded-full bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm shadow-emerald-600/20 hover:bg-emerald-500 active:scale-95"
-              >
-                Install
-              </Button>
+              <div className="flex min-h-[48px] items-center gap-3 px-2.5 py-2">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900/5 text-zinc-500 dark:bg-white/10 dark:text-zinc-300">
+                  <CalendarDays className="size-4" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Member since</span>
+                  <span className="mt-0.5 block text-[11px] text-zinc-400 dark:text-zinc-500">
+                    {formatMemberSince(me.createdAt)}
+                  </span>
+                </span>
+                {statsQ.data ? (
+                  <span className="shrink-0 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+                    {statsQ.data.days} {statsQ.data.days === 1 ? 'day' : 'days'} on Pulse
+                  </span>
+                ) : null}
+              </div>
             </div>
-          </Section>
-        ) : null}
+          </ProfileSection>
+        </div>
 
-        {/* account */}
-        <Section title="Account" delay={0.22}>
-          <div className="flex items-center justify-between gap-2 px-1 py-1.5">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">{me.name}</p>
-              <p className="mt-0.5 truncate font-mono text-xs text-zinc-400 dark:text-zinc-500">{me.id}</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={copyId}
-              className="h-9 shrink-0 gap-1.5 rounded-full px-3 text-xs font-semibold text-zinc-600 dark:text-zinc-300"
-            >
-              <Copy className="size-3.5" aria-hidden />
-              Copy ID
-            </Button>
-          </div>
-        </Section>
-
-        {/* danger zone */}
-        <Section title="Danger zone" delay={0.26}>
-          <Button
-            variant="outline"
-            onClick={() => setSwitchOpen(true)}
-            className="h-11 w-full gap-2 rounded-xl border-destructive/40 text-sm font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive active:scale-[0.98]"
-          >
-            <LogOut className="size-4" aria-hidden />
-            Switch account
-          </Button>
-        </Section>
+        {/* ── SESSION / SIGN OUT ────────────────────────────── */}
+        <div className="px-4">
+          <ProfileSection title="Session" delay={0.34}>
+            <ChevronRow
+              icon={LogOut}
+              destructive
+              title="Sign out"
+              description="Return to the welcome screen — nothing is deleted"
+              onPress={() => setSwitchOpen(true)}
+            />
+          </ProfileSection>
+        </div>
       </div>
 
       {/* saved-messages library drawer */}
@@ -743,11 +893,13 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
           <div className="pb-2">
             <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
               <Star className="size-4 fill-amber-400 text-amber-500" aria-hidden />
-              {savedQuery.isPending ? 'Loading…' : `${(savedQuery.data ?? []).length} saved ${(savedQuery.data ?? []).length === 1 ? 'message' : 'messages'}`}
+              {savedQuery.isPending
+                ? 'Loading'
+                : `${(savedQuery.data ?? []).length} saved ${(savedQuery.data ?? []).length === 1 ? 'message' : 'messages'}`}
             </p>
             {(savedQuery.data ?? []).length === 0 && !savedQuery.isPending ? (
               <p className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                Long-press a message in any chat and choose “Save message”.
+                Long-press a message in any chat and choose Save message.
               </p>
             ) : (
               <ul className="pulse-scroll max-h-[52dvh] space-y-2 overflow-y-auto py-1">
@@ -760,21 +912,27 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
                         setSavedOpen(false)
                         onOpenSavedMessage?.(item.message.conversationId, item.message.id)
                       }}
-                      className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 text-left outline-none transition-colors hover:border-emerald-300 active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800/60 dark:hover:border-emerald-500/50"
+                      className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 text-left outline-none transition-colors hover:border-[var(--ui-accent,#10b981)]/50 active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800/60"
                     >
                       <div className="flex items-center gap-2">
                         <UserAvatar name={item.message.sender.name} color={item.message.sender.color} size={22} />
-                        <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                        <span className="truncate text-xs font-bold text-[var(--ui-accent,#10b981)]">
                           {item.message.sender.id === me.id ? 'You' : item.message.sender.name}
                           <span className="ml-1.5 font-medium text-zinc-400">in {item.conversation.name ?? 'chat'}</span>
                         </span>
                         <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{item.savedAt.slice(0, 10)}</span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
-                        {item.message.imagePath ? '📷 ' : ''}
-                        {item.message.audioPath ? '🎤 ' : ''}
-                        {item.message.content.replace(/\s+/g, ' ').trim() || '(media)'}
-                      </p>
+                      <span className="mt-1 flex items-start gap-1.5">
+                        {item.message.imagePath ? (
+                          <ImageIcon className="mt-0.5 size-3.5 shrink-0 text-zinc-400" aria-label="Photo message" />
+                        ) : null}
+                        {item.message.audioPath ? (
+                          <Mic className="mt-0.5 size-3.5 shrink-0 text-zinc-400" aria-label="Voice message" />
+                        ) : null}
+                        <span className="line-clamp-2 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
+                          {item.message.content.replace(/\s+/g, ' ').trim() || '(media)'}
+                        </span>
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -798,7 +956,7 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
         }}
       />
 
-      {/* full settings tree (owned by crew R19-d) */}
+      {/* full settings tree (owned by R19-d) */}
       <SettingsScreen open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <AlertDialog open={switchOpen} onOpenChange={setSwitchOpen}>
@@ -812,7 +970,7 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
           <AlertDialogFooter className="gap-2">
             <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={switchAccount}
+              onClick={signOut}
               className="rounded-xl bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40"
             >
               Sign out
@@ -821,359 +979,5 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  )
-}
-
-function StatChip({ label, value, accent = false }: { label: string; value: React.ReactNode; accent?: boolean }) {
-  return (
-    <div
-      className={cn(
-        'flex flex-col items-center gap-0.5 rounded-2xl border p-3 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
-        accent
-          ? 'border-emerald-500/25 bg-emerald-500/10'
-          : 'border-zinc-200/70 bg-white/70 dark:border-white/10 dark:bg-zinc-900/60',
-      )}
-    >
-      <span
-        className={cn(
-          'text-base font-bold tracking-tight',
-          accent ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-800 dark:text-zinc-100',
-        )}
-      >
-        {value}
-      </span>
-      <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-        {label}
-      </span>
-    </div>
-  )
-}
-
-/**
- * CountUp-style spring counter — the motion value renders straight to the DOM
- * (no per-frame React state), spring-popping on mount and retargeting on change.
- */
-function CountUp({ value, cap = false }: { value: number; cap?: boolean }) {
-  const reducedMotion = useReducedMotion()
-  const count = useMotionValue(0)
-  const text = useTransform(count, (v) => {
-    const n = Math.round(v)
-    return cap && n > 99 ? '99+' : n.toLocaleString('en-US')
-  })
-
-  useEffect(() => {
-    if (reducedMotion) {
-      count.set(value)
-      return
-    }
-    const controls = animate(count, value, { type: 'spring', stiffness: 140, damping: 26 })
-    return () => controls.stop()
-  }, [value, reducedMotion, count])
-
-  return <motion.span>{text}</motion.span>
-}
-
-function Section({ title, delay = 0, children }: { title: string; delay?: number; children: React.ReactNode }) {
-  const reducedMotion = useReducedMotion()
-  return (
-    <motion.section
-      aria-label={title}
-      initial={reducedMotion ? false : { opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32, ease: ease.out, delay }}
-      className="mt-6"
-    >
-      <div className="mb-2 flex items-center gap-2">
-        <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-          {title}
-        </h2>
-        <Separator className="flex-1" />
-      </div>
-      <div className={cn(GLASS_CARD, 'p-2')}>
-        {children}
-      </div>
-    </motion.section>
-  )
-}
-
-/** Icons for the four nav architectures (verbatim strings for JIT). */
-const NAV_ICONS: Record<NavStyleId, typeof Compass> = {
-  acrylic: LayoutDashboard,
-  rail: PanelRight,
-  edge: Compass,
-  radial: LayoutGrid,
-}
-
-/** Switch the whole shell between the 4 navigation architectures live. */
-function NavStyleGrid() {
-  const [style, apply] = useNavStyle()
-  return (
-    <div className="grid grid-cols-2 gap-2 p-1">
-      {NAV_STYLE_META.map((opt) => {
-        const Icon = NAV_ICONS[opt.id]
-        const isActive = style === opt.id
-        return (
-          <button
-            key={opt.id}
-            type="button"
-            aria-pressed={isActive}
-            onClick={() => {
-              apply(opt.id)
-              haptic(12)
-              toast.success(`${opt.label} navigation active`)
-            }}
-            className={cn(
-              'rounded-xl border p-3 text-left transition-all active:scale-[0.98]',
-              isActive
-                ? 'border-emerald-500 bg-emerald-500/10'
-                : 'border-zinc-200 hover:border-emerald-300 dark:border-zinc-700',
-            )}
-          >
-            <Icon className={cn('size-5', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500')} aria-hidden />
-            <p className="mt-1.5 flex items-center gap-1 text-[13px] font-bold text-zinc-800 dark:text-zinc-100">
-              {opt.label}
-              {isActive ? <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden /> : null}
-            </p>
-            <p className="mt-0.5 text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">{opt.hint}</p>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── @handle editor ───────────────────────────────────────────
-
-const HANDLE_MIN = 3
-const HANDLE_MAX = 20
-const HANDLE_RE = /^[a-z0-9_]+$/
-const HANDLE_DEBOUNCE_MS = 350
-
-/** Mirrors normalizeUsername on the server: 3–20 chars, a-z0-9_ */
-function isValidHandle(value: string): boolean {
-  return value.length >= HANDLE_MIN && value.length <= HANDLE_MAX && HANDLE_RE.test(value)
-}
-
-/** Keep only characters the server would accept. */
-function sanitizeHandleInput(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9_]/g, '')
-    .slice(0, HANDLE_MAX)
-}
-
-function HandleEditorDialog({
-  open,
-  onOpenChange,
-  me,
-  onSaved,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  me: AppUser
-  onSaved: (user: AppUser) => void
-}) {
-  // body mounts only while open → its state resets naturally on every open
-  if (!open) return null
-  return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <HandleEditorBody me={me} onSaved={onSaved} onClose={() => onOpenChange(false)} />
-    </Dialog>
-  )
-}
-
-function HandleEditorBody({
-  me,
-  onSaved,
-  onClose,
-}: {
-  me: AppUser
-  onSaved: (user: AppUser) => void
-  onClose: () => void
-}) {
-  const [value, setValue] = useState(me.username ?? '')
-  const [debounced, setDebounced] = useState(me.username ?? '')
-  /** suggestion captured from a 409 username_taken response */
-  const [clashSuggestion, setClashSuggestion] = useState<string | null>(null)
-
-  const trimmed = value.trim()
-  const changed = trimmed !== (me.username ?? '')
-  const valid = isValidHandle(trimmed)
-
-  // live availability — debounced, skipped while re-typing the current handle
-  const checkEnabled = valid && debounced !== (me.username ?? '')
-  const checkQ = useQuery({
-    queryKey: ['username-check', debounced],
-    queryFn: async (): Promise<{ available: boolean; suggestion: string | null }> => {
-      return apiJson<{ available: boolean; suggestion: string | null }>(
-        `/api/users/check-username?username=${encodeURIComponent(debounced)}`,
-      )
-    },
-    enabled: checkEnabled,
-    staleTime: 5_000,
-  })
-
-  const checkStale = !checkEnabled || debounced !== trimmed
-  const checking = valid && changed && (checkStale || checkQ.isFetching)
-  const available = valid && changed && !checkStale && checkQ.data?.available === true
-  const taken = valid && changed && !checkStale && checkQ.data?.available === false
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(trimmed), HANDLE_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-  }, [trimmed])
-
-  const save = useMutation({
-    mutationFn: async (): Promise<AppUser> => {
-      const res = await apiJson<{ user: AppUser }>(
-        `/api/users/${encodeURIComponent(me.id)}`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify({ username: trimmed }),
-        },
-      )
-      return res.user
-    },
-    onSuccess: (user) => {
-      onSaved(user)
-      toast.success(user.username ? `@${user.username} is yours now` : 'Handle saved')
-      onClose()
-    },
-    onError: async (error: Error) => {
-      toast.error(error.message || 'Could not save the handle')
-      if (error instanceof ApiError && error.status === 409) {
-        // the PATCH route's 409 carries a suggestion but ApiError drops it —
-        // re-ask the availability endpoint for the nearest free variant
-        try {
-          const res = await apiJson<{ available: boolean; suggestion: string | null }>(
-            `/api/users/check-username?username=${encodeURIComponent(trimmed)}`,
-          )
-          setClashSuggestion(res.suggestion)
-        } catch {
-          setClashSuggestion(null)
-        }
-      }
-    },
-  })
-
-  return (
-    <DialogContent className="max-w-[340px] gap-3 rounded-2xl border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-        <DialogHeader className="text-left">
-          <DialogTitle className="text-base tracking-tight">Your @handle</DialogTitle>
-          <DialogDescription className="text-xs leading-relaxed">
-            3–20 characters: lowercase letters, digits, underscore. Friends can find you by it.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-1.5">
-          <div className="relative">
-            <span
-              aria-hidden
-              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[15px] font-semibold text-zinc-400 dark:text-zinc-500"
-            >
-              @
-            </span>
-            <Input
-              value={value}
-              onChange={(e) => {
-                setClashSuggestion(null)
-                setValue(sanitizeHandleInput(e.target.value))
-              }}
-              placeholder="e.g. alice_chen"
-              maxLength={HANDLE_MAX}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              enterKeyHint="done"
-              aria-label="Your handle"
-              aria-invalid={(taken || clashSuggestion !== null) || undefined}
-              aria-describedby="handle-editor-availability"
-              className={cn(
-                'h-11 rounded-xl border-zinc-200 bg-zinc-50 pl-8 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800',
-                (taken || clashSuggestion !== null) &&
-                  'border-amber-400 focus-visible:ring-amber-500/50 dark:border-amber-500/60',
-              )}
-            />
-          </div>
-
-          <p
-            id="handle-editor-availability"
-            role="status"
-            aria-live="polite"
-            className="flex min-h-[18px] flex-wrap items-center gap-1.5 text-xs font-medium"
-          >
-            {trimmed.length === 0 ? (
-              <span className="text-zinc-400 dark:text-zinc-500">Type a handle, or leave empty.</span>
-            ) : !valid ? (
-              <span className="text-zinc-500 dark:text-zinc-400">
-                {HANDLE_MIN}–{HANDLE_MAX} characters: a-z, 0-9, underscore.
-              </span>
-            ) : checking ? (
-              <span className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
-                <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
-                Checking @{trimmed}…
-              </span>
-            ) : available ? (
-              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                <Check className="size-3.5" strokeWidth={3} aria-hidden />
-                @{trimmed} is free!
-              </span>
-            ) : trimmed === (me.username ?? '') ? (
-              <span className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
-                <Check className="size-3.5" strokeWidth={3} aria-hidden />
-                That&apos;s your current handle
-              </span>
-            ) : taken ? (
-              <span className="flex flex-wrap items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                <X className="size-3.5" strokeWidth={3} aria-hidden />
-                @{trimmed} is taken
-                {checkQ.data?.suggestion ? (
-                  <button
-                    type="button"
-                    onClick={() => setValue(sanitizeHandleInput(checkQ.data?.suggestion ?? ''))}
-                    className="ml-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-700 outline-none transition-colors hover:bg-amber-500/25 active:scale-95 dark:text-amber-300"
-                  >
-                    Use @{checkQ.data.suggestion}
-                  </button>
-                ) : null}
-              </span>
-            ) : clashSuggestion ? (
-              <span className="flex flex-wrap items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                <X className="size-3.5" strokeWidth={3} aria-hidden />
-                @{trimmed} was just taken
-                <button
-                  type="button"
-                  onClick={() => setValue(sanitizeHandleInput(clashSuggestion))}
-                  className="ml-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-700 outline-none transition-colors hover:bg-amber-500/25 active:scale-95 dark:text-amber-300"
-                >
-                  Use @{clashSuggestion}
-                </button>
-              </span>
-            ) : null}
-          </p>
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="h-10 flex-1 rounded-xl text-sm font-semibold"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => save.mutate()}
-            disabled={!valid || checking || taken || !changed || save.isPending}
-            className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
-          >
-            {save.isPending ? (
-              <LoaderCircle className="size-4 animate-spin" aria-hidden />
-            ) : (
-              'Save handle'
-            )}
-          </Button>
-        </div>
-      </DialogContent>
   )
 }

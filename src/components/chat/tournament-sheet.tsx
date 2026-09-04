@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useQueryClient } from '@tanstack/react-query'
-import { LoaderCircle, Lock, Trophy, X } from 'lucide-react'
+import { LoaderCircle, Lock, Swords, Trophy, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiJson, jsonBody } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
@@ -100,7 +100,7 @@ export function TournamentSheet({
         }),
       )
       onClose()
-      toast.success('🏆 Tournament started')
+      toast.success('Tournament started')
       // instant local append — room polling is the fallback for stragglers
       window.dispatchEvent(
         new CustomEvent<ChatMessage>('pulse:external-message', { detail: res.message }),
@@ -144,9 +144,9 @@ export function TournamentSheet({
           <header className="flex items-center gap-2.5">
             <span
               aria-hidden
-              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-xl shadow-[0_10px_24px_-10px_rgba(16,185,129,0.8)]"
+              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_10px_24px_-10px_rgba(16,185,129,0.8)]"
             >
-              🏆
+              <Trophy className="size-5 text-white" aria-hidden />
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[15px] font-bold leading-tight text-zinc-50">Start tournament</p>
@@ -206,8 +206,8 @@ export function TournamentSheet({
               role="group"
               aria-label="Season game"
             >
-              <span aria-hidden className="text-xl">
-                ⭕❌
+              <span aria-hidden className="text-xl leading-none text-emerald-300">
+                <Swords className="size-5" />
               </span>
               <span className="flex-1 text-[14px] font-bold text-emerald-300">Tic-tac-toe</span>
               <span className="flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-zinc-400">
@@ -220,7 +220,7 @@ export function TournamentSheet({
           {/* live preview */}
           <div className="rounded-2xl border border-white/10 bg-white/5 px-3.5 py-2.5">
             <p className="text-[12.5px] font-semibold text-zinc-200" aria-live="polite">
-              🏆 {valid ? trimmed : 'Season name'}
+              {valid ? trimmed : 'Season name'}
             </p>
             <p className="mt-0.5 text-[11.5px] font-medium text-zinc-500">
               Tic-tac-toe · started by {me.name} · joins open to everyone in this chat
@@ -241,7 +241,9 @@ export function TournamentSheet({
             {pending ? (
               <LoaderCircle className="size-5 animate-spin" aria-hidden />
             ) : (
-              <>🏆 Start tournament</>
+              <>
+                <Trophy className="size-4" aria-hidden /> Start tournament
+              </>
             )}
           </Button>
         </motion.form>
