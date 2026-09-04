@@ -130,6 +130,8 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
       conversationId: msg.conversationId,
       senderId: msg.senderId,
       content: msg.content,
+      kind: typeof msg.kind === 'string' ? msg.kind : 'text',
+      payload: typeof msg.payload === 'string' ? msg.payload : null,
       deletedAt,
       createdAt: msg.createdAt,
       sender:

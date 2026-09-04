@@ -15,7 +15,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion'
+import { AnimatePresence, animate, motion, useMotionValue, useSpring, useTransform, useVelocity } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
 import {
@@ -43,13 +43,16 @@ import {
   LoaderCircle,
   Lock,
   LogOut,
+  MapPin,
   Megaphone,
   MessageSquare,
   Mic,
+  Minus,
   Pause,
   Pencil,
   Pin,
   PinOff,
+  PictureInPicture2,
   Play,
   Plus,
   Reply,
@@ -59,6 +62,7 @@ import {
   SendHorizontal,
   Smile,
   Sparkles,
+  Sticker,
   Star,
   Timer,
   Trash2,
@@ -74,6 +78,8 @@ import type {
   AppUser,
   ChatMessage,
   ConversationDetail,
+  ConversationSummary,
+  MessageAuthor,
   SavedItem,
   ScheduledItem,
 } from '@/lib/types'
@@ -87,6 +93,7 @@ import {
   hashString,
   isJumboEmoji,
   isSameDayIso,
+  jsonBody,
   otherMemberOf,
   REACTION_CHOICES,
   EMOJI_PICKER_CHOICES,
@@ -124,6 +131,28 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 import { useMounted } from '@/hooks/use-mounted'
+import { usePrefsValues } from '@/lib/prefs'
+import type { PulsePrefs } from '@/lib/prefs-defaults'
+import {
+  MessageEffectsLayer,
+  isMessageEffect,
+  type ActiveEffect,
+  type EffectOrigin,
+  type MessageEffectName,
+} from '@/components/chat/message-effects'
+import { StickerPicker, stickerGradient, type StickerPick } from '@/components/chat/sticker-picker'
+import {
+  LocationBubble,
+  LocationShareSheet,
+  parseLocationPayload,
+  type LocationPayload,
+} from '@/components/chat/location-share'
+import { SlashPalette } from '@/components/chat/slash-palette'
+import { PipChat } from '@/components/chat/pip-chat'
+import { usePipChat } from '@/components/chat/pip-store'
+import { GroupInfoSheet } from '@/components/chat/group-info-sheet'
+import { useNavStyle } from '@/components/chat/nav-router'
+import { UserProfileSheet } from '@/components/chat/user-profile-sheet'
 
 interface DetailResponse {
   conversation: ConversationDetail
@@ -158,8 +187,19 @@ const SLASH_COMMANDS = [
   { cmd: '/roll', args: '[AdM]', help: 'Roll dice, e.g. /roll 2d6' },
   { cmd: '/poll', args: '', help: 'Open the live-poll builder' },
   { cmd: '/schedule', args: '', help: 'Schedule this message for later' },
+  { cmd: '/sticker', args: '', help: 'Open the sticker packs' },
+  { cmd: '/location', args: '', help: 'Share a live map pin' },
+  { cmd: '/effects', args: '<effect>', help: 'confetti · lasers · echo · sparkles' },
   { cmd: '/help', args: '', help: 'Show every command' },
 ] as const
+
+/** Emoji shorthand for effect toasts / chips. */
+const EFFECT_EMOJI: Record<MessageEffectName, string> = {
+  confetti: '🎉',
+  lasers: '⚡️',
+  echo: '🌀',
+  sparkles: '✨',
+}
 
 /** Parse one rolled die — returns null on malformed input. */
 function rollDice(spec: string): { rolls: number[]; total: number } | null {
@@ -176,13 +216,76 @@ function rollDice(spec: string): { rolls: number[]; total: number } | null {
   return { rolls, total: rolls.reduce((a, b) => a + b, 0) }
 }
 
+/** Bubble corner token ← prefs.bubbleRadius. */
+const BUBBLE_RADIUS: Record<'md' | 'lg' | 'pill', string> = {
+  md: 'rounded-xl',
+  lg: 'rounded-2xl',
+  pill: 'rounded-3xl',
+}
+
+/** Safe-parse a sticker payload {emoji, pack} — never throws. */
+function parseSticker(payload: string | null): { emoji: string; pack: string } | null {
+  const p = parseMessagePayload(payload)
+  const emoji = typeof p.emoji === 'string' ? p.emoji : ''
+  if (!emoji) return null
+  const pack = typeof p.pack === 'string' ? p.pack : 'Pulse'
+  return { emoji, pack }
+}
+
+/** Safe-parse a message payload blob — never throws, always an object. */
+function parseMessagePayload(payload: string | null): Record<string, unknown> {
+  if (!payload) return {}
+  try {
+    const raw: unknown = JSON.parse(payload)
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {}
+    return raw as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+/** Wallpaper prefs → soft radial glow colors for the chat background. */
+function wallpaperGlows(wallpaper: PulsePrefs['wallpaper'], dark: boolean): [string, string] {
+  switch (wallpaper) {
+    case 'aurora':
+      return dark
+        ? ['rgba(16,185,129,0.12)', 'rgba(139,92,246,0.09)']
+        : ['rgba(16,185,129,0.11)', 'rgba(139,92,246,0.07)']
+    case 'dusk':
+      return dark
+        ? ['rgba(245,158,11,0.10)', 'rgba(244,63,94,0.09)']
+        : ['rgba(245,158,11,0.10)', 'rgba(244,63,94,0.07)']
+    case 'forest':
+      return dark
+        ? ['rgba(5,150,105,0.13)', 'rgba(132,204,22,0.07)']
+        : ['rgba(5,150,105,0.12)', 'rgba(132,204,22,0.06)']
+    case 'mono':
+      return ['transparent', 'transparent']
+    case 'none':
+    default:
+      return dark
+        ? ['rgba(16,185,129,0.055)', 'rgba(20,184,166,0.04)']
+        : ['rgba(16,185,129,0.05)', 'rgba(20,184,166,0.035)']
+  }
+}
+
 interface SlashOutcome {
   kind: 'send'
   content: string
 }
 
 /** Transform a leading slash command into real message content (or a UI action code). */
-function applySlash(rawInput: string): SlashOutcome | { kind: 'poll' } | { kind: 'schedule' } | { kind: 'help' } | { kind: 'error'; message: string } {
+function applySlash(
+  rawInput: string,
+):
+  | SlashOutcome
+  | { kind: 'poll' }
+  | { kind: 'schedule' }
+  | { kind: 'help' }
+  | { kind: 'sticker' }
+  | { kind: 'location' }
+  | { kind: 'effect'; effect: MessageEffectName; content: string }
+  | { kind: 'error'; message: string } {
   const input = rawInput.trim()
   const m = new RegExp('^' + String.fromCharCode(92) + '/(\\w+)(?:\\s+([\\s\\S]+))?$').exec(input)
   if (!m) return { kind: 'send', content: input }
@@ -213,6 +316,18 @@ function applySlash(rawInput: string): SlashOutcome | { kind: 'poll' } | { kind:
       return { kind: 'poll' }
     case 'schedule':
       return { kind: 'schedule' }
+    case 'sticker':
+      return { kind: 'sticker' }
+    case 'location':
+      return { kind: 'location' }
+    case 'effects': {
+      const effectWord = arg.split(/\s+/)[0]?.toLowerCase() ?? ''
+      if (!isMessageEffect(effectWord)) {
+        return { kind: 'error', message: 'Usage: /effects confetti|lasers|echo|sparkles [text]' }
+      }
+      const text = arg.slice(effectWord.length).trim()
+      return { kind: 'effect', effect: effectWord, content: text }
+    }
     case 'help':
       return { kind: 'help' }
     default:
@@ -237,9 +352,9 @@ type ClusterItem =
 
 export function ChatRoom({
   me,
-  conversationId,
-  unreadAnchorMs = null,
-  initialJumpMessageId = null,
+  conversationId: conversationIdProp,
+  unreadAnchorMs: unreadAnchorMsProp = null,
+  initialJumpMessageId: initialJumpMessageIdProp = null,
   onClose,
 }: {
   me: AppUser
@@ -254,6 +369,32 @@ export function ChatRoom({
   const realtime = usePulseRealtime()
   const { resolvedTheme } = useTheme()
   const themeMounted = useMounted()
+  const prefs = usePrefsValues()
+  // floating bottom docks (acrylic dock / edge bar / radial FAB) need clearance;
+  // the solid rail lives in a layout column → zero inset
+  const [navStyle] = useNavStyle()
+  const dockInset = navStyle === 'rail' ? 0 : 84
+  const startPipChat = usePipChat((s) => s.open)
+  const closePipChat = usePipChat((s) => s.close)
+  const pipConversationId = usePipChat((s) => (s.isOpen ? s.conversationId : null))
+
+  // ── in-room conversation switching ────────────────────────
+  // Tapping a profile sheet's "Message" opens the DM WITHOUT tearing this
+  // room down: the whole component re-keys its queries onto the new id.
+  const [switchedId, setSwitchedId] = useState<string | null>(null)
+  const conversationId = switchedId ?? conversationIdProp
+  /** anchor/jump overrides reset when the user hops to another chat in-room */
+  const [anchorOverride, setAnchorOverride] = useState<number | null | undefined>(undefined)
+  const [jumpOverride, setJumpOverride] = useState<string | null | undefined>(undefined)
+  const unreadAnchorMs = anchorOverride !== undefined ? anchorOverride : unreadAnchorMsProp
+  const initialJumpMessageId = jumpOverride !== undefined ? jumpOverride : initialJumpMessageIdProp
+
+  useEffect(() => {
+    // external navigation (chats list) always wins over an in-room switch
+    setSwitchedId(null)
+    setAnchorOverride(undefined)
+    setJumpOverride(undefined)
+  }, [conversationIdProp])
 
   // device connectivity → offline texts are queued in the outbox
   const [isOffline, setIsOffline] = useState(false)
@@ -335,6 +476,18 @@ export function ChatRoom({
   const [ttlChoicesOpen, setTtlChoicesOpen] = useState(false)
   /** slash-command cheat-sheet dialog */
   const [helpOpen, setHelpOpen] = useState(false)
+
+  // ── stickers · location · effects (R19-b) ──────────────────
+  const [stickerOpen, setStickerOpen] = useState(false)
+  const [locationOpen, setLocationOpen] = useState(false)
+  /** armed full-screen effect applied to the NEXT sent message */
+  const [pendingEffect, setPendingEffect] = useState<MessageEffectName | null>(null)
+  /** Esc-dismisses the slash palette until the draft changes again */
+  const [slashDismissed, setSlashDismissed] = useState(false)
+  /** other-user profile sheet (sender avatars · member rows) */
+  const [profileUser, setProfileUser] = useState<AppUser | null>(null)
+  /** full-screen group management sheet (R19-c contract) */
+  const [groupInfoOpen, setGroupInfoOpen] = useState(false)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -806,6 +959,88 @@ export function ChatRoom({
     }
   }, [scrollToBottom])
 
+  // ── full-screen message effects (confetti/lasers/echo/sparkles) ──
+  const [activeEffect, setActiveEffect] = useState<ActiveEffect | null>(null)
+  const effectQueueRef = useRef<Array<{ effect: MessageEffectName; origin: EffectOrigin }>>([])
+  const effectNonceRef = useRef(0)
+  const activeEffectRef = useRef<ActiveEffect | null>(null)
+  /** cache-tail bookkeeping so incoming messages fire their effect exactly once */
+  const seenTailRef = useRef<{ lastId: string | null; processed: Set<string> }>({
+    lastId: null,
+    processed: new Set(),
+  })
+
+  const triggerEffectFor = useCallback(
+    (messageId: string, effect: MessageEffectName) => {
+      if (prefs.reducedMotion) return // reduced motion → zero effects
+      const viewport = viewportRef.current
+      const host = viewport?.parentElement ?? null
+      let origin: EffectOrigin = { x: 0.5, y: 0.62 }
+      if (viewport && host) {
+        const bubble = viewport.querySelector<HTMLElement>(`[data-mid="${CSS.escape(messageId)}"]`)
+        if (bubble) {
+          const b = bubble.getBoundingClientRect()
+          const r = host.getBoundingClientRect()
+          if (r.width > 0 && r.height > 0) {
+            origin = {
+              x: Math.min(0.97, Math.max(0.03, (b.left + b.width / 2 - r.left) / r.width)),
+              y: Math.min(0.97, Math.max(0.03, (b.top + b.height / 2 - r.top) / r.height)),
+            }
+          }
+        }
+      }
+      if (activeEffectRef.current === null) {
+        effectNonceRef.current += 1
+        const activated: ActiveEffect = { effect, origin, nonce: effectNonceRef.current }
+        activeEffectRef.current = activated
+        setActiveEffect(activated)
+      } else if (effectQueueRef.current.length < 3) {
+        // one canvas instance; rapid triggers line up instead of leaking
+        effectQueueRef.current.push({ effect, origin })
+      }
+    },
+    [prefs.reducedMotion],
+  )
+
+  const handleEffectDone = useCallback(() => {
+    activeEffectRef.current = null
+    setActiveEffect(null)
+    requestAnimationFrame(() => {
+      if (activeEffectRef.current !== null) return
+      const next = effectQueueRef.current.shift()
+      if (!next) return
+      effectNonceRef.current += 1
+      const activated: ActiveEffect = { effect: next.effect, origin: next.origin, nonce: effectNonceRef.current }
+      activeEffectRef.current = activated
+      setActiveEffect(activated)
+    })
+  }, [])
+
+  /** Fire payload effects for messages appended to the tail of the cache. */
+  useEffect(() => {
+    const list = messages.data
+    if (!list || list.length === 0) return
+    const state = seenTailRef.current
+    const tailId = list[list.length - 1].id
+    if (state.lastId === null || !list.some((m) => m.id === state.lastId)) {
+      // first load or cache reset (room switch) → seed silently, never replay history
+      state.lastId = tailId
+      state.processed = new Set(list.map((m) => m.id))
+      return
+    }
+    state.lastId = tailId
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const m = list[i]
+      if (state.processed.has(m.id)) break
+      state.processed.add(m.id)
+      const effect = parseMessagePayload(m.payload).effect
+      if (isMessageEffect(effect)) triggerEffectFor(m.id, effect)
+    }
+    if (state.processed.size > 400) {
+      state.processed = new Set(list.map((m) => m.id))
+    }
+  }, [messages.data, triggerEffectFor])
+
   useEffect(() => {
     if (lastMessageId === null || !historyLoaded) return
     // initial search-jump owns the first positioning — no bottom auto-scroll race
@@ -861,6 +1096,8 @@ export function ChatRoom({
       durationMs,
       parentId,
       viewOnce,
+      kind,
+      payload,
     }: {
       clientId: string
       content: string
@@ -870,6 +1107,10 @@ export function ChatRoom({
       durationMs?: number
       parentId?: string
       viewOnce?: boolean
+      /** rich kinds: 'text' | 'sticker' | 'location' (effects ride kind:'text' + payload) */
+      kind?: string
+      /** structured extras — sticker {emoji,pack} · location {lat,lng,label} · {effect} */
+      payload?: Record<string, unknown>
     }) => {
       const res = await apiJson<SendResponse>(
         `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
@@ -884,12 +1125,14 @@ export function ChatRoom({
             ...(audioPath ? { audioPath, ...(durationMs ? { durationMs } : {}) } : {}),
             ...(parentId ? { parentId } : {}),
             ...(viewOnce ? { viewOnce: true } : {}),
+            ...(kind ? { kind } : {}),
+            ...(payload ? { payload } : {}),
           }),
         },
       )
       return { res, clientId }
     },
-    onMutate: async ({ clientId, content, replyToId, imagePath, audioPath, durationMs, parentId, viewOnce }) => {
+    onMutate: async ({ clientId, content, replyToId, imagePath, audioPath, durationMs, parentId, viewOnce, kind, payload }) => {
       const parentSnapshot = replyToId && replyTo && replyTo.id === replyToId
         ? {
             id: replyTo.id,
@@ -903,6 +1146,8 @@ export function ChatRoom({
         conversationId,
         senderId: me.id,
         content,
+        kind: kind ?? 'text',
+        payload: payload ? JSON.stringify(payload) : null,
         deletedAt: null,
         createdAt: new Date().toISOString(),
         sender: { id: me.id, name: me.name, username: me.username, color: me.color },
@@ -957,6 +1202,12 @@ export function ChatRoom({
         })
       }
       queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      // iMessage-grade send effects — play instantly for our own sends
+      const sentEffect = parseMessagePayload(real.payload).effect
+      if (isMessageEffect(sentEffect) && !prefs.reducedMotion) {
+        seenTailRef.current.processed.add(real.id)
+        triggerEffectFor(real.id, sentEffect)
+      }
       // link previews: fire-and-forget unfurl on outbound URL messages
       if (!vars.parentId && /https?:\/\/|(^|\s)www\./i.test(real.content)) {
         void apiJson(`/api/messages/${encodeURIComponent(real.id)}/unfurl`, {
@@ -1443,6 +1694,76 @@ export function ChatRoom({
 
   useEffect(() => () => stopTyping(), [stopTyping])
 
+  // ── in-room switches + profile wiring ─────────────────────
+
+  /** Swap this mounted room onto another conversation (profile → "Message"). */
+  const switchRoom = useCallback(
+    (nextId: string) => {
+      if (nextId === (switchedId ?? conversationIdProp)) return
+      if (recorderRef.current) {
+        toast.info('Finish or cancel the voice note first')
+        return
+      }
+      stopTyping()
+      haptic(10)
+      setSwitchedId(nextId)
+      setInput(pulseDraftsStore.getState().drafts[nextId] ?? '')
+      setReplyTo(null)
+      setEditing(null)
+      setSelected(null)
+      setPendingImage(null)
+      setCaptionDraft('')
+      setPendingEffect(null)
+      setMenuOpen(false)
+      setSearchOpen(false)
+      setSearchQuery('')
+      setSearchDraft('')
+      setHighlight(null)
+      setThreadRoot(null)
+      setHistoryLoaded(false)
+      setAnchorOverride(null)
+      setJumpOverride(null)
+      requestAnimationFrame(autosize)
+    },
+    [switchedId, conversationIdProp, stopTyping, autosize],
+  )
+
+  /** Profile sheet → "Message" → open (or create) the 1:1 DM right here. */
+  const openDmWith = useCallback(
+    async (userId: string) => {
+      try {
+        const res = await apiJson<{ conversation: ConversationSummary }>(
+          '/api/conversations',
+          jsonBody({ creatorId: me.id, memberIds: [userId] }),
+        )
+        await queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+        switchRoom(res.conversation.id)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Could not open the chat')
+      }
+    },
+    [me.id, queryClient, switchRoom],
+  )
+
+  /** Sender avatar tap in a bubble → profile sheet (full user from members). */
+  const openProfileForAuthor = useCallback(
+    (sender: MessageAuthor) => {
+      const member = detailData?.members.find((m) => m.id === sender.id)
+      if (member) {
+        setProfileUser(member)
+        return
+      }
+      toast.info('This member is no longer part of the chat')
+    },
+    [detailData],
+  )
+
+  /** Member row tap in the info dialog → profile sheet. */
+  const openProfileForUser = useCallback((user: AppUser) => {
+    setInfoOpen(false)
+    setProfileUser(user)
+  }, [])
+
   // ── @mention autocomplete (composer) ────────────────────
 
   /** caret position inside the textarea (tracked on every change) */
@@ -1563,6 +1884,44 @@ export function ChatRoom({
         requestAnimationFrame(autosize)
         return
       }
+      if (outcome.kind === 'sticker') {
+        setStickerOpen(true)
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+        requestAnimationFrame(autosize)
+        return
+      }
+      if (outcome.kind === 'location') {
+        setLocationOpen(true)
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+        requestAnimationFrame(autosize)
+        return
+      }
+      if (outcome.kind === 'effect') {
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+        requestAnimationFrame(autosize)
+        if (outcome.content.length > 0) {
+          if (sendMessage.isPending || isOffline) {
+            if (isOffline) toast.error('Effects need a connection — try again when online')
+            return
+          }
+          stopTyping()
+          sendMessage.mutate({
+            clientId: uid(),
+            content: outcome.content,
+            kind: 'text',
+            payload: { effect: outcome.effect },
+            ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+          })
+        } else {
+          setPendingEffect(outcome.effect)
+          toast(`${EFFECT_EMOJI[outcome.effect]} ${outcome.effect} armed — type a message and send`)
+          requestAnimationFrame(() => textareaRef.current?.focus())
+        }
+        return
+      }
       transformed = outcome.content.trim()
       if (transformed.length === 0) return
     }
@@ -1573,15 +1932,19 @@ export function ChatRoom({
     if (sendMessage.isPending) return
     stopTyping()
     setInput('')
+    setSlashDismissed(false)
     pulseDraftsStore.getState().clearDraft(conversationId)
     requestAnimationFrame(autosize)
 
     const clientId = uid()
     const replyTarget = replyTo && !replyTo.deletedAt ? replyTo : null
+    const armedEffect = pendingEffect
+    if (armedEffect !== null) setPendingEffect(null)
 
     // Offline → hold in the persisted outbox; the realtime provider
     // flushes it (FIFO) as soon as connectivity returns.
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // the outbox is text-only by design — effects never survive the queue
       const queuedTemp: ChatMessage = {
         id: `temp-${clientId}`,
         conversationId,
@@ -1589,6 +1952,8 @@ export function ChatRoom({
         content,
         deletedAt: null,
         createdAt: new Date().toISOString(),
+        kind: 'text',
+        payload: null,
         sender: { id: me.id, name: me.name, username: me.username, color: me.color },
         reactions: [],
         replyTo: replyTarget
@@ -1637,8 +2002,9 @@ export function ChatRoom({
       clientId,
       content,
       ...(replyTarget ? { replyToId: replyTarget.id } : {}),
+      ...(armedEffect !== null ? { kind: 'text', payload: { effect: armedEffect } } : {}),
     })
-  }, [input, editing, editMessage, sendMessage, stopTyping, autosize, replyTo, conversationId, me, queryClient])
+  }, [input, editing, editMessage, sendMessage, stopTyping, autosize, replyTo, conversationId, me, queryClient, pendingEffect, isOffline])
 
   /** Thread drawer composer — replies land under the root, never the main flow. */
   const submitThreadReply = useCallback(
@@ -1652,8 +2018,108 @@ export function ChatRoom({
     [threadRoot, threadDraft, sendMessage],
   )
 
+  // ── sticker / location senders (R19-b) ─────────────────────
+
+  /** Sticker tile tap → real kind:'sticker' message. */
+  const sendSticker = useCallback(
+    (pick: StickerPick) => {
+      if (sendMessage.isPending || isOffline) {
+        if (isOffline) toast.error('Stickers need a connection')
+        return
+      }
+      sendMessage.mutate({
+        clientId: uid(),
+        content: '',
+        kind: 'sticker',
+        payload: { emoji: pick.emoji, pack: pick.pack },
+        ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+      })
+    },
+    [sendMessage, replyTo, isOffline],
+  )
+
+  /** Confirm-sheet → real kind:'location' message. */
+  const sendLocation = useCallback(
+    (payload: LocationPayload) => {
+      setLocationOpen(false)
+      if (sendMessage.isPending || isOffline) {
+        if (isOffline) toast.error('Location sharing needs a connection')
+        return
+      }
+      haptic(12)
+      sendMessage.mutate({
+        clientId: uid(),
+        content: '',
+        kind: 'location',
+        payload: { lat: payload.lat, lng: payload.lng, label: payload.label },
+        ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+      })
+    },
+    [sendMessage, replyTo, isOffline],
+  )
+
+  /** Slash-palette row activated (tap / Enter) — fast-path over applySlash. */
+  const runPaletteCommand = useCallback(
+    (cmd: string) => {
+      haptic(8)
+      setSlashDismissed(true)
+      const clearDraft = () => {
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+      }
+      if (cmd === '/sticker') {
+        clearDraft()
+        setStickerOpen(true)
+        return
+      }
+      if (cmd === '/location') {
+        clearDraft()
+        setLocationOpen(true)
+        return
+      }
+      if (cmd === '/poll') {
+        clearDraft()
+        setPollBuilderOpen(true)
+        return
+      }
+      if (cmd === '/schedule') {
+        clearDraft()
+        setScheduleFor(null)
+        setScheduledListOpen(true)
+        return
+      }
+      if (cmd === '/help') {
+        clearDraft()
+        setHelpOpen(true)
+        return
+      }
+      if (cmd.startsWith('/effects')) {
+        const effect = cmd.split(/\s+/)[1]
+        clearDraft()
+        if (isMessageEffect(effect)) {
+          setPendingEffect(effect)
+          toast(`${EFFECT_EMOJI[effect]} ${effect} armed — type a message and send`)
+        }
+        requestAnimationFrame(() => textareaRef.current?.focus())
+        return
+      }
+      // text-transform commands: stage the command, keep any typed args
+      setInput((prev) => {
+        const args = prev.replace(/^\/\S*\s*/, '').trim()
+        return args.length > 0 ? `${cmd} ${args}` : `${cmd} `
+      })
+      requestAnimationFrame(() => {
+        autosize()
+        textareaRef.current?.focus()
+      })
+    },
+    [conversationId, autosize],
+  )
+
+
   const handleInputChange = (value: string) => {
     setInput(value)
+    setSlashDismissed(false)
     setMentionCaret(textareaRef.current?.selectionStart ?? value.length)
     autosize()
     if (draftTimerRef.current !== null) clearTimeout(draftTimerRef.current)
@@ -2061,10 +2527,10 @@ export function ChatRoom({
             ? 'online'
             : 'offline'
 
-  const dotColor = themeMounted && resolvedTheme === 'dark' ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.05)'
-  // layered wallpaper: soft emerald glows top/bottom over the dot grid
-  const glowTop = themeMounted && resolvedTheme === 'dark' ? 'rgba(16,185,129,0.055)' : 'rgba(16,185,129,0.05)'
-  const glowBottom = themeMounted && resolvedTheme === 'dark' ? 'rgba(20,184,166,0.04)' : 'rgba(20,184,166,0.035)'
+  const isDark = themeMounted && resolvedTheme === 'dark'
+  const dotColor = isDark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.05)'
+  // layered wallpaper (prefs): soft glows over the dot grid — aurora/dusk/forest/mono/none
+  const [glowTop, glowBottom] = wallpaperGlows(prefs.wallpaper, isDark)
 
   return (
     <motion.div
@@ -2131,6 +2597,41 @@ export function ChatRoom({
             </motion.p>
           </AnimatePresence>
         </button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={pipConversationId !== null ? 'Close mini chat window' : 'Open mini chat window'}
+          aria-pressed={pipConversationId !== null}
+          onClick={() => {
+            haptic(10)
+            if (pipConversationId !== null) {
+              closePipChat()
+            } else {
+              startPipChat(conversationId)
+            }
+          }}
+          className={cn(
+            'size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300',
+            pipConversationId !== null && 'text-emerald-600 dark:text-emerald-400',
+          )}
+        >
+          <PictureInPicture2 className="size-5" aria-hidden />
+        </Button>
+        {isGroup ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Group info"
+            onClick={() => {
+              haptic(8)
+              setGroupInfoOpen(true)
+            }}
+            className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+          >
+            <Info className="size-5" aria-hidden />
+          </Button>
+        ) : null}
 
         <Button
           variant="ghost"
@@ -2408,6 +2909,9 @@ export function ChatRoom({
                   onOpenThread={openThread}
                   onVote={handleVote}
                   onClosePoll={(pollId) => closePoll.mutate(pollId)}
+                  bubbleRadius={prefs.bubbleRadius}
+                  density={prefs.density}
+                  onOpenProfile={openProfileForAuthor}
                   highlighted={highlight !== null && highlight.id === item.message.id}
                 />
               ),
@@ -2441,9 +2945,15 @@ export function ChatRoom({
                   ) : other ? (
                     <UserAvatar name={other.name} color={other.color} size={28} />
                   ) : null}
-                  <div className="rounded-2xl rounded-bl-md border border-zinc-100 bg-white px-3 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800">
-                    <TypingDots />
-                  </div>
+                  {/* Telegram-style morphing pill: borderRadius breathes with the dots */}
+                  <motion.div
+                    animate={prefs.reducedMotion ? undefined : { borderRadius: ['1.25rem', '0.875rem', '1.25rem'] }}
+                    transition={{ repeat: Infinity, duration: 0.72, ease: 'easeInOut' }}
+                    className="rounded-2xl rounded-bl-md border border-zinc-100 bg-white px-3 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800"
+                    style={{ willChange: 'border-radius' }}
+                  >
+                    <TypingDots reducedMotion={prefs.reducedMotion} />
+                  </motion.div>
                 </motion.div>
               ) : null}
             </AnimatePresence>
@@ -2585,6 +3095,34 @@ export function ChatRoom({
           ) : null}
         </AnimatePresence>
 
+        <AnimatePresence initial={false}>
+          {pendingEffect !== null ? (
+            <motion.div
+              key="effect-chip"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div className="mb-2 flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/30">
+                <Sparkles className="size-3.5 shrink-0" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">
+                  {EFFECT_EMOJI[pendingEffect]} {pendingEffect} effect armed — next message pops
+                </span>
+                <button
+                  type="button"
+                  aria-label="Cancel effect"
+                  onClick={() => setPendingEffect(null)}
+                  className="rounded-full p-0.5 outline-none transition-transform hover:scale-110 active:scale-90"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
         {broadcastLocked ? (
           <div className="flex items-center justify-center gap-2 rounded-2xl bg-zinc-100 px-3 py-3 text-xs font-semibold text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
             <Megaphone className="size-4 text-emerald-500" aria-hidden />
@@ -2593,6 +3131,15 @@ export function ChatRoom({
         ) : null}
 
         <div className={cn('relative flex items-end gap-2', broadcastLocked && 'pointer-events-none select-none opacity-40')}>
+          {/* slash-command palette (Discord/Slack-style) — fast-path over the plain parser */}
+          {!editing && !recording ? (
+            <SlashPalette
+              open={input.startsWith('/') && !broadcastLocked && !slashDismissed}
+              query={input}
+              onSelect={runPaletteCommand}
+              onDismiss={() => setSlashDismissed(true)}
+            />
+          ) : null}
           {/* @mention autocomplete (Slack/Discord-style) */}
           {mentionMatches.length > 0 ? (
             <div
@@ -2799,6 +3346,28 @@ export function ChatRoom({
                   </div>
                 </PopoverContent>
               </Popover>
+              <button
+                type="button"
+                aria-label="Send a sticker"
+                onClick={() => {
+                  haptic(8)
+                  setStickerOpen(true)
+                }}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 dark:hover:bg-zinc-800"
+              >
+                <Sticker className="size-6" aria-hidden />
+              </button>
+              <button
+                type="button"
+                aria-label="Share location"
+                onClick={() => {
+                  haptic(8)
+                  setLocationOpen(true)
+                }}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-teal-600 active:scale-90 dark:hover:bg-zinc-800"
+              >
+                <MapPin className="size-6" aria-hidden />
+              </button>
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -2812,7 +3381,7 @@ export function ChatRoom({
                 onBlur={stopTyping}
                 className="pulse-scroll max-h-[120px] flex-1 resize-none rounded-3xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-colors focus:border-emerald-400 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-emerald-500/70"
               />
-              {input.trim().length === 0 && !editing ? (
+              {input.trim().length === 0 && !editing && pendingEffect === null ? (
                 <button
                   type="button"
                   aria-label="Record voice note"
@@ -2845,6 +3414,8 @@ export function ChatRoom({
           )}
         </div>
       </div>
+      {/* clearance for the floating bottom dock (composer must never sit under it) */}
+      <div className="shrink-0 bg-white dark:bg-zinc-900" style={{ height: dockInset }} aria-hidden />
 
       {/* message actions */}
       <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
@@ -3546,6 +4117,32 @@ export function ChatRoom({
         onSend={() => submitThreadReply(threadDraft)}
       />
 
+      {/* ── R19 toolkit overlays ───────────────────────────────── */}
+      <StickerPicker open={stickerOpen} onOpenChange={setStickerOpen} onPick={sendSticker} />
+      <LocationShareSheet
+        open={locationOpen}
+        onClose={() => setLocationOpen(false)}
+        onConfirm={sendLocation}
+      />
+      <GroupInfoSheet
+        open={groupInfoOpen}
+        onClose={() => setGroupInfoOpen(false)}
+        conversationId={conversationId}
+        meId={me.id}
+      />
+      <UserProfileSheet
+        user={profileUser}
+        open={profileUser !== null}
+        onOpenChange={(v) => {
+          if (!v) setProfileUser(null)
+        }}
+      />
+      <PipChat me={me} />
+      {/* full-screen message effects — one canvas, queue upstream, zero pointer events */}
+      <div className="pointer-events-none fixed inset-0 z-[80]" aria-hidden>
+        <MessageEffectsLayer active={activeEffect} onDone={handleEffectDone} />
+      </div>
+
       {/* slash-command cheat sheet */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
         <DialogContent className="max-w-[320px] gap-3 rounded-2xl p-4 sm:left-1/2 sm:translate-x-[-50%] dark:bg-zinc-900">
@@ -3620,17 +4217,39 @@ export function ChatRoom({
 
 // ── pieces ───────────────────────────────────────────────────
 
-function TypingDots() {
+function TypingDots({ reducedMotion = false }: { reducedMotion?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 py-0.5" aria-hidden>
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          animate={{ y: [0, -3, 0], opacity: [0.5, 1, 0.5] }}
-          transition={{ repeat: Infinity, duration: 0.9, delay: i * 0.15, ease: 'easeInOut' }}
-          className="size-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500"
-        />
-      ))}
+    <span className="inline-flex items-end gap-1 py-0.5" aria-hidden>
+      {[0, 1, 2].map((i) =>
+        reducedMotion ? (
+          <span
+            key={i}
+            className="size-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500"
+            style={{ opacity: 0.55 + i * 0.22 }}
+          />
+        ) : (
+          // Telegram-grade squash & stretch: dots stretch into pills as they
+          // rise (velocity), squash wide on landing — transform-only, GPU-friendly.
+          <motion.span
+            key={i}
+            className="size-1.5 origin-bottom rounded-full bg-zinc-400 dark:bg-zinc-500"
+            style={{ willChange: 'transform' }}
+            animate={{
+              y: [0, -4, -4, 0, 0],
+              scaleY: [1, 1.55, 1.35, 0.7, 1],
+              scaleX: [1, 0.8, 0.9, 1.2, 1],
+              opacity: [0.45, 1, 0.95, 0.5, 0.45],
+            }}
+            transition={{
+              repeat: Infinity,
+              duration: 0.92,
+              delay: i * 0.14,
+              ease: 'easeInOut',
+              times: [0, 0.38, 0.55, 0.8, 1],
+            }}
+          />
+        ),
+      )}
     </span>
   )
 }
@@ -3776,6 +4395,12 @@ interface MessageRowProps {
   onOpenThread: (message: ChatMessage) => void
   onVote: (pollId: string, optionId: string) => void
   onClosePoll: (pollId: string) => void
+  /** prefs: bubble corner style */
+  bubbleRadius: 'md' | 'lg' | 'pill'
+  /** prefs: row density */
+  density: 'cozy' | 'compact'
+  /** tap a sender avatar → open their profile sheet */
+  onOpenProfile: (sender: MessageAuthor) => void
 }
 
 /** Renders text with the first case-insensitive occurrence of `query` highlighted. */
@@ -4204,6 +4829,9 @@ const MessageRow = memo(function MessageRow({
   onOpenThread,
   onVote,
   onClosePoll,
+  bubbleRadius,
+  density,
+  onOpenProfile,
 }: MessageRowProps) {
   const deleted = message.deletedAt !== null
   const pending = message.id.startsWith('temp-')
@@ -4216,6 +4844,12 @@ const MessageRow = memo(function MessageRow({
   const isImage = !deleted && message.imagePath !== null
   const isVoice = !deleted && !isImage && message.audioPath !== null
   const isPoll = !deleted && message.poll !== null
+  const isSticker = !deleted && !isImage && !isVoice && message.kind === 'sticker'
+  const sticker = isSticker ? parseSticker(message.payload) : null
+  const isLocation = !deleted && !isImage && !isVoice && message.kind === 'location'
+  const loc = isLocation ? parseLocationPayload(message.payload) : null
+  /** jumbo-emoji, stickers and location cards render without bubble chrome */
+  const plainChrome = !deleted && (jumbo || isSticker || isLocation)
   /** Snapchat/WhatsApp view-once gates */
   const viewGated = isImage && message.viewOnce && !mine && message.viewedAt === null
   const viewBurned = isImage && message.viewOnce && !mine && message.viewedAt !== null
@@ -4254,13 +4888,23 @@ const MessageRow = memo(function MessageRow({
       className={cn(
         'flex w-full scroll-mt-24',
         mine ? 'justify-end' : 'justify-start',
-        head ? 'mt-2.5' : 'mt-0.5',
+        density === 'compact' ? (head ? 'mt-1' : 'mt-px') : head ? 'mt-2.5' : 'mt-0.5',
       )}
     >
       {!mine && isGroup ? (
         head ? (
           <div className="mr-1.5 flex shrink-0 items-end pb-5">
-            <UserAvatar name={message.sender.name} color={message.sender.color} size={28} />
+            <button
+              type="button"
+              aria-label={`View ${message.sender.name}'s profile`}
+              className="rounded-full outline-none transition-transform active:scale-90"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenProfile(message.sender)
+              }}
+            >
+              <UserAvatar name={message.sender.name} color={message.sender.color} size={28} />
+            </button>
           </div>
         ) : (
           <span className="mr-1.5 block w-7 shrink-0" aria-hidden />
@@ -4335,22 +4979,22 @@ const MessageRow = memo(function MessageRow({
           className={cn(
             'relative select-none',
             highlighted && !deleted && 'animate-[pulse-message-flash_1.5s_ease-out_1]',
-            jumbo
+            plainChrome
               ? 'px-1 py-0.5'
               : isPoll || (isImage && !viewBurned)
-                ? 'rounded-2xl p-1 shadow-sm'
+                ? `${BUBBLE_RADIUS[bubbleRadius]} p-1 shadow-sm`
                 : isVoice
-                  ? 'rounded-2xl px-2.5 py-2 shadow-sm'
-                  : 'rounded-2xl px-3 py-2 shadow-sm',
+                  ? `${BUBBLE_RADIUS[bubbleRadius]} px-2.5 py-2 shadow-sm`
+                  : `${BUBBLE_RADIUS[bubbleRadius]} px-3 py-2 shadow-sm`,
             deleted &&
               cn(
                 'border border-dashed italic',
                 'rounded-2xl border-zinc-300 bg-transparent text-zinc-400 dark:border-zinc-600 dark:text-zinc-500',
                 mine ? 'rounded-br-md opacity-80' : 'rounded-bl-md',
               ),
-            !deleted && !jumbo && (mine
+            !deleted && !plainChrome && (mine
               ? cn(
-                  'rounded-2xl rounded-br-md bg-emerald-500 text-white',
+                  `${BUBBLE_RADIUS[bubbleRadius]} rounded-br-md bg-emerald-500 text-white`,
                   queued && 'ring-1 ring-inset ring-white/40 opacity-95', // queued: dashed-feel cue
                   mentionsMe && 'ring-2 ring-inset ring-amber-300/80', // you were mentioned
                 )
@@ -4487,6 +5131,19 @@ const MessageRow = memo(function MessageRow({
                   mine={mine}
                   seed={message.id}
                 />
+              ) : isSticker && sticker ? (
+                <div
+                  role="img"
+                  aria-label={`Sticker ${sticker.emoji} from the ${sticker.pack} pack`}
+                  className={cn(
+                    'flex size-24 items-center justify-center rounded-3xl text-5xl shadow-md ring-1 ring-black/5 transition-transform active:scale-95',
+                    stickerGradient(sticker.pack),
+                  )}
+                >
+                  {sticker.emoji}
+                </div>
+              ) : isLocation && loc ? (
+                <LocationBubble lat={loc.lat} lng={loc.lng} label={loc.label} mine={mine} />
               ) : jumbo ? (
                 <p className="text-[34px] leading-[1.2] break-words">{message.content}</p>
               ) : (

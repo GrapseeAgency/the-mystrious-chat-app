@@ -218,6 +218,8 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
     conversationId: message.conversationId,
     senderId: message.senderId,
     content: message.content,
+    kind: message.kind ?? 'text',
+    payload: message.payload ?? null,
     deletedAt: message.deletedAt ? message.deletedAt.toISOString() : null,
     createdAt: message.createdAt.toISOString(),
     sender: mapAuthor(message.sender),

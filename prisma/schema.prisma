@@ -19,6 +19,7 @@ model User {
   color          String                    @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
   statusEmoji    String? // Discord-style custom status glyph (null = none)
   statusText     String? // Discord-style custom status line (null = none)
+  preferences    String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
   createdAt      DateTime                  @default(now())
   lastSeenAt     DateTime                  @default(now())
   wallet         UserWallet?

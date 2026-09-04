@@ -4,17 +4,18 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
-import { BadgeCheck, Check, Compass, Copy, LayoutDashboard, LayoutGrid, LogOut, LoaderCircle, Moon, MoonStar, PanelRight, Smartphone, Star, Sun, Volume2, Vibrate } from 'lucide-react'
+import { AtSign, BadgeCheck, Check, ChevronRight, Compass, Copy, LayoutDashboard, LayoutGrid, LoaderCircle, LogOut, Moon, MoonStar, PanelRight, Settings, Smartphone, Star, Sun, Volume2, Vibrate, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, SavedItem } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
 import {
   AVATAR_GRADIENTS,
   PULSE_COLORS,
+  ApiError,
   apiJson,
   formatMemberSince,
   jsonBody,
@@ -38,7 +39,9 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { UserAvatar } from '@/components/chat/user-avatar'
+import { SettingsScreen } from '@/components/chat/settings-screen'
 import { pulseSettingsStore, haptic, isQuietHoursNow, primeSound } from '@/lib/pulse-settings'
 import { promptPwaInstall, usePulsePwa } from '@/lib/pwa-store'
 import { useMounted } from '@/hooks/use-mounted'
@@ -106,6 +109,10 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
   /** saved-messages library drawer */
   const [savedOpen, setSavedOpen] = useState(false)
   const [switchOpen, setSwitchOpen] = useState(false)
+  /** @handle editor dialog */
+  const [handleOpen, setHandleOpen] = useState(false)
+  /** full settings-tree screen (owned by R19-d) */
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const handleInstall = async () => {
     const outcome = await promptPwaInstall()
@@ -258,6 +265,28 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
               />
             </div>
 
+            {/* @handle editor row */}
+            <button
+              type="button"
+              onClick={() => {
+                haptic(8)
+                setHandleOpen(true)
+              }}
+              aria-label={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
+              className="flex min-h-[56px] w-full items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-left outline-none transition-colors hover:border-emerald-300 active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-emerald-500/40"
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
+                <AtSign className="size-4 text-emerald-500" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Handle</span>
+                <span className="block truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                  {me.username ? `@${me.username}` : 'Set your handle'}
+                </span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
+            </button>
+
             {/* Discord-style custom status */}
             <div className="space-y-2 py-1">
               <Label htmlFor="profile-status" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
@@ -366,6 +395,28 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
           <StatChip label="Unread" value={stats.unread > 99 ? '99+' : String(stats.unread)} accent />
           <StatChip label="Member since" value={stats.memberSince} />
         </section>
+
+        {/* general — full settings tree */}
+        <Section title="General">
+          <button
+            type="button"
+            onClick={() => {
+              haptic(8)
+              setSettingsOpen(true)
+            }}
+            aria-label="Open settings"
+            className="flex min-h-[52px] w-full items-center gap-3 rounded-xl px-1 py-2 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
+              <Settings className="size-4 text-emerald-500" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Settings</span>
+              <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">Preferences, storage, privacy &amp; more</span>
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
+          </button>
+        </Section>
 
         {/* navigation architecture — 4 swappable styles */}
         <Section title="Navigation">
@@ -609,6 +660,23 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
         </DrawerContent>
       </Drawer>
 
+      {/* @handle editor dialog */}
+      <HandleEditorDialog
+        open={handleOpen}
+        onOpenChange={setHandleOpen}
+        me={me}
+        onSaved={(user) => {
+          setUser(user)
+          queryClient.setQueryData(['me', me.id], user)
+          queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+            old?.map((u) => (u.id === user.id ? user : u)),
+          )
+        }}
+      />
+
+      {/* full settings tree (owned by crew R19-d) */}
+      <SettingsScreen open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
       <AlertDialog open={switchOpen} onOpenChange={setSwitchOpen}>
         <AlertDialogContent className="max-w-[320px] rounded-2xl border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">
           <AlertDialogHeader>
@@ -716,5 +784,241 @@ function NavStyleGrid() {
         )
       })}
     </div>
+  )
+}
+
+// ── @handle editor ───────────────────────────────────────────
+
+const HANDLE_MIN = 3
+const HANDLE_MAX = 20
+const HANDLE_RE = /^[a-z0-9_]+$/
+const HANDLE_DEBOUNCE_MS = 350
+
+/** Mirrors normalizeUsername on the server: 3–20 chars, a-z0-9_ */
+function isValidHandle(value: string): boolean {
+  return value.length >= HANDLE_MIN && value.length <= HANDLE_MAX && HANDLE_RE.test(value)
+}
+
+/** Keep only characters the server would accept. */
+function sanitizeHandleInput(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, HANDLE_MAX)
+}
+
+function HandleEditorDialog({
+  open,
+  onOpenChange,
+  me,
+  onSaved,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  me: AppUser
+  onSaved: (user: AppUser) => void
+}) {
+  // body mounts only while open → its state resets naturally on every open
+  if (!open) return null
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <HandleEditorBody me={me} onSaved={onSaved} onClose={() => onOpenChange(false)} />
+    </Dialog>
+  )
+}
+
+function HandleEditorBody({
+  me,
+  onSaved,
+  onClose,
+}: {
+  me: AppUser
+  onSaved: (user: AppUser) => void
+  onClose: () => void
+}) {
+  const [value, setValue] = useState(me.username ?? '')
+  const [debounced, setDebounced] = useState(me.username ?? '')
+  /** suggestion captured from a 409 username_taken response */
+  const [clashSuggestion, setClashSuggestion] = useState<string | null>(null)
+
+  const trimmed = value.trim()
+  const changed = trimmed !== (me.username ?? '')
+  const valid = isValidHandle(trimmed)
+
+  // live availability — debounced, skipped while re-typing the current handle
+  const checkEnabled = valid && debounced !== (me.username ?? '')
+  const checkQ = useQuery({
+    queryKey: ['username-check', debounced],
+    queryFn: async (): Promise<{ available: boolean; suggestion: string | null }> => {
+      return apiJson<{ available: boolean; suggestion: string | null }>(
+        `/api/users/check-username?username=${encodeURIComponent(debounced)}`,
+      )
+    },
+    enabled: checkEnabled,
+    staleTime: 5_000,
+  })
+
+  const checkStale = !checkEnabled || debounced !== trimmed
+  const checking = valid && changed && (checkStale || checkQ.isFetching)
+  const available = valid && changed && !checkStale && checkQ.data?.available === true
+  const taken = valid && changed && !checkStale && checkQ.data?.available === false
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(trimmed), HANDLE_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [trimmed])
+
+  const save = useMutation({
+    mutationFn: async (): Promise<AppUser> => {
+      const res = await apiJson<{ user: AppUser }>(
+        `/api/users/${encodeURIComponent(me.id)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ username: trimmed }),
+        },
+      )
+      return res.user
+    },
+    onSuccess: (user) => {
+      onSaved(user)
+      toast.success(user.username ? `@${user.username} is yours now` : 'Handle saved')
+      onClose()
+    },
+    onError: async (error: Error) => {
+      toast.error(error.message || 'Could not save the handle')
+      if (error instanceof ApiError && error.status === 409) {
+        // the PATCH route's 409 carries a suggestion but ApiError drops it —
+        // re-ask the availability endpoint for the nearest free variant
+        try {
+          const res = await apiJson<{ available: boolean; suggestion: string | null }>(
+            `/api/users/check-username?username=${encodeURIComponent(trimmed)}`,
+          )
+          setClashSuggestion(res.suggestion)
+        } catch {
+          setClashSuggestion(null)
+        }
+      }
+    },
+  })
+
+  return (
+    <DialogContent className="max-w-[340px] gap-3 rounded-2xl border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+        <DialogHeader className="text-left">
+          <DialogTitle className="text-base tracking-tight">Your @handle</DialogTitle>
+          <DialogDescription className="text-xs leading-relaxed">
+            3–20 characters: lowercase letters, digits, underscore. Friends can find you by it.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-1.5">
+          <div className="relative">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[15px] font-semibold text-zinc-400 dark:text-zinc-500"
+            >
+              @
+            </span>
+            <Input
+              value={value}
+              onChange={(e) => {
+                setClashSuggestion(null)
+                setValue(sanitizeHandleInput(e.target.value))
+              }}
+              placeholder="e.g. alice_chen"
+              maxLength={HANDLE_MAX}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              enterKeyHint="done"
+              aria-label="Your handle"
+              aria-invalid={(taken || clashSuggestion !== null) || undefined}
+              aria-describedby="handle-editor-availability"
+              className={cn(
+                'h-11 rounded-xl border-zinc-200 bg-zinc-50 pl-8 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800',
+                (taken || clashSuggestion !== null) &&
+                  'border-amber-400 focus-visible:ring-amber-500/50 dark:border-amber-500/60',
+              )}
+            />
+          </div>
+
+          <p
+            id="handle-editor-availability"
+            role="status"
+            aria-live="polite"
+            className="flex min-h-[18px] flex-wrap items-center gap-1.5 text-xs font-medium"
+          >
+            {trimmed.length === 0 ? (
+              <span className="text-zinc-400 dark:text-zinc-500">Type a handle, or leave empty.</span>
+            ) : !valid ? (
+              <span className="text-zinc-500 dark:text-zinc-400">
+                {HANDLE_MIN}–{HANDLE_MAX} characters: a-z, 0-9, underscore.
+              </span>
+            ) : checking ? (
+              <span className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+                <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+                Checking @{trimmed}…
+              </span>
+            ) : available ? (
+              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <Check className="size-3.5" strokeWidth={3} aria-hidden />
+                @{trimmed} is free!
+              </span>
+            ) : trimmed === (me.username ?? '') ? (
+              <span className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+                <Check className="size-3.5" strokeWidth={3} aria-hidden />
+                That&apos;s your current handle
+              </span>
+            ) : taken ? (
+              <span className="flex flex-wrap items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                <X className="size-3.5" strokeWidth={3} aria-hidden />
+                @{trimmed} is taken
+                {checkQ.data?.suggestion ? (
+                  <button
+                    type="button"
+                    onClick={() => setValue(sanitizeHandleInput(checkQ.data?.suggestion ?? ''))}
+                    className="ml-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-700 outline-none transition-colors hover:bg-amber-500/25 active:scale-95 dark:text-amber-300"
+                  >
+                    Use @{checkQ.data.suggestion}
+                  </button>
+                ) : null}
+              </span>
+            ) : clashSuggestion ? (
+              <span className="flex flex-wrap items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                <X className="size-3.5" strokeWidth={3} aria-hidden />
+                @{trimmed} was just taken
+                <button
+                  type="button"
+                  onClick={() => setValue(sanitizeHandleInput(clashSuggestion))}
+                  className="ml-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-700 outline-none transition-colors hover:bg-amber-500/25 active:scale-95 dark:text-amber-300"
+                >
+                  Use @{clashSuggestion}
+                </button>
+              </span>
+            ) : null}
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            className="h-10 flex-1 rounded-xl text-sm font-semibold"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => save.mutate()}
+            disabled={!valid || checking || taken || !changed || save.isPending}
+            className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+          >
+            {save.isPending ? (
+              <LoaderCircle className="size-4 animate-spin" aria-hidden />
+            ) : (
+              'Save handle'
+            )}
+          </Button>
+        </div>
+      </DialogContent>
   )
 }

@@ -80,6 +80,8 @@ export interface ChatMessage {
   conversationId: string
   senderId: string
   content: string
+  kind: string // text|image|audio|sticker|location
+  payload: string | null // JSON blob for kind extras (sticker emoji, location coords, effect name)
   deletedAt: string | null // ISO or null
   createdAt: string // ISO
   sender: MessageAuthor

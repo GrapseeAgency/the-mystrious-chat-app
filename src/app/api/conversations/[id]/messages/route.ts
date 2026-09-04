@@ -160,6 +160,71 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
+  // Rich message kinds — sticker packs, live location cards and full-screen
+  // effects all ride the kind+payload pair (kind defaults to "text").
+  const MESSAGE_KINDS = ['text', 'image', 'audio', 'sticker', 'location'] as const
+  const EFFECTS = ['confetti', 'lasers', 'echo', 'sparkles'] as const
+  const kind = strField(body.kind) || 'text'
+  if (!(MESSAGE_KINDS as readonly string[]).includes(kind)) {
+    return NextResponse.json(
+      { error: `kind must be one of: ${MESSAGE_KINDS.join(', ')}.` },
+      { status: 400 },
+    )
+  }
+  let payload: string | null = null
+  if (body.payload !== undefined && body.payload !== null) {
+    if (typeof body.payload !== 'object' || Array.isArray(body.payload)) {
+      return NextResponse.json({ error: 'payload must be an object.' }, { status: 400 })
+    }
+    const p = body.payload as Record<string, unknown>
+    if (kind === 'sticker') {
+      const emoji = strField(p.emoji)
+      if (!emoji || emoji.length > 12) {
+        return NextResponse.json({ error: 'payload.emoji (≤12 chars) is required for stickers.' }, { status: 400 })
+      }
+      if (strField(p.pack).length > 40) {
+        return NextResponse.json({ error: 'payload.pack must be 40 characters or fewer.' }, { status: 400 })
+      }
+    } else if (kind === 'location') {
+      const lat = p.lat
+      const lng = p.lng
+      if (
+        typeof lat !== 'number' || typeof lng !== 'number' ||
+        !Number.isFinite(lat) || !Number.isFinite(lng) ||
+        Math.abs(lat) > 90 || Math.abs(lng) > 180
+      ) {
+        return NextResponse.json(
+          { error: 'payload.lat/lng must be valid coordinates (|lat|≤90, |lng|≤180).' },
+          { status: 400 },
+        )
+      }
+      if (strField(p.label).length > 80) {
+        return NextResponse.json({ error: 'payload.label must be 80 characters or fewer.' }, { status: 400 })
+      }
+    } else if (p.effect !== undefined) {
+      if (typeof p.effect !== 'string' || !(EFFECTS as readonly string[]).includes(p.effect)) {
+        return NextResponse.json(
+          { error: `payload.effect must be one of: ${EFFECTS.join(', ')}.` },
+          { status: 400 },
+        )
+      }
+    }
+    try {
+      payload = JSON.stringify(p)
+    } catch {
+      return NextResponse.json({ error: 'payload is not serializable.' }, { status: 400 })
+    }
+    if (payload && payload.length > 2048) {
+      return NextResponse.json({ error: 'payload must be 2KB or smaller.' }, { status: 400 })
+    }
+  }
+  if (kind === 'sticker' && !payload) {
+    return NextResponse.json({ error: 'Sticker messages need payload.emoji.' }, { status: 400 })
+  }
+  if (kind === 'location' && !payload) {
+    return NextResponse.json({ error: 'Location messages need payload.lat/lng.' }, { status: 400 })
+  }
+
   // Optional image attachment — must reference a previously uploaded file.
   const imagePath = strField(body.imagePath)
   if (imagePath) {
@@ -202,7 +267,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (durationMs !== null && !audioPath) {
     return NextResponse.json({ error: 'durationMs is only valid together with audioPath.' }, { status: 400 })
   }
-  if (!content && !imagePath && !audioPath) {
+  const needsBody = kind !== 'sticker' && kind !== 'location'
+  if (needsBody && !content && !imagePath && !audioPath) {
     return NextResponse.json(
       { error: 'Message needs text content, an image, or a voice note.' },
       { status: 400 },
@@ -288,6 +354,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
         conversationId: id,
         senderId,
         content,
+        kind,
+        ...(payload ? { payload } : {}),
         ...(replyToId ? { replyToId } : {}),
         ...(parentId ? { parentId } : {}),
         ...(viewOnce ? { viewOnce: true } : {}),

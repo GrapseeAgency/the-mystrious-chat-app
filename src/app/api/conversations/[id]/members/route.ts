@@ -168,3 +168,89 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
 
   return NextResponse.json({ ok: true, remainingMembers: remaining.length, promotedUserId })
 }
+
+/**
+ * PATCH /api/conversations/[id]/members  body { requesterId, userId, role: 'admin'|'member' }
+ * Group-only role management. ADMINS ONLY.
+ * - promote member → admin: always allowed
+ * - demote admin → member: allowed unless the target is the LAST admin
+ *   (self-demotion included — the group must always keep at least one admin)
+ * → 200 { conversation: ConversationDetail }; relays conversation:updated.
+ */
+export async function PATCH(req: Request, { params }: RouteCtx) {
+  const { id } = await params
+
+  const body = await safeJson(req)
+  const requesterId = typeof body.requesterId === 'string' ? body.requesterId.trim() : ''
+  const targetUserId = typeof body.userId === 'string' ? body.userId.trim() : ''
+  const role = typeof body.role === 'string' ? body.role.trim() : ''
+  if (!requesterId || !targetUserId) {
+    return NextResponse.json({ error: 'requesterId and userId are required.' }, { status: 400 })
+  }
+  if (role !== 'admin' && role !== 'member') {
+    return NextResponse.json({ error: "role must be 'admin' or 'member'." }, { status: 400 })
+  }
+
+  const conv = await db.conversation.findUnique({ where: { id } })
+  if (!conv) {
+    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  }
+  if (!conv.isGroup) {
+    return NextResponse.json({ error: 'Direct conversations have no roles.' }, { status: 400 })
+  }
+
+  const [requester, target] = await Promise.all([
+    db.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId: requesterId, conversationId: id } },
+      select: { id: true, role: true },
+    }),
+    db.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId: targetUserId, conversationId: id } },
+      select: { id: true, role: true },
+    }),
+  ])
+  if (!requester) {
+    return NextResponse.json({ error: 'You are not a participant of this conversation.' }, { status: 403 })
+  }
+  if (requester.role !== 'admin') {
+    return NextResponse.json({ error: 'Only group admins can change roles.' }, { status: 403 })
+  }
+  if (!target) {
+    return NextResponse.json({ error: 'That user is not a member of this group.' }, { status: 404 })
+  }
+  if (target.role === role) {
+    return NextResponse.json({ error: `That member is already ${role === 'admin' ? 'an admin' : 'a member'}.` }, { status: 409 })
+  }
+  if (role === 'member' && target.role === 'admin') {
+    const otherAdmins = await db.conversationParticipant.count({
+      where: { conversationId: id, role: 'admin', NOT: { id: target.id } },
+    })
+    if (otherAdmins === 0) {
+      return NextResponse.json(
+        { error: 'Cannot demote the last admin — promote someone else first.' },
+        { status: 400 },
+      )
+    }
+  }
+
+  await db.conversationParticipant.update({
+    where: { id: target.id },
+    data: { role },
+  })
+
+  const updated = await db.conversation.findUnique({
+    where: { id },
+    include: CONVERSATION_FULL_INCLUDE,
+  })
+  if (!updated) {
+    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  }
+  const detail = buildConversationDetail(updated, requesterId)
+  const memberIds = await memberIdsOf(id)
+  await notifySocket('conversation:updated', memberIds, {
+    type: 'conversation:updated',
+    conversationId: id,
+    recipientIds: memberIds,
+  })
+  return NextResponse.json({ conversation: detail })
+}
