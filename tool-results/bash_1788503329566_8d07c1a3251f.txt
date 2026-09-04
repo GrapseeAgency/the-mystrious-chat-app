@@ -1,3 +1,4 @@
+983:export function HubTab({ me }: { me: AppUser }) {
 // ─────────────────────────────────────────────────────────────
 // Pulse Hub — the economy/control deck (6 live panels):
 //   Wallet · Tasks · Market · Logs · Swap · Apps (100 matrix)
@@ -829,13 +830,7 @@ function CategoryView({
   )
 }
 
-function AppsPanel({
-  me,
-  onOpenConversation,
-}: {
-  me: AppUser
-  onOpenConversation?: (conversationId: string) => void
-}) {
+function AppsPanel({ me }: { me: AppUser }) {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [catView, setCatView] = useState<CatView | null>(null)
@@ -891,7 +886,7 @@ function AppsPanel({
             transition={{ duration: 0.18, ease: 'easeOut' }}
             className="absolute inset-0 z-[70]"
           >
-            <AppDetailSheet app={openApp} me={me} onClose={() => setOpenApp(null)} onOpenConversation={onOpenConversation} />
+            <AppDetailSheet app={openApp} me={me} onClose={() => setOpenApp(null)} />
           </motion.div>
         ) : catView ? (
           <motion.div
@@ -986,14 +981,7 @@ function AppsPanel({
 
 // ── Hub shell ────────────────────────────────────────────────
 
-export function HubTab({
-  me,
-  onOpenConversation,
-}: {
-  me: AppUser
-  /** open a conversation (community chats) in the main chat surface */
-  onOpenConversation?: (conversationId: string) => void
-}) {
+export function HubTab({ me }: { me: AppUser }) {
   const [panel, setPanel] = useState<HubPanel>('wallet')
 
   return (
@@ -1035,7 +1023,7 @@ export function HubTab({
           {panel === 'market' ? <MarketPanel me={me} /> : null}
           {panel === 'swap' ? <SwapPanel me={me} /> : null}
           {panel === 'logs' ? <LogsPanel /> : null}
-          {panel === 'apps' ? <AppsPanel me={me} onOpenConversation={onOpenConversation} /> : null}
+          {panel === 'apps' ? <AppsPanel me={me} /> : null}
         </motion.div>
       </div>
     </div>

@@ -182,7 +182,16 @@ export function MainShell({ me }: { me: AppUser }) {
                 onGoProfile={() => setTab('profile')}
               />
             ) : null}
-            {tab === 'hub' ? <HubTab me={me} /> : null}
+            {tab === 'hub' ? (
+              <HubTab
+                me={me}
+                onOpenConversation={(conversationId) => {
+                  setOpenConversationAnchorMs(null)
+                  setJumpMessageId(null)
+                  setOpenConversationId(conversationId)
+                }}
+              />
+            ) : null}
             {tab === 'contacts' ? (
               <ContactsTab
                 me={me}

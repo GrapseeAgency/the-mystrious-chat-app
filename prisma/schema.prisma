@@ -153,6 +153,7 @@ model Conversation {
   inviteCode        String?                   @unique // shareable join code (groups only; null = no active link)
   ttlSeconds        Int                       @default(0) // disappearing-message TTL (0 = off; applied at send time)
   broadcastMode     Boolean                   @default(false) // Discord-stage/Telegram-channel style admin-only posting
+  appKey            String?                   @unique // hub Apps-matrix community chat (app number as string, e.g. "4")
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt // bumped on every new message → list sort
   participants      ConversationParticipant[]
