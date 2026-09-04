@@ -1,0 +1,802 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse Hub — the economy/control deck (6 live panels):
+     3→//   Wallet · Tasks · Market · Logs · Swap · Apps (100 matrix)
+     4→// Every panel talks to real /api/hub/* routes — zero mocks.
+     5→// ─────────────────────────────────────────────────────────────
+     6→'use client'
+     7→
+     8→import { useMemo, useState } from 'react'
+     9→import { motion } from 'framer-motion'
+    10→import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+    11→import { toast } from 'sonner'
+    12→import {
+    13→  ArrowDownToLine,
+    14→  ArrowUpFromLine,
+    15→  BadgeCheck,
+    16→  Check,
+    17→  ChevronRight,
+    18→  CircleDollarSign,
+    19→  Coins,
+    20→  Flame,
+    21→  Gem,
+    22→  Gift,
+    23→  ListTodo,
+    24→  Search,
+    25→  Send,
+    26→  ShoppingBag,
+    27→  Terminal,
+    28→  Repeat,
+    29→} from 'lucide-react'
+    30→import type { AppUser, HubTaskItem, LedgerEntry, LogEntry, MarketListingItem, SwapInfo, WalletState } from '@/lib/types'
+    31→import { apiJson } from '@/lib/pulse-utils'
+    32→import { cn } from '@/lib/utils'
+    33→import { Button } from '@/components/ui/button'
+    34→import { Input } from '@/components/ui/input'
+    35→import { MATRIX, CATEGORY_CHIPS, MATRIX_TO_NAV, type MatrixApp } from '@/lib/hub-catalog'
+    36→
+    37→type HubPanel = 'wallet' | 'tasks' | 'market' | 'logs' | 'swap' | 'apps'
+    38→
+    39→const PANELS: Array<{ id: HubPanel; label: string; Icon: typeof Coins }> = [
+    40→  { id: 'wallet', label: 'Wallet', Icon: Coins },
+    41→  { id: 'tasks', label: 'Tasks', Icon: ListTodo },
+    42→  { id: 'market', label: 'Market', Icon: ShoppingBag },
+    43→  { id: 'swap', label: 'Swap', Icon: Repeat },
+    44→  { id: 'logs', label: 'Logs', Icon: Terminal },
+    45→  { id: 'apps', label: 'Apps', Icon: BadgeCheck },
+    46→]
+    47→
+    48→// ── Wallet panel ─────────────────────────────────────────────
+    49→
+    50→function WalletPanel({ me }: { me: AppUser }) {
+    51→  const qc = useQueryClient()
+    52→  const [toUsername, setToUsername] = useState('')
+    53→  const [amount, setAmount] = useState('')
+    54→  const [note, setNote] = useState('')
+    55→
+    56→  const walletQ = useQuery({
+    57→    queryKey: ['hub-wallet', me.id],
+    58→    queryFn: async () => {
+    59→      const res = await apiJson<{ wallet: WalletState; ledger: LedgerEntry[] }>(
+    60→        `/api/hub/wallet?userId=${encodeURIComponent(me.id)}`,
+    61→      )
+    62→      return res
+    63→    },
+    64→    refetchInterval: 30_000,
+    65→  })
+    66→
+    67→  const invalidate = () => void qc.invalidateQueries({ queryKey: ['hub-wallet', me.id] })
+    68→
+    69→  const checkin = useMutation({
+    70→    mutationFn: () =>
+    71→      apiJson<{ wallet: WalletState; reward: number; streak: number }>('/api/hub/wallet/checkin', {
+    72→        method: 'POST',
+    73→        headers: { 'Content-Type': 'application/json' },
+    74→        body: JSON.stringify({ userId: me.id }),
+    75→      }),
+    76→    onSuccess: (data) => toast.success(`Checked in — +${data.reward} PC · ${data.streak}-day streak 🔥`),
+    77→    onError: (err: Error) => toast.error(err.message),
+    78→    onSettled: invalidate,
+    79→  })
+    80→
+    81→  const transfer = useMutation({
+    82→    mutationFn: (input: { toUsername: string; amount: number; note: string }) =>
+    83→      apiJson<{ wallet: WalletState }>('/api/hub/wallet/transfer', {
+    84→        method: 'POST',
+    85→        headers: { 'Content-Type': 'application/json' },
+    86→        body: JSON.stringify({ userId: me.id, ...input }),
+    87→      }),
+    88→    onSuccess: (_d, v) => {
+    89→      toast.success(`Sent ${v.amount} PC to @${v.toUsername}`)
+    90→      setToUsername('')
+    91→      setAmount('')
+    92→      setNote('')
+    93→    },
+    94→    onError: (err: Error) => toast.error(err.message),
+    95→    onSettled: invalidate,
+    96→  })
+    97→
+    98→  const wallet = walletQ.data?.wallet
+    99→
+   100→  return (
+   101→    <div className="flex flex-col gap-4">
+   102→      {/* balance hero */}
+   103→      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 p-5 text-white shadow-lg">
+   104→        <div className="absolute -right-6 -top-8 size-28 rounded-full bg-white/10 blur-xl" />
+   105→        <p className="text-[11px] font-medium uppercase tracking-wider text-white/70">Pulse balance</p>
+   106→        <div className="mt-1 flex items-end gap-4">
+   107→          <div>
+   108→            <p className="text-3xl font-bold leading-none">{wallet ? wallet.coins.toLocaleString() : '—'}</p>
+   109→            <p className="mt-1 text-[11px] font-medium text-white/80">PC · Pulse Coins</p>
+   110→          </div>
+   111→          <div className="border-l border-white/20 pl-4">
+   112→            <p className="flex items-center gap-1 text-xl font-bold leading-none">
+   113→              <Gem className="size-4" /> {wallet ? wallet.gems : '—'}
+   114→            </p>
+   115→            <p className="mt-1 text-[11px] font-medium text-white/80">Gems</p>
+   116→          </div>
+   117→        </div>
+   118→        <Button
+   119→          size="sm"
+   120→          disabled={checkin.isPending || wallet?.checkedInToday}
+   121→          onClick={() => checkin.mutate()}
+   122→          className="mt-4 w-full bg-white font-semibold text-emerald-700 hover:bg-white/90 disabled:opacity-60"
+   123→        >
+   124→          {wallet?.checkedInToday ? (
+   125→            <>Checked in today · streak {wallet.streak}</>
+   126→          ) : (
+   127→            <>
+   128→              <Gift className="mr-1.5 size-4" /> Daily check-in · +25 PC
+   129→            </>
+   130→          )}
+   131→        </Button>
+   132→      </div>
+   133→
+   134→      {/* transfer */}
+   135→      <section aria-label="Transfer coins" className="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+   136→        <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+   137→          <Send className="size-4 text-emerald-600" /> Send coins by @handle
+   138→        </h3>
+   139→        <div className="mt-3 grid grid-cols-2 gap-2">
+   140→          <Input
+   141→            value={toUsername}
+   142→            onChange={(e) => setToUsername(e.target.value.replace(/^@/, '').toLowerCase())}
+   143→            placeholder="@handle"
+   144→            className="col-span-2 h-9"
+   145→          />
+   146→          <Input
+   147→            value={amount}
+   148→            onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ''))}
+   149→            placeholder="Amount (PC)"
+   150→            inputMode="numeric"
+   151→            className="h-9"
+   152→          />
+   153→          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" className="h-9" />
+   154→        </div>
+   155→        <Button
+   156→          size="sm"
+   157→          className="mt-2.5 w-full"
+   158→          disabled={transfer.isPending || !toUsername || !amount}
+   159→          onClick={() => transfer.mutate({ toUsername, amount: Number(amount), note })}
+   160→        >
+   161→          {transfer.isPending ? 'Sending…' : 'Transfer'}
+   162→        </Button>
+   163→      </section>
+   164→
+   165→      {/* ledger */}
+   166→      <section aria-label="Ledger" className="rounded-2xl border border-zinc-200 dark:border-zinc-800">
+   167→        <h3 className="border-b border-zinc-200 px-4 py-2.5 text-sm font-semibold dark:border-zinc-800">
+   168→          Ledger · last {walletQ.data?.ledger.length ?? 0}
+   169→        </h3>
+   170→        <ul className="max-h-72 divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-800/60">
+   171→          {(walletQ.data?.ledger ?? []).map((row) => (
+   172→            <li key={row.id} className="flex items-center gap-3 px-4 py-2.5">
+   173→              {row.amount >= 0 ? (
+   174→                <ArrowDownToLine className="size-4 shrink-0 text-emerald-600" />
+   175→              ) : (
+   176→                <ArrowUpFromLine className="size-4 shrink-0 text-rose-500" />
+   177→              )}
+   178→              <div className="min-w-0 flex-1">
+   179→                <p className="truncate text-[13px] font-medium">{row.note || row.kind}</p>
+   180→                <p className="text-[11px] text-zinc-500">{new Date(row.createdAt).toLocaleString()}</p>
+   181→              </div>
+   182→              <p className={cn('text-sm font-bold tabular-nums', row.amount >= 0 ? 'text-emerald-600' : 'text-rose-500')}>
+   183→                {row.amount >= 0 ? '+' : ''}
+   184→                {row.amount} {row.asset}
+   185→              </p>
+   186→            </li>
+   187→          ))}
+   188→          {(walletQ.data?.ledger.length ?? 0) === 0 ? (
+   189→            <li className="px-4 py-6 text-center text-[13px] text-zinc-500">
+   190→              No movements yet — check in above to mint your first coins.
+   191→            </li>
+   192→          ) : null}
+   193→        </ul>
+   194→      </section>
+   195→    </div>
+   196→  )
+   197→}
+   198→
+   199→// ── Tasks panel (3-column kanban) ────────────────────────────
+   200→
+   201→const COLUMNS: Array<{ id: HubTaskItem['status']; label: string }> = [
+   202→  { id: 'todo', label: 'To do' },
+   203→  { id: 'doing', label: 'Doing' },
+   204→  { id: 'done', label: 'Done' },
+   205→]
+   206→
+   207→function TasksPanel({ me }: { me: AppUser }) {
+   208→  const qc = useQueryClient()
+   209→  const [title, setTitle] = useState('')
+   210→
+   211→  const tasksQ = useQuery({
+   212→    queryKey: ['hub-tasks', me.id],
+   213→    queryFn: async () => {
+   214→      const res = await apiJson<{ tasks: HubTaskItem[] }>(`/api/hub/tasks?userId=${encodeURIComponent(me.id)}`)
+   215→      return res.tasks
+   216→    },
+   217→  })
+   218→  const invalidate = () => void qc.invalidateQueries({ queryKey: ['hub-tasks', me.id] })
+   219→
+   220→  const add = useMutation({
+   221→    mutationFn: (t: string) =>
+   222→      apiJson<{ task: HubTaskItem }>('/api/hub/tasks', {
+   223→        method: 'POST',
+   224→        headers: { 'Content-Type': 'application/json' },
+   225→        body: JSON.stringify({ userId: me.id, title: t }),
+   226→      }),
+   227→    onSuccess: () => {
+   228→      setTitle('')
+   229→      invalidate()
+   230→    },
+   231→    onError: (err: Error) => toast.error(err.message),
+   232→  })
+   233→
+   234→  const move = useMutation({
+   235→    mutationFn: (input: { id: string; status: HubTaskItem['status'] }) =>
+   236→      apiJson(`/api/hub/tasks/${input.id}`, {
+   237→        method: 'PATCH',
+   238→        headers: { 'Content-Type': 'application/json' },
+   239→        body: JSON.stringify({ userId: me.id, status: input.status }),
+   240→      }),
+   241→    onSettled: invalidate,
+   242→    onError: (err: Error) => toast.error(err.message),
+   243→  })
+   244→
+   245→  const remove = useMutation({
+   246→    mutationFn: (id: string) => apiJson(`/api/hub/tasks/${id}?userId=${encodeURIComponent(me.id)}`, { method: 'DELETE' }),
+   247→    onSettled: invalidate,
+   248→    onError: (err: Error) => toast.error(err.message),
+   249→  })
+   250→
+   251→  const byStatus = useMemo(() => {
+   252→    const map: Record<HubTaskItem['status'], HubTaskItem[]> = { todo: [], doing: [], done: [] }
+   253→    for (const t of tasksQ.data ?? []) map[t.status]?.push(t)
+   254→    return map
+   255→  }, [tasksQ.data])
+   256→
+   257→  return (
+   258→    <div className="flex flex-col gap-3">
+   259→      <form
+   260→        className="flex gap-2"
+   261→        onSubmit={(e) => {
+   262→          e.preventDefault()
+   263→          if (title.trim()) add.mutate(title.trim())
+   264→        }}
+   265→      >
+   266→        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="New task…" className="h-9" />
+   267→        <Button type="submit" size="sm" disabled={!title.trim() || add.isPending} className="shrink-0">
+   268→          <Check className="size-4" />
+   269→        </Button>
+   270→      </form>
+   271→
+   272→      <div className="grid grid-cols-3 gap-2">
+   273→        {COLUMNS.map((col) => (
+   274→          <div key={col.id} className="rounded-xl bg-zinc-100/70 p-2 dark:bg-zinc-800/40">
+   275→            <p className="mb-2 px-1 text-[11px] font-bold uppercase tracking-wide text-zinc-500">
+   276→              {col.label} · {byStatus[col.id].length}
+   277→            </p>
+   278→            <ul className="flex flex-col gap-1.5">
+   279→              {byStatus[col.id].map((t) => (
+   280→                <motion.li
+   281→                  key={t.id}
+   282→                  layout
+   283→                  initial={{ opacity: 0, scale: 0.95 }}
+   284→                  animate={{ opacity: 1, scale: 1 }}
+   285→                  className="rounded-lg border border-zinc-200 bg-white p-2 shadow-sm dark:border-zinc-700 dark:bg-zinc-900"
+   286→                >
+   287→                  <p className={cn('text-[12px] font-medium leading-snug', t.status === 'done' && 'text-zinc-400 line-through')}>
+   288→                    {t.title}
+   289→                  </p>
+   290→                  <div className="mt-1.5 flex items-center justify-between">
+   291→                    <button
+   292→                      type="button"
+   293→                      aria-label="Advance status"
+   294→                      className="text-[10px] font-semibold text-emerald-600 hover:underline"
+   295→                      onClick={() =>
+   296→                        move.mutate({ id: t.id, status: t.status === 'todo' ? 'doing' : t.status === 'doing' ? 'done' : 'todo' })
+   297→                      }
+   298→                    >
+   299→                      {t.status === 'done' ? '↺ reopen' : '→ next'}
+   300→                    </button>
+   301→                    <button
+   302→                      type="button"
+   303→                      aria-label="Delete task"
+   304→                      className="text-[10px] text-zinc-400 hover:text-rose-500"
+   305→                      onClick={() => remove.mutate(t.id)}
+   306→                    >
+   307→                      ✕
+   308→                    </button>
+   309→                  </div>
+   310→                </motion.li>
+   311→              ))}
+   312→              {byStatus[col.id].length === 0 ? (
+   313→                <li className="rounded-lg border border-dashed border-zinc-300 px-2 py-3 text-center text-[10px] text-zinc-400 dark:border-zinc-700">
+   314→                  empty
+   315→                </li>
+   316→              ) : null}
+   317→            </ul>
+   318→          </div>
+   319→        ))}
+   320→      </div>
+   321→    </div>
+   322→  )
+   323→}
+   324→
+   325→// ── Market panel ─────────────────────────────────────────────
+   326→
+   327→function MarketPanel({ me }: { me: AppUser }) {
+   328→  const qc = useQueryClient()
+   329→  const [title, setTitle] = useState('')
+   330→  const [price, setPrice] = useState('')
+   331→  const [description, setDescription] = useState('')
+   332→
+   333→  const marketQ = useQuery({
+   334→    queryKey: ['hub-market', me.id],
+   335→    queryFn: async () => {
+   336→      const res = await apiJson<{ listings: MarketListingItem[] }>(`/api/hub/market?userId=${encodeURIComponent(me.id)}`)
+   337→      return res.listings
+   338→    },
+   339→    refetchInterval: 30_000,
+   340→  })
+   341→  const walletQ = useQuery({
+   342→    queryKey: ['hub-wallet-mini', me.id],
+   343→    queryFn: async () => {
+   344→      const res = await apiJson<{ wallet: WalletState }>(`/api/hub/wallet?userId=${encodeURIComponent(me.id)}`)
+   345→      return res.wallet
+   346→    },
+   347→  })
+   348→
+   349→  const invalidate = () => {
+   350→    void qc.invalidateQueries({ queryKey: ['hub-market', me.id] })
+   351→    void qc.invalidateQueries({ queryKey: ['hub-wallet-mini', me.id] })
+   352→  }
+   353→
+   354→  const list = useMutation({
+   355→    mutationFn: () =>
+   356→      apiJson('/api/hub/market', {
+   357→        method: 'POST',
+   358→        headers: { 'Content-Type': 'application/json' },
+   359→        body: JSON.stringify({ userId: me.id, title, description, price: Number(price) }),
+   360→      }),
+   361→    onSuccess: () => {
+   362→      toast.success('Listing posted to the market')
+   363→      setTitle('')
+   364→      setPrice('')
+   365→      setDescription('')
+   366→    },
+   367→    onError: (err: Error) => toast.error(err.message),
+   368→    onSettled: invalidate,
+   369→  })
+   370→
+   371→  const buy = useMutation({
+   372→    mutationFn: (id: string) =>
+   373→      apiJson<{ ok: boolean }>(`/api/hub/market/${id}/buy`, {
+   374→        method: 'POST',
+   375→        headers: { 'Content-Type': 'application/json' },
+   376→        body: JSON.stringify({ userId: me.id }),
+   377→      }),
+   378→    onSuccess: () => toast.success('Purchased — coins transferred to the seller'),
+   379→    onError: (err: Error) => toast.error(err.message),
+   380→    onSettled: invalidate,
+   381→  })
+   382→
+   383→  return (
+   384→    <div className="flex flex-col gap-3">
+   385→      <section aria-label="Create listing" className="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+   386→        <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+   387→          <CircleDollarSign className="size-4 text-emerald-600" /> Sell something
+   388→          {walletQ.data ? <span className="ml-auto text-xs font-medium text-zinc-500">you: {walletQ.data.coins} PC</span> : null}
+   389→        </h3>
+   390→        <form
+   391→          className="mt-3 flex flex-col gap-2"
+   392→          onSubmit={(e) => {
+   393→            e.preventDefault()
+   394→            if (title.trim() && price) list.mutate()
+   395→          }}
+   396→        >
+   397→          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (what are you selling?)" className="h-9" />
+   398→          <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="h-9" />
+   399→          <div className="flex gap-2">
+   400→            <Input value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ''))} placeholder="Price PC" inputMode="numeric" className="h-9" />
+   401→            <Button type="submit" size="sm" disabled={!title.trim() || !price || list.isPending} className="shrink-0">
+   402→              List
+   403→            </Button>
+   404→          </div>
+   405→        </form>
+   406→      </section>
+   407→
+   408→      <section aria-label="Listings" className="flex flex-col gap-2">
+   409→        <h3 className="px-1 text-sm font-semibold">Open board</h3>
+   410→        {(marketQ.data ?? []).map((l) => (
+   411→          <motion.div
+   412→            key={l.id}
+   413→            layout
+   414→            initial={{ opacity: 0, y: 4 }}
+   415→            animate={{ opacity: 1, y: 0 }}
+   416→            className={cn(
+   417→              'rounded-xl border p-3',
+   418→              l.status === 'sold' ? 'border-zinc-200 opacity-60 dark:border-zinc-800' : 'border-zinc-200 dark:border-zinc-800',
+   419→            )}
+   420→          >
+   421→            <div className="flex items-start justify-between gap-2">
+   422→              <div className="min-w-0">
+   423→                <p className="truncate text-sm font-semibold">{l.title}</p>
+   424→                {l.description ? <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{l.description}</p> : null}
+   425→                <p className="mt-1 text-[11px] text-zinc-500">
+   426→                  {l.status === 'sold'
+   427→                    ? `sold to ${l.buyer?.username ? `@${l.buyer.username}` : l.buyer?.name ?? '—'}`
+   428→                    : `by ${l.seller?.username ? `@${l.seller.username}` : l.seller?.name ?? '—'}`}
+   429→                  {' · '}
+   430→                  {new Date(l.createdAt).toLocaleDateString()}
+   431→                </p>
+   432→              </div>
+   433→              <div className="flex shrink-0 flex-col items-end gap-1.5">
+   434→                <p className="text-sm font-bold text-emerald-600">{l.price} PC</p>
+   435→                {l.status === 'open' && !l.mine ? (
+   436→                  <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" disabled={buy.isPending} onClick={() => buy.mutate(l.id)}>
+   437→                    Buy
+   438→                  </Button>
+   439→                ) : null}
+   440→                {l.mine && l.status === 'open' ? <span className="text-[10px] font-semibold text-zinc-400">yours</span> : null}
+   441→              </div>
+   442→            </div>
+   443→          </motion.div>
+   444→        ))}
+   445→        {(marketQ.data?.length ?? 0) === 0 ? (
+   446→          <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-[13px] text-zinc-500 dark:border-zinc-700">
+   447→            The board is empty — be the first seller.
+   448→          </p>
+   449→        ) : null}
+   450→      </section>
+   451→    </div>
+   452→  )
+   453→}
+   454→
+   455→// ── Swap panel ───────────────────────────────────────────────
+   456→
+   457→function SwapPanel({ me }: { me: AppUser }) {
+   458→  const qc = useQueryClient()
+   459→  const [direction, setDirection] = useState<'pc2gem' | 'gem2pc'>('pc2gem')
+   460→  const [amount, setAmount] = useState('')
+   461→
+   462→  const swapQ = useQuery({
+   463→    queryKey: ['hub-swap'],
+   464→    queryFn: async () => {
+   465→      const res = await apiJson<SwapInfo>('/api/hub/swap')
+   466→      return res
+   467→    },
+   468→    refetchInterval: 45_000,
+   469→  })
+   470→  const walletQ = useQuery({
+   471→    queryKey: ['hub-wallet-swap', me.id],
+   472→    queryFn: async () => {
+   473→      const res = await apiJson<{ wallet: WalletState }>(`/api/hub/wallet?userId=${encodeURIComponent(me.id)}`)
+   474→      return res.wallet
+   475→    },
+   476→  })
+   477→
+   478→  const invalidate = () => {
+   479→    void qc.invalidateQueries({ queryKey: ['hub-swap'] })
+   480→    void qc.invalidateQueries({ queryKey: ['hub-wallet-swap', me.id] })
+   481→  }
+   482→
+   483→  const swap = useMutation({
+   484→    mutationFn: () =>
+   485→      apiJson<{ wallet: WalletState; note: string }>('/api/hub/swap', {
+   486→        method: 'POST',
+   487→        headers: { 'Content-Type': 'application/json' },
+   488→        body: JSON.stringify({ userId: me.id, direction, amount: Number(amount) }),
+   489→      }),
+   490→    onSuccess: (d) => toast.success(d.note),
+   491→    onError: (err: Error) => toast.error(err.message),
+   492→    onSettled: invalidate,
+   493→  })
+   494→
+   495→  const rate = swapQ.data?.rates
+   496→  const hint =
+   497→    direction === 'pc2gem'
+   498→      ? rate
+   499→        ? `${Number(amount || 0) / rate.pcPerGemBuy} GEM for ${amount || 0} PC`
+   500→        : ''
+   501→      : rate
+   502→        ? `${Number(amount || 0) * rate.pcPerGemSell} PC for ${amount || 0} GEM`
+   503→        : ''
+   504→
+   505→  return (
+   506→    <div className="flex flex-col gap-4">
+   507→      <div className="grid grid-cols-2 gap-2">
+   508→        <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800">
+   509→          <p className="text-[11px] font-medium uppercase text-zinc-500">Buy rate</p>
+   510→          <p className="mt-1 text-lg font-bold">{rate ? `${rate.pcPerGemBuy} PC → 1 GEM` : '—'}</p>
+   511→        </div>
+   512→        <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800">
+   513→          <p className="text-[11px] font-medium uppercase text-zinc-500">Sell rate</p>
+   514→          <p className="mt-1 text-lg font-bold">{rate ? `1 GEM → ${rate.pcPerGemSell} PC` : '—'}</p>
+   515→        </div>
+   516→      </div>
+   517→
+   518→      {swapQ.data ? (
+   519→        <div className="grid grid-cols-4 gap-2 text-center">
+   520→          {[
+   521→            { label: 'swaps', value: swapQ.data.stats.swaps },
+   522→            { label: 'PC bought', value: swapQ.data.stats.pcBought },
+   523→            { label: 'coins live', value: swapQ.data.stats.circulatingCoins },
+   524→            { label: 'gems live', value: swapQ.data.stats.circulatingGems },
+   525→          ].map((s) => (
+   526→            <div key={s.label} className="rounded-xl bg-zinc-100/70 px-2 py-2.5 dark:bg-zinc-800/40">
+   527→              <p className="text-sm font-bold tabular-nums">{s.value.toLocaleString()}</p>
+   528→              <p className="text-[10px] text-zinc-500">{s.label}</p>
+   529→            </div>
+   530→          ))}
+   531→        </div>
+   532→      ) : null}
+   533→
+   534→      <section aria-label="Exchange" className="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+   535→        <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800/60">
+   536→          {(
+   537→            [
+   538→              { id: 'pc2gem', label: 'PC → GEM' },
+   539→              { id: 'gem2pc', label: 'GEM → PC' },
+   540→            ] as const
+   541→          ).map((opt) => (
+   542→            <button
+   543→              key={opt.id}
+   544→              type="button"
+   545→              onClick={() => setDirection(opt.id)}
+   546→              className={cn(
+   547→                'relative rounded-lg py-1.5 text-xs font-semibold transition-colors',
+   548→                direction === opt.id ? 'text-white' : 'text-zinc-600 dark:text-zinc-300',
+   549→              )}
+   550→            >
+   551→              {direction === opt.id ? (
+   552→                <motion.span layoutId="swap-tab" className="absolute inset-0 rounded-lg bg-emerald-600" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
+   553→              ) : null}
+   554→              <span className="relative">{opt.label}</span>
+   555→            </button>
+   556→          ))}
+   557→        </div>
+   558→
+   559→        <Input
+   560→          value={amount}
+   561→          onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ''))}
+   562→          placeholder={direction === 'pc2gem' ? 'PC amount (multiples of 100)' : 'GEM amount'}
+   563→          inputMode="numeric"
+   564→          className="mt-3 h-10 text-center text-lg font-bold"
+   565→        />
+   566→        {hint && Number(amount) > 0 ? <p className="mt-1.5 text-center text-xs font-medium text-emerald-600">{hint}</p> : null}
+   567→
+   568→        <Button className="mt-3 w-full" disabled={swap.isPending || !amount} onClick={() => swap.mutate()}>
+   569→          <Repeat className="mr-1.5 size-4" /> {swap.isPending ? 'Exchanging…' : 'Exchange'}
+   570→        </Button>
+   571→        {walletQ.data ? (
+   572→          <p className="mt-2 text-center text-[11px] text-zinc-500">
+   573→            balance: {walletQ.data.coins.toLocaleString()} PC · {walletQ.data.gems} GEM
+   574→          </p>
+   575→        ) : null}
+   576→      </section>
+   577→    </div>
+   578→  )
+   579→}
+   580→
+   581→// ── Logs panel (terminal) ────────────────────────────────────
+   582→
+   583→function LogsPanel() {
+   584→  const logsQ = useQuery({
+   585→    queryKey: ['hub-logs'],
+   586→    queryFn: async () => {
+   587→      const res = await apiJson<{ logs: LogEntry[] }>('/api/hub/logs?limit=80')
+   588→      return res.logs
+   589→    },
+   590→    refetchInterval: 12_000,
+   591→  })
+   592→
+   593→  return (
+   594→    <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 font-mono shadow-inner">
+   595→      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+   596→        <span className="size-2.5 rounded-full bg-rose-500" />
+   597→        <span className="size-2.5 rounded-full bg-amber-400" />
+   598→        <span className="size-2.5 rounded-full bg-emerald-500" />
+   599→        <p className="ml-1 text-[11px] font-semibold text-zinc-400">pulse://logs — live event stream</p>
+   600→      </div>
+   601→      <ul className="max-h-[26rem] divide-y divide-zinc-900 overflow-y-auto p-2 text-[11px] leading-relaxed">
+   602→        {(logsQ.data ?? []).map((l) => (
+   603→          <li key={l.id} className="flex gap-2 py-1.5">
+   604→            <span className="shrink-0 text-zinc-600">{new Date(l.createdAt).toLocaleTimeString()}</span>
+   605→            <span
+   606→              className={cn(
+   607→                'shrink-0 font-semibold uppercase',
+   608→                l.kind === 'checkin' && 'text-emerald-400',
+   609→                l.kind === 'transfer' && 'text-cyan-400',
+   610→                l.kind === 'swap' && 'text-violet-400',
+   611→                l.kind === 'market' && 'text-amber-400',
+   612→                l.kind !== 'checkin' && l.kind !== 'transfer' && l.kind !== 'swap' && l.kind !== 'market' && 'text-zinc-400',
+   613→              )}
+   614→            >
+   615→              [{l.kind}]
+   616→            </span>
+   617→            <span className="min-w-0 text-zinc-300">
+   618→              {l.user ? `@${l.user.username ?? l.user.name} ` : ''}
+   619→              {l.message}
+   620→            </span>
+   621→          </li>
+   622→        ))}
+   623→        {(logsQ.data?.length ?? 0) === 0 ? (
+   624→          <li className="py-8 text-center text-zinc-600">no events yet — use the economy panels to generate some</li>
+   625→        ) : null}
+   626→      </ul>
+   627→    </div>
+   628→  )
+   629→}
+   630→
+   631→// ── Apps panel (100 matrix) ──────────────────────────────────
+   632→
+   633→function AppDetail({ app, onClose }: { app: MatrixApp; onClose: () => void }) {
+   634→  return (
+   635→    <motion.div
+   636→      initial={{ opacity: 0, y: 10 }}
+   637→      animate={{ opacity: 1, y: 0 }}
+   638→      className="absolute inset-0 z-[70] flex flex-col bg-background"
+   639→    >
+   640→      <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+   641→        <Button variant="ghost" size="sm" className="h-8 px-2" onClick={onClose}>
+   642→          ‹ Back
+   643→        </Button>
+   644→        <p className="truncate text-sm font-bold">
+   645→          #{String(app.n).padStart(3, '0')} · {app.name}
+   646→        </p>
+   647→      </div>
+   648→      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+   649→        <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+   650→          <p className="text-[11px] font-semibold uppercase text-zinc-500">Mobile nav style</p>
+   651→          <p className="mt-1 text-sm font-medium">{app.nav}</p>
+   652→        </div>
+   653→        <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+   654→          <p className="text-[11px] font-semibold uppercase text-zinc-500">Input toolkit</p>
+   655→          <p className="mt-1 text-sm font-medium">{app.input}</p>
+   656→        </div>
+   657→        <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+   658→          <p className="text-[11px] font-semibold uppercase text-zinc-500">Sub-page category</p>
+   659→          <p className="mt-1 text-sm font-medium">{app.category}</p>
+   660→        </div>
+   661→        <div className="rounded-xl border border-emerald-300/60 bg-emerald-50 p-3 dark:border-emerald-800/60 dark:bg-emerald-950/30">
+   662→          <p className="text-[11px] font-semibold uppercase text-emerald-700 dark:text-emerald-400">Secret UI architecture feature</p>
+   663→          <p className="mt-1 text-sm font-medium">{app.secret}</p>
+   664→        </div>
+   665→        <div className="rounded-xl border border-dashed border-zinc-300 p-3 text-center text-[11px] text-zinc-500 dark:border-zinc-700">
+   666→          Pulse implements this app&apos;s nav pattern as{' '}
+   667→          <strong className="text-emerald-600">{MATRIX_TO_NAV[app.nav]}</strong> — switch it live from the Profile → Navigation panel.
+   668→        </div>
+   669→      </div>
+   670→    </motion.div>
+   671→  )
+   672→}
+   673→
+   674→function AppsPanel() {
+   675→  const [search, setSearch] = useState('')
+   676→  const [cat, setCat] = useState<string>('all')
+   677→  const [openApp, setOpenApp] = useState<MatrixApp | null>(null)
+   678→
+   679→  const counts = useMemo(() => {
+   680→    const map: Record<string, number> = {}
+   681→    for (const a of MATRIX) map[a.category] = (map[a.category] ?? 0) + 1
+   682→    return map
+   683→  }, [])
+   684→
+   685→  const filtered = useMemo(() => {
+   686→    const q = search.trim().toLowerCase()
+   687→    return MATRIX.filter(
+   688→      (a) =>
+   689→        (cat === 'all' || a.category === cat) &&
+   690→        (q === '' || a.name.toLowerCase().includes(q) || a.input.toLowerCase().includes(q) || a.secret.toLowerCase().includes(q)),
+   691→    )
+   692→  }, [search, cat])
+   693→
+   694→  if (openApp) {
+   695→    return <AppDetail app={openApp} onClose={() => setOpenApp(null)} />
+   696→  }
+   697→
+   698→  return (
+   699→    <div className="flex flex-col gap-3">
+   700→      <div className="relative">
+   701→        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+   702→        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search 100 platforms…" className="h-9 pl-9" />
+   703→      </div>
+   704→
+   705→      <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+   706→        {CATEGORY_CHIPS.map((chip) => (
+   707→          <button
+   708→            key={chip.id}
+   709→            type="button"
+   710→            onClick={() => setCat(chip.id)}
+   711→            className={cn(
+   712→              'shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors',
+   713→              cat === chip.id
+   714→                ? 'border-emerald-600 bg-emerald-600 text-white'
+   715→                : 'border-zinc-200 text-zinc-600 hover:border-emerald-400 dark:border-zinc-700 dark:text-zinc-300',
+   716→            )}
+   717→          >
+   718→            {chip.label}
+   719→            {chip.id !== 'all' && counts[chip.id] ? ` · ${counts[chip.id]}` : chip.id === 'all' ? ` · ${MATRIX.length}` : ''}
+   720→          </button>
+   721→        ))}
+   722→      </div>
+   723→
+   724→      <ul className="grid grid-cols-2 gap-2">
+   725→        {filtered.map((app) => (
+   726→          <li key={app.n}>
+   727→            <button
+   728→              type="button"
+   729→              onClick={() => setOpenApp(app)}
+   730→              className="group w-full rounded-xl border border-zinc-200 bg-white p-3 text-left shadow-sm transition-all active:scale-[0.98] hover:border-emerald-400 dark:border-zinc-800 dark:bg-zinc-900"
+   731→            >
+   732→              <div className="flex items-center justify-between">
+   733→                <p className="truncate text-[13px] font-bold">{app.name}</p>
+   734→                <ChevronRight className="size-3.5 shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-600" />
+   735→              </div>
+   736→              <p className="mt-0.5 text-[10px] font-medium text-zinc-500">
+   737→                #{String(app.n).padStart(3, '0')} · {app.category.split(' /')[0]}
+   738→              </p>
+   739→            </button>
+   740→          </li>
+   741→        ))}
+   742→      </ul>
+   743→      {filtered.length === 0 ? (
+   744→        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-[13px] text-zinc-500 dark:border-zinc-700">
+   745→          Nothing matches “{search}”.
+   746→        </p>
+   747→      ) : null}
+   748→    </div>
+   749→  )
+   750→}
+   751→
+   752→// ── Hub shell ────────────────────────────────────────────────
+   753→
+   754→export function HubTab({ me }: { me: AppUser }) {
+   755→  const [panel, setPanel] = useState<HubPanel>('wallet')
+   756→
+   757→  return (
+   758→    <div className="flex h-full flex-col overflow-hidden">
+   759→      <header className="shrink-0 border-b border-zinc-200 px-4 pb-2 pt-3 dark:border-zinc-800">
+   760→        <h1 className="flex items-center gap-2 text-lg font-bold">
+   761→          <Flame className="size-5 text-emerald-600" /> Hub
+   762→        </h1>
+   763→        <p className="text-xs text-zinc-500">Your Pulse command deck — economy, tasks, market &amp; the 100-app matrix.</p>
+   764→      </header>
+   765→
+   766→      <nav aria-label="Hub panels" className="shrink-0 px-3 py-2">
+   767→        <div className="flex gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+   768→          {PANELS.map(({ id, label, Icon }) => (
+   769→            <button
+   770→              key={id}
+   771→              type="button"
+   772→              onClick={() => setPanel(id)}
+   773→              aria-current={panel === id ? 'true' : undefined}
+   774→              className={cn(
+   775→                'relative flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition-colors',
+   776→                panel === id ? 'text-white' : 'text-zinc-600 hover:text-emerald-600 dark:text-zinc-300',
+   777→              )}
+   778→            >
+   779→              {panel === id ? (
+   780→                <motion.span layoutId="hub-panel-pill" className="absolute inset-0 rounded-full bg-emerald-600" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
+   781→              ) : null}
+   782→              <Icon className="relative size-3.5" />
+   783→              <span className="relative">{label}</span>
+   784→            </button>
+   785→          ))}
+   786→        </div>
+   787→      </nav>
+   788→
+   789→      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+   790→        <motion.div key={panel} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16 }}>
+   791→          {panel === 'wallet' ? <WalletPanel me={me} /> : null}
+   792→          {panel === 'tasks' ? <TasksPanel me={me} /> : null}
+   793→          {panel === 'market' ? <MarketPanel me={me} /> : null}
+   794→          {panel === 'swap' ? <SwapPanel me={me} /> : null}
+   795→          {panel === 'logs' ? <LogsPanel /> : null}
+   796→          {panel === 'apps' ? <AppsPanel /> : null}
+   797→        </motion.div>
+   798→      </div>
+   799→    </div>
+   800→  )
+   801→}
+   802→

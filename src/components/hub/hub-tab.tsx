@@ -6,7 +6,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -21,6 +21,8 @@ import {
   Gem,
   Gift,
   ListTodo,
+  Loader2,
+  Plus,
   Search,
   Send,
   ShoppingBag,
@@ -28,11 +30,19 @@ import {
   Repeat,
 } from 'lucide-react'
 import type { AppUser, HubTaskItem, LedgerEntry, LogEntry, MarketListingItem, SwapInfo, WalletState } from '@/lib/types'
-import { apiJson } from '@/lib/pulse-utils'
+import { apiJson, buzz } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { MATRIX, CATEGORY_CHIPS, MATRIX_TO_NAV, type MatrixApp } from '@/lib/hub-catalog'
+import { MATRIX, CATEGORY_CHIPS, type MatrixApp, type MatrixCategory } from '@/lib/hub-catalog'
+import {
+  AppDetailSheet,
+  LoadErrorCard,
+  SkeletonDots,
+  hydrateInstalledSet,
+  useInstallToggle,
+  useInstalledSet,
+} from '@/components/hub/app-detail-sheet'
 
 type HubPanel = 'wallet' | 'tasks' | 'market' | 'logs' | 'swap' | 'apps'
 
@@ -132,7 +142,7 @@ function WalletPanel({ me }: { me: AppUser }) {
       </div>
 
       {/* transfer */}
-      <section aria-label="Transfer coins" className="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+      <section aria-label="Transfer coins" className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
           <Send className="size-4 text-emerald-600" /> Send coins by @handle
         </h3>
@@ -163,11 +173,9 @@ function WalletPanel({ me }: { me: AppUser }) {
       </section>
 
       {/* ledger */}
-      <section aria-label="Ledger" className="rounded-2xl border border-zinc-200 dark:border-zinc-800">
-        <h3 className="border-b border-zinc-200 px-4 py-2.5 text-sm font-semibold dark:border-zinc-800">
-          Ledger · last {walletQ.data?.ledger.length ?? 0}
-        </h3>
-        <ul className="max-h-72 divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-800/60">
+      <section aria-label="Ledger" className="rounded-2xl border border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60">
+        <h3 className="border-b border-zinc-200 px-4 py-2.5 text-sm font-semibold dark:border-white/10">Ledger · last {walletQ.data?.ledger.length ?? 0}</h3>
+        <ul className="max-h-72 divide-y divide-zinc-100 overflow-y-auto dark:divide-white/5">
           {(walletQ.data?.ledger ?? []).map((row) => (
             <li key={row.id} className="flex items-center gap-3 px-4 py-2.5">
               {row.amount >= 0 ? (
@@ -271,7 +279,7 @@ function TasksPanel({ me }: { me: AppUser }) {
 
       <div className="grid grid-cols-3 gap-2">
         {COLUMNS.map((col) => (
-          <div key={col.id} className="rounded-xl bg-zinc-100/70 p-2 dark:bg-zinc-800/40">
+          <div key={col.id} className="rounded-xl bg-zinc-100/70 p-2 dark:bg-white/5">
             <p className="mb-2 px-1 text-[11px] font-bold uppercase tracking-wide text-zinc-500">
               {col.label} · {byStatus[col.id].length}
             </p>
@@ -282,7 +290,7 @@ function TasksPanel({ me }: { me: AppUser }) {
                   layout
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="rounded-lg border border-zinc-200 bg-white p-2 shadow-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  className="rounded-lg border border-zinc-200 bg-white p-2 shadow-sm dark:border-white/10 dark:bg-zinc-900/80"
                 >
                   <p className={cn('text-[12px] font-medium leading-snug', t.status === 'done' && 'text-zinc-400 line-through')}>
                     {t.title}
@@ -310,7 +318,7 @@ function TasksPanel({ me }: { me: AppUser }) {
                 </motion.li>
               ))}
               {byStatus[col.id].length === 0 ? (
-                <li className="rounded-lg border border-dashed border-zinc-300 px-2 py-3 text-center text-[10px] text-zinc-400 dark:border-zinc-700">
+                <li className="rounded-lg border border-dashed border-zinc-300 px-2 py-3 text-center text-[10px] text-zinc-400 dark:border-white/15">
                   empty
                 </li>
               ) : null}
@@ -382,7 +390,7 @@ function MarketPanel({ me }: { me: AppUser }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <section aria-label="Create listing" className="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
+      <section aria-label="Create listing" className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
           <CircleDollarSign className="size-4 text-emerald-600" /> Sell something
           {walletQ.data ? <span className="ml-auto text-xs font-medium text-zinc-500">you: {walletQ.data.coins} PC</span> : null}
@@ -415,7 +423,9 @@ function MarketPanel({ me }: { me: AppUser }) {
             animate={{ opacity: 1, y: 0 }}
             className={cn(
               'rounded-xl border p-3',
-              l.status === 'sold' ? 'border-zinc-200 opacity-60 dark:border-zinc-800' : 'border-zinc-200 dark:border-zinc-800',
+              l.status === 'sold'
+                ? 'border-zinc-200/80 bg-zinc-50/60 opacity-60 dark:border-white/10 dark:bg-transparent'
+                : 'border-zinc-200/80 bg-white dark:border-white/10 dark:bg-zinc-900/60',
             )}
           >
             <div className="flex items-start justify-between gap-2">
@@ -443,7 +453,7 @@ function MarketPanel({ me }: { me: AppUser }) {
           </motion.div>
         ))}
         {(marketQ.data?.length ?? 0) === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-[13px] text-zinc-500 dark:border-zinc-700">
+          <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-[13px] text-zinc-500 dark:border-white/15">
             The board is empty — be the first seller.
           </p>
         ) : null}
@@ -505,11 +515,11 @@ function SwapPanel({ me }: { me: AppUser }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800">
+        <div className="rounded-2xl border border-zinc-200/80 p-3 dark:border-white/10 dark:bg-zinc-900/60">
           <p className="text-[11px] font-medium uppercase text-zinc-500">Buy rate</p>
           <p className="mt-1 text-lg font-bold">{rate ? `${rate.pcPerGemBuy} PC → 1 GEM` : '—'}</p>
         </div>
-        <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800">
+        <div className="rounded-2xl border border-zinc-200/80 p-3 dark:border-white/10 dark:bg-zinc-900/60">
           <p className="text-[11px] font-medium uppercase text-zinc-500">Sell rate</p>
           <p className="mt-1 text-lg font-bold">{rate ? `1 GEM → ${rate.pcPerGemSell} PC` : '—'}</p>
         </div>
@@ -523,7 +533,7 @@ function SwapPanel({ me }: { me: AppUser }) {
             { label: 'coins live', value: swapQ.data.stats.circulatingCoins },
             { label: 'gems live', value: swapQ.data.stats.circulatingGems },
           ].map((s) => (
-            <div key={s.label} className="rounded-xl bg-zinc-100/70 px-2 py-2.5 dark:bg-zinc-800/40">
+            <div key={s.label} className="rounded-xl bg-zinc-100/70 px-2 py-2.5 dark:bg-white/5">
               <p className="text-sm font-bold tabular-nums">{s.value.toLocaleString()}</p>
               <p className="text-[10px] text-zinc-500">{s.label}</p>
             </div>
@@ -531,8 +541,8 @@ function SwapPanel({ me }: { me: AppUser }) {
         </div>
       ) : null}
 
-      <section aria-label="Exchange" className="rounded-2xl border border-zinc-200 p-4 dark:border-zinc-800">
-        <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800/60">
+      <section aria-label="Exchange" className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60">
+        <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-zinc-100 p-1 dark:bg-white/5">
           {(
             [
               { id: 'pc2gem', label: 'PC → GEM' },
@@ -591,14 +601,14 @@ function LogsPanel() {
   })
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 font-mono shadow-inner">
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
+    <div className="overflow-hidden rounded-2xl border border-zinc-200/80 bg-zinc-950 font-mono shadow-inner dark:border-white/10 dark:bg-zinc-900/80">
+      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2 dark:border-white/10">
         <span className="size-2.5 rounded-full bg-rose-500" />
         <span className="size-2.5 rounded-full bg-amber-400" />
         <span className="size-2.5 rounded-full bg-emerald-500" />
         <p className="ml-1 text-[11px] font-semibold text-zinc-400">pulse://logs — live event stream</p>
       </div>
-      <ul className="max-h-[26rem] divide-y divide-zinc-900 overflow-y-auto p-2 text-[11px] leading-relaxed">
+      <ul className="max-h-[26rem] divide-y divide-zinc-900 overflow-y-auto p-2 text-[11px] leading-relaxed dark:divide-white/5">
         {(logsQ.data ?? []).map((l) => (
           <li key={l.id} className="flex gap-2 py-1.5">
             <span className="shrink-0 text-zinc-600">{new Date(l.createdAt).toLocaleTimeString()}</span>
@@ -628,53 +638,205 @@ function LogsPanel() {
   )
 }
 
-// ── Apps panel (100 matrix) ──────────────────────────────────
+// ── Apps panel (100 matrix, real installs) ───────────────────
 
-function AppDetail({ app, onClose }: { app: MatrixApp; onClose: () => void }) {
+/** Extra chips for MATRIX categories missing from the static chip list. */
+const EXTRA_CHIP_LABELS: Partial<Record<MatrixCategory, string>> = {
+  'E-Commerce / Global FinTech': 'Global FinTech',
+  'E-Commerce / Hyper-Apps': 'Hyper-Apps',
+}
+
+type CatView = MatrixCategory | 'mine'
+
+function ConnectedChip({ appName, pending, onToggle }: { appName: string; pending: boolean; onToggle: () => void }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="absolute inset-0 z-[70] flex flex-col bg-background"
+    <motion.button
+      type="button"
+      initial={{ scale: 0.7, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+      onClick={(e) => {
+        e.stopPropagation()
+        buzz(12)
+        onToggle()
+      }}
+      disabled={pending}
+      aria-pressed="true"
+      aria-label={`Disconnect ${appName}`}
+      className={cn(
+        'relative inline-flex h-8 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 text-[11px] font-bold text-emerald-700 outline-none transition-colors active:scale-[0.97] dark:text-emerald-400',
+        'after:absolute after:-inset-1.5 after:content-[\'\']', // extends the touch target past 44px
+        'focus-visible:ring-2 focus-visible:ring-emerald-500/60 disabled:opacity-60',
+      )}
     >
-      <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <Button variant="ghost" size="sm" className="h-8 px-2" onClick={onClose}>
-          ‹ Back
-        </Button>
-        <p className="truncate text-sm font-bold">
-          #{String(app.n).padStart(3, '0')} · {app.name}
-        </p>
-      </div>
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
-          <p className="text-[11px] font-semibold uppercase text-zinc-500">Mobile nav style</p>
-          <p className="mt-1 text-sm font-medium">{app.nav}</p>
-        </div>
-        <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
-          <p className="text-[11px] font-semibold uppercase text-zinc-500">Input toolkit</p>
-          <p className="mt-1 text-sm font-medium">{app.input}</p>
-        </div>
-        <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
-          <p className="text-[11px] font-semibold uppercase text-zinc-500">Sub-page category</p>
-          <p className="mt-1 text-sm font-medium">{app.category}</p>
-        </div>
-        <div className="rounded-xl border border-emerald-300/60 bg-emerald-50 p-3 dark:border-emerald-800/60 dark:bg-emerald-950/30">
-          <p className="text-[11px] font-semibold uppercase text-emerald-700 dark:text-emerald-400">Secret UI architecture feature</p>
-          <p className="mt-1 text-sm font-medium">{app.secret}</p>
-        </div>
-        <div className="rounded-xl border border-dashed border-zinc-300 p-3 text-center text-[11px] text-zinc-500 dark:border-zinc-700">
-          Pulse implements this app&apos;s nav pattern as{' '}
-          <strong className="text-emerald-600">{MATRIX_TO_NAV[app.nav]}</strong> — switch it live from the Profile → Navigation panel.
-        </div>
-      </div>
-    </motion.div>
+      {pending ? (
+        <Loader2 className="size-3 animate-spin" aria-hidden />
+      ) : (
+        <span className="relative flex size-1.5">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+          <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+        </span>
+      )}
+      Connected
+    </motion.button>
   )
 }
 
-function AppsPanel() {
+function ConnectChip({ appName, pending, onToggle }: { appName: string; pending: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        buzz(12)
+        onToggle()
+      }}
+      disabled={pending}
+      aria-pressed="false"
+      aria-label={`Connect ${appName}`}
+      className={cn(
+        'relative inline-flex h-8 items-center gap-1 rounded-full border border-zinc-200 px-3 text-[11px] font-bold text-zinc-600 outline-none transition-colors hover:border-emerald-400 hover:text-emerald-600 active:scale-[0.97] dark:border-white/15 dark:text-zinc-300 dark:hover:border-emerald-500/50 dark:hover:text-emerald-400',
+        'after:absolute after:-inset-1.5 after:content-[\'\']', // extends the touch target past 44px
+        'focus-visible:ring-2 focus-visible:ring-emerald-500/60 disabled:opacity-60',
+      )}
+    >
+      {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <Plus className="size-3" aria-hidden />}
+      Connect
+    </button>
+  )
+}
+
+function AppTile({
+  app,
+  me,
+  installed,
+  onOpen,
+}: {
+  app: MatrixApp
+  me: AppUser
+  installed: boolean
+  onOpen: (app: MatrixApp) => void
+}) {
+  const toggle = useInstallToggle(app, me.id)
+  return (
+    <li>
+      <motion.div
+        role="button"
+        tabIndex={0}
+        aria-label={`Open ${app.name} details`}
+        onClick={() => onOpen(app)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onOpen(app)
+          }
+        }}
+        className={cn(
+          'group w-full cursor-pointer rounded-xl border p-3 text-left shadow-sm outline-none transition-all active:scale-[0.97]',
+          'border-zinc-200/80 bg-white hover:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-500/60',
+          'dark:border-white/10 dark:bg-zinc-900/70 dark:hover:border-emerald-500/50',
+        )}
+      >
+        <div className="flex items-center justify-between gap-1.5">
+          <p className="truncate text-[13px] font-bold">{app.name}</p>
+          <ChevronRight className="size-3.5 shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-600" />
+        </div>
+        <p className="mt-0.5 truncate text-[10px] font-medium text-zinc-500">
+          #{String(app.n).padStart(3, '0')} · {app.category.split(' /')[0]}
+        </p>
+        <div className="mt-2.5">
+          {installed ? (
+            <ConnectedChip appName={app.name} pending={toggle.isPending} onToggle={() => toggle.mutate(false)} />
+          ) : (
+            <ConnectChip appName={app.name} pending={toggle.isPending} onToggle={() => toggle.mutate(true)} />
+          )}
+        </div>
+      </motion.div>
+    </li>
+  )
+}
+
+/** Category / My-apps subpage — same full-surface pattern as the detail sheet. */
+function CategoryView({
+  view,
+  me,
+  onOpenApp,
+  onClose,
+}: {
+  view: CatView
+  me: AppUser
+  onOpenApp: (app: MatrixApp) => void
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const setQ = useInstalledSet(me.id)
+  const label = view === 'mine' ? 'My apps' : (CATEGORY_CHIPS.find((c) => c.id === view)?.label ?? view)
+
+  const apps = useMemo(() => {
+    if (view === 'mine') {
+      const known = setQ.data ?? []
+      return MATRIX.filter((a) => known.includes(String(a.n)))
+    }
+    return MATRIX.filter((a) => a.category === view)
+  }, [view, setQ.data])
+
+  const hydrating = view === 'mine' && setQ.isFetching && setQ.data === undefined
+  const failed = view === 'mine' && setQ.isError && setQ.data === undefined
+
+  return (
+    <div className="flex h-full flex-col bg-background" aria-label={`${label} view`}>
+      <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200/80 px-3 py-2.5 dark:border-white/10">
+        <Button variant="ghost" size="sm" className="h-10 px-3" onClick={onClose}>
+          ‹ Back
+        </Button>
+        <p className="truncate text-sm font-bold">{label}</p>
+        <span className="ml-auto shrink-0 rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-bold text-zinc-500 dark:bg-white/10 dark:text-zinc-300">
+          {hydrating ? '…' : apps.length}
+        </span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        {hydrating ? (
+          <div className="flex flex-col items-center gap-2 py-10">
+            <SkeletonDots label="Checking your connected apps" />
+            <p className="text-[12px] font-medium text-zinc-500">Checking your connections…</p>
+          </div>
+        ) : failed ? (
+          <LoadErrorCard
+            message="Could not verify your connected apps."
+            onRetry={() => void hydrateInstalledSet(qc, me.id)}
+          />
+        ) : apps.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center dark:border-white/15">
+            <p className="text-[13px] font-medium text-zinc-500">
+              {view === 'mine'
+                ? 'You haven\u2019t connected any apps yet.'
+                : 'Nothing lives in this category yet.'}
+            </p>
+            <Button size="sm" variant="outline" className="h-9" onClick={onClose}>
+              Browse the matrix
+            </Button>
+          </div>
+        ) : (
+          <ul className="grid grid-cols-2 gap-2">
+            {apps.map((app) => (
+              <AppTile key={app.n} app={app} me={me} installed={(setQ.data ?? []).includes(String(app.n))} onOpen={onOpenApp} />
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AppsPanel({ me }: { me: AppUser }) {
+  const qc = useQueryClient()
   const [search, setSearch] = useState('')
-  const [cat, setCat] = useState<string>('all')
+  const [catView, setCatView] = useState<CatView | null>(null)
   const [openApp, setOpenApp] = useState<MatrixApp | null>(null)
+
+  const setQ = useInstalledSet(me.id)
+  const knownIds = useMemo(() => new Set(setQ.data ?? []), [setQ.data])
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {}
@@ -682,69 +844,136 @@ function AppsPanel() {
     return map
   }, [])
 
+  // chips = static order first, then any live MATRIX category the static list misses
+  const chips = useMemo(() => {
+    const present = new Set(MATRIX.map((a) => a.category))
+    const known = CATEGORY_CHIPS.filter((c) => c.id !== 'all' && present.has(c.id))
+    const knownChipIds = new Set(known.map((c) => c.id))
+    const extras = [...present]
+      .filter((c) => !knownChipIds.has(c))
+      .map((c) => ({ id: c, label: EXTRA_CHIP_LABELS[c] ?? c }))
+    return [...known, ...extras] as Array<{ id: MatrixCategory; label: string }>
+  }, [])
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return MATRIX.filter(
       (a) =>
-        (cat === 'all' || a.category === cat) &&
-        (q === '' || a.name.toLowerCase().includes(q) || a.input.toLowerCase().includes(q) || a.secret.toLowerCase().includes(q)),
+        q === '' ||
+        a.name.toLowerCase().includes(q) ||
+        a.input.toLowerCase().includes(q) ||
+        a.secret.toLowerCase().includes(q),
     )
-  }, [search, cat])
+  }, [search])
 
-  if (openApp) {
-    return <AppDetail app={openApp} onClose={() => setOpenApp(null)} />
+  const openMyApps = () => {
+    buzz(12)
+    setCatView('mine')
+    // Promise.all hydration over all 100 apps — deduped + cached 60s by fetchQuery
+    void hydrateInstalledSet(qc, me.id).catch(() => {})
   }
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search 100 platforms…" className="h-9 pl-9" />
-      </div>
-
-      <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {CATEGORY_CHIPS.map((chip) => (
-          <button
-            key={chip.id}
-            type="button"
-            onClick={() => setCat(chip.id)}
-            className={cn(
-              'shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors',
-              cat === chip.id
-                ? 'border-emerald-600 bg-emerald-600 text-white'
-                : 'border-zinc-200 text-zinc-600 hover:border-emerald-400 dark:border-zinc-700 dark:text-zinc-300',
-            )}
+      <AnimatePresence initial={false}>
+        {openApp ? (
+          <motion.div
+            key="app-detail"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="absolute inset-0 z-[70]"
           >
-            {chip.label}
-            {chip.id !== 'all' && counts[chip.id] ? ` · ${counts[chip.id]}` : chip.id === 'all' ? ` · ${MATRIX.length}` : ''}
-          </button>
-        ))}
-      </div>
-
-      <ul className="grid grid-cols-2 gap-2">
-        {filtered.map((app) => (
-          <li key={app.n}>
-            <button
-              type="button"
-              onClick={() => setOpenApp(app)}
-              className="group w-full rounded-xl border border-zinc-200 bg-white p-3 text-left shadow-sm transition-all active:scale-[0.98] hover:border-emerald-400 dark:border-zinc-800 dark:bg-zinc-900"
-            >
-              <div className="flex items-center justify-between">
-                <p className="truncate text-[13px] font-bold">{app.name}</p>
-                <ChevronRight className="size-3.5 shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-600" />
+            <AppDetailSheet app={openApp} me={me} onClose={() => setOpenApp(null)} />
+          </motion.div>
+        ) : catView ? (
+          <motion.div
+            key={`cat-${catView}`}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="absolute inset-0 z-[70]"
+          >
+            <CategoryView
+              view={catView}
+              me={me}
+              onOpenApp={setOpenApp}
+              onClose={() => setCatView(null)}
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="apps-grid"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+          >
+            <div className="flex flex-col gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search 100 platforms…"
+                  className="h-9 pl-9"
+                />
               </div>
-              <p className="mt-0.5 text-[10px] font-medium text-zinc-500">
-                #{String(app.n).padStart(3, '0')} · {app.category.split(' /')[0]}
-              </p>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {filtered.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-[13px] text-zinc-500 dark:border-zinc-700">
-          Nothing matches “{search}”.
-        </p>
-      ) : null}
+
+              <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <button
+                  type="button"
+                  onClick={openMyApps}
+                  aria-label="Show my connected apps"
+                  className={cn(
+                    'shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-500/20 active:scale-[0.97] dark:text-emerald-400',
+                  )}
+                >
+                  My apps{setQ.data !== undefined ? ` · ${setQ.data.length}` : ''}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatView(null)}
+                  aria-label="Show all apps"
+                  className="shrink-0 rounded-full border border-emerald-600 bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white transition-colors active:scale-[0.97]"
+                >
+                  All · {MATRIX.length}
+                </button>
+                {chips.map((chip) => (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => setCatView(chip.id)}
+                    aria-label={`Open ${chip.label} category`}
+                    className="shrink-0 rounded-full border border-zinc-200 px-3 py-1 text-[11px] font-semibold text-zinc-600 transition-colors hover:border-emerald-400 active:scale-[0.97] dark:border-white/15 dark:bg-white/5 dark:text-zinc-300 dark:hover:border-emerald-500/50"
+                  >
+                    {chip.label} · {counts[chip.id] ?? 0}
+                  </button>
+                ))}
+              </div>
+
+              <ul className="grid grid-cols-2 gap-2">
+                {filtered.map((app) => (
+                  <AppTile
+                    key={app.n}
+                    app={app}
+                    me={me}
+                    installed={knownIds.has(String(app.n))}
+                    onOpen={setOpenApp}
+                  />
+                ))}
+              </ul>
+              {filtered.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-[13px] text-zinc-500 dark:border-white/15">
+                  Nothing matches “{search}”.
+                </p>
+              ) : null}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -756,7 +985,7 @@ export function HubTab({ me }: { me: AppUser }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-zinc-200 px-4 pb-2 pt-3 dark:border-zinc-800">
+      <header className="shrink-0 border-b border-zinc-200/80 px-4 pb-2 pt-3 dark:border-white/10">
         <h1 className="flex items-center gap-2 text-lg font-bold">
           <Flame className="size-5 text-emerald-600" /> Hub
         </h1>
@@ -793,7 +1022,7 @@ export function HubTab({ me }: { me: AppUser }) {
           {panel === 'market' ? <MarketPanel me={me} /> : null}
           {panel === 'swap' ? <SwapPanel me={me} /> : null}
           {panel === 'logs' ? <LogsPanel /> : null}
-          {panel === 'apps' ? <AppsPanel /> : null}
+          {panel === 'apps' ? <AppsPanel me={me} /> : null}
         </motion.div>
       </div>
     </div>

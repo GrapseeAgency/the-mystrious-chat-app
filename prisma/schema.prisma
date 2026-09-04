@@ -22,6 +22,7 @@ model User {
   preferences    String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
   createdAt      DateTime                  @default(now())
   lastSeenAt     DateTime                  @default(now())
+  appInstalls    AppInstall[]
   wallet         UserWallet?
   ledger         WalletLedger[]
   hubTasks       HubTask[]
@@ -79,6 +80,22 @@ model HubTask {
   owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@index([ownerId, status])
+}
+
+/**
+ * Hub Apps ecosystem — a user's real connection to a catalog app
+ * (hub-catalog.ts ids). One row per (user, app); status toggles.
+ */
+model AppInstall {
+  id          String   @id @default(cuid())
+  userId      String
+  appId       String // hub-catalog app id (e.g. "telegram", "discord")
+  installedAt DateTime @default(now())
+  status      String   @default("connected") // connected | muted
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, appId])
+  @@index([appId])
 }
 
 /**
