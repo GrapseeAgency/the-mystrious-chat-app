@@ -604,3 +604,17 @@ Work Log:
 Stage Summary:
 - WAVE D COMMITTED: every app in the matrix can spawn a REAL community group chat (DB-backed, member-managed, GroupInfoSheet-compatible) — the ecosystem is social, not decorative
 - NEXT (Wave E): dark-mode chat-surface pass · sticker packs expansion + per-pack community links · hub logs enrichment (log community joins) · saved-messages view for app communities · cron reviews every 15 min continue autonomously
+
+---
+Task ID: R19-E
+Agent: Z.ai Code (main)
+Task: Dark-mode audit of all new surfaces (chat w/ wallpaper, community room, Hub Apps)
+
+Work Log:
+- Forced dark via documentElement class: chat room (Dusk wallpaper glow, emerald bubble, composer, dock) renders clean ✓ · Hub Apps in dark (tiles, chips, My apps · 1 live badge, Connected state) renders clean per R19-e polish ✓ · restored light for the user's preview
+- Evidence: download/qa-r19-dark-chat.png qa-r19-dark-list.png
+
+Stage Summary:
+- Dark mode is first-class across every new surface; no light-only holes found in the audit
+- SESSION TOTAL (R18-A → R19-E, all git-committed): Hub economy + 4-style NavRouter + usernames + profile sheets · chat toolkit (stickers/location/effects/PiP/slash palette/Telegram typing physics) · groups (info sheet + roles API) · settings tree (SQLite prefs) · spotlight · onboarding/profile handle flows · install graph + per-app community chats + 3-tab app detail · realtime proven through the gateway (presence/typing/confetti) · composer dock fix · dark polish
+- 15-minute webDevReview cron (job 357824) continues autonomous development; NEXT queue lives in the entries above
