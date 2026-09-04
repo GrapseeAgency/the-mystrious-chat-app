@@ -1,0 +1,1556 @@
+     1→I went through the list as a **product-design and systems benchmark**, not merely as a catalogue of messaging features. The crucial question is not “what can users type here?” but:
+     2→
+     3→> **What does this product turn conversation into?**
+     4→
+     5→That distinction explains why Discord feels like a community operating system, Slack feels like a work operating system, Twitch feels like a live-media venue, Rec Room feels like a social game, Nextdoor feels like a neighbourhood network, and Figma feels like a design room rather than a chat application.
+     6→
+     7→One important correction before the benchmark: your 100 names are **not actually 100 independent active chat platforms** in September 2026. Skype was retired on **5 May 2025**; Guilded was sunset at the end of 2025; Meta Workplace closed in May 2026; Amino shut down in December 2025. X Spaces is a feature of X, RCS is a messaging protocol, `bere.al` is associated with BeReal rather than being a separate network, Status Network is an Ethereum L2 rather than a messenger, and “Status IM”, “Session Messaging”, and “Twitter Spaces” overlap with other entries. ([Microsoft Support][1])
+     8→
+     9→So I will **preserve all 100 positions**, but I will explicitly identify duplicates, protocols, dead products and uncertain names instead of inventing features.
+    10→
+    11→---
+    12→
+    13→# 1–20 — The major communication architectures
+    14→
+    15→### 1. Discord — **the community operating system**
+    16→
+    17→**Beyond chat:** Discord turns one conversation into a persistent world: servers contain categories, text channels, forum channels, voice channels, stages, roles, events and apps. The most important conceptual move is that **a community itself is the product**, not merely the messages inside it.
+    18→
+    19→**What is unusually intelligent:** Apps can operate inside DMs, group chats, servers and voice calls; Activities allow games, quizzes and collaborative experiences to open directly inside the conversation. Developers can also expose commands through the launcher, slash commands or contextual actions on users/messages. ([Discord Apps][2])
+    20→
+    21→**Design lesson:** Discord does not dump every capability into the composer. It distributes capabilities according to **context**: talk in a channel, gather in voice, organise through roles, perform actions through apps, play through Activities. That separation is one of its greatest UX achievements.
+    22→
+    23→**Why it feels polished:** persistent server navigation + hierarchy + recognisable icons + restrained typography + immediate presence indicators make the interface feel like **a place you inhabit**, rather than a pile of messages.
+    24→
+    25→---
+    26→
+    27→### 2. Slack — **conversation → work**
+    28→
+    29→Slack's killer idea is that conversation is only the front door. Channels organise people around projects or subjects, while Huddles, Canvas, Lists, files, workflows and integrations turn discussion into execution. ([Slack][3])
+    30→
+    31→**The brilliant part:** a Huddle happens directly inside a channel or DM, can include video, multi-person screen sharing, a notes canvas and AI meeting notes. ([Slack][4])
+    32→
+    33→Canvas is even more important: files, images, video, comments, threads, app data and workflows can live together instead of forcing users to leave Slack. ([Slack][5])
+    34→
+    35→**Design lesson:** Slack's interface understands a crucial rule:
+    36→
+    37→**Do not make the user decide which tool to use before they know what they are trying to accomplish.**
+    38→
+    39→Conversation → canvas → workflow → action.
+    40→
+    41→That is far more sophisticated than “chat + 50 buttons”.
+    42→
+    43→---
+    44→
+    45→### 3. WhatsApp — **messaging as universal infrastructure**
+    46→
+    47→WhatsApp's strength is not feature extravagance. It is **frictionless ubiquity**.
+    48→
+    49→The product has gradually expanded from private messaging into Communities, Channels, Status, business messaging, group calling, payments/business interactions in some markets and richer commerce.
+    50→
+    51→Channels are particularly clever because they deliberately separate **broadcasting from conversation**. A Channel is not pretending to be a group chat: followers receive updates, react and vote without turning the feed into thousands of replies. ([WhatsApp Help Center][6])
+    52→
+    53→**Design lesson:** WhatsApp demonstrates that the best information architecture often comes from asking:
+    54→
+    55→> “Should this content be conversational, broadcast, private or transactional?”
+    56→
+    57→Rather than treating everything as messages.
+    58→
+    59→---
+    60→
+    61→### 4. Telegram — **messenger → programmable ecosystem**
+    62→
+    63→Telegram's defining leap is the **bot + Mini App architecture**. Developers can make bots perform practical tasks and Mini Apps can bring interactive services directly into Telegram; Mini Apps can generate media/files and even integrate with device-level shortcuts. ([Telegram][7])
+    64→
+    65→Groups and channels can scale dramatically, while topics provide structured discussion inside communities.
+    66→
+    67→**What makes it beyond chat:** the user can encounter a service without installing another application.
+    68→
+    69→A payment flow, game, utility, store, form, bot, community or media experience can begin from a message.
+    70→
+    71→**Design lesson:** Telegram shows the power of treating messages as **launch surfaces for applications**.
+    72→
+    73→---
+    74→
+    75→### 5. Signal — **private communication as a complete environment**
+    76→
+    77→Signal has gone significantly beyond “encrypted SMS”. Current features include polls, pinned messages, group member labels, usernames/phone-number privacy, Stories, scheduled messages, screen sharing, chat folders, disappearing messages, themes and Note to Self. ([Signal Support][8])
+    78→
+    79→The beautifully understated feature is **Note to Self**: your private messenger also becomes an encrypted personal notebook/file bridge. ([Signal Support][9])
+    80→
+    81→Stories retain Signal's privacy philosophy rather than becoming an advertising feed; you control who can see them, including custom stories and group stories. ([Signal Support][10])
+    82→
+    83→**Design lesson:** Signal's sophistication is mostly invisible. Its UX treats privacy as a **default interaction model**, not a settings page.
+    84→
+    85→---
+    86→
+    87→### 6. Element — **communication sovereignty**
+    88→
+    89→Element is interesting because it is not merely a prettier secure messenger. It sits on Matrix and combines messaging, spaces, files, voice/video, integrations, widgets and self-hosting/decentralisation. ([Element][11])
+    90→
+    91→Spaces group rooms into larger communities; Matrix itself can bridge communities across systems such as IRC, Discord and Slack. ([matrix.org][12])
+    92→
+    93→**Beyond chat:** the deeper product is **ownership of communications infrastructure**.
+    94→
+    95→**Design lesson:** Element demonstrates that “UX” can extend all the way down to architecture: a user can perceive decentralisation through spaces, homeservers, verification and interoperability rather than having to understand the protocol.
+    96→
+    97→---
+    98→
+    99→### 7. Revolt — **Discord-like community architecture with openness**
+   100→
+   101→Revolt's appeal is its community-server architecture: servers, channels, roles, permissions and a Discord-like social structure, but with an open-source/community-oriented positioning.
+   102→
+   103→**Beyond chat:** the meaningful differentiator is not a single killer feature; it is the ability to construct **your own communication environment** rather than merely participate in somebody else's feed.
+   104→
+   105→**Design lesson:** Revolt reinforces how powerful Discord's information architecture is: server → categories → channels → permissions. The hierarchy creates mental order before conversation begins.
+   106→
+   107→---
+   108→
+   109→### 8. Beeper — **the inbox abstraction**
+   110→
+   111→Beeper's innovation is conceptually enormous: it attempts to make many networks feel like **one messaging inbox**. Current Beeper connects services including WhatsApp, Instagram, Telegram, Signal, Messenger, X, Google Messages, Google Chat, LinkedIn, Discord and Slack. ([Beeper][13])
+   112→
+   113→Its newer architecture emphasises on-device connections for many services, with cross-device synchronisation and productivity features such as reminders and scheduling. ([Beeper][13])
+   114→
+   115→**Beyond chat:** Beeper's product is actually **information consolidation**.
+   116→
+   117→**Design lesson:** it attacks one of modern communication's biggest problems: users do not have too few chats; they have **too many inboxes**.
+   118→
+   119→---
+   120→
+   121→### 9. Threema — **privacy-first communication with practical structure**
+   122→
+   123→Threema's philosophy is closer to “secure communication toolkit” than social network. It combines messaging with encrypted calls, groups, file sharing, polls and organisational functionality.
+   124→
+   125→**Beyond chat:** the differentiator is the attempt to make privacy compatible with normal daily collaboration rather than forcing the user into a minimalist cryptographic tool.
+   126→
+   127→**Design lesson:** strong privacy UX works best when security mechanisms are integrated into ordinary interactions rather than presented as technical ceremony.
+   128→
+   129→---
+   130→
+   131→### 10. Viber — **messaging + expressive social layer + communities**
+   132→
+   133→Viber combines private and group chats, voice/video calls, communities, stickers/GIFs, message editing/deletion, disappearing messages and synchronisation across devices. It also offers calls to ordinary phone numbers through Viber Out. ([Viber][14])
+   134→
+   135→**Beyond chat:** Viber treats **expression** as a product category. Stickers, GIFs, reactions, custom content and communities are not afterthoughts.
+   136→
+   137→**Design lesson:** communication is not only semantic information. It is emotion, identity, play and social signalling. Viber makes those layers visually available without replacing the basic message flow.
+   138→
+   139→---
+   140→
+   141→### 11. WeChat — **the super-app benchmark**
+   142→
+   143→WeChat's real significance is what happens when messaging becomes a **gateway to an ecosystem**: social feeds, mini-programs, commerce, payments, services, official accounts and numerous everyday functions.
+   144→
+   145→**Beyond chat:** the user does not think, “Now I am leaving messaging to use a service.” Messaging becomes the navigation layer for daily life.
+   146→
+   147→**Design lesson:** the super-app model succeeds when the platform turns **identity + communication + transaction + service discovery** into one continuous experience.
+   148→
+   149→---
+   150→
+   151→### 12. LINE — **messenger as entertainment culture**
+   152→
+   153→LINE combines conventional messaging with stickers, communities, social content, services, games and a deep sticker/character ecosystem.
+   154→
+   155→**The clever part:** LINE has historically treated stickers as a **visual language**, not merely decoration.
+   156→
+   157→A sticker communicates tone that text struggles to express: affection, sarcasm, celebration, embarrassment, frustration, etc.
+   158→
+   159→**Design lesson:** a platform becomes culturally sticky when the UI acquires its own **native grammar of expression**.
+   160→
+   161→---
+   162→
+   163→### 13. KakaoTalk — **messaging + services + identity**
+   164→
+   165→KakaoTalk is deeply integrated into the broader Kakao ecosystem: open chats, channels, commerce, gifts, business services and other products.
+   166→
+   167→**Beyond chat:** communication becomes a gateway into an **identity-and-services ecosystem**.
+   168→
+   169→**Design lesson:** “one app” works when adjacent capabilities share the same identity, contact graph and interaction vocabulary.
+   170→
+   171→---
+   172→
+   173→### 14. Session — **messaging without conventional identity assumptions**
+   174→
+   175→Session is notable for privacy architecture based on decentralised communication and metadata protection, rather than simply applying encryption to a conventional phone-number messenger.
+   176→
+   177→**Beyond chat:** the important product idea is **anonymous/pseudonymous identity**, where the user is not forced to expose a normal social identifier.
+   178→
+   179→**Design lesson:** identity itself is a product decision. A messaging system can ask “Who are you?” very differently from WhatsApp or Signal.
+   180→
+   181→---
+   182→
+   183→### 15. Wickr — **secure organisational communication**
+   184→
+   185→Wickr's legacy is particularly relevant to enterprise messaging: secure messaging, control, administration, retention and organisational deployment.
+   186→
+   187→However, the old Wickr Pro product was discontinued and AWS consolidated the product line into AWS Wickr; AWS documentation confirms the migration/discontinuation path. ([Amazon Web Services][15])
+   188→
+   189→**Beyond chat:** organisational policy becomes part of the communication product.
+   190→
+   191→**Design lesson:** enterprise communication is not merely “consumer chat with more users”. Auditability, identity, administration and governance are first-class UX.
+   192→
+   193→---
+   194→
+   195→### 16. Matrix — **not a chat app; an entire communication protocol**
+   196→
+   197→Matrix should be treated separately from Element.
+   198→
+   199→Matrix is an open standard/ecosystem with servers, clients, bridges, bots, SDKs and decentralised communication. ([matrix.org][16])
+   200→
+   201→Its most extraordinary property is federation: people on different servers can still communicate.
+   202→
+   203→Bridges can connect Matrix environments with other communications systems such as Slack, Discord and IRC. ([matrix.org][17])
+   204→
+   205→**Beyond chat:** Matrix is essentially an **internet protocol for conversations**.
+   206→
+   207→**Design lesson:** the deepest level of product design is sometimes not an interface at all—it is the architecture that allows multiple interfaces to exist.
+   208→
+   209→---
+   210→
+   211→### 17. Twitch — **conversation attached to live media**
+   212→
+   213→Twitch does not make chat the centre of gravity. **The stream is the event; chat is the audience layer.**
+   214→
+   215→Subscriptions, Bits, emotes, raids, clips, moderation, channel points and live interaction transform viewers from passive spectators into participants.
+   216→
+   217→**Why the interface works:** the stream occupies the dominant visual area; chat remains persistent but subordinate. This hierarchy mirrors what the user came to do.
+   218→
+   219→**Design lesson:** UI hierarchy should reflect **the user's primary activity**, not the number of available features.
+   220→
+   221→---
+   222→
+   223→### 18. Microsoft Teams — **communication fused with the Microsoft work graph**
+   224→
+   225→Teams brings chats and channels together with meetings, Loop components, files, Microsoft 365 content and third-party apps. ([Microsoft][18])
+   226→
+   227→Collaborative notes can exist directly inside chats, with agendas, tasks and real-time editing; assigned tasks can flow into To Do/Planner. ([Microsoft Support][19])
+   228→
+   229→**Beyond chat:** Teams turns communication into **work objects**.
+   230→
+   231→**Design lesson:** the most powerful integration is not a link-out. It is when an object remains **alive inside the conversation**.
+   232→
+   233→---
+   234→
+   235→### 19. Google Chat — **conversation inside Google's information ecosystem**
+   236→
+   237→Google Chat is strongest when it inherits the surrounding Google Workspace model: spaces, threaded conversations, files, Drive, Calendar, Meet, apps and collaborative documents.
+   238→
+   239→**Beyond chat:** a message can be the doorway to a broader Workspace action.
+   240→
+   241→**Design lesson:** Google's advantage is contextual continuity. The user already has identity, documents, calendar and organisational data, so communication becomes another layer over the same graph.
+   242→
+   243→---
+   244→
+   245→### 20. Zoom — **meeting platform evolving into work platform**
+   246→
+   247→Zoom has been expanding from meetings into Team Chat, Docs, Whiteboards, Clips, AI Companion and Workspace-style information organisation.
+   248→
+   249→The current AI chat panel can work from Zoom content such as meetings, chats and docs, while also accepting external data sources such as Google Drive and Microsoft 365. ([Zoom][20])
+   250→
+   251→Zoom can also generate documents, data tables, whiteboards and clips through AI Companion. ([Zoom][21])
+   252→
+   253→**Beyond chat:** Zoom is attempting to make **communication itself the source material for work**.
+   254→
+   255→---
+   256→
+   257→# 21–40 — collaboration, gaming and live communication
+   258→
+   259→### 21. Webex — **meeting → workspace**
+   260→
+   261→Webex organises work around Spaces and Teams where users can message, call, meet, share files and use whiteboards. ([Webex Help Center][22])
+   262→
+   263→Its strength is continuity: a space remains after the meeting ends.
+   264→
+   265→**Design lesson:** meeting software becomes much more useful when the room does not disappear after everyone hangs up.
+   266→
+   267→---
+   268→
+   269→### 22. Chanty — **chat with an action layer**
+   270→
+   271→Chanty deliberately embeds tasks into communication: messages can become tasks, tasks have status/assignees, and task discussions remain contextual. It also offers Kanban, Teambook, announcements, calendars, polls, forms, calls and knowledge organisation. ([Chanty][23])
+   272→
+   273→**Why the design is intelligent:** it does not make the user “copy the message into a project-management system”.
+   274→
+   275→**The message itself becomes the work item.**
+   276→
+   277→---
+   278→
+   279→### 23. Flock — **team hub**
+   280→
+   281→Flock combines channels and DMs with video calls, file discovery, app integrations, directories, announcements, mailing lists and bookmarks. Its interface explicitly positions itself as a place where users can perform several work actions without changing tabs. ([Flock][24])
+   282→
+   283→**Design lesson:** one of the most underappreciated UX problems is **context switching**.
+   284→
+   285→Flock attacks it directly.
+   286→
+   287→---
+   288→
+   289→### 24. Ryver — **forums + groups + direct communication**
+   290→
+   291→Ryver separates public forums, private group conversations and person-to-person communication. ([Ryver][25])
+   292→
+   293→**Beyond chat:** the useful distinction is between **broadcast/open discussion** and **private working conversation**.
+   294→
+   295→**Design lesson:** conversation topology matters as much as messaging technology.
+   296→
+   297→---
+   298→
+   299→### 25. Mattermost — **self-hosted operational communication**
+   300→
+   301→Mattermost is designed around channels, teams, discussions and direct messages, while extending into operational workflows, integrations and self-hosting.
+   302→
+   303→**Beyond chat:** the product is particularly relevant to organisations that consider communications infrastructure part of operational control.
+   304→
+   305→**Design lesson:** enterprise UX can be excellent without copying consumer platforms; **control and auditability can themselves be design features**.
+   306→
+   307→---
+   308→
+   309→### 26. Rocket.Chat — **chat + omnichannel service desk**
+   310→
+   311→Rocket.Chat combines team collaboration with an omnichannel customer-engagement layer. Its documentation explicitly covers channels, teams, discussions, DMs, threads, file sharing, search, Livechat, email, WhatsApp and other channel integrations. ([Rocket.Chat Documentation][26])
+   312→
+   313→**Beyond chat:** the same agent can handle an internal discussion and an external customer interaction.
+   314→
+   315→**Design lesson:** the real object is not “message”; it is **conversation across channels**.
+   316→
+   317→---
+   318→
+   319→### 27. Zulip — **the topic architecture is the feature**
+   320→
+   321→Zulip's defining innovation is topic-based conversation.
+   322→
+   323→Several conversations can exist inside one channel without becoming one giant chronological river. Topics remain readable days later, and messages are automatically associated with the conversation being viewed. ([Zulip][27])
+   324→
+   325→Zulip additionally has collaborative messages, polls, to-do lists, reminders, integrations, bots and even bridge functionality. ([Zulip][28])
+   326→
+   327→**Why it is unusually intelligent:** it solves the fundamental weakness of traditional chat:
+   328→
+   329→**time is a terrible information architecture.**
+   330→
+   331→Topics turn chat from a river into an indexed knowledge system.
+   332→
+   333→---
+   334→
+   335→### 28. Fumble — **unverified entry**
+   336→
+   337→I could not establish a sufficiently authoritative current product profile for a major communication platform called “Fumble” matching this benchmark.
+   338→
+   339→That means I would **not invent a feature analysis** and pretend it is researched.
+   340→
+   341→For a serious product benchmark, this position should be marked:
+   342→
+   343→**Verification required — do not use as a feature source.**
+   344→
+   345→---
+   346→
+   347→### 29. Guilded — **historically superb gaming-community architecture, now closed**
+   348→
+   349→Guilded was particularly interesting because it went beyond Discord-style messaging into gaming-specific structures: calendars, scheduling, forums, docs, voice, recruitment-style community organisation and server tooling.
+   350→
+   351→But it is no longer an active platform: Roblox announced that Guilded would sunset at the end of 2025. ([DevForum][29])
+   352→
+   353→**Design lesson from the product that existed:** community software becomes substantially more useful when it understands **what the community actually does**.
+   354→
+   355→For gaming, that means events, teams, games, schedules and roles—not merely channels.
+   356→
+   357→---
+   358→
+   359→### 30. TeamSpeak — **voice architecture as the product**
+   360→
+   361→TeamSpeak has historically concentrated on highly controllable voice servers, channels, permissions and low-level administration.
+   362→
+   363→**Beyond chat:** it treats voice as infrastructure rather than simply “another message type”.
+   364→
+   365→**Design lesson:** for some communities, the most important UX is not text—it is **presence, voice hierarchy, permissions and stability**.
+   366→
+   367→---
+   368→
+   369→### 31. Mumble — **low-latency positional communication**
+   370→
+   371→Mumble's defining characteristic is high-quality low-latency voice, including positional audio in supported environments.
+   372→
+   373→**Beyond chat:** users can perceive *where* someone is in relation to them in a virtual environment.
+   374→
+   375→That is a profound shift from:
+   376→
+   377→> “Who sent this message?”
+   378→
+   379→to:
+   380→
+   381→> “Where is that person in this space?”
+   382→
+   383→---
+   384→
+   385→### 32. Steam Chat — **social layer attached to gaming identity**
+   386→
+   387→Steam Chat connects directly with game presence: friends can be grouped by game, favourites can be surfaced, group chats persist, and rich presence can show what friends are doing inside games. ([Steam Community][30])
+   388→
+   389→**Beyond chat:** the system knows **what activity generated the social interaction**.
+   390→
+   391→**Design lesson:** presence becomes more valuable when it represents something meaningful: “playing X”, “in a match”, “joinable”, rather than merely “online”.
+   392→
+   393→---
+   394→
+   395→### 33. Skype — **historic communication benchmark, no longer active**
+   396→
+   397→Skype once revolutionised internet calling, screen sharing, group video, messaging and international calling.
+   398→
+   399→But it was retired on **5 May 2025**, with Microsoft directing users towards Teams Free. ([Microsoft Support][1])
+   400→
+   401→**Design lesson:** being historically dominant does not mean the information architecture remains optimal. Platforms can be displaced when a newer product absorbs their strongest capabilities into a broader ecosystem.
+   402→
+   403→---
+   404→
+   405→### 34. VRChat — **communication as inhabitable 3D space**
+   406→
+   407→VRChat is radically different because identity is represented through avatars and conversation happens while users inhabit worlds.
+   408→
+   409→**Beyond chat:** identity, body language, distance, spatial audio, gestures, world design and community events all become communication.
+   410→
+   411→**Design lesson:** the strongest social interfaces sometimes remove the conventional UI almost entirely and let **the environment become the interface**.
+   412→
+   413→---
+   414→
+   415→### 35. Rec Room — **social network disguised as a game platform**
+   416→
+   417→Rec Room describes itself as a social app played like a game, with millions of player-created rooms and a Maker Pen for constructing interactive experiences. ([Rec Room][31])
+   418→
+   419→**Beyond chat:** the user can **build the thing they are talking about**.
+   420→
+   421→That is an extraordinarily strong community loop:
+   422→
+   423→Create → share → visit → play → discuss → remix.
+   424→
+   425→---
+   426→
+   427→### 36. Snapchat — **camera-first social communication**
+   428→
+   429→Snapchat starts with the camera rather than the keyboard. Stories, Spotlight, Chat, Lenses and Maps create a system in which communication, entertainment and location-based discovery coexist. ([Snapchat][32])
+   430→
+   431→**Why the design is exceptional:** each function has its own visual behaviour.
+   432→
+   433→Lenses = transformation.
+   434→Stories = temporary narrative.
+   435→Chat = private conversation.
+   436→Spotlight = discovery.
+   437→Map = spatial awareness.
+   438→
+   439→It avoids the mistake of making all content look like identical posts.
+   440→
+   441→---
+   442→
+   443→### 37. Instagram DMs — **private communication inside a visual identity network**
+   444→
+   445→Instagram DMs inherit the platform's enormous media graph: profiles, posts, Reels, Stories and creators.
+   446→
+   447→**Beyond chat:** sharing is contextual. You rarely send a naked URL—you send the Instagram object itself.
+   448→
+   449→**Design lesson:** communication becomes richer when the network's **content objects are native to the conversation**.
+   450→
+   451→---
+   452→
+   453→### 38. TikTok Inbox — **social discovery feeding conversation**
+   454→
+   455→TikTok's messaging is inseparable from video discovery.
+   456→
+   457→The user can discover a piece of content, react to it, share it privately and bring other people into the context.
+   458→
+   459→**Beyond chat:** the primary social object is **media**, while messaging is the connective tissue around it.
+   460→
+   461→This reverses the classic messenger architecture.
+   462→
+   463→---
+   464→
+   465→### 39. X DMs — **private messaging attached to a public discourse network**
+   466→
+   467→X DMs are interesting precisely because they exist beside public posting, Communities and Spaces.
+   468→
+   469→**Beyond chat:** users can move between:
+   470→
+   471→public statement → public conversation → live audio → private conversation.
+   472→
+   473→X therefore treats messaging as one layer within a broader **public/private communication continuum**. X describes Communities, Spaces, DMs, long-form posts, video and subscription mechanisms as parts of one ecosystem. ([Help Center][33])
+   474→
+   475→---
+   476→
+   477→### 40. Threads — **conversation-first social network**
+   478→
+   479→Threads is principally a public social-discussion environment rather than a traditional messenger.
+   480→
+   481→Its relevant lesson is the distinction between **public conversation and private messaging**: the two have different incentives, visibility and interface needs.
+   482→
+   483→**Design lesson:** never assume that a private DM UI can simply be scaled into a public community UI. The psychology changes.
+   484→
+   485→---
+   486→
+   487→# 41–60 — social identity, ephemeral communication and alternative protocols
+   488→
+   489→### 41. iMessage — **communication as OS-level magic**
+   490→
+   491→iMessage is powerful because communication is deeply integrated into Apple's ecosystem.
+   492→
+   493→Features such as reactions, rich media, effects, shared experiences and safety/location-oriented functionality make the message thread feel like an interactive space rather than SMS.
+   494→
+   495→**Design lesson:** platform-native communication feels luxurious when the underlying operating system removes friction.
+   496→
+   497→The user does not feel like they are “opening another service”.
+   498→
+   499→---
+   500→
+   501→### 42. Google Messages — **RCS plus increasingly expressive messaging**
+   502→
+   503→Google Messages combines SMS/MMS fallback with RCS capabilities such as typing indicators, read receipts, high-resolution media and richer group communication. ([Google Help][34])
+   504→
+   505→Its current design experimentation also includes Screen Effects and custom conversation bubbles that let individual chats acquire distinct visual identities. ([Google Help][35])
+   506→
+   507→**Design lesson:** personalisation can be valuable when it is **local to the relationship** rather than an endless global theme store.
+   508→
+   509→---
+   510→
+   511→### 43. RCS Chat — **not an app**
+   512→
+   513→RCS is a communication protocol.
+   514→
+   515→It provides capabilities such as typing indicators, read receipts, Wi-Fi/data messaging and high-resolution file/media transfer. ([Google Help][34])
+   516→
+   517→The important “beyond chat” lesson is architectural:
+   518→
+   519→RCS attempts to make **carrier messaging behave like modern internet messaging**.
+   520→
+   521→It is therefore a protocol-level benchmark rather than a UI benchmark.
+   522→
+   523→---
+   524→
+   525→### 44. Voxer — **voice messaging as walkie-talkie communication**
+   526→
+   527→Voxer is built around push-to-talk/live voice combined with conventional text and media.
+   528→
+   529→**Beyond chat:** voice is neither a phone call nor a recorded voicemail; it sits in the middle as **asynchronous radio**.
+   530→
+   531→**Design lesson:** communication modes do not need to be binary (“text” vs “call”). There is an enormous design space between them.
+   532→
+   533→---
+   534→
+   535→### 45. Zello — **professional push-to-talk**
+   536→
+   537→Zello applies the walkie-talkie model to smartphones, with channels, push-to-talk communication and location-aware/team-oriented scenarios.
+   538→
+   539→**Beyond chat:** the interaction is designed around **fast coordination**, not leisurely conversation.
+   540→
+   541→**Design lesson:** optimise the UI around the temporal needs of the activity.
+   542→
+   543→---
+   544→
+   545→### 46. Marco Polo — **asynchronous video relationships**
+   546→
+   547→Marco Polo's basic insight is beautifully simple: people can send video messages without requiring both parties to be available at the same time.
+   548→
+   549→**Beyond chat:** it makes video **asynchronous social presence**.
+   550→
+   551→Unlike live calls, the receiver can consume it when convenient.
+   552→
+   553→---
+   554→
+   555→### 47. Clubhouse — **conversation as a live room**
+   556→
+   557→Clubhouse's important contribution is the idea that social audio should feel like entering rooms rather than opening a call.
+   558→
+   559→Hosts, speakers, listeners, moderation and topic discovery create a **stage/listener hierarchy**.
+   560→
+   561→**Design lesson:** audio becomes dramatically more understandable when the product gives the conversation a spatial/social structure.
+   562→
+   563→---
+   564→
+   565→### 48. Twitter Spaces — **live-audio layer of X**
+   566→
+   567→This is not a separate platform.
+   568→
+   569→X Spaces lets people join live audio conversations, request the ability to speak, and lets hosts manage speaker access; X also provides discoverability and captions. ([X Business][36])
+   570→
+   571→**Its cleverness:** the conversation appears in the timeline, meaning the **social graph supplies the audience**.
+   572→
+   573→---
+   574→
+   575→### 49. BeReal — **time pressure as social architecture**
+   576→
+   577→BeReal's core design historically revolved around a prompt-driven moment where users capture an unpolished glimpse of real life.
+   578→
+   579→**Beyond chat:** the feature is not another message type; it establishes a **social ritual**.
+   580→
+   581→That is important.
+   582→
+   583→The most powerful social products often create rituals rather than simply adding functionality.
+   584→
+   585→---
+   586→
+   587→### 50. Bere.al — **BeReal domain, not independent platform**
+   588→
+   589→This is not a separate messaging ecosystem.
+   590→
+   591→`bere.al` is associated with BeReal infrastructure/web properties; it should therefore not be counted separately from BeReal. ([User Bradley][37])
+   592→
+   593→---
+   594→
+   595→### 51. Status — **messenger + wallet + decentralised communities**
+   596→
+   597→Status is a particularly unusual super-app: private messaging, decentralised communities and a self-custodial crypto wallet exist in the same application. ([Status][38])
+   598→
+   599→**Beyond chat:** users can communicate, hold assets, transact and interact with decentralised applications.
+   600→
+   601→**Design lesson:** this is a powerful example of **identity + communication + ownership** being placed under one product.
+   602→
+   603→---
+   604→
+   605→### 52. Status IM — **same Status ecosystem**
+   606→
+   607→“Status IM” should not be treated as a separate full platform from Status Messenger.
+   608→
+   609→The distinctive architecture remains decentralised messaging, pseudonymous identity and community communication. ([Status][38])
+   610→
+   611→---
+   612→
+   613→### 53. Status Network — **not a messenger**
+   614→
+   615→Status Network is an Ethereum Layer-2 network intended to support decentralised social applications, games and protocols. ([Status Network][39])
+   616→
+   617→Its lesson is infrastructure-oriented:
+   618→
+   619→**What if the social platform were financially and technically programmable at network level?**
+   620→
+   621→That is different from normal chat software.
+   622→
+   623→---
+   624→
+   625→### 54. Session Messaging — **same Session ecosystem**
+   626→
+   627→This repeats #14 conceptually.
+   628→
+   629→Session's important contribution is metadata-resistant, decentralised/pseudonymous communication.
+   630→
+   631→The design lesson is about **identity minimisation**, not another independent interface.
+   632→
+   633→---
+   634→
+   635→### 55. SimpleX Chat — **remove the social identifier itself**
+   636→
+   637→SimpleX is one of the most intellectually interesting messaging systems on your list.
+   638→
+   639→It uses temporary anonymous pairwise identifiers instead of conventional public profile identifiers, alongside encrypted messaging, groups, files, calls, disappearing messages, portable encrypted storage and incognito mode. ([SimpleX Chat][40])
+   640→
+   641→**Beyond chat:** the product questions the assumption that every user needs a stable identity identifier.
+   642→
+   643→**Design lesson:** sometimes the most innovative UX comes from removing an assumption rather than adding a button.
+   644→
+   645→---
+   646→
+   647→### 56. Briar — **communication when the internet disappears**
+   648→
+   649→Briar is exceptional for resilience.
+   650→
+   651→It can synchronise over Bluetooth, Wi-Fi, Tor and even removable storage; it also offers private messages, public forums and blogs. ([Briar][41])
+   652→
+   653→**Beyond chat:** this is communication designed around **failure conditions**.
+   654→
+   655→No central server.
+   656→No permanent assumption of connectivity.
+   657→No assumption that the internet is healthy.
+   658→
+   659→**Design lesson:** resilience itself can be a user-facing product capability.
+   660→
+   661→---
+   662→
+   663→### 57. Jami — **distributed communications suite**
+   664→
+   665→Jami provides messaging, audio/video calls, group chats, conferences, screen sharing, media streaming, recorded messages, an extension system and even SIP functionality. ([Jami][42])
+   666→
+   667→**Beyond chat:** it is a peer-to-peer communications toolkit.
+   668→
+   669→**Design lesson:** modularity becomes more meaningful when the underlying architecture actually supports new communication behaviours.
+   670→
+   671→---
+   672→
+   673→### 58. Tox — **peer-to-peer identity and communication**
+   674→
+   675→Tox is a decentralised communications protocol/ecosystem designed around secure peer-to-peer messaging, voice/video and file transfer.
+   676→
+   677→**Beyond chat:** again, the interesting product is the **network model**, rather than decorative UI.
+   678→
+   679→---
+   680→
+   681→### 59. Wire — **secure collaboration rather than secure texting**
+   682→
+   683→Wire combines encrypted messaging, calls, files, conferencing and document collaboration; its collaboration layer keeps files associated with verified group membership. ([Wire][43])
+   684→
+   685→**Beyond chat:** a secure conversation becomes a **secure collaborative workspace**.
+   686→
+   687→**Design lesson:** privacy does not have to mean minimalism. Security can support rich interfaces.
+   688→
+   689→---
+   690→
+   691→### 60. Dust — **ephemerality as product philosophy**
+   692→
+   693→Dust's interesting proposition is centred around temporary/disappearing communication and privacy-oriented interactions.
+   694→
+   695→Its strongest design principle is therefore:
+   696→
+   697→**communication does not necessarily have to become a permanent archive.**
+   698→
+   699→That contrasts with Slack, Discord and email, whose history becomes increasingly valuable over time.
+   700→
+   701→---
+   702→
+   703→# 61–80 — enterprise communication, customer communication and the “work graph”
+   704→
+   705→### 61. Keybase — **identity + cryptographic collaboration**
+   706→
+   707→Keybase historically connected encrypted communication with cryptographic identity, teams and developer-oriented workflows such as secure file handling and Git integration.
+   708→
+   709→**Beyond chat:** it treated identity as something mathematically verifiable rather than merely represented by a username.
+   710→
+   711→**Design lesson:** trust can be a product layer.
+   712→
+   713→---
+   714→
+   715→### 62. Spike — **email transformed into conversational communication**
+   716→
+   717→Spike's distinctive idea is to make email behave more like modern chat while adding collaborative notes, tasks and meetings.
+   718→
+   719→**Beyond chat:** it attacks an enormous UX problem:
+   720→
+   721→email contains conversations, tasks, documents and scheduling—but usually distributes them across separate conceptual layers.
+   722→
+   723→Spike attempts to make the inbox feel like a **communication workspace**.
+   724→
+   725→---
+   726→
+   727→### 63. Missive — **shared inbox as collaborative conversation**
+   728→
+   729→Missive treats customer/team email as something multiple teammates can work on together.
+   730→
+   731→**Beyond chat:** internal comments, assignments, rules and automation happen around the external conversation without exposing internal discussion to the customer.
+   732→
+   733→**Design lesson:** one of the most powerful collaboration patterns is:
+   734→
+   735→**external message + private internal layer**.
+   736→
+   737→---
+   738→
+   739→### 64. Front — **operationalising the inbox**
+   740→
+   741→Front's shared inbox model lets teams collaborate internally using comments while customers see only the external conversation. ([Front Help Center][44])
+   742→
+   743→Its shared inboxes can combine channels including email, Instagram and SMS. ([Front Help Center][45])
+   744→
+   745→Front even merges duplicate messages across shared inboxes by default so actions remain coordinated. ([Front Help Center][46])
+   746→
+   747→**Beyond chat:** communication becomes **work allocation**.
+   748→
+   749→---
+   750→
+   751→### 65. Intercom — **customer conversation → customer operation**
+   752→
+   753→Intercom is much more than live chat: its Inbox unifies email, live chat, phone, WhatsApp and social conversations, while AI Copilot can use past conversations and knowledge sources to support agents. ([Intercom][47])
+   754→
+   755→Its 2026 Messenger also has a dedicated Tickets space, separating ongoing conversation from structured case management. ([Intercom][48])
+   756→
+   757→**This is exceptionally intelligent UX:** conversation remains conversational until it becomes a case—and then the UI changes appropriately.
+   758→
+   759→---
+   760→
+   761→### 66. Drift — **conversation as sales routing**
+   762→
+   763→Drift's traditional strength is conversational marketing: chat, qualification, routing and meeting scheduling.
+   764→
+   765→**Beyond chat:** its purpose is not “talk to customers”; it is:
+   766→
+   767→visitor → identify intent → qualify → route → book → convert.
+   768→
+   769→**Design lesson:** the strongest business messaging products have a **goal hidden behind the conversation**.
+   770→
+   771→---
+   772→
+   773→### 67. Crisp — **shared customer communication hub**
+   774→
+   775→Crisp combines customer messaging with shared team inboxes, automation, knowledge and support workflows.
+   776→
+   777→**Beyond chat:** multiple agents can work around the same customer relationship rather than treating each message as an isolated ticket.
+   778→
+   779→**Design lesson:** communication history is more useful when attached to **customer context**.
+   780→
+   781→---
+   782→
+   783→### 68. Tidio — **human support + automation**
+   784→
+   785→Tidio combines live chat with AI/chatbot automation.
+   786→
+   787→**Beyond chat:** a conversation can begin with automation and escalate to a human when necessary.
+   788→
+   789→The important design concept is not the bot itself but **handoff continuity**.
+   790→
+   791→A human should inherit the context rather than restarting the conversation.
+   792→
+   793→---
+   794→
+   795→### 69. Zendesk Chat — **communication as support infrastructure**
+   796→
+   797→Zendesk's broader platform turns chat into a support system around tickets, knowledge, customer profiles, automation and omnichannel communication.
+   798→
+   799→**Beyond chat:** the unit of work is not the message; it is the **customer problem**.
+   800→
+   801→That distinction is crucial for any support-oriented platform.
+   802→
+   803→---
+   804→
+   805→### 70. HubSpot Chat — **conversation attached to CRM intelligence**
+   806→
+   807→HubSpot connects live chat with CRM records, marketing, sales pipelines, forms and automation.
+   808→
+   809→**Beyond chat:** communication contributes data to a larger customer lifecycle.
+   810→
+   811→**Design lesson:** the chat interface becomes more useful when the system understands **who the person is and what has already happened**.
+   812→
+   813→---
+   814→
+   815→### 71. ManyChat — **message automation as a marketing programming language**
+   816→
+   817→ManyChat turns social messaging into automations: triggers, flows, replies, campaigns, comment-triggered interactions and lead journeys.
+   818→
+   819→**Beyond chat:** the user is effectively building a **conversation program**.
+   820→
+   821→That is a completely different mental model from sending messages manually.
+   822→
+   823→---
+   824→
+   825→### 72. Chatfuel — **no-code conversational automation**
+   826→
+   827→Chatfuel's core idea is similar: automate messaging flows across social/business channels.
+   828→
+   829→**Beyond chat:** conversation becomes a **state machine**:
+   830→
+   831→trigger → condition → response → branch → conversion.
+   832→
+   833→**Design lesson:** conversational UI becomes powerful when it is designed not only for recipients but also for **builders**.
+   834→
+   835→---
+   836→
+   837→### 73. MobileMonkey — **social engagement automation**
+   838→
+   839→MobileMonkey has been particularly notable for Instagram/Facebook messaging automation, including automatic responses to comments, mentions and incoming messages. ([MobileMonkey][49])
+   840→
+   841→**Beyond chat:** a public action—comment, mention, interaction—can automatically open a private conversational workflow.
+   842→
+   843→**Design lesson:** social and private communication can form a **funnel**, not two disconnected worlds.
+   844→
+   845→---
+   846→
+   847→### 74. Landbot — **conversation as interface**
+   848→
+   849→Landbot lets organisations build conversational experiences and bots rather than ordinary forms.
+   850→
+   851→**Beyond chat:** a conversation replaces a traditional form or workflow UI.
+   852→
+   853→The clever part is progressive disclosure:
+   854→
+   855→the interface only asks the next relevant question.
+   856→
+   857→---
+   858→
+   859→### 75. Tars — **conversational conversion journeys**
+   860→
+   861→Tars uses chatbot-style interfaces for lead capture, qualification and conversion.
+   862→
+   863→**Beyond chat:** the interaction is structured around outcomes—booking, qualification, conversion—not open-ended discussion.
+   864→
+   865→**Design lesson:** “chat” is often a visual metaphor for a **guided workflow**.
+   866→
+   867→---
+   868→
+   869→### 76. Typeform Chat — **forms redesigned as conversations**
+   870→
+   871→Typeform's conversational system is especially interesting because it applies chat principles to data collection.
+   872→
+   873→Its AI can construct and refine forms and workflows, while its FAQ-with-AI question type lets respondents ask contextual questions during the interaction. ([Typeform Help Center][50])
+   874→
+   875→Typeform also supports branching questions and rich media/video forms. ([Typeform][51])
+   876→
+   877→**Beyond chat:** it converts the old form from:
+   878→
+   879→Question 1 → Question 2 → Question 3
+   880→
+   881→into:
+   882→
+   883→**responsive dialogue → context → relevant next question.**
+   884→
+   885→That is excellent information architecture.
+   886→
+   887→---
+   888→
+   889→### 77. Jostle — **people-centric intranet**
+   890→
+   891→Jostle is a beautiful example of going beyond document-centric enterprise UX.
+   892→
+   893→It centres people, organisation, news, knowledge, events, recognition and employee discovery. Its people views can locate colleagues by role, location or expertise; its knowledge system contains policies, forms and training; its AI can return context-aware answers. ([Jostle][52])
+   894→
+   895→It also has visual organisational structures and recognition/Shout-Outs. ([Jostle][53])
+   896→
+   897→**Design lesson:** Jostle asks a better question than “where are the documents?”
+   898→
+   899→It asks:
+   900→
+   901→> **Who is in this organisation, what do they know, and how do we help people find each other?**
+   902→
+   903→---
+   904→
+   905→### 78. Workplace by Meta — **closed, but historically important**
+   906→
+   907→Workplace attempted to turn Facebook-like social interaction into an enterprise network.
+   908→
+   909→It combined groups, announcements, profiles, social feeds, live video and organisational communication.
+   910→
+   911→But Meta shut Workplace down in May 2026. ([Meta][54])
+   912→
+   913→**Design lesson:** its biggest legacy is the recognition that company communication benefits from **social dynamics**, not only project-management structures.
+   914→
+   915→---
+   916→
+   917→### 79. Basecamp — **project as a home**
+   918→
+   919→Basecamp's architecture is unusually disciplined.
+   920→
+   921→Every project receives a dedicated home containing to-dos, message boards, chat rooms, calendars, Kanban-style Card Tables and other tools. ([Basecamp][55])
+   922→
+   923→Its Message Boards separate durable discussions from ephemeral Campfire-style chat, while Hill Charts communicate **uncertainty and project state** rather than merely percentage completion. ([Basecamp][55])
+   924→
+   925→**This is extremely smart design.**
+   926→
+   927→Basecamp understands that:
+   928→
+   929→> chat is transient; project knowledge should be durable.
+   930→
+   931→---
+   932→
+   933→### 80. ClickUp Chat — **conversation inside the work graph**
+   934→
+   935→ClickUp's strength is not chat alone; it is that chat sits beside tasks, docs, whiteboards and projects.
+   936→
+   937→Its Whiteboards can contain live tasks and Docs, and sticky notes/shapes can become tasks. ([ClickUp Help][56])
+   938→
+   939→**Beyond chat:** ideas can become work without translation.
+   940→
+   941→**Design lesson:** the best collaboration systems make the transformation:
+   942→
+   943→**thought → discussion → artefact → task → outcome**
+   944→
+   945→feel like one continuous interaction.
+   946→
+   947→---
+   948→
+   949→# 81–100 — knowledge, creative collaboration, spatial worlds and communities
+   950→
+   951→### 81. Asana Chat — **conversation attached to accountability**
+   952→
+   953→Asana's real strength is what happens after someone says something.
+   954→
+   955→Its task/project system supports forms, dependencies, rules, approvals, goals, timelines, portfolios, workload and automation. ([Asana Help Center][57])
+   956→
+   957→The Inbox lets users filter updates and turn notifications directly into follow-up tasks. ([Asana][58])
+   958→
+   959→Its newer AI layer adds smart summaries, answers, status generation, rules, AI teammates and an AI “Chief of Staff”-style assistant. ([Asana Help Center][59])
+   960→
+   961→**Beyond chat:** communication becomes **accountability**.
+   962→
+   963→---
+   964→
+   965→### 82. Monday Chat — **conversation connected to structured data**
+   966→
+   967→monday.com's differentiator is its visual work-management layer.
+   968→
+   969→The 2026 platform positioning has become explicitly AI-first, with agents capable of working across workflows, departments and live operational data. ([monday.com][60])
+   970→
+   971→**Beyond chat:** conversation can become an instruction to an agent operating over structured organisational data.
+   972→
+   973→That is the beginning of the transition from:
+   974→
+   975→chatbot → **work agent**.
+   976→
+   977→---
+   978→
+   979→### 83. Notion Chat — **conversation + knowledge graph**
+   980→
+   981→Notion's power comes from the fact that chat or comments can live beside Docs, databases, wikis, projects, meeting notes and other knowledge objects.
+   982→
+   983→Its Docs support dozens of content types, including code, toggles, embedded media, charts and structured content, with comments and co-editing directly attached to the document. ([Notion][61])
+   984→
+   985→**Beyond chat:** conversation can directly modify the organisation's **memory**.
+   986→
+   987→**Design lesson:** the ultimate collaboration system may not be a messenger at all; it may be a **shared memory system with conversation wrapped around it**.
+   988→
+   989→---
+   990→
+   991→### 84. Miro Chat — **conversation embodied on a canvas**
+   992→
+   993→Miro's strength is visual spatial collaboration.
+   994→
+   995→Its AI Workflows allow teams to transform existing canvas context into structured deliverables, while AI agents/Sidekicks can operate within the canvas. 
+   996→
+   997→**Beyond chat:** rather than saying “the answer is…” in a message, a participant can **draw the answer**.
+   998→
+   999→That is a fundamentally different communication medium.
+  1000→
+  1001→---
+  1002→
+  1003→### 85. Figma Chat — **communication attached to the artefact**
+  1004→
+  1005→Figma is one of the strongest examples on your entire list.
+  1006→
+  1007→Multiple collaborators can edit a file simultaneously, leave comments directly on designs, use audio, cursor chat and Spotlight, inspect versions and collaborate in presentations. ([Figma][62])
+  1008→
+  1009→**Beyond chat:** a conversation is anchored to **the exact object being discussed**.
+  1010→
+  1011→Instead of:
+  1012→
+  1013→> “Button on the homepage around the middle-left.”
+  1014→
+  1015→You comment directly on the button.
+  1016→
+  1017→That removes ambiguity.
+  1018→
+  1019→---
+  1020→
+  1021→### 86. Gather.town — **office as a game-like map**
+  1022→
+  1023→Gather turns remote work into a 2D spatial office.
+  1024→
+  1025→Its chat system includes whole-office chat, private-area chat, meetings and private/group messaging. ([Classic (1.0) Gather Help Center][63])
+  1026→
+  1027→**Beyond chat:** location itself communicates social context.
+  1028→
+  1029→Near the meeting room → probably available for discussion.
+  1030→At someone's desk → perhaps working.
+  1031→In another area → different team/activity.
+  1032→
+  1033→**Design lesson:** physical environments contain social metadata that conventional chat interfaces throw away.
+  1034→
+  1035→---
+  1036→
+  1037→### 87. Kumospace — **spatial video communication**
+  1038→
+  1039→Kumospace uses virtual spaces and proximity-oriented video interaction to create more natural group gatherings.
+  1040→
+  1041→**Beyond chat:** the user interacts with **distance and room layout**, not just participant lists.
+  1042→
+  1043→**Design lesson:** hybrid-work interfaces are more believable when they reproduce some of the subtle social signals of physical space.
+  1044→
+  1045→---
+  1046→
+  1047→### 88. Topia — **virtual social worlds**
+  1048→
+  1049→Topia applies spatial environments to gatherings, events and communities.
+  1050→
+  1051→**Beyond chat:** the world is a social object.
+  1052→
+  1053→The event can have rooms, proximity, movement, identities and experiences.
+  1054→
+  1055→**Design lesson:** social UX can be designed as **environmental architecture** rather than merely screen architecture.
+  1056→
+  1057→---
+  1058→
+  1059→### 89. Spatial — **social interaction through immersive environments**
+  1060→
+  1061→Spatial is focused heavily on immersive/social 3D environments, worlds and avatars.
+  1062→
+  1063→**Beyond chat:** users communicate through objects, environment, avatars, movement and shared space.
+  1064→
+  1065→The interface becomes closer to a game engine than a messaging application.
+  1066→
+  1067→---
+  1068→
+  1069→### 90. Roblox Chat — **conversation inside an experience**
+  1070→
+  1071→Roblox's communication system is interesting because chat happens inside user-created experiences.
+  1072→
+  1073→Roblox currently uses age-checking and age-appropriate restrictions, and Experience Chat is designed for people playing the same experience. ([Roblox][64])
+  1074→
+  1075→**Beyond chat:** the conversation exists because the players are already **doing something together**.
+  1076→
+  1077→That distinction is tremendously important.
+  1078→
+  1079→---
+  1080→
+  1081→### 91. Minecraft Chat — **communication attached to creation**
+  1082→
+  1083→Minecraft's chat is much less important than the world that surrounds it.
+  1084→
+  1085→Players communicate while building, exploring, fighting, trading or operating servers.
+  1086→
+  1087→**Beyond chat:** shared environments become the conversation.
+  1088→
+  1089→A building can communicate status.
+  1090→A sign can communicate information.
+  1091→A redstone mechanism can embody logic.
+  1092→
+  1093→The world becomes a persistent message.
+  1094→
+  1095→---
+  1096→
+  1097→### 92. Among Us Chat — **communication under gameplay pressure**
+  1098→
+  1099→Among Us demonstrates a fascinating principle:
+  1100→
+  1101→**communication becomes a mechanic.**
+  1102→
+  1103→Chat helps players form hypotheses, lie, accuse, defend and coordinate.
+  1104→
+  1105→**Beyond chat:** communication has consequences inside the game.
+  1106→
+  1107→The best social games therefore make conversation part of the actual **decision system**, not just a social side panel.
+  1108→
+  1109→---
+  1110→
+  1111→### 93. Plato — **messaging through games**
+  1112→
+  1113→Plato's design joins lightweight games and communication.
+  1114→
+  1115→**Beyond chat:** instead of asking “What should we talk about?”, the product offers a shared activity.
+  1116→
+  1117→Game → interaction → relationship → conversation.
+  1118→
+  1119→This is one of the simplest ways to overcome conversational inertia.
+  1120→
+  1121→---
+  1122→
+  1123→### 94. Hago — **games + live social interaction**
+  1124→
+  1125→Hago combines casual games with social functions such as rooms, interaction and live experiences.
+  1126→
+  1127→**Beyond chat:** it uses **activity as the social icebreaker**.
+  1128→
+  1129→**Design lesson:** social platforms frequently work better when users have something to *do* together.
+  1130→
+  1131→---
+  1132→
+  1133→### 95. Yubo — **friend discovery + live social interaction**
+  1134→
+  1135→Yubo's model has historically centred on discovering people and entering live social interactions rather than maintaining a static contact list.
+  1136→
+  1137→**Beyond chat:** the product is built around **meeting people**, not only messaging people you already know.
+  1138→
+  1139→**Design lesson:** social products can be separated into:
+  1140→
+  1141→relationship maintenance,
+  1142→relationship discovery,
+  1143→community participation.
+  1144→
+  1145→Mixing all three into one feed often produces clutter.
+  1146→
+  1147→---
+  1148→
+  1149→### 96. Leket — **verification gap**
+  1150→
+  1151→I could not establish a reliable authoritative source confirming exactly which current “Leket” communication platform you are referring to.
+  1152→
+  1153→So this one belongs in the same research category as Fumble:
+  1154→
+  1155→**do not build a product benchmark from guessed features.**
+  1156→
+  1157→---
+  1158→
+  1159→### 97. Amino — **community identity, now discontinued**
+  1160→
+  1161→Amino was historically important for fandom communities because it created **separate identities and communities around interests**, rather than treating every relationship as one universal network.
+  1162→
+  1163→But Amino shut down on **19 December 2025**. ([Aminoka][65])
+  1164→
+  1165→Its legacy idea remains valuable:
+  1166→
+  1167→**people often want a different self inside a different community.**
+  1168→
+  1169→That is fundamentally different from having one universal profile everywhere.
+  1170→
+  1171→---
+  1172→
+  1173→### 98. BAND — **group life management**
+  1174→
+  1175→BAND is one of the strongest “beyond chat” examples in this list.
+  1176→
+  1177→It combines posts, announcements, shared calendars, photos/videos, files, attendance, surveys, 1:1/group chats, live streaming, polls, to-do lists and group challenges. ([Band][66])
+  1178→
+  1179→**Why it works:** it is designed around **real groups**—families, clubs, schools, sports teams and communities.
+  1180→
+  1181→It asks:
+  1182→
+  1183→> What does this group need to organise life?
+  1184→
+  1185→rather than:
+  1186→
+  1187→> How do we make this group chat more exciting?
+  1188→
+  1189→That is a much stronger product question.
+  1190→
+  1191→---
+  1192→
+  1193→### 99. MeWe — **social network without algorithmic dependency**
+  1194→
+  1195→MeWe offers feeds, pages, groups, private chats, stories, disappearing content, voice/video, cloud storage, dual-camera functionality and group-specific profiles. ([MeWe Support][67])
+  1196→
+  1197→Its Groups provide dedicated chat, shared storage, events, smart search and tagging. ([MeWe Support][68])
+  1198→
+  1199→Its distinctive philosophy is chronological/user-controlled feeds rather than aggressive algorithmic filtering. ([MeWe Support][69])
+  1200→
+  1201→**Beyond chat:** MeWe attempts to make **ownership and control** part of the social experience.
+  1202→
+  1203→---
+  1204→
+  1205→### 100. Nextdoor — **neighbourhood intelligence**
+  1206→
+  1207→Nextdoor may be one of the most conceptually different products in your list.
+  1208→
+  1209→It combines neighbourhood identity with local news, safety alerts, recommendations, listings, events and local businesses. ([Nextdoor][70])
+  1210→
+  1211→Its AI-powered Faves system can synthesise years of neighbourhood discussions to answer practical local questions. ([Nextdoor Blog][71])
+  1212→
+  1213→**Beyond chat:** the product is not really “messaging”.
+  1214→
+  1215→It is:
+  1216→
+  1217→**local knowledge + trust + place + recommendations + safety + commerce + community.**
+  1218→
+  1219→That is why its product model is so interesting.
+  1220→
+  1221→---
+  1222→
+  1223→# Now the really important part: **why do the best ones not look like scribble?**
+  1224→
+  1225→This is where the 100-platform comparison becomes genuinely useful.
+  1226→
+  1227→The products that feel “perfect” generally obey several design laws.
+  1228→
+  1229→## 1. They do not put everything in one interface
+  1230→
+  1231→Consider the difference:
+  1232→
+  1233→**Discord**
+  1234→
+  1235→Server → category → channel → thread → voice → activity → app
+  1236→
+  1237→**Slack**
+  1238→
+  1239→Workspace → channel → conversation → canvas → workflow
+  1240→
+  1241→**Figma**
+  1242→
+  1243→File → canvas → object → comment → prototype → presentation
+  1244→
+  1245→**Notion**
+  1246→
+  1247→Workspace → page → database → block → comment
+  1248→
+  1249→**Twitch**
+  1250→
+  1251→Channel → stream → chat → clip → community
+  1252→
+  1253→**Nextdoor**
+  1254→
+  1255→Neighbourhood → local information → alert → recommendation → event
+  1256→
+  1257→The system has **layers**.
+  1258→
+  1259→That is the secret.
+  1260→
+  1261→A weak application says:
+  1262→
+  1263→> “Here are 74 features.”
+  1264→
+  1265→A strong application says:
+  1266→
+  1267→> “Here is where you are. Here is what belongs here. Here is what you can do next.”
+  1268→
+  1269→---
+  1270→
+  1271→# 2. The strongest products give every object a job
+  1272→
+  1273→Look at Discord.
+  1274→
+  1275→A server isn't merely a folder.
+  1276→
+  1277→A channel isn't merely a chat room.
+  1278→
+  1279→A role isn't merely a badge.
+  1280→
+  1281→An Activity isn't merely a mini-game.
+  1282→
+  1283→A forum isn't merely another message feed.
+  1284→
+  1285→Each object has a **semantic purpose**.
+  1286→
+  1287→Likewise in Slack:
+  1288→
+  1289→Message → conversation
+  1290→Canvas → knowledge
+  1291→List → action
+  1292→Huddle → synchronous discussion
+  1293→Workflow → automation
+  1294→
+  1295→This is why it does not feel chaotic despite enormous feature depth.
+  1296→
+  1297→---
+  1298→
+  1299→# 3. They use progressive disclosure
+  1300→
+  1301→This may be the single most important lesson for the product you are designing.
+  1302→
+  1303→A sophisticated platform should **hide complexity until the complexity becomes relevant**.
+  1304→
+  1305→Figma does not show you 200 collaboration controls when you first open a design.
+  1306→
+  1307→Discord does not display every bot action permanently.
+  1308→
+  1309→Slack does not turn every channel into an enormous dashboard.
+  1310→
+  1311→Typeform does not show every possible branch simultaneously.
+  1312→
+  1313→The interface says:
+  1314→
+  1315→> **Here is the next meaningful thing.**
+  1316→
+  1317→Then reveals more only when required.
+  1318→
+  1319→---
+  1320→
+  1321→# 4. They turn conversation into an object
+  1322→
+  1323→This happens repeatedly:
+  1324→
+  1325→Slack:
+  1326→**message → canvas/workflow**
+  1327→
+  1328→Teams:
+  1329→**message → Loop → task**
+  1330→
+  1331→Chanty:
+  1332→**message → task**
+  1333→
+  1334→ClickUp:
+  1335→**message/idea → task/doc/whiteboard**
+  1336→
+  1337→Intercom:
+  1338→**conversation → ticket**
+  1339→
+  1340→Asana:
+  1341→**comment/update → task**
+  1342→
+  1343→Front:
+  1344→**conversation → assignment/internal collaboration**
+  1345→
+  1346→Figma:
+  1347→**comment → design revision**
+  1348→
+  1349→This is a gigantic product principle.
+  1350→
+  1351→### The winning question is not:
+  1352→
+  1353→> “What else can users say?”
+  1354→
+  1355→It is:
+  1356→
+  1357→> **“What can users create from what they just said?”**
+  1358→
+  1359→---
+  1360→
+  1361→# 5. They distinguish temporary from permanent information
+  1362→
+  1363→Zulip understands this exceptionally well.
+  1364→
+  1365→Signal understands it through disappearing messages.
+  1366→
+  1367→Basecamp separates chat from durable message boards.
+  1368→
+  1369→Intercom separates conversations from tickets.
+  1370→
+  1371→Notion treats pages as durable memory.
+  1372→
+  1373→Discord uses channels/forums for different lifetimes of information.
+  1374→
+  1375→This matters because information has different temporal values:
+  1376→
+  1377→**momentary → conversational → actionable → reference → archival**
+  1378→
+  1379→If everything follows one chronological feed, the system becomes a mess.
+  1380→
+  1381→---
+  1382→
+  1383→# 6. They design around a primary human activity
+  1384→
+  1385→This is why:
+  1386→
+  1387→**Twitch** feels like a broadcast venue.
+  1388→
+  1389→**Rec Room** feels like a game.
+  1390→
+  1391→**Figma** feels like a studio.
+  1392→
+  1393→**Miro** feels like a workshop.
+  1394→
+  1395→**Nextdoor** feels like a neighbourhood.
+  1396→
+  1397→**BAND** feels like a club organiser.
+  1398→
+  1399→**Jostle** feels like an organisation.
+  1400→
+  1401→**Discord** feels like a community.
+  1402→
+  1403→**Slack** feels like an office.
+  1404→
+  1405→**WhatsApp** feels like a universal telephone book.
+  1406→
+  1407→The interface communicates the product's **purpose before you read the documentation**.
+  1408→
+  1409→That is extraordinarily difficult to achieve—and tremendously valuable.
+  1410→
+  1411→---
+  1412→
+  1413→# The platforms I would study most intensely
+  1414→
+  1415→Not necessarily the “best overall”, but the **best teachers of particular design problems**:
+  1416→
+  1417→| Product            | What I would steal conceptually                 |
+  1418→| ------------------ | ----------------------------------------------- |
+  1419→| **Discord**        | Community architecture                          |
+  1420→| **Slack**          | Conversation → work                             |
+  1421→| **Zulip**          | Conversation organisation                       |
+  1422→| **Telegram**       | Programmable messaging                          |
+  1423→| **Signal**         | Privacy UX                                      |
+  1424→| **Matrix/Element** | Interoperability                                |
+  1425→| **Beeper**         | Unified inbox                                   |
+  1426→| **Twitch**         | Live-media hierarchy                            |
+  1427→| **Snapchat**       | Native visual communication                     |
+  1428→| **Teams**          | Communication + documents                       |
+  1429→| **Basecamp**       | Durable vs temporary knowledge                  |
+  1430→| **ClickUp**        | Ideas → execution                               |
+  1431→| **Asana**          | Accountability/workflows                        |
+  1432→| **Notion**         | Shared organisational memory                    |
+  1433→| **Miro**           | Spatial thinking                                |
+  1434→| **Figma**          | Contextual collaboration                        |
+  1435→| **Gather**         | Spatial presence                                |
+  1436→| **Rec Room**       | User-created experiences                        |
+  1437→| **BAND**           | Real-life group organisation                    |
+  1438→| **MeWe**           | User-controlled social space                    |
+  1439→| **Nextdoor**       | Local intelligence                              |
+  1440→| **Intercom**       | Conversation → support operation                |
+  1441→| **Front**          | Internal collaboration around external messages |
+  1442→| **SimpleX**        | Identity minimisation                           |
+  1443→| **Briar**          | Resilience without internet                     |
+  1444→| **Status**         | Communication + ownership                       |
+  1445→| **Roblox**         | Communication inside an experience              |
+  1446→
+  1447→And there is a deeper conclusion hiding underneath the entire benchmark:
+  1448→
+  1449→## The future “chat app” is probably not a chat app.
+  1450→
+  1451→The trajectory of these products is remarkably consistent:
+  1452→
+  1453→**Chat**
+  1454→↓
+  1455→**Community**
+  1456→↓
+  1457→**Content**
+  1458→↓
+  1459→**Presence**
+  1460→↓
+  1461→**Files / knowledge**
+  1462→↓
+  1463→**Tasks / workflows**
+  1464→↓
+  1465→**Automation**
+  1466→↓
+  1467→**AI agents**
+  1468→↓
+  1469→**Transactions / services**
+  1470→↓
+  1471→**Persistent digital environments**
+  1472→
+  1473→Slack's Canvas, ClickUp Whiteboards, Miro AI Workflows, Asana AI Teammates, Zoom AI Companion, Telegram Mini Apps and Status's wallet/community architecture all point towards the same fundamental evolution: **communication becomes the connective tissue between activities rather than the activity itself**. ([Slack][5])
+  1474→
+  1475→That is also why the most intelligent interfaces feel calm despite enormous functionality.
+  1476→
+  1477→They do **not** show the user everything.
+  1478→
+  1479→They build a hierarchy of meaning:
+  1480→
+  1481→> **Where am I? → Who am I with? → What are we doing? → What matters now? → What can happen next?**
+  1482→
+  1483→That is the real secret behind the platforms on your list that feel “decorated perfectly” rather than scribbled together.
+  1484→
+  1485→[1]: https://support.microsoft.com/en-us/skype/4e034bbd-cb7a-48b7-9f5a-594255f62836?utm_source=chatgpt.com "Skype is retiring in May 2025: What you need to know - Microsoft Support"
+  1486→[2]: https://support-apps.discord.com/hc/en-us/articles/26593412574359-How-to-Use-Apps?utm_source=chatgpt.com "How to Use Apps – Discord Apps and Activities"
+  1487→[3]: https://slack.com/features?utm_source=chatgpt.com "Slack Features: Team Collaboration Tools | Slack"
+  1488→[4]: https://slack.com/help/articles/4402059015315-Use-huddles-in-Slack?utm_source=chatgpt.com "Use huddles in Slack | Slack"
+  1489→[5]: https://slack.com/features/canvas?utm_source=chatgpt.com "Slack Canvas: Collaborate & Curate in Workspaces | Slack"
+  1490→[6]: https://faq.whatsapp.com/809740894165112?utm_source=chatgpt.com "About channels on the WhatsApp Business app | WhatsApp Help Center"
+  1491→[7]: https://core.telegram.org/bots?utm_source=chatgpt.com "Bots: An introduction for developers"
+  1492→[8]: https://support.signal.org/hc/en-us/sections/360001602792-Signal-Messenger-Features?utm_source=chatgpt.com "Signal Messenger Features – Signal Support"
+  1493→[9]: https://support.signal.org/hc/en-us/articles/360043272451-Note-to-Self?utm_source=chatgpt.com "Note to Self – Signal Support"
+  1494→[10]: https://support.signal.org/hc/en-us/articles/5008009166234-Stories?utm_source=chatgpt.com "Stories – Signal Support"
+  1495→[11]: https://element.io/features?utm_source=chatgpt.com "Element features"
+  1496→[12]: https://www.matrix.org/docs/chat_basics/public-rooms/?utm_source=chatgpt.com "Matrix.org - Public Rooms"
+  1497→[13]: https://www.beeper.com/?utm_source=chatgpt.com "Beeper — All your chats in one app"
+  1498→[14]: https://www.viber.com/en/features/?utm_source=chatgpt.com "Features | Viber"
+  1499→[15]: https://aws.amazon.com/wickr/faqs/?utm_source=chatgpt.com "Secure End-to-End Encrypted Communication Platform - AWS Wickr FAQs - Amazon Web Services"
+  1500→[16]: https://www.matrix.org/?utm_source=chatgpt.com "Matrix.org"
+  1501→[17]: https://matrix.org/docs/matrix-concepts/elements-of-matrix/?utm_source=chatgpt.com "Matrix.org - Elements of Matrix"
+  1502→[18]: https://www.microsoft.com/en-us/microsoft-teams/group-chat-software?utm_source=chatgpt.com "Video Conferencing, Meetings, Calling | Microsoft Teams"
+  1503→[19]: https://support.microsoft.com/en-us/teams/chat/use-collaborative-notes-in-microsoft-teams-chats?utm_source=chatgpt.com "Use collaborative notes in Microsoft Teams chats | Microsoft Support"
+  1504→[20]: https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0077463&utm_source=chatgpt.com "Using the AI chat panel in the Zoom Workplace app"
+  1505→[21]: https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0081485&utm_source=chatgpt.com "新用户入门指南"
+  1506→[22]: https://help.webex.com/article/4eawbp/Webex-Teams-?utm_source=chatgpt.com "Webex App | Spaces and Teams"
+  1507→[23]: https://www.chanty.com/pricing/?utm_source=chatgpt.com "Pricing | Chanty"
+  1508→[24]: https://www.flock.com/features/?utm_source=chatgpt.com "Flock - Features"
+  1509→[25]: https://ryver.com/features/?utm_source=chatgpt.com "Features | Ryver"
+  1510→[26]: https://docs.rocket.chat/docs?utm_source=chatgpt.com "What is Rocket.Chat?"
+  1511→[27]: https://zulip.com/help/introduction-to-topics?utm_source=chatgpt.com "Introduction to topics | Zulip help center"
+  1512→[28]: https://docs.zulip.com/features/?utm_source=chatgpt.com "Features | Zulip"
+  1513→[29]: https://devforum.roblox.com/t/update-on-guilded-and-communities/3966775?utm_source=chatgpt.com "Update on Guilded and Communities - Announcements - Developer Forum | Roblox"
+  1514→[30]: https://steamcommunity.com/updates/chatupdate?utm_source=chatgpt.com "New friends list, voice, and chat features"
+  1515→[31]: https://recroom.com/?utm_source=chatgpt.com "Rec Room"
+  1516→[32]: https://www.snapchat.com/?utm_source=chatgpt.com "Snapchat - Say It In A Snap"
+  1517→[33]: https://help.x.com/en/using-x/download-the-x-app?utm_source=chatgpt.com "Download the X app"
+  1518→[34]: https://support.google.com/messages/answer/9487020?hl=en&utm_source=chatgpt.com "RCS chats by Google FAQ - Google Messages"
+  1519→[35]: https://support.google.com/messages/answer/15685397?hl=en&utm_source=chatgpt.com "Welcome to Google Messages - Google Messages"
+  1520→[36]: https://business.x.com/en/products/twitter-spaces?utm_source=chatgpt.com "X Spaces"
+  1521→[37]: https://userbradley.github.io/BeReal/domains/sub-domains/?utm_source=chatgpt.com "Sub Domains - BeReal API Documentation"
+  1522→[38]: https://status.app/?utm_source=chatgpt.com "Status App | Private Messenger, Web3 Wallet & Browser"
+  1523→[39]: https://status.network/?utm_source=chatgpt.com "Status Network | Gasless Ethereum L2 with Native Yield"
+  1524→[40]: https://simplex.chat/messaging/?utm_source=chatgpt.com "SimpleX Chat: The World's Most Secure Messaging"
+  1525→[41]: https://briarproject.org/how-it-works/?utm_source=chatgpt.com "How it works - Briar"
+  1526→[42]: https://jami.net/?utm_source=chatgpt.com "Jami"
+  1527→[43]: https://wire.com/en/features?utm_source=chatgpt.com "Features in Focus | Boosting productivity with Wire"
+  1528→[44]: https://help.front.com/en/articles/2256?utm_source=chatgpt.com "Understanding comments"
+  1529→[45]: https://help.front.com/en/articles/2057?utm_source=chatgpt.com "Add and use shared inboxes"
+  1530→[46]: https://help.front.com/en/articles/2265?utm_source=chatgpt.com "Shared inboxes merge duplicates by default"
+  1531→[47]: https://www.intercom.com/helpdesk/inbox?utm_source=chatgpt.com "AI-powered inbox for faster, better customer support | Intercom"
+  1532→[48]: https://www.intercom.com/help/en/articles/8313203-tickets-space-in-the-messenger?utm_source=chatgpt.com "Tickets space in the Messenger | Intercom Help"
+  1533→[49]: https://app.mobilemonkey.com/instachamp/?utm_source=chatgpt.com "Instagram Growth Tools for Engagement & Messaging Automation | InstaChamp by MobileMonkey"
+  1534→[50]: https://help.typeform.com/hc/en-us/articles/14955071444244-Get-the-most-out-of-Typeform-with-AI?utm_source=chatgpt.com "Get the most out of Typeform with AI – Help Center"
+  1535→[51]: https://www.typeform.com/platform-overview?utm_source=chatgpt.com "Platform Overview"
+  1536→[52]: https://jostle.me/?utm_source=chatgpt.com "Jostle: Employee Success Platform for Modern Workplaces | Jostle"
+  1537→[53]: https://success.jostle.me/jostle-corporate-intranet?utm_source=chatgpt.com "Intranet software to connect your employees | Jostle"
+  1538→[54]: https://www.meta.com/workplace/?utm_source=chatgpt.com "Workplace from Meta | Meta"
+  1539→[55]: https://basecamp.com/features?utm_source=chatgpt.com "Basecamp — Features, benefits, benefits, and benefits"
+  1540→[56]: https://help.clickup.com/hc/en-us/articles/17217215332887-Add-tasks-and-Docs-to-a-Whiteboard?utm_source=chatgpt.com "Add tasks and Docs to a Whiteboard – ClickUp Help"
+  1541→[57]: https://help.asana.com/s/article/all-asana-features?utm_source=chatgpt.com "All Asana features: explore the full platform | Help Center"
+  1542→[58]: https://asana.com/features/project-management/inbox?utm_source=chatgpt.com "Explore Asana Inbox Management Features • Asana"
+  1543→[59]: https://help.asana.com/s/article/learn-about-asana-advanced-features?language=en_US&utm_source=chatgpt.com "Asana Advanced features: what's included | Help Center"
+  1544→[60]: https://monday.com/p/press-release/monday-com-goes-all-in-on-ai-from-work-management-platform-to-ai-work-platform/?utm_source=chatgpt.com "monday.com Goes All In on AI: From Work Management Platform to AI Work Platform - monday.com"
+  1545→[61]: https://www.notion.com/product/docs?utm_source=chatgpt.com "Docs | Notion"
+  1546→[62]: https://www.figma.com/pricing/?utm_source=chatgpt.com "Plans & Pricing | Figma"
+  1547→[63]: https://support.gather.town/articles/2360216656-overview-of-chat-for-remote-office-spaces?utm_source=chatgpt.com "Overview of Chat for Gather 1.0 Remote Office Spaces"
+  1548→[64]: https://about.roblox.com/safety-faqs?utm_source=chatgpt.com "Safety FAQs | Roblox"
+  1549→[65]: https://aminoka.com/?utm_source=chatgpt.com "Aminoka: The Amino Alternative. Communities, Chat and Roleplay."
+  1550→[66]: https://about.band.us/features?utm_source=chatgpt.com "All-in-One Group Communication App | BAND App"
+  1551→[67]: https://support.mewe.com/hc/en-us/articles/360052272994-What-is-MeWe?utm_source=chatgpt.com "What is MeWe? – Help Center"
+  1552→[68]: https://support.mewe.com/hc/en-us/articles/360037058174-What-are-MeWe-groups?utm_source=chatgpt.com "What are MeWe groups? – Help Center"
+  1553→[69]: https://support.mewe.com/hc/en-us/articles/360026157974-What-is-MeWe-s-Privacy-Policy?utm_source=chatgpt.com "What is MeWe's Privacy Policy? – Help Center"
+  1554→[70]: https://about.nextdoor.com/?utm_source=chatgpt.com "About Nextdoor"
+  1555→[71]: https://blog.nextdoor.com/meet-the-new-nextdoor?utm_source=chatgpt.com "Meet the New Nextdoor: A Redesign of our Product, Refounding of Our Company, and Recommitment to Local Community"
+  1556→

@@ -42,12 +42,15 @@ import {
   ImagePlus,
   Info,
   Link2,
+  ListTodo,
   LoaderCircle,
   Lock,
   LogOut,
+  Map as MapIcon,
   MapPin,
   Megaphone,
   MessageSquare,
+  MessagesSquare,
   Mic,
   Minus,
   Pause,
@@ -58,6 +61,7 @@ import {
   PictureInPicture2,
   Play,
   Plus,
+  Podcast,
   Reply,
   RotateCcw,
   Search,
@@ -70,8 +74,10 @@ import {
   Star,
   Timer,
   Trash2,
+  Trophy,
   UserPlus,
   UserRoundMinus,
+  VenetianMask,
   Vote,
   VolumeX,
   X,
@@ -86,6 +92,7 @@ import type {
   MessageAuthor,
   SavedItem,
   ScheduledItem,
+  TopicSummary,
 } from '@/lib/types'
 import {
   apiJson,
@@ -161,6 +168,18 @@ import { useRedPacketSheet } from "@/components/chat/redpacket-sheet"
 import GameTicTacToeCard from "@/components/chat/game-tictactoe-card"
 import { useKanbanSheet } from "@/components/chat/kanban-sheet"
 import { useEventsSheet } from "@/components/chat/events-sheet"
+// ── R24-b: topics rail + stage/space/tournament (parallel crews' sheets) ──
+import { TopicBar } from "@/components/chat/topic-bar"
+import { useStageSheet } from "@/components/chat/stage-room-sheet"
+import { useSpaceSheet } from "@/components/chat/space-sheet"
+import { useTournamentSheet } from "@/components/chat/tournament-sheet"
+import TournamentCard from "@/components/chat/tournament-card"
+import {
+  TOPIC_CREATED_EVENT,
+  STAGE_OPEN_EVENT,
+  SPACE_OPEN_EVENT,
+  TOURNAMENT_OPEN_EVENT,
+} from "@/components/chat/slash-palette"
 
 /** /game palette → chat-room creates the match (DM: vs the peer; group: open) */
 const NEW_GAME_EVENT = 'pulse:new-game'
@@ -205,6 +224,10 @@ const SLASH_COMMANDS = [
   { cmd: '/schedule', args: '', help: 'Schedule this message for later' },
   { cmd: '/sticker', args: '', help: 'Open the sticker packs' },
   { cmd: '/location', args: '', help: 'Share a live map pin' },
+  { cmd: '/topic', args: '<name>', help: 'Create a topic and file here' },
+  { cmd: '/stage', args: '', help: 'Open the live stage room' },
+  { cmd: '/space', args: '', help: 'Open the spatial space' },
+  { cmd: '/tournament', args: '', help: 'Start a group tournament' },
   { cmd: '/effects', args: '<effect>', help: 'confetti · lasers · echo · sparkles' },
   { cmd: '/help', args: '', help: 'Show every command' },
 ] as const
@@ -249,6 +272,36 @@ function parseRedPacketPayload(payload: string | null): { packetId: string } | n
 function parseGamePayload(payload: string | null): { matchId: string } | null {
   const p = parseMessagePayload(payload)
   return typeof p.matchId === 'string' && p.matchId.length > 0 ? { matchId: p.matchId } : null
+}
+
+/** Safe-parse a tournament payload {tournamentId, name, game} — never throws. (R24) */
+function parseTournamentPayload(payload: string | null): { tournamentId: string } | null {
+  const p = parseMessagePayload(payload)
+  return typeof p.tournamentId === 'string' && p.tournamentId.length > 0
+    ? { tournamentId: p.tournamentId }
+    : null
+}
+
+// ── R24-b: client mirror of the server's deterministic incognito alias —
+// identical FNV-1a + word lists to the messages route, so the OPTIMISTIC
+// bubble already shows the exact alias the server will store. ──
+const ANON_ADJECTIVES = ['Swift', 'Quiet', 'Neon', 'Ember', 'Frost', 'Lucky', 'Cosmic', 'Silent'] as const
+const ANON_ANIMALS = ['Falcon', 'Otter', 'Panda', 'Wolf', 'Comet', 'Tiger', 'Raven', 'Fox'] as const
+
+function anonStableHash(value: string): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
+function anonAliasPreview(userId: string, conversationId: string): string {
+  const hash = anonStableHash(`${userId}:${conversationId}`)
+  const adjective = ANON_ADJECTIVES[hash % ANON_ADJECTIVES.length]
+  const animal = ANON_ANIMALS[Math.floor(hash / ANON_ADJECTIVES.length) % ANON_ANIMALS.length]
+  return `${adjective} the ${animal}`
 }
 
 /** Safe-parse a sticker payload {emoji, pack} — never throws. */
@@ -312,7 +365,8 @@ function applySlash(
   | { kind: 'help' }
   | { kind: 'sticker' }
   | { kind: 'location' }
-  | { kind: 'tool'; tool: 'whiteboard' | 'redpacket' | 'kanban' | 'events' | 'game' }
+  | { kind: 'topic'; name: string }
+  | { kind: 'tool'; tool: 'whiteboard' | 'redpacket' | 'kanban' | 'events' | 'game' | 'stage' | 'space' | 'tournament' }
   | { kind: 'effect'; effect: MessageEffectName; content: string }
   | { kind: 'error'; message: string } {
   const input = rawInput.trim()
@@ -354,8 +408,16 @@ function applySlash(
     case 'kanban':
     case 'events':
     case 'game':
-      // R23: standalone tools — sheets/games live in the component body
-      return { kind: 'tool', tool: word.toLowerCase() as 'whiteboard' | 'redpacket' | 'kanban' | 'events' | 'game' }
+    case 'stage':
+    case 'space':
+    case 'tournament':
+      // R23/R24: standalone tools — sheets/games live in the component body
+      return { kind: 'tool', tool: word.toLowerCase() as 'whiteboard' | 'redpacket' | 'kanban' | 'events' | 'game' | 'stage' | 'space' | 'tournament' }
+    case 'topic': {
+      // R24-b: create a Zulip topic, then file the NEXT send under it
+      if (arg.length === 0) return { kind: 'error', message: 'Usage: /topic Design' }
+      return { kind: 'topic', name: arg }
+    }
     case 'effects': {
       const effectWord = arg.split(/\s+/)[0]?.toLowerCase() ?? ''
       if (!isMessageEffect(effectWord)) {
@@ -466,6 +528,10 @@ export function ChatRoom({
     setSwitchedId(null)
     setAnchorOverride(undefined)
     setJumpOverride(undefined)
+    // R24-b: topics are per-conversation — never leak a view across rooms
+    setActiveTopicId(null)
+    setAnonNext(false)
+    anonNextRef.current = false
   }, [conversationIdProp])
 
   // device connectivity → offline texts are queued in the outbox
@@ -626,6 +692,15 @@ export function ChatRoom({
   // ── collaborative whiteboard (R21-c) — palette event opens it ──
   const whiteboard = useWhiteboardSheet(conversationId, me.id)
 
+  // ── R24-b: Zulip-style topics (groups) + incognito arming ─────
+  /** active topic view — null = General (the implicit whole-room stream) */
+  const [activeTopicId, setActiveTopicId] = useState<string | null>(null)
+  /** Venetian-mask arming — next send posts anonymously (groups only) */
+  const [anonNext, setAnonNext] = useState(false)
+  const anonNextRef = useRef(false)
+  /** previous activeTopicId — detects topic switches to re-arm scroll anchoring */
+  const prevTopicRef = useRef<string | null>(null)
+
   const viewportRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const nearBottomRef = useRef(true)
@@ -660,15 +735,23 @@ export function ChatRoom({
     refetchInterval: 6_000,
   })
 
+  // R24-b: General view = whole room (existing key — unchanged behavior);
+  // an active topic gets its own key so caches never bleed between views.
+  const messagesKey =
+    activeTopicId === null
+      ? (['messages', conversationId] as const)
+      : (['messages', conversationId, activeTopicId] as const)
+
   const messages = useQuery({
-    queryKey: ['messages', conversationId],
+    queryKey: messagesKey,
     queryFn: async (): Promise<ChatMessage[]> => {
+      const topicSuffix = activeTopicId !== null ? `&topicId=${encodeURIComponent(activeTopicId)}` : ''
       const res = await apiJson<MessagesResponse>(
-        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=${MESSAGES_PAGE_SIZE}`,
+        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=${MESSAGES_PAGE_SIZE}${topicSuffix}`,
       )
       // Merge with whatever is cached (older pages loaded via "Load older")
       // so a background refetch never amputates already-loaded history.
-      const previous = queryClient.getQueryData<ChatMessage[]>(['messages', conversationId])
+      const previous = queryClient.getQueryData<ChatMessage[]>(messagesKey)
       if (!previous || previous.length === 0) {
         applyHasMore(res.total !== undefined ? res.messages.length < res.total : res.hasMore === true)
         return res.messages
@@ -695,13 +778,14 @@ export function ChatRoom({
     const prevTop = el?.scrollTop ?? 0
     setLoadingOlder(true)
     try {
+      const topicSuffix = activeTopicId !== null ? `&topicId=${encodeURIComponent(activeTopicId)}` : ''
       const res = await apiJson<MessagesResponse>(
-        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=${OLDER_PAGE_SIZE}&before=${encodeURIComponent(oldest.createdAt)}`,
+        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=${OLDER_PAGE_SIZE}&before=${encodeURIComponent(oldest.createdAt)}${topicSuffix}`,
       )
       // Arm the anchor only now — the very next render (data applied) restores it.
       scrollRestoreRef.current = { prevHeight, prevTop }
       let cachedCount = res.messages.length
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
+      queryClient.setQueryData<ChatMessage[]>(messagesKey, (old) => {
         if (!old || old.length === 0) return res.messages
         const known = new Set(old.map((m) => m.id))
         const additions = res.messages.filter((m) => !known.has(m.id))
@@ -715,7 +799,7 @@ export function ChatRoom({
     } finally {
       setLoadingOlder(false)
     }
-  }, [messages.data, loadingOlder, conversationId, queryClient, applyHasMore])
+  }, [messages.data, loadingOlder, conversationId, activeTopicId, messagesKey, queryClient, applyHasMore])
 
   // scroll anchor: after prepending, keep the viewport pinned to the same content
   useLayoutEffect(() => {
@@ -725,6 +809,34 @@ export function ChatRoom({
     scrollRestoreRef.current = null
     el.scrollTop = el.scrollHeight - pending.prevHeight + pending.prevTop
   })
+
+  // ── R24-b: message-cache plumbing that spans BOTH views ─────
+  // The General view keeps the whole-room cache; the active topic view has
+  // its own key. Mutations patch both so optimistic rows never vanish when
+  // the user flips between General and a topic mid-flight.
+  const patchMessageViews = useCallback(
+    (updater: (old: ChatMessage[] | undefined) => ChatMessage[] | undefined) => {
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], updater)
+      if (activeTopicId !== null) {
+        queryClient.setQueryData<ChatMessage[]>(['messages', conversationId, activeTopicId], updater)
+      }
+    },
+    [queryClient, conversationId, activeTopicId],
+  )
+
+  // Switching topics swaps the message view — re-arm the first-load scroll
+  // anchor so every topic starts pinned to its newest message.
+  useEffect(() => {
+    if (prevTopicRef.current === null) {
+      prevTopicRef.current = activeTopicId
+      return
+    }
+    if (prevTopicRef.current !== activeTopicId) {
+      prevTopicRef.current = activeTopicId
+      setHistoryLoaded(false)
+      setJumpOverride(null)
+    }
+  }, [activeTopicId])
 
   // ── jump-to-message machinery (search hits + quoted replies) ─
 
@@ -941,6 +1053,7 @@ export function ChatRoom({
   // ── R23: external-message contract — sheets/cards that create messages
   // (red-packet send, game rematch) push the fresh ChatMessage through this
   // window event so the room appends it instantly; 3.5s polling is the fallback.
+  // R24-b: topic-filed arrivals also append to the active topic view.
   useEffect(() => {
     const handler = (e: Event) => {
       const msg = (e as CustomEvent<ChatMessage>).detail
@@ -949,10 +1062,16 @@ export function ChatRoom({
         if (!old || old.some((m) => m.id === msg.id)) return old
         return [...old, msg].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
       })
+      if (activeTopicId !== null && msg.topicId === activeTopicId) {
+        queryClient.setQueryData<ChatMessage[]>(['messages', conversationId, activeTopicId], (old) => {
+          if (!old || old.some((m) => m.id === msg.id)) return old
+          return [...old, msg].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+        })
+      }
     }
     window.addEventListener('pulse:external-message', handler)
     return () => window.removeEventListener('pulse:external-message', handler)
-  }, [conversationId, queryClient])
+  }, [conversationId, activeTopicId, queryClient])
 
   // ── R23-b: /game palette entry → create a tic-tac-toe match.
   // DM: challenge the peer directly; group: open challenge anyone can claim.
@@ -1076,6 +1195,9 @@ export function ChatRoom({
         prev === null ||
         !isSameDayIso(prev.createdAt, message.createdAt) ||
         prev.senderId !== message.senderId ||
+        // R24-b: an incognito send always opens a fresh cluster (different mask)
+        prev.anon !== message.anon ||
+        prev.anonAlias !== message.anonAlias ||
         Date.parse(message.createdAt) - Date.parse(prev.createdAt) > CLUSTER_WINDOW_MS
       built.push({ message, head: clusterBreak })
       prev = message
@@ -1344,6 +1466,10 @@ export function ChatRoom({
             ...(viewOnce ? { viewOnce: true } : {}),
             ...(kind ? { kind } : {}),
             ...(payload ? { payload } : {}),
+            // R24-b: file the send under the active topic (thread replies stay
+            // unfiled) + incognito arming (server honors it in groups only)
+            ...(activeTopicId !== null && !parentId ? { topicId: activeTopicId } : {}),
+            ...(anonNextRef.current && isGroup ? { anon: true } : {}),
           }),
         },
       )
@@ -1358,6 +1484,9 @@ export function ChatRoom({
             deleted: replyTo.deletedAt !== null,
           }
         : null
+      // R24-b: the optimistic row already wears the incognito mask + topic
+      // filing it will carry on the server (deterministic alias = same value).
+      const tempAnon = anonNextRef.current && isGroup
       const temp: ChatMessage = {
         id: `temp-${clientId}`,
         conversationId,
@@ -1377,6 +1506,9 @@ export function ChatRoom({
         pinnedAt: null,
         pinnedBy: null,
         parentId: parentId ?? null,
+        topicId: activeTopicId !== null && !parentId ? activeTopicId : null, // R24-b: active-topic filing
+        anon: tempAnon,
+        anonAlias: tempAnon ? anonAliasPreview(me.id, conversationId) : null,
         viewOnce: viewOnce === true,
         viewedAt: null,
         viewedBy: null,
@@ -1386,9 +1518,7 @@ export function ChatRoom({
         poll: null,
         translations: [],
       }
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
-        old ? [...old, temp] : [temp],
-      )
+      patchMessageViews((old) => (old ? [...old, temp] : [temp]))
       if (parentId) {
         // optimistic echo inside the open thread sheet too
         queryClient.setQueryData<ChatMessage[]>(['thread', parentId], (old) => {
@@ -1400,6 +1530,15 @@ export function ChatRoom({
     onSuccess: ({ res, clientId }, vars) => {
       const real = res.message
       setReplyTo(null)
+      // R24-b: incognito is one-shot — disarm after a successful send
+      if (anonNextRef.current) {
+        anonNextRef.current = false
+        setAnonNext(false)
+      }
+      if (real.topicId !== null) {
+        // keep the topic chip count badge honest right away
+        void queryClient.invalidateQueries({ queryKey: ['topics', conversationId] })
+      }
       // the real row replaces the optimistic temp — remember it so the bubble
       // entrance spring doesn't replay for a message that already animated in
       landedIdsRef.current.set(real.id, Date.now())
@@ -1407,7 +1546,7 @@ export function ChatRoom({
         const cutoff = Date.now() - 10_000
         for (const [id, ts] of landedIdsRef.current) if (ts < cutoff) landedIdsRef.current.delete(id)
       }
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
+      patchMessageViews((old) => {
         if (!old) return [real]
         const hadReal = old.some((m) => m.id === real.id)
         const cleaned = old.filter(
@@ -1442,9 +1581,7 @@ export function ChatRoom({
       }
     },
     onError: (_error, { clientId }) => {
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
-        old ? old.filter((m) => m.id !== `temp-${clientId}`) : old,
-      )
+      patchMessageViews((old) => old?.filter((m) => m.id !== `temp-${clientId}`) ?? old)
       toast.error('Message failed to send')
     },
   })
@@ -1468,7 +1605,7 @@ export function ChatRoom({
       return res.message
     },
     onMutate: async ({ messageId, emoji }) => {
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+      patchMessageViews((old) =>
         old
           ? old.map((m) => {
               if (m.id !== messageId) return m
@@ -1493,7 +1630,7 @@ export function ChatRoom({
       )
     },
     onSuccess: (real) => {
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+      patchMessageViews((old) =>
         old ? old.map((m) => (m.id === real.id ? { ...m, reactions: real.reactions } : m)) : old,
       )
     },
@@ -1521,7 +1658,7 @@ export function ChatRoom({
     },
     onMutate: async (messageId) => {
       const previous = queryClient.getQueryData<ChatMessage[]>(['messages', conversationId])
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+      patchMessageViews((old) =>
         old
           ? old.map((m) => (m.id === messageId ? { ...m, deletedAt: new Date().toISOString() } : m))
           : old,
@@ -1530,7 +1667,7 @@ export function ChatRoom({
     },
     onSuccess: (data) => {
       const real = data.message
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+      patchMessageViews((old) =>
         old ? old.map((m) => (m.id === real.id ? real : m)) : old,
       )
       queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
@@ -1540,6 +1677,8 @@ export function ChatRoom({
       if (context?.previous) {
         queryClient.setQueryData(['messages', conversationId], context.previous)
       }
+      // topic views heal via prefix invalidation
+      void queryClient.invalidateQueries({ queryKey: ['messages', conversationId] })
       toast.error('Could not delete the message')
     },
     onSettled: () => {
@@ -1560,7 +1699,7 @@ export function ChatRoom({
     },
     onMutate: async ({ messageId, content }) => {
       const previous = queryClient.getQueryData<ChatMessage[]>(['messages', conversationId])
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+      patchMessageViews((old) =>
         old
           ? old.map((m) =>
               m.id === messageId
@@ -1572,7 +1711,7 @@ export function ChatRoom({
       return { previous }
     },
     onSuccess: ({ message: real }) => {
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+      patchMessageViews((old) =>
         old ? old.map((m) => (m.id === real.id ? real : m)) : old,
       )
       queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
@@ -1583,6 +1722,8 @@ export function ChatRoom({
       if (context?.previous) {
         queryClient.setQueryData(['messages', conversationId], context.previous)
       }
+      // topic views heal via prefix invalidation
+      void queryClient.invalidateQueries({ queryKey: ['messages', conversationId] })
       toast.error('Could not update the message')
     },
     onSettled: () => {
@@ -1602,7 +1743,7 @@ export function ChatRoom({
     },
     onMutate: async (messageId) => {
       const now = new Date().toISOString()
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+      patchMessageViews((old) =>
         old?.map((m) =>
           m.id === messageId
             ? { ...m, pinnedAt: m.pinnedAt ? null : now, pinnedBy: m.pinnedAt ? null : me.id }
@@ -1611,7 +1752,7 @@ export function ChatRoom({
       )
     },
     onSuccess: ({ message: real }) => {
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+      patchMessageViews((old) =>
         old ? old.map((m) => (m.id === real.id ? real : m)) : old,
       )
       queryClient.invalidateQueries({ queryKey: ['pinned', conversationId] })
@@ -1647,11 +1788,11 @@ export function ChatRoom({
   /** swap a fresh poll-bearing row into every cache it lives in */
   const applyPollRow = useCallback(
     (fresh: ChatMessage) => {
-      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
+      patchMessageViews((old) =>
         old ? old.map((m) => (m.id === fresh.id ? fresh : m)) : old,
       )
     },
-    [queryClient, conversationId],
+    [patchMessageViews],
   )
 
   const createPoll = useMutation({
@@ -1730,6 +1871,32 @@ export function ChatRoom({
       haptic(10)
     },
     onError: () => toast.error('Could not update saved state'),
+  })
+
+  // ── R24-b: Chanty-style message → kanban task conversion ──
+
+  const convertToTask = useMutation({
+    mutationFn: async (messageId: string) => {
+      return apiJson<{ card: { id: string; title: string } }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/kanban`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me.id, messageId }),
+        },
+      )
+    },
+    onSuccess: (data) => {
+      toast.success('📌 Task created from message')
+      fireParticles({ kind: 'burst', count: 40 })
+      haptic(12)
+      // refresh the board if the kanban sheet has ever cached it
+      void queryClient.invalidateQueries({ queryKey: ['kanban', conversationId] })
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Could not create the task')
+    },
+    onSettled: () => setSelected(null),
   })
 
   // ── view-once consumption ────────────────────────────────
@@ -1873,6 +2040,66 @@ export function ChatRoom({
   const kanban = useKanbanSheet(conversationId, me.id, sheetMembers, myRole)
   const events = useEventsSheet(conversationId, me.id, sheetMembers, myRole)
 
+  // ── R24-b: Zulip-style topic rail data (groups only) ─────────
+  const topicsQuery = useQuery({
+    queryKey: ['topics', conversationId],
+    queryFn: async (): Promise<TopicSummary[]> => {
+      const res = await apiJson<{ topics: TopicSummary[] }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/topics?userId=${encodeURIComponent(me.id)}`,
+      )
+      return res.topics
+    },
+    enabled: isGroup,
+    staleTime: 10_000,
+    // keeps chip count badges honest without a socket event per topic
+    refetchInterval: 15_000,
+  })
+  const topics = topicsQuery.data ?? []
+  const activeTopic =
+    activeTopicId !== null ? (topics.find((t) => t.id === activeTopicId) ?? null) : null
+
+  const createTopic = useCallback(
+    async (name: string, emoji: string): Promise<string | null> => {
+      try {
+        const res = await apiJson<{ topic: TopicSummary }>(
+          `/api/conversations/${encodeURIComponent(conversationId)}/topics`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: me.id, name, emoji }),
+          },
+        )
+        await queryClient.invalidateQueries({ queryKey: ['topics', conversationId] })
+        setActiveTopicId(res.topic.id)
+        toast.success(`Filing to ${res.topic.emoji} ${res.topic.name} — next send lands there`)
+        window.dispatchEvent(new CustomEvent(TOPIC_CREATED_EVENT, { detail: res.topic }))
+        haptic(12)
+        return res.topic.id
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Could not create the topic')
+        return null
+      }
+    },
+    [conversationId, me.id, queryClient],
+  )
+
+  const selectTopic = useCallback((topicId: string | null) => {
+    setActiveTopicId(topicId)
+  }, [])
+
+  // self-heal: the active topic was deleted (creator/admin) → back to General
+  useEffect(() => {
+    if (!isGroup || activeTopicId === null) return
+    if (topicsQuery.isSuccess && !topics.some((t) => t.id === activeTopicId)) {
+      setActiveTopicId(null)
+    }
+  }, [isGroup, topicsQuery.isSuccess, topics, activeTopicId])
+
+  // ── R24: stage / space / tournament sheets (parallel crews' hooks) ──
+  const stage = useStageSheet(conversationId, me)
+  const space = useSpaceSheet(conversationId, me)
+  const tournament = useTournamentSheet(conversationId, me)
+
   /** amber chip above the composer while delayed sends are pending */
   const scheduledChip = useMemo(() => {
     const items = scheduledQuery.data ?? []
@@ -1979,6 +2206,9 @@ export function ChatRoom({
       setSearchDraft('')
       setHighlight(null)
       setThreadRoot(null)
+      setActiveTopicId(null)
+      setAnonNext(false)
+      anonNextRef.current = false
       setHistoryLoaded(false)
       setAnchorOverride(null)
       setJumpOverride(null)
@@ -2129,6 +2359,13 @@ export function ChatRoom({
         requestAnimationFrame(autosize)
         return
       }
+      if (outcome.kind === 'topic') {
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+        requestAnimationFrame(autosize)
+        void createTopic(outcome.name, '💬')
+        return
+      }
       if (outcome.kind === 'tool') {
         setInput('')
         pulseDraftsStore.getState().clearDraft(conversationId)
@@ -2137,6 +2374,15 @@ export function ChatRoom({
         else if (outcome.tool === 'redpacket') redPacket.setOpen(true)
         else if (outcome.tool === 'kanban') kanban.setOpen(true)
         else if (outcome.tool === 'events') events.setOpen(true)
+        else if (outcome.tool === 'stage') window.dispatchEvent(new CustomEvent(STAGE_OPEN_EVENT))
+        else if (outcome.tool === 'space') window.dispatchEvent(new CustomEvent(SPACE_OPEN_EVENT))
+        else if (outcome.tool === 'tournament') {
+          if (!isGroup) {
+            toast.error('Tournaments are for groups only')
+          } else {
+            window.dispatchEvent(new CustomEvent(TOURNAMENT_OPEN_EVENT))
+          }
+        }
         else window.dispatchEvent(new CustomEvent(NEW_GAME_EVENT))
         return
       }
@@ -2242,6 +2488,9 @@ export function ChatRoom({
         pinnedAt: null,
         pinnedBy: null,
         parentId: null,
+        topicId: null,
+        anon: false,
+        anonAlias: null,
         viewOnce: false,
         viewedAt: null,
         viewedBy: null,
@@ -2385,6 +2634,28 @@ export function ChatRoom({
         window.dispatchEvent(new CustomEvent(NEW_GAME_EVENT))
         return
       }
+      // ── R24-b: stage / space / tournament dispatch straight to the ──
+      // parallel crews' hooks; /topic falls through to the staging tail so
+      // typed args survive and applySlash creates the topic on Enter.
+      if (cmd === '/stage') {
+        clearDraft()
+        window.dispatchEvent(new CustomEvent(STAGE_OPEN_EVENT))
+        return
+      }
+      if (cmd === '/space') {
+        clearDraft()
+        window.dispatchEvent(new CustomEvent(SPACE_OPEN_EVENT))
+        return
+      }
+      if (cmd === '/tournament') {
+        clearDraft()
+        if (!isGroup) {
+          toast.error('Tournaments are for groups only')
+        } else {
+          window.dispatchEvent(new CustomEvent(TOURNAMENT_OPEN_EVENT))
+        }
+        return
+      }
       if (cmd.startsWith('/effects')) {
         const effect = cmd.split(/\s+/)[1]
         clearDraft()
@@ -2405,7 +2676,7 @@ export function ChatRoom({
         textareaRef.current?.focus()
       })
     },
-    [conversationId, autosize, redPacket, kanban, events],
+    [conversationId, autosize, isGroup, redPacket, kanban, events],
   )
 
 
@@ -3145,6 +3416,17 @@ export function ChatRoom({
         </button>
       ) : null}
 
+      {/* R24-b: Zulip-style topic rail — General + real topic chips (groups only) */}
+      {isGroup ? (
+        <TopicBar
+          topics={topics}
+          activeTopicId={activeTopicId}
+          onSelect={selectTopic}
+          onCreate={createTopic}
+          reducedMotion={prefs.reducedMotion}
+        />
+      ) : null}
+
       {/* messages */}
       <div
         ref={viewportRef}
@@ -3422,6 +3704,35 @@ export function ChatRoom({
         </AnimatePresence>
 
         <AnimatePresence initial={false}>
+          {activeTopic && !editing ? (
+            <motion.div
+              key="topic-filing-pill"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div className="mb-2 flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30">
+                <MessagesSquare className="size-3.5 shrink-0" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">Filing to #{activeTopic.name}</span>
+                <button
+                  type="button"
+                  aria-label="Stop filing to this topic — back to General"
+                  onClick={() => {
+                    haptic(8)
+                    setActiveTopicId(null)
+                  }}
+                  className="rounded-full p-0.5 outline-none transition-transform hover:scale-110 active:scale-90"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
           {replyTo ? (
             <motion.div
               key="reply-bar"
@@ -3496,6 +3807,42 @@ export function ChatRoom({
                   type="button"
                   aria-label="Cancel effect"
                   onClick={() => setPendingEffect(null)}
+                  className="rounded-full p-0.5 outline-none transition-transform hover:scale-110 active:scale-90"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
+          {anonNext && isGroup && !recording ? (
+            <motion.div
+              key="anon-pill"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div className="mb-2 flex items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/40">
+                <motion.span
+                  initial={prefs.reducedMotion ? false : { scale: 1 }}
+                  animate={prefs.reducedMotion ? undefined : { scale: [1, 1.16, 1] }}
+                  transition={{ duration: 0.55, ease: 'easeOut' }}
+                  className="flex"
+                >
+                  <VenetianMask className="size-3.5 shrink-0" aria-hidden />
+                </motion.span>
+                <span className="min-w-0 flex-1">Incognito on — next message hides your name</span>
+                <button
+                  type="button"
+                  aria-label="Turn off incognito"
+                  onClick={() => {
+                    setAnonNext(false)
+                    anonNextRef.current = false
+                  }}
                   className="rounded-full p-0.5 outline-none transition-transform hover:scale-110 active:scale-90"
                 >
                   <X className="size-3.5" aria-hidden />
@@ -3611,6 +3958,40 @@ export function ChatRoom({
                     run: () => {
                       setTray(false)
                       events.setOpen(true)
+                    },
+                  },
+                  {
+                    label: 'Stage',
+                    icon: Podcast,
+                    tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+                    disabled: false,
+                    run: () => {
+                      setTray(false)
+                      window.dispatchEvent(new CustomEvent(STAGE_OPEN_EVENT))
+                    },
+                  },
+                  {
+                    label: 'Space',
+                    icon: MapIcon,
+                    tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                    disabled: false,
+                    run: () => {
+                      setTray(false)
+                      window.dispatchEvent(new CustomEvent(SPACE_OPEN_EVENT))
+                    },
+                  },
+                  {
+                    label: 'Tournament',
+                    icon: Trophy,
+                    tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+                    disabled: !isGroup,
+                    run: () => {
+                      setTray(false)
+                      if (!isGroup) {
+                        toast.error('Tournaments are for groups only')
+                        return
+                      }
+                      window.dispatchEvent(new CustomEvent(TOURNAMENT_OPEN_EVENT))
                     },
                   },
                   {
@@ -3851,6 +4232,30 @@ export function ChatRoom({
                 onBlur={stopTyping}
                 className="pulse-scroll max-h-[120px] min-h-[44px] w-full flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-[height] duration-200 ease-out placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
               />
+              {/* R24-b: incognito arm — the next send posts under a mask (groups) */}
+              {isGroup && !editing ? (
+                <motion.button
+                  type="button"
+                  aria-label={anonNext ? 'Incognito armed — next message is anonymous' : 'Send the next message anonymously'}
+                  aria-pressed={anonNext}
+                  onClick={() => {
+                    haptic(8)
+                    const next = !anonNextRef.current
+                    anonNextRef.current = next
+                    setAnonNext(next)
+                  }}
+                  whileTap={pressTap}
+                  transition={pressSpring}
+                  className={cn(
+                    'flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-colors',
+                    anonNext
+                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                      : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300',
+                  )}
+                >
+                  <VenetianMask className="size-5" aria-hidden />
+                </motion.button>
+              ) : null}
               <Popover>
                 <PopoverTrigger asChild>
                   <button
@@ -4055,6 +4460,24 @@ export function ChatRoom({
               >
                 <Star className={cn('size-4', isSavedIds.has(selected.id) ? 'fill-amber-400 text-amber-500' : 'text-amber-500')} aria-hidden />
                 {isSavedIds.has(selected.id) ? 'Unsave' : 'Save message'}
+              </Button>
+            ) : null}
+            {selected && selected.parentId === null && !selected.deletedAt && selected.kind === 'text' ? (
+              <Button
+                variant="outline"
+                disabled={convertToTask.isPending}
+                onClick={() => {
+                  if (!selected) return
+                  convertToTask.mutate(selected.id)
+                }}
+                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
+              >
+                {convertToTask.isPending ? (
+                  <LoaderCircle className="size-4 animate-spin text-teal-500" aria-hidden />
+                ) : (
+                  <ListTodo className="size-4 text-teal-500" aria-hidden />
+                )}
+                Convert to task
               </Button>
             ) : null}
             <Button
@@ -4717,6 +5140,10 @@ export function ChatRoom({
       {redPacket.node}
       {kanban.node}
       {events.node}
+      {/* ── R24: stage / space / tournament sheets (parallel crews' hooks) ── */}
+      {stage.node}
+      {space.node}
+      {tournament.node}
       <UserProfileSheet
         user={profileUser}
         open={profileUser !== null}
@@ -5446,8 +5873,15 @@ const MessageRow = memo(function MessageRow({
   const redPacketInfo = isRedPacket ? parseRedPacketPayload(message.payload) : null
   const isGame = !deleted && !isImage && !isVoice && message.kind === 'game'
   const gameInfo = isGame ? parseGamePayload(message.payload) : null
+  /** R24: tournament bracket cards live in chat like games/red packets */
+  const isTournament = !deleted && !isImage && !isVoice && message.kind === 'tournament'
+  const tournamentInfo = isTournament ? parseTournamentPayload(message.payload) : null
+  /** R24-b: incognito sends wear a neutral zinc mask instead of name/avatar */
+  const anonMasked = !deleted && message.anon && message.anonAlias !== null
+  const senderLabel =
+    anonMasked && message.anonAlias ? `🕶️ ${message.anonAlias}` : message.sender.name
   /** jumbo-emoji, stickers and location cards render without bubble chrome */
-  const plainChrome = !deleted && (jumbo || isSticker || isLocation || ((isRedPacket && redPacketInfo !== null) || (isGame && gameInfo !== null)))
+  const plainChrome = !deleted && (jumbo || isSticker || isLocation || ((isRedPacket && redPacketInfo !== null) || (isGame && gameInfo !== null) || (isTournament && tournamentInfo !== null)))
   /** Snapchat/WhatsApp view-once gates */
   const viewGated = isImage && message.viewOnce && !mine && message.viewedAt === null
   const viewBurned = isImage && message.viewOnce && !mine && message.viewedAt !== null
@@ -5497,17 +5931,27 @@ const MessageRow = memo(function MessageRow({
       {!mine && isGroup ? (
         head ? (
           <div className="mr-1.5 flex shrink-0 items-end pb-5">
-            <button
-              type="button"
-              aria-label={`View ${message.sender.name}'s profile`}
-              className="rounded-full outline-none transition-transform active:scale-90"
-              onClick={(e) => {
-                e.stopPropagation()
-                onOpenProfile(message.sender)
-              }}
-            >
-              <UserAvatar name={message.sender.name} color={message.sender.color} size={28} />
-            </button>
+            {anonMasked ? (
+              <span
+                role="img"
+                aria-label="Anonymous member"
+                className="flex size-7 items-center justify-center rounded-full bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300"
+              >
+                <VenetianMask className="size-4" aria-hidden />
+              </span>
+            ) : (
+              <button
+                type="button"
+                aria-label={`View ${message.sender.name}'s profile`}
+                className="rounded-full outline-none transition-transform active:scale-90"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenProfile(message.sender)
+                }}
+              >
+                <UserAvatar name={message.sender.name} color={message.sender.color} size={28} />
+              </button>
+            )}
           </div>
         ) : (
           <span className="mr-1.5 block w-7 shrink-0" aria-hidden />
@@ -5517,7 +5961,7 @@ const MessageRow = memo(function MessageRow({
       <div className={cn('flex max-w-[78%] flex-col', mine ? 'items-end' : 'items-start')}>
         {!mine && isGroup && head && !deleted ? (
           <span className="mb-0.5 ml-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-            {message.sender.name}
+            {senderLabel}
           </span>
         ) : null}
 
@@ -5778,6 +6222,10 @@ const MessageRow = memo(function MessageRow({
               ) : isGame && gameInfo ? (
                 <div data-card-interactive className="w-full max-w-[300px]">
                   <GameTicTacToeCard matchId={gameInfo.matchId} meId={myId} />
+                </div>
+              ) : isTournament && tournamentInfo ? (
+                <div data-card-interactive className="w-full max-w-[300px]">
+                  <TournamentCard tournamentId={tournamentInfo.tournamentId} meId={myId} />
                 </div>
               ) : jumbo ? (
                 <p className="text-[34px] leading-[1.2] break-words">{message.content}</p>

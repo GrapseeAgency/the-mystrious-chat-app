@@ -1,0 +1,999 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse — Live Voice room (R21-b "Beyond Chat" wave).
+     3→// Voxer/Zello/Telegram voice-chat style walkie-talkie rooms
+     4→// relayed through the pulse-socket service (port 3003).
+     5→//
+     6→// REAL audio, zero mocks:
+     7→//  · join → getUserMedia({audio}) — permission-denied surfaces an
+     8→//    honest inline error (no fake audio ever plays or sends).
+     9→//  · PTT (hold-to-talk, tap-to-latch) → raw mic PCM is captured
+    10→//    via AudioWorklet (ScriptProcessor fallback), downsampled to
+    11→//    16 kHz mono, split into ~250 ms Int16 chunks, base64-packed
+    12→//    and emitted as `voice:chunk` over the socket relay.
+    13→//  · receivers decode chunks into an AudioBuffer queue with a
+    14→//    small jitter buffer for gapless-ish playback.
+    15→//  · nothing is recorded, stored, or uploaded — chunks are relayed
+    16→//    peer-to-peer through the socket service and dropped.
+    17→//
+    18→// The session ENGINE (mic + socket + roster) lives in the
+    19→// `useVoiceRoom` hook so the room keeps running while the sheet
+    20→// is closed (the chat shows a "Voice · N live" pill). The sheet
+    21→// below is pure UI on top of that controller.
+    22→// ─────────────────────────────────────────────────────────────
+    23→'use client'
+    24→
+    25→import { useCallback, useEffect, useRef, useState } from 'react'
+    26→import { io, type Socket } from 'socket.io-client'
+    27→import { motion } from 'framer-motion'
+    28→import {
+    29→  AlertTriangle,
+    30→  AudioLines,
+    31→  LoaderCircle,
+    32→  Mic,
+    33→  MicOff,
+    34→  PhoneOff,
+    35→  Radio,
+    36→  X,
+    37→} from 'lucide-react'
+    38→import { toast } from 'sonner'
+    39→import type { AppUser } from '@/lib/types'
+    40→import { haptic } from '@/lib/pulse-settings'
+    41→import { cn } from '@/lib/utils'
+    42→import { Button } from '@/components/ui/button'
+    43→import { UserAvatar } from '@/components/chat/user-avatar'
+    44→
+    45→// ── audio pipeline constants ─────────────────────────────────
+    46→const TARGET_RATE = 16_000 // Hz — wideband voice, keeps chunks small
+    47→const CHUNK_MS = 250 // emit a chunk every 250 ms
+    48→const CHUNK_SAMPLES = Math.round((TARGET_RATE * CHUNK_MS) / 1000) // 4000 samples
+    49→const JITTER_BUFFER_S = 0.085 // playback pre-roll for smooth-ish scheduling
+    50→const RELAY_CONNECT_TIMEOUT_MS = 8_000
+    51→
+    52→export interface VoicePeerInfo {
+    53→  id: string
+    54→  name: string
+    55→  username: string | null
+    56→  color: string
+    57→}
+    58→
+    59→export type VoiceRoomStatus = 'idle' | 'joining' | 'joined' | 'error'
+    60→
+    61→export interface VoiceRoomController {
+    62→  status: VoiceRoomStatus
+    63→  /** honest failure text for the inline error state (permission denied etc.) */
+    64→  errorMsg: string
+    65→  /** socket link to the relay (gateway :3003) is up */
+    66→  connected: boolean
+    67→  inRoom: boolean
+    68→  roster: VoicePeerInfo[]
+    69→  /** peer ids currently holding PTT (emerald glow) */
+    70→  speakingIds: ReadonlySet<string>
+    71→  micMuted: boolean
+    72→  /** local user is actively transmitting */
+    73→  transmitting: boolean
+    74→  join: () => void
+    75→  leave: () => void
+    76→  setPtt: (on: boolean) => void
+    77→  toggleMute: () => void
+    78→}
+    79→
+    80→// ── binary helpers ───────────────────────────────────────────
+    81→
+    82→function bytesToBase64(bytes: Uint8Array): string {
+    83→  let binary = ''
+    84→  const step = 0x8000
+    85→  for (let i = 0; i < bytes.length; i += step) {
+    86→    binary += String.fromCharCode(...bytes.subarray(i, i + step))
+    87→  }
+    88→  return btoa(binary)
+    89→}
+    90→
+    91→function base64ToBytes(b64: string): Uint8Array | null {
+    92→  try {
+    93→    const bin = atob(b64)
+    94→    const bytes = new Uint8Array(bin.length)
+    95→    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    96→    return bytes
+    97→  } catch {
+    98→    return null
+    99→  }
+   100→}
+   101→
+   102→function floatToInt16(input: Float32Array): Int16Array {
+   103→  const out = new Int16Array(input.length)
+   104→  for (let i = 0; i < input.length; i++) {
+   105→    const s = Math.max(-1, Math.min(1, input[i]))
+   106→    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+   107→  }
+   108→  return out
+   109→}
+   110→
+   111→function int16ToFloat(bytes: Uint8Array): Float32Array<ArrayBuffer> {
+   112→  const usable = bytes.byteLength - (bytes.byteLength % 2)
+   113→  const pcm = new Int16Array(bytes.buffer, bytes.byteOffset, usable / 2)
+   114→  const out = new Float32Array(pcm.length)
+   115→  for (let i = 0; i < pcm.length; i++) out[i] = pcm[i] / 0x8000
+   116→  return out
+   117→}
+   118→
+   119→/** Linear-interpolation decimation of one fixed-size block down to TARGET_RATE. */
+   120→function downsampleBlock(input: Float32Array, outLen: number): Float32Array {
+   121→  if (input.length <= 1) return new Float32Array(outLen)
+   122→  const out = new Float32Array(outLen)
+   123→  const step = (input.length - 1) / Math.max(1, outLen - 1)
+   124→  for (let i = 0; i < outLen; i++) {
+   125→    const p = i * step
+   126→    const i0 = Math.floor(p)
+   127→    const frac = p - i0
+   128→    const a = input[i0]
+   129→    const b = i0 + 1 < input.length ? input[i0 + 1] : a
+   130→    out[i] = a + (b - a) * frac
+   131→  }
+   132→  return out
+   133→}
+   134→
+   135→// ── the engine hook ──────────────────────────────────────────
+   136→
+   137→export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomController {
+   138→  const [status, setStatus] = useState<VoiceRoomStatus>('idle')
+   139→  const [errorMsg, setErrorMsg] = useState('')
+   140→  const [connected, setConnected] = useState(false)
+   141→  const [roster, setRoster] = useState<VoicePeerInfo[]>([])
+   142→  const [speakingIds, setSpeakingIds] = useState<ReadonlySet<string>>(new Set())
+   143→  const [micMuted, setMicMuted] = useState(false)
+   144→  const [transmitting, setTransmitting] = useState(false)
+   145→
+   146→  const socketRef = useRef<Socket | null>(null)
+   147→  const streamRef = useRef<MediaStream | null>(null)
+   148→  const ctxRef = useRef<AudioContext | null>(null)
+   149→  const nodesRef = useRef<{ source: AudioNode; node: AudioNode; sink: AudioNode } | null>(null)
+   150→  /** capture accumulator: one native-rate block ≈ CHUNK_MS of audio */
+   151→  const blockRef = useRef<{ buf: Float32Array; count: number }>({ buf: new Float32Array(0), count: 0 })
+   152→  const seqRef = useRef(1)
+   153→  const peerPlayRef = useRef<Map<string, { lastSeq: number; nextAt: number }>>(new Map())
+   154→  const joinedConvRef = useRef<string | null>(null)
+   155→  const transmittingRef = useRef(false)
+   156→  const mutedRef = useRef(false)
+   157→  const mountedRef = useRef(true)
+   158→
+   159→  // ── socket plumbing ────────────────────────────────────────
+   160→
+   161→  const lastResyncRef = useRef(0)
+   162→
+   163→  const emitVoiceJoin = useCallback((sock: Socket, convId: string) => {
+   164→    sock.emit('voice:join', {
+   165→      conversationId: convId,
+   166→      user: { id: me.id, name: me.name, username: me.username, color: me.color },
+   167→    })
+   168→  }, [me.id, me.name, me.username, me.color])
+   169→
+   170→  const ensureSocket = useCallback(() => {
+   171→    if (socketRef.current) return socketRef.current
+   172→
+   173→    const sock = io('/?XTransformPort=3003', {
+   174→      path: '/',
+   175→      transports: ['polling', 'websocket'],
+   176→      upgrade: true,
+   177→      reconnection: true,
+   178→      reconnectionDelay: 800,
+   179→      reconnectionDelayMax: 5_000,
+   180→      timeout: RELAY_CONNECT_TIMEOUT_MS,
+   181→    })
+   182→    socketRef.current = sock
+   183→
+   184→    sock.on('connect', () => {
+   185→      if (!mountedRef.current) return
+   186→      setConnected(true)
+   187→      // the relay wipes rosters on reconnect/restart — re-register the mic
+   188→      if (joinedConvRef.current) emitVoiceJoin(sock, joinedConvRef.current)
+   189→    })
+   190→    sock.on('disconnect', () => {
+   191→      if (mountedRef.current) setConnected(false)
+   192→    })
+   193→
+   194→    sock.on('voice:roster', (raw: unknown) => {
+   195→      if (!mountedRef.current) return
+   196→      if (raw === null || typeof raw !== 'object') return
+   197→      const r = raw as { conversationId?: unknown; peers?: unknown }
+   198→      const convId = typeof r.conversationId === 'string' ? r.conversationId : ''
+   199→      if (!convId || convId !== joinedConvRef.current || !Array.isArray(r.peers)) return
+   200→      const peers = r.peers.flatMap((p): VoicePeerInfo[] => {
+   201→        if (p === null || typeof p !== 'object') return []
+   202→        const peer = p as Record<string, unknown>
+   203→        if (typeof peer.id !== 'string' || typeof peer.name !== 'string') return []
+   204→        return [
+   205→          {
+   206→            id: peer.id,
+   207→            name: peer.name,
+   208→            username: typeof peer.username === 'string' ? peer.username : null,
+   209→            color: typeof peer.color === 'string' ? peer.color : 'emerald',
+   210→          },
+   211→        ]
+   212→      })
+   213→      setRoster(peers)
+   214→      // prune transmit rings to peers that are actually on stage
+   215→      const liveIds = new Set(peers.map((p) => p.id))
+   216→      setSpeakingIds((prev) => {
+   217→        const next = new Set<string>()
+   218→        for (const id of prev) if (liveIds.has(id)) next.add(id)
+   219→        return next.size === prev.size ? prev : next
+   220→      })
+   221→      // relay restart wiped us mid-session → re-register (rate-limited)
+   222→      const now = Date.now()
+   223→      if (!liveIds.has(me.id) && joinedConvRef.current === convId && now - lastResyncRef.current > 2_000) {
+   224→        lastResyncRef.current = now
+   225→        emitVoiceJoin(sock, convId)
+   226→      }
+   227→    })
+   228→
+   229→    sock.on('voice:ptt', (raw: unknown) => {
+   230→      if (!mountedRef.current) return
+   231→      if (raw === null || typeof raw !== 'object') return
+   232→      const r = raw as { conversationId?: unknown; userId?: unknown; on?: unknown }
+   233→      const convId = typeof r.conversationId === 'string' ? r.conversationId : ''
+   234→      const userId = typeof r.userId === 'string' ? r.userId : ''
+   235→      if (!convId || convId !== joinedConvRef.current || !userId) return
+   236→      setSpeakingIds((prev) => {
+   237→        const next = new Set(prev)
+   238→        if (r.on === true) next.add(userId)
+   239→        else next.delete(userId)
+   240→        return next
+   241→      })
+   242→    })
+   243→
+   244→    sock.on('voice:chunk', (raw: unknown) => {
+   245→      if (!mountedRef.current) return
+   246→      if (raw === null || typeof raw !== 'object') return
+   247→      const r = raw as { conversationId?: unknown; userId?: unknown; seq?: unknown; data?: unknown }
+   248→      const convId = typeof r.conversationId === 'string' ? r.conversationId : ''
+   249→      const userId = typeof r.userId === 'string' ? r.userId : ''
+   250→      const seq = typeof r.seq === 'number' && Number.isFinite(r.seq) ? Math.floor(r.seq) : -1
+   251→      if (!convId || convId !== joinedConvRef.current || !userId || seq < 0) return
+   252→      if (typeof r.data !== 'string' || r.data.length === 0) return
+   253→      const bytes = base64ToBytes(r.data)
+   254→      if (!bytes || bytes.length === 0) return
+   255→
+   256→      const state = peerPlayRef.current.get(userId) ?? { lastSeq: 0, nextAt: 0 }
+   257→      if (seq <= state.lastSeq) return // stale/duplicate packet
+   258→      state.lastSeq = seq
+   259→      peerPlayRef.current.set(userId, state)
+   260→
+   261→      try {
+   262→        const ctx = ctxRef.current
+   263→        if (!ctx) return
+   264→        if (ctx.state === 'suspended') void ctx.resume()
+   265→        const samples = int16ToFloat(bytes)
+   266→        if (samples.length === 0) return
+   267→        const buffer = ctx.createBuffer(1, samples.length, TARGET_RATE)
+   268→        buffer.copyToChannel(samples, 0)
+   269→        const src = ctx.createBufferSource()
+   270→        src.buffer = buffer
+   271→        // per-peer playhead: chain chunks back-to-back, ≥ one jitter buffer ahead
+   272→        const at = Math.max(ctx.currentTime + JITTER_BUFFER_S, state.nextAt)
+   273→        src.start(at)
+   274→        state.nextAt = at + buffer.duration
+   275→        src.connect(ctx.destination)
+   276→        src.onended = () => {
+   277→          try {
+   278→            src.disconnect()
+   279→          } catch {
+   280→            /* already gone */
+   281→          }
+   282→        }
+   283→      } catch {
+   284→        // a corrupt chunk must never take the room down — drop it
+   285→      }
+   286→    })
+   287→
+   288→    return sock
+   289→  }, [emitVoiceJoin, me.id])
+   290→
+   291→  // ── capture pipeline ───────────────────────────────────────
+   292→
+   293→  const sendChunk = useCallback((samples: Float32Array) => {
+   294→    const sock = socketRef.current
+   295→    const convId = joinedConvRef.current
+   296→    if (!sock || !convId || !sock.connected) return
+   297→    try {
+   298→      const pcm = floatToInt16(samples)
+   299→      const data = bytesToBase64(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength))
+   300→      seqRef.current += 1
+   301→      sock.emit('voice:chunk', {
+   302→        conversationId: convId,
+   303→        userId: me.id,
+   304→        seq: seqRef.current - 1,
+   305→        data,
+   306→      })
+   307→    } catch {
+   308→      // encode failure — drop this slice, the stream keeps flowing
+   309→    }
+   310→  }, [me.id])
+   311→
+   312→  const pushSamples = useCallback((input: Float32Array) => {
+   313→    if (!transmittingRef.current || mutedRef.current) return
+   314→    const block = blockRef.current
+   315→    if (block.buf.length === 0) return // capture not armed
+   316→    let srcOff = 0
+   317→    while (srcOff < input.length) {
+   318→      const take = Math.min(block.buf.length - block.count, input.length - srcOff)
+   319→      block.buf.set(input.subarray(srcOff, srcOff + take), block.count)
+   320→      block.count += take
+   321→      srcOff += take
+   322→      if (block.count === block.buf.length) {
+   323→        sendChunk(downsampleBlock(block.buf, CHUNK_SAMPLES))
+   324→        block.count = 0
+   325→      }
+   326→    }
+   327→  }, [sendChunk])
+   328→
+   329→  /** AudioWorklet source inlined as a Blob URL — no extra public file needed. */
+   330→  const attachCapture = useCallback(async (ctx: AudioContext, stream: MediaStream) => {
+   331→    const source = ctx.createMediaStreamSource(stream)
+   332→    const sink = ctx.createGain()
+   333→    sink.gain.value = 0 // capture only — never monitor locally (no echo loop)
+   334→    sink.connect(ctx.destination)
+   335→
+   336→    const workletSrc = `class PulseCaptureProcessor extends AudioWorkletProcessor {
+   337→  process(inputs) {
+   338→    const input = inputs[0]
+   339→    if (input && input[0] && input[0].length > 0) this.port.postMessage(input[0])
+   340→    return true
+   341→  }
+   342→}
+   343→registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
+   344→    let node: AudioNode | null = null
+   345→    try {
+   346→      const blobUrl = URL.createObjectURL(new Blob([workletSrc], { type: 'application/javascript' }))
+   347→      try {
+   348→        await ctx.audioWorklet.addModule(blobUrl)
+   349→        const worklet = new AudioWorkletNode(ctx, 'pulse-capture-processor')
+   350→        worklet.port.onmessage = (event: MessageEvent) => {
+   351→          const data = event.data
+   352→          if (data instanceof Float32Array) pushSamples(data)
+   353→        }
+   354→        node = worklet
+   355→      } finally {
+   356→        URL.revokeObjectURL(blobUrl)
+   357→      }
+   358→    } catch {
+   359→      node = null // fall through to the ScriptProcessor path
+   360→    }
+   361→    if (!node) {
+   362→      // ScriptProcessor fallback (deprecated but universal — incl. older Safari)
+   363→      const processor = ctx.createScriptProcessor(4096, 1, 1)
+   364→      processor.onaudioprocess = (event) => {
+   365→        const channel = event.inputBuffer.getChannelData(0)
+   366→        pushSamples(new Float32Array(channel))
+   367→      }
+   368→      node = processor
+   369→    }
+   370→    source.connect(node)
+   371→    node.connect(sink)
+   372→    nodesRef.current = { source, node, sink }
+   373→  }, [pushSamples])
+   374→
+   375→  const teardownAudio = useCallback(() => {
+   376→    const nodes = nodesRef.current
+   377→    nodesRef.current = null
+   378→    if (nodes) {
+   379→      for (const n of [nodes.source, nodes.node, nodes.sink]) {
+   380→        try {
+   381→          n.disconnect()
+   382→        } catch {
+   383→          /* already gone */
+   384→        }
+   385→      }
+   386→    }
+   387→    const stream = streamRef.current
+   388→    streamRef.current = null
+   389→    if (stream) {
+   390→      for (const track of stream.getTracks()) {
+   391→        try {
+   392→          track.stop()
+   393→        } catch {
+   394→          /* already stopped */
+   395→        }
+   396→      }
+   397→    }
+   398→    const ctx = ctxRef.current
+   399→    ctxRef.current = null
+   400→    if (ctx) {
+   401→      void ctx.close().catch(() => undefined)
+   402→    }
+   403→    blockRef.current = { buf: new Float32Array(0), count: 0 }
+   404→    peerPlayRef.current.clear()
+   405→  }, [])
+   406→
+   407→  const teardownSocket = useCallback(() => {
+   408→    const sock = socketRef.current
+   409→    socketRef.current = null
+   410→    if (sock) {
+   411→      sock.removeAllListeners()
+   412→      sock.disconnect()
+   413→    }
+   414→    setConnected(false)
+   415→  }, [])
+   416→
+   417→  // ── public controls ────────────────────────────────────────
+   418→
+   419→  const join = useCallback(() => {
+   420→    if (status === 'joining' || status === 'joined') return
+   421→    setStatus('joining')
+   422→    setErrorMsg('')
+   423→
+   424→    const fail = (message: string) => {
+   425→      if (!mountedRef.current) return
+   426→      teardownAudio()
+   427→      setStatus('error')
+   428→      setErrorMsg(message)
+   429→      toast.error(message)
+   430→    }
+   431→
+   432→    void (async () => {
+   433→      try {
+   434→        // 1. AudioContext FIRST (iOS only unlocks contexts created in a gesture)
+   435→        const Ctx = window.AudioContext ??
+   436→          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+   437→        if (!Ctx) {
+   438→          fail('This browser cannot process live audio.')
+   439→          return
+   440→        }
+   441→        const ctx = new Ctx()
+   442→        ctxRef.current = ctx
+   443→        void ctx.resume().catch(() => undefined)
+   444→
+   445→        // 2. mic — the honest gate; permission denial lands in the inline error
+   446→        const stream = await navigator.mediaDevices.getUserMedia({
+   447→          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+   448→        })
+   449→        streamRef.current = stream
+   450→
+   451→        // 3. relay link
+   452→        const sock = ensureSocket()
+   453→        if (!sock.connected) {
+   454→          await new Promise<void>((resolve, reject) => {
+   455→            const timer = setTimeout(() => {
+   456→              cleanup()
+   457→              reject(new Error('timeout'))
+   458→            }, RELAY_CONNECT_TIMEOUT_MS)
+   459→            const cleanup = () => {
+   460→              clearTimeout(timer)
+   461→              sock.off('connect', onConnect)
+   462→              sock.off('connect_error', onError)
+   463→            }
+   464→            const onConnect = () => {
+   465→              cleanup()
+   466→              resolve()
+   467→            }
+   468→            const onError = () => {
+   469→              cleanup()
+   470→              reject(new Error('unreachable'))
+   471→            }
+   472→            sock.once('connect', onConnect)
+   473→            sock.once('connect_error', onError)
+   474→          })
+   475→        }
+   476→
+   477→        // 4. arm capture graph (worklet → ScriptProcessor fallback)
+   478→        await attachCapture(ctx, stream)
+   479→
+   480→        // 5. take the stage
+   481→        joinedConvRef.current = conversationId
+   482→        emitVoiceJoin(sock, conversationId)
+   483→        if (mountedRef.current) {
+   484→          setStatus('joined')
+   485→          setMicMuted(false)
+   486→          mutedRef.current = false
+   487→          for (const track of stream.getAudioTracks()) track.enabled = true
+   488→        }
+   489→      } catch (error) {
+   490→        const name = error instanceof DOMException ? error.name : ''
+   491→        if (name === 'NotAllowedError' || name === 'SecurityError') {
+   492→          fail('Microphone access was denied — allow it in your browser settings to go live.')
+   493→        } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+   494→          fail('No usable microphone was found on this device.')
+   495→        } else if (name === 'NotReadableError') {
+   496→          fail('Your microphone is busy in another app — close it and try again.')
+   497→        } else {
+   498→          fail('Could not reach the voice relay — check your connection and retry.')
+   499→        }
+   500→      }
+   501→    })()
+   502→  }, [status, attachCapture, conversationId, emitVoiceJoin, ensureSocket, teardownAudio])
+   503→
+   504→  const leave = useCallback(() => {
+   505→    const convId = joinedConvRef.current
+   506→    const sock = socketRef.current
+   507→    if (convId && sock) {
+   508→      try {
+   509→        sock.emit('voice:leave', { conversationId: convId })
+   510→      } catch {
+   511→        /* socket already gone — disconnect cleanup covers it */
+   512→      }
+   513→    }
+   514→    joinedConvRef.current = null
+   515→    transmittingRef.current = false
+   516→    mutedRef.current = false
+   517→    seqRef.current = 1
+   518→    if (mountedRef.current) {
+   519→      setTransmitting(false)
+   520→      setMicMuted(false)
+   521→      setRoster([])
+   522→      setSpeakingIds(new Set())
+   523→      setStatus('idle')
+   524→      setErrorMsg('')
+   525→    }
+   526→    teardownAudio()
+   527→    teardownSocket()
+   528→  }, [teardownAudio, teardownSocket])
+   529→
+   530→  const setPtt = useCallback((on: boolean) => {
+   531→    const convId = joinedConvRef.current
+   532→    const sock = socketRef.current
+   533→    if (!convId || !sock) return
+   534→    if (on) {
+   535→      if (transmittingRef.current || mutedRef.current || !sock.connected) return
+   536→      transmittingRef.current = true
+   537→      blockRef.current.count = 0 // fresh capture window per transmission
+   538→      setTransmitting(true)
+   539→      try {
+   540→        sock.emit('voice:ptt', { conversationId: convId, userId: me.id, on: true })
+   541→      } catch {
+   542→        /* best effort — rings self-heal on the next toggle */
+   543→      }
+   544→    } else {
+   545→      if (!transmittingRef.current) return
+   546→      transmittingRef.current = false
+   547→      setTransmitting(false)
+   548→      // flush the partial capture window so the tail of the sentence ships too
+   549→      const block = blockRef.current
+   550→      if (block.count > 0 && block.buf.length > 0) {
+   551→        const outLen = Math.max(1, Math.round((block.count / block.buf.length) * CHUNK_SAMPLES))
+   552→        sendChunk(downsampleBlock(block.buf.subarray(0, block.count), outLen))
+   553→        block.count = 0
+   554→      }
+   555→      try {
+   556→        sock.emit('voice:ptt', { conversationId: convId, userId: me.id, on: false })
+   557→      } catch {
+   558→        /* best effort */
+   559→      }
+   560→    }
+   561→  }, [me.id, sendChunk])
+   562→
+   563→  const toggleMute = useCallback(() => {
+   564→    const next = !mutedRef.current
+   565→    mutedRef.current = next
+   566→    setMicMuted(next)
+   567→    if (next && transmittingRef.current) setPtt(false) // a muted mic never transmits
+   568→    const stream = streamRef.current
+   569→    if (stream) {
+   570→      for (const track of stream.getAudioTracks()) {
+   571→        try {
+   572→          track.enabled = !next
+   573→        } catch {
+   574→          /* keep the software gate as the source of truth */
+   575→        }
+   576→      }
+   577→    }
+   578→  }, [setPtt])
+   579→
+   580→  // conversation switch mid-session → the mic belongs to ONE room
+   581→  useEffect(() => {
+   582→    if (joinedConvRef.current && joinedConvRef.current !== conversationId) {
+   583→      const wasInRoom = status === 'joined'
+   584→      leave()
+   585→      if (wasInRoom) toast.info('Left the live voice room')
+   586→    }
+   587→  }, [conversationId])
+   588→
+   589→  // unmount → full teardown (stop tracks, emit leave, drop socket)
+   590→  useEffect(() => {
+   591→    mountedRef.current = true
+   592→    return () => {
+   593→      mountedRef.current = false
+   594→      leave()
+   595→    }
+   596→  }, [])
+   597→
+   598→  return {
+   599→    status,
+   600→    errorMsg,
+   601→    connected,
+   602→    inRoom: status === 'joined',
+   603→    roster,
+   604→    speakingIds,
+   605→    micMuted,
+   606→    transmitting,
+   607→    join,
+   608→    leave,
+   609→    setPtt,
+   610→    toggleMute,
+   611→  }
+   612→}
+   613→
+   614→// ── the sheet UI ─────────────────────────────────────────────
+   615→
+   616→function SpeakingBars() {
+   617→  return (
+   618→    <span className="flex items-end gap-[2.5px]" aria-hidden>
+   619→      {[0, 1, 2].map((i) => (
+   620→        <motion.span
+   621→          key={i}
+   622→          className="w-[3px] rounded-full bg-emerald-300"
+   623→          animate={{ height: [4, 13, 6, 15, 5] }}
+   624→          transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.14, ease: 'easeInOut' }}
+   625→          style={{ height: 5 }}
+   626→        />
+   627→      ))}
+   628→    </span>
+   629→  )
+   630→}
+   631→
+   632→function PeerRow({
+   633→  peer,
+   634→  speaking,
+   635→  isMe,
+   636→}: {
+   637→  peer: VoicePeerInfo
+   638→  speaking: boolean
+   639→  isMe: boolean
+   640→}) {
+   641→  return (
+   642→    <li className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] px-3 py-2.5">
+   643→      <motion.span
+   644→        animate={
+   645→          speaking
+   646→            ? { boxShadow: '0 0 0 2px rgba(52,211,153,0.9), 0 0 18px rgba(16,185,129,0.55)' }
+   647→            : { boxShadow: '0 0 0 1px rgba(255,255,255,0.1)' }
+   648→        }
+   649→        transition={{ duration: 0.18 }}
+   650→        className="rounded-full"
+   651→        style={{ willChange: 'transform' }}
+   652→      >
+   653→        <UserAvatar name={peer.name} color={peer.color} size={40} />
+   654→      </motion.span>
+   655→      <div className="min-w-0 flex-1">
+   656→        <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-zinc-100">
+   657→          <span className="truncate">{peer.name}</span>
+   658→          {isMe ? (
+   659→            <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-300">
+   660→              you
+   661→            </span>
+   662→          ) : null}
+   663→        </p>
+   664→        <p className="truncate text-[11px] text-zinc-500">
+   665→          {peer.username ? `@${peer.username}` : 'on stage'}
+   666→        </p>
+   667→      </div>
+   668→      {speaking ? (
+   669→        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-1">
+   670→          <SpeakingBars />
+   671→          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">live</span>
+   672→        </span>
+   673→      ) : (
+   674→        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-zinc-600">listening</span>
+   675→      )}
+   676→    </li>
+   677→  )
+   678→}
+   679→
+   680→export function VoiceRoomSheet({
+   681→  title,
+   682→  myId,
+   683→  voice,
+   684→  onClose,
+   685→}: {
+   686→  title: string
+   687→  /** the local user's id — marks "you" in the roster */
+   688→  myId: string
+   689→  voice: VoiceRoomController
+   690→  onClose: () => void
+   691→}) {
+   692→  const voiceRef = useRef(voice)
+   693→  const holdStartRef = useRef(0)
+   694→  const pointerActiveRef = useRef(false)
+   695→
+   696→  // keep the latest controller reachable from effects/handlers (never during render)
+   697→  useEffect(() => {
+   698→    voiceRef.current = voice
+   699→  })
+   700→
+   701→  // closing the sheet must never leave a ghost transmission hot
+   702→  useEffect(() => {
+   703→    return () => voiceRef.current.setPtt(false)
+   704→  }, [])
+   705→
+   706→  // Esc dismisses
+   707→  useEffect(() => {
+   708→    const onKey = (e: KeyboardEvent) => {
+   709→      if (e.key === 'Escape') onClose()
+   710→    }
+   711→    window.addEventListener('keydown', onKey)
+   712→    return () => window.removeEventListener('keydown', onKey)
+   713→  }, [onClose])
+   714→
+   715→  const onPttDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+   716→    if (!voice.inRoom || voice.micMuted) return
+   717→    e.preventDefault()
+   718→    e.currentTarget.setPointerCapture?.(e.pointerId)
+   719→    haptic(8)
+   720→    pointerActiveRef.current = true
+   721→    holdStartRef.current = Date.now()
+   722→    if (voice.transmitting) {
+   723→      voice.setPtt(false) // tap while latched → unlatch
+   724→      return
+   725→    }
+   726→    voice.setPtt(true)
+   727→  }
+   728→
+   729→  const onPttUp = () => {
+   730→    pointerActiveRef.current = false
+   731→    if (!voiceRef.current.transmitting) return
+   732→    // a quick tap latches the mic on; a real hold stops on release
+   733→    if (Date.now() - holdStartRef.current >= 260) voiceRef.current.setPtt(false)
+   734→  }
+   735→
+   736→  /** keyboard parity: Space/Enter toggles the latch like a tap */
+   737→  const onPttKey = () => {
+   738→    if (!voice.inRoom || voice.micMuted) return
+   739→    haptic(8)
+   740→    holdStartRef.current = Date.now()
+   741→    voice.setPtt(!voice.transmitting)
+   742→  }
+   743→
+   744→  const connectionLine = (() => {
+   745→    if (voice.inRoom && voice.connected) {
+   746→      return { dot: 'bg-emerald-400', text: 'Connected via gateway :3003', pulse: false }
+   747→    }
+   748→    if (voice.status === 'joining') {
+   749→      return { dot: 'bg-amber-400', text: 'Connecting to the voice relay…', pulse: true }
+   750→    }
+   751→    if (voice.inRoom && !voice.connected) {
+   752→      return { dot: 'bg-rose-400', text: 'Reconnecting to the relay…', pulse: true }
+   753→    }
+   754→    return { dot: 'bg-zinc-500', text: 'Standby — not connected', pulse: false }
+   755→  })()
+   756→
+   757→  const canTalk = voice.inRoom && !voice.micMuted
+   758→
+   759→  return (
+   760→    <>
+   761→      {/* backdrop */}
+   762→      <motion.div
+   763→        initial={{ opacity: 0 }}
+   764→        animate={{ opacity: 1 }}
+   765→        exit={{ opacity: 0 }}
+   766→        transition={{ duration: 0.2 }}
+   767→        onClick={onClose}
+   768→        aria-hidden
+   769→        className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
+   770→      />
+   771→
+   772→      {/* sheet */}
+   773→      <motion.div
+   774→        role="dialog"
+   775→        aria-modal="true"
+   776→        aria-label={`Live voice room — ${title}`}
+   777→        initial={{ y: '100%' }}
+   778→        animate={{ y: 0 }}
+   779→        exit={{ y: '100%' }}
+   780→        transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+   781→        drag="y"
+   782→        dragConstraints={{ top: 0, bottom: 0 }}
+   783→        dragElastic={{ top: 0, bottom: 0.55 }}
+   784→        onDragEnd={(_, info) => {
+   785→          if (info.offset.y > 110 || info.velocity.y > 620) onClose()
+   786→        }}
+   787→        style={{ willChange: 'transform' }}
+   788→        className="fixed inset-x-0 bottom-0 z-[70] mx-auto flex max-h-[82dvh] w-full max-w-[420px] flex-col overflow-hidden rounded-t-3xl border-t border-white/10 bg-zinc-950/95 text-zinc-100 shadow-[0_-18px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl"
+   789→      >
+   790→        {/* grab handle */}
+   791→        <button
+   792→          type="button"
+   793→          aria-label="Drag down to close"
+   794→          onClick={onClose}
+   795→          className="mx-auto flex w-full cursor-grab justify-center pt-2.5 pb-1 outline-none active:cursor-grabbing"
+   796→        >
+   797→          <span className="h-1.5 w-11 rounded-full bg-white/15" aria-hidden />
+   798→        </button>
+   799→
+   800→        {/* header */}
+   801→        <div className="flex items-start gap-2 px-4 pt-1.5 pb-3">
+   802→          <span
+   803→            aria-hidden
+   804→            className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300"
+   805→          >
+   806→            <AudioLines className="size-5" />
+   807→          </span>
+   808→          <div className="min-w-0 flex-1">
+   809→            <h2 className="truncate text-[15px] font-bold tracking-tight">Live Voice</h2>
+   810→            <p className="truncate text-[11.5px] text-zinc-400">{title}</p>
+   811→          </div>
+   812→          <Button
+   813→            variant="ghost"
+   814→            size="icon"
+   815→            aria-label="Close voice room"
+   816→            onClick={onClose}
+   817→            className="size-8 shrink-0 rounded-full text-zinc-400 hover:bg-white/10 hover:text-white"
+   818→          >
+   819→            <X className="size-4.5" aria-hidden />
+   820→          </Button>
+   821→        </div>
+   822→
+   823→        {/* scrollable body */}
+   824→        <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+   825→          {/* connection state */}
+   826→          <p className="flex items-center gap-2 pb-3 text-[11px] font-medium text-zinc-400">
+   827→            <span className={cn('size-1.5 rounded-full', connectionLine.dot, connectionLine.pulse && 'animate-pulse')} aria-hidden />
+   828→            {connectionLine.text}
+   829→          </p>
+   830→
+   831→          {/* roster */}
+   832→          {voice.inRoom ? (
+   833→            voice.roster.length > 0 ? (
+   834→              <ul className="space-y-2" aria-label="Voice participants">
+   835→                {voice.roster.map((peer) => (
+   836→                  <PeerRow
+   837→                    key={peer.id}
+   838→                    peer={peer}
+   839→                    speaking={voice.speakingIds.has(peer.id)}
+   840→                    isMe={peer.id === myId}
+   841→                  />
+   842→                ))}
+   843→              </ul>
+   844→            ) : (
+   845→              <p className="py-4 text-center text-xs text-zinc-500">Syncing roster…</p>
+   846→            )
+   847→          ) : (
+   848→            <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-7 text-center">
+   849→              <span className="flex size-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300" aria-hidden>
+   850→                <Radio className="size-5" />
+   851→              </span>
+   852→              <p className="text-[13px] font-semibold text-zinc-200">Nobody is on stage yet</p>
+   853→              <p className="max-w-[240px] text-[11.5px] leading-relaxed text-zinc-500">
+   854→                Join the room, hold the talk button and speak — everyone inside hears you instantly.
+   855→              </p>
+   856→            </div>
+   857→          )}
+   858→
+   859→          {/* honest failure state */}
+   860→          {voice.status === 'error' && voice.errorMsg ? (
+   861→            <div
+   862→              role="alert"
+   863→              className="mt-3 flex items-start gap-2.5 rounded-2xl border border-rose-500/25 bg-rose-500/10 px-3 py-3"
+   864→            >
+   865→              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-rose-400" aria-hidden />
+   866→              <div className="min-w-0 flex-1">
+   867→                <p className="text-[12.5px] font-medium leading-relaxed text-rose-200">{voice.errorMsg}</p>
+   868→                <Button
+   869→                  onClick={() => voice.join()}
+   870→                  className="mt-2 h-8 rounded-xl bg-rose-500/90 px-3 text-xs font-bold text-white hover:bg-rose-500"
+   871→                >
+   872→                  Try again
+   873→                </Button>
+   874→              </div>
+   875→            </div>
+   876→          ) : null}
+   877→
+   878→          {voice.inRoom && voice.micMuted ? (
+   879→            <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-[11.5px] font-medium text-amber-300" role="status">
+   880→              Mic is muted — unmute to talk.
+   881→            </p>
+   882→          ) : null}
+   883→        </div>
+   884→
+   885→        {/* PTT + controls */}
+   886→        <div className="shrink-0 border-t border-white/10 bg-zinc-950/80 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+   887→          <div className="flex items-center justify-center gap-5 pb-3">
+   888→            {/* mute toggle */}
+   889→            <Button
+   890→              variant="outline"
+   891→              size="icon"
+   892→              aria-label={voice.micMuted ? 'Unmute microphone' : 'Mute microphone'}
+   893→              aria-pressed={voice.micMuted}
+   894→              disabled={!voice.inRoom}
+   895→              onClick={() => {
+   896→                haptic(8)
+   897→                voice.toggleMute()
+   898→              }}
+   899→              className={cn(
+   900→                'size-12 rounded-full border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40',
+   901→                voice.micMuted && 'border-amber-400/40 bg-amber-500/15 text-amber-300',
+   902→              )}
+   903→            >
+   904→              {voice.micMuted ? <MicOff className="size-5" aria-hidden /> : <Mic className="size-5" aria-hidden />}
+   905→            </Button>
+   906→
+   907→            {/* push-to-talk */}
+   908→            <button
+   909→              type="button"
+   910→              aria-label={voice.transmitting ? 'Stop transmitting' : 'Push to talk — hold or tap to latch'}
+   911→              aria-pressed={voice.transmitting}
+   912→              disabled={!canTalk}
+   913→              onPointerDown={onPttDown}
+   914→              onPointerUp={onPttUp}
+   915→              onPointerCancel={onPttUp}
+   916→              onPointerLeave={() => {
+   917→                // only a genuinely-held pointer drag-off stops the mic —
+   918→                // never a mouse merely drifting across a latched button
+   919→                if (pointerActiveRef.current) onPttUp()
+   920→              }}
+   921→              onKeyDown={(e) => {
+   922→                if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+   923→                  e.preventDefault()
+   924→                  onPttKey()
+   925→                }
+   926→              }}
+   927→              onContextMenu={(e) => e.preventDefault()}
+   928→              className={cn(
+   929→                'relative flex size-[108px] touch-none flex-col items-center justify-center gap-0.5 rounded-full text-white select-none outline-none transition-colors duration-150',
+   930→                canTalk
+   931→                  ? voice.transmitting
+   932→                    ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_0_34px_rgba(16,185,129,0.55)]'
+   933→                    : 'bg-gradient-to-br from-zinc-700 to-zinc-800 shadow-inner'
+   934→                  : 'cursor-not-allowed bg-zinc-800/70 text-zinc-500',
+   935→              )}
+   936→              style={{ willChange: 'transform' }}
+   937→            >
+   938→              {voice.transmitting ? (
+   939→                <>
+   940→                  <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/35" aria-hidden style={{ animationDuration: '1.3s' }} />
+   941→                  <span className="absolute -inset-2 animate-ping rounded-full border border-emerald-400/30" aria-hidden style={{ animationDuration: '1.9s' }} />
+   942→                </>
+   943→              ) : null}
+   944→              {voice.transmitting ? (
+   945→                <AudioLines className="size-7" aria-hidden />
+   946→              ) : (
+   947→                <Mic className="size-7" aria-hidden />
+   948→              )}
+   949→              <span className="text-[9.5px] font-bold uppercase tracking-widest">
+   950→                {voice.transmitting ? 'Live' : canTalk ? 'Hold' : 'Off'}
+   951→              </span>
+   952→            </button>
+   953→
+   954→            {/* leave / join */}
+   955→            {voice.inRoom ? (
+   956→              <Button
+   957→                variant="outline"
+   958→                size="icon"
+   959→                aria-label="Leave voice room"
+   960→                onClick={() => {
+   961→                  haptic(10)
+   962→                  voice.leave()
+   963→                }}
+   964→                className="size-12 rounded-full border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:text-rose-200"
+   965→              >
+   966→                <PhoneOff className="size-5" aria-hidden />
+   967→              </Button>
+   968→            ) : (
+   969→              <Button
+   970→                size="icon"
+   971→                aria-label="Join live voice"
+   972→                onClick={() => {
+   973→                  haptic(10)
+   974→                  voice.join()
+   975→                }}
+   976→                disabled={voice.status === 'joining'}
+   977→                className="size-12 rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-600/30 hover:bg-emerald-500/90 disabled:opacity-60"
+   978→              >
+   979→                {voice.status === 'joining' ? (
+   980→                  <LoaderCircle className="size-5 animate-spin" aria-hidden />
+   981→                ) : (
+   982→                  <AudioLines className="size-5" aria-hidden />
+   983→                )}
+   984→              </Button>
+   985→            )}
+   986→          </div>
+   987→
+   988→          <p className="text-center text-[10px] leading-relaxed text-zinc-500">
+   989→            Hold to talk · tap to latch · {voice.inRoom ? `${voice.roster.length} on stage` : 'join to open the mic'}
+   990→            <span className="mt-0.5 block text-zinc-600">
+   991→              Voice is streamed live in 250 ms chunks and never recorded or stored.
+   992→            </span>
+   993→          </p>
+   994→        </div>
+   995→      </motion.div>
+   996→    </>
+   997→  )
+   998→}
+   999→

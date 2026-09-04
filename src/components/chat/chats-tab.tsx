@@ -8,9 +8,9 @@ import Image from 'next/image'
 import { AnimatePresence, motion, useReducedMotion, type PanInfo } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, LoaderCircle, MoreVertical, PencilLine, Pin, PinOff, Plus, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, FolderPlus, LoaderCircle, MoreVertical, PencilLine, Pin, PinOff, Plus, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
 import { toast } from 'sonner'
-import type { AppUser, ConversationSummary, SearchResultMessage } from '@/lib/types'
+import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import {
   apiJson,
@@ -38,6 +38,7 @@ import {
 } from '@/components/chat/stories-sheet'
 import type { StoryGroup, StoriesResponse } from '@/components/chat/stories-sheet'
 import { StoryComposerSheet } from '@/components/chat/story-composer-sheet'
+import { FoldersSheet } from '@/components/chat/folders-sheet'
 
 interface ConversationsResponse {
   conversations: ConversationSummary[]
@@ -641,7 +642,9 @@ export function ChatsTab({
   const allDrafts = useStore(pulseDraftsStore, (s) => s.drafts)
 
   const rows = useMemo(() => {
-    return (conversations.data ?? []).map((conv) => {
+    // R24-a: Note-to-Self chats render via their dedicated card below —
+    // never as a "DM with myself" row in the regular list.
+    return (conversations.data ?? []).filter((conv) => !conv.isSelf).map((conv) => {
       const previewInfo = conversationPreview(conv, me.id)
       const other = conv.isGroup ? null : otherMemberOf(conv, me.id)
       const groupName =
@@ -887,6 +890,76 @@ export function ChatsTab({
     sheetConv.mutedUntil !== null &&
     Date.parse(sheetConv.mutedUntil) > Date.now()
 
+  // ── R24-a Signal-style chat folders + Note to Self ─────────
+  const reducedMotion = useReducedMotion()
+  const [foldersOpen, setFoldersOpen] = useState(false)
+  /** active rail folder (null = All) */
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
+
+  const foldersQ = useQuery({
+    queryKey: ['folders', me.id],
+    queryFn: async (): Promise<FolderSummary[]> => {
+      const res = await apiJson<{ folders: FolderSummary[] }>(
+        `/api/folders?userId=${encodeURIComponent(me.id)}`,
+      )
+      return res.folders
+    },
+    staleTime: 10_000,
+  })
+  const folders = useMemo(() => foldersQ.data ?? [], [foldersQ.data])
+
+  // folder deleted (or lost) elsewhere → fall back to All
+  useEffect(() => {
+    if (activeFolderId !== null && !folders.some((f) => f.id === activeFolderId)) {
+      setActiveFolderId(null)
+    }
+  }, [activeFolderId, folders])
+
+  /** per-folder rail badge: its chats present in the active (non-archived) list */
+  const folderCounts = useMemo(() => {
+    const activeIds = new Set(activeRows.map(({ conv }) => conv.id))
+    const counts = new Map<string, number>()
+    for (const folder of folders) {
+      counts.set(folder.id, folder.conversationIds.reduce((n, id) => (activeIds.has(id) ? n + 1 : n), 0))
+    }
+    return counts
+  }, [folders, activeRows])
+
+  /** rows of the currently active folder (rail filter on top of the Telegram filter) */
+  const visibleRows = useMemo(() => {
+    if (activeFolderId === null) return folderFiltered
+    const ids = new Set(folders.find((f) => f.id === activeFolderId)?.conversationIds ?? [])
+    return folderFiltered.filter(({ conv }) => ids.has(conv.id))
+  }, [folderFiltered, activeFolderId, folders])
+
+  /** the viewer's private Note to Self chat (null = not created yet) */
+  const selfConv = useMemo(
+    () => (conversations.data ?? []).find((conv) => conv.isSelf) ?? null,
+    [conversations.data],
+  )
+
+  const createSelfChat = useMutation({
+    mutationFn: async () =>
+      apiJson<{ conversation: ConversationSummary }>('/api/conversations/self', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: me.id }),
+      }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      onOpenConversation(res.conversation.id, null)
+    },
+    onError: () => {
+      toast.error('Could not open Note to Self')
+    },
+  })
+
+  const handleSelfPress = useCallback(() => {
+    haptic(6)
+    if (selfConv) handlePress(selfConv)
+    else createSelfChat.mutate()
+  }, [selfConv, handlePress, createSelfChat])
+
   const data = conversations.data ?? []
 
   return (
@@ -1107,6 +1180,105 @@ export function ChatsTab({
         </div>
       ) : null}
 
+      {/* R24-a Signal-style chat folder rail */}
+      {!searching ? (
+        <div
+          className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto px-3 pb-1.5 pt-0.5"
+          role="tablist"
+          aria-label="Chat folders"
+        >
+          <motion.button
+            type="button"
+            role="tab"
+            aria-selected={activeFolderId === null}
+            aria-label="All chats"
+            onClick={() => {
+              haptic(6)
+              setActiveFolderId(null)
+            }}
+            whileTap={reducedMotion ? undefined : pressTap}
+            transition={pressSpring}
+            className={cn(
+              'relative flex h-11 shrink-0 items-center rounded-full px-4 text-[13px] font-semibold outline-none transition-colors',
+              activeFolderId === null
+                ? 'text-white'
+                : 'bg-white/70 text-zinc-600 ring-1 ring-zinc-200/70 backdrop-blur-xl hover:bg-zinc-100 dark:bg-zinc-900/60 dark:text-zinc-300 dark:ring-white/10 dark:hover:bg-zinc-800/70',
+            )}
+          >
+            {activeFolderId === null ? (
+              <motion.span
+                layoutId="folders-rail-pill"
+                transition={spring.snappy}
+                className="absolute inset-0 rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/25"
+              />
+            ) : null}
+            <span className="relative z-10">All</span>
+          </motion.button>
+          {folders.map((folder) => {
+            const active = activeFolderId === folder.id
+            const count = folderCounts.get(folder.id) ?? 0
+            return (
+              <motion.button
+                key={folder.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-label={`Folder ${folder.name} — ${count} ${count === 1 ? 'chat' : 'chats'}`}
+                onClick={() => {
+                  haptic(6)
+                  setActiveFolderId(active ? null : folder.id)
+                }}
+                whileTap={reducedMotion ? undefined : pressTap}
+                transition={pressSpring}
+                className={cn(
+                  'relative flex h-11 shrink-0 items-center rounded-full px-3.5 text-[13px] font-semibold outline-none transition-colors',
+                  active
+                    ? 'text-white'
+                    : 'bg-white/70 text-zinc-600 ring-1 ring-zinc-200/70 backdrop-blur-xl hover:bg-zinc-100 dark:bg-zinc-900/60 dark:text-zinc-300 dark:ring-white/10 dark:hover:bg-zinc-800/70',
+                )}
+              >
+                {active ? (
+                  <motion.span
+                    layoutId="folders-rail-pill"
+                    transition={spring.snappy}
+                    className="absolute inset-0 rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/25"
+                  />
+                ) : null}
+                <span className="relative z-10 flex items-center gap-1.5">
+                  <span aria-hidden>{folder.emoji}</span>
+                  <span className="max-w-[96px] truncate">{folder.name}</span>
+                  {count > 0 ? (
+                    <span
+                      className={cn(
+                        'flex h-[15px] min-w-[15px] items-center justify-center rounded-full px-1 text-[9px] font-bold',
+                        active
+                          ? 'bg-white/25 text-white'
+                          : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',
+                      )}
+                    >
+                      {count > 99 ? '99+' : count}
+                    </span>
+                  ) : null}
+                </span>
+              </motion.button>
+            )
+          })}
+          <motion.button
+            type="button"
+            aria-label="Manage chat folders"
+            onClick={() => {
+              haptic(6)
+              setFoldersOpen(true)
+            }}
+            whileTap={reducedMotion ? undefined : pressTap}
+            transition={pressSpring}
+            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-500 ring-1 ring-zinc-200/70 backdrop-blur-xl outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 focus-visible:ring-2 focus-visible:ring-emerald-500/60 dark:bg-zinc-900/60 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-zinc-800/70 dark:hover:text-emerald-400"
+          >
+            <FolderPlus className="size-[18px]" aria-hidden />
+          </motion.button>
+        </div>
+      ) : null}
+
       {/* list */}
       <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
         {conversations.isPending ? (
@@ -1168,10 +1340,53 @@ export function ChatsTab({
               </div>
             ) : null}
           </div>
-        ) : data.length === 0 ? (
+        ) : rows.length === 0 ? (
           <EmptyChats onSayHi={onOpenContacts} />
         ) : (
           <div className="py-1">
+            {/* R24-a Note to Self — private notebook chat (above regular chats) */}
+            <motion.button
+              type="button"
+              onClick={handleSelfPress}
+              whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+              transition={pressSpring}
+              aria-label={
+                selfConv
+                  ? 'Open Note to Self — your private space'
+                  : 'Create Note to Self — your private space'
+              }
+              className="mx-2 mb-1 mt-0.5 flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-gradient-to-r from-emerald-500/[0.08] to-teal-500/[0.05] px-3 py-2.5 text-left outline-none transition-colors hover:border-emerald-500/45 dark:border-emerald-400/20 dark:from-emerald-400/[0.07] dark:to-teal-400/[0.04] dark:hover:border-emerald-400/45"
+            >
+              <span
+                aria-hidden
+                className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[17px] shadow-sm shadow-emerald-600/30"
+              >
+                📝
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Note to Self
+                </span>
+                <span className="block truncate text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                  Your private space — notes, links, ideas
+                </span>
+              </span>
+              {createSelfChat.isPending ? (
+                <LoaderCircle className="size-4 shrink-0 animate-spin text-emerald-500" aria-hidden />
+              ) : (
+                <span
+                  className={cn(
+                    'flex shrink-0 items-center gap-0.5 rounded-full py-1 pl-2 pr-1 text-[11px] font-bold',
+                    selfConv
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'bg-emerald-500 text-white shadow-sm shadow-emerald-600/30',
+                  )}
+                >
+                  {selfConv ? 'Open' : 'Create'}
+                  <ChevronRight className="size-3.5" aria-hidden />
+                </span>
+              )}
+            </motion.button>
             {archivedRows.length > 0 ? (
               <motion.button
                 type="button"
@@ -1196,20 +1411,33 @@ export function ChatsTab({
                 </span>
               </motion.button>
             ) : null}
-            {folderFiltered.map(({ conv, props }, i) => (
-              <ConversationRow
-                key={props.id}
-                {...props}
-                entranceIndex={entranceOn ? i : null}
-                onPress={() => handlePress(conv)}
-                onLongPress={() => openSheetFor(conv)}
-                onPin={() => togglePin.mutate(conv)}
-                onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
-              />
-            ))}
-            {folderFiltered.length === 0 && activeRows.length > 0 ? (
+            {/* folder switch springs the whole list block (R24-a) */}
+            <motion.div
+              key={activeFolderId ?? 'all'}
+              initial={reducedMotion ? false : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={spring.soft}
+              style={{ willChange: 'transform' }}
+            >
+              {visibleRows.map(({ conv, props }, i) => (
+                <ConversationRow
+                  key={props.id}
+                  {...props}
+                  entranceIndex={entranceOn ? i : null}
+                  onPress={() => handlePress(conv)}
+                  onLongPress={() => openSheetFor(conv)}
+                  onPin={() => togglePin.mutate(conv)}
+                  onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
+                />
+              ))}
+            </motion.div>
+            {visibleRows.length === 0 && activeRows.length > 0 ? (
               <p className="px-8 pb-4 pt-10 text-center text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                {listFilter === 'unread' ? 'No unread chats — you are all caught up.' : 'No groups yet — start one from Contacts.'}
+                {activeFolderId !== null
+                  ? 'This folder is empty — tap the folder button on the rail to add chats.'
+                  : listFilter === 'unread'
+                    ? 'No unread chats — you are all caught up.'
+                    : 'No groups yet — start one from Contacts.'}
               </p>
             ) : null}
             {activeRows.length === 0 && archivedRows.length > 0 ? (
@@ -1358,6 +1586,14 @@ export function ChatsTab({
           </div>
         </DrawerContent>
       </Drawer>
+
+      {/* R24-a chat folders manager sheet */}
+      <FoldersSheet
+        open={foldersOpen}
+        onClose={() => setFoldersOpen(false)}
+        me={me}
+        conversations={data}
+      />
 
       {/* status story viewer + composer (full-screen overlays) */}
       <AnimatePresence>

@@ -209,6 +209,101 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Board changed — try again.' }, { status: 409 })
   }
 
+  // ── R24-d hooks: XP + tournament season feed ────────────────
+  // Runs only after the guarded write landed. EVERY write here is
+  // best-effort: wrapped in try/catch so a hook failure can never
+  // break the move response. Win → winner +25 xp (loser unchanged);
+  // draw → both players +10 xp. A running Tournament on this room
+  // auto-joins BOTH players and books the result into the standings.
+  if (nextStatus !== 'active') {
+    try {
+      const isDraw = nextStatus === 'draw'
+      const winnerLocal: string | null = isDraw ? null : userId
+      const loserLocal: string | null =
+        winnerLocal === null ? null : winnerLocal === match.playerXId ? match.playerOId : match.playerXId
+
+      // XP — win: +25 to the winner only · draw: +10 to both.
+      const xpAwards = isDraw
+        ? [...new Set([match.playerXId, match.playerOId].filter((v): v is string => Boolean(v)))]
+        : [userId]
+      for (const awardedId of xpAwards) {
+        await db.user.update({
+          where: { id: awardedId },
+          data: { xp: { increment: isDraw ? 10 : 25 } },
+        })
+      }
+
+      // Tournament feed — newest running season on this room.
+      let tournamentId: string | null = null
+      const season = await db.tournament.findFirst({
+        where: { conversationId: match.conversationId, status: 'running' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { id: true },
+      })
+      if (season) {
+        tournamentId = season.id
+        if (isDraw && loserLocal === null) {
+          // draw needs both seats; auto-join then book draws for both
+          const bothIds = [match.playerXId, match.playerOId].filter(
+            (v): v is string => Boolean(v),
+          )
+          if (bothIds.length === 2) {
+            for (const playerId of bothIds) {
+              await db.tournamentPlayer.upsert({
+                where: { tournamentId_userId: { tournamentId: season.id, userId: playerId } },
+                create: { tournamentId: season.id, userId: playerId },
+                update: {},
+              })
+            }
+            await db.tournamentPlayer.updateMany({
+              where: { tournamentId: season.id, userId: { in: bothIds } },
+              data: { draws: { increment: 1 } },
+            })
+          }
+        } else if (winnerLocal !== null && loserLocal !== null) {
+          // auto-join both players so standings stay complete
+          for (const playerId of [winnerLocal, loserLocal]) {
+            await db.tournamentPlayer.upsert({
+              where: { tournamentId_userId: { tournamentId: season.id, userId: playerId } },
+              create: { tournamentId: season.id, userId: playerId },
+              update: {},
+            })
+          }
+          await db.tournamentPlayer.updateMany({
+            where: { tournamentId: season.id, userId: winnerLocal },
+            data: { points: { increment: 1 }, wins: { increment: 1 } },
+          })
+          await db.tournamentPlayer.updateMany({
+            where: { tournamentId: season.id, userId: loserLocal },
+            data: { losses: { increment: 1 } },
+          })
+        }
+      }
+
+      // Devops trail — one row per awarded user.
+      for (const awardedId of xpAwards) {
+        await db.logEvent.create({
+          data: {
+            userId: awardedId,
+            kind: 'game',
+            message: isDraw
+              ? 'drew a tic-tac-toe match (+10 xp)'
+              : 'won a tic-tac-toe match (+25 xp)',
+            meta: JSON.stringify({
+              matchId: id,
+              conversationId: match.conversationId,
+              tournamentId,
+              xp: isDraw ? 10 : 25,
+            }),
+          },
+        })
+      }
+    } catch (hookError) {
+      // XP/tournament accounting must never break the move response.
+      console.error('[games/move] xp/tournament hook failed:', hookError)
+    }
+  }
+
   const fresh = await db.gameMatch.findUnique({ where: { id } })
   if (!fresh) {
     return NextResponse.json({ error: 'Game match not found.' }, { status: 404 })

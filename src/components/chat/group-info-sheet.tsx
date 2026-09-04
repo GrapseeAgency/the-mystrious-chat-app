@@ -18,6 +18,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AtSign,
+  BarChart3,
   Check,
   ChevronLeft,
   Copy,
@@ -30,11 +31,13 @@ import {
   Plus,
   Search,
   Trash2,
+  Trophy,
   UserPlus,
   UsersRound,
   Webhook,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { haptic } from '@/lib/pulse-settings'
 import type { AppUser, ConversationDetail, GroupRole } from '@/lib/types'
 import {
   apiJson,
@@ -60,6 +63,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { UserProfileSheet } from '@/components/chat/user-profile-sheet'
+import {
+  LEADERBOARD_OPEN_EVENT,
+  useLeaderboardSheet,
+} from '@/components/chat/leaderboard-sheet'
+import {
+  TOURNAMENT_OPEN_EVENT,
+  useTournamentSheet,
+} from '@/components/chat/tournament-sheet'
 
 /** Mirrors GROUP_NAME_MAX in src/lib/serializers.ts (PATCH route enforces 1–48). */
 const GROUP_NAME_MAX = 48
@@ -187,6 +198,16 @@ function GroupInfoInner({
   const isAdmin = myRole === 'admin'
   const adminCount = detail?.members.filter((m) => m.role === 'admin').length ?? 0
 
+  // R24-d — leaderboard + tournament sheets (nodes render below; the
+  // section cards dispatch `pulse:open-leaderboard` / `pulse:open-tournament`).
+  const meMember = detail?.members.find((m) => m.id === meId) ?? null
+  const lb = useLeaderboardSheet(conversationId, meId)
+  const ts = useTournamentSheet(conversationId, {
+    id: meId,
+    name: meMember?.name ?? 'You',
+    color: meMember?.color ?? 'emerald',
+  })
+
   // Escape closes the topmost layer only (modal > profile drawer > sheet).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -311,6 +332,10 @@ function GroupInfoInner({
         profileUser={profileUser}
         onCloseProfile={() => setProfileUser(null)}
       />
+
+      {/* R24-d — leaderboard + tournament sheets (opened via window events) */}
+      {lb.node}
+      {ts.node}
     </>
   )
 }
@@ -393,6 +418,10 @@ function GroupInfoBody({
 
       {/* webhooks — Discord-style incoming integrations */}
       <WebhooksSection conversationId={detail.id} meId={meId} isAdmin={isAdmin} />
+
+      {/* leaderboard + tournaments (R24-d, Twitch-style XP seasons) */}
+      <LeaderboardSection conversationId={detail.id} meId={meId} />
+      <TournamentSection conversationId={detail.id} />
 
       {/* members */}
       <div className="px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
@@ -809,6 +838,260 @@ function WebhookDeleteModal({
         </Button>
       </div>
     </SheetModal>
+  )
+}
+
+// ── leaderboard (R24-d, Twitch-style XP ranks) ───────────────
+
+/** Wire shape mirror of GET /api/leaderboard (LeaderboardRow in types.ts). */
+interface LeaderboardMiniRow {
+  userId: string
+  name: string
+  color: string
+  xp: number
+  messageCount: number
+  gameWins: number
+  tournamentPoints: number
+}
+
+/**
+ * Compact top-3 preview + full-sheet launcher. Shares the
+ * ['leaderboard', conversationId] query cache with the sheet.
+ */
+function LeaderboardSection({
+  conversationId,
+  meId,
+}: {
+  conversationId: string
+  meId: string
+}) {
+  const rowsQ = useQuery({
+    queryKey: ['leaderboard', conversationId],
+    queryFn: async (): Promise<LeaderboardMiniRow[]> => {
+      const res = await apiJson<{ rows: LeaderboardMiniRow[] }>(
+        `/api/leaderboard?conversationId=${encodeURIComponent(conversationId)}&userId=${encodeURIComponent(meId)}`,
+      )
+      return res.rows
+    },
+    staleTime: 5_000,
+  })
+
+  const rows = rowsQ.data ?? []
+  const top3 = rows.slice(0, 3)
+  const openSheet = () => {
+    haptic(10)
+    window.dispatchEvent(new CustomEvent(LEADERBOARD_OPEN_EVENT))
+  }
+
+  return (
+    <div className="px-4 pb-1">
+      <div className="mb-2 flex items-center justify-between px-1">
+        <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+          <BarChart3 className="size-3.5" aria-hidden />
+          Leaderboard
+        </h3>
+        <span className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+          {rowsQ.isPending ? '…' : rows.length}
+        </span>
+      </div>
+
+      <div
+        className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-1.5 dark:border-zinc-800 dark:bg-zinc-800/40"
+        aria-busy={rowsQ.isPending || undefined}
+      >
+        {rowsQ.isPending ? (
+          <div className="space-y-2 p-1.5" aria-label="Loading leaderboard">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="size-7 rounded-full" />
+                <Skeleton className="h-3.5 flex-1 rounded-md" />
+                <Skeleton className="h-3.5 w-10 rounded-md" />
+              </div>
+            ))}
+          </div>
+        ) : rowsQ.isError ? (
+          <p className="px-2.5 py-3 text-center text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            Could not load the leaderboard.
+          </p>
+        ) : top3.length === 0 ? (
+          <p className="px-2.5 py-3 text-center text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            No ranked members yet.
+          </p>
+        ) : (
+          top3.map((row, i) => (
+            <div
+              key={row.userId}
+              className="flex min-h-[44px] items-center gap-2.5 rounded-xl px-2 py-1.5"
+            >
+              <span aria-hidden className="w-6 shrink-0 text-center text-[13px]">
+                {['🥇', '🥈', '🥉'][i]}
+              </span>
+              <span
+                aria-hidden
+                className={cn(
+                  'flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-[10px] font-bold text-white',
+                  gradientFor(row.color),
+                )}
+              >
+                {row.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">
+                {row.name}
+                {row.userId === meId ? (
+                  <span className="font-medium text-emerald-600 dark:text-emerald-400"> · you</span>
+                ) : null}
+              </span>
+              <span className="shrink-0 text-[12px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                {row.xp} XP
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        onClick={openSheet}
+        aria-label="View full leaderboard"
+        className="mt-2 h-11 w-full rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 active:scale-[0.98] dark:text-emerald-400 dark:hover:text-emerald-300"
+      >
+        <BarChart3 className="size-4" aria-hidden />
+        View full leaderboard
+      </Button>
+    </div>
+  )
+}
+
+// ── tournaments (R24-d, season ladders) ──────────────────────
+
+/** Wire shape mirror of GET /api/tournaments?conversationId=. */
+interface TournamentListRow {
+  id: string
+  name: string
+  game: string
+  status: string
+  playerCount: number
+  createdAt: string
+}
+
+/**
+ * Running seasons list (newest 5, real player counts) + the season
+ * composer launcher (window event → useTournamentSheet node).
+ */
+function TournamentSection({
+  conversationId,
+}: {
+  conversationId: string
+}) {
+  const seasonsQ = useQuery({
+    queryKey: ['tournaments', conversationId],
+    queryFn: async (): Promise<TournamentListRow[]> => {
+      const res = await apiJson<{ tournaments: TournamentListRow[] }>(
+        `/api/tournaments?conversationId=${encodeURIComponent(conversationId)}`,
+      )
+      return res.tournaments
+    },
+    staleTime: 5_000,
+  })
+
+  const seasons = seasonsQ.data ?? []
+  const openSheet = () => {
+    haptic(10)
+    window.dispatchEvent(new CustomEvent(TOURNAMENT_OPEN_EVENT))
+  }
+
+  return (
+    <div className="px-4 pb-1">
+      <div className="mb-2 flex items-center justify-between px-1">
+        <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+          <Trophy className="size-3.5" aria-hidden />
+          Tournament
+        </h3>
+        <span className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+          {seasonsQ.isPending ? '…' : seasons.length}
+        </span>
+      </div>
+
+      <div
+        className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-1.5 dark:border-zinc-800 dark:bg-zinc-800/40"
+        aria-busy={seasonsQ.isPending || undefined}
+      >
+        {seasonsQ.isPending ? (
+          <div className="space-y-2 p-1.5" aria-label="Loading tournaments">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="size-7 rounded-full" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-1/2 rounded-md" />
+                  <Skeleton className="h-3 w-1/3 rounded-md" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : seasonsQ.isError ? (
+          <p className="px-2.5 py-3 text-center text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            Could not load tournaments.
+          </p>
+        ) : seasons.length === 0 ? (
+          <p className="px-2.5 py-3 text-center text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            No seasons yet — start one below.
+          </p>
+        ) : (
+          seasons.map((season) => {
+            const running = season.status === 'running'
+            return (
+              <div
+                key={season.id}
+                className="flex min-h-[52px] items-center gap-3 rounded-xl px-2 py-1.5"
+              >
+                <span aria-hidden className="shrink-0 text-lg">
+                  🏆
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                    {season.name}
+                  </p>
+                  <p className="mt-0.5 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                    Tic-tac-toe · {season.playerCount}{' '}
+                    {season.playerCount === 1 ? 'player' : 'players'} ·{' '}
+                    {formatListStamp(season.createdAt)}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    'flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide',
+                    running
+                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400',
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'size-1.5 rounded-full',
+                      running ? 'animate-pulse bg-emerald-500' : 'bg-zinc-400',
+                    )}
+                  />
+                  {running ? 'Running' : 'Finished'}
+                </span>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        onClick={openSheet}
+        aria-label="Start tournament"
+        className="mt-2 h-11 w-full rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 active:scale-[0.98] dark:text-emerald-400 dark:hover:text-emerald-300"
+      >
+        <Plus className="size-4" aria-hidden />
+        Start tournament
+      </Button>
+    </div>
   )
 }
 

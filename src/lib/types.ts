@@ -94,6 +94,9 @@ export interface ChatMessage {
   pinnedAt: string | null // ISO or null — pinned within the conversation
   pinnedBy: string | null // userId of whoever pinned (null when unpinned)
   parentId: string | null // Slack/Zulip thread root this reply belongs to
+  topicId: string | null // Zulip-style topic filing (null = General)
+  anon: boolean // Session/SimpleX-style anonymous send
+  anonAlias: string | null // deterministic incognito alias (shown instead of sender name)
   viewOnce: boolean // view-once media gate (sender's own copies always render)
   viewedAt: string | null // when a non-sender consumed a view-once attachment
   viewedBy: string | null
@@ -121,6 +124,7 @@ export interface ConversationSummary {
   archivedAt: string | null // viewer's archive watermark (null = active chat)
   ttlSeconds: number // disappearing-message TTL for THIS chat (0 = off)
   broadcastMode: boolean // admin-only posting (groups/stage channels)
+  isSelf: boolean // Signal-style Note to Self conversation
 }
 
 export type GroupRole = 'admin' | 'member'
@@ -138,6 +142,7 @@ export interface ConversationDetail {
   inviteCode: string | null // shareable join code (groups only; null = no active link)
   ttlSeconds: number // disappearing-message TTL (0 = off)
   broadcastMode: boolean // admin-only posting
+  isSelf: boolean // Signal-style Note to Self conversation
 }
 
 /** Public preview of an invite code before joining (GET /api/invite/[code]). */
@@ -172,6 +177,57 @@ export interface ScheduledItem {
   content: string
   scheduledAt: string // ISO
   sentAt: string | null
+}
+
+// ── R24 — topics, folders, tournaments, leaderboard ──────────
+
+/** Zulip-style topic chip row (GET /api/conversations/[id]/topics). */
+export interface TopicSummary {
+  id: string
+  name: string
+  emoji: string
+  lastMessageAt: string // ISO — sort key
+  messageCount: number // real filed-message count
+}
+
+/** Signal/Beeper chat folder (GET /api/folders). */
+export interface FolderSummary {
+  id: string
+  name: string
+  emoji: string
+  position: number
+  conversationIds: string[] // membership in rail order
+}
+
+/** One row of the group/global leaderboard. */
+export interface LeaderboardRow {
+  userId: string
+  name: string
+  color: string
+  xp: number
+  messageCount: number
+  gameWins: number
+  tournamentPoints: number
+}
+
+/** Tournament season card data (GET /api/tournaments/[id]). */
+export interface TournamentSummary {
+  id: string
+  conversationId: string
+  name: string
+  game: string
+  status: 'running' | 'finished'
+  createdAt: string
+  endsAt: string | null
+  entries: Array<{
+    userId: string
+    name: string
+    color: string
+    points: number
+    wins: number
+    losses: number
+    draws: number
+  }>
 }
 
 // ── Socket event payloads (port 3003 mini service) ────────────

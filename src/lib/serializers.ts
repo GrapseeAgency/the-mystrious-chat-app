@@ -232,6 +232,9 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
     pinnedAt: message.pinnedAt ? message.pinnedAt.toISOString() : null,
     pinnedBy: message.pinnedBy ?? null,
     parentId: message.parentId ?? null,
+    topicId: message.topicId ?? null,
+    anon: message.anon ?? false,
+    anonAlias: message.anonAlias ?? null,
     viewOnce: message.viewOnce,
     viewedAt: message.viewedAt ? message.viewedAt.toISOString() : null,
     viewedBy: message.viewedBy ?? null,
@@ -314,6 +317,7 @@ export async function buildConversationSummary(
     archivedAt: mine?.archivedAt ? mine.archivedAt.toISOString() : null,
     ttlSeconds: conv.ttlSeconds,
     broadcastMode: conv.broadcastMode,
+    isSelf: conv.isSelf,
   }
 }
 
@@ -334,6 +338,7 @@ export function buildConversationDetail(
     inviteCode: conv.isGroup ? (conv.inviteCode ?? null) : null,
     ttlSeconds: conv.ttlSeconds,
     broadcastMode: conv.broadcastMode,
+    isSelf: conv.isSelf,
   }
 }
 

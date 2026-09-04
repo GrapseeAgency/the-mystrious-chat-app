@@ -34,6 +34,9 @@ model User {
   savedMessages  SavedMessage[]
   quickPhrases   QuickPhrase[]
   stories        StatusStory[]
+  folders        Folder[]
+  xp             Int                    @default(0) // Twitch-style channel points earned by real activity
+  tournamentEntries TournamentPlayer[]
 
   @@index([name])
 }
@@ -154,6 +157,7 @@ model Conversation {
   inviteCode        String?                   @unique // shareable join code (groups only; null = no active link)
   ttlSeconds        Int                       @default(0) // disappearing-message TTL (0 = off; applied at send time)
   broadcastMode     Boolean                   @default(false) // Discord-stage/Telegram-channel style admin-only posting
+  isSelf            Boolean                   @default(false) // Signal-style Note to Self (single participant = owner)
   appKey            String?                   @unique // hub Apps-matrix community chat (app number as string, e.g. "4")
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt // bumped on every new message → list sort
@@ -164,6 +168,9 @@ model Conversation {
   kanbanCards       KanbanCard[]
   events            GroupEvent[]
   gameMatches       GameMatch[]
+  topics            Topic[]
+  tournaments       Tournament[]
+  folderEntries     FolderConversation[]
 
   @@index([updatedAt])
 }
@@ -259,6 +266,9 @@ model Message {
   pinnedAt       DateTime? // pinned within the conversation (null = not pinned)
   pinnedBy       String? // userId who pinned (display attribution)
   parentId       String? // Slack/Zulip thread root this reply belongs to (null = top-level)
+  topicId        String? // Zulip-style topic this message is filed under (null = General)
+  anon           Boolean              @default(false) // Session/SimpleX-style anonymous send
+  anonAlias      String? // deterministic per-(user,conversation) incognito alias (sender-side display)
   viewOnce       Boolean              @default(false) // Snapchat/WhatsApp view-once media gate
   viewedAt       DateTime? // when the non-sender consumed a view-once attachment
   viewedBy       String? // who consumed it
@@ -275,6 +285,7 @@ model Message {
   threadReplies  Message[]            @relation("MessageThreads")
   reactions      Reaction[]
   poll           Poll?
+  topic          Topic?               @relation(fields: [topicId], references: [id], onDelete: SetNull)
   redPacket      RedPacket?
   translations   MessageTranslation[]
   linkPreview    LinkPreview?         @relation(fields: [linkUrl], references: [url])
@@ -393,6 +404,93 @@ model Reaction {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// R24 — beyond-chat wave 3: topics, folders, xp/tournaments
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Zulip-style topic — first-class information architecture inside a group.
+ * "time is a terrible information architecture": topics turn the chat river
+ * into indexed knowledge. Messages may file under one topic (null = General).
+ */
+model Topic {
+  id             String       @id @default(cuid())
+  conversationId String
+  name           String
+  emoji          String       @default("💬")
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  lastMessageAt  DateTime     @default(now()) // bumped on every filed message → topic sort
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  messages       Message[]
+
+  @@unique([conversationId, name])
+  @@index([conversationId, lastMessageAt])
+}
+
+/**
+ * Signal/Beeper-style chat folder — user-scoped bucket ordering the chats list.
+ */
+model Folder {
+  id        String              @id @default(cuid())
+  userId    String
+  name      String
+  emoji     String              @default("📂")
+  position  Int                 @default(0)
+  createdAt DateTime            @default(now())
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries   FolderConversation[]
+
+  @@index([userId, position])
+}
+
+model FolderConversation {
+  id             String       @id @default(cuid())
+  folderId       String
+  conversationId String
+  position       Int          @default(0)
+  folder         Folder       @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, conversationId])
+  @@index([folderId, position])
+}
+
+/**
+ * Twitch/Plato-style tournament season inside one conversation. While
+ * status = "running", every game win in that room feeds the standings.
+ */
+model Tournament {
+  id             String            @id @default(cuid())
+  conversationId String
+  name           String
+  game           String            @default("tictactoe")
+  status         String            @default("running") // running | finished
+  createdById    String?
+  endsAt         DateTime?
+  createdAt      DateTime          @default(now())
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  entries        TournamentPlayer[]
+
+  @@index([conversationId, status])
+}
+
+model TournamentPlayer {
+  id           String     @id @default(cuid())
+  tournamentId String
+  userId       String
+  points       Int        @default(0) // +1 per game win while the season runs
+  wins         Int        @default(0)
+  losses       Int        @default(0)
+  draws        Int        @default(0)
+  joinedAt     DateTime   @default(now())
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, userId])
+  @@index([tournamentId, points])
+}
+
+// ═══════════════════════════════════════════════════════════════
 // R23 — beyond-chat wave 2: red packets, games, kanban, events
 // ═══════════════════════════════════════════════════════════════
 
@@ -458,13 +556,14 @@ model GameMatch {
  * ordering, optional assignee resolved against room members client-side.
  */
 model KanbanCard {
-  id             String       @id @default(cuid())
+  id              String       @id @default(cuid())
   conversationId String
   title          String
   column         String       @default("todo") // todo|doing|done
   position       Int          @default(0) // stable sort within (conversation, column)
   assigneeId     String?
   createdById    String?
+  sourceMessageId String? // Chanty-style provenance: card born from a chat message
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

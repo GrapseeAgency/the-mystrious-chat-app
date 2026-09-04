@@ -8,6 +8,10 @@
  *  - Client→client relay : `typing`
  *  - Live voice rooms    : in-memory rosters `voiceRooms` Map + `voice:{conversationId}`
  *                          socket.io rooms; `voice:join|leave|roster|ptt|chunk` relay
+ *  - Stage rooms (R24-c) : Clubhouse hierarchy in `stageRooms` Map + `stage:{conversationId}`
+ *                          socket.io rooms; `stage:join|hand|approve|mute|end|leave` → `stage:state`
+ *  - Spatial presence    : Gather-style positions in `spaceRooms` Map + `space:{conversationId}`
+ *                          socket.io rooms; `space:join|move|leave` → `space:state`
  *  - HTTP relay API      : POST /notify (message:new|message:deleted|message:read), POST /typing
  *  - Health probe        : GET / (or anything unknown) → { ok:true, service:'pulse-socket' }
  *
@@ -164,6 +168,224 @@ function leaveVoiceRoom(socketId: string, reason: string): void {
     })
   }
   console.log(`[voice] leave user=${removedUserId ?? '?'} conv=${conversationId} sock=${socketId} reason=${reason} peers=${room.size}`)
+}
+
+/**
+ * Stage-room enforcement hook (R24-c): force-removes ONE user's voice peer from
+ * the conversation's voice roster (e.g. the host muted them from the stage).
+ * The roster map stays the single source of truth, so the identity gates on
+ * `voice:ptt` / `voice:chunk` immediately reject the removed user — a muted
+ * speaker can never keep transmitting through a laggy/malicious client.
+ */
+function removeVoicePeerByUser(conversationId: string, userId: string, reason: string): void {
+  const room = voiceRooms.get(conversationId)
+  const peer = room?.get(userId)
+  if (!room || !peer) return
+  room.delete(userId)
+  if (room.size === 0) {
+    voiceRooms.delete(conversationId)
+  } else {
+    io.to(voiceRoomName(conversationId)).emit('voice:roster', rosterPayload(conversationId))
+  }
+  // their socket no longer holds a voice seat; also stop any glowing ring
+  if (socketVoiceRoom.get(peer.socketId) === conversationId) socketVoiceRoom.delete(peer.socketId)
+  io.to(voiceRoomName(conversationId)).emit('voice:ptt', { conversationId, userId, on: false })
+  console.log(`[voice] force-remove user=${userId} conv=${conversationId} reason=${reason}`)
+}
+
+// ---------------------------------------------------------------------------
+// Stage rooms (R24-c) — Clubhouse-style hierarchy, pure in-memory, ephemeral.
+// host → speakers → listeners, plus a FIFO raised-hands queue. No DB access.
+// TRUST MODEL (honest): roles are claimed by clients; the host seat is granted
+// to the first joiner of a fresh room and re-claimable via `asHost` ONLY while
+// the seat is empty. All rosters are identity-gated to the registering socket.
+// ---------------------------------------------------------------------------
+interface StagePerson {
+  userId: string
+  name: string
+  username: string | null
+  color: string
+  socketId: string
+  joinedAt: number
+}
+
+interface StageRoom {
+  hostId: string | null
+  speakers: Map<string, StagePerson>
+  /** userId -> raised hand (FIFO by raisedAt) */
+  hands: Map<string, { user: StagePerson; raisedAt: number }>
+  listeners: Map<string, StagePerson>
+}
+
+/** conversationId -> stage state — a socket.io room `stage:{conversationId}` backs each entry */
+const stageRooms = new Map<string, StageRoom>()
+/** socketId -> conversationId of the stage this socket occupies (max ONE stage per socket) */
+const socketStageRoom = new Map<string, string>()
+
+const stageRoomName = (conversationId: string) => `stage:${conversationId}`
+
+/** The host is always a speaker; if they vanished from every roster the seat is empty. */
+function stageLiveHost(room: StageRoom): StagePerson | null {
+  if (!room.hostId) return null
+  return room.speakers.get(room.hostId) ?? null
+}
+
+/**
+ * Public-safe stage payload. Contract fields: host, speakers, hands,
+ * listenerCount. `listeners` is an ADDITIVE extra (names row in the sheet UI).
+ */
+function stageStatePayload(conversationId: string) {
+  const room = stageRooms.get(conversationId)
+  if (!room) return null
+  const host = stageLiveHost(room)
+  const speakers = Array.from(room.speakers.values()).sort((a, b) => {
+    if (host && a.userId === host.userId) return -1
+    if (host && b.userId === host.userId) return 1
+    return a.joinedAt - b.joinedAt
+  })
+  const hands = Array.from(room.hands.values())
+    .sort((a, b) => a.raisedAt - b.raisedAt)
+    .map((h) => h.user)
+  const listeners = Array.from(room.listeners.values()).sort((a, b) => a.joinedAt - b.joinedAt)
+  return {
+    conversationId,
+    host: host ? { id: host.userId, name: host.name, color: host.color } : null,
+    speakers: speakers.map((s) => ({ id: s.userId, name: s.name, color: s.color })),
+    hands: hands.map((h) => ({ id: h.userId, name: h.name, color: h.color })),
+    listeners: listeners.map((l) => ({ id: l.userId, name: l.name, color: l.color })),
+    listenerCount: room.listeners.size,
+  }
+}
+
+function broadcastStageState(conversationId: string): void {
+  const payload = stageStatePayload(conversationId)
+  if (!payload) return
+  io.to(stageRoomName(conversationId)).emit('stage:state', payload)
+}
+
+/** Removes a user from EVERY roster of one stage room (host seat empties, no auto-promotion). */
+function removeStageUser(room: StageRoom, userId: string): boolean {
+  let present = false
+  if (room.speakers.delete(userId)) present = true
+  if (room.hands.delete(userId)) present = true
+  if (room.listeners.delete(userId)) present = true
+  if (room.hostId === userId) room.hostId = null
+  return present
+}
+
+/**
+ * Removes a socket from its stage room (explicit leave or disconnect).
+ * Mirrors `leaveVoiceRoom`: the server-side map is authoritative.
+ */
+function leaveStageRoom(socketId: string, reason: string): void {
+  const conversationId = socketStageRoom.get(socketId)
+  if (!conversationId) return
+  socketStageRoom.delete(socketId)
+  const room = stageRooms.get(conversationId)
+  if (!room) return
+
+  // find the roster entry owned by THIS socket (rosters are keyed by userId)
+  let removedUserId: string | null = null
+  for (const map of [room.speakers, room.listeners]) {
+    for (const [userId, person] of map) {
+      if (person.socketId === socketId) {
+        removedUserId = userId
+        break
+      }
+    }
+    if (removedUserId) break
+  }
+  if (!removedUserId) {
+    for (const [userId, hand] of room.hands) {
+      if (hand.user.socketId === socketId) {
+        removedUserId = userId
+        break
+      }
+    }
+  }
+  if (removedUserId) removeStageUser(room, removedUserId)
+
+  const empty = room.speakers.size === 0 && room.hands.size === 0 && room.listeners.size === 0
+  if (empty) {
+    stageRooms.delete(conversationId)
+  } else {
+    broadcastStageState(conversationId)
+  }
+  console.log(`[stage] leave user=${removedUserId ?? '?'} conv=${conversationId} sock=${socketId} reason=${reason}`)
+}
+
+// ---------------------------------------------------------------------------
+// Spatial presence (R24-c) — Gather.town-style office, pure in-memory.
+// Positions are normalized 0..1; movement is throttled + clamped server-side.
+// ---------------------------------------------------------------------------
+interface SpacePlayer {
+  userId: string
+  name: string
+  username: string | null
+  color: string
+  socketId: string
+  x: number // normalized 0..1
+  y: number // normalized 0..1
+  lastMoveAt: number
+}
+
+/** conversationId -> (userId -> player) — a socket.io room `space:{conversationId}` backs each entry */
+const spaceRooms = new Map<string, Map<string, SpacePlayer>>()
+/** socketId -> conversationId of the space this socket occupies (max ONE space per socket) */
+const socketSpaceRoom = new Map<string, string>()
+
+const spaceRoomName = (conversationId: string) => `space:${conversationId}`
+const SPACE_MOVE_THROTTLE_MS = 80
+const SPACE_IDLE_PRUNE_MS = 5 * 60_000
+
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
+
+/** Drops players idle for over 5 minutes (no accepted move) and empty rooms. */
+function pruneSpaceRoom(conversationId: string): void {
+  const room = spaceRooms.get(conversationId)
+  if (!room) return
+  const now = Date.now()
+  for (const [userId, player] of room) {
+    if (now - player.lastMoveAt > SPACE_IDLE_PRUNE_MS) room.delete(userId)
+  }
+  if (room.size === 0) spaceRooms.delete(conversationId)
+}
+
+function spaceStatePayload(conversationId: string): { conversationId: string; players: Array<{ id: string; name: string; color: string; x: number; y: number }> } {
+  const room = spaceRooms.get(conversationId)
+  const round4 = (value: number): number => Math.round(value * 10_000) / 10_000
+  const players = room
+    ? Array.from(room.values())
+        .sort((a, b) => a.userId.localeCompare(b.userId))
+        .map((p) => ({ id: p.userId, name: p.name, color: p.color, x: round4(p.x), y: round4(p.y) }))
+    : []
+  return { conversationId, players }
+}
+
+function broadcastSpaceState(conversationId: string): void {
+  pruneSpaceRoom(conversationId)
+  io.to(spaceRoomName(conversationId)).emit('space:state', spaceStatePayload(conversationId))
+}
+
+/** Removes a socket from its space room (explicit leave or disconnect). */
+function leaveSpaceRoom(socketId: string, reason: string): void {
+  const conversationId = socketSpaceRoom.get(socketId)
+  if (!conversationId) return
+  socketSpaceRoom.delete(socketId)
+  const room = spaceRooms.get(conversationId)
+  if (!room) return
+
+  let removedUserId: string | null = null
+  for (const [userId, player] of room) {
+    if (player.socketId === socketId) {
+      room.delete(userId)
+      removedUserId = userId
+      break
+    }
+  }
+  if (room.size === 0) spaceRooms.delete(conversationId)
+  if (removedUserId) broadcastSpaceState(conversationId)
+  console.log(`[space] leave user=${removedUserId ?? '?'} conv=${conversationId} sock=${socketId} reason=${reason}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +581,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     port: PORT,
     online: onlineUsers.size,
     voiceRooms: voiceRooms.size,
+    stageRooms: stageRooms.size,
+    spaceRooms: spaceRooms.size,
     uptimeSec: Math.round(process.uptime()),
   })
 }
@@ -538,6 +762,299 @@ io.on('connection', (socket: Socket) => {
     })
   })
 
+  // ── Stage room events (R24-c) ─────────────────────────────
+
+  /**
+   * stage:join { conversationId, user: { id, name, username, color }, asHost? }
+   * Joins the socket to room `stage:{conversationId}` and upserts the roster.
+   * First joiner of a FRESH room becomes host; `asHost` claims are honored ONLY
+   * while the host seat is empty (trust model documented in the header above).
+   * Re-joins (resync) keep the role the user already had.
+   */
+  socket.on('stage:join', (raw: unknown) => {
+    const data = (raw ?? {}) as {
+      conversationId?: unknown
+      asHost?: unknown
+      user?: { id?: unknown; name?: unknown; username?: unknown; color?: unknown }
+    }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const userId = asTrimmedString(data.user?.id).slice(0, 64)
+    if (!conversationId || !userId) {
+      console.warn(`[stage] join rejected sock=${socket.id} (bad conversationId/userId)`)
+      return
+    }
+
+    // One stage per socket: silently drop any previous stage membership first.
+    leaveStageRoom(socket.id, 'switch')
+
+    let room = stageRooms.get(conversationId)
+    if (!room) {
+      room = { hostId: null, speakers: new Map(), hands: new Map(), listeners: new Map() }
+      stageRooms.set(conversationId, room)
+    }
+
+    // Defensive: if the recorded host vanished from every roster, free the seat.
+    if (
+      room.hostId &&
+      !room.speakers.has(room.hostId) &&
+      !room.hands.has(room.hostId) &&
+      !room.listeners.has(room.hostId)
+    ) {
+      room.hostId = null
+    }
+
+    const wasHost = room.hostId === userId
+    const prevRole = room.speakers.has(userId)
+      ? 'speaker'
+      : room.listeners.has(userId)
+        ? 'listener'
+        : room.hands.has(userId)
+          ? 'hand'
+          : null
+    const prevRaisedAt = prevRole === 'hand' ? (room.hands.get(userId)?.raisedAt ?? Date.now()) : 0
+    room.speakers.delete(userId)
+    room.hands.delete(userId)
+    room.listeners.delete(userId)
+
+    const person: StagePerson = {
+      userId,
+      name: asTrimmedString(data.user?.name).slice(0, 64) || 'Someone',
+      username:
+        typeof data.user?.username === 'string' && data.user.username.trim().length > 0
+          ? data.user.username.trim().slice(0, 32)
+          : null,
+      color: asTrimmedString(data.user?.color).slice(0, 24) || 'emerald',
+      socketId: socket.id,
+      joinedAt: Date.now(),
+    }
+
+    const freshRoom = room.speakers.size === 0 && room.hands.size === 0 && room.listeners.size === 0
+    let role: 'host' | 'speaker' | 'hand' | 'listener'
+    if (wasHost || (freshRoom && room.hostId === null) || (data.asHost === true && room.hostId === null)) {
+      room.hostId = userId
+      room.speakers.set(userId, person)
+      role = 'host'
+    } else if (prevRole === 'speaker') {
+      room.speakers.set(userId, person) // resync keeps the speaker seat
+      role = 'speaker'
+    } else if (prevRole === 'hand') {
+      room.hands.set(userId, { user: person, raisedAt: prevRaisedAt }) // resync keeps the raised hand
+      role = 'hand'
+    } else {
+      room.listeners.set(userId, person)
+      role = 'listener'
+    }
+
+    socketStageRoom.set(socket.id, conversationId)
+    void socket.join(stageRoomName(conversationId))
+
+    broadcastStageState(conversationId)
+    console.log(`[stage] join user=${userId} conv=${conversationId} sock=${socket.id} role=${role}`)
+  })
+
+  /**
+   * stage:hand { conversationId, user: { id }, raised } — ONLY listeners may
+   * toggle their own hand, and only from the socket that registered them.
+   */
+  socket.on('stage:hand', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown; user?: { id?: unknown }; raised?: unknown }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const userId = asTrimmedString(data.user?.id).slice(0, 64)
+    if (!conversationId || !userId) return
+    const room = stageRooms.get(conversationId)
+    if (!room) return
+    const listener = room.listeners.get(userId)
+    if (!listener || listener.socketId !== socket.id) return
+    if (data.raised === true) {
+      if (!room.hands.has(userId)) room.hands.set(userId, { user: listener, raisedAt: Date.now() })
+    } else {
+      room.hands.delete(userId)
+    }
+    broadcastStageState(conversationId)
+    console.log(`[stage] hand user=${userId} conv=${conversationId} raised=${data.raised === true}`)
+  })
+
+  /**
+   * stage:approve { conversationId, byUserId, targetUserId } — host-only:
+   * moves a raised hand into the speakers roster (hand + listener entries cleared).
+   */
+  socket.on('stage:approve', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown; byUserId?: unknown; targetUserId?: unknown }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const byUserId = asTrimmedString(data.byUserId).slice(0, 64)
+    const targetUserId = asTrimmedString(data.targetUserId).slice(0, 64)
+    if (!conversationId || !byUserId || !targetUserId) return
+    const room = stageRooms.get(conversationId)
+    if (!room) return
+    const host = stageLiveHost(room)
+    // host-only, identity-gated to the socket the host registered from
+    if (!host || host.userId !== byUserId || host.socketId !== socket.id) return
+    const hand = room.hands.get(targetUserId)
+    if (!hand) return
+    room.hands.delete(targetUserId)
+    room.listeners.delete(targetUserId)
+    room.speakers.set(targetUserId, hand.user)
+    broadcastStageState(conversationId)
+    console.log(`[stage] approve target=${targetUserId} conv=${conversationId} by=${byUserId}`)
+  })
+
+  /**
+   * stage:mute { conversationId, byUserId, targetUserId } — host-only.
+   * Speaker → listener (contract). The host seat itself is immune.
+   * Also dismisses a raised hand (the sheet's hand-queue "Mute" affordance)
+   * and force-removes the target's voice seat so a muted speaker cannot keep
+   * transmitting through a laggy client (real enforcement, not client-trust).
+   */
+  socket.on('stage:mute', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown; byUserId?: unknown; targetUserId?: unknown }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const byUserId = asTrimmedString(data.byUserId).slice(0, 64)
+    const targetUserId = asTrimmedString(data.targetUserId).slice(0, 64)
+    if (!conversationId || !byUserId || !targetUserId) return
+    const room = stageRooms.get(conversationId)
+    if (!room) return
+    const host = stageLiveHost(room)
+    if (!host || host.userId !== byUserId || host.socketId !== socket.id) return
+    if (targetUserId === room.hostId) return // the host cannot mute themselves via this event
+
+    let acted: 'speaker' | 'hand' | null = null
+    if (room.speakers.has(targetUserId)) {
+      const person = room.speakers.get(targetUserId)
+      if (person) {
+        room.speakers.delete(targetUserId)
+        room.hands.delete(targetUserId)
+        room.listeners.set(targetUserId, person)
+        acted = 'speaker'
+        // real enforcement: strip their mic seat from the voice roster immediately
+        removeVoicePeerByUser(conversationId, targetUserId, 'stage-mute')
+      }
+    } else if (room.hands.has(targetUserId)) {
+      room.hands.delete(targetUserId)
+      acted = 'hand'
+    }
+    if (!acted) return
+    broadcastStageState(conversationId)
+    console.log(`[stage] mute target=${targetUserId} conv=${conversationId} by=${byUserId} acted=${acted}`)
+  })
+
+  /**
+   * stage:end { conversationId, byUserId } — host-only: deletes the stage and
+   * tells everyone (`stage:ended`), then force-cleans the io room + map indices.
+   */
+  socket.on('stage:end', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown; byUserId?: unknown }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const byUserId = asTrimmedString(data.byUserId).slice(0, 64)
+    if (!conversationId || !byUserId) return
+    const room = stageRooms.get(conversationId)
+    if (!room) return
+    const host = stageLiveHost(room)
+    if (!host || host.userId !== byUserId || host.socketId !== socket.id) return
+
+    stageRooms.delete(conversationId)
+    io.to(stageRoomName(conversationId)).emit('stage:ended', { conversationId })
+    io.in(stageRoomName(conversationId)).socketsLeave(stageRoomName(conversationId))
+    for (const [sockId, conv] of socketStageRoom) {
+      if (conv === conversationId) socketStageRoom.delete(sockId)
+    }
+    console.log(`[stage] end conv=${conversationId} by=${byUserId}`)
+  })
+
+  /** stage:leave { conversationId? } — explicit exit; the server map is authoritative. */
+  socket.on('stage:leave', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown }
+    const claimed = asTrimmedString(data.conversationId).slice(0, 128)
+    const actual = socketStageRoom.get(socket.id)
+    if (actual && claimed && claimed !== actual) return
+    leaveStageRoom(socket.id, 'explicit')
+  })
+
+  // ── Spatial presence events (R24-c) ───────────────────────
+
+  /**
+   * space:join { conversationId, user: { id, name, username, color } }
+   * Upserts the player (x=0.5, y=0.5 default; previous position kept on re-join)
+   * and broadcasts `space:state` to the whole `space:{conversationId}` room.
+   */
+  socket.on('space:join', (raw: unknown) => {
+    const data = (raw ?? {}) as {
+      conversationId?: unknown
+      user?: { id?: unknown; name?: unknown; username?: unknown; color?: unknown }
+    }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const userId = asTrimmedString(data.user?.id).slice(0, 64)
+    if (!conversationId || !userId) {
+      console.warn(`[space] join rejected sock=${socket.id} (bad conversationId/userId)`)
+      return
+    }
+
+    // One space per socket: silently drop any previous space membership first.
+    leaveSpaceRoom(socket.id, 'switch')
+
+    let room = spaceRooms.get(conversationId)
+    if (!room) {
+      room = new Map<string, SpacePlayer>()
+      spaceRooms.set(conversationId, room)
+    }
+    const existing = room.get(userId)
+    const player: SpacePlayer = {
+      userId,
+      name: asTrimmedString(data.user?.name).slice(0, 64) || 'Someone',
+      username:
+        typeof data.user?.username === 'string' && data.user.username.trim().length > 0
+          ? data.user.username.trim().slice(0, 32)
+          : null,
+      color: asTrimmedString(data.user?.color).slice(0, 24) || 'emerald',
+      socketId: socket.id,
+      x: existing ? existing.x : 0.5,
+      y: existing ? existing.y : 0.5,
+      lastMoveAt: Date.now(),
+    }
+    room.set(userId, player) // last session wins on duplicate userId
+    socketSpaceRoom.set(socket.id, conversationId)
+    void socket.join(spaceRoomName(conversationId))
+
+    broadcastSpaceState(conversationId)
+    console.log(`[space] join user=${userId} conv=${conversationId} sock=${socket.id} players=${room.size}`)
+  })
+
+  /**
+   * space:move { conversationId, x, y } — identity-gated, clamped to 0..1 and
+   * throttled to one accepted move per 80 ms per player (non-finite → ignored).
+   */
+  socket.on('space:move', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown; x?: unknown; y?: unknown }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    if (!conversationId) return
+    const room = spaceRooms.get(conversationId)
+    if (!room) return
+    let player: SpacePlayer | null = null
+    for (const candidate of room.values()) {
+      if (candidate.socketId === socket.id) {
+        player = candidate
+        break
+      }
+    }
+    if (!player) return
+    if (typeof data.x !== 'number' || !Number.isFinite(data.x)) return
+    if (typeof data.y !== 'number' || !Number.isFinite(data.y)) return
+    const now = Date.now()
+    if (now - player.lastMoveAt < SPACE_MOVE_THROTTLE_MS) return // throttle: ignore rapid-fire moves
+    player.x = clamp01(data.x)
+    player.y = clamp01(data.y)
+    player.lastMoveAt = now
+    broadcastSpaceState(conversationId)
+  })
+
+  /** space:leave { conversationId? } — explicit exit; the server map is authoritative. */
+  socket.on('space:leave', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown }
+    const claimed = asTrimmedString(data.conversationId).slice(0, 128)
+    const actual = socketSpaceRoom.get(socket.id)
+    if (actual && claimed && claimed !== actual) return
+    leaveSpaceRoom(socket.id, 'explicit')
+  })
+
   socket.on('error', (error) => {
     console.error(`[ws] socket error (${socket.id}):`, error instanceof Error ? error.message : error)
   })
@@ -545,6 +1062,9 @@ io.on('connection', (socket: Socket) => {
   socket.on('disconnect', (reason: string) => {
     // Voice rooms clean up FIRST: the departed mic must never keep the stage.
     leaveVoiceRoom(socket.id, `disconnect:${reason}`)
+    // Stage + spatial presence rosters follow (mirror cleanup).
+    leaveStageRoom(socket.id, `disconnect:${reason}`)
+    leaveSpaceRoom(socket.id, `disconnect:${reason}`)
     const wentOffline = dropPresence(socket.id)
     if (wentOffline) {
       io.emit('presence:snapshot', { onlineUserIds: presenceSnapshot() })
@@ -596,7 +1116,7 @@ process.on('unhandledRejection', (err) => {
 })
 
 httpServer.listen(PORT, () => {
-  console.log(`Pulse socket service listening on port ${PORT} (path "/", presence+relay ready)`)
+  console.log(`Pulse socket service listening on port ${PORT} (path "/", presence+relay+voice+stage+space ready)`)
 })
 
 let shuttingDown = false

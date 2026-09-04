@@ -22,15 +22,19 @@ import {
   Dices,
   Gamepad2,
   Gift,
+  Map as MapIcon,
   MapPin,
+  MessagesSquare,
   PartyPopper,
   PenLine,
+  Podcast,
   Presentation,
   Radio,
   RotateCcw,
   Sparkles,
   SquareKanban,
   Sticker,
+  Trophy,
   UserRound,
   Vote,
   Zap,
@@ -58,6 +62,16 @@ export const REDPACKET_OPEN_EVENT = 'pulse:open-redpacket'
 export const KANBAN_OPEN_EVENT = 'pulse:open-kanban'
 export const EVENTS_OPEN_EVENT = 'pulse:open-events'
 export const NEW_GAME_EVENT = 'pulse:new-game'
+
+// ── R24-b: topics + stage/space/tournament (wave 3) ──
+/** Fired after /topic creates a topic — detail carries the fresh TopicSummary. */
+export const TOPIC_CREATED_EVENT = 'pulse:topic-created'
+/** Fired by /stage — the stage-room sheet hook (crew R24) listens internally. */
+export const STAGE_OPEN_EVENT = 'pulse:open-stage'
+/** Fired by /space — the spatial-space sheet hook listens internally. */
+export const SPACE_OPEN_EVENT = 'pulse:open-space'
+/** Fired by /tournament (groups only) — the tournament sheet hook listens. */
+export const TOURNAMENT_OPEN_EVENT = 'pulse:open-tournament'
 
 /** Generic fire-and-forget dispatcher for the R23 sheet/game events. */
 function dispatchPulseEvent(event: string, conversationId?: string | null): void {
@@ -92,6 +106,10 @@ export const PULSE_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   { cmd: '/game', args: '', help: 'Start tic-tac-toe in this chat', icon: Gamepad2, tone: 'text-violet-500' },
   { cmd: '/kanban', args: '', help: 'Open the group board', icon: SquareKanban, tone: 'text-teal-500' },
   { cmd: '/events', args: '', help: 'Group events with RSVP', icon: CalendarDays, tone: 'text-amber-500' },
+  { cmd: '/topic', args: '<name>', help: 'Create a topic and file here', icon: MessagesSquare, tone: 'text-emerald-500' },
+  { cmd: '/stage', args: '', help: 'Open the live stage room', icon: Podcast, tone: 'text-teal-500' },
+  { cmd: '/space', args: '', help: 'Open the spatial space', icon: MapIcon, tone: 'text-amber-500' },
+  { cmd: '/tournament', args: '', help: 'Start a group tournament', icon: Trophy, tone: 'text-rose-500' },
   { cmd: '/effects confetti', args: '[text]', help: 'Send with a confetti blast', icon: PartyPopper, tone: 'text-rose-500' },
   { cmd: '/effects lasers', args: '[text]', help: 'Send with sweeping laser beams', icon: Zap, tone: 'text-amber-500' },
   { cmd: '/effects echo', args: '[text]', help: 'Send with expanding echo rings', icon: Radio, tone: 'text-emerald-500' },

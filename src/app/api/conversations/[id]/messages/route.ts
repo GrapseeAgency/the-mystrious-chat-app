@@ -28,6 +28,30 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
+// ── R24-b: deterministic incognito aliases (Session/SimpleX-style) ──
+// Same person + same conversation ALWAYS maps to the same alias —
+// FNV-1a over "userId:conversationId" keeps it stable across restarts.
+const ANON_ADJECTIVES = ['Swift', 'Quiet', 'Neon', 'Ember', 'Frost', 'Lucky', 'Cosmic', 'Silent'] as const
+const ANON_ANIMALS = ['Falcon', 'Otter', 'Panda', 'Wolf', 'Comet', 'Tiger', 'Raven', 'Fox'] as const
+
+/** Stable 32-bit FNV-1a string hash (deterministic, no randomness). */
+function stableHash(value: string): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
+/** "Ember the Falcon" — deterministic per (user, conversation) pair. */
+function anonAliasFor(userId: string, conversationId: string): string {
+  const hash = stableHash(`${userId}:${conversationId}`)
+  const adjective = ANON_ADJECTIVES[hash % ANON_ADJECTIVES.length]
+  const animal = ANON_ANIMALS[Math.floor(hash / ANON_ADJECTIVES.length) % ANON_ANIMALS.length]
+  return `${adjective} the ${animal}`
+}
+
 /**
  * GET /api/conversations/[id]/messages?limit=200&before=<ISO>&q=<text>
  * → { messages: ChatMessage[], hasMore: boolean, total: number }
@@ -87,6 +111,13 @@ export async function GET(req: Request, { params }: RouteCtx) {
     )
   }
 
+  // R24-b: optional Zulip-topic filter — only alive messages filed under the
+  // given topic. Omitted → unchanged whole-room behavior (General included).
+  const topicFilterRaw = strField(url.searchParams.get('topicId'))
+  const topicFilter = topicFilterRaw
+    ? { topicId: topicFilterRaw, deletedAt: null as null }
+    : null
+
   // Search mode — case-insensitive substring scan (SQLite has no ICU collation,
   // so matching happens in Node over the conversation's rows).
   const q = (url.searchParams.get('q') ?? '').trim()
@@ -109,12 +140,16 @@ export async function GET(req: Request, { params }: RouteCtx) {
     // Older page: take N older than the cursor, then flip to ascending.
     const [rows, total] = await Promise.all([
       db.message.findMany({
-        where: { conversationId: id, createdAt: { lt: before } },
+        where: {
+          conversationId: id,
+          createdAt: { lt: before },
+          ...(topicFilter ?? {}),
+        },
         orderBy: { createdAt: 'desc' },
         take: limit,
         include: MESSAGE_FULL_INCLUDE,
       }),
-      db.message.count({ where: { conversationId: id } }),
+      db.message.count({ where: { conversationId: id, ...(topicFilter ?? {}) } }),
     ])
     rows.reverse()
     return NextResponse.json({ messages: rows.map((m) => mapMessage(m)), hasMore: rows.length === limit, total })
@@ -126,12 +161,13 @@ export async function GET(req: Request, { params }: RouteCtx) {
       where: {
         conversationId: id,
         ...(afterRaw ? { createdAt: { gt: parseIsoDate(afterRaw) as Date } } : {}),
+        ...(topicFilter ?? {}),
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
       include: MESSAGE_FULL_INCLUDE,
     }),
-    db.message.count({ where: { conversationId: id } }),
+    db.message.count({ where: { conversationId: id, ...(topicFilter ?? {}) } }),
   ])
   messages.reverse()
   return NextResponse.json({
@@ -317,6 +353,24 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
+  // R24-b: optional Zulip-style topic filing — the topic must belong to THIS
+  // conversation; message.topicId lands inside the create (General = null).
+  const topicId = strField(body.topicId)
+  if (topicId) {
+    const topic = await db.topic.findUnique({
+      where: { id: topicId },
+      select: { conversationId: true },
+    })
+    if (!topic || topic.conversationId !== id) {
+      return NextResponse.json({ error: 'Invalid topic.' }, { status: 400 })
+    }
+  }
+
+  // R24-b: optional anonymous send — honored in GROUP chats only (ignored for
+  // DMs). The alias is deterministic per (sender, conversation) so the sender
+  // keeps one consistent mask per room.
+  const anonRequested = body.anon === true
+
   // Optional thread parent (Slack/Zulip): must be a top-level, alive message here.
   const parentId = strField(body.parentId)
   if (parentId) {
@@ -349,6 +403,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
   const now = new Date()
   const expiresAt = conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
+  // Anonymous flag only applies inside groups; DM sends stay named.
+  const anon = anonRequested && conv.isGroup
+  const anonAlias = anon ? anonAliasFor(senderId, id) : null
   const message = await db.$transaction(async (tx) => {
     const created = await tx.message.create({
       data: {
@@ -359,6 +416,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
         ...(payload ? { payload } : {}),
         ...(replyToId ? { replyToId } : {}),
         ...(parentId ? { parentId } : {}),
+        ...(topicId ? { topicId } : {}),
+        ...(anon ? { anon: true, anonAlias } : {}),
         ...(viewOnce ? { viewOnce: true } : {}),
         ...(expiresAt ? { expiresAt } : {}),
         ...(imagePath ? { imagePath } : {}),
@@ -366,6 +425,20 @@ export async function POST(req: Request, { params }: RouteCtx) {
       },
       include: MESSAGE_FULL_INCLUDE,
     })
+    if (topicId) {
+      // Topic rail sort key — newest filed message keeps its topic on top.
+      await tx.topic.update({ where: { id: topicId }, data: { lastMessageAt: now } })
+    }
+    if (anon) {
+      await tx.logEvent.create({
+        data: {
+          userId: senderId,
+          kind: 'message',
+          message: 'anonymous message posted',
+          meta: JSON.stringify({ conversationId: id, messageId: created.id }),
+        },
+      })
+    }
     // Bump list ordering — @updatedAt allows an explicit value write.
     await tx.conversation.update({ where: { id }, data: { updatedAt: now } })
     // Sender obviously read their own message.
@@ -399,6 +472,12 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
   // Pulse bot engine: real command replies (/roll, /math, /wallet, /poll …).
   await maybeBotReply(id, { id: message.id, senderId, content })
+
+  // R24-b: Twitch-style channel points — every real send earns +2 XP.
+  // Fire-and-forget so send latency stays low (no daily cap yet — honest gap).
+  void db.user
+    .update({ where: { id: senderId }, data: { xp: { increment: 2 } } })
+    .catch(() => undefined)
 
   return NextResponse.json({ message: mapped }, { status: 201 })
 }

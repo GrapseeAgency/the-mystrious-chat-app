@@ -15,6 +15,9 @@
 //   POST body { userId, title (1..120), column? ('todo' default),
 //               assigneeId? (must be a room participant) }
 //        → 201 { card } — position = (max position in that column) + 1.
+//   POST body { userId, messageId } (Chanty-style, R24-b)
+//        → the message itself becomes the card: title = first 80 chars of
+//          its text (fallback 'Task'), sourceMessageId keeps provenance.
 //
 // All handlers verify conversation participation — no anonymous
 // board access, no mocks, everything lands in Prisma/SQLite.
@@ -35,6 +38,8 @@ type KanbanColumnId = (typeof COLUMNS)[number]
 const TITLE_MIN = 1
 const TITLE_MAX = 120
 const CARDS_CAP = 500
+/** Chanty-style message→card title cap (R24-b provenance flow). */
+const MESSAGE_TITLE_MAX = 80
 
 function isColumn(value: string): value is KanbanColumnId {
   return (COLUMNS as readonly string[]).includes(value)
@@ -159,7 +164,32 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const guard = await participantGuard(id, userId)
   if (guard) return guard
 
-  const title = strField(body.title)
+  // ── R24-b: message→task conversion (Chanty) ─────────────────
+  // When messageId is present the card is born FROM a chat message: the
+  // text becomes the title and the row keeps a sourceMessageId so the
+  // board can always trace the provenance. Title-based creation is
+  // unchanged when messageId is absent.
+  const sourceMessageId = strField(body.messageId)
+  let provenanceTitle: string | null = null
+  if (sourceMessageId !== '') {
+    const source = await db.message.findUnique({
+      where: { id: sourceMessageId },
+      select: { conversationId: true, content: true, deletedAt: true },
+    })
+    if (!source || source.conversationId !== id) {
+      return NextResponse.json(
+        { error: 'messageId must reference a message in this conversation.' },
+        { status: 400 },
+      )
+    }
+    const trimmedContent = source.content.replace(/\s+/g, ' ').trim()
+    provenanceTitle =
+      trimmedContent.length > 0
+        ? trimmedContent.slice(0, MESSAGE_TITLE_MAX)
+        : 'Task'
+  }
+
+  const title = provenanceTitle ?? strField(body.title)
   if (title.length < TITLE_MIN || title.length > TITLE_MAX) {
     return NextResponse.json(
       { error: `title must be ${TITLE_MIN}-${TITLE_MAX} characters.` },
@@ -197,9 +227,34 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const position = (agg._max.position ?? -1) + 1
 
   const row = await db.kanbanCard.create({
-    data: { conversationId: id, title, column, position, assigneeId, createdById: userId },
+    data: {
+      conversationId: id,
+      title,
+      column,
+      position,
+      assigneeId,
+      createdById: userId,
+      ...(sourceMessageId !== '' ? { sourceMessageId } : {}),
+    },
   })
   const names = await resolveNames([row.assigneeId, row.createdById])
+
+  // Real activity trail — the note calls out the message provenance.
+  await db.logEvent.create({
+    data: {
+      userId,
+      kind: 'message',
+      message:
+        sourceMessageId !== ''
+          ? `converted a chat message into the task "${title}"`
+          : `created task "${title}" on the board`,
+      meta: JSON.stringify({
+        conversationId: id,
+        cardId: row.id,
+        ...(sourceMessageId !== '' ? { sourceMessageId } : {}),
+      }),
+    },
+  })
 
   return NextResponse.json({ card: serializeCard(row, names) }, { status: 201 })
 }
