@@ -20,15 +20,19 @@ import {
   AtSign,
   Check,
   ChevronLeft,
+  Copy,
   Crown,
   EllipsisVertical,
   LoaderCircle,
   LogOut,
   Megaphone,
   Pencil,
+  Plus,
   Search,
+  Trash2,
   UserPlus,
   UsersRound,
+  Webhook,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationDetail, GroupRole } from '@/lib/types'
@@ -59,6 +63,8 @@ import { UserProfileSheet } from '@/components/chat/user-profile-sheet'
 
 /** Mirrors GROUP_NAME_MAX in src/lib/serializers.ts (PATCH route enforces 1–48). */
 const GROUP_NAME_MAX = 48
+/** Mirrors WEBHOOK_NAME_MAX in src/app/api/webhooks/route.ts (POST enforces 1–32). */
+const WEBHOOK_NAME_MAX = 32
 
 interface ConversationResponse {
   conversation: ConversationDetail
@@ -74,6 +80,34 @@ interface LeaveResponse {
   ok: boolean
   remainingMembers: number
   promotedUserId: string | null
+}
+
+/** Row of GET /api/webhooks?conversationId= — Discord-style incoming hook. */
+interface WebhookItem {
+  id: string
+  name: string
+  token: string
+  avatarColor: string
+  url: string
+  createdAt: string
+  createdBy: string
+}
+interface WebhooksResponse {
+  webhooks: WebhookItem[]
+}
+
+/** Spring stagger for the webhook rows (matches the sheet's micro-interaction set). */
+const webhookListVariants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.045 } },
+}
+const webhookRowVariants = {
+  hidden: { opacity: 0, y: 10 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { type: 'spring' as const, stiffness: 420, damping: 32 },
+  },
 }
 
 /** Modal identity — parameterized variants carry the target member id. */
@@ -357,6 +391,9 @@ function GroupInfoBody({
         />
       </div>
 
+      {/* webhooks — Discord-style incoming integrations */}
+      <WebhooksSection conversationId={detail.id} meId={meId} isAdmin={isAdmin} />
+
       {/* members */}
       <div className="px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <div className="mb-2 flex items-center justify-between px-1">
@@ -424,6 +461,354 @@ function ActionTile({
       {icon}
       <span className="text-[11px] font-semibold tracking-tight">{label}</span>
     </button>
+  )
+}
+
+// ── webhooks (Discord-style incoming integrations) ───────────
+
+/**
+ * Management card for incoming webhooks. Everyone sees the list and can
+ * copy ingest URLs; creation + deletion are admin-only. Data is fully
+ * real: GET/POST /api/webhooks + DELETE /api/webhooks/[token].
+ */
+function WebhooksSection({
+  conversationId,
+  meId,
+  isAdmin,
+}: {
+  conversationId: string
+  meId: string
+  isAdmin: boolean
+}) {
+  const queryClient = useQueryClient()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<WebhookItem | null>(null)
+
+  const webhooksQ = useQuery({
+    queryKey: ['webhooks', conversationId],
+    queryFn: async (): Promise<WebhookItem[]> => {
+      const res = await apiJson<WebhooksResponse>(
+        `/api/webhooks?conversationId=${encodeURIComponent(conversationId)}&requesterId=${encodeURIComponent(meId)}`,
+      )
+      return res.webhooks
+    },
+    staleTime: 5_000,
+  })
+
+  const copyUrl = async (webhook: WebhookItem) => {
+    try {
+      await navigator.clipboard.writeText(`${location.origin}/api/webhooks/${webhook.token}`)
+      toast.success('Webhook URL copied')
+    } catch {
+      toast.error('Could not copy the URL')
+    }
+  }
+
+  const deleteWebhook = useMutation({
+    mutationFn: async (token: string) => {
+      return apiJson<{ ok: boolean }>(
+        `/api/webhooks/${encodeURIComponent(token)}?requesterId=${encodeURIComponent(meId)}`,
+        { method: 'DELETE' },
+      )
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['webhooks', conversationId] })
+      toast.success('Webhook deleted')
+      setDeleteTarget(null)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Could not delete the webhook')
+    },
+  })
+
+  const webhooks = webhooksQ.data ?? []
+
+  return (
+    <div className="px-4 pb-1">
+      <div className="mb-2 flex items-center justify-between px-1">
+        <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+          <Webhook className="size-3.5" aria-hidden />
+          Webhooks
+        </h3>
+        <span className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+          {webhooks.length}
+        </span>
+      </div>
+
+      {webhooksQ.isPending ? (
+        <div
+          className="space-y-2 rounded-2xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-800/40"
+          aria-busy="true"
+          aria-label="Loading webhooks"
+        >
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <Skeleton className="size-8 rounded-full" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-3.5 w-1/2 rounded-md" />
+                <Skeleton className="h-3 w-1/3 rounded-md" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : webhooksQ.isError ? (
+        <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-4 text-center">
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            Could not load webhooks.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void webhooksQ.refetch()}
+            className="mt-2 h-8 rounded-full px-4 text-xs font-semibold"
+          >
+            Try again
+          </Button>
+        </div>
+      ) : webhooks.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-zinc-300 p-5 text-center dark:border-zinc-700">
+          <Webhook className="mx-auto size-6 text-zinc-300 dark:text-zinc-600" aria-hidden />
+          <p className="mt-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            No webhooks yet
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+            {isAdmin
+              ? 'Create one to let outside services post into this chat.'
+              : 'Admins can add Discord-style integrations here.'}
+          </p>
+        </div>
+      ) : (
+        <motion.ul
+          variants={webhookListVariants}
+          initial="hidden"
+          animate="show"
+          className="pulse-scroll max-h-52 space-y-0.5 overflow-y-auto rounded-2xl border border-zinc-200 bg-zinc-50/60 p-1.5 dark:border-zinc-800 dark:bg-zinc-800/40"
+        >
+          {webhooks.map((webhook) => (
+            <WebhookRow
+              key={webhook.id}
+              webhook={webhook}
+              isAdmin={isAdmin}
+              onCopy={copyUrl}
+              onDelete={() => setDeleteTarget(webhook)}
+            />
+          ))}
+        </motion.ul>
+      )}
+
+      {isAdmin ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setCreateOpen(true)}
+          className="mt-2 h-11 w-full rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 active:scale-[0.98] dark:text-emerald-400 dark:hover:text-emerald-300"
+        >
+          <Plus className="size-4" aria-hidden />
+          Create webhook
+        </Button>
+      ) : null}
+
+      {createOpen ? (
+        <WebhookCreateModal
+          onClose={() => setCreateOpen(false)}
+          conversationId={conversationId}
+          meId={meId}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <WebhookDeleteModal
+          target={deleteTarget}
+          pending={deleteWebhook.isPending}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => deleteWebhook.mutate(deleteTarget.token)}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function WebhookRow({
+  webhook,
+  isAdmin,
+  onCopy,
+  onDelete,
+}: {
+  webhook: WebhookItem
+  isAdmin: boolean
+  onCopy: (webhook: WebhookItem) => Promise<void>
+  onDelete: () => void
+}) {
+  return (
+    <motion.li
+      variants={webhookRowVariants}
+      className="flex min-h-[52px] items-center gap-3 rounded-xl px-2 py-1.5"
+    >
+      <span
+        className={cn('size-3 shrink-0 rounded-full bg-gradient-to-br shadow-sm', gradientFor(webhook.avatarColor))}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+          {webhook.name}
+        </p>
+        <p className="mt-0.5 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+          /api/webhooks/{webhook.token} · added {formatListStamp(webhook.createdAt)}
+        </p>
+      </div>
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.88 }}
+        onClick={() => void onCopy(webhook)}
+        aria-label={`Copy ${webhook.name} webhook URL`}
+        className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-200/70 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+      >
+        <Copy className="size-4" aria-hidden />
+      </motion.button>
+      {isAdmin ? (
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.88 }}
+          onClick={onDelete}
+          aria-label={`Delete ${webhook.name}`}
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/50"
+        >
+          <Trash2 className="size-4" aria-hidden />
+        </motion.button>
+      ) : null}
+    </motion.li>
+  )
+}
+
+function WebhookCreateModal({
+  onClose,
+  conversationId,
+  meId,
+}: {
+  onClose: () => void
+  conversationId: string
+  meId: string
+}) {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState('')
+  const trimmed = name.trim()
+  const valid = trimmed.length > 0 && trimmed.length <= WEBHOOK_NAME_MAX
+
+  const create = useMutation({
+    mutationFn: async (): Promise<WebhookItem> => {
+      return apiJson<WebhookItem>(
+        '/api/webhooks',
+        jsonBody({ conversationId, name: trimmed, requesterId: meId }),
+      )
+    },
+    onSuccess: (created) => {
+      void queryClient.invalidateQueries({ queryKey: ['webhooks', conversationId] })
+      toast.success(`Webhook “${created.name}” created`)
+      onClose()
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Could not create the webhook')
+    },
+  })
+
+  return (
+    <SheetModal open onClose={onClose} label="Create webhook">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (valid && !create.isPending) create.mutate()
+        }}
+      >
+        <h3 className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+          Create webhook
+        </h3>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+          Outside services POST to its URL and drop messages into this chat as a named sender.
+        </p>
+        <div className="mt-3 space-y-1.5">
+          <Label htmlFor="webhook-name-input" className="sr-only">
+            Webhook name
+          </Label>
+          <Input
+            id="webhook-name-input"
+            value={name}
+            maxLength={WEBHOOK_NAME_MAX}
+            onChange={(event) => setName(event.target.value.slice(0, WEBHOOK_NAME_MAX))}
+            placeholder="e.g. Deploys · CI · Weather"
+            autoFocus
+            autoComplete="off"
+            enterKeyHint="done"
+            aria-invalid={trimmed.length === 0 || undefined}
+            className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+          />
+          <p className="text-right text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+            {trimmed.length}/{WEBHOOK_NAME_MAX}
+          </p>
+        </div>
+        <div className="mt-3 flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            className="h-10 flex-1 rounded-xl text-sm font-semibold"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={!valid || create.isPending}
+            className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+          >
+            {create.isPending ? (
+              <LoaderCircle className="size-4 animate-spin" aria-hidden />
+            ) : (
+              'Create'
+            )}
+          </Button>
+        </div>
+      </form>
+    </SheetModal>
+  )
+}
+
+function WebhookDeleteModal({
+  target,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  target: WebhookItem
+  pending: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <SheetModal open onClose={onClose} label="Delete webhook">
+      <h3 className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+        Delete “{target.name}”?
+      </h3>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+        Its URL stops working immediately. Messages it already posted stay in the chat.
+      </p>
+      <div className="mt-4 flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
+          className="h-10 flex-1 rounded-xl text-sm font-semibold"
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          variant="destructive"
+          onClick={onConfirm}
+          disabled={pending}
+          className="h-10 flex-1 rounded-xl text-sm font-semibold active:scale-[0.98]"
+        >
+          {pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : 'Delete'}
+        </Button>
+      </div>
+    </SheetModal>
   )
 }
 

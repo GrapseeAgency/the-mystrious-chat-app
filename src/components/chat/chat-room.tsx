@@ -148,6 +148,8 @@ import {
   type LocationPayload,
 } from '@/components/chat/location-share'
 import { SlashPalette } from '@/components/chat/slash-palette'
+import { VoiceRoomSheet, useVoiceRoom } from "@/components/chat/voice-room-sheet"
+import { useWhiteboardSheet } from "@/components/chat/whiteboard-sheet"
 import { PipChat } from '@/components/chat/pip-chat'
 import { usePipChat } from '@/components/chat/pip-store'
 import { GroupInfoSheet } from '@/components/chat/group-info-sheet'
@@ -330,11 +332,19 @@ function applySlash(
     }
     case 'help':
       return { kind: 'help' }
-    default:
+    default: {
+      // R21-a bot commands are answered server-side by @pulseai — pass them
+      // through as a normal message so the bot engine can reply. Typos that
+      // match nothing still surface the /help affordance below.
+      const botCommands = new Set(['math', 'flip', '8ball', 'rps', 'dice', 'time', 'wallet'])
+      if (botCommands.has(word.toLowerCase())) {
+        return { kind: 'send', content: input }
+      }
       return {
         kind: 'error',
         message: `Unknown command "/${word}" — try /help`,
       }
+    }
   }
 }
 /** "1:23" (minutes:seconds) for voice notes + record timer. */
@@ -488,6 +498,13 @@ export function ChatRoom({
   const [profileUser, setProfileUser] = useState<AppUser | null>(null)
   /** full-screen group management sheet (R19-c contract) */
   const [groupInfoOpen, setGroupInfoOpen] = useState(false)
+
+  // ── live voice room (R21-b) — engine survives sheet close ──
+  const [voiceOpen, setVoiceOpen] = useState(false)
+  const voice = useVoiceRoom(conversationId, me)
+
+  // ── collaborative whiteboard (R21-c) — palette event opens it ──
+  const whiteboard = useWhiteboardSheet(conversationId, me.id)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -2618,6 +2635,22 @@ export function ChatRoom({
         >
           <PictureInPicture2 className="size-5" aria-hidden />
         </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Live voice room"
+          aria-pressed={voice.inRoom}
+          onClick={() => {
+            haptic(10)
+            setVoiceOpen(true)
+          }}
+          className={cn(
+            'size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300',
+            voice.inRoom && 'text-emerald-600 dark:text-emerald-400',
+          )}
+        >
+          <Mic className="size-5" aria-hidden />
+        </Button>
         {isGroup ? (
           <Button
             variant="ghost"
@@ -2785,6 +2818,34 @@ export function ChatRoom({
           ) : null}
         </AnimatePresence>
       </header>
+
+      {/* live voice pill — mic stays warm with the sheet closed; tap to reopen (R21-b) */}
+      <AnimatePresence>
+        {voice.inRoom && !voiceOpen ? (
+          <motion.button
+            key="voice-live-pill"
+            type="button"
+            initial={{ opacity: 0, y: -12, scale: 0.9, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }}
+            exit={{ opacity: 0, y: -8, scale: 0.95, x: '-50%' }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            onClick={() => {
+              haptic(10)
+              setVoiceOpen(true)
+            }}
+            aria-label={`Reopen live voice room — ${voice.roster.length} ${voice.roster.length === 1 ? 'participant' : 'participants'}`}
+            className="absolute top-[calc(3.75rem+env(safe-area-inset-top))] left-1/2 z-30 flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-zinc-950/85 py-1.5 pr-3 pl-2.5 text-xs font-bold text-emerald-300 shadow-lg shadow-emerald-950/40 backdrop-blur-md outline-none active:scale-95"
+            style={{ willChange: 'transform' }}
+          >
+            <span className="relative flex size-2" aria-hidden>
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" style={{ animationDuration: '1.4s' }} />
+              <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+            </span>
+            <Mic className="size-3.5" aria-hidden />
+            Voice · {voice.roster.length} live
+          </motion.button>
+        ) : null}
+      </AnimatePresence>
 
       {/* pinned banner (Telegram/WhatsApp-style) */}
       {latestPinned ? (
@@ -4130,6 +4191,21 @@ export function ChatRoom({
         conversationId={conversationId}
         meId={me.id}
       />
+
+      {/* ── R21-b live voice room (engine keeps running while closed) ── */}
+      <AnimatePresence>
+        {voiceOpen ? (
+          <VoiceRoomSheet
+            key="voice-room-sheet"
+            title={headerTitle}
+            myId={me.id}
+            voice={voice}
+            onClose={() => setVoiceOpen(false)}
+          />
+        ) : null}
+      </AnimatePresence>
+      {/* ── R21-c shared whiteboard (opened via /whiteboard palette entry) ── */}
+      {whiteboard.node}
       <UserProfileSheet
         user={profileUser}
         open={profileUser !== null}

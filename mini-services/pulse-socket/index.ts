@@ -6,6 +6,8 @@
  * Responsibilities (NO database access ever):
  *  - Presence tracking   : onlineUsers Map<userId, Set<socketId>>, rooms `user:{userId}`
  *  - Client→client relay : `typing`
+ *  - Live voice rooms    : in-memory rosters `voiceRooms` Map + `voice:{conversationId}`
+ *                          socket.io rooms; `voice:join|leave|roster|ptt|chunk` relay
  *  - HTTP relay API      : POST /notify (message:new|message:deleted|message:read), POST /typing
  *  - Health probe        : GET / (or anything unknown) → { ok:true, service:'pulse-socket' }
  *
@@ -85,6 +87,83 @@ function dropPresence(socketId: string): boolean {
     return true // last socket closed -> user fully offline
   }
   return false
+}
+
+// ---------------------------------------------------------------------------
+// Live voice rooms (R21-b) — pure in-memory, ephemeral by design.
+// ---------------------------------------------------------------------------
+interface VoicePeer {
+  userId: string
+  name: string
+  username: string | null
+  color: string
+  socketId: string
+  joinedAt: number
+}
+
+/** conversationId -> (userId -> peer) — a socket.io room `voice:{conversationId}` backs each entry */
+const voiceRooms = new Map<string, Map<string, VoicePeer>>()
+/** socketId -> conversationId this socket's mic is attached to (max ONE voice room per socket) */
+const socketVoiceRoom = new Map<string, string>()
+
+const voiceRoomName = (conversationId: string) => `voice:${conversationId}`
+
+function voiceRosterSnapshot(conversationId: string): VoicePeer[] {
+  const room = voiceRooms.get(conversationId)
+  if (!room) return []
+  return Array.from(room.values()).sort((a, b) => a.joinedAt - b.joinedAt)
+}
+
+/** Public-safe roster payload (never leaks socketIds). */
+function rosterPayload(conversationId: string) {
+  return {
+    conversationId,
+    peers: voiceRosterSnapshot(conversationId).map((p) => ({
+      id: p.userId,
+      name: p.name,
+      username: p.username,
+      color: p.color,
+    })),
+  }
+}
+
+function broadcastVoiceRoster(conversationId: string): void {
+  io.to(voiceRoomName(conversationId)).emit('voice:roster', rosterPayload(conversationId))
+}
+
+/**
+ * Removes a socket from its voice room (explicit leave or disconnect).
+ * Broadcasts the fresh roster to the remaining peers.
+ */
+function leaveVoiceRoom(socketId: string, reason: string): void {
+  const conversationId = socketVoiceRoom.get(socketId)
+  if (!conversationId) return
+  socketVoiceRoom.delete(socketId)
+  const room = voiceRooms.get(conversationId)
+  if (!room) return
+
+  let removedUserId: string | null = null
+  for (const [userId, peer] of room) {
+    if (peer.socketId === socketId) {
+      room.delete(userId)
+      removedUserId = userId
+      break
+    }
+  }
+  if (room.size === 0) {
+    voiceRooms.delete(conversationId)
+  } else {
+    broadcastVoiceRoster(conversationId)
+  }
+  if (removedUserId) {
+    // everyone still transmitting from the departed socket stops glowing
+    io.to(voiceRoomName(conversationId)).emit('voice:ptt', {
+      conversationId,
+      userId: removedUserId,
+      on: false,
+    })
+  }
+  console.log(`[voice] leave user=${removedUserId ?? '?'} conv=${conversationId} sock=${socketId} reason=${reason} peers=${room.size}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +358,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     service: 'pulse-socket',
     port: PORT,
     online: onlineUsers.size,
+    voiceRooms: voiceRooms.size,
     uptimeSec: Math.round(process.uptime()),
   })
 }
@@ -357,11 +437,114 @@ io.on('connection', (socket: Socket) => {
     }
   })
 
+  // ── Live voice room events (R21-b) ─────────────────────────
+
+  /**
+   * voice:join { conversationId, user: { id, name, username, color } }
+   * Joins the socket to room `voice:{conversationId}`, upserts the in-memory
+   * roster and broadcasts `voice:roster` to every peer in that voice room.
+   */
+  socket.on('voice:join', (raw: unknown) => {
+    const data = (raw ?? {}) as {
+      conversationId?: unknown
+      user?: { id?: unknown; name?: unknown; username?: unknown; color?: unknown }
+    }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const userId = asTrimmedString(data.user?.id).slice(0, 64)
+    if (!conversationId || !userId) {
+      console.warn(`[voice] join rejected sock=${socket.id} (bad conversationId/userId)`)
+      return
+    }
+
+    // One voice room per socket: silently drop any previous membership first.
+    leaveVoiceRoom(socket.id, 'switch')
+
+    const peer: VoicePeer = {
+      userId,
+      name: asTrimmedString(data.user?.name).slice(0, 64) || 'Someone',
+      username:
+        typeof data.user?.username === 'string' && data.user.username.trim().length > 0
+          ? data.user.username.trim().slice(0, 32)
+          : null,
+      color: asTrimmedString(data.user?.color).slice(0, 24) || 'emerald',
+      socketId: socket.id,
+      joinedAt: Date.now(),
+    }
+
+    let room = voiceRooms.get(conversationId)
+    if (!room) {
+      room = new Map<string, VoicePeer>()
+      voiceRooms.set(conversationId, room)
+    }
+    room.set(userId, peer) // last session wins on duplicate userId
+    socketVoiceRoom.set(socket.id, conversationId)
+    void socket.join(voiceRoomName(conversationId))
+
+    broadcastVoiceRoster(conversationId)
+    console.log(`[voice] join user=${userId} conv=${conversationId} sock=${socket.id} peers=${room.size}`)
+  })
+
+  /** voice:leave { conversationId? } — explicit exit (conversationId optional; map is the truth). */
+  socket.on('voice:leave', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown }
+    const claimed = asTrimmedString(data.conversationId).slice(0, 128)
+    const actual = socketVoiceRoom.get(socket.id)
+    // Defensively ignore mismatched claims — the server-side map is authoritative.
+    if (actual && claimed && claimed !== actual) return
+    leaveVoiceRoom(socket.id, 'explicit')
+  })
+
+  /**
+   * voice:ptt { conversationId, userId, on } — push-to-talk state relay.
+   * Broadcast to the WHOLE voice room (sender included) so self rings glow too.
+   */
+  socket.on('voice:ptt', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown; userId?: unknown; on?: unknown }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const userId = asTrimmedString(data.userId).slice(0, 64)
+    if (!conversationId || !userId) return
+    // Only peers actually in this voice room may flip its transmit state.
+    const room = voiceRooms.get(conversationId)
+    const peer = room?.get(userId)
+    if (!peer || peer.socketId !== socket.id) return
+    io.to(voiceRoomName(conversationId)).emit('voice:ptt', {
+      conversationId,
+      userId,
+      on: data.on === true,
+    })
+  })
+
+  /**
+   * voice:chunk { conversationId, userId, seq, data(base64 PCM) } — audio relay.
+   * Broadcast to the voice room EXCEPT the sender. Size-capped, identity-checked.
+   */
+  const MAX_VOICE_CHUNK_CHARS = 96 * 1024
+  socket.on('voice:chunk', (raw: unknown) => {
+    const data = (raw ?? {}) as { conversationId?: unknown; userId?: unknown; seq?: unknown; data?: unknown }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const userId = asTrimmedString(data.userId).slice(0, 64)
+    const seq = typeof data.seq === 'number' && Number.isFinite(data.seq) ? Math.floor(data.seq) : -1
+    if (!conversationId || !userId || seq < 0) return
+    if (typeof data.data !== 'string' || data.data.length === 0 || data.data.length > MAX_VOICE_CHUNK_CHARS) return
+    // Identity gate: a socket may only stream chunks AS the peer it registered.
+    const room = voiceRooms.get(conversationId)
+    const peer = room?.get(userId)
+    if (!peer || peer.socketId !== socket.id) return
+    socket.to(voiceRoomName(conversationId)).emit('voice:chunk', {
+      conversationId,
+      userId,
+      seq,
+      data: data.data,
+    })
+  })
+
   socket.on('error', (error) => {
     console.error(`[ws] socket error (${socket.id}):`, error instanceof Error ? error.message : error)
   })
 
   socket.on('disconnect', (reason: string) => {
+    // Voice rooms clean up FIRST: the departed mic must never keep the stage.
+    leaveVoiceRoom(socket.id, `disconnect:${reason}`)
     const wentOffline = dropPresence(socket.id)
     if (wentOffline) {
       io.emit('presence:snapshot', { onlineUserIds: presenceSnapshot() })

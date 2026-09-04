@@ -5,10 +5,10 @@
 
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, LoaderCircle, MoreVertical, PencilLine, Pin, PinOff, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, LoaderCircle, MoreVertical, PencilLine, Pin, PinOff, Plus, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -31,6 +31,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 import { ThemeToggleButton } from '@/components/chat/theme-toggle'
+import {
+  StoriesSheet,
+  storiesQueryKey,
+} from '@/components/chat/stories-sheet'
+import type { StoryGroup, StoriesResponse } from '@/components/chat/stories-sheet'
+import { StoryComposerSheet } from '@/components/chat/story-composer-sheet'
 
 interface ConversationsResponse {
   conversations: ConversationSummary[]
@@ -355,6 +361,77 @@ function SearchSection({ label, count }: { label: string; count: number }) {
   )
 }
 
+// ── 24h status stories ──────────────────────────────────────
+
+const STORY_RING_SIZE = 56
+
+/**
+ * One avatar cell in the Status row. `ring`: 'unseen' → animated
+ * emerald→teal conic ring · 'seen' → static zinc ring · 'none' → plain
+ * (used by "My status" when no story is live; renders the "+" badge).
+ */
+const StoryRingCell = memo(function StoryRingCell({
+  name,
+  color,
+  ring,
+  plus = false,
+  label,
+  onPress,
+  index,
+}: {
+  name: string
+  color: string
+  ring: 'unseen' | 'seen' | 'none'
+  plus?: boolean
+  label: string
+  onPress: () => void
+  index: number
+}) {
+  const inner = STORY_RING_SIZE - 5
+  return (
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.05, 0.35), type: 'spring', stiffness: 420, damping: 26 }}
+      whileTap={{ scale: 0.92 }}
+      onClick={onPress}
+      aria-label={ring === 'unseen' ? `${label} — new status` : label}
+      className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-2xl pb-1 pt-0.5 outline-none"
+    >
+      <span className="relative block" style={{ width: STORY_RING_SIZE, height: STORY_RING_SIZE }}>
+        {ring === 'unseen' ? (
+          <motion.span
+            aria-hidden
+            className="absolute inset-0 rounded-full [background:conic-gradient(from_0deg,#34d399,#14b8a6,#6ee7b7,#10b981,#34d399)]"
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 2.6, ease: 'linear' }}
+          />
+        ) : (
+          <span
+            aria-hidden
+            className={cn(
+              'absolute inset-0 rounded-full',
+              ring === 'seen' ? 'bg-zinc-300 dark:bg-zinc-600' : 'bg-zinc-200 dark:bg-zinc-700',
+            )}
+          />
+        )}
+        <span className="absolute inset-[2.5px] overflow-hidden rounded-full bg-white dark:bg-zinc-900">
+          <UserAvatar name={name} color={color} size={inner} />
+        </span>
+        {plus ? (
+          <span className="absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full bg-emerald-500 text-white ring-2 ring-white dark:ring-zinc-900">
+            <Plus className="size-3" strokeWidth={3} aria-hidden />
+          </span>
+        ) : null}
+      </span>
+      <span className="w-full truncate text-center text-[11px] font-medium leading-tight text-zinc-600 dark:text-zinc-400">
+        {label}
+      </span>
+    </motion.button>
+  )
+})
+
 export function ChatsTab({
   me,
   onOpenConversation,
@@ -506,6 +583,36 @@ export function ChatsTab({
   // ── row long-press action sheet (pin/unpin) ───────────────
   const [sheetConv, setSheetConv] = useState<ConversationSummary | null>(null)
   const queryClient = useQueryClient()
+
+  // ── 24h status stories (ring row + viewer/composer sheets) ──
+  const storiesQ = useQuery({
+    queryKey: storiesQueryKey(me.id),
+    queryFn: async (): Promise<StoriesResponse> =>
+      apiJson<StoriesResponse>(`/api/stories?requesterId=${encodeURIComponent(me.id)}`),
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+  })
+  const storyGroups = useMemo(() => storiesQ.data?.groups ?? [], [storiesQ.data])
+  const myStoryGroup = useMemo(() => storyGroups.find((g) => g.mine) ?? null, [storyGroups])
+  const otherStoryGroups = useMemo(() => storyGroups.filter((g) => !g.mine), [storyGroups])
+
+  /** open viewer at a specific user's first story (null = closed) */
+  const [viewerStart, setViewerStart] = useState<{ userId: string; storyId: string } | null>(null)
+  const [composerOpen, setComposerOpen] = useState(false)
+
+  const openMyStatus = useCallback(() => {
+    haptic(6)
+    if (myStoryGroup && myStoryGroup.stories.length > 0) {
+      setViewerStart({ userId: myStoryGroup.user.id, storyId: myStoryGroup.stories[0].id })
+    } else {
+      setComposerOpen(true)
+    }
+  }, [myStoryGroup])
+
+  const openStoryGroup = useCallback((group: StoryGroup) => {
+    haptic(6)
+    setViewerStart({ userId: group.user.id, storyId: group.stories[0].id })
+  }, [])
 
   const togglePin = useMutation({
     mutationFn: async (conv: ConversationSummary) => {
@@ -708,6 +815,35 @@ export function ChatsTab({
               </button>
             )
           })}
+        </div>
+      ) : null}
+
+      {/* 24h status stories row */}
+      {!searching ? (
+        <div className="shrink-0 border-b border-zinc-100 pb-2 pt-1 dark:border-zinc-800/70">
+          <h2 className="sr-only">Status</h2>
+          <div className="no-scrollbar flex items-start gap-3 overflow-x-auto px-3 pt-1">
+            <StoryRingCell
+              name={me.name}
+              color={me.color}
+              ring={myStoryGroup ? 'unseen' : 'none'}
+              plus={!myStoryGroup}
+              label="My status"
+              onPress={openMyStatus}
+              index={0}
+            />
+            {otherStoryGroups.map((group, i) => (
+              <StoryRingCell
+                key={group.user.id}
+                name={group.user.name}
+                color={group.user.color}
+                ring={group.allSeen ? 'seen' : 'unseen'}
+                label={group.user.name}
+                onPress={() => openStoryGroup(group)}
+                index={i + 1}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -951,6 +1087,25 @@ export function ChatsTab({
           </div>
         </DrawerContent>
       </Drawer>
+
+      {/* status story viewer + composer (full-screen overlays) */}
+      <AnimatePresence>
+        {composerOpen ? (
+          <StoryComposerSheet key="story-composer" me={me} onClose={() => setComposerOpen(false)} />
+        ) : null}
+        {viewerStart !== null && storyGroups.length > 0 ? (
+          <StoriesSheet
+            key="stories-viewer"
+            me={me}
+            groups={storyGroups}
+            start={viewerStart}
+            onClose={() => {
+              setViewerStart(null)
+              void queryClient.invalidateQueries({ queryKey: storiesQueryKey(me.id) })
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
     </div>
   )
 }

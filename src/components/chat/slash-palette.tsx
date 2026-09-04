@@ -4,10 +4,15 @@
 // Fuzzy filtering, arrow-key + Enter navigation, Esc to dismiss,
 // tap to select. The legacy plain-text parser in chat-room keeps
 // working — the palette is a fast-path on top of it.
+//
+// /whiteboard (Task R21-c) is dispatched standalone: the palette
+// fires `pulse:open-whiteboard` on window (or the onOpenWhiteboard
+// prop when provided) because the sheet lives in chat-room, which
+// wires it via useWhiteboardSheet() — see whiteboard-sheet.tsx.
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Armchair,
@@ -17,6 +22,7 @@ import {
   MapPin,
   PartyPopper,
   PenLine,
+  Presentation,
   Radio,
   RotateCcw,
   Sparkles,
@@ -36,6 +42,21 @@ export interface SlashCommandDef {
   tone: string
 }
 
+/** Window event fired by the /whiteboard entry — chat-room listens via useWhiteboardSheet(). */
+export const WHITEBOARD_OPEN_EVENT = 'pulse:open-whiteboard'
+
+/**
+ * Fire-and-forget trigger for the shared whiteboard. `conversationId` rides
+ * along in event.detail when known; the ChatRoom-side listener uses its own
+ * conversation id, so callers may omit it.
+ */
+export function dispatchOpenWhiteboard(conversationId?: string | null): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(
+    new CustomEvent(WHITEBOARD_OPEN_EVENT, { detail: { conversationId: conversationId ?? null } }),
+  )
+}
+
 export const PULSE_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   { cmd: '/me', args: '<action>', help: 'Send an italic action line', icon: UserRound, tone: 'text-emerald-500' },
   { cmd: '/shrug', args: '[text]', help: 'Append ¯\\_(ツ)_/¯', icon: PenLine, tone: 'text-teal-500' },
@@ -46,6 +67,7 @@ export const PULSE_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   { cmd: '/schedule', args: '', help: 'Schedule this message for later', icon: CalendarClock, tone: 'text-amber-500' },
   { cmd: '/sticker', args: '', help: 'Open the sticker packs', icon: Sticker, tone: 'text-emerald-500' },
   { cmd: '/location', args: '', help: 'Share a live map pin', icon: MapPin, tone: 'text-teal-500' },
+  { cmd: '/whiteboard', args: '', help: 'Open the shared whiteboard', icon: Presentation, tone: 'text-emerald-500' },
   { cmd: '/effects confetti', args: '[text]', help: 'Send with a confetti blast', icon: PartyPopper, tone: 'text-rose-500' },
   { cmd: '/effects lasers', args: '[text]', help: 'Send with sweeping laser beams', icon: Zap, tone: 'text-amber-500' },
   { cmd: '/effects echo', args: '[text]', help: 'Send with expanding echo rings', icon: Radio, tone: 'text-emerald-500' },
@@ -78,6 +100,8 @@ export function SlashPalette({
   commands = PULSE_SLASH_COMMANDS,
   onSelect,
   onDismiss,
+  onOpenWhiteboard,
+  conversationId,
 }: {
   open: boolean
   /** the full composer draft (must start with '/') */
@@ -85,6 +109,10 @@ export function SlashPalette({
   commands?: readonly SlashCommandDef[]
   onSelect: (cmd: string) => void
   onDismiss: () => void
+  /** direct wiring option — overrides the pulse:open-whiteboard event */
+  onOpenWhiteboard?: () => void
+  /** rides along in the pulse:open-whiteboard event detail when known */
+  conversationId?: string
 }) {
   const matches = useMemo(() => {
     const needle = query.startsWith('/') ? query : ''
@@ -95,6 +123,27 @@ export function SlashPalette({
   const [index, setIndex] = useState(0)
   // highlight is DERIVED — filtering can shrink the list without an effect
   const activeIndex = matches.length === 0 ? 0 : Math.min(index, matches.length - 1)
+
+  /**
+   * Run a palette row. /whiteboard is special: chat-room's onSelect parser
+   * doesn't know it, so the palette dispatches the standalone contract itself
+   * (prop callback when wired, else the pulse:open-whiteboard window event).
+   */
+  const activate = useCallback(
+    (cmd: string) => {
+      if (cmd === '/whiteboard') {
+        if (onOpenWhiteboard) {
+          onOpenWhiteboard()
+        } else {
+          dispatchOpenWhiteboard(conversationId ?? null)
+        }
+        onDismiss()
+        return
+      }
+      onSelect(cmd)
+    },
+    [onOpenWhiteboard, conversationId, onSelect, onDismiss],
+  )
 
   // keyboard capture happens at the window (capture phase) so it wins
   // over the composer textarea's own Enter-to-send / Escape handlers
@@ -112,7 +161,7 @@ export function SlashPalette({
       } else if (event.key === 'Enter' || event.key === 'Tab') {
         event.preventDefault()
         event.stopPropagation()
-        onSelect(matches[activeIndex]?.cmd ?? matches[0].cmd)
+        activate(matches[activeIndex]?.cmd ?? matches[0].cmd)
       } else if (event.key === 'Escape') {
         event.preventDefault()
         event.stopPropagation()
@@ -121,7 +170,7 @@ export function SlashPalette({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [open, matches.length, activeIndex, onSelect, onDismiss])
+  }, [open, matches.length, activeIndex, activate, onDismiss])
 
   return (
     <AnimatePresence>
@@ -147,7 +196,7 @@ export function SlashPalette({
                   role="option"
                   aria-selected={i === activeIndex}
                   onMouseEnter={() => setIndex(i)}
-                  onClick={() => onSelect(command.cmd)}
+                  onClick={() => activate(command.cmd)}
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none transition-colors',
                     i === activeIndex

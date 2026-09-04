@@ -1,0 +1,1250 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse — Group Info Sheet (full-screen, Telegram-grade).
+     3→// Real APIs only:
+     4→//  - GET    /api/conversations/[id]?userId=me          → { conversation: ConversationDetail }
+     5→//  - PATCH  /api/conversations/[id]                    { requesterId, name }              (admin rename)
+     6→//  - POST   /api/conversations/[id]/members            { requesterId, userIds: [] }       (admin add)
+     7→//  - PATCH  /api/conversations/[id]/members            { requesterId, userId, role }      (admin promote/demote)
+     8→//  - DELETE /api/conversations/[id]/members/[userId]   { requesterId }                    (admin remove member)
+     9→//  - DELETE /api/conversations/[id]/members            { requesterId }                    (leave, auto-succession)
+    10→//  - GET    /api/users                                 → { users: AppUser[] }             (add-member picker)
+    11→// Member taps open <UserProfileSheet>. Cache shares the
+    12→// ['conversation', conversationId] key used by chat-room.
+    13→// ─────────────────────────────────────────────────────────────
+    14→'use client'
+    15→
+    16→import { useEffect, useMemo, useState, type ReactNode } from 'react'
+    17→import { AnimatePresence, motion } from 'framer-motion'
+    18→import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+    19→import {
+    20→  AtSign,
+    21→  Check,
+    22→  ChevronLeft,
+    23→  Crown,
+    24→  EllipsisVertical,
+    25→  LoaderCircle,
+    26→  LogOut,
+    27→  Megaphone,
+    28→  Pencil,
+    29→  Search,
+    30→  UserPlus,
+    31→  UsersRound,
+    32→} from 'lucide-react'
+    33→import { toast } from 'sonner'
+    34→import type { AppUser, ConversationDetail, GroupRole } from '@/lib/types'
+    35→import {
+    36→  apiJson,
+    37→  formatListStamp,
+    38→  gradientFor,
+    39→  groupGradientFor,
+    40→  initialsOf,
+    41→  jsonBody,
+    42→} from '@/lib/pulse-utils'
+    43→import { cn } from '@/lib/utils'
+    44→import { Button } from '@/components/ui/button'
+    45→import { Input } from '@/components/ui/input'
+    46→import { Label } from '@/components/ui/label'
+    47→import { Badge } from '@/components/ui/badge'
+    48→import { Skeleton } from '@/components/ui/skeleton'
+    49→import { Checkbox } from '@/components/ui/checkbox'
+    50→import {
+    51→  DropdownMenu,
+    52→  DropdownMenuContent,
+    53→  DropdownMenuItem,
+    54→  DropdownMenuSeparator,
+    55→  DropdownMenuTrigger,
+    56→} from '@/components/ui/dropdown-menu'
+    57→import { UserAvatar } from '@/components/chat/user-avatar'
+    58→import { UserProfileSheet } from '@/components/chat/user-profile-sheet'
+    59→
+    60→/** Mirrors GROUP_NAME_MAX in src/lib/serializers.ts (PATCH route enforces 1–48). */
+    61→const GROUP_NAME_MAX = 48
+    62→
+    63→interface ConversationResponse {
+    64→  conversation: ConversationDetail
+    65→}
+    66→interface UsersResponse {
+    67→  users: AppUser[]
+    68→}
+    69→interface AddedResponse {
+    70→  conversation: ConversationDetail
+    71→  added: string[]
+    72→}
+    73→interface LeaveResponse {
+    74→  ok: boolean
+    75→  remainingMembers: number
+    76→  promotedUserId: string | null
+    77→}
+    78→
+    79→/** Modal identity — parameterized variants carry the target member id. */
+    80→type SheetModalKind = 'rename' | 'add' | 'leave' | `promote:${string}` | `demote:${string}` | `remove:${string}` | null
+    81→
+    82→function modalTarget(kind: SheetModalKind): { kind: string; userId: string | null } {
+    83→  if (kind === null || !kind.includes(':')) return { kind: kind ?? 'none', userId: null }
+    84→  const [k, id] = kind.split(':')
+    85→  return { kind: k, userId: id }
+    86→}
+    87→
+    88→export function GroupInfoSheet({
+    89→  open,
+    90→  onClose,
+    91→  conversationId,
+    92→  meId,
+    93→}: {
+    94→  open: boolean
+    95→  onClose: () => void
+    96→  conversationId: string | null
+    97→  meId: string
+    98→}) {
+    99→  return (
+   100→    <AnimatePresence>
+   101→      {open && conversationId !== null ? (
+   102→        <motion.div
+   103→          key={`group-info-${conversationId}`}
+   104→          initial={{ x: '100%' }}
+   105→          animate={{ x: 0 }}
+   106→          exit={{ x: '100%' }}
+   107→          transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+   108→          className="fixed inset-0 z-[70] flex flex-col bg-white shadow-2xl dark:bg-zinc-900"
+   109→          role="dialog"
+   110→          aria-modal="true"
+   111→          aria-label="Conversation info"
+   112→        >
+   113→          <GroupInfoInner
+   114→            conversationId={conversationId}
+   115→            meId={meId}
+   116→            onClose={onClose}
+   117→          />
+   118→        </motion.div>
+   119→      ) : null}
+   120→    </AnimatePresence>
+   121→  )
+   122→}
+   123→
+   124→/** Everything stateful lives here; unmounts with the sheet so nested layers never linger. */
+   125→function GroupInfoInner({
+   126→  conversationId,
+   127→  meId,
+   128→  onClose,
+   129→}: {
+   130→  conversationId: string
+   131→  meId: string
+   132→  onClose: () => void
+   133→}) {
+   134→  const queryClient = useQueryClient()
+   135→  const [modal, setModal] = useState<SheetModalKind>(null)
+   136→  const [profileUser, setProfileUser] = useState<AppUser | null>(null)
+   137→
+   138→  const detailQ = useQuery({
+   139→    queryKey: ['conversation', conversationId],
+   140→    queryFn: async (): Promise<ConversationDetail> => {
+   141→      const res = await apiJson<ConversationResponse>(
+   142→        `/api/conversations/${encodeURIComponent(conversationId)}?userId=${encodeURIComponent(meId)}`,
+   143→      )
+   144→      return res.conversation
+   145→    },
+   146→    staleTime: 10_000,
+   147→    refetchInterval: 30_000,
+   148→  })
+   149→
+   150→  const detail = detailQ.data ?? null
+   151→  const isGroup = detail?.isGroup ?? false
+   152→  const myRole: GroupRole = detail?.members.find((m) => m.id === meId)?.role ?? 'member'
+   153→  const isAdmin = myRole === 'admin'
+   154→  const adminCount = detail?.members.filter((m) => m.role === 'admin').length ?? 0
+   155→
+   156→  // Escape closes the topmost layer only (modal > profile drawer > sheet).
+   157→  useEffect(() => {
+   158→    const onKey = (event: KeyboardEvent) => {
+   159→      if (event.key !== 'Escape') return
+   160→      if (modal !== null || profileUser !== null) return // an inner layer owns this Escape
+   161→      onClose()
+   162→    }
+   163→    window.addEventListener('keydown', onKey)
+   164→    return () => window.removeEventListener('keydown', onKey)
+   165→  }, [modal, profileUser, onClose])
+   166→
+   167→  const leaveGroup = useMutation({
+   168→    mutationFn: async (): Promise<LeaveResponse> => {
+   169→      return apiJson<LeaveResponse>(
+   170→        `/api/conversations/${encodeURIComponent(conversationId)}/members`,
+   171→        {
+   172→          method: 'DELETE',
+   173→          body: JSON.stringify({ requesterId: meId }),
+   174→        },
+   175→      )
+   176→    },
+   177→    onSuccess: (data) => {
+   178→      const promoted = data.promotedUserId
+   179→        ? (detail?.members.find((m) => m.id === data.promotedUserId)?.name ?? null)
+   180→        : null
+   181→      toast.success(
+   182→        promoted ? `You left the group — ${promoted} is now an admin` : 'You left the group',
+   183→      )
+   184→      void queryClient.invalidateQueries({ queryKey: ['conversations', meId] })
+   185→      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+   186→      setModal(null)
+   187→      onClose()
+   188→    },
+   189→    onError: (error: Error) => {
+   190→      toast.error(error.message || 'Could not leave the group')
+   191→    },
+   192→  })
+   193→
+   194→  return (
+   195→    <>
+   196→      {/* header */}
+   197→      <header className="relative z-10 flex min-h-14 shrink-0 items-center gap-1 border-b border-zinc-200 bg-white/90 px-2 pt-[env(safe-area-inset-top)] backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/90">
+   198→        <Button
+   199→          variant="ghost"
+   200→          size="icon"
+   201→          aria-label="Back to chat"
+   202→          onClick={onClose}
+   203→          className="size-10 shrink-0 rounded-full text-zinc-600 hover:bg-transparent hover:text-zinc-900 active:scale-95 dark:text-zinc-300 dark:hover:text-white"
+   204→        >
+   205→          <ChevronLeft className="size-6" aria-hidden />
+   206→        </Button>
+   207→        <p className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+   208→          {isGroup ? 'Group info' : 'Chat info'}
+   209→        </p>
+   210→      </header>
+   211→
+   212→      {/* body */}
+   213→      {detailQ.isPending ? (
+   214→        <InfoSkeleton isGroup={isGroup} />
+   215→      ) : detailQ.isError || detail === null ? (
+   216→        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
+   217→          <UsersRound className="size-8 text-zinc-300 dark:text-zinc-600" aria-hidden />
+   218→          <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+   219→            Could not load the conversation info.
+   220→          </p>
+   221→          <Button
+   222→            variant="outline"
+   223→            size="sm"
+   224→            onClick={() => void detailQ.refetch()}
+   225→            className="h-9 rounded-full px-4 text-xs font-semibold"
+   226→          >
+   227→            Try again
+   228→          </Button>
+   229→        </div>
+   230→      ) : isGroup ? (
+   231→        <GroupInfoBody
+   232→          detail={detail}
+   233→          meId={meId}
+   234→          isAdmin={isAdmin}
+   235→          adminCount={adminCount}
+   236→          onOpenModal={setModal}
+   237→          onOpenProfile={setProfileUser}
+   238→        />
+   239→      ) : (
+   240→        <DmInfoBody detail={detail} meId={meId} onOpenProfile={setProfileUser} />
+   241→      )}
+   242→
+   243→      {/* nested modals — absolute inside the sheet so they layer above z-[70] */}
+   244→      {detail !== null && isGroup ? (
+   245→        <>
+   246→          <RenameModal
+   247→            open={modal === 'rename'}
+   248→            onClose={() => setModal(null)}
+   249→            conversationId={conversationId}
+   250→            meId={meId}
+   251→            currentName={detail.name ?? ''}
+   252→          />
+   253→          <AddMembersModal
+   254→            open={modal === 'add'}
+   255→            onClose={() => setModal(null)}
+   256→            conversationId={conversationId}
+   257→            meId={meId}
+   258→            existingIds={detail.members.map((m) => m.id)}
+   259→          />
+   260→          <LeaveModal
+   261→            open={modal === 'leave'}
+   262→            onClose={() => setModal(null)}
+   263→            groupName={detail.name?.trim() || 'this group'}
+   264→            pending={leaveGroup.isPending}
+   265→            onConfirm={() => leaveGroup.mutate()}
+   266→          />
+   267→        </>
+   268→      ) : null}
+   269→
+   270→      {/* role/remove confirms + the member profile drawer (portaled) */}
+   271→      <MemberActionHost
+   272→        conversationId={conversationId}
+   273→        meId={meId}
+   274→        members={detail?.members ?? []}
+   275→        modal={modal}
+   276→        setModal={setModal}
+   277→        profileUser={profileUser}
+   278→        onCloseProfile={() => setProfileUser(null)}
+   279→      />
+   280→    </>
+   281→  )
+   282→}
+   283→
+   284→// ── group body ───────────────────────────────────────────────
+   285→
+   286→function GroupInfoBody({
+   287→  detail,
+   288→  meId,
+   289→  isAdmin,
+   290→  adminCount,
+   291→  onOpenModal,
+   292→  onOpenProfile,
+   293→}: {
+   294→  detail: ConversationDetail
+   295→  meId: string
+   296→  isAdmin: boolean
+   297→  adminCount: number
+   298→  onOpenModal: (m: SheetModalKind) => void
+   299→  onOpenProfile: (u: AppUser) => void
+   300→}) {
+   301→  const groupName = detail.name?.trim() || 'Group'
+   302→  const gradient = groupGradientFor(detail.id)
+   303→  return (
+   304→    <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+   305→      {/* hero */}
+   306→      <div className={cn('relative overflow-hidden px-5 pb-5 pt-7 text-white', gradient)}>
+   307→        <div className="absolute -right-10 -top-12 size-44 rounded-full bg-white/15 blur-2xl" />
+   308→        <div className="absolute -bottom-14 -left-8 size-40 rounded-full bg-black/10 blur-2xl" />
+   309→        <div className="relative flex items-center gap-4">
+   310→          <div className="flex size-[72px] shrink-0 items-center justify-center rounded-[22px] border-2 border-white/40 bg-black/10 text-2xl font-black tracking-tight">
+   311→            {initialsOf(groupName)}
+   312→          </div>
+   313→          <div className="min-w-0">
+   314→            <h2 className="truncate text-xl font-bold leading-tight tracking-tight">{groupName}</h2>
+   315→            <p className="mt-0.5 text-[13px] font-medium text-white/85">
+   316→              {detail.members.length} {detail.members.length === 1 ? 'member' : 'members'} ·{' '}
+   317→              {adminCount} {adminCount === 1 ? 'admin' : 'admins'}
+   318→            </p>
+   319→            {detail.broadcastMode ? (
+   320→              <Badge className="mt-1.5 gap-1 border-white/30 bg-black/25 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-black/25">
+   321→                <Megaphone className="size-3" aria-hidden />
+   322→                Announcements only
+   323→              </Badge>
+   324→            ) : null}
+   325→          </div>
+   326→        </div>
+   327→        {detail.broadcastMode ? (
+   328→          <p className="relative mt-3 flex items-center gap-1.5 text-[11px] leading-snug text-white/75">
+   329→            <Megaphone className="size-3.5 shrink-0" aria-hidden />
+   330→            Only admins can send messages while announcement mode is on.
+   331→          </p>
+   332→        ) : null}
+   333→      </div>
+   334→
+   335→      {/* actions row */}
+   336→      <div className="flex items-stretch gap-2 px-4 py-4">
+   337→        {isAdmin ? (
+   338→          <>
+   339→            <ActionTile
+   340→              label="Add member"
+   341→              onClick={() => onOpenModal('add')}
+   342→              icon={<UserPlus className="size-5" aria-hidden />}
+   343→            />
+   344→            <ActionTile
+   345→              label="Rename"
+   346→              onClick={() => onOpenModal('rename')}
+   347→              icon={<Pencil className="size-5" aria-hidden />}
+   348→            />
+   349→          </>
+   350→        ) : null}
+   351→        <ActionTile
+   352→          label="Leave group"
+   353→          destructive
+   354→          wide={!isAdmin}
+   355→          onClick={() => onOpenModal('leave')}
+   356→          icon={<LogOut className="size-5" aria-hidden />}
+   357→        />
+   358→      </div>
+   359→
+   360→      {/* members */}
+   361→      <div className="px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+   362→        <div className="mb-2 flex items-center justify-between px-1">
+   363→          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+   364→            Members
+   365→          </h3>
+   366→          <span className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+   367→            {detail.members.length}
+   368→          </span>
+   369→        </div>
+   370→        <ul className="pulse-scroll max-h-[46dvh] space-y-0.5 overflow-y-auto rounded-2xl border border-zinc-200 bg-zinc-50/60 p-1.5 dark:border-zinc-800 dark:bg-zinc-800/40">
+   371→          {detail.members.length === 0 ? (
+   372→            <li className="px-3 py-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
+   373→              No members yet.
+   374→            </li>
+   375→          ) : (
+   376→            [...detail.members]
+   377→              .sort((a, b) => {
+   378→                if (a.role !== b.role) return a.role === 'admin' ? -1 : 1
+   379→                return a.name.localeCompare(b.name)
+   380→              })
+   381→              .map((member) => (
+   382→                <MemberRow
+   383→                  key={member.id}
+   384→                  member={member}
+   385→                  meId={meId}
+   386→                  isAdmin={isAdmin}
+   387→                  onOpenProfile={onOpenProfile}
+   388→                  onOpenModal={onOpenModal}
+   389→                />
+   390→              ))
+   391→          )}
+   392→        </ul>
+   393→      </div>
+   394→    </div>
+   395→  )
+   396→}
+   397→
+   398→function ActionTile({
+   399→  label,
+   400→  icon,
+   401→  onClick,
+   402→  destructive = false,
+   403→  wide = false,
+   404→}: {
+   405→  label: string
+   406→  icon: ReactNode
+   407→  onClick: () => void
+   408→  destructive?: boolean
+   409→  wide?: boolean
+   410→}) {
+   411→  return (
+   412→    <button
+   413→      type="button"
+   414→      onClick={onClick}
+   415→      aria-label={label}
+   416→      className={cn(
+   417→        'flex min-h-[72px] flex-1 flex-col items-center justify-center gap-1.5 rounded-2xl border p-2 outline-none transition-all active:scale-[0.96]',
+   418→        wide && 'flex-[1.4]',
+   419→        destructive
+   420→          ? 'border-destructive/25 bg-destructive/5 text-destructive hover:bg-destructive/10'
+   421→          : 'border-zinc-200 bg-white text-zinc-700 shadow-sm hover:border-emerald-300 hover:bg-emerald-500/5 hover:text-emerald-700 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-emerald-500/40 dark:hover:text-emerald-400',
+   422→      )}
+   423→    >
+   424→      {icon}
+   425→      <span className="text-[11px] font-semibold tracking-tight">{label}</span>
+   426→    </button>
+   427→  )
+   428→}
+   429→
+   430→// ── member row ───────────────────────────────────────────────
+   431→
+   432→function MemberRow({
+   433→  member,
+   434→  meId,
+   435→  isAdmin,
+   436→  onOpenProfile,
+   437→  onOpenModal,
+   438→}: {
+   439→  member: ConversationDetail['members'][number]
+   440→  meId: string
+   441→  isAdmin: boolean
+   442→  onOpenProfile: (u: AppUser) => void
+   443→  onOpenModal: (m: SheetModalKind) => void
+   444→}) {
+   445→  const isMe = member.id === meId
+   446→  const openProfile = () => onOpenProfile(member)
+   447→
+   448→  return (
+   449→    <li>
+   450→      <div
+   451→        role="button"
+   452→        tabIndex={0}
+   453→        aria-label={`Open ${member.name}'s profile`}
+   454→        onClick={openProfile}
+   455→        onKeyDown={(event) => {
+   456→          if (event.key === 'Enter' || event.key === ' ') {
+   457→            event.preventDefault()
+   458→            openProfile()
+   459→          }
+   460→        }}
+   461→        className="flex min-h-[60px] w-full cursor-pointer items-center gap-3 rounded-xl px-2 py-2 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:bg-white dark:hover:bg-zinc-800 dark:active:bg-zinc-700/60"
+   462→      >
+   463→        <UserAvatar name={member.name} color={member.color} size={44} />
+   464→        <div className="min-w-0 flex-1">
+   465→          <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+   466→            <span className="truncate">{member.name}</span>
+   467→            {isMe ? (
+   468→              <span className="shrink-0 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+   469→                you
+   470→              </span>
+   471→            ) : null}
+   472→            {member.role === 'admin' ? (
+   473→              <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+   474→                <Crown className="size-2.5" aria-hidden />
+   475→                Admin
+   476→              </span>
+   477→            ) : null}
+   478→          </p>
+   479→          <p className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   480→            {member.username ? (
+   481→              <>
+   482→                <AtSign className="size-3 shrink-0" aria-hidden />
+   483→                <span className="truncate">{member.username}</span>
+   484→                <span className="px-0.5 text-zinc-300 dark:text-zinc-600">·</span>
+   485→              </>
+   486→            ) : null}
+   487→            <span className="shrink-0">active {formatListStamp(member.lastSeenAt)}</span>
+   488→          </p>
+   489→        </div>
+   490→
+   491→        {isAdmin && !isMe ? (
+   492→          <DropdownMenu>
+   493→            <DropdownMenuTrigger asChild>
+   494→              <button
+   495→                type="button"
+   496→                aria-label={`Manage ${member.name}`}
+   497→                onClick={(event) => event.stopPropagation()}
+   498→                className="flex size-10 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-200/70 hover:text-zinc-700 active:scale-90 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+   499→              >
+   500→                <EllipsisVertical className="size-[18px]" aria-hidden />
+   501→              </button>
+   502→            </DropdownMenuTrigger>
+   503→            <DropdownMenuContent
+   504→              align="end"
+   505→              sideOffset={6}
+   506→              className="z-[90] w-52 rounded-xl border-zinc-200 dark:border-zinc-700"
+   507→            >
+   508→              <PromoteDemoteItems member={member} onOpenModal={onOpenModal} />
+   509→            </DropdownMenuContent>
+   510→          </DropdownMenu>
+   511→        ) : null}
+   512→      </div>
+   513→    </li>
+   514→  )
+   515→}
+   516→
+   517→/**
+   518→ * Role + removal actions for one member. Removal uses the dedicated
+   519→ * DELETE /api/conversations/[id]/members/[userId] sub-route (kick non-admin
+   520→ * members); kicking admins is rejected server-side, so that item is hidden
+   521→ * for admin targets instead of guaranteeing a 403.
+   522→ */
+   523→function PromoteDemoteItems({
+   524→  member,
+   525→  onOpenModal,
+   526→}: {
+   527→  member: ConversationDetail['members'][number]
+   528→  onOpenModal: (m: SheetModalKind) => void
+   529→}) {
+   530→  return (
+   531→    <>
+   532→      {member.role === 'member' ? (
+   533→        <DropdownMenuItem
+   534→          onSelect={() => onOpenModal(`promote:${member.id}`)}
+   535→          className="gap-2.5 rounded-lg py-2.5 text-sm"
+   536→        >
+   537→          <Crown className="size-4 text-amber-500" aria-hidden />
+   538→          Promote to admin
+   539→        </DropdownMenuItem>
+   540→      ) : (
+   541→        <DropdownMenuItem
+   542→          onSelect={() => onOpenModal(`demote:${member.id}`)}
+   543→          className="gap-2.5 rounded-lg py-2.5 text-sm"
+   544→        >
+   545→          <UsersRound className="size-4 text-zinc-500" aria-hidden />
+   546→          Demote to member
+   547→        </DropdownMenuItem>
+   548→      )}
+   549→      {member.role === 'member' ? (
+   550→        <>
+   551→          <DropdownMenuSeparator />
+   552→          <DropdownMenuItem
+   553→            onSelect={() => onOpenModal(`remove:${member.id}`)}
+   554→            className="gap-2.5 rounded-lg py-2.5 text-sm text-destructive focus:bg-destructive/10 focus:text-destructive"
+   555→          >
+   556→            <LogOut className="size-4" aria-hidden />
+   557→            Remove from group
+   558→          </DropdownMenuItem>
+   559→        </>
+   560→      ) : null}
+   561→    </>
+   562→  )
+   563→}
+   564→
+   565→// ── DM fallback body ─────────────────────────────────────────
+   566→
+   567→function DmInfoBody({
+   568→  detail,
+   569→  meId,
+   570→  onOpenProfile,
+   571→}: {
+   572→  detail: ConversationDetail
+   573→  meId: string
+   574→  onOpenProfile: (u: AppUser) => void
+   575→}) {
+   576→  const other = detail.members.find((m) => m.id !== meId) ?? detail.members[0] ?? null
+   577→  if (!other) {
+   578→    return (
+   579→      <div className="flex flex-1 items-center justify-center px-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+   580→        This chat has no other members yet.
+   581→      </div>
+   582→    )
+   583→  }
+   584→  return (
+   585→    <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+   586→      <div className={cn('relative overflow-hidden px-5 pb-5 pt-7 text-white', gradientFor(other.color))}>
+   587→        <div className="absolute -right-10 -top-12 size-44 rounded-full bg-white/15 blur-2xl" />
+   588→        <div className="relative flex items-center gap-4">
+   589→          <UserAvatar name={other.name} color={other.color} size={72} className="rounded-[22px]" />
+   590→          <div className="min-w-0">
+   591→            <h2 className="truncate text-xl font-bold leading-tight tracking-tight">{other.name}</h2>
+   592→            {other.username ? (
+   593→              <p className="mt-0.5 flex items-center gap-0.5 text-[13px] font-medium text-white/85">
+   594→                <AtSign className="size-3.5" aria-hidden />
+   595→                {other.username}
+   596→              </p>
+   597→            ) : null}
+   598→            {other.statusText ? (
+   599→              <p className="mt-0.5 truncate text-xs text-white/80">
+   600→                {other.statusEmoji ? `${other.statusEmoji} ` : ''}
+   601→                {other.statusText}
+   602→              </p>
+   603→            ) : null}
+   604→          </div>
+   605→        </div>
+   606→      </div>
+   607→      <div className="px-4 py-4">
+   608→        <button
+   609→          type="button"
+   610→          onClick={() => onOpenProfile(other)}
+   611→          className="w-full rounded-2xl border border-zinc-200 bg-white p-3.5 text-left outline-none transition-colors hover:border-emerald-300 dark:border-zinc-800 dark:bg-zinc-800/60 dark:hover:border-emerald-500/40"
+   612→        >
+   613→          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">About</p>
+   614→          <p className="mt-1 text-sm leading-relaxed text-zinc-700 dark:text-zinc-200">{other.about}</p>
+   615→          <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500">
+   616→            Last active {formatListStamp(other.lastSeenAt)}
+   617→          </p>
+   618→        </button>
+   619→      </div>
+   620→    </div>
+   621→  )
+   622→}
+   623→
+   624→// ── loading skeleton ─────────────────────────────────────────
+   625→
+   626→function InfoSkeleton({ isGroup }: { isGroup: boolean }) {
+   627→  return (
+   628→    <div
+   629→      className="min-h-0 flex-1 overflow-hidden"
+   630→      aria-busy="true"
+   631→      aria-label="Loading conversation info"
+   632→    >
+   633→      <div className="px-5 pb-5 pt-7">
+   634→        <div className="flex items-center gap-4">
+   635→          <Skeleton className="size-[72px] rounded-[22px]" />
+   636→          <div className="flex-1 space-y-2">
+   637→            <Skeleton className="h-5 w-2/3 rounded-lg" />
+   638→            <Skeleton className="h-3.5 w-1/3 rounded-md" />
+   639→          </div>
+   640→        </div>
+   641→      </div>
+   642→      {isGroup ? (
+   643→        <>
+   644→          <div className="flex gap-2 px-4 py-4">
+   645→            <Skeleton className="h-[72px] flex-1 rounded-2xl" />
+   646→            <Skeleton className="h-[72px] flex-1 rounded-2xl" />
+   647→            <Skeleton className="h-[72px] flex-1 rounded-2xl" />
+   648→          </div>
+   649→          <div className="space-y-2 px-4">
+   650→            {Array.from({ length: 5 }).map((_, i) => (
+   651→              <div key={i} className="flex items-center gap-3 rounded-xl p-2">
+   652→                <Skeleton className="size-11 rounded-full" />
+   653→                <div className="flex-1 space-y-1.5">
+   654→                  <Skeleton className="h-3.5 w-1/2 rounded-md" />
+   655→                  <Skeleton className="h-3 w-1/3 rounded-md" />
+   656→                </div>
+   657→              </div>
+   658→            ))}
+   659→          </div>
+   660→        </>
+   661→      ) : (
+   662→        <div className="px-4 py-4">
+   663→          <Skeleton className="h-24 w-full rounded-2xl" />
+   664→        </div>
+   665→      )}
+   666→    </div>
+   667→  )
+   668→}
+   669→
+   670→// ── modal shell (inside the sheet's stacking context) ────────
+   671→
+   672→function SheetModal({
+   673→  open,
+   674→  onClose,
+   675→  label,
+   676→  children,
+   677→}: {
+   678→  open: boolean
+   679→  onClose: () => void
+   680→  label: string
+   681→  children: ReactNode
+   682→}) {
+   683→  useEffect(() => {
+   684→    if (!open) return
+   685→    const onKey = (event: KeyboardEvent) => {
+   686→      if (event.key === 'Escape') onClose()
+   687→    }
+   688→    window.addEventListener('keydown', onKey)
+   689→    return () => window.removeEventListener('keydown', onKey)
+   690→  }, [open, onClose])
+   691→
+   692→  return (
+   693→    <AnimatePresence>
+   694→      {open ? (
+   695→        <motion.div
+   696→          initial={{ opacity: 0 }}
+   697→          animate={{ opacity: 1 }}
+   698→          exit={{ opacity: 0 }}
+   699→          transition={{ duration: 0.16 }}
+   700→          className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-5 backdrop-blur-[2px]"
+   701→          onClick={onClose}
+   702→          role="dialog"
+   703→          aria-modal="true"
+   704→          aria-label={label}
+   705→        >
+   706→          <motion.div
+   707→            initial={{ scale: 0.9, y: 16, opacity: 0 }}
+   708→            animate={{ scale: 1, y: 0, opacity: 1 }}
+   709→            exit={{ scale: 0.95, y: 8, opacity: 0 }}
+   710→            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+   711→            className="w-full max-w-[340px] rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+   712→            onClick={(event) => event.stopPropagation()}
+   713→          >
+   714→            {children}
+   715→          </motion.div>
+   716→        </motion.div>
+   717→      ) : null}
+   718→    </AnimatePresence>
+   719→  )
+   720→}
+   721→
+   722→// ── rename ───────────────────────────────────────────────────
+   723→
+   724→function RenameModal({
+   725→  open,
+   726→  onClose,
+   727→  conversationId,
+   728→  meId,
+   729→  currentName,
+   730→}: {
+   731→  open: boolean
+   732→  onClose: () => void
+   733→  conversationId: string
+   734→  meId: string
+   735→  currentName: string
+   736→}) {
+   737→  const queryClient = useQueryClient()
+   738→  const [name, setName] = useState(currentName)
+   739→
+   740→  const trimmed = name.trim()
+   741→  const valid = trimmed.length > 0 && trimmed.length <= GROUP_NAME_MAX && trimmed !== currentName
+   742→
+   743→  const rename = useMutation({
+   744→    mutationFn: async (): Promise<ConversationResponse> => {
+   745→      return apiJson<ConversationResponse>(
+   746→        `/api/conversations/${encodeURIComponent(conversationId)}`,
+   747→        { method: 'PATCH', body: JSON.stringify({ requesterId: meId, name: trimmed }) },
+   748→      )
+   749→    },
+   750→    onMutate: async () => {
+   751→      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+   752→      const prev = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+   753→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   754→        old ? { ...old, name: trimmed } : old,
+   755→      )
+   756→      return { prev }
+   757→    },
+   758→    onSuccess: (data) => {
+   759→      // route returns the detail built for the requester (me) — safe to cache directly
+   760→      queryClient.setQueryData(['conversation', conversationId], data.conversation)
+   761→      void queryClient.invalidateQueries({ queryKey: ['conversations', meId] })
+   762→      toast.success('Group renamed')
+   763→      onClose()
+   764→    },
+   765→    onError: (error: Error, _vars, ctx) => {
+   766→      if (ctx?.prev) queryClient.setQueryData(['conversation', conversationId], ctx.prev)
+   767→      toast.error(error.message || 'Could not rename the group')
+   768→    },
+   769→  })
+   770→
+   771→  return (
+   772→    <SheetModal open={open} onClose={onClose} label="Rename group">
+   773→      <form
+   774→        onSubmit={(event) => {
+   775→          event.preventDefault()
+   776→          if (valid && !rename.isPending) rename.mutate()
+   777→        }}
+   778→      >
+   779→        <h3 className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+   780→          Rename group
+   781→        </h3>
+   782→        <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+   783→          Visible to every member. 1–{GROUP_NAME_MAX} characters.
+   784→        </p>
+   785→        <div className="mt-3 space-y-1.5">
+   786→          <Label htmlFor="group-rename-input" className="sr-only">
+   787→            Group name
+   788→          </Label>
+   789→          <Input
+   790→            id="group-rename-input"
+   791→            value={name}
+   792→            maxLength={GROUP_NAME_MAX}
+   793→            onChange={(event) => setName(event.target.value.slice(0, GROUP_NAME_MAX))}
+   794→            autoFocus
+   795→            autoComplete="off"
+   796→            enterKeyHint="done"
+   797→            aria-invalid={trimmed.length === 0 || undefined}
+   798→            className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+   799→          />
+   800→          <p className="text-right text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+   801→            {trimmed.length}/{GROUP_NAME_MAX}
+   802→          </p>
+   803→        </div>
+   804→        <div className="mt-3 flex gap-2">
+   805→          <Button
+   806→            type="button"
+   807→            variant="outline"
+   808→            onClick={onClose}
+   809→            className="h-10 flex-1 rounded-xl text-sm font-semibold"
+   810→          >
+   811→            Cancel
+   812→          </Button>
+   813→          <Button
+   814→            type="submit"
+   815→            disabled={!valid || rename.isPending}
+   816→            className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+   817→          >
+   818→            {rename.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : 'Save name'}
+   819→          </Button>
+   820→        </div>
+   821→      </form>
+   822→    </SheetModal>
+   823→  )
+   824→}
+   825→
+   826→// ── add members ──────────────────────────────────────────────
+   827→
+   828→function AddMembersModal({
+   829→  open,
+   830→  onClose,
+   831→  conversationId,
+   832→  meId,
+   833→  existingIds,
+   834→}: {
+   835→  open: boolean
+   836→  onClose: () => void
+   837→  conversationId: string
+   838→  meId: string
+   839→  existingIds: string[]
+   840→}) {
+   841→  const queryClient = useQueryClient()
+   842→  const [search, setSearch] = useState('')
+   843→  const [selected, setSelected] = useState<Set<string>>(new Set())
+   844→
+   845→  const usersQ = useQuery({
+   846→    queryKey: ['users'],
+   847→    queryFn: async (): Promise<AppUser[]> => {
+   848→      const res = await apiJson<UsersResponse>('/api/users')
+   849→      return res.users
+   850→    },
+   851→    enabled: open,
+   852→  })
+   853→
+   854→  const existingSet = useMemo(() => new Set(existingIds), [existingIds])
+   855→  const candidates = useMemo(() => {
+   856→    const q = search.trim().toLowerCase()
+   857→    return (usersQ.data ?? [])
+   858→      .filter((u) => !existingSet.has(u.id))
+   859→      .filter(
+   860→        (u) =>
+   861→          q.length === 0 ||
+   862→          u.name.toLowerCase().includes(q) ||
+   863→          (u.username ?? '').toLowerCase().includes(q),
+   864→      )
+   865→  }, [usersQ.data, existingSet, search])
+   866→
+   867→  const addMembers = useMutation({
+   868→    mutationFn: async (userIds: string[]): Promise<AddedResponse> => {
+   869→      return apiJson<AddedResponse>(
+   870→        `/api/conversations/${encodeURIComponent(conversationId)}/members`,
+   871→        jsonBody({ requesterId: meId, userIds }),
+   872→      )
+   873→    },
+   874→    onMutate: async (userIds: string[]) => {
+   875→      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+   876→      const prev = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+   877→      const now = new Date().toISOString()
+   878→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) => {
+   879→        if (!old) return old
+   880→        const known = new Set(old.members.map((m) => m.id))
+   881→        const fresh = (usersQ.data ?? [])
+   882→          .filter((u) => userIds.includes(u.id) && !known.has(u.id))
+   883→          .map((u) => ({ ...u, lastReadAt: now, role: 'member' as GroupRole }))
+   884→        return fresh.length > 0 ? { ...old, members: [...old.members, ...fresh] } : old
+   885→      })
+   886→      return { prev }
+   887→    },
+   888→    onSuccess: (data) => {
+   889→      // route returns the detail built for the requester (me) — safe to cache directly
+   890→      queryClient.setQueryData(['conversation', conversationId], data.conversation)
+   891→      void queryClient.invalidateQueries({ queryKey: ['conversations', meId] })
+   892→      toast.success(
+   893→        data.added.length === 1 ? '1 member added' : `${data.added.length} members added`,
+   894→      )
+   895→      onClose()
+   896→    },
+   897→    onError: (error: Error, _vars, ctx) => {
+   898→      if (ctx?.prev) queryClient.setQueryData(['conversation', conversationId], ctx.prev)
+   899→      toast.error(error.message || 'Could not add members')
+   900→    },
+   901→  })
+   902→
+   903→  const toggle = (id: string) => {
+   904→    setSelected((prev) => {
+   905→      const next = new Set(prev)
+   906→      if (next.has(id)) next.delete(id)
+   907→      else next.add(id)
+   908→      return next
+   909→    })
+   910→  }
+   911→
+   912→  return (
+   913→    <SheetModal open={open} onClose={onClose} label="Add members">
+   914→      <div className="flex flex-col">
+   915→        <h3 className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+   916→          Add members
+   917→        </h3>
+   918→        <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+   919→          Pick people already on this Pulse. They start with no unread backlog.
+   920→        </p>
+   921→
+   922→        {/* search */}
+   923→        <div className="relative mt-3">
+   924→          <Search
+   925→            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400"
+   926→            aria-hidden
+   927→          />
+   928→          <Input
+   929→            value={search}
+   930→            onChange={(event) => setSearch(event.target.value.slice(0, 40))}
+   931→            placeholder="Search people…"
+   932→            aria-label="Search people to add"
+   933→            autoComplete="off"
+   934→            className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+   935→          />
+   936→        </div>
+   937→
+   938→        {/* candidates */}
+   939→        <div className="pulse-scroll mt-2 max-h-[38dvh] min-h-[120px] space-y-0.5 overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50/60 p-1.5 dark:border-zinc-800 dark:bg-zinc-800/40">
+   940→          {usersQ.isPending ? (
+   941→            <div className="space-y-2 p-2" aria-busy="true">
+   942→              {Array.from({ length: 4 }).map((_, i) => (
+   943→                <div key={i} className="flex items-center gap-3">
+   944→                  <Skeleton className="size-9 rounded-full" />
+   945→                  <Skeleton className="h-3.5 w-1/2 rounded-md" />
+   946→                </div>
+   947→              ))}
+   948→            </div>
+   949→          ) : usersQ.isError ? (
+   950→            <p className="px-3 py-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
+   951→              Could not load people. Close and try again.
+   952→            </p>
+   953→          ) : candidates.length === 0 ? (
+   954→            <p className="px-3 py-6 text-center text-xs text-zinc-500 dark:text-zinc-400">
+   955→              {search.trim().length > 0
+   956→                ? 'No one matches that search.'
+   957→                : 'Everyone on this Pulse is already here.'}
+   958→            </p>
+   959→          ) : (
+   960→            candidates.map((user) => {
+   961→              const checked = selected.has(user.id)
+   962→              return (
+   963→                <label
+   964→                  key={user.id}
+   965→                  className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-xl px-2 py-1.5 transition-colors hover:bg-white dark:hover:bg-zinc-800"
+   966→                >
+   967→                  <Checkbox
+   968→                    checked={checked}
+   969→                    onCheckedChange={() => toggle(user.id)}
+   970→                    aria-label={`Add ${user.name}`}
+   971→                    className="data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600"
+   972→                  />
+   973→                  <UserAvatar name={user.name} color={user.color} size={36} />
+   974→                  <span className="min-w-0 flex-1">
+   975→                    <span className="block truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+   976→                      {user.name}
+   977→                    </span>
+   978→                    {user.username ? (
+   979→                      <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   980→                        @{user.username}
+   981→                      </span>
+   982→                    ) : null}
+   983→                  </span>
+   984→                  {checked ? (
+   985→                    <Check className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+   986→                  ) : null}
+   987→                </label>
+   988→              )
+   989→            })
+   990→          )}
+   991→        </div>
+   992→
+   993→        <div className="mt-3 flex gap-2">
+   994→          <Button
+   995→            type="button"
+   996→            variant="outline"
+   997→            onClick={onClose}
+   998→            className="h-10 flex-1 rounded-xl text-sm font-semibold"
+   999→          >
+  1000→            Cancel
+  1001→          </Button>
+  1002→          <Button
+  1003→            type="button"
+  1004→            disabled={selected.size === 0 || addMembers.isPending}
+  1005→            onClick={() => addMembers.mutate([...selected])}
+  1006→            className="h-10 flex-[1.4] rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+  1007→          >
+  1008→            {addMembers.isPending ? (
+  1009→              <LoaderCircle className="size-4 animate-spin" aria-hidden />
+  1010→            ) : selected.size > 0 ? (
+  1011→              `Add ${selected.size}`
+  1012→            ) : (
+  1013→              'Add'
+  1014→            )}
+  1015→          </Button>
+  1016→        </div>
+  1017→      </div>
+  1018→    </SheetModal>
+  1019→  )
+  1020→}
+  1021→
+  1022→// ── leave confirm ────────────────────────────────────────────
+  1023→
+  1024→function LeaveModal({
+  1025→  open,
+  1026→  onClose,
+  1027→  groupName,
+  1028→  pending,
+  1029→  onConfirm,
+  1030→}: {
+  1031→  open: boolean
+  1032→  onClose: () => void
+  1033→  groupName: string
+  1034→  pending: boolean
+  1035→  onConfirm: () => void
+  1036→}) {
+  1037→  return (
+  1038→    <SheetModal open={open} onClose={onClose} label="Leave group">
+  1039→      <h3 className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+  1040→        Leave “{groupName}”?
+  1041→      </h3>
+  1042→      <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+  1043→        You&apos;ll stop receiving messages. History stays on your device. If you&apos;re the last
+  1044→        admin, the longest-standing member is promoted automatically.
+  1045→      </p>
+  1046→      <div className="mt-4 flex gap-2">
+  1047→        <Button
+  1048→          type="button"
+  1049→          variant="outline"
+  1050→          onClick={onClose}
+  1051→          className="h-10 flex-1 rounded-xl text-sm font-semibold"
+  1052→        >
+  1053→          Cancel
+  1054→        </Button>
+  1055→        <Button
+  1056→          type="button"
+  1057→          disabled={pending}
+  1058→          onClick={onConfirm}
+  1059→          className="h-10 flex-1 rounded-xl bg-destructive text-sm font-semibold text-white hover:bg-destructive/90 active:scale-[0.98]"
+  1060→        >
+  1061→          {pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : 'Leave group'}
+  1062→        </Button>
+  1063→      </div>
+  1064→    </SheetModal>
+  1065→  )
+  1066→}
+  1067→
+  1068→// ── role change + removal confirms + member profile drawer ───
+  1069→
+  1070→function MemberActionHost({
+  1071→  conversationId,
+  1072→  meId,
+  1073→  members,
+  1074→  modal,
+  1075→  setModal,
+  1076→  profileUser,
+  1077→  onCloseProfile,
+  1078→}: {
+  1079→  conversationId: string | null
+  1080→  meId: string
+  1081→  members: ConversationDetail['members']
+  1082→  modal: SheetModalKind
+  1083→  setModal: (m: SheetModalKind) => void
+  1084→  profileUser: AppUser | null
+  1085→  onCloseProfile: () => void
+  1086→}) {
+  1087→  const queryClient = useQueryClient()
+  1088→  const { kind, userId } = modalTarget(modal)
+  1089→  const target = userId ? (members.find((m) => m.id === userId) ?? null) : null
+  1090→
+  1091→  const setRole = useMutation({
+  1092→    mutationFn: async ({ userId: targetId, role }: { userId: string; role: GroupRole }) => {
+  1093→      return apiJson<ConversationResponse>(
+  1094→        `/api/conversations/${encodeURIComponent(conversationId ?? '')}/members`,
+  1095→        { method: 'PATCH', body: JSON.stringify({ requesterId: meId, userId: targetId, role }) },
+  1096→      )
+  1097→    },
+  1098→    onMutate: async ({ userId: targetId, role }) => {
+  1099→      if (conversationId === null) return
+  1100→      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+  1101→      const prev = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+  1102→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+  1103→        old
+  1104→          ? { ...old, members: old.members.map((m) => (m.id === targetId ? { ...m, role } : m)) }
+  1105→          : old,
+  1106→      )
+  1107→      return { prev }
+  1108→    },
+  1109→    onSuccess: (_data, { role }) => {
+  1110→      // refetch instead of caching: the PATCH detail is built for the TARGET viewer
+  1111→      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+  1112→      void queryClient.invalidateQueries({ queryKey: ['conversations', meId] })
+  1113→      toast.success(role === 'admin' ? 'Promoted to admin' : 'Demoted to member')
+  1114→    },
+  1115→    onError: (error: Error, _vars, ctx) => {
+  1116→      if (ctx?.prev && conversationId !== null) {
+  1117→        queryClient.setQueryData(['conversation', conversationId], ctx.prev)
+  1118→      }
+  1119→      // surfaces the API verbatim — e.g. "Cannot demote the last admin — promote someone else first."
+  1120→      toast.error(error.message || 'Could not change the role')
+  1121→    },
+  1122→    onSettled: () => setModal(null),
+  1123→  })
+  1124→
+  1125→  const removeMember = useMutation({
+  1126→    mutationFn: async (targetId: string) => {
+  1127→      return apiJson<{ ok: boolean }>(
+  1128→        `/api/conversations/${encodeURIComponent(conversationId ?? '')}/members/${encodeURIComponent(targetId)}`,
+  1129→        { method: 'DELETE', body: JSON.stringify({ requesterId: meId }) },
+  1130→      )
+  1131→    },
+  1132→    onMutate: async (targetId: string) => {
+  1133→      if (conversationId === null) return
+  1134→      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+  1135→      const prev = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+  1136→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+  1137→        old ? { ...old, members: old.members.filter((m) => m.id !== targetId) } : old,
+  1138→      )
+  1139→      return { prev }
+  1140→    },
+  1141→    onSuccess: (_data, targetId) => {
+  1142→      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+  1143→      void queryClient.invalidateQueries({ queryKey: ['conversations', meId] })
+  1144→      toast.success(`${members.find((m) => m.id === targetId)?.name ?? 'Member'} removed from the group`)
+  1145→    },
+  1146→    onError: (error: Error, _userId, ctx) => {
+  1147→      if (ctx?.prev && conversationId !== null) {
+  1148→        queryClient.setQueryData(['conversation', conversationId], ctx.prev)
+  1149→      }
+  1150→      toast.error(error.message || 'Could not remove the member')
+  1151→    },
+  1152→    onSettled: () => setModal(null),
+  1153→  })
+  1154→
+  1155→  return (
+  1156→    <>
+  1157→      {kind === 'promote' && target ? (
+  1158→        <SheetModal open onClose={() => setModal(null)} label={`Promote ${target.name}`}>
+  1159→          <h3 className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+  1160→            Make {target.name} an admin?
+  1161→          </h3>
+  1162→          <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+  1163→            Admins can rename the group, add and remove members, and toggle announcement mode.
+  1164→          </p>
+  1165→          <div className="mt-4 flex gap-2">
+  1166→            <Button
+  1167→              variant="outline"
+  1168→              onClick={() => setModal(null)}
+  1169→              className="h-10 flex-1 rounded-xl text-sm font-semibold"
+  1170→            >
+  1171→              Cancel
+  1172→            </Button>
+  1173→            <Button
+  1174→              onClick={() => setRole.mutate({ userId: target.id, role: 'admin' })}
+  1175→              disabled={setRole.isPending}
+  1176→              className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+  1177→            >
+  1178→              {setRole.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : 'Promote'}
+  1179→            </Button>
+  1180→          </div>
+  1181→        </SheetModal>
+  1182→      ) : null}
+  1183→
+  1184→      {kind === 'demote' && target ? (
+  1185→        <SheetModal open onClose={() => setModal(null)} label={`Demote ${target.name}`}>
+  1186→          <h3 className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+  1187→            Demote {target.name}?
+  1188→          </h3>
+  1189→          <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+  1190→            They lose admin powers. A group always keeps at least one admin.
+  1191→          </p>
+  1192→          <div className="mt-4 flex gap-2">
+  1193→            <Button
+  1194→              variant="outline"
+  1195→              onClick={() => setModal(null)}
+  1196→              className="h-10 flex-1 rounded-xl text-sm font-semibold"
+  1197→            >
+  1198→              Cancel
+  1199→            </Button>
+  1200→            <Button
+  1201→              onClick={() => setRole.mutate({ userId: target.id, role: 'member' })}
+  1202→              disabled={setRole.isPending}
+  1203→              className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+  1204→            >
+  1205→              {setRole.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : 'Demote'}
+  1206→            </Button>
+  1207→          </div>
+  1208→        </SheetModal>
+  1209→      ) : null}
+  1210→
+  1211→      {kind === 'remove' && target ? (
+  1212→        <SheetModal open onClose={() => setModal(null)} label={`Remove ${target.name}`}>
+  1213→          <h3 className="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+  1214→            Remove {target.name} from the group?
+  1215→          </h3>
+  1216→          <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+  1217→            They lose access to this chat. They can be added back anytime.
+  1218→          </p>
+  1219→          <div className="mt-4 flex gap-2">
+  1220→            <Button
+  1221→              variant="outline"
+  1222→              onClick={() => setModal(null)}
+  1223→              className="h-10 flex-1 rounded-xl text-sm font-semibold"
+  1224→            >
+  1225→              Cancel
+  1226→            </Button>
+  1227→            <Button
+  1228→              variant="destructive"
+  1229→              onClick={() => removeMember.mutate(target.id)}
+  1230→              disabled={removeMember.isPending}
+  1231→              className="h-10 flex-1 rounded-xl text-sm font-semibold active:scale-[0.98]"
+  1232→            >
+  1233→              {removeMember.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : 'Remove'}
+  1234→            </Button>
+  1235→          </div>
+  1236→        </SheetModal>
+  1237→      ) : null}
+  1238→
+  1239→      {/* member profile drawer (portals to body; z raised inside user-profile-sheet) */}
+  1240→      <UserProfileSheet
+  1241→        user={profileUser}
+  1242→        open={profileUser !== null}
+  1243→        onOpenChange={(v) => {
+  1244→          if (!v) onCloseProfile()
+  1245→        }}
+  1246→      />
+  1247→    </>
+  1248→  )
+  1249→}
+  1250→

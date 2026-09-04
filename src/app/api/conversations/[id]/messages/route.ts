@@ -20,6 +20,7 @@ import {
   strField,
 } from '@/lib/serializers'
 import { maybeAiReply } from '@/lib/ai-bot'
+import { botWillRespond, maybeBotReply } from '@/lib/bot-engine'
 
 export const dynamic = 'force-dynamic'
 
@@ -392,7 +393,12 @@ export async function POST(req: Request, { params }: RouteCtx) {
   })
 
   // Pulse AI companion: fire-and-forget evaluation (DMs + @mentions in groups).
-  maybeAiReply(id, mapped)
+  // Stands down when the deterministic bot engine owns this message, so a
+  // single user message never earns two replies.
+  if (!botWillRespond(content)) maybeAiReply(id, mapped)
+
+  // Pulse bot engine: real command replies (/roll, /math, /wallet, /poll …).
+  await maybeBotReply(id, { id: message.id, senderId, content })
 
   return NextResponse.json({ message: mapped }, { status: 201 })
 }
