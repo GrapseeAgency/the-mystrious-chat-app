@@ -17,8 +17,11 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Armchair,
   CalendarClock,
+  CalendarDays,
   CircleHelp,
   Dices,
+  Gamepad2,
+  Gift,
   MapPin,
   PartyPopper,
   PenLine,
@@ -26,6 +29,7 @@ import {
   Radio,
   RotateCcw,
   Sparkles,
+  SquareKanban,
   Sticker,
   UserRound,
   Vote,
@@ -46,6 +50,20 @@ export interface SlashCommandDef {
 
 /** Window event fired by the /whiteboard entry — chat-room listens via useWhiteboardSheet(). */
 export const WHITEBOARD_OPEN_EVENT = 'pulse:open-whiteboard'
+
+// ── R23: same standalone-dispatch pattern for the new beyond-chat tools.
+// The sheets/cards live in chat-room which listens via their use*Sheet hooks;
+// /game is special — chat-room POSTs /api/games (DM → peer, group → open). ──
+export const REDPACKET_OPEN_EVENT = 'pulse:open-redpacket'
+export const KANBAN_OPEN_EVENT = 'pulse:open-kanban'
+export const EVENTS_OPEN_EVENT = 'pulse:open-events'
+export const NEW_GAME_EVENT = 'pulse:new-game'
+
+/** Generic fire-and-forget dispatcher for the R23 sheet/game events. */
+function dispatchPulseEvent(event: string, conversationId?: string | null): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(event, { detail: { conversationId: conversationId ?? null } }))
+}
 
 /**
  * Fire-and-forget trigger for the shared whiteboard. `conversationId` rides
@@ -70,6 +88,10 @@ export const PULSE_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   { cmd: '/sticker', args: '', help: 'Open the sticker packs', icon: Sticker, tone: 'text-emerald-500' },
   { cmd: '/location', args: '', help: 'Share a live map pin', icon: MapPin, tone: 'text-teal-500' },
   { cmd: '/whiteboard', args: '', help: 'Open the shared whiteboard', icon: Presentation, tone: 'text-emerald-500' },
+  { cmd: '/redpacket', args: '', help: 'Send a red packet (coins)', icon: Gift, tone: 'text-rose-500' },
+  { cmd: '/game', args: '', help: 'Start tic-tac-toe in this chat', icon: Gamepad2, tone: 'text-violet-500' },
+  { cmd: '/kanban', args: '', help: 'Open the group board', icon: SquareKanban, tone: 'text-teal-500' },
+  { cmd: '/events', args: '', help: 'Group events with RSVP', icon: CalendarDays, tone: 'text-amber-500' },
   { cmd: '/effects confetti', args: '[text]', help: 'Send with a confetti blast', icon: PartyPopper, tone: 'text-rose-500' },
   { cmd: '/effects lasers', args: '[text]', help: 'Send with sweeping laser beams', icon: Zap, tone: 'text-amber-500' },
   { cmd: '/effects echo', args: '[text]', help: 'Send with expanding echo rings', icon: Radio, tone: 'text-emerald-500' },
@@ -142,6 +164,8 @@ export function SlashPalette({
         onDismiss()
         return
       }
+      // R23 commands flow through onSelect so the host clears the composer
+      // draft and dispatches the sheet/game events in one place.
       onSelect(cmd)
     },
     [onOpenWhiteboard, conversationId, onSelect, onDismiss],

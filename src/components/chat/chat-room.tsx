@@ -22,6 +22,7 @@ import {
   ArrowDown,
   BellOff,
   CalendarClock,
+  CalendarDays,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -35,6 +36,7 @@ import {
   EllipsisVertical,
   EyeOff,
   Forward,
+  Gift,
   Globe,
   HelpCircle,
   ImagePlus,
@@ -63,6 +65,7 @@ import {
   SendHorizontal,
   Smile,
   Sparkles,
+  SquareKanban,
   Sticker,
   Star,
   Timer,
@@ -152,6 +155,15 @@ import {
 import { SlashPalette } from '@/components/chat/slash-palette'
 import { VoiceRoomSheet, useVoiceRoom } from "@/components/chat/voice-room-sheet"
 import { useWhiteboardSheet } from "@/components/chat/whiteboard-sheet"
+// ── R23: beyond-chat wave 2 — red packets, games, kanban, events ──
+import RedPacketBubble from "@/components/chat/redpacket-bubble"
+import { useRedPacketSheet } from "@/components/chat/redpacket-sheet"
+import GameTicTacToeCard from "@/components/chat/game-tictactoe-card"
+import { useKanbanSheet } from "@/components/chat/kanban-sheet"
+import { useEventsSheet } from "@/components/chat/events-sheet"
+
+/** /game palette → chat-room creates the match (DM: vs the peer; group: open) */
+const NEW_GAME_EVENT = 'pulse:new-game'
 import { PipChat } from '@/components/chat/pip-chat'
 import { usePipChat } from '@/components/chat/pip-store'
 import { GroupInfoSheet } from '@/components/chat/group-info-sheet'
@@ -227,6 +239,18 @@ const BUBBLE_RADIUS: Record<'md' | 'lg' | 'pill', string> = {
   pill: 'rounded-3xl',
 }
 
+/** Safe-parse a red-packet payload {packetId, …} — never throws. (R23-a) */
+function parseRedPacketPayload(payload: string | null): { packetId: string } | null {
+  const p = parseMessagePayload(payload)
+  return typeof p.packetId === 'string' && p.packetId.length > 0 ? { packetId: p.packetId } : null
+}
+
+/** Safe-parse a game payload {matchId, …} — never throws. (R23-b) */
+function parseGamePayload(payload: string | null): { matchId: string } | null {
+  const p = parseMessagePayload(payload)
+  return typeof p.matchId === 'string' && p.matchId.length > 0 ? { matchId: p.matchId } : null
+}
+
 /** Safe-parse a sticker payload {emoji, pack} — never throws. */
 function parseSticker(payload: string | null): { emoji: string; pack: string } | null {
   const p = parseMessagePayload(payload)
@@ -288,6 +312,7 @@ function applySlash(
   | { kind: 'help' }
   | { kind: 'sticker' }
   | { kind: 'location' }
+  | { kind: 'tool'; tool: 'whiteboard' | 'redpacket' | 'kanban' | 'events' | 'game' }
   | { kind: 'effect'; effect: MessageEffectName; content: string }
   | { kind: 'error'; message: string } {
   const input = rawInput.trim()
@@ -324,6 +349,13 @@ function applySlash(
       return { kind: 'sticker' }
     case 'location':
       return { kind: 'location' }
+    case 'whiteboard':
+    case 'redpacket':
+    case 'kanban':
+    case 'events':
+    case 'game':
+      // R23: standalone tools — sheets/games live in the component body
+      return { kind: 'tool', tool: word.toLowerCase() as 'whiteboard' | 'redpacket' | 'kanban' | 'events' | 'game' }
     case 'effects': {
       const effectWord = arg.split(/\s+/)[0]?.toLowerCase() ?? ''
       if (!isMessageEffect(effectWord)) {
@@ -905,6 +937,49 @@ export function ChatRoom({
     () => (detailData ? detailData.members.filter((m) => m.id !== me.id).map((m) => m.id) : []),
     [detailData, me.id],
   )
+
+  // ── R23: external-message contract — sheets/cards that create messages
+  // (red-packet send, game rematch) push the fresh ChatMessage through this
+  // window event so the room appends it instantly; 3.5s polling is the fallback.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const msg = (e as CustomEvent<ChatMessage>).detail
+      if (!msg || msg.conversationId !== conversationId) return
+      queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
+        if (!old || old.some((m) => m.id === msg.id)) return old
+        return [...old, msg].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+      })
+    }
+    window.addEventListener('pulse:external-message', handler)
+    return () => window.removeEventListener('pulse:external-message', handler)
+  }, [conversationId, queryClient])
+
+  // ── R23-b: /game palette entry → create a tic-tac-toe match.
+  // DM: challenge the peer directly; group: open challenge anyone can claim.
+  const createGame = useCallback(async () => {
+    try {
+      const res = await apiJson<{ match: { id: string }; message: ChatMessage }>('/api/games', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId: me.id,
+          conversationId,
+          ...(recipients.length === 1 ? { opponentId: recipients[0] } : {}),
+        }),
+      })
+      window.dispatchEvent(new CustomEvent<ChatMessage>('pulse:external-message', { detail: res.message }))
+      toast.success('⚔️ Tic-tac-toe challenge sent')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not start the game')
+    }
+  }, [conversationId, me.id, recipients])
+
+  useEffect(() => {
+    const handler = () => {
+      void createGame()
+    }
+    window.addEventListener(NEW_GAME_EVENT, handler)
+    return () => window.removeEventListener(NEW_GAME_EVENT, handler)
+  }, [createGame])
 
   const typers = realtime.typersIn(conversationId, me.id)
   const typerLabel = useMemo(() => {
@@ -1789,6 +1864,15 @@ export function ChatRoom({
   const myRole = detailData?.members.find((m) => m.id === me.id)?.role ?? 'member'
   const broadcastLocked = isGroup && (detailData?.broadcastMode ?? false) && myRole !== 'admin'
 
+  // ── R23: red packets + kanban + events — palette events open them ──
+  const redPacket = useRedPacketSheet(conversationId, me.id)
+  const sheetMembers = useMemo(
+    () => (detailData?.members ?? []).map((m) => ({ id: m.id, name: m.name, color: m.color })),
+    [detailData],
+  )
+  const kanban = useKanbanSheet(conversationId, me.id, sheetMembers, myRole)
+  const events = useEventsSheet(conversationId, me.id, sheetMembers, myRole)
+
   /** amber chip above the composer while delayed sends are pending */
   const scheduledChip = useMemo(() => {
     const items = scheduledQuery.data ?? []
@@ -2045,6 +2129,17 @@ export function ChatRoom({
         requestAnimationFrame(autosize)
         return
       }
+      if (outcome.kind === 'tool') {
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+        requestAnimationFrame(autosize)
+        if (outcome.tool === 'whiteboard') whiteboard.setOpen(true)
+        else if (outcome.tool === 'redpacket') redPacket.setOpen(true)
+        else if (outcome.tool === 'kanban') kanban.setOpen(true)
+        else if (outcome.tool === 'events') events.setOpen(true)
+        else window.dispatchEvent(new CustomEvent(NEW_GAME_EVENT))
+        return
+      }
       if (outcome.kind === 'poll') {
         setPollBuilderOpen(true)
         setInput('')
@@ -2269,6 +2364,27 @@ export function ChatRoom({
         setHelpOpen(true)
         return
       }
+      // ── R23: standalone tools — clear the draft, then open/dispatch ──
+      if (cmd === '/redpacket') {
+        clearDraft()
+        redPacket.setOpen(true)
+        return
+      }
+      if (cmd === '/kanban') {
+        clearDraft()
+        kanban.setOpen(true)
+        return
+      }
+      if (cmd === '/events') {
+        clearDraft()
+        events.setOpen(true)
+        return
+      }
+      if (cmd === '/game') {
+        clearDraft()
+        window.dispatchEvent(new CustomEvent(NEW_GAME_EVENT))
+        return
+      }
       if (cmd.startsWith('/effects')) {
         const effect = cmd.split(/\s+/)[1]
         clearDraft()
@@ -2289,7 +2405,7 @@ export function ChatRoom({
         textareaRef.current?.focus()
       })
     },
-    [conversationId, autosize],
+    [conversationId, autosize, redPacket, kanban, events],
   )
 
 
@@ -3468,6 +3584,36 @@ export function ChatRoom({
                     },
                   },
                   {
+                    label: 'Packet',
+                    icon: Gift,
+                    tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+                    disabled: broadcastLocked,
+                    run: () => {
+                      setTray(false)
+                      redPacket.setOpen(true)
+                    },
+                  },
+                  {
+                    label: 'Kanban',
+                    icon: SquareKanban,
+                    tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+                    disabled: false,
+                    run: () => {
+                      setTray(false)
+                      kanban.setOpen(true)
+                    },
+                  },
+                  {
+                    label: 'Events',
+                    icon: CalendarDays,
+                    tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                    disabled: false,
+                    run: () => {
+                      setTray(false)
+                      events.setOpen(true)
+                    },
+                  },
+                  {
                     label: 'Effects',
                     icon: Sparkles,
                     tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
@@ -4567,6 +4713,10 @@ export function ChatRoom({
       </AnimatePresence>
       {/* ── R21-c shared whiteboard (opened via /whiteboard palette entry) ── */}
       {whiteboard.node}
+      {/* ── R23: red packets / kanban / events sheets (palette + tray entries) ── */}
+      {redPacket.node}
+      {kanban.node}
+      {events.node}
       <UserProfileSheet
         user={profileUser}
         open={profileUser !== null}
@@ -5291,8 +5441,13 @@ const MessageRow = memo(function MessageRow({
   const sticker = isSticker ? parseSticker(message.payload) : null
   const isLocation = !deleted && !isImage && !isVoice && message.kind === 'location'
   const loc = isLocation ? parseLocationPayload(message.payload) : null
+  /** R23: red-packet + game cards render as self-contained chat cards */
+  const isRedPacket = !deleted && !isImage && !isVoice && message.kind === 'redpacket'
+  const redPacketInfo = isRedPacket ? parseRedPacketPayload(message.payload) : null
+  const isGame = !deleted && !isImage && !isVoice && message.kind === 'game'
+  const gameInfo = isGame ? parseGamePayload(message.payload) : null
   /** jumbo-emoji, stickers and location cards render without bubble chrome */
-  const plainChrome = !deleted && (jumbo || isSticker || isLocation)
+  const plainChrome = !deleted && (jumbo || isSticker || isLocation || ((isRedPacket && redPacketInfo !== null) || (isGame && gameInfo !== null)))
   /** Snapchat/WhatsApp view-once gates */
   const viewGated = isImage && message.viewOnce && !mine && message.viewedAt === null
   const viewBurned = isImage && message.viewOnce && !mine && message.viewedAt !== null
@@ -5419,11 +5574,14 @@ const MessageRow = memo(function MessageRow({
               beginReply()
             }
           }}
-          onClick={() => {
+          onClick={(e) => {
             if (dragMovedRef.current) {
               dragMovedRef.current = false
               return
             }
+            // R23: clicks inside self-contained cards (red packet, game board)
+            // belong to the card — never open the message-options sheet
+            if (e.target instanceof Element && e.target.closest('[data-card-interactive]')) return
             if (interactive && !isImage) onPress(message)
           }}
           onPointerDown={() => interactive && onStartLongPress(message)}
@@ -5438,7 +5596,7 @@ const MessageRow = memo(function MessageRow({
           role={interactive && !isImage ? 'button' : undefined}
           tabIndex={interactive && !isImage ? 0 : undefined}
           onKeyDown={(event) => {
-            if (interactive && !isImage && event.key === 'Enter') onPress(message)
+            if (!(event.target instanceof Element && event.target.closest('[data-card-interactive]')) && interactive && !isImage && event.key === 'Enter') onPress(message)
           }}
           className={cn(
             'relative select-none',
@@ -5608,6 +5766,19 @@ const MessageRow = memo(function MessageRow({
                 </div>
               ) : isLocation && loc ? (
                 <LocationBubble lat={loc.lat} lng={loc.lng} label={loc.label} mine={mine} />
+              ) : isRedPacket && redPacketInfo ? (
+                <div data-card-interactive className="w-56 sm:w-60">
+                  <RedPacketBubble
+                    packetId={redPacketInfo.packetId}
+                    meId={myId}
+                    mine={mine}
+                    senderName={message.sender.name}
+                  />
+                </div>
+              ) : isGame && gameInfo ? (
+                <div data-card-interactive className="w-full max-w-[300px]">
+                  <GameTicTacToeCard matchId={gameInfo.matchId} meId={myId} />
+                </div>
               ) : jumbo ? (
                 <p className="text-[34px] leading-[1.2] break-words">{message.content}</p>
               ) : (
