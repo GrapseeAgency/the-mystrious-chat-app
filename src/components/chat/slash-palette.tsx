@@ -33,6 +33,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { spring, ease, stagger } from '@/lib/motion'
+import { glassSurface } from '@/components/ui/glass-card'
 
 export interface SlashCommandDef {
   cmd: string
@@ -182,21 +184,29 @@ export function SlashPalette({
           initial={{ opacity: 0, y: 8, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 6, scale: 0.98 }}
-          transition={{ type: 'spring', stiffness: 520, damping: 32 }}
-          className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-2xl border border-zinc-200 bg-white/95 shadow-xl shadow-zinc-900/10 backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-800/95"
+          transition={spring.snappy}
+          className={cn(
+            glassSurface,
+            'absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-2xl',
+          )}
           style={{ willChange: 'transform, opacity' }}
         >
           <div className="pulse-scroll max-h-64 overflow-y-auto p-1.5">
             {matches.map((command, i) => {
               const Icon = command.icon
               return (
-                <button
+                <motion.button
                   key={command.cmd}
                   type="button"
                   role="option"
                   aria-selected={i === activeIndex}
                   onMouseEnter={() => setIndex(i)}
                   onClick={() => activate(command.cmd)}
+                  // shared-token entrance: 25ms stagger, swift-out + tactile press
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.28, ease: ease.out, delay: stagger(i, 0.025, 8) }}
+                  whileTap={{ scale: 0.97 }}
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none transition-colors',
                     i === activeIndex
@@ -232,7 +242,7 @@ export function SlashPalette({
                       ↵
                     </kbd>
                   ) : null}
-                </button>
+                </motion.button>
               )
             })}
           </div>

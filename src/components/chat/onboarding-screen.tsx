@@ -33,6 +33,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { WebglGlow } from '@/components/fx/webgl-glow'
 import { cn } from '@/lib/utils'
 
 interface CreateUserResponse {
@@ -274,14 +275,17 @@ export function OnboardingScreen() {
   return (
     <div className="flex h-full flex-col overflow-y-auto pulse-scroll px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(2rem,env(safe-area-inset-top))]">
       <div className="flex flex-1 flex-col items-center justify-center gap-5">
-        <Image
-          src="/onboarding-hero.png"
-          alt="Pulse messenger illustration"
-          width={196}
-          height={196}
-          priority
-          className="rounded-3xl shadow-lg shadow-emerald-500/10"
-        />
+        <div className="relative overflow-hidden rounded-3xl">
+          <WebglGlow className="absolute inset-0" intensity={0.85} />
+          <Image
+            src="/onboarding-hero.png"
+            alt="Pulse messenger illustration"
+            width={196}
+            height={196}
+            priority
+            className="relative rounded-3xl shadow-lg shadow-emerald-500/10"
+          />
+        </div>
 
         <div className="text-center">
           <h1 className="flex items-center justify-center gap-1.5 text-[26px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">

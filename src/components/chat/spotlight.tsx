@@ -37,6 +37,8 @@ import { useTheme } from 'next-themes'
 import { usePulseSession } from '@/lib/pulse-store'
 import { usePrefsValues } from '@/lib/prefs'
 import { cn } from '@/lib/utils'
+import { spring, ease, stagger } from '@/lib/motion'
+import { glassSurface } from '@/components/ui/glass-card'
 import { Input } from '@/components/ui/input'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 
@@ -424,7 +426,7 @@ export function SpotlightOverlay({
   const nothingFound =
     q.length > 0 && flatRows.length === 0 && !messageSearch.isFetching
 
-  const spring = reducedMotion ? { duration: 0 } : { type: 'spring' as const, stiffness: 420, damping: 34 }
+  const panelTransition = reducedMotion ? { duration: 0 } : spring.soft
 
   return (
     <motion.div
@@ -444,13 +446,16 @@ export function SpotlightOverlay({
         aria-hidden
       />
 
-      {/* card */}
+      {/* card — liquid-glass surface (R22 recipe) with a spring entrance */}
       <motion.div
-        initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.98, y: -6, transition: { duration: 0.12 } }}
-        transition={spring}
-        className="absolute inset-x-0 top-[7%] mx-auto flex w-[92%] max-w-md flex-col overflow-hidden rounded-3xl border border-white/50 bg-white/85 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.5)] backdrop-blur-2xl dark:border-white/10 dark:bg-zinc-900/85"
+        initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 6, transition: { duration: 0.12 } }}
+        transition={panelTransition}
+        className={cn(
+          glassSurface,
+          'absolute inset-x-0 top-[7%] mx-auto flex w-[92%] max-w-md flex-col overflow-hidden',
+        )}
       >
         {/* input row */}
         <div className="flex items-center gap-2.5 border-b border-zinc-200/70 px-4 dark:border-zinc-700/60">
@@ -505,6 +510,7 @@ export function SpotlightOverlay({
                       query={q}
                       active={idx === activeIdx}
                       index={idx}
+                      reducedMotion={reducedMotion}
                       onSelect={() => activate(row)}
                       onHover={() => setSelKey(row.key)}
                     />
@@ -559,6 +565,7 @@ function SpotlightItemRow({
   query,
   active,
   index,
+  reducedMotion,
   onSelect,
   onHover,
 }: {
@@ -566,6 +573,7 @@ function SpotlightItemRow({
   query: string
   active: boolean
   index: number
+  reducedMotion: boolean
   onSelect: () => void
   onHover: () => void
 }) {
@@ -671,7 +679,7 @@ function SpotlightItemRow({
   }
 
   return (
-    <button
+    <motion.button
       type="button"
       role="option"
       aria-selected={active}
@@ -679,8 +687,18 @@ function SpotlightItemRow({
       onClick={onSelect}
       onMouseEnter={onHover}
       className={base}
+      // shared-token entrance: 25ms stagger, swift-out — rows flow in
+      initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={
+        reducedMotion
+          ? { duration: 0 }
+          : { duration: 0.32, ease: ease.out, delay: stagger(index, 0.025) }
+      }
+      whileTap={reducedMotion ? undefined : { scale: 0.97 }}
+      style={{ willChange: 'transform, opacity' }}
     >
       {content}
-    </button>
+    </motion.button>
   )
 }

@@ -5,7 +5,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useMotionValue, useReducedMotion, useTransform, animate } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
 import { AtSign, BadgeCheck, Check, ChevronRight, Compass, Copy, LayoutDashboard, LayoutGrid, LoaderCircle, LogOut, Moon, MoonStar, PanelRight, Settings, Smartphone, Star, Sun, Volume2, Vibrate, X } from 'lucide-react'
@@ -22,6 +22,7 @@ import {
   type AvatarColor,
 } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
+import { ease, pressSpring, pressTap, spring } from '@/lib/motion'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +60,14 @@ const ABOUT_MAX = 140
 /** Discord-flavored custom-status glyph choices. */
 const STATUS_EMOJIS = ['🔥', '✨', '🎯', '☕', '🎧', '🌙', '💡', '🚀', '😴', '🍽️', ' vacation'.trim(), '💼'] as const
 
+/** Row press: body scales 0.98 while the chevron nudges x+2 (variant propagation). */
+const ROW_VARIANTS = { rest: { scale: 1 }, tap: { scale: 0.98 } } as const
+const CHEVRON_VARIANTS = { rest: { x: 0 }, tap: { x: 2 } } as const
+
+/** Inline GlassCard recipe (R22 list surfaces — shared physical language). */
+const GLASS_CARD =
+  'rounded-3xl border border-zinc-200/70 bg-white/70 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:border-white/10 dark:bg-zinc-900/60 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+
 export function ProfileTab({
   me,
   onOpenSavedMessage,
@@ -86,6 +95,7 @@ function ProfileTabInner({
 function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMessage?: (conversationId: string, messageId: string) => void }) {
   const queryClient = useQueryClient()
   const setUser = usePulseSession((s) => s.setUser)
+  const reducedMotion = useReducedMotion()
   const { resolvedTheme, setTheme } = useTheme()
   const soundOn = pulseSettingsStore((s) => s.soundOn)
   const hapticsOn = pulseSettingsStore((s) => s.hapticsOn)
@@ -209,6 +219,17 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
     }
   }
 
+  /** copy the @handle chip in the hero (same clipboard pattern as Copy ID) */
+  const copyHandle = async () => {
+    if (!me.username) return
+    try {
+      await navigator.clipboard.writeText(`@${me.username}`)
+      toast.success('Handle copied')
+    } catch {
+      toast.error('Clipboard is unavailable here')
+    }
+  }
+
   /** Telegram-style saved/starred library */
   const savedQuery = useQuery({
     queryKey: ['saved', me.id],
@@ -227,14 +248,91 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
 
   return (
     <div className="absolute inset-0 flex flex-col bg-white dark:bg-zinc-900">
-      <header className="shrink-0 border-b border-zinc-200 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] dark:border-zinc-800">
+      {/* soft emerald wash so the glass cards have something to refract */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(70%_60%_at_50%_0%,rgba(16,185,129,0.08),transparent_70%)]"
+      />
+      <header className="relative shrink-0 border-b border-zinc-200 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] dark:border-zinc-800">
         <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Settings</h1>
       </header>
 
-      <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        {/* avatar + fields */}
+      <div className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        {/* hero + fields */}
         <section aria-label="Profile" className="flex flex-col items-center gap-4">
-          <UserAvatar name={name || me.name} color={color} size={96} showPresence online />
+          {/* HERO — avatar floats over an emerald→teal gradient wash inside a glass card */}
+          <div
+            className={cn(
+              GLASS_CARD,
+              'relative flex w-full flex-col items-center gap-2 overflow-hidden px-4 pb-5 pt-6',
+            )}
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_75%_at_25%_0%,rgba(52,211,153,0.16),transparent_60%),radial-gradient(80%_65%_at_82%_6%,rgba(20,184,166,0.13),transparent_55%)]"
+            />
+            <motion.div
+              initial={reducedMotion ? false : { scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={spring.bouncy}
+              className="relative"
+            >
+              <UserAvatar name={name || me.name} color={color} size={96} showPresence online />
+            </motion.div>
+            <motion.h2
+              initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: ease.out, delay: 0.06 }}
+              className="relative text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
+            >
+              {name.trim() || me.name}
+            </motion.h2>
+            {me.statusEmoji || me.statusText ? (
+              <motion.p
+                initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, ease: ease.out, delay: 0.1 }}
+                className="relative text-xs font-medium text-zinc-500 dark:text-zinc-400"
+              >
+                {[me.statusEmoji, me.statusText].filter(Boolean).join(' ')}
+              </motion.p>
+            ) : null}
+            <motion.div
+              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: ease.out, delay: 0.14 }}
+              className="relative"
+            >
+              <span className="flex items-center gap-0.5 rounded-full bg-emerald-500/10 py-1 pl-3 pr-1 ring-1 ring-emerald-500/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic(8)
+                    setHandleOpen(true)
+                  }}
+                  aria-label={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
+                  className="flex items-center gap-1 rounded-full outline-none"
+                >
+                  <AtSign className="size-3 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                    {me.username ? `@${me.username}` : 'Set your handle'}
+                  </span>
+                </button>
+                {me.username ? (
+                  <motion.button
+                    type="button"
+                    whileTap={reducedMotion ? undefined : pressTap}
+                    transition={pressSpring}
+                    onClick={copyHandle}
+                    aria-label="Copy your handle"
+                    className="flex size-5 items-center justify-center rounded-full text-emerald-600/80 outline-none hover:bg-emerald-500/20 dark:text-emerald-400/80"
+                  >
+                    <Copy className="size-3" aria-hidden />
+                  </motion.button>
+                ) : null}
+              </span>
+            </motion.div>
+          </div>
 
           <div className="w-full space-y-3">
             <div className="space-y-1.5">
@@ -266,14 +364,19 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
             </div>
 
             {/* @handle editor row */}
-            <button
+            <motion.button
               type="button"
               onClick={() => {
                 haptic(8)
                 setHandleOpen(true)
               }}
+              initial="rest"
+              animate="rest"
+              whileTap="tap"
+              variants={ROW_VARIANTS}
+              transition={pressSpring}
               aria-label={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
-              className="flex min-h-[56px] w-full items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-left outline-none transition-colors hover:border-emerald-300 active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-emerald-500/40"
+              className="flex min-h-[56px] w-full items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-left outline-none transition-colors hover:border-emerald-300 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-emerald-500/40"
             >
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
                 <AtSign className="size-4 text-emerald-500" aria-hidden />
@@ -284,8 +387,10 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
                   {me.username ? `@${me.username}` : 'Set your handle'}
                 </span>
               </span>
-              <ChevronRight className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
-            </button>
+              <motion.span variants={CHEVRON_VARIANTS} className="shrink-0">
+                <ChevronRight className="size-4 text-zinc-400 dark:text-zinc-500" aria-hidden />
+              </motion.span>
+            </motion.button>
 
             {/* Discord-style custom status */}
             <div className="space-y-2 py-1">
@@ -296,7 +401,7 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
                 {STATUS_EMOJIS.map((e) => {
                   const selected = statusEmoji === e
                   return (
-                    <button
+                    <motion.button
                       key={e}
                       type="button"
                       role="radio"
@@ -306,6 +411,8 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
                         haptic(6)
                         setStatusEmoji(selected ? '' : e)
                       }}
+                      whileTap={reducedMotion ? undefined : pressTap}
+                      transition={pressSpring}
                       className={cn(
                         'flex size-8 items-center justify-center rounded-full text-base outline-none transition-transform',
                         selected
@@ -314,7 +421,7 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
                       )}
                     >
                       {e}
-                    </button>
+                    </motion.button>
                   )
                 })}
               </div>
@@ -336,15 +443,17 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
                 {PULSE_COLORS.map((c) => {
                   const selected = c === color
                   return (
-                    <button
+                    <motion.button
                       key={c}
                       type="button"
                       role="radio"
                       aria-checked={selected}
                       aria-label={`${c} avatar`}
                       onClick={() => setColor(c)}
+                      whileTap={reducedMotion ? undefined : pressTap}
+                      transition={pressSpring}
                       className={cn(
-                        'flex size-8 items-center justify-center rounded-full bg-gradient-to-br shadow-sm outline-none transition-transform active:scale-90',
+                        'flex size-8 items-center justify-center rounded-full bg-gradient-to-br shadow-sm outline-none transition-transform',
                         AVATAR_GRADIENTS[c],
                         selected
                           ? 'ring-2 ring-emerald-600 ring-offset-2 ring-offset-white dark:ring-offset-zinc-900 scale-105'
@@ -352,7 +461,7 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
                       )}
                     >
                       {selected ? <Check className="size-3.5 text-white" strokeWidth={3} /> : null}
-                    </button>
+                    </motion.button>
                   )
                 })}
               </div>
@@ -391,19 +500,24 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
 
         {/* stats */}
         <section aria-label="Stats" className="mt-5 grid grid-cols-3 gap-2">
-          <StatChip label="Chats" value={stats.chats.toLocaleString('en-US')} />
-          <StatChip label="Unread" value={stats.unread > 99 ? '99+' : String(stats.unread)} accent />
+          <StatChip label="Chats" value={<CountUp value={stats.chats} />} />
+          <StatChip label="Unread" value={<CountUp value={stats.unread} cap />} accent />
           <StatChip label="Member since" value={stats.memberSince} />
         </section>
 
         {/* general — full settings tree */}
-        <Section title="General">
-          <button
+        <Section title="General" delay={0.02}>
+          <motion.button
             type="button"
             onClick={() => {
               haptic(8)
               setSettingsOpen(true)
             }}
+            initial="rest"
+            animate="rest"
+            whileTap="tap"
+            variants={ROW_VARIANTS}
+            transition={pressSpring}
             aria-label="Open settings"
             className="flex min-h-[52px] w-full items-center gap-3 rounded-xl px-1 py-2 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
           >
@@ -414,23 +528,30 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
               <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Settings</span>
               <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">Preferences, storage, privacy &amp; more</span>
             </span>
-            <ChevronRight className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
-          </button>
+            <motion.span variants={CHEVRON_VARIANTS} className="shrink-0">
+              <ChevronRight className="size-4 text-zinc-400 dark:text-zinc-500" aria-hidden />
+            </motion.span>
+          </motion.button>
         </Section>
 
         {/* navigation architecture — 4 swappable styles */}
-        <Section title="Navigation">
+        <Section title="Navigation" delay={0.06}>
           <NavStyleGrid />
         </Section>
 
         {/* saved / starred library (Telegram parity) */}
-        <Section title="Library">
-          <button
+        <Section title="Library" delay={0.1}>
+          <motion.button
             type="button"
             onClick={() => {
               haptic(8)
               setSavedOpen(true)
             }}
+            initial="rest"
+            animate="rest"
+            whileTap="tap"
+            variants={ROW_VARIANTS}
+            transition={pressSpring}
             className="flex w-full items-center gap-3 rounded-xl px-1 py-2 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
           >
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
@@ -440,11 +561,14 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
               <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Saved messages</span>
               <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">Long-press any message → Save message</span>
             </span>
-          </button>
+            <motion.span variants={CHEVRON_VARIANTS} className="shrink-0">
+              <ChevronRight className="size-4 text-zinc-400 dark:text-zinc-500" aria-hidden />
+            </motion.span>
+          </motion.button>
         </Section>
 
         {/* notifications */}
-        <Section title="Notifications">
+        <Section title="Notifications" delay={0.14}>
           <div className="flex items-center justify-between px-1 py-1.5">
             <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
               <Volume2 className="size-4 text-emerald-500" aria-hidden />
@@ -535,7 +659,7 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
         </Section>
 
         {/* appearance */}
-        <Section title="Appearance">
+        <Section title="Appearance" delay={0.18}>
           <div className="flex items-center justify-between px-1 py-1.5">
             <span className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
               {mounted && resolvedTheme === 'dark' ? (
@@ -557,7 +681,7 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
 
         {/* app install (visible when the browser offers the prompt) */}
         {installEvent ? (
-          <Section title="App">
+          <Section title="App" delay={0.2}>
             <div className="flex items-center justify-between gap-2 px-1 py-1.5">
               <div className="min-w-0">
                 <p className="flex items-center gap-3 text-sm font-medium text-zinc-700 dark:text-zinc-200">
@@ -580,7 +704,7 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
         ) : null}
 
         {/* account */}
-        <Section title="Account">
+        <Section title="Account" delay={0.22}>
           <div className="flex items-center justify-between gap-2 px-1 py-1.5">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">{me.name}</p>
@@ -599,7 +723,7 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
         </Section>
 
         {/* danger zone */}
-        <Section title="Danger zone">
+        <Section title="Danger zone" delay={0.26}>
           <Button
             variant="outline"
             onClick={() => setSwitchOpen(true)}
@@ -700,14 +824,14 @@ function ProfileEditor({ me, onOpenSavedMessage }: { me: AppUser; onOpenSavedMes
   )
 }
 
-function StatChip({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function StatChip({ label, value, accent = false }: { label: string; value: React.ReactNode; accent?: boolean }) {
   return (
     <div
       className={cn(
-        'flex flex-col items-center gap-0.5 rounded-2xl border p-3',
+        'flex flex-col items-center gap-0.5 rounded-2xl border p-3 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
         accent
-          ? 'border-emerald-500/25 bg-emerald-500/5'
-          : 'border-zinc-200 bg-zinc-50 dark:border-zinc-700/70 dark:bg-zinc-800/50',
+          ? 'border-emerald-500/25 bg-emerald-500/10'
+          : 'border-zinc-200/70 bg-white/70 dark:border-white/10 dark:bg-zinc-900/60',
       )}
     >
       <span
@@ -725,19 +849,50 @@ function StatChip({ label, value, accent = false }: { label: string; value: stri
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * CountUp-style spring counter — the motion value renders straight to the DOM
+ * (no per-frame React state), spring-popping on mount and retargeting on change.
+ */
+function CountUp({ value, cap = false }: { value: number; cap?: boolean }) {
+  const reducedMotion = useReducedMotion()
+  const count = useMotionValue(0)
+  const text = useTransform(count, (v) => {
+    const n = Math.round(v)
+    return cap && n > 99 ? '99+' : n.toLocaleString('en-US')
+  })
+
+  useEffect(() => {
+    if (reducedMotion) {
+      count.set(value)
+      return
+    }
+    const controls = animate(count, value, { type: 'spring', stiffness: 140, damping: 26 })
+    return () => controls.stop()
+  }, [value, reducedMotion, count])
+
+  return <motion.span>{text}</motion.span>
+}
+
+function Section({ title, delay = 0, children }: { title: string; delay?: number; children: React.ReactNode }) {
+  const reducedMotion = useReducedMotion()
   return (
-    <section aria-label={title} className="mt-6">
+    <motion.section
+      aria-label={title}
+      initial={reducedMotion ? false : { opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.32, ease: ease.out, delay }}
+      className="mt-6"
+    >
       <div className="mb-2 flex items-center gap-2">
         <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
           {title}
         </h2>
         <Separator className="flex-1" />
       </div>
-      <div className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm dark:border-zinc-700/70 dark:bg-zinc-800/40">
+      <div className={cn(GLASS_CARD, 'p-2')}>
         {children}
       </div>
-    </section>
+    </motion.section>
   )
 }
 

@@ -52,6 +52,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Presentation,
   PictureInPicture2,
   Play,
   Plus,
@@ -101,6 +102,7 @@ import {
   uid,
 } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
+import { spring, ease, pressTap, pressSpring, fireParticles, type ParticleKind } from '@/lib/motion'
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
 import { pulseOutboxStore, outboxCount } from '@/lib/pulse-outbox'
 import { ForwardSheet } from '@/components/chat/forward-sheet'
@@ -347,6 +349,34 @@ function applySlash(
     }
   }
 }
+/** Effect name → app-wide particle burst kind (R22 premium FX layer). */
+const EFFECT_PARTICLES: Record<MessageEffectName, ParticleKind> = {
+  confetti: 'confetti',
+  lasers: 'burst',
+  echo: 'burst',
+  sparkles: 'stars',
+}
+
+/**
+ * Fire the full-screen particle layer from an element's viewport position
+ * (used for reaction bursts — one synchronous getBoundingClientRect, no rAF
+ * churn). Respects reduced motion.
+ */
+function fireParticlesAt(el: Element | null, kind: ParticleKind = 'hearts', count = 24): void {
+  if (!el || typeof window === 'undefined') return
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+  const r = el.getBoundingClientRect()
+  if (r.width === 0 && r.height === 0) return
+  const w = window.innerWidth || 1
+  const h = window.innerHeight || 1
+  fireParticles({
+    kind,
+    count,
+    x: Math.min(0.97, Math.max(0.03, (r.left + r.width / 2) / w)),
+    y: Math.min(0.97, Math.max(0.03, (r.top + r.height / 2) / h)),
+  })
+}
+
 /** "1:23" (minutes:seconds) for voice notes + record timer. */
 function formatVoicems(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000))
@@ -419,6 +449,43 @@ export function ChatRoom({
     }
   }, [])
 
+  // ── keyboard lift (R22): visualViewport shrink → composer rides the keyboard ──
+  // Transform-only (no layout thrash); only while a text field actually holds
+  // focus so browser-chrome collapses never bounce the room.
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    let raf = 0
+    const update = () => {
+      raf = 0
+      const active = document.activeElement
+      const typing =
+        active instanceof HTMLElement &&
+        (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')
+      const overlap = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      const lift = typing && overlap > 90 ? Math.min(overlap, 420) : 0
+      setKbdLift((prev) => (Math.abs(prev - lift) > 1 ? lift : prev))
+    }
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(update)
+    }
+    vv.addEventListener('resize', schedule)
+    vv.addEventListener('scroll', schedule)
+    window.addEventListener('focusin', schedule)
+    window.addEventListener('focusout', schedule)
+    update()
+    return () => {
+      vv.removeEventListener('resize', schedule)
+      vv.removeEventListener('scroll', schedule)
+      window.removeEventListener('focusin', schedule)
+      window.removeEventListener('focusout', schedule)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [])
+
+  // mount watermark / send pop / missed-count effects live further down —
+  // they depend on queries + mutations declared below (see "scrolling" section).
+
   // restore persisted draft once per opened conversation
   const [input, setInput] = useState(() => pulseDraftsStore.getState().drafts[conversationId] ?? '')
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -430,6 +497,27 @@ export function ChatRoom({
   const [selected, setSelected] = useState<ChatMessage | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [showJump, setShowJump] = useState(false)
+  /** messages that landed while scrolled away — badge on the jump-to-latest pill */
+  const [missedCount, setMissedCount] = useState(0)
+  const missedCountRef = useRef(0)
+  const lastSeenLenRef = useRef(0)
+  // ── R22 composer premium state ────────────────────────────────
+  /** attachments tray (springs open above the capsule) */
+  const [trayOpen, setTrayOpen] = useState(false)
+  const [trayEffectsOpen, setTrayEffectsOpen] = useState(false)
+  /** mirror for the stable autosize callback (no re-creation on toggle) */
+  const trayOpenRef = useRef(false)
+  /** capsule focus-within → emerald hairline ring */
+  const [composerFocus, setComposerFocus] = useState(false)
+  /** px the composer is lifted while the on-screen keyboard is open */
+  const [kbdLift, setKbdLift] = useState(0)
+  /** 0→N success pop tick for the send/mic slot after a message lands */
+  const [sendPop, setSendPop] = useState(0)
+  const wasSendingRef = useRef(false)
+  /** mount watermark — only messages newer than this animate their entrance */
+  const mountMsRef = useRef(0)
+  /** real ids that just replaced optimistic temps — skip their re-entrance */
+  const landedIdsRef = useRef<Map<string, number>>(new Map())
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   /** message being edited (Telegram-style composer edit mode) */
   const [editing, setEditing] = useState<ChatMessage | null>(null)
@@ -990,6 +1078,10 @@ export function ChatRoom({
   const triggerEffectFor = useCallback(
     (messageId: string, effect: MessageEffectName) => {
       if (prefs.reducedMotion) return // reduced motion → zero effects
+      // R22: full-screen particle companion (confetti→confetti · sparkles→stars ·
+      // lasers/echo→burst) fired from the composer position, layered UNDER the
+      // existing per-message effect canvas.
+      fireParticles({ kind: EFFECT_PARTICLES[effect], x: 0.5, y: 0.85, count: 90 })
       const viewport = viewportRef.current
       const host = viewport?.parentElement ?? null
       let origin: EffectOrigin = { x: 0.5, y: 0.62 }
@@ -1098,8 +1190,41 @@ export function ChatRoom({
     if (!el) return
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
     nearBottomRef.current = distance < NEAR_BOTTOM_PX
-    if (nearBottomRef.current) setShowJump(false)
+    if (nearBottomRef.current) {
+      if (missedCountRef.current > 0) {
+        missedCountRef.current = 0
+        setMissedCount(0)
+      }
+      setShowJump(false)
+    }
   }, [])
+
+  // mount watermark: freeze "now" when the first history page commits —
+  // only messages newer than this get the spring entrance (never history).
+  useEffect(() => {
+    if (historyLoaded) mountMsRef.current = Date.now()
+  }, [historyLoaded])
+
+  // off-screen arrivals → badge count on the jump-to-latest pill
+  useEffect(() => {
+    const len = messages.data?.length ?? 0
+    if (nearBottomRef.current) {
+      lastSeenLenRef.current = len
+      if (missedCountRef.current !== 0) {
+        missedCountRef.current = 0
+        setMissedCount(0)
+      }
+    } else if (len > lastSeenLenRef.current) {
+      missedCountRef.current += len - lastSeenLenRef.current
+      lastSeenLenRef.current = len
+      setMissedCount(missedCountRef.current)
+    } else if (len < lastSeenLenRef.current) {
+      // room switch / cache reset
+      lastSeenLenRef.current = len
+      missedCountRef.current = 0
+      setMissedCount(0)
+    }
+  }, [messages.data])
 
   // ── sending ────────────────────────────────────────────────
 
@@ -1200,6 +1325,13 @@ export function ChatRoom({
     onSuccess: ({ res, clientId }, vars) => {
       const real = res.message
       setReplyTo(null)
+      // the real row replaces the optimistic temp — remember it so the bubble
+      // entrance spring doesn't replay for a message that already animated in
+      landedIdsRef.current.set(real.id, Date.now())
+      if (landedIdsRef.current.size > 60) {
+        const cutoff = Date.now() - 10_000
+        for (const [id, ts] of landedIdsRef.current) if (ts < cutoff) landedIdsRef.current.delete(id)
+      }
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
         if (!old) return [real]
         const hadReal = old.some((m) => m.id === real.id)
@@ -1241,6 +1373,14 @@ export function ChatRoom({
       toast.error('Message failed to send')
     },
   })
+
+  // send-button success pop: fires once per completed send (pending → done).
+  // Declared after the mutation so the deps read live isPending values.
+  useEffect(() => {
+    const pendingNow = sendMessage.isPending
+    if (wasSendingRef.current && !pendingNow) setSendPop((t) => t + 1)
+    wasSendingRef.current = pendingNow
+  }, [sendMessage.isPending])
 
   /** Toggle an emoji reaction (optimistic; server response is truth). */
   const toggleReaction = useMutation({
@@ -1700,8 +1840,25 @@ export function ChatRoom({
     const el = textareaRef.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+    // attachments tray open → clamp to a single line so the tray stays the star
+    const cap = trayOpenRef.current ? 48 : 120
+    el.style.height = `${Math.min(el.scrollHeight, cap)}px`
   }, [])
+
+  /** tray toggle — collapses the textarea to one line while the tray is open */
+  const setTray = useCallback(
+    (open: boolean) => {
+      trayOpenRef.current = open
+      setTrayOpen(open)
+      if (open) {
+        // the tray overlays the slash palette — dismiss it until the draft changes
+        setSlashDismissed(true)
+        setTrayEffectsOpen(false)
+      }
+      requestAnimationFrame(autosize)
+    },
+    [autosize],
+  )
 
   const stopTyping = useCallback(() => {
     if (recipients.length > 0) {
@@ -1723,6 +1880,7 @@ export function ChatRoom({
       }
       stopTyping()
       haptic(10)
+      setTray(false)
       setSwitchedId(nextId)
       setInput(pulseDraftsStore.getState().drafts[nextId] ?? '')
       setReplyTo(null)
@@ -1742,7 +1900,7 @@ export function ChatRoom({
       setJumpOverride(null)
       requestAnimationFrame(autosize)
     },
-    [switchedId, conversationIdProp, stopTyping, autosize],
+    [switchedId, conversationIdProp, stopTyping, autosize, setTray],
   )
 
   /** Profile sheet → "Message" → open (or create) the 1:1 DM right here. */
@@ -1855,6 +2013,7 @@ export function ChatRoom({
   const submit = useCallback(() => {
     const raw = input.trim()
     if (raw.length === 0) return
+    setTray(false)
 
     // Telegram-style edit mode → PATCH instead of send
     if (editing) {
@@ -2021,7 +2180,7 @@ export function ChatRoom({
       ...(replyTarget ? { replyToId: replyTarget.id } : {}),
       ...(armedEffect !== null ? { kind: 'text', payload: { effect: armedEffect } } : {}),
     })
-  }, [input, editing, editMessage, sendMessage, stopTyping, autosize, replyTo, conversationId, me, queryClient, pendingEffect, isOffline])
+  }, [input, editing, editMessage, sendMessage, stopTyping, autosize, replyTo, conversationId, me, queryClient, pendingEffect, isOffline, setTray])
 
   /** Thread drawer composer — replies land under the root, never the main flow. */
   const submitThreadReply = useCallback(
@@ -2248,6 +2407,7 @@ export function ChatRoom({
 
   const startRecording = useCallback(async () => {
     if (recorderRef.current || sendingVoice) return
+    setTray(false)
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       toast.error('Voice notes are not supported in this browser')
       return
@@ -2315,7 +2475,7 @@ export function ChatRoom({
       setRecordMs(Date.now() - recordStartedAtRef.current)
     }, 200)
     haptic(14)
-  }, [sendMessage, replyTo, sendingVoice, teardownRecorder])
+  }, [sendMessage, replyTo, sendingVoice, teardownRecorder, setTray])
 
   // safety: leaving the room (or tab) mid-recording discards the note
   useEffect(
@@ -2925,18 +3085,31 @@ export function ChatRoom({
             {items.map((item) =>
               item.kind === 'day' ? (
                 <div key={item.key} className="sticky top-1 z-20 my-3 flex justify-center">
-                  <span className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-zinc-800/85 dark:text-zinc-300 dark:ring-white/10">
+                  <motion.span
+                    initial={prefs.reducedMotion ? false : { opacity: 0, y: -6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.28, ease: ease.out }}
+                    className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-zinc-800/85 dark:text-zinc-300 dark:ring-white/10"
+                  >
                     {item.label}
-                  </span>
+                  </motion.span>
                 </div>
               ) : item.kind === 'unread' ? (
-                <div key={item.key} className="my-3 flex items-center gap-2 px-1" role="separator" aria-label="Unread messages">
+                <motion.div
+                  key={item.key}
+                  initial={prefs.reducedMotion ? false : { opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.28, ease: ease.out }}
+                  className="my-3 flex items-center gap-2 px-1"
+                  role="separator"
+                  aria-label="Unread messages"
+                >
                   <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
-                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-emerald-600 dark:text-emerald-400">
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-emerald-600 backdrop-blur-sm dark:text-emerald-400">
                     UNREAD
                   </span>
                   <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
-                </div>
+                </motion.div>
               ) : (
                 <MessageRow
                   key={item.key}
@@ -2974,6 +3147,13 @@ export function ChatRoom({
                   density={prefs.density}
                   onOpenProfile={openProfileForAuthor}
                   highlighted={highlight !== null && highlight.id === item.message.id}
+                  reducedMotion={prefs.reducedMotion}
+                  justArrived={
+                    item.message.id.startsWith('temp-') ||
+                    (mountMsRef.current > 0 &&
+                      !landedIdsRef.current.has(item.message.id) &&
+                      Date.parse(item.message.createdAt) > mountMsRef.current)
+                  }
                 />
               ),
             )}
@@ -2982,10 +3162,10 @@ export function ChatRoom({
               {typers.length > 0 ? (
                 <motion.div
                   key="typing-bubble"
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  transition={{ duration: 0.15 }}
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                  transition={spring.snappy}
                   className="mt-1.5 flex items-end gap-1.5"
                 >
                   {isGroup ? (
@@ -3025,27 +3205,52 @@ export function ChatRoom({
           {showJump ? (
             <motion.button
               type="button"
-              aria-label="Jump to newest messages"
+              aria-label={
+                missedCount > 0
+                  ? `Jump to newest messages — ${missedCount} new`
+                  : 'Jump to newest messages'
+              }
               initial={{ opacity: 0, y: 10, scale: 0.85 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.9 }}
-              transition={{ type: 'spring', stiffness: 420, damping: 22 }}
+              transition={{ type: 'spring', stiffness: 480, damping: 20 }}
+              whileTap={{ scale: 0.94 }}
               onClick={() => {
                 setShowJump(false)
+                missedCountRef.current = 0
+                setMissedCount(0)
                 haptic(8)
                 scrollToBottom(true)
               }}
-              className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-emerald-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 active:scale-95"
+              style={{ willChange: 'transform' }}
+              className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-emerald-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 outline-none"
             >
               New messages
               <ArrowDown className="size-3.5" aria-hidden />
+              {missedCount > 0 ? (
+                <motion.span
+                  key={missedCount}
+                  initial={prefs.reducedMotion ? false : { scale: 0.4, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={spring.bouncy}
+                  className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-emerald-600"
+                >
+                  {missedCount > 99 ? '99+' : missedCount}
+                </motion.span>
+              ) : null}
             </motion.button>
           ) : null}
         </AnimatePresence>
       </div>
 
-      {/* composer */}
-      <div className="shrink-0 border-t border-zinc-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:border-zinc-800 dark:bg-zinc-900">
+      {/* composer — floating glass capsule (R22); rides the keyboard via visualViewport */}
+      <motion.div
+        animate={{ y: -kbdLift }}
+        transition={spring.soft}
+        style={{ willChange: 'transform' }}
+        className="relative z-20 shrink-0"
+      >
+        <div className="bg-zinc-100/80 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:bg-zinc-950/60">
         <AnimatePresence initial={false}>
           {isOffline ? (
             <motion.div
@@ -3184,6 +3389,153 @@ export function ChatRoom({
           ) : null}
         </AnimatePresence>
 
+        {/* attachments tray — springs open above the capsule, staggered glass tiles */}
+        <AnimatePresence initial={false}>
+          {trayOpen && !recording ? (
+            <motion.div
+              key="attach-tray"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={spring.soft}
+              className="overflow-hidden"
+            >
+              <div className="mb-2 grid grid-cols-4 gap-2 rounded-3xl bg-white/60 p-2.5 ring-1 ring-inset ring-black/5 shadow-sm backdrop-blur-xl dark:bg-zinc-900/50 dark:ring-white/10">
+                {([
+                  {
+                    label: 'Photo',
+                    icon: sendingImage ? LoaderCircle : ImagePlus,
+                    tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                    disabled: sendingImage || broadcastLocked,
+                    run: () => {
+                      setTray(false)
+                      fileInputRef.current?.click()
+                    },
+                  },
+                  {
+                    label: 'Sticker',
+                    icon: Sticker,
+                    tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                    disabled: broadcastLocked,
+                    run: () => {
+                      setTray(false)
+                      setStickerOpen(true)
+                    },
+                  },
+                  {
+                    label: 'Location',
+                    icon: MapPin,
+                    tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+                    disabled: broadcastLocked,
+                    run: () => {
+                      setTray(false)
+                      setLocationOpen(true)
+                    },
+                  },
+                  {
+                    label: 'Poll',
+                    icon: Vote,
+                    tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+                    disabled: broadcastLocked,
+                    run: () => {
+                      setTray(false)
+                      setPollBuilderOpen(true)
+                    },
+                  },
+                  {
+                    label: 'Schedule',
+                    icon: CalendarClock,
+                    tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+                    disabled: broadcastLocked,
+                    run: () => {
+                      const draft = input.trim()
+                      if (draft.length === 0 && scheduleFor === null) {
+                        toast.info('Type the message first, then schedule it')
+                        return
+                      }
+                      setTray(false)
+                      setScheduleFor(draft)
+                    },
+                  },
+                  {
+                    label: 'Board',
+                    icon: Presentation,
+                    tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                    disabled: false,
+                    run: () => {
+                      setTray(false)
+                      whiteboard.setOpen(true)
+                    },
+                  },
+                  {
+                    label: 'Effects',
+                    icon: Sparkles,
+                    tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+                    disabled: broadcastLocked,
+                    run: () => setTrayEffectsOpen((v) => !v),
+                  },
+                  {
+                    label: 'Commands',
+                    icon: Dices,
+                    tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+                    disabled: false,
+                    run: () => {
+                      setTray(false)
+                      setHelpOpen(true)
+                    },
+                  },
+                ] as const).map((tile, i) => (
+                  <motion.button
+                    key={tile.label}
+                    type="button"
+                    disabled={tile.disabled}
+                    onClick={tile.run}
+                    initial={prefs.reducedMotion ? false : { opacity: 0, y: 12, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ ...spring.bouncy, delay: prefs.reducedMotion ? 0 : i * 0.03 }}
+                    whileTap={tile.disabled ? undefined : { scale: 0.92 }}
+                    className="flex flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-2.5 outline-none transition-colors hover:bg-white/70 disabled:opacity-40 dark:hover:bg-zinc-800/60"
+                  >
+                    <span className={cn('flex size-9 items-center justify-center rounded-full', tile.tone)} aria-hidden>
+                      <tile.icon className={cn('size-5', tile.label === 'Photo' && sendingImage && 'animate-spin')} />
+                    </span>
+                    <span className="text-[10px] font-semibold text-zinc-600 dark:text-zinc-300">{tile.label}</span>
+                  </motion.button>
+                ))}
+              </div>
+              {trayEffectsOpen ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={spring.soft}
+                  className="mb-2 flex gap-1.5"
+                  role="group"
+                  aria-label="Arm a message effect"
+                >
+                  {(Object.keys(EFFECT_EMOJI) as MessageEffectName[]).map((effectName) => (
+                    <motion.button
+                      key={effectName}
+                      type="button"
+                      whileTap={{ scale: 0.92 }}
+                      transition={spring.bouncy}
+                      onClick={() => {
+                        setPendingEffect(effectName)
+                        setTray(false)
+                        toast(`${EFFECT_EMOJI[effectName]} ${effectName} armed — type a message and send`)
+                        requestAnimationFrame(() => textareaRef.current?.focus())
+                      }}
+                      className="flex flex-1 items-center justify-center gap-1 rounded-full bg-violet-500/10 py-2 text-[11px] font-bold text-violet-700 ring-1 ring-inset ring-violet-500/25 outline-none transition-colors hover:bg-violet-500/20 dark:text-violet-300"
+                    >
+                      <span aria-hidden>{EFFECT_EMOJI[effectName]}</span>
+                      {effectName}
+                    </motion.button>
+                  ))}
+                </motion.div>
+              ) : null}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
         {broadcastLocked ? (
           <div className="flex items-center justify-center gap-2 rounded-2xl bg-zinc-100 px-3 py-3 text-xs font-semibold text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
             <Megaphone className="size-4 text-emerald-500" aria-hidden />
@@ -3191,7 +3543,24 @@ export function ChatRoom({
           </div>
         ) : null}
 
-        <div className={cn('relative flex items-end gap-2', broadcastLocked && 'pointer-events-none select-none opacity-40')}>
+        <div
+          onFocusCapture={() => setComposerFocus(true)}
+          onBlurCapture={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setComposerFocus(false)
+          }}
+          className={cn(
+            'relative flex items-end gap-1 rounded-[26px] p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.18)] backdrop-blur-2xl bg-white/80 ring-1 ring-inset ring-black/[0.06] dark:bg-zinc-900/70 dark:ring-white/10 dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]',
+            broadcastLocked && 'pointer-events-none select-none opacity-40',
+          )}
+        >
+          {/* emerald focus hairline — springs in whenever the capsule holds focus */}
+          <motion.div
+            aria-hidden
+            initial={false}
+            animate={{ opacity: composerFocus ? 1 : 0, scale: composerFocus ? 1 : 0.985 }}
+            transition={spring.soft}
+            className="pointer-events-none absolute inset-0 rounded-[26px] ring-2 ring-inset ring-emerald-500/40"
+          />
           {/* slash-command palette (Discord/Slack-style) — fast-path over the plain parser */}
           {!editing && !recording ? (
             <SlashPalette
@@ -3242,134 +3611,100 @@ export function ChatRoom({
           />
           {recording ? (
             <>
-              <button
+              <motion.button
                 type="button"
                 aria-label="Cancel recording"
                 onClick={() => finishRecording(false)}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 outline-none transition-transform hover:bg-rose-200 active:scale-90 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-500/25"
+                whileTap={{ scale: 0.9 }}
+                transition={pressSpring}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 outline-none transition-colors hover:bg-rose-200 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-500/25"
               >
                 <X className="size-5" aria-hidden />
-              </button>
-              <div
+              </motion.button>
+              <motion.div
                 role="status"
                 aria-label="Recording voice note"
+                initial={{ opacity: 0, x: -14 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={spring.snappy}
                 className="flex h-11 flex-1 items-center gap-2.5 rounded-full border border-rose-200 bg-rose-50 px-4 dark:border-rose-500/30 dark:bg-rose-500/10"
               >
+                {/* live pulsing red radar ring around the record indicator */}
                 <span className="relative flex size-2.5 shrink-0" aria-hidden>
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                  {!prefs.reducedMotion ? (
+                    <motion.span
+                      className="absolute inset-0 rounded-full border-2 border-rose-400"
+                      animate={{ scale: [1, 2], opacity: [0.85, 0] }}
+                      transition={{ repeat: Infinity, duration: 1.1, ease: 'easeOut' }}
+                    />
+                  ) : null}
                   <span className="relative inline-flex size-2.5 rounded-full bg-rose-500" />
                 </span>
-                <span className="text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                <motion.span
+                  initial={{ opacity: 0, y: -6, scale: 0.8 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={spring.bouncy}
+                  className="text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400"
+                >
                   {formatVoicems(recordMs)}
-                </span>
+                </motion.span>
                 <span className="ml-auto truncate text-xs text-zinc-400 dark:text-zinc-500">
                   Recording voice note…
                 </span>
-              </div>
-              <button
+              </motion.div>
+              <motion.button
                 type="button"
                 aria-label="Stop and send voice note"
                 disabled={sendingVoice}
                 onClick={() => finishRecording(true)}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-90 disabled:opacity-60"
+                whileTap={sendingVoice ? undefined : { scale: 0.9 }}
+                transition={pressSpring}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-md shadow-emerald-600/25 outline-none transition-colors hover:brightness-105 disabled:opacity-60"
               >
                 {sendingVoice ? (
                   <LoaderCircle className="size-5 animate-spin" aria-hidden />
                 ) : (
                   <SendHorizontal className="size-5" aria-hidden />
                 )}
-              </button>
+              </motion.button>
             </>
           ) : (
             <>
-              {/* Telegram/Discord attach menu: photos · polls · scheduled · quick phrases */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Add attachment"
-                    className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 dark:hover:bg-zinc-800"
-                  >
-                    <Plus className="size-6" aria-hidden />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  side="top"
-                  align="start"
-                  sideOffset={10}
-                  className="w-56 rounded-2xl p-1.5 dark:bg-zinc-800"
-                >
-                  <div className="flex flex-col">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={sendingImage || broadcastLocked}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                    >
-                      {sendingImage ? (
-                        <LoaderCircle className="size-4 animate-spin text-emerald-500" aria-hidden />
-                      ) : (
-                        <ImagePlus className="size-4 text-emerald-500" aria-hidden />
-                      )}
-                      Photo
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={broadcastLocked}
-                      onClick={() => {
-                        setPollBuilderOpen(true)
-                        setHelpOpen(false)
-                      }}
-                      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                    >
-                      <Vote className="size-4 text-violet-500" aria-hidden />
-                      Create poll
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={broadcastLocked}
-                      onClick={() => {
-                        const draft = input.trim()
-                        if (draft.length === 0 && scheduleFor === null) {
-                          toast.info('Type the message first, then schedule it')
-                          return
-                        }
-                        setScheduleFor(draft)
-                      }}
-                      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                    >
-                      <CalendarClock className="size-4 text-amber-500" aria-hidden />
-                      Schedule message
-                    </button>
-                    {(scheduledQuery.data?.length ?? 0) > 0 ? (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => setScheduledListOpen(true)}
-                        className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                      >
-                        <Clock className="size-4 text-zinc-400" aria-hidden />
-                        Pending sends
-                        <span className="ml-auto rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-600 dark:bg-amber-500/20 dark:text-amber-300">
-                          {scheduledQuery.data?.length}
-                        </span>
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => setHelpOpen(true)}
-                      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                    >
-                      <Dices className="size-4 text-teal-500" aria-hidden />
-                      Slash commands
-                    </button>
-                  </div>
-                </PopoverContent>
-              </Popover>
+              {/* + tray toggle — rotates 45° into a ✕ while the tray is open */}
+              <motion.button
+                type="button"
+                aria-label={trayOpen ? 'Close attachments tray' : 'Open attachments tray'}
+                aria-expanded={trayOpen}
+                disabled={broadcastLocked}
+                onClick={() => {
+                  haptic(8)
+                  setTray(!trayOpen)
+                }}
+                whileTap={broadcastLocked ? undefined : { scale: 0.88 }}
+                animate={{ rotate: trayOpen ? 45 : 0 }}
+                transition={spring.snappy}
+                className={cn(
+                  'flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-colors',
+                  trayOpen
+                    ? 'bg-zinc-900/5 text-zinc-700 dark:bg-white/10 dark:text-zinc-200'
+                    : 'text-zinc-400 hover:bg-zinc-100 hover:text-emerald-600 dark:hover:bg-zinc-800',
+                )}
+              >
+                <Plus className="size-6" aria-hidden />
+              </motion.button>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                rows={1}
+                aria-label="Message input"
+                placeholder="Type a message"
+                maxLength={2000}
+                enterKeyHint="send"
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={stopTyping}
+                className="pulse-scroll max-h-[120px] min-h-[44px] w-full flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-[height] duration-200 ease-out placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              />
               <Popover>
                 <PopoverTrigger asChild>
                   <button
@@ -3407,76 +3742,96 @@ export function ChatRoom({
                   </div>
                 </PopoverContent>
               </Popover>
-              <button
-                type="button"
-                aria-label="Send a sticker"
-                onClick={() => {
-                  haptic(8)
-                  setStickerOpen(true)
-                }}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 dark:hover:bg-zinc-800"
-              >
-                <Sticker className="size-6" aria-hidden />
-              </button>
-              <button
-                type="button"
-                aria-label="Share location"
-                onClick={() => {
-                  haptic(8)
-                  setLocationOpen(true)
-                }}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-teal-600 active:scale-90 dark:hover:bg-zinc-800"
-              >
-                <MapPin className="size-6" aria-hidden />
-              </button>
-              <textarea
-                ref={textareaRef}
-                value={input}
-                rows={1}
-                aria-label="Message input"
-                placeholder="Type a message"
-                maxLength={2000}
-                enterKeyHint="send"
-                onChange={(e) => handleInputChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={stopTyping}
-                className="pulse-scroll max-h-[120px] flex-1 resize-none rounded-3xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-colors focus:border-emerald-400 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-emerald-500/70"
-              />
               {input.trim().length === 0 && !editing && pendingEffect === null ? (
-                <button
+                <motion.button
                   type="button"
                   aria-label="Record voice note"
                   onClick={() => void startRecording()}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 outline-none transition-all hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-90 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-emerald-400"
+                  whileTap={pressTap}
+                  transition={pressSpring}
+                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 outline-none transition-colors hover:bg-emerald-500/10 hover:text-emerald-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-emerald-400"
                 >
-                  <Mic className="size-5" aria-hidden />
-                </button>
+                  <motion.span
+                    key={sendPop}
+                    initial={false}
+                    animate={sendPop > 0 && !prefs.reducedMotion ? { scale: [1, 1.18, 1] } : { scale: 1 }}
+                    transition={{ duration: 0.32, times: [0, 0.45, 1], ease: 'easeOut' }}
+                    className="flex"
+                  >
+                    <Mic className="size-5" aria-hidden />
+                  </motion.span>
+                </motion.button>
               ) : (
-                <button
+                <motion.button
                   type="button"
                   aria-label={editing ? 'Save edit' : 'Send message'}
                   disabled={input.trim().length === 0 || sendMessage.isPending || editMessage.isPending}
                   onClick={submit}
+                  whileTap={input.trim().length > 0 && !sendMessage.isPending ? { scale: 0.88 } : undefined}
+                  transition={pressSpring}
                   className={cn(
-                    'flex size-11 shrink-0 items-center justify-center rounded-full transition-all active:scale-90',
+                    'flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-colors',
                     input.trim().length > 0
-                      ? 'bg-emerald-500 text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90'
+                      ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-md shadow-emerald-600/30'
                       : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500',
                   )}
                 >
-                  {editing ? (
-                    <Check className="size-5" aria-hidden />
-                  ) : (
-                    <SendHorizontal className="size-5" aria-hidden />
-                  )}
-                </button>
+                  <AnimatePresence mode="wait" initial={false}>
+                    {sendMessage.isPending || editMessage.isPending ? (
+                      <motion.span
+                        key="sending"
+                        initial={{ opacity: 0, scale: 0.55, rotate: -90 }}
+                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                        exit={{ opacity: 0, scale: 0.55 }}
+                        transition={spring.snappy}
+                        className="flex"
+                      >
+                        <LoaderCircle className="size-5 animate-spin" aria-hidden />
+                      </motion.span>
+                    ) : editing ? (
+                      <motion.span
+                        key="edit"
+                        initial={{ opacity: 0, scale: 0.55 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.55 }}
+                        transition={spring.bouncy}
+                        className="flex"
+                      >
+                        <Check className="size-5" aria-hidden />
+                      </motion.span>
+                    ) : input.trim().length > 0 ? (
+                      <motion.span
+                        key="plane"
+                        initial={{ opacity: 0, x: 16, scale: 0.5, rotate: -35 }}
+                        animate={{ opacity: 1, x: 0, scale: 1, rotate: 0 }}
+                        exit={{ opacity: 0, x: -12, scale: 0.6 }}
+                        transition={spring.bouncy}
+                        className="flex"
+                      >
+                        <SendHorizontal className="size-5" aria-hidden />
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key="idle-dot"
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.5 }}
+                        transition={spring.snappy}
+                        className="flex"
+                      >
+                        <span className="block size-2 rounded-full bg-current" aria-hidden />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </motion.button>
               )}
             </>
           )}
         </div>
-      </div>
+        </div>
+      </motion.div>
       {/* clearance for the floating bottom dock (composer must never sit under it) */}
-      <div className="shrink-0 bg-white dark:bg-zinc-900" style={{ height: dockInset }} aria-hidden />
+      <div className="shrink-0 bg-zinc-100/80 dark:bg-zinc-950/60" style={{ height: dockInset }} aria-hidden />
 
       {/* message actions */}
       <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
@@ -3492,18 +3847,24 @@ export function ChatRoom({
           {selected && !selected.deletedAt ? (
             <div className="flex items-center justify-between gap-0.5" role="group" aria-label="React with an emoji">
               {REACTION_CHOICES.map((emoji) => (
-                <button
+                <motion.button
                   key={emoji}
                   type="button"
                   aria-label={`React with ${emoji}`}
-                  onClick={() => {
+                  whileTap={{ scale: 0.85 }}
+                  transition={pressSpring}
+                  onClick={(e) => {
+                    const adding = !selected.reactions.some(
+                      (g) => g.emoji === emoji && g.userIds.includes(me.id),
+                    )
+                    if (adding) fireParticlesAt(e.currentTarget, 'hearts', 24)
                     handleToggleReaction(selected.id, emoji)
                     setSelected(null)
                   }}
-                  className="flex size-10 items-center justify-center rounded-full text-xl outline-none transition-transform hover:scale-125 hover:bg-zinc-100 active:scale-95 dark:hover:bg-zinc-800"
+                  className="flex size-10 items-center justify-center rounded-full text-xl outline-none transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
                 >
                   {emoji}
-                </button>
+                </motion.button>
               ))}
             </div>
           ) : null}
@@ -4477,6 +4838,10 @@ interface MessageRowProps {
   density: 'cozy' | 'compact'
   /** tap a sender avatar → open their profile sheet */
   onOpenProfile: (sender: MessageAuthor) => void
+  /** spring-entrance for freshly arrived messages (history renders static) */
+  justArrived: boolean
+  /** prefs.reducedMotion mirror — gates entrance/tap/particle motion */
+  reducedMotion: boolean
 }
 
 /** Renders text with the first case-insensitive occurrence of `query` highlighted. */
@@ -4908,6 +5273,8 @@ const MessageRow = memo(function MessageRow({
   bubbleRadius,
   density,
   onOpenProfile,
+  justArrived,
+  reducedMotion,
 }: MessageRowProps) {
   const deleted = message.deletedAt !== null
   const pending = message.id.startsWith('temp-')
@@ -4950,8 +5317,13 @@ const MessageRow = memo(function MessageRow({
   // keeps every hint invisible.
   const bubbleX = useMotionValue(0)
   const towardX = useTransform(bubbleX, (v) => (mine ? -v : v))
-  const hintOpacity = useTransform(towardX, [10, 34], [0, 1])
-  const hintScale = useTransform(towardX, [10, 52], [0.6, 1.05])
+  const hintOpacity = useTransform(towardX, [4, 28], [0, 1])
+  const hintScale = useTransform(towardX, [4, 44], [0.5, 1.1])
+
+  /** true when a ❤️ double-tap would ADD (not remove) the reaction */
+  const doubleTapAddsHeart = !message.reactions.some(
+    (g) => g.emoji === '❤️' && g.userIds.includes(myId),
+  )
 
   const openReactionInfo = (emoji: string) => {
     haptic(10)
@@ -5015,11 +5387,26 @@ const MessageRow = memo(function MessageRow({
             </motion.span>
           )}
           <motion.div
+          initial={
+            justArrived && !reducedMotion
+              ? mine
+                ? { opacity: 0, scaleX: 1.06, scaleY: 0.94, y: 6 } // Telegram-style squash & stretch on land
+                : { opacity: 0, scale: 0.85, y: 8 } // incoming pop
+              : false
+          }
+          animate={justArrived && !reducedMotion ? { opacity: 1, scaleX: 1, scaleY: 1, y: 0 } : undefined}
+          transition={spring.bouncy}
+          style={{ transformOrigin: mine ? '100% 100%' : '0% 100%' }}
+          className="min-w-0"
+        >
+          <motion.div
           drag="x"
-          dragConstraints={{ left: -56, right: 56 }}
-          dragElastic={0.16}
+          dragConstraints={{ left: -64, right: 64 }}
+          dragElastic={0.12}
           dragDirectionLock
           dragSnapToOrigin
+          whileTap={interactive && !reducedMotion ? { scale: 0.97 } : undefined}
+          transition={spring.snappy}
           style={{ x: bubbleX }}
           onDragStart={() => {
             dragMovedRef.current = false
@@ -5027,7 +5414,7 @@ const MessageRow = memo(function MessageRow({
           }}
           onDragEnd={(_e, info) => {
             const toward = mine ? -info.offset.x : info.offset.x
-            if (toward > 52) {
+            if (toward > 28) {
               dragMovedRef.current = true
               beginReply()
             }
@@ -5042,8 +5429,9 @@ const MessageRow = memo(function MessageRow({
           onPointerDown={() => interactive && onStartLongPress(message)}
           onPointerUp={onEndLongPress}
           onPointerLeave={onEndLongPress}
-          onDoubleClick={() => {
+          onDoubleClick={(e) => {
             if (interactive) {
+              if (doubleTapAddsHeart && !reducedMotion) fireParticlesAt(e.currentTarget, 'hearts', 28)
               onToggleReaction(message.id, '❤️')
             }
           }}
@@ -5269,6 +5657,7 @@ const MessageRow = memo(function MessageRow({
             ) : null}
           </div>
         </motion.div>
+        </motion.div>
         </div>
 
         {hasReactions && !deleted ? (
@@ -5288,8 +5677,12 @@ const MessageRow = memo(function MessageRow({
                   key={group.emoji}
                   type="button"
                   aria-label={`${group.emoji} ${group.count} — tap to toggle, hold for details`}
-                  onClick={() => {
-                    if (!chipFiredRef.current) onToggleReaction(message.id, group.emoji)
+                  onClick={(e) => {
+                    if (!chipFiredRef.current) {
+                      // R22: hearts burst from the chip when a reaction is added
+                      if (!iReacted && !reducedMotion) fireParticlesAt(e.currentTarget, 'hearts', 24)
+                      onToggleReaction(message.id, group.emoji)
+                    }
                     chipFiredRef.current = false
                   }}
                   onPointerDown={() => {
@@ -5322,7 +5715,11 @@ const MessageRow = memo(function MessageRow({
                 >
                   <span className="text-xs leading-none">{group.emoji}</span>
                   {group.count > 1 ? (
-                    <span
+                    <motion.span
+                      key={`${group.count}-${iReacted}`}
+                      initial={reducedMotion ? false : { scale: 1.45, opacity: 0.5 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={spring.bouncy}
                       className={cn(
                         'font-semibold',
                         iReacted
@@ -5331,7 +5728,7 @@ const MessageRow = memo(function MessageRow({
                       )}
                     >
                       {group.count}
-                    </span>
+                    </motion.span>
                   ) : null}
                 </button>
               )
@@ -5429,7 +5826,10 @@ function rowsEqual(prev: MessageRowProps, next: MessageRowProps): boolean {
     prev.onImageLoad === next.onImageLoad &&
     prev.onOpenThread === next.onOpenThread &&
     prev.onVote === next.onVote &&
-    prev.onClosePoll === next.onClosePoll
+    prev.onClosePoll === next.onClosePoll &&
+    prev.onOpenProfile === next.onOpenProfile &&
+    prev.justArrived === next.justArrived &&
+    prev.reducedMotion === next.reducedMotion
   )
 }
 

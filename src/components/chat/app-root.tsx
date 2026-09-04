@@ -15,6 +15,7 @@ import { ApiError, apiJson } from '@/lib/pulse-utils'
 import { Providers } from '@/components/chat/providers'
 import { OnboardingScreen } from '@/components/chat/onboarding-screen'
 import { MainShell } from '@/components/chat/main-shell'
+import { ParticleLayer } from '@/components/fx/particle-layer'
 
 type BootStatus = 'checking' | 'onboarding' | 'ready'
 
@@ -119,6 +120,8 @@ function BootGate() {
 export function AppRoot() {
   return (
     <Providers>
+      {/* global FX layer — fixed z-[95], survives route/tab switches */}
+      <ParticleLayer />
       <BootGate />
     </Providers>
   )

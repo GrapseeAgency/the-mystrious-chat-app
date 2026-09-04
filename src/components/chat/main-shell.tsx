@@ -1,20 +1,25 @@
 // ─────────────────────────────────────────────────────────────
 // Pulse Chat — main shell: four-tab layout inside the phone
 // frame with ChatRoom rendered as a full-screen overlay, plus
-// the system chrome: a slim command bar (Spotlight search ⌘K /
-// Ctrl+K + Settings) and the Spotlight / Settings overlays.
+// the system chrome: a glass command bar (Spotlight search ⌘K /
+// Ctrl+K + Settings), edge-swipe tab switching, the liquid-glass
+// floating dock (acrylic style) and the Spotlight / Settings
+// overlays.
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion'
 import { useQueryClient } from '@tanstack/react-query'
 import { Search, Settings as SettingsIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import { haptic } from '@/lib/pulse-settings'
 import type { AppUser } from '@/lib/types'
 import { apiJson } from '@/lib/pulse-utils'
 import { usePrefs } from '@/lib/prefs'
+import { ease, pressSpring, pressTap } from '@/lib/motion'
 import { PulseNav, useNavStyle, type PulseTab } from '@/components/chat/nav-router'
+import { BottomNav } from '@/components/chat/bottom-nav'
 import { ChatsTab } from '@/components/chat/chats-tab'
 import { ContactsTab } from '@/components/chat/contacts-tab'
 import { ProfileTab } from '@/components/chat/profile-tab'
@@ -32,8 +37,34 @@ const TAB_LABEL: Record<PulseTab, string> = {
   profile: 'Profile',
 }
 
+/** Canonical tab order — drives auto direction for slide/fade transitions. */
+const TAB_ORDER: Array<PulseTab> = ['chats', 'hub', 'contacts', 'profile']
+
+/**
+ * Direction-aware tab-panel transition (R22): content slides ±24px +
+ * fades with the signature swift-out ease. popLayout lets the outgoing
+ * panel fly while the incoming one settles. Reduced motion → instant swap.
+ */
+function makePanelVariants(reduced: boolean): Variants {
+  return {
+    enter: (dir: number) => (reduced ? { opacity: 0 } : { opacity: 0, x: dir * 24 }),
+    center: { opacity: 1, x: 0 },
+    exit: (dir: number) => (reduced ? { opacity: 0 } : { opacity: 0, x: dir * -24 }),
+  }
+}
+
 export function MainShell({ me }: { me: AppUser }) {
-  const [tab, setTab] = useState<PulseTab>('chats')
+  // tab + last travel direction kept together so AnimatePresence always
+  // knows which way to slide (dock taps: index order · swipes: gesture)
+  const [navState, setNavState] = useState<{ tab: PulseTab; dir: 1 | -1 }>({ tab: 'chats', dir: 1 })
+  const tab = navState.tab
+  const changeTab = useCallback((next: PulseTab, dir?: 1 | -1) => {
+    setNavState((prev) => {
+      if (prev.tab === next) return prev
+      const nextDir: 1 | -1 = dir ?? (TAB_ORDER.indexOf(next) > TAB_ORDER.indexOf(prev.tab) ? 1 : -1)
+      return { tab: next, dir: nextDir }
+    })
+  }, [])
   const [navStyle] = useNavStyle()
   const railMode = navStyle === 'rail'
   const [openConversationId, setOpenConversationId] = useState<string | null>(null)
@@ -52,6 +83,11 @@ export function MainShell({ me }: { me: AppUser }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const queryClient = useQueryClient()
   const hydratePrefs = usePrefs((s) => s.hydrate)
+  const reducedMotion = useReducedMotion()
+  const panelVariants = makePanelVariants(reducedMotion === true)
+  // edge-swipe intent anchor: only touches born within 24px of a screen
+  // edge can become tab switches (never hijacks vertical scroll)
+  const swipeAnchor = useRef<{ x: number; y: number; edge: 'left' | 'right' } | null>(null)
   /** invite deep-link code lifted from ?join= (null = none pending) */
   const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(() => {
     // pure read — consumed on first render, cleaned up just after mount
@@ -105,6 +141,48 @@ export function MainShell({ me }: { me: AppUser }) {
     }
   }
 
+  // ── edge-swipe tab switching (R22) ─────────────────────────
+  // left edge + swipe right → previous tab · right edge + swipe left → next.
+  // Pure passive listeners: no preventDefault, so vertical scroll and inner
+  // carousels are never hijacked; intent cancels the moment it turns vertical.
+  const onContentTouchStart = (e: React.TouchEvent) => {
+    if (reducedMotion) return
+    if (openConversationId !== null || settingsOpen || spotlightOpen) return
+    const t = e.touches[0]
+    if (!t) return
+    const edge: 'left' | 'right' | null =
+      t.clientX <= 24 ? 'left' : t.clientX >= window.innerWidth - 24 ? 'right' : null
+    swipeAnchor.current = edge ? { x: t.clientX, y: t.clientY, edge } : null
+  }
+
+  const onContentTouchMove = (e: React.TouchEvent) => {
+    const anchor = swipeAnchor.current
+    if (!anchor) return
+    const t = e.touches[0]
+    if (!t) return
+    if (Math.abs(t.clientY - anchor.y) > Math.abs(t.clientX - anchor.x) + 8) {
+      swipeAnchor.current = null // vertical intent — release the gesture
+    }
+  }
+
+  const onContentTouchEnd = (e: React.TouchEvent) => {
+    const anchor = swipeAnchor.current
+    swipeAnchor.current = null
+    if (!anchor || reducedMotion) return
+    const t = e.changedTouches[0]
+    if (!t) return
+    const dx = t.clientX - anchor.x
+    if (Math.abs(dx) < 56) return // too short — a tap, not a swipe
+    const idx = TAB_ORDER.indexOf(tab)
+    if (anchor.edge === 'left' && dx > 0 && idx > 0) {
+      haptic(8)
+      changeTab(TAB_ORDER[idx - 1], -1)
+    } else if (anchor.edge === 'right' && dx < 0 && idx < TAB_ORDER.length - 1) {
+      haptic(8)
+      changeTab(TAB_ORDER[idx + 1], 1)
+    }
+  }
+
   /** Spotlight → People row: open (or lazily create) a 1:1 DM, same call as NewChatSheet. */
   const openDmByUserId = useCallback(
     async (userId: string) => {
@@ -129,7 +207,9 @@ export function MainShell({ me }: { me: AppUser }) {
     <div className="relative flex h-full flex-col overflow-hidden">
       {/* system command bar — Spotlight trigger (⌘K) + Settings; hidden while a chat room owns the screen */}
       {openConversationId === null ? (
-        <header className="relative z-[65] flex h-11 shrink-0 items-center gap-1 border-b border-zinc-200/70 bg-white/70 px-2 backdrop-blur-xl dark:border-zinc-800/70 dark:bg-zinc-900/70">
+        <header
+          className="sticky top-0 z-[65] flex h-11 shrink-0 items-center gap-1 border-b border-zinc-200/70 bg-white/70 px-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] backdrop-blur-2xl backdrop-saturate-150 [will-change:transform] dark:border-white/10 dark:bg-zinc-900/65 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+        >
           <span
             aria-hidden
             className="inline-block size-1.5 shrink-0 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600"
@@ -138,36 +218,53 @@ export function MainShell({ me }: { me: AppUser }) {
             {TAB_LABEL[tab]}
           </span>
           <div className="flex-1" />
-          <button
+          <motion.button
             type="button"
             aria-label="Search"
             onClick={() => setSpotlightOpen(true)}
-            className="flex size-10 items-center justify-center rounded-full text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-700 active:scale-95 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+            whileTap={reducedMotion ? undefined : pressTap}
+            transition={pressSpring}
+            className="flex size-10 items-center justify-center rounded-full text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
           >
             <Search className="size-[18px]" aria-hidden />
-          </button>
-          <button
+          </motion.button>
+          <motion.button
             type="button"
             aria-label="Settings"
             onClick={() => setSettingsOpen(true)}
-            className="flex size-10 items-center justify-center rounded-full text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-700 active:scale-95 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+            whileTap={reducedMotion ? undefined : pressTap}
+            transition={pressSpring}
+            className="flex size-10 items-center justify-center rounded-full text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
           >
             <SettingsIcon className="size-[18px]" aria-hidden />
-          </button>
+          </motion.button>
         </header>
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        {railMode && !settingsOpen ? <PulseNav me={me} active={tab} onChange={setTab} /> : null}
-        <div className="relative min-h-0 flex-1">
-        <AnimatePresence mode="wait" initial={false}>
+        {railMode && !settingsOpen ? <PulseNav me={me} active={tab} onChange={changeTab} /> : null}
+        <div
+          className="relative min-h-0 flex-1"
+          onTouchStart={onContentTouchStart}
+          onTouchMove={onContentTouchMove}
+          onTouchEnd={onContentTouchEnd}
+          onTouchCancel={() => {
+            swipeAnchor.current = null
+          }}
+        >
+        <AnimatePresence mode="popLayout" initial={false} custom={navState.dir}>
           <motion.div
             key={tab}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
+            role="tabpanel"
+            aria-label={`${TAB_LABEL[tab]} tab`}
+            custom={navState.dir}
+            variants={panelVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: reducedMotion ? 0 : 0.22, ease: ease.out }}
             className="absolute inset-0"
+            style={reducedMotion ? undefined : { willChange: 'transform' }}
           >
             {tab === 'chats' ? (
               <ChatsTab
@@ -177,9 +274,9 @@ export function MainShell({ me }: { me: AppUser }) {
                   setJumpMessageId(jumpTargetId ?? null)
                   setOpenConversationId(conversationId)
                 }}
-                onOpenContacts={() => setTab('contacts')}
+                onOpenContacts={() => changeTab('contacts')}
                 onRequestNewChat={() => openNewChat('dm')}
-                onGoProfile={() => setTab('profile')}
+                onGoProfile={() => changeTab('profile')}
               />
             ) : null}
             {tab === 'hub' ? (
@@ -200,7 +297,7 @@ export function MainShell({ me }: { me: AppUser }) {
                   setJumpMessageId(null)
                   setOpenConversationId(conversationId)
                 }}
-                onGoProfile={() => setTab('profile')}
+                onGoProfile={() => changeTab('profile')}
                 onRequestNewGroup={() => openNewChat('group')}
               />
             ) : null}
@@ -208,7 +305,7 @@ export function MainShell({ me }: { me: AppUser }) {
               <ProfileTab
                 me={me}
                 onOpenSavedMessage={(conversationId, messageId) => {
-                  setTab('chats')
+                  changeTab('chats')
                   setOpenConversationAnchorMs(null)
                   setJumpMessageId(messageId)
                   setOpenConversationId(conversationId)
@@ -233,7 +330,18 @@ export function MainShell({ me }: { me: AppUser }) {
         </div>
       </div>
 
-      {!railMode && !settingsOpen ? <PulseNav me={me} active={tab} onChange={setTab} /> : null}
+      {/* liquid-glass floating dock (acrylic) · PulseNav keeps the other
+          nav styles (rail/edge/radial). Hidden while a chat room, Settings
+          or a blocking sheet owns the screen — slides away via AnimatePresence. */}
+      <AnimatePresence>
+        {openConversationId === null && !railMode && !settingsOpen && !sheetMounted && pendingInviteCode === null ? (
+          navStyle === 'acrylic' ? (
+            <BottomNav key="dock-acrylic" me={me} active={tab} onChange={changeTab} />
+          ) : (
+            <PulseNav key="nav-overlay" me={me} active={tab} onChange={changeTab} />
+          )
+        ) : null}
+      </AnimatePresence>
 
       {sheetMounted ? (
         <NewChatSheet
@@ -275,7 +383,7 @@ export function MainShell({ me }: { me: AppUser }) {
             me={me}
             onOpenHub={() => {
               setSettingsOpen(false)
-              setTab('hub')
+              changeTab('hub')
             }}
           />
         ) : null}
@@ -295,7 +403,7 @@ export function MainShell({ me }: { me: AppUser }) {
             }}
             onOpenDm={(userId) => void openDmByUserId(userId)}
             onRequestNewChat={() => openNewChat('dm')}
-            onOpenHub={() => setTab('hub')}
+            onOpenHub={() => changeTab('hub')}
           />
         ) : null}
       </AnimatePresence>

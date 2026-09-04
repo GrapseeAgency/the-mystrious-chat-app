@@ -3,9 +3,9 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion, type PanInfo } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, LoaderCircle, MoreVertical, PencilLine, Pin, PinOff, Plus, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
@@ -21,6 +21,7 @@ import {
   otherMemberOf,
 } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
+import { ease, pressSpring, pressTap, spring, stagger } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
 import type { ChatsListFilter } from '@/lib/pulse-settings'
 import { pulseSettingsStore } from '@/lib/pulse-settings'
@@ -68,11 +69,40 @@ interface ConversationRowProps {
   muted: boolean
   /** someone is typing in this conversation right now */
   typing: boolean
+  /** row lives in the archived drawer (swipe chip flips to Unarchive) */
+  archived: boolean
+  /** stagger slot for the initial-mount entrance (null = animate nothing) */
+  entranceIndex: number | null
   onPress: () => void
   onLongPress: () => void
+  /** existing pin/unpin handler — surfaced as a swipe-left chip */
+  onPin: () => void
+  /** existing archive/unarchive handler — surfaced as a swipe-left chip */
+  onArchive: () => void
 }
 
 const LONG_PRESS_MS = 450
+
+/** Full reveal width of the swipe action tray (2 glass chips). */
+const SWIPE_REVEAL_PX = 112
+/** Drag distance that snaps the tray open (one chip width). */
+const SWIPE_OPEN_THRESHOLD_PX = 56
+
+/** Pulsing emerald presence halo behind online avatars (spring.gentle loop). */
+function PresenceGlow({ reduced }: { reduced: boolean }) {
+  if (reduced) {
+    return <span aria-hidden className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/50" />
+  }
+  return (
+    <motion.span
+      aria-hidden
+      initial={{ scale: 1, opacity: 0.65 }}
+      animate={{ scale: 1.14, opacity: 0.18 }}
+      transition={{ ...spring.gentle, repeat: Infinity, repeatType: 'reverse' }}
+      className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.35)]"
+    />
+  )
+}
 
 const ConversationRow = memo(function ConversationRow({
   id,
@@ -91,12 +121,21 @@ const ConversationRow = memo(function ConversationRow({
   pinned,
   muted,
   typing,
+  archived,
+  entranceIndex,
   onPress,
   onLongPress,
+  onPin,
+  onArchive,
 }: ConversationRowProps) {
   const hasUnread = unreadCount > 0
+  const reducedMotion = useReducedMotion()
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressFiredRef = useRef(false)
+  /** true between dragStart and the click that follows release — swallows the click */
+  const draggedRef = useRef(false)
+  const [swipeOpen, setSwipeOpen] = useState(false)
+  const entrance = entranceIndex !== null && !reducedMotion
 
   const clearLongPress = useCallback(() => {
     if (longPressRef.current !== null) {
@@ -106,6 +145,7 @@ const ConversationRow = memo(function ConversationRow({
   }, [])
 
   const startLongPress = useCallback(() => {
+    draggedRef.current = false
     clearLongPress()
     longPressFiredRef.current = false
     longPressRef.current = setTimeout(() => {
@@ -117,29 +157,130 @@ const ConversationRow = memo(function ConversationRow({
   }, [clearLongPress, onLongPress])
 
   const handleClick = useCallback(() => {
+    if (draggedRef.current) {
+      draggedRef.current = false
+      return
+    }
+    if (swipeOpen) {
+      setSwipeOpen(false)
+      return
+    }
     if (!longPressFiredRef.current) onPress()
     longPressFiredRef.current = false
-  }, [onPress])
+  }, [onPress, swipeOpen])
+
+  const handleDragStart = useCallback(() => {
+    draggedRef.current = true
+    clearLongPress()
+  }, [clearLongPress])
+
+  const handleDragEnd = useCallback(
+    (_event: unknown, info: PanInfo) => {
+      const from = swipeOpen ? -SWIPE_REVEAL_PX : 0
+      setSwipeOpen(from + info.offset.x <= -SWIPE_OPEN_THRESHOLD_PX)
+    },
+    [swipeOpen],
+  )
 
   return (
-    <div className="group relative px-2">
-      <button
-        type="button"
-        onClick={handleClick}
-        onPointerDown={startLongPress}
-        onPointerUp={clearLongPress}
-        onPointerLeave={clearLongPress}
-        onContextMenu={(e) => e.preventDefault()}
-        className={cn(
-          'flex w-full touch-manipulation items-center gap-3 rounded-2xl px-2 py-2.5 text-left outline-none transition-colors active:bg-zinc-100 dark:active:bg-zinc-800',
-          pinned && 'bg-emerald-500/[0.045] dark:bg-emerald-500/[0.06]',
-        )}
-      >
-        {isGroup ? (
-          <GroupAvatar title={groupTitle} id={id} size={48} />
-        ) : (
-          <UserAvatar name={dmName ?? name} color={dmColor} size={48} showPresence online={online} />
-        )}
+    <motion.div
+      initial={entrance ? { opacity: 0, y: 14 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{
+        duration: 0.32,
+        ease: ease.out,
+        delay: entrance ? stagger(entranceIndex ?? 0, 0.028, 12) : 0,
+      }}
+      className="group relative overflow-hidden px-2"
+    >
+      <div className="relative">
+        {/* swipe-left glass action chips — the same pin/archive handlers the option sheet uses */}
+        <div className="absolute inset-y-1 right-2 z-0 flex items-center gap-1.5 pr-1" inert={!swipeOpen}>
+          <motion.button
+            type="button"
+            tabIndex={swipeOpen ? 0 : -1}
+            aria-hidden={!swipeOpen}
+            whileTap={reducedMotion ? undefined : pressTap}
+            transition={pressSpring}
+            onClick={() => {
+              setSwipeOpen(false)
+              onPin()
+            }}
+            aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`}
+            className="flex size-12 flex-col items-center justify-center gap-0.5 rounded-2xl bg-white/70 shadow-sm outline-none ring-1 ring-white/10 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10"
+          >
+            {pinned ? (
+              <PinOff className="size-[18px] text-amber-500" aria-hidden />
+            ) : (
+              <Pin className="size-[18px] text-emerald-600 dark:text-emerald-400" aria-hidden />
+            )}
+            <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400">
+              {pinned ? 'Unpin' : 'Pin'}
+            </span>
+          </motion.button>
+          <motion.button
+            type="button"
+            tabIndex={swipeOpen ? 0 : -1}
+            aria-hidden={!swipeOpen}
+            whileTap={reducedMotion ? undefined : pressTap}
+            transition={pressSpring}
+            onClick={() => {
+              setSwipeOpen(false)
+              onArchive()
+            }}
+            aria-label={archived ? `Unarchive ${name}` : `Archive ${name}`}
+            className="flex size-12 flex-col items-center justify-center gap-0.5 rounded-2xl bg-white/70 shadow-sm outline-none ring-1 ring-white/10 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10"
+          >
+            {archived ? (
+              <ArchiveRestore className="size-[18px] text-amber-500" aria-hidden />
+            ) : (
+              <Archive className="size-[18px] text-zinc-500 dark:text-zinc-400" aria-hidden />
+            )}
+            <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400">
+              {archived ? 'Unarchive' : 'Archive'}
+            </span>
+          </motion.button>
+        </div>
+
+        {/* swipeable row body — x-drag with direction lock so vertical scroll never fights */}
+        <motion.div
+          drag="x"
+          dragDirectionLock
+          dragConstraints={{ left: -SWIPE_REVEAL_PX, right: 0 }}
+          dragElastic={0.05}
+          dragMomentum={false}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          animate={{ x: swipeOpen ? -SWIPE_REVEAL_PX : 0 }}
+          transition={spring.snappy}
+          whileTap={reducedMotion ? undefined : { scale: 0.975 }}
+          style={{ willChange: 'transform' }}
+          className="relative z-10"
+        >
+          <button
+            type="button"
+            onClick={handleClick}
+            onPointerDown={startLongPress}
+            onPointerUp={clearLongPress}
+            onPointerLeave={clearLongPress}
+            onContextMenu={(e) => e.preventDefault()}
+            className="relative flex w-full touch-manipulation items-center gap-3 overflow-hidden rounded-2xl bg-white px-2 py-2.5 text-left outline-none dark:bg-zinc-900"
+          >
+            {pinned ? (
+              <span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl bg-emerald-500/[0.045] dark:bg-emerald-500/[0.06]" />
+            ) : null}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-2xl bg-zinc-900/[0.04] opacity-0 transition-opacity duration-100 group-active:opacity-100 dark:bg-white/5"
+            />
+            <span className="relative shrink-0">
+              {!isGroup && online ? <PresenceGlow reduced={reducedMotion === true} /> : null}
+              {isGroup ? (
+                <GroupAvatar title={groupTitle} id={id} size={48} />
+              ) : (
+                <UserAvatar name={dmName ?? name} color={dmColor} size={48} showPresence online={online} />
+              )}
+            </span>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
@@ -158,7 +299,11 @@ const ConversationRow = memo(function ConversationRow({
                 {name}
               </span>
             </span>
-            <span
+            <motion.span
+              key={time}
+              initial={reducedMotion ? false : { opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={spring.bouncy}
               className={cn(
                 'shrink-0 text-[11px]',
                 hasUnread
@@ -167,7 +312,7 @@ const ConversationRow = memo(function ConversationRow({
               )}
             >
               {time}
-            </span>
+            </motion.span>
           </div>
           <div className="mt-0.5 flex items-center justify-between gap-2">
             {typing ? (
@@ -205,18 +350,20 @@ const ConversationRow = memo(function ConversationRow({
             )}
             {hasUnread && !muted ? (
               <motion.span
-                initial={{ scale: 0 }}
+                key={unreadCount}
+                initial={reducedMotion ? false : { scale: 0 }}
                 animate={{ scale: 1 }}
-                transition={{ type: 'spring', stiffness: 520, damping: 20 }}
+                transition={spring.bouncy}
                 className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
               >
                 {unreadCount > 99 ? '99+' : unreadCount}
               </motion.span>
             ) : muted ? (
               <motion.span
-                initial={{ scale: 0.6, opacity: 0 }}
+                key={unreadCount}
+                initial={reducedMotion ? false : { scale: 0.6, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 520, damping: 24 }}
+                transition={spring.bouncy}
                 aria-label={hasUnread ? `Muted — ${unreadCount} unread` : 'Muted'}
                 className={cn(
                   'flex h-[18px] shrink-0 items-center gap-1 rounded-full px-1.5 text-[10px] font-bold ring-2 ring-white dark:ring-zinc-900',
@@ -231,20 +378,23 @@ const ConversationRow = memo(function ConversationRow({
             ) : null}
           </div>
         </div>
-      </button>
-      <button
-        type="button"
-        aria-label={`Options for ${name}`}
-        onClick={(e) => {
-          e.stopPropagation()
-          onLongPress()
-        }}
-        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-zinc-400 opacity-0 shadow-sm outline-none backdrop-blur transition-opacity hover:text-zinc-600 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-zinc-800/90 dark:hover:text-zinc-200"
-      >
-        <MoreVertical className="size-4" aria-hidden />
-      </button>
-      <div aria-hidden className="ml-[64px] h-px bg-zinc-100 dark:bg-zinc-800" />
-    </div>
+          </button>
+          {/* overflow options — kept for accessibility (screen readers + keyboard) */}
+          <button
+            type="button"
+            aria-label={`Options for ${name}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onLongPress()
+            }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-zinc-400 opacity-0 shadow-sm outline-none backdrop-blur transition-opacity hover:text-zinc-600 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-zinc-800/90 dark:hover:text-zinc-200"
+          >
+            <MoreVertical className="size-4" aria-hidden />
+          </button>
+          <div aria-hidden className="ml-[64px] h-px bg-zinc-100 dark:bg-zinc-800" />
+        </motion.div>
+      </div>
+    </motion.div>
   )
 })
 
@@ -302,6 +452,7 @@ const SearchMessageRow = memo(function SearchMessageRow({
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.16 }}
+      whileTap={{ scale: 0.975 }}
       onClick={() => onPress(hit)}
       className="flex w-full touch-manipulation items-center gap-3 rounded-2xl px-2 py-2.5 text-left outline-none transition-colors active:bg-zinc-100 dark:active:bg-zinc-800"
     >
@@ -387,25 +538,32 @@ const StoryRingCell = memo(function StoryRingCell({
   onPress: () => void
   index: number
 }) {
+  const reducedMotion = useReducedMotion()
   const inner = STORY_RING_SIZE - 5
   return (
     <motion.button
       type="button"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.05, 0.35), type: 'spring', stiffness: 420, damping: 26 }}
-      whileTap={{ scale: 0.92 }}
+      initial={reducedMotion ? false : 'hidden'}
+      animate="shown"
+      whileTap={reducedMotion ? undefined : 'tap'}
+      variants={{
+        hidden: {
+          opacity: 0,
+          y: 10,
+          transition: { duration: 0.28, ease: ease.out, delay: stagger(index, 0.03, 10) },
+        },
+        shown: { opacity: 1, y: 0, scale: 1, transition: spring.bouncy },
+        tap: { opacity: 1, y: 0, scale: 0.92, transition: spring.bouncy },
+      }}
       onClick={onPress}
       aria-label={ring === 'unseen' ? `${label} — new status` : label}
-      className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-2xl pb-1 pt-0.5 outline-none"
+      className="flex w-16 shrink-0 snap-start flex-col items-center gap-1 rounded-2xl pb-1 pt-0.5 outline-none"
     >
       <span className="relative block" style={{ width: STORY_RING_SIZE, height: STORY_RING_SIZE }}>
         {ring === 'unseen' ? (
-          <motion.span
+          <span
             aria-hidden
-            className="absolute inset-0 rounded-full [background:conic-gradient(from_0deg,#34d399,#14b8a6,#6ee7b7,#10b981,#34d399)]"
-            animate={{ rotate: 360 }}
-            transition={{ repeat: Infinity, duration: 2.6, ease: 'linear' }}
+            className="pulse-story-spin absolute inset-0 rounded-full [background:conic-gradient(from_0deg,#34d399,#14b8a6,#6ee7b7,#10b981,#34d399)]"
           />
         ) : (
           <span
@@ -449,6 +607,7 @@ export function ChatsTab({
   const typersIn = realtime.typersIn
   const onlineIds = realtime.onlineIds
   const [searching, setSearching] = useState(false)
+  const [searchFocused, setSearchFocused] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   /** debounced mirror of searchQuery feeding the server message search */
   const [deferredQuery, setDeferredQuery] = useState('')
@@ -463,6 +622,19 @@ export function ChatsTab({
       return res.conversations
     },
     refetchInterval: 6_000,
+  })
+
+  /**
+   * Entrance stagger plays ONLY on the tab's first list render — the flag flips
+   * right after the first commit that has rows, so refetches/edits never re-animate.
+   * (setState is deferred off the effect body to keep the commit clean.)
+   */
+  const [entranceOn, setEntranceOn] = useState(true)
+  useEffect(() => {
+    if ((conversations.data ?? []).length > 0) {
+      const t = setTimeout(() => setEntranceOn(false), 0)
+      return () => clearTimeout(t)
+    }
   })
 
   // live drafts → "Draft: …" previews in the list (zustand external store)
@@ -496,6 +668,7 @@ export function ChatsTab({
           pinned: conv.pinnedAt !== null,
           muted: conv.mutedUntil !== null && Date.parse(conv.mutedUntil) > Date.now(),
           typing: typersIn(conv.id, me.id).length > 0,
+          archived: conv.archivedAt !== null,
         },
       }
     })
@@ -554,6 +727,7 @@ export function ChatsTab({
       deferredTimerRef.current = null
     }
     setSearching(false)
+    setSearchFocused(false)
     setSearchQuery('')
     setDeferredQuery('')
   }, [])
@@ -717,38 +891,106 @@ export function ChatsTab({
 
   return (
     <div className="absolute inset-0 flex flex-col bg-white dark:bg-zinc-900">
+      {/* slow conic shimmer for unseen story rings — CSS, transform-only, honors reduced-motion */}
+      <style>{`@keyframes pulse-story-spin{to{transform:rotate(360deg)}}.pulse-story-spin{animation:pulse-story-spin 6s linear infinite;will-change:transform}@media (prefers-reduced-motion:reduce){.pulse-story-spin{animation:none}}`}</style>
       {/* header */}
       <header className="shrink-0 border-b border-zinc-200 pt-[max(0px,env(safe-area-inset-top))] dark:border-zinc-800">
         {searching ? (
-          <div className="flex items-center gap-2 px-3 py-2.5">
-            <Input
-              autoFocus
-              value={searchQuery}
-              onChange={(e) => handleSearchInput(e.target.value)}
-              placeholder="Search chats and messages…"
-              aria-label="Search conversations"
-              className="h-10 flex-1 rounded-full border-zinc-200 bg-zinc-100 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Close search"
-              onClick={closeSearch}
-              className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: ease.out }}
+            className="flex items-center gap-2 px-3 py-2.5"
+          >
+            {/* glass pill — the search icon expands into the full input */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.2, ease: ease.out }}
+              className="relative flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-full bg-zinc-100/80 px-4 ring-1 ring-zinc-200/70 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10"
             >
-              <X className="size-5" aria-hidden />
-            </Button>
-          </div>
+              <motion.span
+                aria-hidden
+                animate={{ opacity: searchFocused ? 1 : 0 }}
+                transition={spring.soft}
+                className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.25)] ring-2 ring-emerald-500/50"
+              />
+              <Search className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.2, ease: ease.out }}
+                className="min-w-0 flex-1"
+              >
+                <Input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(e) => handleSearchInput(e.target.value)}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
+                  placeholder="Search chats and messages…"
+                  aria-label="Search conversations"
+                  className="h-full border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+                />
+              </motion.div>
+              <AnimatePresence initial={false}>
+                {searchQuery ? (
+                  <motion.button
+                    key="clear-search"
+                    type="button"
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    transition={spring.bouncy}
+                    onClick={() => handleSearchInput('')}
+                    aria-label="Clear search"
+                    className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-300/70 text-zinc-600 outline-none dark:bg-zinc-700 dark:text-zinc-300"
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </motion.button>
+                ) : null}
+              </AnimatePresence>
+            </motion.div>
+            <AnimatePresence initial={false} mode="popLayout">
+              <motion.span
+                key={`close-search-${searchFocused && searchQuery ? 'hot' : 'idle'}`}
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.6 }}
+                transition={spring.bouncy}
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Close search"
+                  onClick={closeSearch}
+                  className={cn(
+                    'size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300',
+                    searchFocused && searchQuery && 'text-emerald-600 dark:text-emerald-400',
+                  )}
+                >
+                  <X className="size-5" aria-hidden />
+                </Button>
+              </motion.span>
+            </AnimatePresence>
+          </motion.div>
         ) : (
-          <div className="flex items-center gap-2 px-3 py-2.5">
-            <button
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2, ease: ease.out }}
+            className="flex items-center gap-2 px-3 py-2.5"
+          >
+            <motion.button
               type="button"
               aria-label="Open my profile"
               onClick={onGoProfile}
-              className="rounded-full outline-none transition-transform active:scale-95"
+              whileTap={{ scale: 0.92 }}
+              transition={pressSpring}
+              className="rounded-full outline-none"
             >
               <UserAvatar name={me.name} color={me.color} size={36} />
-            </button>
+            </motion.button>
             <h1 className="mr-auto flex items-center gap-1.5 pl-1 text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
               Pulse
               <span aria-hidden className="inline-block size-1.5 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600" />
@@ -763,20 +1005,27 @@ export function ChatsTab({
               <SquarePen className="size-[19px]" aria-hidden />
             </Button>
             <ThemeToggleButton />
-          </div>
+          </motion.div>
         )}
         {!searching ? (
-          <div className="px-3 pb-2.5">
-            <button
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: ease.out }}
+            className="px-3 pb-2.5"
+          >
+            <motion.button
               type="button"
               aria-label="Start searching"
               onClick={() => setSearching(true)}
-              className="flex h-10 w-full items-center gap-2.5 rounded-full bg-zinc-100 px-4 text-left outline-none ring-emerald-500/60 transition-colors hover:bg-zinc-200/70 focus-visible:ring-2 active:scale-[0.99] dark:bg-zinc-800 dark:hover:bg-zinc-700/70"
+              whileTap={{ scale: 0.985 }}
+              transition={pressSpring}
+              className="flex h-10 w-full items-center gap-2.5 rounded-full bg-zinc-100/80 px-4 text-left outline-none ring-1 ring-zinc-200/70 backdrop-blur-xl transition-colors hover:bg-zinc-200/70 dark:bg-zinc-900/60 dark:ring-white/10 dark:hover:bg-zinc-800/70"
             >
               <Search className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
               <span className="text-sm text-zinc-400 dark:text-zinc-500">Search chats and messages</span>
-            </button>
-          </div>
+            </motion.button>
+          </motion.div>
         ) : null}
       </header>
 
@@ -790,7 +1039,7 @@ export function ChatsTab({
           ] as Array<{ key: ChatsListFilter; label: string }>).map((f) => {
             const active = listFilter === f.key
             return (
-              <button
+              <motion.button
                 key={f.key}
                 type="button"
                 role="tab"
@@ -799,20 +1048,31 @@ export function ChatsTab({
                   haptic(6)
                   setListFilter(f.key)
                 }}
+                whileTap={pressTap}
+                transition={pressSpring}
                 className={cn(
-                  'flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-[12px] font-semibold outline-none transition-all active:scale-95',
+                  'relative flex h-7 shrink-0 items-center rounded-full px-3 text-[12px] font-semibold outline-none transition-colors',
                   active
-                    ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-600/25'
+                    ? 'text-white'
                     : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200/70 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
                 )}
               >
-                {f.label === 'Unread' && unreadTotal > 0 && !active ? (
-                  <span className="flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-emerald-500/20 px-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-                    {unreadTotal > 99 ? '99+' : unreadTotal}
-                  </span>
+                {active ? (
+                  <motion.span
+                    layoutId="chats-filter-pill"
+                    transition={spring.snappy}
+                    className="absolute inset-0 rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/25"
+                  />
                 ) : null}
-                {f.label}
-              </button>
+                <span className="relative z-10 flex items-center gap-1">
+                  {f.label === 'Unread' && unreadTotal > 0 && !active ? (
+                    <span className="flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-emerald-500/20 px-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                      {unreadTotal > 99 ? '99+' : unreadTotal}
+                    </span>
+                  ) : null}
+                  {f.label}
+                </span>
+              </motion.button>
             )
           })}
         </div>
@@ -822,7 +1082,7 @@ export function ChatsTab({
       {!searching ? (
         <div className="shrink-0 border-b border-zinc-100 pb-2 pt-1 dark:border-zinc-800/70">
           <h2 className="sr-only">Status</h2>
-          <div className="no-scrollbar flex items-start gap-3 overflow-x-auto px-3 pt-1">
+          <div className="no-scrollbar flex snap-x snap-mandatory items-start gap-3 overflow-x-auto px-3 pt-1 [mask-image:linear-gradient(to_right,transparent_0,black_12px,black_calc(100%-12px),transparent_100%)]">
             <StoryRingCell
               name={me.name}
               color={me.color}
@@ -858,12 +1118,15 @@ export function ChatsTab({
             {filteredRows.length > 0 ? (
               <>
                 <SearchSection label="Chats" count={filteredRows.length} />
-                {filteredRows.map(({ conv, props }) => (
+                {filteredRows.map(({ conv, props }, i) => (
                   <ConversationRow
                     key={props.id}
                     {...props}
+                    entranceIndex={entranceOn ? i : null}
                     onPress={() => handlePress(conv)}
                     onLongPress={() => openSheetFor(conv)}
+                    onPin={() => togglePin.mutate(conv)}
+                    onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
                   />
                 ))}
               </>
@@ -910,13 +1173,15 @@ export function ChatsTab({
         ) : (
           <div className="py-1">
             {archivedRows.length > 0 ? (
-              <button
+              <motion.button
                 type="button"
+                whileTap={{ scale: 0.985 }}
+                transition={pressSpring}
                 onClick={() => {
                   haptic(6)
                   setArchivedOpen(true)
                 }}
-                className="flex w-full items-center gap-3 px-4 py-2.5 pl-[26px] text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800"
+                className="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 pl-[26px] text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800"
               >
                 <Archive className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">Archived</span>
@@ -929,14 +1194,17 @@ export function ChatsTab({
                   {archivedRows.length}
                   <ChevronRight className="size-3.5" aria-hidden />
                 </span>
-              </button>
+              </motion.button>
             ) : null}
-            {folderFiltered.map(({ conv, props }) => (
+            {folderFiltered.map(({ conv, props }, i) => (
               <ConversationRow
                 key={props.id}
                 {...props}
+                entranceIndex={entranceOn ? i : null}
                 onPress={() => handlePress(conv)}
                 onLongPress={() => openSheetFor(conv)}
+                onPin={() => togglePin.mutate(conv)}
+                onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
               />
             ))}
             {folderFiltered.length === 0 && activeRows.length > 0 ? (
@@ -1073,15 +1341,18 @@ export function ChatsTab({
             Muted here — a new message moves a chat back to your inbox.
           </p>
           <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {archivedRows.map(({ conv, props }) => (
+            {archivedRows.map(({ conv, props }, i) => (
               <ConversationRow
                 key={props.id}
                 {...props}
+                entranceIndex={entranceOn && archivedOpen ? i : null}
                 onPress={() => {
                   setArchivedOpen(false)
                   handlePress(conv)
                 }}
                 onLongPress={() => openSheetFor(conv)}
+                onPin={() => togglePin.mutate(conv)}
+                onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
               />
             ))}
           </div>
@@ -1111,8 +1382,14 @@ export function ChatsTab({
 }
 
 function EmptyChats({ onSayHi }: { onSayHi: () => void }) {
+  const reducedMotion = useReducedMotion()
   return (
-    <div className="flex flex-col items-center justify-center gap-4 px-8 pt-16 text-center">
+    <motion.div
+      initial={reducedMotion ? false : { opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: ease.out }}
+      className="flex flex-col items-center justify-center gap-4 px-8 pt-16 text-center"
+    >
       <Image
         src="/empty-chats.png"
         alt="No conversations illustration"
@@ -1136,6 +1413,6 @@ function EmptyChats({ onSayHi }: { onSayHi: () => void }) {
         Say hi to someone
         <ArrowRight className="size-4" aria-hidden />
       </Button>
-    </div>
+    </motion.div>
   )
 }
