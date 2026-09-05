@@ -91,18 +91,23 @@ function ChannelRow({
         className="flex min-w-0 flex-1 items-center gap-3 outline-none"
       >
         {/* R33-b — circular channel photo when one is set; the broadcast-icon
-            glass tile stays the fallback (unread dot overlays both). */}
+            glass tile stays the fallback (unread dot overlays both).
+            R34-a shapes: channels are THINGS → both photo and fallback tile
+            wear the .pulse-squircle mask (the unread dot sits OUTSIDE the
+            masked wrapper so it never gets clipped). */}
         <span className="relative shrink-0">
-          {channel.photo ? (
-            <GroupAvatar title={channel.name} id={channel.id} size={44} photo={channel.photo} />
-          ) : (
-            <span
-              aria-hidden
-              className="glass-deep relative flex size-11 items-center justify-center rounded-2xl"
-            >
-              <Radio className="size-5 text-emerald-600 dark:text-emerald-400" />
-            </span>
-          )}
+          <span className="pulse-squircle block" style={{ width: 44, height: 44 }}>
+            {channel.photo ? (
+              <GroupAvatar title={channel.name} id={channel.id} size={44} photo={channel.photo} />
+            ) : (
+              <span
+                aria-hidden
+                className="glass-deep relative flex size-11 items-center justify-center rounded-2xl"
+              >
+                <Radio className="size-5 text-emerald-600 dark:text-emerald-400" />
+              </span>
+            )}
+          </span>
           {channel.unread ? (
             <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-zinc-900" />
           ) : null}

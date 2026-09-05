@@ -101,6 +101,7 @@ export const PULSE_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   { cmd: '/poll', args: '', help: 'Open the live-poll builder', icon: Vote, tone: 'text-violet-500' },
   { cmd: '/schedule', args: '', help: 'Schedule this message for later', icon: CalendarClock, tone: 'text-amber-500' },
   { cmd: '/remind', args: '<message> in <time>', help: 'Set a reminder on your next message', icon: Bell, tone: 'text-emerald-500' },
+  { cmd: '/recap', args: '', help: 'AI summary of the recent chat', icon: Sparkles, tone: 'text-violet-500' },
   { cmd: '/sticker', args: '', help: 'Open the sticker packs', icon: Sticker, tone: 'text-emerald-500' },
   { cmd: '/location', args: '', help: 'Share a live map pin', icon: MapPin, tone: 'text-teal-500' },
   { cmd: '/whiteboard', args: '', help: 'Open the shared whiteboard', icon: Presentation, tone: 'text-emerald-500' },

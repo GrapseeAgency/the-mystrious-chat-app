@@ -39,6 +39,7 @@ import {
   EyeOff,
   Flame,
   Forward,
+  Gamepad2,
   Gift,
   Globe,
   HelpCircle,
@@ -2059,6 +2060,42 @@ export function ChatRoom({
     onError: () => toast.error('Could not update disappearing messages'),
   })
 
+  // ── R34-b: AI recap (Zoom AI-Companion parity) ───────────
+  /** live recap card content — null = no card; auto-dismisses after 15s */
+  const [recap, setRecap] = useState<{ text: string; basedOn: number } | null>(null)
+  const recapMutation = useMutation({
+    mutationFn: async () =>
+      apiJson<{ recap: string; basedOn: number; cached: boolean }>('/api/ai/recap', {
+        method: 'POST',
+        body: JSON.stringify({ userId: me.id, conversationId }),
+      }),
+    onSuccess: (data) => {
+      setRecap({ text: data.recap, basedOn: data.basedOn })
+      haptic(12)
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : 'Recap is unavailable right now'),
+  })
+  /** Gate: recap is for groups or DMs with real activity (>= 5 messages). */
+  const requestRecap = useCallback(() => {
+    const liveCount = (messages.data ?? []).filter((m) => m.deletedAt === null).length
+    if (liveCount < 5) {
+      toast.info('Recap needs at least 5 messages in this chat')
+      return
+    }
+    recapMutation.mutate()
+  }, [messages.data, recapMutation.mutate])
+  // auto-dismiss the card so it never outstays its welcome
+  useEffect(() => {
+    if (recap === null) return
+    const timer = setTimeout(() => setRecap(null), 15_000)
+    return () => clearTimeout(timer)
+  }, [recap])
+  // a recap belongs to the room it was asked in
+  useEffect(() => {
+    setRecap(null)
+  }, [conversationId])
+
   // ── scheduled sends ──────────────────────────────────────
 
   const scheduledQuery = useQuery({
@@ -2312,6 +2349,250 @@ export function ChatRoom({
     },
     [autosize],
   )
+
+  // R34-b: Esc closes the attachments tray (window capture, mirroring the palette)
+  useEffect(() => {
+    if (!trayOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        setTray(false)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [trayOpen, setTray])
+
+  // ── R34-b: progressive-disclosure attachments tray ────────
+  // Discord rule: the FREQUENT actions (photo, sticker, emoji, mic/voice)
+  // stay on the composer bar; everything else lives here, GROUPED by
+  // purpose behind the '+' toggle. No capability was removed — regrouped.
+  // (Folders live in the Chats tab, not in a room's composer, so there is
+  // no Folder tile; 'Topic' is groups-only by nature.)
+  type TrayTile = {
+    label: string
+    help: string
+    icon: LucideIcon
+    tone: string
+    disabled: boolean
+    /** true → only meaningful in group conversations */
+    groupOnly?: boolean
+    run: () => void
+  }
+  const trayGroups: { title: string; tiles: TrayTile[] }[] = (
+    [
+      {
+        title: 'Create',
+        tiles: [
+          {
+            label: 'Poll',
+            help: 'Live votes in this chat',
+            icon: Vote,
+            tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+            disabled: broadcastLocked,
+            run: () => {
+              setTray(false)
+              setPollBuilderOpen(true)
+            },
+          },
+          {
+            label: 'Schedule',
+            help: 'Send this message later',
+            icon: CalendarClock,
+            tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+            disabled: broadcastLocked,
+            run: () => {
+              const draft = input.trim()
+              if (draft.length === 0 && scheduleFor === null) {
+                toast.info('Type the message first, then schedule it')
+                return
+              }
+              setTray(false)
+              setScheduleFor(draft)
+            },
+          },
+          {
+            label: 'Whiteboard',
+            help: 'Sketch together on one canvas',
+            icon: Presentation,
+            tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+            disabled: false,
+            run: () => {
+              setTray(false)
+              whiteboard.setOpen(true)
+            },
+          },
+          {
+            label: 'Red packet',
+            help: 'Wrap coins as a gift',
+            icon: Gift,
+            tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+            disabled: broadcastLocked,
+            run: () => {
+              setTray(false)
+              redPacket.setOpen(true)
+            },
+          },
+        ],
+      },
+      {
+        title: 'Gather',
+        tiles: [
+          {
+            label: 'Events',
+            help: 'Plan meetups with RSVP',
+            icon: CalendarDays,
+            tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+            disabled: false,
+            run: () => {
+              setTray(false)
+              events.setOpen(true)
+            },
+          },
+          {
+            label: 'Stage',
+            help: 'Live audio stage for the room',
+            icon: Podcast,
+            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            disabled: false,
+            run: () => {
+              setTray(false)
+              window.dispatchEvent(new CustomEvent(STAGE_OPEN_EVENT))
+            },
+          },
+          {
+            label: 'Space',
+            help: 'Hang out in a spatial room',
+            icon: MapIcon,
+            tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+            disabled: false,
+            run: () => {
+              setTray(false)
+              window.dispatchEvent(new CustomEvent(SPACE_OPEN_EVENT))
+            },
+          },
+          {
+            label: 'Game',
+            help: 'Start tic-tac-toe here',
+            icon: Gamepad2,
+            tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+            disabled: false,
+            run: () => {
+              setTray(false)
+              window.dispatchEvent(new CustomEvent(NEW_GAME_EVENT))
+            },
+          },
+          {
+            label: 'Tournament',
+            help: 'Bracketed group competition',
+            icon: Trophy,
+            tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+            disabled: !isGroup,
+            run: () => {
+              setTray(false)
+              if (!isGroup) {
+                toast.error('Tournaments are for groups only')
+                return
+              }
+              window.dispatchEvent(new CustomEvent(TOURNAMENT_OPEN_EVENT))
+            },
+          },
+        ],
+      },
+      {
+        title: 'Organise',
+        tiles: [
+          {
+            label: 'Kanban',
+            help: 'Group tasks on a board',
+            icon: SquareKanban,
+            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            disabled: false,
+            run: () => {
+              setTray(false)
+              kanban.setOpen(true)
+            },
+          },
+          {
+            label: 'Topic',
+            help: 'File the chat under a topic',
+            icon: MessagesSquare,
+            tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+            disabled: false,
+            groupOnly: true,
+            run: () => {
+              setTray(false)
+              // stage the /topic draft — the palette + parser take it from here
+              setInput('/topic ')
+              setSlashDismissed(false)
+              requestAnimationFrame(() => {
+                autosize()
+                textareaRef.current?.focus()
+              })
+            },
+          },
+        ],
+      },
+      {
+        title: 'Express',
+        tiles: [
+          {
+            label: 'Effects',
+            help: 'Confetti, lasers, echo, sparkles',
+            icon: Sparkles,
+            tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+            disabled: broadcastLocked,
+            run: () => setTrayEffectsOpen((v) => !v),
+          },
+          {
+            label: 'Commands',
+            help: 'Every slash command',
+            icon: Dices,
+            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            disabled: false,
+            run: () => {
+              setTray(false)
+              setHelpOpen(true)
+            },
+          },
+          {
+            label: 'Location',
+            help: 'Drop a live map pin',
+            icon: MapPin,
+            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            disabled: broadcastLocked,
+            run: () => {
+              setTray(false)
+              setLocationOpen(true)
+            },
+          },
+          {
+            label: 'Incognito',
+            help: anonNext ? 'Armed — next send is anonymous' : 'Next send hides your name',
+            icon: VenetianMask,
+            tone: anonNext
+              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+              : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400',
+            disabled: false,
+            groupOnly: true,
+            run: () => {
+              haptic(8)
+              const next = !anonNextRef.current
+              anonNextRef.current = next
+              setAnonNext(next)
+              if (next) setTray(false)
+            },
+          },
+        ],
+      },
+    ] as { title: string; tiles: TrayTile[] }[]
+  )
+    .map((group) => ({
+      ...group,
+      tiles: group.tiles.filter((tile) => !tile.groupOnly || isGroup),
+    }))
+    .filter((group) => group.tiles.length > 0)
 
   const stopTyping = useCallback(() => {
     if (recipients.length > 0) {
@@ -2756,6 +3037,12 @@ export function ChatRoom({
         setHelpOpen(true)
         return
       }
+      // R34-b: AI recap — same trigger as the header overflow entry
+      if (cmd === '/recap') {
+        clearDraft()
+        requestRecap()
+        return
+      }
       // ── R23: standalone tools — clear the draft, then open/dispatch ──
       if (cmd === '/redpacket') {
         clearDraft()
@@ -2819,7 +3106,7 @@ export function ChatRoom({
         textareaRef.current?.focus()
       })
     },
-    [conversationId, autosize, isGroup, redPacket, kanban, events],
+    [conversationId, autosize, isGroup, redPacket, kanban, events, requestRecap],
   )
 
 
@@ -3547,6 +3834,20 @@ export function ChatRoom({
                   <Info className="size-4 text-zinc-400" aria-hidden />
                   {isGroup ? 'Manage group' : 'Manage chat'}
                 </button>
+                {/* R34-b: AI recap — real LLM summary of the recent chat */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={recapMutation.isPending}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    requestRecap()
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  <Sparkles className="size-4 text-violet-500" aria-hidden />
+                  Recap with AI
+                </button>
                 {isRoomMuted ? (
                   <button
                     type="button"
@@ -4143,7 +4444,96 @@ export function ChatRoom({
           ) : null}
         </AnimatePresence>
 
-        {/* attachments tray — springs open above the capsule, staggered glass tiles */}
+        {/* R34-b: AI recap card — pinned above the composer, auto-dismisses.
+            Real LLM output via /api/ai/recap; failures surface as honest toasts. */}
+        <AnimatePresence initial={false}>
+          {recap !== null || recapMutation.isPending ? (
+            <motion.div
+              key="ai-recap-card"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={spring.soft}
+              className="overflow-hidden"
+            >
+              <div className="glass-deep glass-sheen mb-2 rounded-2xl p-3">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400"
+                    aria-hidden
+                  >
+                    <Sparkles className="size-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-zinc-900 dark:text-zinc-50">AI recap</p>
+                    <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+                      {recapMutation.isPending
+                        ? 'Summarizing the latest messages'
+                        : recap
+                          ? `Based on ${recap.basedOn} messages`
+                          : ''}
+                    </p>
+                  </div>
+                  {recap !== null && !recapMutation.isPending ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(recap.text)
+                          .then(() => toast.success('Recap copied'))
+                          .catch(() => toast.error('Could not copy the recap'))
+                      }}
+                      className="glass-pill flex h-7 shrink-0 items-center gap-1 px-2.5 text-[11px] font-bold text-emerald-600 outline-none transition-transform active:scale-95 dark:text-emerald-400"
+                    >
+                      <Copy className="size-3" aria-hidden />
+                      Copy
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    aria-label="Dismiss recap"
+                    onClick={() => setRecap(null)}
+                    className="glass-pill flex size-7 shrink-0 items-center justify-center text-zinc-500 outline-none transition-transform active:scale-90 dark:text-zinc-400"
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </div>
+                {recap !== null && !recapMutation.isPending ? (
+                  <p className="mt-2 whitespace-pre-line text-[12.5px] leading-relaxed text-zinc-700 dark:text-zinc-200">
+                    {recap.text}
+                  </p>
+                ) : (
+                  <div className="mt-2 flex items-center gap-2 text-[12px] font-medium text-zinc-500 dark:text-zinc-400">
+                    <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+                    Reading the room…
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        {/* attachments tray — Discord-style progressive disclosure (R34-b):
+            the bar keeps the frequent actions (photo/sticker/emoji/mic),
+            everything else lives here GROUPED by purpose behind the '+'.
+            Tap-away backdrop + Esc close it. */}
+        <AnimatePresence>
+          {trayOpen ? (
+            <motion.button
+              key="tray-backdrop"
+              type="button"
+              aria-hidden
+              tabIndex={-1}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.16 }}
+              onClick={() => setTray(false)}
+              className="absolute inset-x-0 bottom-0 z-0 cursor-default bg-zinc-950/25 outline-none dark:bg-black/40"
+              style={{ top: '-100vh' }}
+            />
+          ) : null}
+        </AnimatePresence>
         <AnimatePresence initial={false}>
           {trayOpen && !recording ? (
             <motion.div
@@ -4152,174 +4542,64 @@ export function ChatRoom({
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={spring.soft}
-              className="overflow-hidden"
+              className="relative z-10 overflow-hidden"
             >
-              <div className="mb-2 grid grid-cols-4 gap-2 rounded-3xl bg-white/60 p-2.5 ring-1 ring-inset ring-black/5 shadow-sm backdrop-blur-xl dark:bg-zinc-900/50 dark:ring-white/10">
-                {([
-                  {
-                    label: 'Photo',
-                    icon: sendingImage ? LoaderCircle : ImagePlus,
-                    tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-                    disabled: sendingImage || broadcastLocked,
-                    run: () => {
-                      setTray(false)
-                      fileInputRef.current?.click()
-                    },
-                  },
-                  {
-                    label: 'Sticker',
-                    icon: Sticker,
-                    tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                    disabled: broadcastLocked,
-                    run: () => {
-                      setTray(false)
-                      setStickerOpen(true)
-                    },
-                  },
-                  {
-                    label: 'Location',
-                    icon: MapPin,
-                    tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
-                    disabled: broadcastLocked,
-                    run: () => {
-                      setTray(false)
-                      setLocationOpen(true)
-                    },
-                  },
-                  {
-                    label: 'Poll',
-                    icon: Vote,
-                    tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-                    disabled: broadcastLocked,
-                    run: () => {
-                      setTray(false)
-                      setPollBuilderOpen(true)
-                    },
-                  },
-                  {
-                    label: 'Schedule',
-                    icon: CalendarClock,
-                    tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-                    disabled: broadcastLocked,
-                    run: () => {
-                      const draft = input.trim()
-                      if (draft.length === 0 && scheduleFor === null) {
-                        toast.info('Type the message first, then schedule it')
-                        return
-                      }
-                      setTray(false)
-                      setScheduleFor(draft)
-                    },
-                  },
-                  {
-                    label: 'Board',
-                    icon: Presentation,
-                    tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-                    disabled: false,
-                    run: () => {
-                      setTray(false)
-                      whiteboard.setOpen(true)
-                    },
-                  },
-                  {
-                    label: 'Packet',
-                    icon: Gift,
-                    tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-                    disabled: broadcastLocked,
-                    run: () => {
-                      setTray(false)
-                      redPacket.setOpen(true)
-                    },
-                  },
-                  {
-                    label: 'Kanban',
-                    icon: SquareKanban,
-                    tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
-                    disabled: false,
-                    run: () => {
-                      setTray(false)
-                      kanban.setOpen(true)
-                    },
-                  },
-                  {
-                    label: 'Events',
-                    icon: CalendarDays,
-                    tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                    disabled: false,
-                    run: () => {
-                      setTray(false)
-                      events.setOpen(true)
-                    },
-                  },
-                  {
-                    label: 'Stage',
-                    icon: Podcast,
-                    tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
-                    disabled: false,
-                    run: () => {
-                      setTray(false)
-                      window.dispatchEvent(new CustomEvent(STAGE_OPEN_EVENT))
-                    },
-                  },
-                  {
-                    label: 'Space',
-                    icon: MapIcon,
-                    tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                    disabled: false,
-                    run: () => {
-                      setTray(false)
-                      window.dispatchEvent(new CustomEvent(SPACE_OPEN_EVENT))
-                    },
-                  },
-                  {
-                    label: 'Tournament',
-                    icon: Trophy,
-                    tone: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-                    disabled: !isGroup,
-                    run: () => {
-                      setTray(false)
-                      if (!isGroup) {
-                        toast.error('Tournaments are for groups only')
-                        return
-                      }
-                      window.dispatchEvent(new CustomEvent(TOURNAMENT_OPEN_EVENT))
-                    },
-                  },
-                  {
-                    label: 'Effects',
-                    icon: Sparkles,
-                    tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-                    disabled: broadcastLocked,
-                    run: () => setTrayEffectsOpen((v) => !v),
-                  },
-                  {
-                    label: 'Commands',
-                    icon: Dices,
-                    tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
-                    disabled: false,
-                    run: () => {
-                      setTray(false)
-                      setHelpOpen(true)
-                    },
-                  },
-                ] as const).map((tile, i) => (
-                  <motion.button
-                    key={tile.label}
-                    type="button"
-                    disabled={tile.disabled}
-                    onClick={tile.run}
-                    initial={prefs.reducedMotion ? false : { opacity: 0, y: 12, scale: 0.9 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ ...spring.bouncy, delay: prefs.reducedMotion ? 0 : i * 0.03 }}
-                    whileTap={tile.disabled ? undefined : { scale: 0.92 }}
-                    className="flex flex-col items-center justify-center gap-1.5 rounded-2xl px-1 py-2.5 outline-none transition-colors hover:bg-white/70 disabled:opacity-40 dark:hover:bg-zinc-800/60"
-                  >
-                    <span className={cn('flex size-9 items-center justify-center rounded-full', tile.tone)} aria-hidden>
-                      <tile.icon className={cn('size-5', tile.label === 'Photo' && sendingImage && 'animate-spin')} />
-                    </span>
-                    <span className="text-[10px] font-semibold text-zinc-600 dark:text-zinc-300">{tile.label}</span>
-                  </motion.button>
-                ))}
+              <div
+                role="group"
+                aria-label="Attachments and tools"
+                className="pulse-scroll mb-2 max-h-[min(58vh,440px)] overflow-y-auto rounded-3xl bg-white/60 p-2.5 ring-1 ring-inset ring-black/5 shadow-sm backdrop-blur-xl dark:bg-zinc-900/50 dark:ring-white/10"
+              >
+                {trayGroups.map((group, gi) => {
+                  // one shared stagger timeline across all groups
+                  const offset = trayGroups
+                    .slice(0, gi)
+                    .reduce((sum, g) => sum + g.tiles.length, 0)
+                  return (
+                    <div key={group.title} className={cn(gi > 0 && 'mt-3')}>
+                      <span className="glass-pill mb-1.5 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+                        {group.title}
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {group.tiles.map((tile, i) => (
+                          <motion.button
+                            key={tile.label}
+                            type="button"
+                            disabled={tile.disabled}
+                            onClick={tile.run}
+                            initial={
+                              prefs.reducedMotion ? false : { opacity: 0, y: 10, scale: 0.94 }
+                            }
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{
+                              ...spring.bouncy,
+                              delay: prefs.reducedMotion ? 0 : (offset + i) * 0.022,
+                            }}
+                            whileTap={tile.disabled ? undefined : { scale: 0.96 }}
+                            className="flex w-full items-center gap-2.5 rounded-2xl bg-white/55 px-2.5 py-2 text-left ring-1 ring-inset ring-black/[0.04] outline-none transition-colors hover:bg-white/90 disabled:opacity-40 dark:bg-white/[0.04] dark:ring-white/[0.06] dark:hover:bg-white/[0.09]"
+                          >
+                            <span
+                              className={cn(
+                                'flex size-9 shrink-0 items-center justify-center rounded-full',
+                                tile.tone,
+                              )}
+                              aria-hidden
+                            >
+                              <tile.icon className="size-[18px]" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[12.5px] font-semibold text-zinc-700 dark:text-zinc-100">
+                                {tile.label}
+                              </span>
+                              <span className="block truncate text-[10px] text-zinc-400 dark:text-zinc-500">
+                                {tile.help}
+                              </span>
+                            </span>
+                          </motion.button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
               {trayEffectsOpen ? (
                 <motion.div
@@ -4513,6 +4793,36 @@ export function ChatRoom({
               >
                 <Plus className="size-6" aria-hidden />
               </motion.button>
+              {/* R34-b: frequent actions stay on the bar (Discord rule) — photo + sticker */}
+              <motion.button
+                type="button"
+                aria-label="Send a photo"
+                disabled={sendingImage || broadcastLocked}
+                onClick={() => fileInputRef.current?.click()}
+                whileTap={sendingImage || broadcastLocked ? undefined : { scale: 0.88 }}
+                transition={spring.snappy}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-emerald-400"
+              >
+                {sendingImage ? (
+                  <LoaderCircle className="size-5 animate-spin" aria-hidden />
+                ) : (
+                  <ImagePlus className="size-5" aria-hidden />
+                )}
+              </motion.button>
+              <motion.button
+                type="button"
+                aria-label="Open sticker packs"
+                disabled={broadcastLocked}
+                onClick={() => {
+                  haptic(8)
+                  setStickerOpen(true)
+                }}
+                whileTap={broadcastLocked ? undefined : { scale: 0.88 }}
+                transition={spring.snappy}
+                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-500 disabled:opacity-50 dark:hover:bg-zinc-800"
+              >
+                <Sticker className="size-5" aria-hidden />
+              </motion.button>
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -4526,30 +4836,7 @@ export function ChatRoom({
                 onBlur={stopTyping}
                 className="pulse-scroll max-h-[120px] min-h-[44px] w-full flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-[height] duration-200 ease-out placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
               />
-              {/* R24-b: incognito arm — the next send posts under a mask (groups) */}
-              {isGroup && !editing ? (
-                <motion.button
-                  type="button"
-                  aria-label={anonNext ? 'Incognito armed — next message is anonymous' : 'Send the next message anonymously'}
-                  aria-pressed={anonNext}
-                  onClick={() => {
-                    haptic(8)
-                    const next = !anonNextRef.current
-                    anonNextRef.current = next
-                    setAnonNext(next)
-                  }}
-                  whileTap={pressTap}
-                  transition={pressSpring}
-                  className={cn(
-                    'flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-colors',
-                    anonNext
-                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                      : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300',
-                  )}
-                >
-                  <VenetianMask className="size-5" aria-hidden />
-                </motion.button>
-              ) : null}
+              {/* R24-b incognito arm moved to the tray's Express group (R34-b regroup) */}
               <Popover>
                 <PopoverTrigger asChild>
                   <button

@@ -48,11 +48,13 @@ const TAB_LABEL: Record<PulseTab, string> = {
 /** Canonical tab order — drives auto direction for slide/fade transitions. */
 const TAB_ORDER: Array<PulseTab> = ['chats', 'hub', 'contacts', 'profile']
 
-/** Deep links that live INSIDE a tab → owning tab (R27 lead). */
+/** Deep links that live INSIDE a tab → owning tab (R27 lead).
+ *  R34-a: #/calls is a chats-tab sub-page like #/chats/archived. */
 const TAB_BOOSTS: Array<[prefix: string, tab: PulseTab]> = [
   ['#/contacts', 'contacts'],
   ['#/hub', 'hub'],
   ['#/chats', 'chats'],
+  ['#/calls', 'chats'],
 ]
 
 /** Initial tab for a boot deep link (SSR-safe; overlays like #/settings stay on chats). */

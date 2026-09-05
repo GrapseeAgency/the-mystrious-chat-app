@@ -1,0 +1,1343 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse NavBar (R25 → R26-e) — thirteen navigation architectures,
+     3→// one file. The previous 4-style router (acrylic/rail/edge/radial)
+     4→// is DELETED; these thirteen are the shipped languages, default =
+     5→// Floating Capsule.
+     6→//
+     7→// R26-e — the nav GROWS with features:
+     8→// · NAV_ITEMS is the single destination registry (id, label, icon,
+     9→//   badge?) — every architecture renders from it, so a future
+    10→//   feature appends ONE entry instead of a rewrite.
+    11→// · The default capsule grows a center compose action (new-chat)
+    12→//   and an overflow "More" button opening a compact GlassMenu
+    13→//   (Settings / Search / Saved / Stories). The overflow also ships
+    14→//   on floating-top, island and command-bar.
+    15→// · NavContextAction is extended ('settings' | 'search' | 'saved' |
+    16→//   'stories'); existing actions behave exactly as before.
+    17→//
+    18→// Every variant: spring physics from @/lib/motion, layoutId pills,
+    19→// haptics, animated unread pops, Lucide icons only (zero emojis),
+    20→// `will-change` GPU isolation, reduced-motion respect.
+    21→// ─────────────────────────────────────────────────────────────
+    22→'use client'
+    23→
+    24→import { useCallback, useEffect, useRef, useState } from 'react'
+    25→import { createPortal } from 'react-dom'
+    26→import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from 'framer-motion'
+    27→import { useQuery } from '@tanstack/react-query'
+    28→import {
+    29→  Aperture,
+    30→  Bookmark,
+    31→  CircleUserRound,
+    32→  Command,
+    33→  Ellipsis,
+    34→  Flame,
+    35→  GripHorizontal,
+    36→  MessageCircle,
+    37→  Plus,
+    38→  Search,
+    39→  Settings as SettingsIcon,
+    40→  Users,
+    41→  type LucideIcon,
+    42→} from 'lucide-react'
+    43→import type { AppUser, ConversationSummary } from '@/lib/types'
+    44→import { apiJson } from '@/lib/pulse-utils'
+    45→import { cn } from '@/lib/utils'
+    46→import { haptic } from '@/lib/pulse-settings'
+    47→import { ease, pressSpring, pressTap, spring, stagger } from '@/lib/motion'
+    48→import { useNavStyleStore, type NavStyleId, NAV_STYLES } from '@/lib/nav-registry'
+    49→import { GlassMenu, GlassMenuItem, GlassMenuSeparator } from '@/components/ui/glass-menu'
+    50→
+    51→export type { NavStyleId }
+    52→export type PulseTab = 'chats' | 'hub' | 'contacts' | 'profile'
+    53→
+    54→/** Compat alias — pickers import NAV_STYLE_META. */
+    55→export const NAV_STYLE_META = NAV_STYLES
+    56→
+    57→// ── R26-e destination registry ──────────────────────────────
+    58→// Every nav architecture renders from NAV_ITEMS. Adding a feature =
+    59→// appending one entry here (badge kinds are opt-in per item).
+    60→export interface NavItemDef {
+    61→  id: PulseTab
+    62→  label: string
+    63→  Icon: LucideIcon
+    64→  /** which live badge feeds this destination (unread count today) */
+    65→  badge?: 'chats-unread'
+    66→}
+    67→
+    68→export const NAV_ITEMS: Array<NavItemDef> = [
+    69→  { id: 'chats', label: 'Chats', Icon: MessageCircle, badge: 'chats-unread' },
+    70→  { id: 'hub', label: 'Hub', Icon: Flame },
+    71→  { id: 'contacts', label: 'Contacts', Icon: Users },
+    72→  { id: 'profile', label: 'Profile', Icon: CircleUserRound },
+    73→]
+    74→
+    75→/** React hook — current nav style + setter (zustand persist).
+    76→ *  Primitive + stable-function selectors (never allocate in the selector —
+    77→ *  a fresh array here trips useSyncExternalStore's getSnapshot cache). */
+    78→export function useNavStyle(): [NavStyleId, (s: NavStyleId) => void] {
+    79→  const style = useNavStyleStore((s) => s.style)
+    80→  const setStyle = useNavStyleStore((s) => s.setStyle)
+    81→  return [style, setStyle]
+    82→}
+    83→
+    84→/** Which screen zone a style occupies — the shell uses this for layout. */
+    85→export function zoneFor(style: NavStyleId): 'bottom' | 'top' | 'side' | 'overlay' {
+    86→  return NAV_STYLES.find((s) => s.id === style)?.zone ?? 'bottom'
+    87→}
+    88→
+    89→/** Shared unread counter from the real conversations API. */
+    90→function useUnread(me: AppUser): number {
+    91→  const { data } = useQuery({
+    92→    queryKey: ['conversations', me.id],
+    93→    queryFn: async (): Promise<ConversationSummary[]> => {
+    94→      const res = await apiJson<{ conversations: ConversationSummary[] }>(
+    95→        `/api/conversations?userId=${encodeURIComponent(me.id)}`,
+    96→      )
+    97→      return res.conversations
+    98→    },
+    99→    refetchInterval: 25_000,
+   100→  })
+   101→  return (data ?? []).reduce((sum, c) => sum + c.unreadCount, 0)
+   102→}
+   103→
+   104→/** Unread counter — pops (spring) on every value CHANGE via key remount. */
+   105→function UnreadBadge({ count, className }: { count: number; className?: string }) {
+   106→  const reduced = useReducedMotion()
+   107→  if (count <= 0) return null
+   108→  return (
+   109→    <motion.span
+   110→      key={count}
+   111→      initial={reduced ? false : { scale: 0.4, opacity: 0 }}
+   112→      animate={{ scale: 1, opacity: 1 }}
+   113→      transition={reduced ? { duration: 0 } : spring.bouncy}
+   114→      className={cn(
+   115→        'pointer-events-none absolute -right-2.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 px-1.5 text-[10px] font-bold text-white shadow-[0_4px_12px_-2px_rgba(16,185,129,0.65)] ring-2 ring-white dark:ring-zinc-900',
+   116→        className,
+   117→      )}
+   118→    >
+   119→      {count > 99 ? '99+' : count}
+   120→    </motion.span>
+   121→  )
+   122→}
+   123→
+   124→/**
+   125→ * Capsule destination: press physics, wobble, active pill, staggered
+   126→ * label. Registry-driven — `badge` comes from the item definition.
+   127→ */
+   128→function CapsuleTab({
+   129→  id,
+   130→  label,
+   131→  Icon,
+   132→  badge,
+   133→  active,
+   134→  unread,
+   135→  onSelect,
+   136→  layoutId,
+   137→}: {
+   138→  id: PulseTab
+   139→  label: string
+   140→  Icon: LucideIcon
+   141→  badge?: NavItemDef['badge']
+   142→  active: boolean
+   143→  unread: number
+   144→  onSelect: (tab: PulseTab) => void
+   145→  layoutId: string
+   146→}) {
+   147→  const reduced = useReducedMotion()
+   148→  const wobble = useAnimationControls()
+   149→  const press = useCallback(() => {
+   150→    haptic(12)
+   151→    onSelect(id)
+   152→    if (!reduced) void wobble.start({ rotate: [0, -8, 6, 0] }, { duration: 0.35, ease: ease.out })
+   153→  }, [id, onSelect, reduced, wobble])
+   154→  return (
+   155→    <motion.button
+   156→      type="button"
+   157→      role="tab"
+   158→      aria-selected={active}
+   159→      aria-label={label}
+   160→      onClick={press}
+   161→      whileTap={reduced ? undefined : { scale: 0.88, y: 1 }}
+   162→      transition={reduced ? { duration: 0 } : spring.bouncy}
+   163→      className="relative flex min-h-[52px] flex-1 touch-manipulation select-none flex-col items-center justify-center gap-[3px] rounded-[22px] outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+   164→    >
+   165→      {active ? (
+   166→        <motion.span
+   167→          layoutId={layoutId}
+   168→          transition={reduced ? { duration: 0 } : spring.snappy}
+   169→          className="absolute inset-0 rounded-[22px] bg-gradient-to-b from-emerald-500/20 to-emerald-500/[0.06] shadow-[0_6px_20px_-6px_rgba(16,185,129,0.55)] ring-1 ring-inset ring-emerald-500/30 dark:from-emerald-400/[0.16] dark:to-emerald-400/[0.05] dark:ring-emerald-400/25"
+   170→          style={{ willChange: 'transform' }}
+   171→        />
+   172→      ) : null}
+   173→      <motion.span animate={wobble} className="relative">
+   174→        <motion.span
+   175→          animate={{ scale: active ? 1.08 : 1, y: active ? -1 : 0 }}
+   176→          transition={reduced ? { duration: 0 } : spring.bouncy}
+   177→          className="relative block"
+   178→        >
+   179→          <Icon
+   180→            className={cn(
+   181→              'size-[22px] transition-colors duration-200',
+   182→              active ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+   183→            )}
+   184→            strokeWidth={active ? 2.2 : 1.8}
+   185→            aria-hidden
+   186→          />
+   187→          {badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
+   188→        </motion.span>
+   189→      </motion.span>
+   190→      <motion.span
+   191→        animate={{ y: active ? -1 : 0 }}
+   192→        transition={{ ...(reduced ? { duration: 0 } : spring.bouncy), delay: reduced ? 0 : stagger(1, 0.02) }}
+   193→        className={cn(
+   194→          'text-[10px] leading-none transition-colors duration-200',
+   195→          active ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'font-medium text-zinc-500 dark:text-zinc-400',
+   196→        )}
+   197→      >
+   198→        {label}
+   199→      </motion.span>
+   200→    </motion.button>
+   201→  )
+   202→}
+   203→
+   204→const GLASS_PANEL =
+   205→  'border border-zinc-200/70 bg-white/70 shadow-[0_8px_32px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.65)] backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-zinc-900/65 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_8px_32px_rgba(0,0,0,0.45)]'
+   206→
+   207→/** GlassMenuItem with the shared press microinteraction (spring tap). */
+   208→const TapMenuItem = motion.create(GlassMenuItem)
+   209→
+   210→/**
+   211→ * R26-e overflow — "More" trigger (Ellipsis) + compact GlassMenu
+   212→ * portal (Settings / Search / Saved / Stories). The menu floats via
+   213→ * a document.body portal so nav ancestors with backdrop-filter or
+   214→ * overflow-hidden can never clip it; position is measured from the
+   215→ * trigger rect at open time (above or below, right-aligned).
+   216→ * Springs: glassMenuMotion entrance + pressTap taps. Escape, veil
+   217→ * tap, scroll or resize dismiss it.
+   218→ */
+   219→function NavOverflowButton({
+   220→  placement,
+   221→  onAction,
+   222→  buttonClassName,
+   223→  showLabel = false,
+   224→  onOpenChange,
+   225→}: {
+   226→  placement: 'above' | 'below'
+   227→  onAction: (action: NavContextAction) => void
+   228→  buttonClassName?: string
+   229→  showLabel?: boolean
+   230→  /** reports open-state so hosts (island auto-collapse) can pause timers */
+   231→  onOpenChange?: (open: boolean) => void
+   232→}) {
+   233→  const reduced = useReducedMotion()
+   234→  const [open, setOpen] = useState(false)
+   235→  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
+   236→  const btnRef = useRef<HTMLButtonElement | null>(null)
+   237→
+   238→  const openMenu = useCallback(() => {
+   239→    const rect = btnRef.current?.getBoundingClientRect()
+   240→    if (rect) setAnchor({ x: rect.right, y: placement === 'above' ? rect.top : rect.bottom })
+   241→    setOpen(true)
+   242→    onOpenChange?.(true)
+   243→  }, [placement, onOpenChange])
+   244→
+   245→  const close = useCallback(() => {
+   246→    setOpen(false)
+   247→    onOpenChange?.(false)
+   248→  }, [onOpenChange])
+   249→
+   250→  useEffect(() => {
+   251→    if (!open) return
+   252→    const onKey = (e: KeyboardEvent) => {
+   253→      if (e.key === 'Escape') close()
+   254→    }
+   255→    const onReposition = () => close()
+   256→    window.addEventListener('keydown', onKey)
+   257→    window.addEventListener('resize', onReposition)
+   258→    window.addEventListener('scroll', onReposition, true)
+   259→    return () => {
+   260→      window.removeEventListener('keydown', onKey)
+   261→      window.removeEventListener('resize', onReposition)
+   262→      window.removeEventListener('scroll', onReposition, true)
+   263→    }
+   264→  }, [open, close])
+   265→
+   266→  const runAction = (action: NavContextAction) => {
+   267→    close()
+   268→    onAction(action)
+   269→  }
+   270→
+   271→  const menuMotionProps = reduced
+   272→    ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } }
+   273→    : {}
+   274→
+   275→  return (
+   276→    <>
+   277→      <motion.button
+   278→        ref={btnRef}
+   279→        type="button"
+   280→        aria-label="More options"
+   281→        aria-haspopup="menu"
+   282→        aria-expanded={open}
+   283→        onClick={() => {
+   284→          haptic(10)
+   285→          if (open) close()
+   286→          else openMenu()
+   287→        }}
+   288→        whileTap={reduced ? undefined : pressTap}
+   289→        transition={pressSpring}
+   290→        className={cn(
+   291→          'flex shrink-0 touch-manipulation select-none items-center justify-center rounded-full text-zinc-500 outline-none transition-colors',
+   292→          'hover:bg-zinc-900/[0.05] focus-visible:ring-2 focus-visible:ring-emerald-500/60',
+   293→          'dark:text-zinc-400 dark:hover:bg-white/[0.07]',
+   294→          showLabel
+   295→            ? 'min-h-[46px] flex-1 flex-col gap-0.5 rounded-3xl text-[9px] font-semibold'
+   296→            : buttonClassName ?? 'size-10 self-center',
+   297→        )}
+   298→      >
+   299→        <Ellipsis className="size-5" aria-hidden />
+   300→        {showLabel ? <span className="relative text-zinc-600 dark:text-zinc-300">More</span> : null}
+   301→      </motion.button>
+   302→      {typeof document === 'undefined'
+   303→        ? null
+   304→        : createPortal(
+   305→            <AnimatePresence>
+   306→              {open && anchor ? (
+   307→                <>
+   308→                  <motion.button
+   309→                    key="nav-more-veil"
+   310→                    type="button"
+   311→                    aria-label="Close menu"
+   312→                    initial={{ opacity: 0 }}
+   313→                    animate={{ opacity: 1 }}
+   314→                    exit={{ opacity: 0 }}
+   315→                    transition={{ duration: reduced ? 0 : 0.16 }}
+   316→                    onClick={close}
+   317→                    className="fixed inset-0 z-[80] cursor-default bg-zinc-950/25 backdrop-blur-[2px]"
+   318→                  />
+   319→                  <motion.div
+   320→                    key="nav-more-anchor"
+   321→                    initial={{ opacity: 0 }}
+   322→                    animate={{ opacity: 1 }}
+   323→                    exit={{ opacity: 0 }}
+   324→                    transition={{ duration: reduced ? 0 : 0.12 }}
+   325→                    className="fixed z-[81]"
+   326→                    style={{
+   327→                      left: anchor.x,
+   328→                      top: anchor.y,
+   329→                      transform: `translate(-100%, ${placement === 'above' ? '-100%' : '0'}) translateY(${placement === 'above' ? '-14px' : '14px'})`,
+   330→                    }}
+   331→                  >
+   332→                    <GlassMenu aria-label="More options" className="w-[232px]" {...menuMotionProps}>
+   333→                      <TapMenuItem
+   334→                        icon={SettingsIcon}
+   335→                        label="Settings"
+   336→                        whileTap={reduced ? undefined : pressTap}
+   337→                        transition={pressSpring}
+   338→                        onClick={() => {
+   339→                          haptic(10)
+   340→                          runAction('settings')
+   341→                        }}
+   342→                      />
+   343→                      <TapMenuItem
+   344→                        icon={Search}
+   345→                        label="Search"
+   346→                        trailing={<Command className="size-3 text-zinc-400" aria-hidden />}
+   347→                        whileTap={reduced ? undefined : pressTap}
+   348→                        transition={pressSpring}
+   349→                        onClick={() => {
+   350→                          haptic(10)
+   351→                          runAction('search')
+   352→                        }}
+   353→                      />
+   354→                      <GlassMenuSeparator />
+   355→                      <TapMenuItem
+   356→                        icon={Bookmark}
+   357→                        label="Saved"
+   358→                        whileTap={reduced ? undefined : pressTap}
+   359→                        transition={pressSpring}
+   360→                        onClick={() => {
+   361→                          haptic(10)
+   362→                          runAction('saved')
+   363→                        }}
+   364→                      />
+   365→                      <TapMenuItem
+   366→                        icon={Aperture}
+   367→                        label="Stories"
+   368→                        whileTap={reduced ? undefined : pressTap}
+   369→                        transition={pressSpring}
+   370→                        onClick={() => {
+   371→                          haptic(10)
+   372→                          runAction('stories')
+   373→                        }}
+   374→                      />
+   375→                    </GlassMenu>
+   376→                  </motion.div>
+   377→                </>
+   378→              ) : null}
+   379→            </AnimatePresence>,
+   380→            document.body,
+   381→          )}
+   382→    </>
+   383→  )
+   384→}
+   385→
+   386→/** Center compose action — emits the existing 'new-chat' context action. */
+   387→function CapsuleComposeButton({ onAction }: { onAction: (action: NavContextAction) => void }) {
+   388→  const reduced = useReducedMotion()
+   389→  return (
+   390→    <motion.button
+   391→      type="button"
+   392→      aria-label="New chat"
+   393→      onClick={() => {
+   394→        haptic(14)
+   395→        onAction('new-chat')
+   396→      }}
+   397→      whileTap={reduced ? undefined : pressTap}
+   398→      transition={pressSpring}
+   399→      className="mx-0.5 flex size-[46px] shrink-0 touch-manipulation select-none items-center justify-center self-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-[0_8px_22px_-6px_rgba(16,185,129,0.7)] outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+   400→      style={{ willChange: 'transform' }}
+   401→    >
+   402→      <Plus className="size-5" aria-hidden />
+   403→    </motion.button>
+   404→  )
+   405→}
+   406→
+   407→// ── 1 · capsule — Floating Capsule Navigation Bar (DEFAULT) ──
+   408→
+   409→function CapsuleNav({
+   410→  active,
+   411→  onChange,
+   412→  unread,
+   413→  onContextAction,
+   414→}: TabProps & { onContextAction: (action: NavContextAction) => void }) {
+   415→  const reduced = useReducedMotion()
+   416→  // registry-driven split: first half · center compose · second half · overflow
+   417→  const mid = Math.ceil(NAV_ITEMS.length / 2)
+   418→  const lead = NAV_ITEMS.slice(0, mid)
+   419→  const tail = NAV_ITEMS.slice(mid)
+   420→  return (
+   421→    <div className="pointer-events-none absolute inset-x-3 bottom-0 z-[45] mb-[calc(env(safe-area-inset-bottom,0px)_+_10px)]">
+   422→      <motion.nav
+   423→        role="tablist"
+   424→        aria-label="Main navigation (floating capsule)"
+   425→        initial={reduced ? false : { y: 64, opacity: 0 }}
+   426→        animate={{ y: 0, opacity: 1 }}
+   427→        exit={reduced ? undefined : { y: 64, opacity: 0 }}
+   428→        transition={reduced ? { duration: 0 } : spring.soft}
+   429→        className={cn('pointer-events-auto flex items-stretch gap-1 rounded-[28px] p-1.5', GLASS_PANEL)}
+   430→      >
+   431→        {lead.map((item) => (
+   432→          <CapsuleTab
+   433→            key={item.id}
+   434→            id={item.id}
+   435→            label={item.label}
+   436→            Icon={item.Icon}
+   437→            badge={item.badge}
+   438→            active={active === item.id}
+   439→            unread={item.badge === 'chats-unread' ? unread : 0}
+   440→            onSelect={onChange}
+   441→            layoutId="nav-capsule-pill"
+   442→          />
+   443→        ))}
+   444→        <CapsuleComposeButton onAction={onContextAction} />
+   445→        {tail.map((item) => (
+   446→          <CapsuleTab
+   447→            key={item.id}
+   448→            id={item.id}
+   449→            label={item.label}
+   450→            Icon={item.Icon}
+   451→            badge={item.badge}
+   452→            active={active === item.id}
+   453→            unread={item.badge === 'chats-unread' ? unread : 0}
+   454→            onSelect={onChange}
+   455→            layoutId="nav-capsule-pill"
+   456→          />
+   457→        ))}
+   458→        <NavOverflowButton placement="above" onAction={onContextAction} />
+   459→      </motion.nav>
+   460→    </div>
+   461→  )
+   462→}
+   463→
+   464→// ── 2 · floating-top — Floating Top Nav ──────────────────────
+   465→
+   466→function FloatingTopNav({
+   467→  active,
+   468→  onChange,
+   469→  unread,
+   470→  onContextAction,
+   471→}: TabProps & { onContextAction: (action: NavContextAction) => void }) {
+   472→  const reduced = useReducedMotion()
+   473→  return (
+   474→    <div className="pointer-events-none absolute inset-x-3 top-2 z-[60]">
+   475→      <motion.nav
+   476→        role="tablist"
+   477→        aria-label="Main navigation (floating top)"
+   478→        initial={reduced ? false : { y: -56, opacity: 0 }}
+   479→        animate={{ y: 0, opacity: 1 }}
+   480→        exit={reduced ? undefined : { y: -56, opacity: 0 }}
+   481→        transition={reduced ? { duration: 0 } : spring.soft}
+   482→        className={cn('pointer-events-auto flex items-stretch gap-1 rounded-[26px] p-1.5', GLASS_PANEL)}
+   483→      >
+   484→        {NAV_ITEMS.map((item) => (
+   485→          <CapsuleTab
+   486→            key={item.id}
+   487→            id={item.id}
+   488→            label={item.label}
+   489→            Icon={item.Icon}
+   490→            badge={item.badge}
+   491→            active={active === item.id}
+   492→            unread={item.badge === 'chats-unread' ? unread : 0}
+   493→            onSelect={onChange}
+   494→            layoutId="nav-top-pill"
+   495→          />
+   496→        ))}
+   497→        <NavOverflowButton placement="below" onAction={onContextAction} buttonClassName="size-10 self-center" />
+   498→      </motion.nav>
+   499→    </div>
+   500→  )
+   501→}
+   502→
+   503→// ── 3 · floating-dock — Dock with magnifying icons ───────────
+   504→
+   505→function FloatingDock({ active, onChange, unread }: TabProps) {
+   506→  const reduced = useReducedMotion()
+   507→  return (
+   508→    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[45] mb-[calc(env(safe-area-inset-bottom,0px)_+_12px)] flex justify-center">
+   509→      <motion.nav
+   510→        role="tablist"
+   511→        aria-label="Main navigation (floating dock)"
+   512→        initial={reduced ? false : { y: 64, opacity: 0 }}
+   513→        animate={{ y: 0, opacity: 1 }}
+   514→        exit={reduced ? undefined : { y: 64, opacity: 0 }}
+   515→        transition={reduced ? { duration: 0 } : spring.soft}
+   516→        className={cn('pointer-events-auto flex items-end gap-1 rounded-[24px] px-2.5 py-2', GLASS_PANEL)}
+   517→      >
+   518→        {NAV_ITEMS.map((item) => (
+   519→          <div key={item.id} className="flex items-end gap-1">
+   520→            {item.id !== NAV_ITEMS[0].id ? <span aria-hidden className="mb-3 size-1 rounded-full bg-zinc-300 dark:bg-zinc-700" /> : null}
+   521→            <motion.button
+   522→              type="button"
+   523→              role="tab"
+   524→              aria-selected={active === item.id}
+   525→              aria-label={item.label}
+   526→              onClick={() => {
+   527→                haptic(12)
+   528→                onChange(item.id)
+   529→              }}
+   530→              whileHover={reduced ? undefined : { scale: 1.22, y: -6 }}
+   531→              whileTap={reduced ? undefined : { scale: 0.9 }}
+   532→              transition={reduced ? { duration: 0 } : spring.bouncy}
+   533→              className="relative flex size-12 touch-manipulation items-center justify-center rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+   534→            >
+   535→              {active === item.id ? (
+   536→                <motion.span
+   537→                  layoutId="nav-dock-pill"
+   538→                  transition={reduced ? { duration: 0 } : spring.snappy}
+   539→                  className="absolute inset-0 rounded-2xl bg-gradient-to-b from-emerald-500/25 to-emerald-500/[0.08] ring-1 ring-inset ring-emerald-500/40"
+   540→                />
+   541→              ) : null}
+   542→              <span className="relative">
+   543→                <item.Icon
+   544→                  className={cn(
+   545→                    'size-6 transition-colors',
+   546→                    active === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+   547→                  )}
+   548→                  strokeWidth={active === item.id ? 2.2 : 1.8}
+   549→                  aria-hidden
+   550→                />
+   551→                {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
+   552→              </span>
+   553→            </motion.button>
+   554→          </div>
+   555→        ))}
+   556→      </motion.nav>
+   557→    </div>
+   558→  )
+   559→}
+   560→
+   561→// ── 4 · pill — segmented pill with sliding fill ──────────────
+   562→
+   563→function PillNav({ active, onChange, unread }: TabProps) {
+   564→  const reduced = useReducedMotion()
+   565→  return (
+   566→    <div className="pointer-events-none absolute inset-x-6 bottom-0 z-[45] mb-[calc(env(safe-area-inset-bottom,0px)_+_12px)]">
+   567→      <motion.nav
+   568→        role="tablist"
+   569→        aria-label="Main navigation (pill)"
+   570→        initial={reduced ? false : { y: 56, opacity: 0 }}
+   571→        animate={{ y: 0, opacity: 1 }}
+   572→        exit={reduced ? undefined : { y: 56, opacity: 0 }}
+   573→        transition={reduced ? { duration: 0 } : spring.soft}
+   574→        className={cn('pointer-events-auto relative flex rounded-full p-1', GLASS_PANEL)}
+   575→      >
+   576→        {NAV_ITEMS.map((item) => {
+   577→          const isActive = active === item.id
+   578→          return (
+   579→            <button
+   580→              key={item.id}
+   581→              type="button"
+   582→              role="tab"
+   583→              aria-selected={isActive}
+   584→              aria-label={item.label}
+   585→              onClick={() => {
+   586→                haptic(10)
+   587→                onChange(item.id)
+   588→              }}
+   589→              className={cn(
+   590→                'relative flex min-h-[44px] flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-full px-2 text-[11px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-emerald-500/60',
+   591→                isActive ? 'text-white' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
+   592→              )}
+   593→            >
+   594→              {isActive ? (
+   595→                <motion.span
+   596→                  layoutId="nav-pill-fill"
+   597→                  transition={reduced ? { duration: 0 } : spring.snappy}
+   598→                  className="absolute inset-0 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 shadow-[0_6px_18px_-4px_rgba(16,185,129,0.7)]"
+   599→                  style={{ willChange: 'transform' }}
+   600→                />
+   601→              ) : null}
+   602→              <span className="relative">
+   603→                <item.Icon className="size-[17px]" strokeWidth={isActive ? 2.3 : 1.9} aria-hidden />
+   604→                {item.badge === 'chats-unread' ? <UnreadBadge count={unread} className="-right-2 -top-2 ring-transparent" /> : null}
+   605→              </span>
+   606→              <span className="relative hidden xs:inline sm:inline">{item.label}</span>
+   607→            </button>
+   608→          )
+   609→        })}
+   610→      </motion.nav>
+   611→    </div>
+   612→  )
+   613→}
+   614→
+   615→// ── 5 · bottom-bar — classic edge-to-edge bar ────────────────
+   616→
+   617→function BottomBar({ active, onChange, unread }: TabProps) {
+   618→  return (
+   619→    <nav
+   620→      role="tablist"
+   621→      aria-label="Main navigation (bottom bar)"
+   622→      className="absolute inset-x-0 bottom-0 z-[45] flex items-stretch border-t border-zinc-200/80 bg-white/85 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/85"
+   623→    >
+   624→      {NAV_ITEMS.map((item) => {
+   625→        const isActive = active === item.id
+   626→        return (
+   627→          <button
+   628→            key={item.id}
+   629→            type="button"
+   630→            role="tab"
+   631→            aria-selected={isActive}
+   632→            aria-label={item.label}
+   633→            onClick={() => {
+   634→              haptic(10)
+   635→              onChange(item.id)
+   636→            }}
+   637→            className={cn(
+   638→              'relative flex min-h-[56px] flex-1 touch-manipulation flex-col items-center justify-center gap-1 pt-1.5 text-[10px] font-semibold outline-none transition-colors',
+   639→              isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+   640→            )}
+   641→          >
+   642→            <span className="relative">
+   643→              <item.Icon className="size-[22px]" strokeWidth={isActive ? 2.2 : 1.8} aria-hidden />
+   644→              {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
+   645→            </span>
+   646→            {item.label}
+   647→            {isActive ? (
+   648→              <motion.span
+   649→                layoutId="nav-bottombar-dot"
+   650→                transition={spring.snappy}
+   651→                className="absolute top-0 h-[3px] w-8 rounded-b-full bg-emerald-500"
+   652→                style={{ willChange: 'transform' }}
+   653→              />
+   654→            ) : null}
+   655→          </button>
+   656→        )
+   657→      })}
+   658→    </nav>
+   659→  )
+   660→}
+   661→
+   662→// ── 6 · tab-bar — iOS-style tinted squircles ─────────────────
+   663→
+   664→function TabBarNav({ active, onChange, unread }: TabProps) {
+   665→  return (
+   666→    <nav
+   667→      role="tablist"
+   668→      aria-label="Main navigation (tab bar)"
+   669→      className="absolute inset-x-0 bottom-0 z-[45] flex items-stretch gap-1 border-t border-zinc-200/70 bg-white/80 px-2 pb-[env(safe-area-inset-bottom,0px)] pt-1.5 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/80"
+   670→    >
+   671→      {NAV_ITEMS.map((item) => {
+   672→        const isActive = active === item.id
+   673→        return (
+   674→          <motion.button
+   675→            key={item.id}
+   676→            type="button"
+   677→            role="tab"
+   678→            aria-selected={isActive}
+   679→            aria-label={item.label}
+   680→            whileTap={{ scale: 0.92 }}
+   681→            transition={spring.bouncy}
+   682→            onClick={() => {
+   683→              haptic(10)
+   684→              onChange(item.id)
+   685→            }}
+   686→            className="relative flex min-h-[52px] flex-1 touch-manipulation flex-col items-center justify-center gap-1 text-[10px] font-medium outline-none"
+   687→          >
+   688→            {isActive ? (
+   689→              <motion.span
+   690→                layoutId="nav-tabbar-squircle"
+   691→                transition={spring.snappy}
+   692→                className="absolute inset-x-3 inset-y-1 rounded-2xl bg-emerald-500/15 ring-1 ring-inset ring-emerald-500/25 dark:bg-emerald-400/10"
+   693→                style={{ willChange: 'transform' }}
+   694→              />
+   695→            ) : null}
+   696→            <span className="relative">
+   697→              <item.Icon
+   698→                className={cn(
+   699→                  'size-[21px] transition-colors',
+   700→                  isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+   701→                )}
+   702→                strokeWidth={isActive ? 2.2 : 1.8}
+   703→                aria-hidden
+   704→              />
+   705→              {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
+   706→            </span>
+   707→            <span className={cn('relative', isActive && 'font-semibold text-emerald-600 dark:text-emerald-400')}>
+   708→              {item.label}
+   709→            </span>
+   710→          </motion.button>
+   711→        )
+   712→      })}
+   713→    </nav>
+   714→  )
+   715→}
+   716→
+   717→// ── 7 · floating-tab-bar — detached elevated card ────────────
+   718→
+   719→function FloatingTabBar({ active, onChange, unread }: TabProps) {
+   720→  const reduced = useReducedMotion()
+   721→  return (
+   722→    <div className="pointer-events-none absolute inset-x-4 bottom-0 z-[45] mb-[calc(env(safe-area-inset-bottom,0px)_+_12px)]">
+   723→      <motion.nav
+   724→        role="tablist"
+   725→        aria-label="Main navigation (floating tab bar)"
+   726→        initial={reduced ? false : { y: 64, opacity: 0 }}
+   727→        animate={{ y: 0, opacity: 1 }}
+   728→        exit={reduced ? undefined : { y: 64, opacity: 0 }}
+   729→        transition={reduced ? { duration: 0 } : spring.soft}
+   730→        className={cn('pointer-events-auto flex items-stretch gap-1.5 rounded-[26px] p-2', GLASS_PANEL)}
+   731→      >
+   732→        {NAV_ITEMS.map((item) => {
+   733→          const isActive = active === item.id
+   734→          return (
+   735→            <motion.button
+   736→              key={item.id}
+   737→              type="button"
+   738→              role="tab"
+   739→              aria-selected={isActive}
+   740→              aria-label={item.label}
+   741→              animate={{ y: isActive ? -4 : 0, scale: isActive ? 1.02 : 1 }}
+   742→              transition={reduced ? { duration: 0 } : spring.bouncy}
+   743→              onClick={() => {
+   744→                haptic(12)
+   745→                onChange(item.id)
+   746→              }}
+   747→              className="relative flex min-h-[54px] flex-1 touch-manipulation flex-col items-center justify-center gap-1 rounded-[20px] text-[10px] font-semibold outline-none"
+   748→            >
+   749→              {isActive ? (
+   750→                <motion.span
+   751→                  layoutId="nav-ftab-card"
+   752→                  transition={reduced ? { duration: 0 } : spring.snappy}
+   753→                  className="absolute inset-0 rounded-[20px] bg-gradient-to-b from-white to-zinc-50 shadow-[0_10px_24px_-8px_rgba(16,185,129,0.45),0_2px_6px_rgba(0,0,0,0.08)] ring-1 ring-emerald-500/30 dark:from-zinc-800 dark:to-zinc-900"
+   754→                  style={{ willChange: 'transform' }}
+   755→                />
+   756→              ) : null}
+   757→              <span className="relative">
+   758→                <item.Icon
+   759→                  className={cn(
+   760→                    'size-[21px] transition-colors',
+   761→                    isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+   762→                  )}
+   763→                  strokeWidth={isActive ? 2.2 : 1.8}
+   764→                  aria-hidden
+   765→                />
+   766→                {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
+   767→              </span>
+   768→              <span
+   769→                className={cn(
+   770→                  'relative transition-colors',
+   771→                  isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+   772→                )}
+   773→              >
+   774→                {item.label}
+   775→              </span>
+   776→            </motion.button>
+   777→          )
+   778→        })}
+   779→      </motion.nav>
+   780→    </div>
+   781→  )
+   782→}
+   783→
+   784→// ── 8 · command-bar — top text command strip ─────────────────
+   785→
+   786→function CommandBarNav({
+   787→  active,
+   788→  onChange,
+   789→  unread,
+   790→  onSearch,
+   791→  onSettings,
+   792→  onContextAction,
+   793→}: TabProps & { onSearch: () => void; onSettings: () => void; onContextAction: (action: NavContextAction) => void }) {
+   794→  const reduced = useReducedMotion()
+   795→  return (
+   796→    <div className="pointer-events-none absolute inset-x-3 top-2 z-[60]">
+   797→      <motion.nav
+   798→        role="tablist"
+   799→        aria-label="Main navigation (command bar)"
+   800→        initial={reduced ? false : { y: -56, opacity: 0 }}
+   801→        animate={{ y: 0, opacity: 1 }}
+   802→        exit={reduced ? undefined : { y: -56, opacity: 0 }}
+   803→        transition={reduced ? { duration: 0 } : spring.soft}
+   804→        className={cn('pointer-events-auto flex items-center gap-0.5 rounded-full py-1 pl-2 pr-1', GLASS_PANEL)}
+   805→      >
+   806→        <motion.button
+   807→          type="button"
+   808→          aria-label="Search"
+   809→          onClick={() => {
+   810→            haptic(8)
+   811→            onSearch()
+   812→          }}
+   813→          whileTap={reduced ? undefined : { scale: 0.9 }}
+   814→          className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+   815→        >
+   816→          <Search className="size-4" aria-hidden />
+   817→          <Command className="-ml-2 mt-3 size-2.5 text-zinc-400" aria-hidden />
+   818→        </motion.button>
+   819→        <span aria-hidden className="h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />
+   820→        <div className="relative flex flex-1 items-center justify-around">
+   821→          {NAV_ITEMS.map((item) => {
+   822→            const isActive = active === item.id
+   823→            return (
+   824→              <button
+   825→                key={item.id}
+   826→                type="button"
+   827→                role="tab"
+   828→                aria-selected={isActive}
+   829→                onClick={() => {
+   830→                  haptic(10)
+   831→                  onChange(item.id)
+   832→                }}
+   833→                className={cn(
+   834→                  'relative min-h-[40px] touch-manipulation rounded-full px-3 text-[12px] font-semibold outline-none transition-colors',
+   835→                  isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+   836→                )}
+   837→              >
+   838→                {isActive ? (
+   839→                  <motion.span
+   840→                    layoutId="nav-cmd-underline"
+   841→                    transition={reduced ? { duration: 0 } : spring.snappy}
+   842→                    className="absolute inset-x-2 -bottom-0.5 h-[2.5px] rounded-full bg-emerald-500"
+   843→                    style={{ willChange: 'transform' }}
+   844→                  />
+   845→                ) : null}
+   846→                {item.label}
+   847→              </button>
+   848→            )
+   849→          })}
+   850→        </div>
+   851→        <span aria-hidden className="h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />
+   852→        <motion.button
+   853→          type="button"
+   854→          aria-label="Settings"
+   855→          onClick={() => {
+   856→            haptic(8)
+   857→            onSettings()
+   858→          }}
+   859→          whileTap={reduced ? undefined : { scale: 0.9 }}
+   860→          className="relative flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+   861→        >
+   862→          <SettingsIcon className="size-4" aria-hidden />
+   863→          {unread > 0 ? <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-emerald-500" /> : null}
+   864→        </motion.button>
+   865→        <NavOverflowButton placement="below" onAction={onContextAction} buttonClassName="size-9" />
+   866→      </motion.nav>
+   867→    </div>
+   868→  )
+   869→}
+   870→
+   871→// ── 9 · rail — persistent vertical side rail ─────────────────
+   872→
+   873→function RailNav({ active, onChange, unread }: TabProps) {
+   874→  return (
+   875→    <nav
+   876→      role="tablist"
+   877→      aria-label="Main navigation (rail)"
+   878→      className="z-[45] flex w-[68px] shrink-0 flex-col items-center gap-1 border-r border-zinc-200/70 bg-white/60 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/60"
+   879→    >
+   880→      <div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-sm font-black text-white shadow-[0_6px_16px_-4px_rgba(16,185,129,0.7)]">
+   881→        P
+   882→      </div>
+   883→      {NAV_ITEMS.map((item) => {
+   884→        const isActive = active === item.id
+   885→        return (
+   886→          <motion.button
+   887→            key={item.id}
+   888→            type="button"
+   889→            role="tab"
+   890→            aria-selected={isActive}
+   891→            aria-label={item.label}
+   892→            whileTap={{ scale: 0.92 }}
+   893→            transition={spring.bouncy}
+   894→            onClick={() => {
+   895→              haptic(10)
+   896→              onChange(item.id)
+   897→            }}
+   898→            className={cn(
+   899→              'relative flex w-14 flex-col items-center gap-1 rounded-2xl py-2.5 text-[9px] font-semibold outline-none transition-colors',
+   900→              isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
+   901→            )}
+   902→          >
+   903→            {isActive ? (
+   904→              <motion.span
+   905→                layoutId="nav-rail-bar"
+   906→                transition={spring.snappy}
+   907→                className="absolute -left-[13px] top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-emerald-500"
+   908→                style={{ willChange: 'transform' }}
+   909→              />
+   910→            ) : null}
+   911→            <span className="relative">
+   912→              <item.Icon className="size-5" strokeWidth={isActive ? 2.2 : 1.8} aria-hidden />
+   913→              {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
+   914→            </span>
+   915→            {item.label}
+   916→          </motion.button>
+   917→        )
+   918→      })}
+   919→    </nav>
+   920→  )
+   921→}
+   922→
+   923→// ── 10 · island — dynamic-island expanding pill ──────────────
+   924→
+   925→function IslandNav({
+   926→  active,
+   927→  onChange,
+   928→  unread,
+   929→  onContextAction,
+   930→}: TabProps & { onContextAction: (action: NavContextAction) => void }) {
+   931→  const reduced = useReducedMotion()
+   932→  const [expanded, setExpanded] = useState(false)
+   933→  const [overflowOpen, setOverflowOpen] = useState(false)
+   934→  const activeItem = NAV_ITEMS.find((t) => t.id === active) ?? NAV_ITEMS[0]
+   935→  useEffect(() => {
+   936→    // auto-collapse pauses while the overflow glass menu is open —
+   937→    // the menu lives inside the expanded island and must not vanish mid-read
+   938→    if (!expanded || overflowOpen) return
+   939→    const t = window.setTimeout(() => setExpanded(false), 4200)
+   940→    return () => window.clearTimeout(t)
+   941→  }, [expanded, overflowOpen])
+   942→  return (
+   943→    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[46] mb-[calc(env(safe-area-inset-bottom,0px)_+_12px)] flex justify-center">
+   944→      <motion.nav
+   945→        role="tablist"
+   946→        aria-label="Main navigation (island)"
+   947→        layout
+   948→        onClick={() => {
+   949→          haptic(10)
+   950→          setExpanded((v) => !v)
+   951→        }}
+   952→        animate={{ width: expanded ? 'min(92%, 380px)' : 148 }}
+   953→        transition={reduced ? { duration: 0 } : spring.snappy}
+   954→        style={{ willChange: 'width' }}
+   955→        className={cn(
+   956→          'pointer-events-auto flex min-h-[54px] cursor-pointer items-center justify-center overflow-hidden rounded-full p-1.5',
+   957→          GLASS_PANEL,
+   958→        )}
+   959→      >
+   960→        <AnimatePresence mode="popLayout" initial={false}>
+   961→          {expanded ? (
+   962→            <motion.div
+   963→              key="island-open"
+   964→              initial={{ opacity: 0, scale: 0.9 }}
+   965→              animate={{ opacity: 1, scale: 1 }}
+   966→              exit={{ opacity: 0, scale: 0.9 }}
+   967→              transition={reduced ? { duration: 0 } : spring.bouncy}
+   968→              className="flex w-full items-stretch"
+   969→            >
+   970→              {NAV_ITEMS.map((item) => (
+   971→                <button
+   972→                  key={item.id}
+   973→                  type="button"
+   974→                  role="tab"
+   975→                  aria-selected={active === item.id}
+   976→                  aria-label={item.label}
+   977→                  onClick={(e) => {
+   978→                    e.stopPropagation()
+   979→                    haptic(12)
+   980→                    onChange(item.id)
+   981→                    setExpanded(false)
+   982→                  }}
+   983→                  className="relative flex min-h-[46px] flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-3xl text-[9px] font-semibold outline-none"
+   984→                >
+   985→                  {active === item.id ? (
+   986→                    <motion.span
+   987→                      layoutId="nav-island-pill"
+   988→                      transition={spring.snappy}
+   989→                      className="absolute inset-1 rounded-3xl bg-emerald-500/18 ring-1 ring-inset ring-emerald-500/30"
+   990→                    />
+   991→                  ) : null}
+   992→                  <span className="relative">
+   993→                    <item.Icon
+   994→                      className={cn(
+   995→                        'size-5',
+   996→                        active === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+   997→                      )}
+   998→                      aria-hidden
+   999→                    />
+  1000→                    {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
+  1001→                  </span>
+  1002→                  <span className="relative text-zinc-600 dark:text-zinc-300">{item.label}</span>
+  1003→                </button>
+  1004→              ))}
+  1005→              <div
+  1006→                className="relative flex min-h-[46px] flex-1 items-center justify-center"
+  1007→                onClick={(e) => e.stopPropagation()}
+  1008→              >
+  1009→                <NavOverflowButton
+  1010→                  placement="above"
+  1011→                  onOpenChange={setOverflowOpen}
+  1012→                  onAction={(action) => {
+  1013→                    setExpanded(false)
+  1014→                    onContextAction(action)
+  1015→                  }}
+  1016→                  showLabel
+  1017→                />
+  1018→              </div>
+  1019→            </motion.div>
+  1020→          ) : (
+  1021→            <motion.div
+  1022→              key="island-closed"
+  1023→              initial={{ opacity: 0, scale: 0.85 }}
+  1024→              animate={{ opacity: 1, scale: 1 }}
+  1025→              exit={{ opacity: 0, scale: 0.85 }}
+  1026→              transition={reduced ? { duration: 0 } : spring.bouncy}
+  1027→              className="flex items-center gap-2 px-3"
+  1028→            >
+  1029→              <span className="relative">
+  1030→                <activeItem.Icon className="size-[22px] text-emerald-600 dark:text-emerald-400" aria-hidden />
+  1031→                {active === 'chats' ? <UnreadBadge count={unread} /> : null}
+  1032→              </span>
+  1033→              <span className="text-[12px] font-semibold text-zinc-700 dark:text-zinc-200">{activeItem.label}</span>
+  1034→              <GripHorizontal className="size-4 text-zinc-400" aria-hidden />
+  1035→            </motion.div>
+  1036→          )}
+  1037→        </AnimatePresence>
+  1038→      </motion.nav>
+  1039→    </div>
+  1040→  )
+  1041→}
+  1042→
+  1043→// ── 11 · radial — FAB fanning an arc ─────────────────────────
+  1044→
+  1045→function RadialNav({ active, onChange, unread }: TabProps) {
+  1046→  const reduced = useReducedMotion()
+  1047→  const [open, setOpen] = useState(false)
+  1048→  // registry-driven arc: destinations fan across the upper hemisphere
+  1049→  const radius = 96
+  1050→  const step = 34 // degrees between destinations
+  1051→  return (
+  1052→    <>
+  1053→      <AnimatePresence>
+  1054→        {open ? (
+  1055→          <motion.div
+  1056→            key="radial-veil"
+  1057→            initial={{ opacity: 0 }}
+  1058→            animate={{ opacity: 1 }}
+  1059→            exit={{ opacity: 0 }}
+  1060→            className="absolute inset-0 z-[84] bg-zinc-950/35 backdrop-blur-[18px]"
+  1061→            onClick={() => setOpen(false)}
+  1062→          >
+  1063→            {NAV_ITEMS.map((item, i) => {
+  1064→              const deg = -90 + (i - (NAV_ITEMS.length - 1) / 2) * step
+  1065→              const rad = (deg * Math.PI) / 180
+  1066→              return (
+  1067→                <motion.button
+  1068→                  key={item.id}
+  1069→                  type="button"
+  1070→                  aria-label={item.label}
+  1071→                  initial={{ opacity: 0, x: 0, y: 0, scale: 0.4 }}
+  1072→                  animate={{ opacity: 1, x: Math.cos(rad) * radius, y: Math.sin(rad) * radius, scale: 1 }}
+  1073→                  exit={{ opacity: 0, x: 0, y: 0, scale: 0.4 }}
+  1074→                  transition={reduced ? { duration: 0 } : { ...spring.bouncy, delay: i * 0.03 }}
+  1075→                  onClick={(e) => {
+  1076→                    e.stopPropagation()
+  1077→                    haptic(12)
+  1078→                    onChange(item.id)
+  1079→                    setOpen(false)
+  1080→                  }}
+  1081→                  className="absolute bottom-6 left-1/2 flex size-[68px] -translate-x-1/2 flex-col items-center justify-center gap-0.5 rounded-full border border-white/40 bg-white/85 text-[9px] font-bold text-zinc-800 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/90 dark:text-white"
+  1082→                >
+  1083→                  <span className="relative">
+  1084→                    <item.Icon className={cn('size-5', active === item.id && 'text-emerald-500')} aria-hidden />
+  1085→                    {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
+  1086→                  </span>
+  1087→                  {item.label}
+  1088→                </motion.button>
+  1089→              )
+  1090→            })}
+  1091→          </motion.div>
+  1092→        ) : null}
+  1093→      </AnimatePresence>
+  1094→      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[83] mb-[calc(env(safe-area-inset-bottom,0px)_+_14px)] flex justify-center">
+  1095→        <motion.button
+  1096→          type="button"
+  1097→          aria-label={open ? 'Close radial navigation' : 'Open radial navigation'}
+  1098→          onClick={() => {
+  1099→            haptic(14)
+  1100→            setOpen((v) => !v)
+  1101→          }}
+  1102→          whileTap={{ scale: 0.92 }}
+  1103→          animate={{ rotate: open ? 45 : 0 }}
+  1104→          transition={spring.snappy}
+  1105→          className="pointer-events-auto flex size-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-[0_10px_36px_-6px_rgba(16,185,129,0.65)]"
+  1106→          style={{ willChange: 'transform' }}
+  1107→        >
+  1108→          <Plus className="size-6" aria-hidden />
+  1109→        </motion.button>
+  1110→      </div>
+  1111→    </>
+  1112→  )
+  1113→}
+  1114→
+  1115→// ── 12 · gesture — swipe handle + quick switcher ─────────────
+  1116→
+  1117→function GestureNav({ active, onChange, unread }: TabProps) {
+  1118→  const reduced = useReducedMotion()
+  1119→  const [open, setOpen] = useState(false)
+  1120→  const dragY = useAnimationControls()
+  1121→  return (
+  1122→    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[46] mb-[calc(env(safe-area-inset-bottom,0px)_+_8px)] flex flex-col items-center">
+  1123→      <AnimatePresence>
+  1124→        {open ? (
+  1125→          <motion.div
+  1126→            key="gesture-switcher"
+  1127→            initial={{ opacity: 0, y: 24, scale: 0.92 }}
+  1128→            animate={{ opacity: 1, y: 0, scale: 1 }}
+  1129→            exit={{ opacity: 0, y: 24, scale: 0.92 }}
+  1130→            transition={reduced ? { duration: 0 } : spring.bouncy}
+  1131→            className={cn('pointer-events-auto mb-2.5 flex items-center gap-1 rounded-[24px] p-1.5', GLASS_PANEL)}
+  1132→          >
+  1133→            {NAV_ITEMS.map((item) => (
+  1134→              <button
+  1135→                key={item.id}
+  1136→                type="button"
+  1137→                role="tab"
+  1138→                aria-selected={active === item.id}
+  1139→                aria-label={item.label}
+  1140→                onClick={() => {
+  1141→                  haptic(12)
+  1142→                  onChange(item.id)
+  1143→                  setOpen(false)
+  1144→                }}
+  1145→                className="relative flex size-14 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-2xl text-[9px] font-semibold outline-none"
+  1146→              >
+  1147→                {active === item.id ? (
+  1148→                  <motion.span
+  1149→                    layoutId="nav-gesture-pill"
+  1150→                    transition={spring.snappy}
+  1151→                    className="absolute inset-0 rounded-2xl bg-emerald-500/18 ring-1 ring-inset ring-emerald-500/30"
+  1152→                  />
+  1153→                ) : null}
+  1154→                <span className="relative">
+  1155→                  <item.Icon
+  1156→                    className={cn(
+  1157→                      'size-5',
+  1158→                      active === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+  1159→                    )}
+  1160→                    aria-hidden
+  1161→                  />
+  1162→                  {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
+  1163→                </span>
+  1164→                <span className="relative text-zinc-600 dark:text-zinc-300">{item.label}</span>
+  1165→              </button>
+  1166→            ))}
+  1167→          </motion.div>
+  1168→        ) : null}
+  1169→      </AnimatePresence>
+  1170→      <motion.button
+  1171→        type="button"
+  1172→        aria-label={open ? 'Collapse quick switcher' : 'Open quick switcher'}
+  1173→        animate={dragY}
+  1174→        onClick={() => {
+  1175→          haptic(10)
+  1176→          setOpen((v) => !v)
+  1177→        }}
+  1178→        className="pointer-events-auto flex h-9 w-40 touch-manipulation items-end justify-center rounded-full pb-1.5 outline-none"
+  1179→      >
+  1180→        <span
+  1181→          className={cn(
+  1182→            'h-[5px] rounded-full transition-all duration-300',
+  1183→            open ? 'w-16 bg-emerald-500' : 'w-24 bg-zinc-400 dark:bg-zinc-600',
+  1184→          )}
+  1185→        />
+  1186→      </motion.button>
+  1187→    </div>
+  1188→  )
+  1189→}
+  1190→
+  1191→// ── 13 · contextual-dock — adapts to the active tab ──────────
+  1192→
+  1193→const CONTEXT_ACTION: Record<PulseTab, { label: string; Icon: typeof Plus }> = {
+  1194→  chats: { label: 'New chat', Icon: Plus },
+  1195→  hub: { label: 'Search', Icon: Search },
+  1196→  contacts: { label: 'New group', Icon: Users },
+  1197→  profile: { label: 'Settings', Icon: SettingsIcon },
+  1198→}
+  1199→
+  1200→function ContextualDock({
+  1201→  active,
+  1202→  onChange,
+  1203→  unread,
+  1204→  onContextAction,
+  1205→}: TabProps & { onContextAction: (action: NavContextAction) => void }) {
+  1206→  const reduced = useReducedMotion()
+  1207→  const ctx = CONTEXT_ACTION[active]
+  1208→  return (
+  1209→    <div className="pointer-events-none absolute inset-x-3 bottom-0 z-[45] mb-[calc(env(safe-area-inset-bottom,0px)_+_10px)]">
+  1210→      <motion.nav
+  1211→        role="tablist"
+  1212→        aria-label="Main navigation (contextual dock)"
+  1213→        layout
+  1214→        transition={reduced ? { duration: 0 } : spring.soft}
+  1215→        className={cn('pointer-events-auto flex items-center gap-1 rounded-[26px] p-1.5', GLASS_PANEL)}
+  1216→      >
+  1217→        {NAV_ITEMS.map((item) => (
+  1218→          <CapsuleTab
+  1219→            key={item.id}
+  1220→            id={item.id}
+  1221→            label={item.label}
+  1222→            Icon={item.Icon}
+  1223→            badge={item.badge}
+  1224→            active={active === item.id}
+  1225→            unread={item.badge === 'chats-unread' ? unread : 0}
+  1226→            onSelect={onChange}
+  1227→            layoutId="nav-ctx-pill"
+  1228→          />
+  1229→        ))}
+  1230→        <AnimatePresence mode="popLayout" initial={false}>
+  1231→          <motion.button
+  1232→            key={active}
+  1233→            type="button"
+  1234→            aria-label={ctx.label}
+  1235→            initial={{ opacity: 0, x: 12, scale: 0.8 }}
+  1236→            animate={{ opacity: 1, x: 0, scale: 1 }}
+  1237→            exit={{ opacity: 0, x: 12, scale: 0.8 }}
+  1238→            transition={reduced ? { duration: 0 } : spring.bouncy}
+  1239→            onClick={() => {
+  1240→              haptic(14)
+  1241→              onContextAction(
+  1242→                active === 'chats' ? 'new-chat' : active === 'hub' ? 'search' : active === 'contacts' ? 'new-group' : 'settings',
+  1243→              )
+  1244→            }}
+  1245→            className="ml-0.5 flex h-[52px] shrink-0 items-center gap-1.5 rounded-[20px] bg-gradient-to-br from-emerald-500 to-teal-600 px-3 text-[11px] font-bold text-white shadow-[0_8px_22px_-6px_rgba(16,185,129,0.7)]"
+  1246→          >
+  1247→            <ctx.Icon className="size-4" aria-hidden />
+  1248→            <span className="hidden sm:inline">{ctx.label}</span>
+  1249→          </motion.button>
+  1250→        </AnimatePresence>
+  1251→      </motion.nav>
+  1252→    </div>
+  1253→  )
+  1254→}
+  1255→
+  1256→// ── Router ───────────────────────────────────────────────────
+  1257→
+  1258→interface TabProps {
+  1259→  active: PulseTab
+  1260→  onChange: (tab: PulseTab) => void
+  1261→  unread: number
+  1262→}
+  1263→
+  1264→/**
+  1265→ * Cross-file nav actions. R26-e extends the R25 union:
+  1266→ *   new-chat / new-group  · existing compose flows (main-shell handles)
+  1267→ *   search / settings     · existing inline triggers (main-shell handles)
+  1268→ *   saved                 · NEW — jump to the profile Saved library
+  1269→ *   stories               · NEW — open the chats-tab stories viewer
+  1270→ * 'saved' and 'stories' are emitted by the nav overflow GlassMenu;
+  1271→ * main-shell (lead-owned) must extend handleContextAction to wire them
+  1272→ * (today its catch-all else-branch opens Settings — documented in the
+  1273→ * R26-e worklog entry).
+  1274→ */
+  1275→export type NavContextAction = 'new-chat' | 'new-group' | 'search' | 'settings' | 'saved' | 'stories'
+  1276→
+  1277→/**
+  1278→ * One-call navigation: reads the persisted style and renders the matching
+  1279→ * architecture. `onContextAction` feeds the contextual dock's per-tab chip
+  1280→ * AND the R26-e overflow GlassMenu (capsule / floating-top / island /
+  1281→ * command-bar); `onSearch`/`onSettings` feed the command bar's inline
+  1282→ * triggers.
+  1283→ */
+  1284→export function PulseNavBar({
+  1285→  me,
+  1286→  active,
+  1287→  onChange,
+  1288→  onSearch,
+  1289→  onSettings,
+  1290→  onContextAction,
+  1291→}: {
+  1292→  me: AppUser
+  1293→  active: PulseTab
+  1294→  onChange: (tab: PulseTab) => void
+  1295→  onSearch: () => void
+  1296→  onSettings: () => void
+  1297→  onContextAction: (action: NavContextAction) => void
+  1298→}) {
+  1299→  const [style] = useNavStyle()
+  1300→  const unread = useUnread(me)
+  1301→  switch (style) {
+  1302→    case 'floating-top':
+  1303→      return <FloatingTopNav active={active} onChange={onChange} unread={unread} onContextAction={onContextAction} />
+  1304→    case 'floating-dock':
+  1305→      return <FloatingDock active={active} onChange={onChange} unread={unread} />
+  1306→    case 'pill':
+  1307→      return <PillNav active={active} onChange={onChange} unread={unread} />
+  1308→    case 'bottom-bar':
+  1309→      return <BottomBar active={active} onChange={onChange} unread={unread} />
+  1310→    case 'tab-bar':
+  1311→      return <TabBarNav active={active} onChange={onChange} unread={unread} />
+  1312→    case 'floating-tab-bar':
+  1313→      return <FloatingTabBar active={active} onChange={onChange} unread={unread} />
+  1314→    case 'command-bar':
+  1315→      return (
+  1316→        <CommandBarNav
+  1317→          active={active}
+  1318→          onChange={onChange}
+  1319→          unread={unread}
+  1320→          onSearch={onSearch}
+  1321→          onSettings={onSettings}
+  1322→          onContextAction={onContextAction}
+  1323→        />
+  1324→      )
+  1325→    case 'rail':
+  1326→      return <RailNav active={active} onChange={onChange} unread={unread} />
+  1327→    case 'island':
+  1328→      return <IslandNav active={active} onChange={onChange} unread={unread} onContextAction={onContextAction} />
+  1329→    case 'radial':
+  1330→      return <RadialNav active={active} onChange={onChange} unread={unread} />
+  1331→    case 'gesture':
+  1332→      return <GestureNav active={active} onChange={onChange} unread={unread} />
+  1333→    case 'contextual-dock':
+  1334→      return <ContextualDock active={active} onChange={onChange} unread={unread} onContextAction={onContextAction} />
+  1335→    case 'capsule':
+  1336→    default:
+  1337→      return <CapsuleNav active={active} onChange={onChange} unread={unread} onContextAction={onContextAction} />
+  1338→  }
+  1339→}
+  1340→
+  1341→/** Back-compat alias for older import sites. */
+  1342→export const PulseNav = PulseNavBar
+  1343→

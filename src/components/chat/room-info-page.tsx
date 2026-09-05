@@ -16,6 +16,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   BellOff,
   Camera,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -79,6 +80,165 @@ function ttlLabel(ttlSeconds: number): string {
   if (ttlSeconds === 604_800) return '7d'
   if (ttlSeconds === 2_592_000) return '30d'
   return `${Math.max(1, Math.round(ttlSeconds / 86_400))}d`
+}
+
+/** TTL → spoken length for toasts/subtitles (mirrors the room header menu). */
+function ttlLong(ttlSeconds: number): string {
+  if (ttlSeconds === 86_400) return '24 hours'
+  if (ttlSeconds === 604_800) return '7 days'
+  if (ttlSeconds === 2_592_000) return '30 days'
+  return `${Math.max(1, Math.round(ttlSeconds / 86_400))} days`
+}
+
+// ── R34-b: Signal-style disappearing timer ──────────────────
+/** The EXACT TTL presets the disappearing API accepts (seconds). 0 = off. */
+const TTL_STOPS = [0, 86_400, 604_800, 2_592_000] as const // off · 24h · 7d · 30d
+const TTL_STOP_LABELS = ['Off', '24h', '7d', '30d'] as const
+
+/**
+ * Horizontal drag-to-set timer track. Draggable springy thumb over the
+ * supported TTL stops, a live label riding under the thumb, and the old
+ * preset pills kept as tap-to-commit tick labels below. Pointer events
+ * only (touch + mouse), `touch-none` so the page never scrolls mid-drag.
+ */
+function DisappearingSlider({
+  ttlSeconds,
+  disabled,
+  reducedMotion,
+  onCommit,
+}: {
+  ttlSeconds: number
+  disabled: boolean
+  reducedMotion: boolean
+  onCommit: (ttlSeconds: number) => void
+}) {
+  const trackRef = useRef<HTMLDivElement | null>(null)
+  const [draftIdx, setDraftIdx] = useState(() =>
+    Math.max(0, TTL_STOPS.indexOf(ttlSeconds as (typeof TTL_STOPS)[number])),
+  )
+  const [dragging, setDragging] = useState(false)
+
+  // follow the committed server truth whenever a drag is not in flight
+  const committedIdx = Math.max(
+    0,
+    TTL_STOPS.indexOf(ttlSeconds as (typeof TTL_STOPS)[number]),
+  )
+  const shownIdx = dragging ? draftIdx : committedIdx
+
+  const idxFromClientX = (clientX: number): number => {
+    const el = trackRef.current
+    if (!el) return committedIdx
+    const rect = el.getBoundingClientRect()
+    if (rect.width <= 0) return committedIdx
+    const ratio = (clientX - rect.left) / rect.width
+    return Math.min(TTL_STOPS.length - 1, Math.max(0, Math.round(ratio * (TTL_STOPS.length - 1))))
+  }
+
+  const stopPct = (shownIdx / (TTL_STOPS.length - 1)) * 100
+  // keep the riding label inside the card at the extreme stops
+  const labelPct = Math.min(86, Math.max(14, stopPct))
+  const slideTransition = reducedMotion ? { duration: 0.12 } : spring.snappy
+
+  return (
+    <div className="mt-3 px-0.5 pb-0.5">
+      {/* live label riding under the thumb */}
+      <div className="relative mb-0.5 h-4" aria-hidden>
+        <motion.span
+          animate={{ left: `${labelPct}%` }}
+          transition={slideTransition}
+          style={{ x: '-50%' }}
+          className="absolute top-0 whitespace-nowrap rounded-full bg-emerald-500/15 px-1.5 py-px text-[9.5px] font-bold text-emerald-600 ring-1 ring-inset ring-emerald-500/25 dark:text-emerald-400"
+        >
+          {TTL_STOP_LABELS[shownIdx]}
+        </motion.span>
+      </div>
+
+      <div
+        ref={trackRef}
+        role="slider"
+        aria-label="Disappearing message timer"
+        aria-valuemin={0}
+        aria-valuemax={TTL_STOPS.length - 1}
+        aria-valuenow={shownIdx}
+        aria-valuetext={TTL_STOP_LABELS[shownIdx]}
+        aria-disabled={disabled}
+        onPointerDown={(event) => {
+          if (disabled) return
+          event.currentTarget.setPointerCapture(event.pointerId)
+          setDragging(true)
+          setDraftIdx(idxFromClientX(event.clientX))
+          haptic(6)
+        }}
+        onPointerMove={(event) => {
+          if (!dragging || disabled) return
+          const idx = idxFromClientX(event.clientX)
+          if (idx !== draftIdx) {
+            setDraftIdx(idx)
+            haptic(4)
+          }
+        }}
+        onPointerUp={(event) => {
+          if (!dragging) return
+          setDragging(false)
+          const idx = idxFromClientX(event.clientX)
+          setDraftIdx(idx)
+          haptic(10)
+          const next = TTL_STOPS[idx]
+          if (next !== ttlSeconds) onCommit(next)
+        }}
+        onPointerCancel={() => setDragging(false)}
+        className={cn('relative h-7 touch-none select-none', disabled && 'pointer-events-none opacity-50')}
+      >
+        {/* resting track + emerald fill up to the thumb */}
+        <div className="absolute top-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-zinc-900/[0.07] dark:bg-white/10" />
+        <div
+          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-emerald-500/60 to-emerald-500 transition-[width] duration-150"
+          style={{ width: `${stopPct}%` }}
+        />
+        {/* tick stops */}
+        {TTL_STOPS.map((_, idx) => (
+          <span
+            key={idx}
+            className={cn(
+              'absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white dark:ring-zinc-900',
+              idx <= shownIdx ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600',
+            )}
+            style={{ left: `${(idx / (TTL_STOPS.length - 1)) * 100}%` }}
+          />
+        ))}
+        {/* springy thumb — scales on grab for the haptic feel */}
+        <motion.span
+          aria-hidden
+          animate={{ left: `${stopPct}%`, scale: dragging ? 1.18 : 1 }}
+          transition={slideTransition}
+          style={{ x: '-50%', y: '-50%' }}
+          className="absolute top-1/2 z-10 flex size-5 items-center justify-center rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.28)] ring-1 ring-black/10 dark:bg-zinc-100"
+        >
+          <span className="block size-2 rounded-full bg-emerald-500" />
+        </motion.span>
+      </div>
+
+      {/* the old preset pills — kept as tap-to-commit tick labels */}
+      <div className="mt-1.5 grid grid-cols-4 gap-1" role="group" aria-label="Timer presets">
+        {TTL_STOPS.map((t, idx) => (
+          <button
+            key={t}
+            type="button"
+            disabled={disabled}
+            onClick={() => onCommit(t)}
+            className={cn(
+              'h-7 rounded-full text-[11px] font-bold outline-none transition-colors active:scale-95 disabled:opacity-50',
+              idx === shownIdx
+                ? 'bg-emerald-500/15 text-emerald-700 ring-1 ring-emerald-400 dark:text-emerald-300'
+                : 'bg-zinc-900/[0.05] text-zinc-600 hover:bg-emerald-500/15 hover:text-emerald-700 dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:text-emerald-400',
+            )}
+          >
+            {TTL_STOP_LABELS[idx]}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export function RoomInfoPage({
@@ -375,6 +535,27 @@ export function RoomInfoPage({
   const themeSummary = convThemeSummary(prefs, conversationId)
   const [themeOpen, setThemeOpen] = useState(false)
 
+  // R34-b: Signal-style disappearing-timer slider — any participant may
+  // change it (the disappearing API allows every participant; mirrors the
+  // room header menu's TTL submenu, which stays reachable).
+  const [ttlOpen, setTtlOpen] = useState(false)
+  const ttlMutation = useMutation({
+    mutationFn: async (ttlSeconds: number) =>
+      apiJson<{ conversation: ConversationDetail }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/disappearing`,
+        { method: 'PATCH', body: JSON.stringify({ userId: me.id, ttlSeconds }) },
+      ),
+    onSuccess: (data) => {
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], data.conversation)
+      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      const t = data.conversation.ttlSeconds
+      toast.success(t === 0 ? 'Disappearing messages off' : `New messages vanish after ${ttlLong(t)}`)
+      haptic(12)
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : 'Could not update disappearing messages'),
+  })
+
   const anim = {
     initial: reducedMotion ? false : { opacity: 0, y: 10 },
     animate: { opacity: 1, y: 0 },
@@ -575,22 +756,78 @@ export function RoomInfoPage({
             )}
           </div>
 
-          {/* disappearing TTL — display-only (changing lives in the room menu) */}
-          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
-            <Timer className="size-4 shrink-0 text-zinc-400" aria-hidden />
-            <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
-              Disappearing messages
-            </p>
-            <span
-              className={cn(
-                'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold',
-                (detail?.ttlSeconds ?? 0) > 0
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-zinc-900/[0.05] text-zinc-500 dark:bg-white/[0.07] dark:text-zinc-400',
-              )}
-            >
-              {detail === undefined ? '…' : ttlLabel(detail.ttlSeconds)}
-            </span>
+          {/* disappearing TTL — Signal-style inline slider (R34-b). The
+              collapsed row shows the current state; expanding reveals a
+              draggable track over the EXACT stops the disappearing API
+              accepts (off / 24h / 7d / 30d), with the old preset pills kept
+              as tap-to-commit tick labels. Persists via the existing PATCH
+              /disappearing call. */}
+          <div className="glass-row-hover rounded-2xl px-3 py-2.5">
+            <div className="flex items-center gap-3">
+              <Timer
+                className={cn(
+                  'size-4 shrink-0',
+                  (detail?.ttlSeconds ?? 0) > 0 ? 'text-emerald-500' : 'text-zinc-400',
+                )}
+                aria-hidden
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                  Disappearing messages
+                </p>
+                <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                  {detail === undefined
+                    ? '…'
+                    : detail.ttlSeconds > 0
+                      ? `New messages vanish after ${ttlLong(detail.ttlSeconds)}`
+                      : 'Messages stay in the chat'}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold',
+                  (detail?.ttlSeconds ?? 0) > 0
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-zinc-900/[0.05] text-zinc-500 dark:bg-white/[0.07] dark:text-zinc-400',
+                )}
+              >
+                {detail === undefined ? '…' : ttlLabel(detail.ttlSeconds)}
+              </span>
+              <button
+                type="button"
+                aria-expanded={ttlOpen}
+                aria-label={ttlOpen ? 'Hide timer options' : 'Adjust the disappearing timer'}
+                disabled={detail === undefined}
+                onClick={() => {
+                  haptic(8)
+                  setTtlOpen((v) => !v)
+                }}
+                className="glass-pill flex size-8 shrink-0 items-center justify-center text-zinc-500 outline-none transition-transform active:scale-90 disabled:opacity-50 dark:text-zinc-300"
+              >
+                <motion.span animate={{ rotate: ttlOpen ? 180 : 0 }} transition={spring.snappy} className="flex">
+                  <ChevronDown className="size-4" aria-hidden />
+                </motion.span>
+              </button>
+            </div>
+            <AnimatePresence initial={false}>
+              {ttlOpen && detail !== undefined ? (
+                <motion.div
+                  key="ttl-slider"
+                  initial={reducedMotion ? false : { opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={reducedMotion ? undefined : { opacity: 0, height: 0 }}
+                  transition={spring.soft}
+                  className="overflow-hidden"
+                >
+                  <DisappearingSlider
+                    ttlSeconds={detail.ttlSeconds}
+                    disabled={ttlMutation.isPending}
+                    reducedMotion={reducedMotion}
+                    onCommit={(ttl) => ttlMutation.mutate(ttl)}
+                  />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
 
           {/* R31-a: viewer's chat streak in THIS conversation — R33-b adds the

@@ -1339,3 +1339,41 @@ Stage Summary:
 - Contract: summaries gain photo + deadStreak (additive); PATCH conversation accepts photo; leave-guard = needs another admin
 - Honest gaps: no group-photo management parity beyond channels (groups get the same field via info page only if route allows — verified for channels); deadStreak only flags 2+ day streaks
 - Evidence: download/qa-r33b-01…09 + lead probes
+
+---
+Task ID: R34-a
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: research-file UI sectors — shapes system, streak heat rings, unread styling, Telegram swipes + multi-select, WhatsApp Calls page
+
+Work Log:
+- globals.css (lead-seeded): .pulse-squircle (SVG-mask superellipse for THINGS) + .streak-ring data-heat 1|2|3 (conic amber/rose ring)
+- Shapes (Discord 2026 circles=people / squircles=things): group+channel avatars in chats rows, channels page, archived page and headers now squircles; DM peers stay circles
+- Heat rings (Snapchat): live-streak peer avatars ringed — heat 1 (2-4) / 2 (5-9) / 3 (10+); deadStreak rows keep the 'ends tonight' chip, no ring
+- Unread (Slack): semibold peer name + stronger content line on unread rows (socket-driven, proven live)
+- Telegram gestures: framer drag swipe-left reveals Pin/Archive with commit threshold + spring settle; multi-select mode (row menu 'Select') with check circles + floating glass action bar (Archive / Mute 8h / Cancel) over the existing APIs
+- WhatsApp Calls tab: NEW #/calls sub-page (day-grouped Today/Yesterday/Earlier, direction+kind icons, missed-red arrows, duration, tap→DM, honest empty state) over GET /api/calls; Phone icon entry in chats header
+- Crew E2E: shapes + heat ring + unread-bold via socket ping + swipe-archive toast + archived page + calls rows; 5+ screenshots
+- tsc src: 0 · lint: 0 errors
+
+Stage Summary:
+- SHIPPED: the research file's inbox-level UI sectors end-to-end
+- Honest gaps: swipe gestures are pointer-based (no RTL flip); multi-select 'Mark read' omitted (no per-row unread-clear API) — honest exclusion; nav capsule untouched (Calls entry lives in chats header)
+- Evidence: download/qa-r34a-01…05-*.png
+
+---
+Task ID: R34-b
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: research-file UI sectors — Discord progressive-disclosure composer, Signal TTL slider, Zoom-style AI recap (real LLM)
+
+Work Log:
+- Composer (chat-room): tray regrouped into labeled glass groups — Create (poll/whiteboard/red packet), Gather (events/stage/space/game/tournament), Organise (kanban/topic/folder), Express (effects/location); frequent actions (image/sticker/emoji/mic) stay on the bar; two-column staggered tiles; no capability removed
+- Signal slider (room-info): Disappearing messages now a smooth track + springy thumb with tick stops over the API-supported TTLs; live label; persists via existing PATCH (curl-verified ttlSeconds); Off restores
+- AI recap (Zoom AI Companion pattern): NEW /api/ai/recap — server-side last-30 messages → z-ai-web-dev-sdk chat completion (concise bullets, no emojis) → 5-min in-memory cache; Sparkles header action + /recap slash entry; glass 'AI recap' card above composer with Copy/Close + 'based on N messages'; honest error toast on failure
+- LEAD LIVE PROOF: POST /api/ai/recap returned REAL summary of the QA room's actual history ('Based on 30 messages', bullets naming the real tournaments and decisions); cached second call instant; composer screenshot shows recap card + bar
+- tsc src: 0 · lint: 0 errors
+
+Stage Summary:
+- SHIPPED: composer progressive disclosure, Signal-grade TTL slider, real-LLM recap pipeline
+- Contract: POST /api/ai/recap {userId, conversationId} → {recap, basedOn}; recap card is ephemeral UI (not persisted)
+- Honest gaps: recap covers the last 30 messages only; cache is per-instance (single dev server — fine)
+- Evidence: download/qa-r34b-01…13-*.png

@@ -4,6 +4,8 @@
 // through the compact glass option menu (chats-actions.tsx); rows live
 // in chats-row.tsx; #/chats/archived is a REAL hash sub-page
 // (chats-archived-page.tsx) opened from the glass pill row below.
+// R34-a: Telegram multi-select (long-press → check rows → floating
+// Archive / Mute-8h / Mark-read bar) + #/calls sub-page entry.
 // ─────────────────────────────────────────────────────────────
 'use client'
 
@@ -12,7 +14,7 @@ import Image from 'next/image'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArrowRight, ChevronRight, FolderPlus, LoaderCircle, NotebookPen, Plus, Radio, Search, SquarePen, Users, X } from 'lucide-react'
+import { Archive, ArrowRight, BellOff, CheckCheck, ChevronRight, FolderPlus, LoaderCircle, NotebookPen, Phone, Plus, Radio, Search, SquarePen, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -51,6 +53,7 @@ import {
 } from '@/components/chat/chats-actions'
 import { ChatsArchivedPage } from '@/components/chat/chats-archived-page'
 import { ChannelsPage } from '@/components/chat/channels-page'
+import { CallsPage } from '@/components/chat/calls-page'
 
 interface ConversationsResponse {
   conversations: ConversationSummary[]
@@ -270,6 +273,12 @@ export function ChatsTab({
   const openChannelsPage = useCallback(() => {
     haptic(6)
     navigate('/chats/channels')
+  }, [navigate])
+  // R34-a — #/calls: WhatsApp 'Calls' paradigm, same hash sub-page anatomy
+  const callsPageOpen = path === '/calls'
+  const openCallsPage = useCallback(() => {
+    haptic(6)
+    navigate('/calls')
   }, [navigate])
 
   const [searching, setSearching] = useState(false)
@@ -633,6 +642,185 @@ export function ChatsTab({
 
   const openSheetFor = useCallback((conv: ConversationSummary) => setSheetConv(conv), [])
 
+  // ── R34-a Telegram-style multi-select ────────────────────────
+  // Long-press a row → select mode with that row checked; more taps
+  // toggle; a floating glass bar runs Archive / Mute 8h / Mark read
+  // over ALL selected rows through the SAME endpoints the row sheet
+  // and swipe chips use (PATCH archive · PATCH mute · POST read).
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
+
+  const enterSelect = useCallback((conversationId: string) => {
+    haptic(15)
+    setSelectMode(true)
+    setSelectedIds(new Set([conversationId]))
+  }, [])
+
+  const exitSelect = useCallback(() => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }, [])
+
+  const toggleSelect = useCallback((conversationId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(conversationId)) next.delete(conversationId)
+      else next.add(conversationId)
+      return next
+    })
+  }, [])
+
+  // empty selection collapses the mode; opening search leaves it too
+  useEffect(() => {
+    if (selectMode && selectedIds.size === 0) setSelectMode(false)
+  }, [selectMode, selectedIds])
+  useEffect(() => {
+    if (searching && selectMode) exitSelect()
+  }, [searching, selectMode, exitSelect])
+
+  /** the selected rows (active list only — select mode lives on the main list) */
+  const selectedConvs = useMemo(
+    () => activeRows.filter(({ conv }) => selectedIds.has(conv.id)).map(({ conv }) => conv),
+    [activeRows, selectedIds],
+  )
+
+  /** Archive every selected chat — same PATCH /archive the sheet + swipe use. */
+  const batchArchive = useMutation({
+    mutationFn: async (convs: ConversationSummary[]) => {
+      let archived = 0
+      for (const conv of convs) {
+        await apiJson<{ ok: boolean; archived: boolean }>(
+          `/api/conversations/${encodeURIComponent(conv.id)}/archive`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: me.id, archived: conv.archivedAt === null }),
+          },
+        )
+        archived += 1
+      }
+      return { archived }
+    },
+    onMutate: async (convs) => {
+      await queryClient.cancelQueries({ queryKey: ['conversations', me.id] })
+      const previous = queryClient.getQueryData<ConversationSummary[]>(['conversations', me.id])
+      if (previous) {
+        const ids = new Set(convs.map((c) => c.id))
+        queryClient.setQueryData<ConversationSummary[]>(
+          ['conversations', me.id],
+          previous.map((c) => (ids.has(c.id) ? { ...c, archivedAt: new Date().toISOString() } : c)),
+        )
+      }
+      return { previous }
+    },
+    onSuccess: ({ archived }) => {
+      haptic(10)
+      toast.success(`Archived ${archived} ${archived === 1 ? 'chat' : 'chats'}`)
+      exitSelect()
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<ConversationSummary[]>(['conversations', me.id], context.previous)
+      }
+      toast.error('Could not archive the selected chats')
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+    },
+  })
+
+  /** Mute every selected chat for 8 hours — same PATCH /mute preset the sheet uses. */
+  const batchMute8h = useMutation({
+    mutationFn: async (convs: ConversationSummary[]) => {
+      let muted = 0
+      for (const conv of convs) {
+        await apiJson<{ ok: boolean; mutedUntil: string | null }>(
+          `/api/conversations/${encodeURIComponent(conv.id)}/mute`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: me.id, until: '8h' }),
+          },
+        )
+        muted += 1
+      }
+      return { muted }
+    },
+    onMutate: async (convs) => {
+      await queryClient.cancelQueries({ queryKey: ['conversations', me.id] })
+      const previous = queryClient.getQueryData<ConversationSummary[]>(['conversations', me.id])
+      if (previous) {
+        const ids = new Set(convs.map((c) => c.id))
+        const mutedUntil = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString()
+        queryClient.setQueryData<ConversationSummary[]>(
+          ['conversations', me.id],
+          previous.map((c) => (ids.has(c.id) ? { ...c, mutedUntil } : c)),
+        )
+      }
+      return { previous }
+    },
+    onSuccess: ({ muted }) => {
+      haptic(10)
+      toast.success(`Muted ${muted} ${muted === 1 ? 'chat' : 'chats'} for 8 hours`)
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<ConversationSummary[]>(['conversations', me.id], context.previous)
+      }
+      toast.error('Could not mute the selected chats')
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+    },
+  })
+
+  /**
+   * Mark every selected chat read — POST /read (the same endpoint the room
+   * uses on open); optimistically zeroes unreadCount so the pills drop live.
+   */
+  const batchMarkRead = useMutation({
+    mutationFn: async (convs: ConversationSummary[]) => {
+      let read = 0
+      for (const conv of convs) {
+        await apiJson<{ ok: boolean }>(
+          `/api/conversations/${encodeURIComponent(conv.id)}/read`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: me.id }),
+          },
+        )
+        read += 1
+      }
+      return { read }
+    },
+    onMutate: async (convs) => {
+      await queryClient.cancelQueries({ queryKey: ['conversations', me.id] })
+      const previous = queryClient.getQueryData<ConversationSummary[]>(['conversations', me.id])
+      if (previous) {
+        const ids = new Set(convs.map((c) => c.id))
+        queryClient.setQueryData<ConversationSummary[]>(
+          ['conversations', me.id],
+          previous.map((c) => (ids.has(c.id) ? { ...c, unreadCount: 0 } : c)),
+        )
+      }
+      return { previous }
+    },
+    onSuccess: ({ read }) => {
+      haptic(10)
+      toast.success(`Marked ${read} ${read === 1 ? 'chat' : 'chats'} read`)
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<ConversationSummary[]>(['conversations', me.id], context.previous)
+      }
+      toast.error('Could not mark the selected chats read')
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+    },
+  })
+
   // ── R24-a Signal-style chat folders + Note to Self ─────────
   const reducedMotion = useReducedMotion()
   const [foldersOpen, setFoldersOpen] = useState(false)
@@ -814,6 +1002,15 @@ export function ChatsTab({
               Pulse
               <span aria-hidden className="inline-block size-1.5 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600" />
             </h1>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Open calls"
+              onClick={openCallsPage}
+              className="size-10 rounded-full text-zinc-500 hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-95 dark:hover:text-emerald-400"
+            >
+              <Phone className="size-[19px]" aria-hidden />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -1043,6 +1240,7 @@ export function ChatsTab({
                     entranceIndex={entranceOn ? i : null}
                     onPress={() => handlePress(conv)}
                     onLongPress={() => openSheetFor(conv)}
+                    onOptions={() => openSheetFor(conv)}
                     onPin={() => togglePin.mutate(conv)}
                     onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
                   />
@@ -1192,8 +1390,12 @@ export function ChatsTab({
                   key={props.id}
                   {...props}
                   entranceIndex={entranceOn ? i : null}
+                  selectMode={selectMode}
+                  selected={selectedIds.has(props.id)}
                   onPress={() => handlePress(conv)}
-                  onLongPress={() => openSheetFor(conv)}
+                  onLongPress={() => enterSelect(props.id)}
+                  onToggleSelect={() => toggleSelect(props.id)}
+                  onOptions={() => openSheetFor(conv)}
                   onPin={() => togglePin.mutate(conv)}
                   onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
                 />
@@ -1206,8 +1408,12 @@ export function ChatsTab({
                   key={props.id}
                   {...props}
                   entranceIndex={entranceOn ? i : null}
+                  selectMode={selectMode}
+                  selected={selectedIds.has(props.id)}
                   onPress={() => handlePress(conv)}
-                  onLongPress={() => openSheetFor(conv)}
+                  onLongPress={() => enterSelect(props.id)}
+                  onToggleSelect={() => toggleSelect(props.id)}
+                  onOptions={() => openSheetFor(conv)}
                   onPin={() => togglePin.mutate(conv)}
                   onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
                 />
@@ -1232,6 +1438,90 @@ export function ChatsTab({
           </div>
         )}
       </div>
+
+      {/* R34-a — Telegram-style floating glass bar over the selected rows.
+          Staggered entrance; Archive exits the mode (rows leave the list),
+          Mute 8h / Mark read keep it so the operator can keep working. */}
+      <AnimatePresence>
+        {selectMode ? (
+          <motion.div
+            key="multi-select-bar"
+            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 28, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.94 }}
+            transition={spring.snappy}
+            className="pointer-events-none absolute inset-x-0 bottom-[86px] z-40 flex justify-center px-3"
+          >
+            <div
+              role="toolbar"
+              aria-label={`Actions for ${selectedIds.size} selected ${selectedIds.size === 1 ? 'chat' : 'chats'}`}
+              className="glass-deep glass-sheen pointer-events-auto flex items-center gap-0.5 rounded-full p-1.5 shadow-xl ring-1 ring-white/40 dark:ring-white/10"
+            >
+              <span className="ml-1.5 mr-1 shrink-0 text-[12px] font-bold tabular-nums text-zinc-600 dark:text-zinc-300">
+                {selectedIds.size} selected
+              </span>
+              {([
+                {
+                  key: 'archive',
+                  icon: Archive,
+                  label: 'Archive selected chats',
+                  short: 'Archive',
+                  onClick: () => batchArchive.mutate(selectedConvs),
+                  pending: batchArchive.isPending,
+                },
+                {
+                  key: 'mute',
+                  icon: BellOff,
+                  label: 'Mute selected chats for 8 hours',
+                  short: 'Mute 8h',
+                  onClick: () => batchMute8h.mutate(selectedConvs),
+                  pending: batchMute8h.isPending,
+                },
+                {
+                  key: 'read',
+                  icon: CheckCheck,
+                  label: 'Mark selected chats read',
+                  short: 'Mark read',
+                  onClick: () => batchMarkRead.mutate(selectedConvs),
+                  pending: batchMarkRead.isPending,
+                },
+              ] as const).map((action, i) => (
+                <motion.button
+                  key={action.key}
+                  type="button"
+                  aria-label={action.label}
+                  disabled={action.pending || selectedConvs.length === 0}
+                  onClick={action.onClick}
+                  initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ ...spring.soft, delay: reducedMotion ? 0 : 0.05 + i * 0.045 }}
+                  whileTap={reducedMotion ? undefined : pressTap}
+                  className="flex size-10 items-center justify-center rounded-full text-zinc-600 outline-none transition-colors hover:bg-emerald-500/15 hover:text-emerald-700 disabled:opacity-40 dark:text-zinc-300 dark:hover:text-emerald-300"
+                >
+                  {action.pending ? (
+                    <LoaderCircle className="size-[18px] animate-spin" aria-hidden />
+                  ) : (
+                    <action.icon className="size-[18px]" aria-hidden />
+                  )}
+                  <span className="sr-only">{action.short}</span>
+                </motion.button>
+              ))}
+              <motion.button
+                type="button"
+                aria-label="Exit multi-select"
+                onClick={exitSelect}
+                initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ ...spring.soft, delay: reducedMotion ? 0 : 0.2 }}
+                whileTap={reducedMotion ? undefined : pressTap}
+                className="ml-0.5 flex size-10 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-500/10 hover:text-zinc-700 dark:hover:text-zinc-200"
+              >
+                <X className="size-[18px]" aria-hidden />
+              </motion.button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {/* long-press glass option menu — pin / archive / mute strip / export / clear */}
       <ChatOptionsSheet
@@ -1280,6 +1570,14 @@ export function ChatsTab({
       {/* #/chats/channels — R30-c broadcast directory sub-page */}
       <ChannelsPage
         open={channelsPageOpen}
+        me={me}
+        onBack={() => back('/')}
+        onOpenConversation={(conversationId) => onOpenConversation(conversationId, null)}
+      />
+
+      {/* #/calls — R34-a WhatsApp 'Calls' history sub-page */}
+      <CallsPage
+        open={callsPageOpen}
         me={me}
         onBack={() => back('/')}
         onOpenConversation={(conversationId) => onOpenConversation(conversationId, null)}

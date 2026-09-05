@@ -2,12 +2,19 @@
 // Pulse — conversation list row (R27-e: extracted from chats-tab
 // so the chats list AND the #/chats/archived sub-page share one
 // row implementation — same swipe chips, same presence, same motion).
+// R34-a shapes/motion pass:
+//   • Discord 2026 shapes — group/channel THING avatars wear the
+//     .pulse-squircle mask (people stay circular).
+//   • Snapchat streak heat ring — a LIVE (not at-risk) myStreak ≥ 2
+//     paints .streak-ring around the peer avatar (heat 1/2/3).
+//   • Telegram multi-select — selectMode turns the row into a real
+//     checkbox (check-circle over the avatar, press toggles, drag off).
 // ─────────────────────────────────────────────────────────────
 'use client'
 
 import { memo, useCallback, useRef, useState } from 'react'
 import { motion, useReducedMotion, type PanInfo } from 'framer-motion'
-import { Archive, ArchiveRestore, BellOff, Flame, Hourglass, MoreVertical, PencilLine, Pin, PinOff } from 'lucide-react'
+import { Archive, ArchiveRestore, BellOff, Check, Flame, Hourglass, MoreVertical, PencilLine, Pin, PinOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ease, pressSpring, pressTap, spring, stagger } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
@@ -43,6 +50,15 @@ export interface ConversationRowProps {
   photo?: string | null
   /** row lives in the archived sub-page (swipe chip flips to Unarchive) */
   archived: boolean
+  /** R34-a: multi-select mode — the row becomes a checkbox (press toggles) */
+  selectMode?: boolean
+  /** R34-a: checked state inside multi-select mode */
+  selected?: boolean
+  /** R34-a: toggle this row's selection (select mode press) */
+  onToggleSelect?: () => void
+  /** R34-a: explicit handler for the ⋮ overflow button — defaults to
+   *  onLongPress so legacy call sites keep their exact behavior */
+  onOptions?: () => void
   /** stagger slot for the initial-mount entrance (null = animate nothing) */
   entranceIndex: number | null
   onPress: () => void
@@ -58,6 +74,15 @@ export type ConversationRowData = Omit<
   ConversationRowProps,
   'onPress' | 'onLongPress' | 'onPin' | 'onArchive' | 'entranceIndex'
 >
+
+/**
+ * R34-a — Snapchat heat level for a LIVE streak: 2-4 → 1 (warm),
+ * 5-9 → 2 (hot), 10+ → 3 (blazing). At-risk streaks ring nothing
+ * (they keep their amber "ends tonight" chip instead).
+ */
+export function streakHeatLevel(count: number): 1 | 2 | 3 {
+  return count >= 10 ? 3 : count >= 5 ? 2 : 1
+}
 
 const LONG_PRESS_MS = 450
 
@@ -103,6 +128,10 @@ export const ConversationRow = memo(function ConversationRow({
   streakAtRisk = null,
   photo = null,
   archived,
+  selectMode = false,
+  selected = false,
+  onToggleSelect,
+  onOptions,
   entranceIndex,
   onPress,
   onLongPress,
@@ -111,6 +140,9 @@ export const ConversationRow = memo(function ConversationRow({
 }: ConversationRowProps) {
   const hasUnread = unreadCount > 0
   const reducedMotion = useReducedMotion()
+  /** R34-a: heat ring level for a live peer streak (null = no ring) */
+  const streakHeat =
+    !isGroup && streakAtRisk === null && streakCount >= 2 ? streakHeatLevel(streakCount) : null
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressFiredRef = useRef(false)
   /** true between dragStart and the click that follows release — swallows the click */
@@ -126,6 +158,7 @@ export const ConversationRow = memo(function ConversationRow({
   }, [])
 
   const startLongPress = useCallback(() => {
+    if (selectMode) return // long-press is inert while multi-select owns the list
     draggedRef.current = false
     clearLongPress()
     longPressFiredRef.current = false
@@ -135,11 +168,19 @@ export const ConversationRow = memo(function ConversationRow({
       haptic(15)
       onLongPress()
     }, LONG_PRESS_MS)
-  }, [clearLongPress, onLongPress])
+  }, [clearLongPress, onLongPress, selectMode])
 
   const handleClick = useCallback(() => {
     if (draggedRef.current) {
       draggedRef.current = false
+      return
+    }
+    if (selectMode) {
+      if (!longPressFiredRef.current) {
+        haptic(8)
+        onToggleSelect?.()
+      }
+      longPressFiredRef.current = false
       return
     }
     if (swipeOpen) {
@@ -148,7 +189,7 @@ export const ConversationRow = memo(function ConversationRow({
     }
     if (!longPressFiredRef.current) onPress()
     longPressFiredRef.current = false
-  }, [onPress, swipeOpen])
+  }, [onPress, onToggleSelect, selectMode, swipeOpen])
 
   const handleDragStart = useCallback(() => {
     draggedRef.current = true
@@ -157,10 +198,11 @@ export const ConversationRow = memo(function ConversationRow({
 
   const handleDragEnd = useCallback(
     (_event: unknown, info: PanInfo) => {
+      if (selectMode) return // swipe reveal disabled while multi-select is up
       const from = swipeOpen ? -SWIPE_REVEAL_PX : 0
       setSwipeOpen(from + info.offset.x <= -SWIPE_OPEN_THRESHOLD_PX)
     },
-    [swipeOpen],
+    [selectMode, swipeOpen],
   )
 
   return (
@@ -176,7 +218,7 @@ export const ConversationRow = memo(function ConversationRow({
     >
       <div className="relative">
         {/* swipe-left glass action chips — the same pin/archive handlers the option menu uses */}
-        <div className="absolute inset-y-1 right-2 z-0 flex items-center gap-1.5 pr-1" inert={!swipeOpen}>
+        <div className="absolute inset-y-1 right-2 z-0 flex items-center gap-1.5 pr-1" inert={!swipeOpen || selectMode}>
           <motion.button
             type="button"
             tabIndex={swipeOpen ? 0 : -1}
@@ -225,21 +267,23 @@ export const ConversationRow = memo(function ConversationRow({
 
         {/* swipeable row body — x-drag with direction lock so vertical scroll never fights */}
         <motion.div
-          drag="x"
+          drag={selectMode ? false : 'x'}
           dragDirectionLock
           dragConstraints={{ left: -SWIPE_REVEAL_PX, right: 0 }}
           dragElastic={0.05}
           dragMomentum={false}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          animate={{ x: swipeOpen ? -SWIPE_REVEAL_PX : 0 }}
+          animate={{ x: !selectMode && swipeOpen ? -SWIPE_REVEAL_PX : 0, scale: selectMode ? 0.985 : 1 }}
           transition={spring.snappy}
-          whileTap={reducedMotion ? undefined : { scale: 0.975 }}
+          whileTap={reducedMotion ? undefined : { scale: selectMode ? 0.96 : 0.975 }}
           style={{ willChange: 'transform' }}
           className="relative z-10"
         >
           <button
             type="button"
+            role={selectMode ? 'checkbox' : undefined}
+            aria-checked={selectMode ? selected : undefined}
             onClick={handleClick}
             onPointerDown={startLongPress}
             onPointerUp={clearLongPress}
@@ -257,10 +301,41 @@ export const ConversationRow = memo(function ConversationRow({
             <span className="relative shrink-0">
               {!isGroup && online ? <PresenceGlow reduced={reducedMotion === true} /> : null}
               {isGroup ? (
-                <GroupAvatar title={groupTitle} id={id} size={48} photo={photo} />
+                // R34-a shapes system: groups/channels are THINGS → squircle mask
+                // (people keep their circles). Mask clips the tile to the
+                // superellipse silhouette at the exact avatar size.
+                <span className="pulse-squircle block" style={{ width: 48, height: 48 }}>
+                  <GroupAvatar title={groupTitle} id={id} size={48} photo={photo} />
+                </span>
               ) : (
-                <UserAvatar name={dmName ?? name} color={dmColor} size={48} showPresence online={online} />
+                <span
+                  className={cn('block', streakHeat !== null && 'streak-ring')}
+                  data-heat={streakHeat ?? undefined}
+                >
+                  <UserAvatar name={dmName ?? name} color={dmColor} size={48} showPresence online={online} />
+                </span>
               )}
+              {selectMode ? (
+                // R34-a Telegram-style check circle over the avatar
+                <motion.span
+                  initial={reducedMotion ? false : { scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={spring.bouncy}
+                  className="absolute inset-0 z-10 flex items-center justify-center"
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'flex size-6 items-center justify-center rounded-full ring-2 backdrop-blur-sm transition-colors',
+                      selected
+                        ? 'bg-emerald-500 ring-white/70 dark:ring-white/25'
+                        : 'bg-zinc-900/35 ring-white/60 dark:bg-zinc-950/50 dark:ring-white/30',
+                    )}
+                  >
+                    {selected ? <Check className="size-4 text-white" strokeWidth={3} aria-hidden /> : null}
+                  </span>
+                </motion.span>
+              ) : null}
             </span>
 
             <div className="min-w-0 flex-1">
@@ -387,18 +462,21 @@ export const ConversationRow = memo(function ConversationRow({
               </div>
             </div>
           </button>
-          {/* overflow options — kept for accessibility (screen readers + keyboard) */}
+          {/* overflow options — kept for accessibility (screen readers + keyboard);
+              hidden while multi-select owns the list (the bar replaces it) */}
+          {!selectMode ? (
           <button
             type="button"
             aria-label={`Options for ${name}`}
             onClick={(e) => {
               e.stopPropagation()
-              onLongPress()
+              ;(onOptions ?? onLongPress)()
             }}
             className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-zinc-400 opacity-0 shadow-sm outline-none backdrop-blur transition-opacity hover:text-zinc-600 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-zinc-800/90 dark:hover:text-zinc-200"
           >
             <MoreVertical className="size-4" aria-hidden />
           </button>
+          ) : null}
           <div aria-hidden className="ml-[64px] h-px bg-zinc-100 dark:bg-zinc-800" />
         </motion.div>
       </div>
