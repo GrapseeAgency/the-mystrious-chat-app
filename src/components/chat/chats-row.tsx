@@ -238,7 +238,7 @@ export const ConversationRow = memo(function ConversationRow({
             onPointerUp={clearLongPress}
             onPointerLeave={clearLongPress}
             onContextMenu={(e) => e.preventDefault()}
-            className="relative flex w-full touch-manipulation items-center gap-3 overflow-hidden rounded-2xl bg-white px-2 py-2.5 text-left outline-none dark:bg-zinc-900"
+            className="relative flex w-full touch-manipulation items-center gap-3 overflow-hidden rounded-2xl bg-white/80 px-2 py-2.5 text-left outline-none ring-1 ring-inset ring-white/40 dark:bg-zinc-900/70 dark:ring-white/[0.06]"
           >
             {pinned ? (
               <span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl bg-emerald-500/[0.045] dark:bg-emerald-500/[0.06]" />

@@ -12,7 +12,7 @@ import Image from 'next/image'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArrowRight, ChevronRight, FolderPlus, LoaderCircle, Plus, Radio, Search, SquarePen, Users, X } from 'lucide-react'
+import { Archive, ArrowRight, ChevronRight, FolderPlus, LoaderCircle, NotebookPen, Plus, Radio, Search, SquarePen, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -703,7 +703,10 @@ export function ChatsTab({
   const data = conversations.data ?? []
 
   return (
-    <div className="absolute inset-0 flex flex-col bg-white dark:bg-zinc-900">
+    <div className="absolute inset-0 flex flex-col bg-white/30 dark:bg-zinc-950/20">
+      {/* R32: root is translucent now — the ui-root aurora washes show through
+          behind every row/pill, which is what makes the glass recipes read.
+          (Was opaque bg-white/dark:bg-zinc-900: glass sat on a dead white.) */}
       {/* slow conic shimmer for unseen story rings — CSS, transform-only, honors reduced-motion */}
       <style>{`@keyframes pulse-story-spin{to{transform:rotate(360deg)}}.pulse-story-spin{animation:pulse-story-spin 6s linear infinite;will-change:transform}@media (prefers-reduced-motion:reduce){.pulse-story-spin{animation:none}}`}</style>
       {/* header */}
@@ -1084,7 +1087,10 @@ export function ChatsTab({
           <EmptyChats onSayHi={onOpenContacts} />
         ) : (
           <div className="py-1">
-            {/* R24-a Note to Self — private notebook chat (above regular chats) */}
+            {/* R24-a Note to Self — private notebook chat (above regular chats).
+                R32: the hero row now wears the full reference glass — deep panel,
+                diagonal sheen, specular rim — with a Lucide glyph in a glowing
+                tile (emoji retired per the no-emoji rule). */}
             <motion.button
               type="button"
               onClick={handleSelfPress}
@@ -1095,13 +1101,14 @@ export function ChatsTab({
                   ? 'Open Note to Self — your private space'
                   : 'Create Note to Self — your private space'
               }
-              className="mx-2 mb-1 mt-0.5 flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-gradient-to-r from-emerald-500/[0.08] to-teal-500/[0.05] px-3 py-2.5 text-left outline-none transition-colors hover:border-emerald-500/45 dark:border-emerald-400/20 dark:from-emerald-400/[0.07] dark:to-teal-400/[0.04] dark:hover:border-emerald-400/45"
+              className="glass-deep glass-sheen mx-2 mb-1 mt-0.5 flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors hover:border-emerald-500/40"
             >
               <span
                 aria-hidden
-                className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[17px] shadow-sm shadow-emerald-600/30"
+                className="relative flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-sm shadow-emerald-600/30"
               >
-                📝
+                <NotebookPen className="size-[17px]" aria-hidden />
+                <span className="pointer-events-none absolute inset-0 rounded-xl bg-[radial-gradient(80%_60%_at_50%_0%,rgba(255,255,255,0.55),transparent_70%)]" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -1172,7 +1179,26 @@ export function ChatsTab({
               transition={spring.soft}
               style={{ willChange: 'transform' }}
             >
-              {visibleRows.map(({ conv, props }, i) => (
+              {/* R32 rhythm: grouped list like the refs — PINNED block, then
+                  ALL CHATS, separated by the tiny uppercase glass labels. */}
+              {visibleRows.some(({ props }) => props.pinned) ? (
+                <SearchSection label="Pinned" count={visibleRows.filter(({ props }) => props.pinned).length} />
+              ) : null}
+              {visibleRows.filter(({ props }) => props.pinned).map(({ conv, props }, i) => (
+                <ConversationRow
+                  key={props.id}
+                  {...props}
+                  entranceIndex={entranceOn ? i : null}
+                  onPress={() => handlePress(conv)}
+                  onLongPress={() => openSheetFor(conv)}
+                  onPin={() => togglePin.mutate(conv)}
+                  onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
+                />
+              ))}
+              {visibleRows.some(({ props }) => props.pinned) ? (
+                <SearchSection label="All chats" count={visibleRows.filter(({ props }) => !props.pinned).length} />
+              ) : null}
+              {visibleRows.filter(({ props }) => !props.pinned).map(({ conv, props }, i) => (
                 <ConversationRow
                   key={props.id}
                   {...props}
@@ -1293,31 +1319,39 @@ function EmptyChats({ onSayHi }: { onSayHi: () => void }) {
       initial={reducedMotion ? false : { opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: ease.out }}
-      className="flex flex-col items-center justify-center gap-4 px-8 pt-16 text-center"
+      className="flex flex-col items-center justify-center px-4 pt-10 text-center"
     >
-      <Image
-        src="/empty-chats.png"
-        alt="No conversations illustration"
-        width={168}
-        height={168}
-        className="rounded-3xl shadow-md shadow-zinc-200/70 dark:shadow-none"
-      />
-      <div>
-        <h2 className="text-base font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">
-          No conversations yet
-        </h2>
-        <p className="mx-auto mt-1 max-w-[240px] text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-          Your next great chat is one tap away. Find someone and break the ice.
-        </p>
+      {/* R32 empty state in the reference language: layered deep glass with a
+          soft emerald icon-glow blooming behind the illustration. */}
+      <div className="glass-deep glass-sheen relative flex w-full max-w-[300px] flex-col items-center gap-4 rounded-[28px] px-6 py-8">
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -top-10 left-1/2 size-40 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.28),transparent_65%)] blur-md"
+        />
+        <Image
+          src="/empty-chats.png"
+          alt="No conversations illustration"
+          width={144}
+          height={144}
+          className="relative rounded-3xl shadow-md shadow-zinc-200/70 ring-1 ring-white/50 dark:shadow-none dark:ring-white/10"
+        />
+        <div className="relative">
+          <h2 className="text-base font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">
+            No conversations yet
+          </h2>
+          <p className="mx-auto mt-1 max-w-[240px] text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+            Your next great chat is one tap away. Find someone and break the ice.
+          </p>
+        </div>
+        <Button
+          onClick={onSayHi}
+          variant="outline"
+          className="glass-pill relative h-10 gap-1.5 rounded-full border-emerald-500/40 px-5 text-sm font-semibold text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-400 active:scale-[0.98]"
+        >
+          Say hi to someone
+          <ArrowRight className="size-4" aria-hidden />
+        </Button>
       </div>
-      <Button
-        onClick={onSayHi}
-        variant="outline"
-        className="h-10 gap-1.5 rounded-full border-emerald-500/40 px-5 text-sm font-semibold text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-400 active:scale-[0.98]"
-      >
-        Say hi to someone
-        <ArrowRight className="size-4" aria-hidden />
-      </Button>
     </motion.div>
   )
 }

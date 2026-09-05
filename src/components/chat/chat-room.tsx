@@ -3260,16 +3260,20 @@ export function ChatRoom({
       animate={{ y: 0 }}
       exit={{ y: '100%' }}
       transition={{ type: 'spring', stiffness: 320, damping: 34 }}
-      className="absolute inset-0 z-40 flex flex-col bg-white dark:bg-zinc-900"
+      className="absolute inset-0 z-40 flex flex-col bg-white/70 dark:bg-zinc-950/70"
       role="dialog"
       aria-label={`Conversation with ${headerTitle}`}
     >
+      {/* R32: room canvas is translucent (was opaque bg-white/dark:bg-zinc-900) —
+          the ui-root aurora washes glow through the whole room and the
+          wallpaper glows below finally have light to work with. The only
+          backdrop-blur layers in the room are the header + composer capsule. */}
       {/* R28 lead: floating pane manager — panes were orphaned (store writes
           with no renderer). Mounted once per room overlay, above content. */}
       <PipChat me={me} />
 
       {/* header */}
-      <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-zinc-800 dark:bg-zinc-900">
+      <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-1.5 border-b border-zinc-200/70 bg-white/60 px-2 pt-[env(safe-area-inset-top)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-800/80 dark:bg-zinc-950/55">
         <Button
           variant="ghost"
           size="icon"
@@ -3661,7 +3665,7 @@ export function ChatRoom({
       <div
         ref={viewportRef}
         onScroll={handleScroll}
-        className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-zinc-50 px-3 pt-3 pb-2 dark:bg-black/25"
+        className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white/25 px-3 pt-3 pb-2 dark:bg-black/20"
         style={{
           backgroundImage: `radial-gradient(ellipse 90% 34% at 50% -8%, ${glowTop}, transparent 62%), radial-gradient(ellipse 110% 40% at 50% 110%, ${glowBottom}, transparent 62%), radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
           backgroundSize: '100% 100%, 100% 100%, 16px 16px',
@@ -3677,18 +3681,26 @@ export function ChatRoom({
             <Skeleton className="ml-auto h-9 w-2/5 rounded-2xl" />
           </div>
         ) : items.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <div
-              aria-hidden
-              className="flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/15 to-emerald-600/10 text-emerald-500 dark:from-emerald-400/10 dark:to-emerald-600/5"
-            >
-              <SendHorizontal className="size-7 -rotate-45" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
-              <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                Say hello — your words travel in real time.
-              </p>
+          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+            {/* R32 empty state — the reference glass: deep layered panel with a
+                soft emerald glow blooming behind the glyph. */}
+            <div className="glass-deep glass-sheen relative flex w-full max-w-[280px] flex-col items-center gap-3 rounded-[28px] px-6 py-8">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -top-8 left-1/2 size-32 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.3),transparent_65%)] blur-md"
+              />
+              <div
+                aria-hidden
+                className="relative flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/20 to-emerald-600/10 text-emerald-500 ring-1 ring-inset ring-white/40 dark:from-emerald-400/15 dark:to-emerald-600/5 dark:ring-white/10"
+              >
+                <SendHorizontal className="size-7 -rotate-45" />
+              </div>
+              <div className="relative">
+                <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
+                <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                  Say hello — your words travel in real time.
+                </p>
+              </div>
             </div>
           </div>
         ) : (
@@ -3879,7 +3891,7 @@ export function ChatRoom({
         style={{ willChange: 'transform' }}
         className="relative z-20 shrink-0"
       >
-        <div className="bg-zinc-100/80 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:bg-zinc-950/60">
+        <div className="bg-gradient-to-t from-zinc-100/90 via-zinc-100/45 to-transparent px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:from-zinc-950/85 dark:via-zinc-950/40 dark:to-transparent">
         <AnimatePresence initial={false}>
           {isOffline ? (
             <motion.div

@@ -1283,3 +1283,20 @@ Work Log:
 Stage Summary:
 - SHIPPED: 5 distinct WebGL ambient types (aurora/caustics/mesh/stars/liquid) + off, persisted server-side
 - Evidence: download/qa-r31b-01…03-*.png + lead qa-r31-lead-02…04
+
+---
+Task ID: R32
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: glass-accuracy pass vs the 5 reference pictures + decoration sweep
+
+Work Log:
+- Crew read the 5 reference images (upload/pasted_image_1788577*.png) and extracted the recipe: ambient colored wash BEHIND translucent panels, deep-blur glass cards with inner hairline rims + specular top edge, soft layered shadows, consistent radii rhythm, restrained accent usage
+- Token-level tuning in src/app/globals.css (93 lines: wash layers, ring/gloss alphas, shadow stacks per data-ui theme) + glass-card.tsx glassSurface refinements; chat-room panel chrome + chats-tab section rhythm + chats-row chip polish follow the tokens
+- Before/after proofs light+dark for chats/room/settings/hub (12 screenshots qa-r32-*); lead re-shot loaded dark state (crew's dark shot caught the boot splash): deep emerald ambient wash + translucent elevated rows in BOTH themes, contrast holds, all prior features (Note to Self, Channels, Archived, flame chips) render
+- Guardrails checked: reduced-motion path untouched, no new nested-blur stacking, 360px layout intact via token-only changes
+- tsc src: 0 · lint clean
+
+Stage Summary:
+- SHIPPED: glass system upgraded to the reference recipe at TOKEN level (globals.css + glass-card) so every surface inherits; core surfaces re-decorated
+- Honest gaps: remaining pages (contacts/profile deep sub-pages) inherit tokens automatically but deserve their own decoration pass; hub category pages not re-shot
+- Evidence: download/qa-r32-before-*.png + qa-r32-{light,dark}-*.png + lead qa-r32-lead-dark-chats.png
