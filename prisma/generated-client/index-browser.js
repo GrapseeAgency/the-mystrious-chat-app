@@ -213,6 +213,7 @@ exports.Prisma.ConversationScalarFieldEnum = {
   id: 'id',
   isGroup: 'isGroup',
   name: 'name',
+  description: 'description',
   inviteCode: 'inviteCode',
   ttlSeconds: 'ttlSeconds',
   broadcastMode: 'broadcastMode',

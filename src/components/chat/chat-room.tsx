@@ -3216,7 +3216,9 @@ export function ChatRoom({
   const subtitle = typerLabel.length > 0
     ? typerLabel
     : isGroup
-      ? `${detailData?.members.length ?? 0} members · ${onlineOthers} online${isBroadcast ? ' · announcements' : ''}${ttlSeconds > 0 ? ' · disappearing' : ''}`
+      ? isBroadcast
+        ? `${detailData?.members.length ?? 0} subscribers · ${onlineOthers} online${ttlSeconds > 0 ? ' · disappearing' : ''}`
+        : `${detailData?.members.length ?? 0} members · ${onlineOthers} online${ttlSeconds > 0 ? ' · disappearing' : ''}`
       : !other
         ? ''
         : dmStatus.length > 0
@@ -3305,6 +3307,15 @@ export function ChatRoom({
         >
           <p className="flex items-center gap-1 truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             <span className="truncate">{headerTitle}</span>
+            {isBroadcast ? (
+              <span
+                className="flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400"
+                aria-label="Broadcast channel — only admins can post"
+              >
+                <Radio className="size-2.5" aria-hidden />
+                Channel
+              </span>
+            ) : null}
             {isRoomMuted ? (
               <BellOff className="size-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" aria-label="Notifications muted" />
             ) : null}
@@ -4272,9 +4283,9 @@ export function ChatRoom({
         </AnimatePresence>
 
         {broadcastLocked ? (
-          <div className="flex items-center justify-center gap-2 rounded-2xl bg-zinc-100 px-3 py-3 text-xs font-semibold text-zinc-500 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700">
-            <Megaphone className="size-4 text-emerald-500" aria-hidden />
-            Announcement mode — only admins can send here
+          <div className="glass-deep glass-sheen flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+            <Lock className="size-4 shrink-0 text-emerald-500" aria-hidden />
+            Only admins can post
           </div>
         ) : null}
 

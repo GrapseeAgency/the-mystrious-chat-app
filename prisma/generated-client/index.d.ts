@@ -14995,6 +14995,7 @@ export namespace Prisma {
     id: string | null
     isGroup: boolean | null
     name: string | null
+    description: string | null
     inviteCode: string | null
     ttlSeconds: number | null
     broadcastMode: boolean | null
@@ -15008,6 +15009,7 @@ export namespace Prisma {
     id: string | null
     isGroup: boolean | null
     name: string | null
+    description: string | null
     inviteCode: string | null
     ttlSeconds: number | null
     broadcastMode: boolean | null
@@ -15021,6 +15023,7 @@ export namespace Prisma {
     id: number
     isGroup: number
     name: number
+    description: number
     inviteCode: number
     ttlSeconds: number
     broadcastMode: number
@@ -15044,6 +15047,7 @@ export namespace Prisma {
     id?: true
     isGroup?: true
     name?: true
+    description?: true
     inviteCode?: true
     ttlSeconds?: true
     broadcastMode?: true
@@ -15057,6 +15061,7 @@ export namespace Prisma {
     id?: true
     isGroup?: true
     name?: true
+    description?: true
     inviteCode?: true
     ttlSeconds?: true
     broadcastMode?: true
@@ -15070,6 +15075,7 @@ export namespace Prisma {
     id?: true
     isGroup?: true
     name?: true
+    description?: true
     inviteCode?: true
     ttlSeconds?: true
     broadcastMode?: true
@@ -15170,6 +15176,7 @@ export namespace Prisma {
     id: string
     isGroup: boolean
     name: string | null
+    description: string
     inviteCode: string | null
     ttlSeconds: number
     broadcastMode: boolean
@@ -15202,6 +15209,7 @@ export namespace Prisma {
     id?: boolean
     isGroup?: boolean
     name?: boolean
+    description?: boolean
     inviteCode?: boolean
     ttlSeconds?: boolean
     broadcastMode?: boolean
@@ -15226,6 +15234,7 @@ export namespace Prisma {
     id?: boolean
     isGroup?: boolean
     name?: boolean
+    description?: boolean
     inviteCode?: boolean
     ttlSeconds?: boolean
     broadcastMode?: boolean
@@ -15239,6 +15248,7 @@ export namespace Prisma {
     id?: boolean
     isGroup?: boolean
     name?: boolean
+    description?: boolean
     inviteCode?: boolean
     ttlSeconds?: boolean
     broadcastMode?: boolean
@@ -15252,6 +15262,7 @@ export namespace Prisma {
     id?: boolean
     isGroup?: boolean
     name?: boolean
+    description?: boolean
     inviteCode?: boolean
     ttlSeconds?: boolean
     broadcastMode?: boolean
@@ -15261,7 +15272,7 @@ export namespace Prisma {
     updatedAt?: boolean
   }
 
-  export type ConversationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "isGroup" | "name" | "inviteCode" | "ttlSeconds" | "broadcastMode" | "isSelf" | "appKey" | "createdAt" | "updatedAt", ExtArgs["result"]["conversation"]>
+  export type ConversationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "isGroup" | "name" | "description" | "inviteCode" | "ttlSeconds" | "broadcastMode" | "isSelf" | "appKey" | "createdAt" | "updatedAt", ExtArgs["result"]["conversation"]>
   export type ConversationInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     participants?: boolean | Conversation$participantsArgs<ExtArgs>
     messages?: boolean | Conversation$messagesArgs<ExtArgs>
@@ -15296,6 +15307,7 @@ export namespace Prisma {
       id: string
       isGroup: boolean
       name: string | null
+      description: string
       inviteCode: string | null
       ttlSeconds: number
       broadcastMode: boolean
@@ -15739,6 +15751,7 @@ export namespace Prisma {
     readonly id: FieldRef<"Conversation", 'String'>
     readonly isGroup: FieldRef<"Conversation", 'Boolean'>
     readonly name: FieldRef<"Conversation", 'String'>
+    readonly description: FieldRef<"Conversation", 'String'>
     readonly inviteCode: FieldRef<"Conversation", 'String'>
     readonly ttlSeconds: FieldRef<"Conversation", 'Int'>
     readonly broadcastMode: FieldRef<"Conversation", 'Boolean'>
@@ -44588,6 +44601,7 @@ export namespace Prisma {
     id: 'id',
     isGroup: 'isGroup',
     name: 'name',
+    description: 'description',
     inviteCode: 'inviteCode',
     ttlSeconds: 'ttlSeconds',
     broadcastMode: 'broadcastMode',
@@ -45647,6 +45661,7 @@ export namespace Prisma {
     id?: StringFilter<"Conversation"> | string
     isGroup?: BoolFilter<"Conversation"> | boolean
     name?: StringNullableFilter<"Conversation"> | string | null
+    description?: StringFilter<"Conversation"> | string
     inviteCode?: StringNullableFilter<"Conversation"> | string | null
     ttlSeconds?: IntFilter<"Conversation"> | number
     broadcastMode?: BoolFilter<"Conversation"> | boolean
@@ -45670,6 +45685,7 @@ export namespace Prisma {
     id?: SortOrder
     isGroup?: SortOrder
     name?: SortOrderInput | SortOrder
+    description?: SortOrder
     inviteCode?: SortOrderInput | SortOrder
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
@@ -45698,6 +45714,7 @@ export namespace Prisma {
     NOT?: ConversationWhereInput | ConversationWhereInput[]
     isGroup?: BoolFilter<"Conversation"> | boolean
     name?: StringNullableFilter<"Conversation"> | string | null
+    description?: StringFilter<"Conversation"> | string
     ttlSeconds?: IntFilter<"Conversation"> | number
     broadcastMode?: BoolFilter<"Conversation"> | boolean
     isSelf?: BoolFilter<"Conversation"> | boolean
@@ -45719,6 +45736,7 @@ export namespace Prisma {
     id?: SortOrder
     isGroup?: SortOrder
     name?: SortOrderInput | SortOrder
+    description?: SortOrder
     inviteCode?: SortOrderInput | SortOrder
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
@@ -45740,6 +45758,7 @@ export namespace Prisma {
     id?: StringWithAggregatesFilter<"Conversation"> | string
     isGroup?: BoolWithAggregatesFilter<"Conversation"> | boolean
     name?: StringNullableWithAggregatesFilter<"Conversation"> | string | null
+    description?: StringWithAggregatesFilter<"Conversation"> | string
     inviteCode?: StringNullableWithAggregatesFilter<"Conversation"> | string | null
     ttlSeconds?: IntWithAggregatesFilter<"Conversation"> | number
     broadcastMode?: BoolWithAggregatesFilter<"Conversation"> | boolean
@@ -48216,6 +48235,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -48239,6 +48259,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -48262,6 +48283,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -48285,6 +48307,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -48308,6 +48331,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -48321,6 +48345,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -48334,6 +48359,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -50895,6 +50921,7 @@ export namespace Prisma {
     id?: SortOrder
     isGroup?: SortOrder
     name?: SortOrder
+    description?: SortOrder
     inviteCode?: SortOrder
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
@@ -50912,6 +50939,7 @@ export namespace Prisma {
     id?: SortOrder
     isGroup?: SortOrder
     name?: SortOrder
+    description?: SortOrder
     inviteCode?: SortOrder
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
@@ -50925,6 +50953,7 @@ export namespace Prisma {
     id?: SortOrder
     isGroup?: SortOrder
     name?: SortOrder
+    description?: SortOrder
     inviteCode?: SortOrder
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
@@ -57297,6 +57326,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -57319,6 +57349,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -57357,6 +57388,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -57379,6 +57411,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -57699,6 +57732,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -57721,6 +57755,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -57828,6 +57863,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -57850,6 +57886,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -57935,6 +57972,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -57957,6 +57995,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -58523,6 +58562,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -58545,6 +58585,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -59566,6 +59607,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -59588,6 +59630,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -59626,6 +59669,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -59648,6 +59692,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -60057,6 +60102,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -60079,6 +60125,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -60192,6 +60239,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -60214,6 +60262,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -60444,6 +60493,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -60466,6 +60516,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -60533,6 +60584,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -60555,6 +60607,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -60577,6 +60630,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -60599,6 +60653,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -60666,6 +60721,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -60688,6 +60744,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -61184,6 +61241,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -61206,6 +61264,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -61244,6 +61303,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -61266,6 +61326,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -61288,6 +61349,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -61310,6 +61372,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -61348,6 +61411,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -61370,6 +61434,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -61392,6 +61457,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -61414,6 +61480,7 @@ export namespace Prisma {
     id?: string
     isGroup?: boolean
     name?: string | null
+    description?: string
     inviteCode?: string | null
     ttlSeconds?: number
     broadcastMode?: boolean
@@ -61477,6 +61544,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
@@ -61499,6 +61567,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     isGroup?: BoolFieldUpdateOperationsInput | boolean
     name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
     inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean

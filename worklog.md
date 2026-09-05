@@ -1228,3 +1228,24 @@ Stage Summary:
 - Contract: Reminder wire = { id, conversationId, messageId?, note, remindAt, firedAt, conversation{id,name,isGroup}, snippet? }; GET ?due=1 → due-unfired only
 - Honest gaps: cross-room jump falls back to toast (same-room jump only); due-loop is per-room (settings-level global loop deferred)
 - Evidence: download/qa-r30b-0*.png
+
+---
+Task ID: R30-c
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: WhatsApp Channels / Telegram-style broadcast channels — full experience
+
+Work Log:
+- Schema (pre-pushed by lead): Conversation.description String default ""
+- NEW /api/channels — GET directory (isGroup && broadcastMode && !isSelf, memberCount, isSubscribed, 60-char last-message preview, ?mine=1) + POST create (name 2-40 / desc 200 validation, creator admin participant, real first message 'Channel created — say it loud.')
+- NEW /api/channels/[id]/subscribe — POST join (member role, idempotent) / DELETE leave (admins blocked with honest 403)
+- NEW src/components/chat/channels-page.tsx — #/chats/channels hash sub-page (archived-page anatomy): SUBSCRIBED segment (rows w/ broadcast icon, desc, subscriber count, Open) + DISCOVER segment (Subscribe pill, optimistic move, refresh), empty states honest
+- chats-tab.tsx: Channels entry row (Radio + subscribed count) beside Archived; new-chat-sheet.tsx: 'New channel' segmented action with name+description glass form, inline validation
+- chat-room.tsx polish: Channel badge pill in header (Radio + subscriber count); locked members see 'Only admins can post' banner + composer pointer-events-none opacity-40 (existing broadcastLocked, verified non-interactive); room-info shows description + 'N subscribers'
+- tsc src: 0 errors · lint clean · Live API probe: Pulse Daily real channel, 2 members, subscribed, preview flowing
+- Lead-reviewed E2E (11 screenshots): create flow → room w/ badge + admin post → chats entry → sub-page subscribed → 2nd subscriber (Bob) via API → reload persistence → info desc/subscribers → Bob locked composer (banner + dead composer, 403 posts) → Alice restored
+
+Stage Summary:
+- SHIPPED: channels end-to-end (create, directory discovery, subscribe/leave, admin-only posting gated server+client, badge + locked composer + subscriber counts)
+- Contract: GET /api/channels[?mine=1] → { channels: [{ id, name, description, createdAt, memberCount, isSubscribed, unread, preview }] }; POST /api/channels { userId, name, description? }; POST/DELETE /api/channels/[id]/subscribe { userId }
+- Honest gaps: no channel image/avatar yet (palette icon), no channel transfer, discover = all channels (no pagination — fine at current scale)
+- Evidence: download/qa-r30c-01…11-*.png

@@ -95,6 +95,8 @@ export function RoomInfoPage({
   const title = isGroup ? detail?.name || 'Group' : other?.name ?? 'Chat'
   const myRole = detail?.members.find((m) => m.id === me.id)?.role
   const isAdmin = myRole === 'admin'
+  /** R30-c — broadcast channel (WhatsApp-Channels style): subscribers language */
+  const isChannel = isGroup && (detail?.broadcastMode ?? false)
 
   const isMuted =
     detail?.myMutedUntil != null && Date.parse(detail.myMutedUntil) > Date.now()
@@ -369,13 +371,20 @@ export function RoomInfoPage({
                 <Skeleton className="mt-1.5 h-4 w-24 rounded-md" />
               ) : isGroup ? (
                 <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                  {members.length} {members.length === 1 ? 'member' : 'members'} · {onlineCount} online
+                  {members.length} {members.length === 1 ? (isChannel ? 'subscriber' : 'member') : isChannel ? 'subscribers' : 'members'} · {onlineCount} online
                 </p>
               ) : (
                 <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
                   {other ? (onlineIds.has(other.id) ? 'Online now' : 'Offline') : 'Direct chat'}
                 </p>
               )}
+              {/* R30-c — channel purpose line (display-only: the info page has no
+                  inline-edit pattern; renames live in the classic group manager) */}
+              {detail !== undefined && detail.description ? (
+                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  {detail.description}
+                </p>
+              ) : null}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {isGroup && (detail?.broadcastMode ?? false) ? (
                   <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
@@ -610,7 +619,7 @@ export function RoomInfoPage({
           transition={{ ...spring.soft, delay: stagger(3) }}
           className="px-2 pt-4 pb-1.5 text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase dark:text-zinc-500"
         >
-          Members{detail ? ` · ${members.length}` : ''}
+          {isChannel ? 'Subscribers' : 'Members'}{detail ? ` · ${members.length}` : ''}
         </motion.p>
         <motion.div
           {...anim}

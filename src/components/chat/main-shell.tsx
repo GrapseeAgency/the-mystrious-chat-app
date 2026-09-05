@@ -101,7 +101,7 @@ export function MainShell({ me }: { me: AppUser }) {
   /** message to scroll-to + flash once the room's history is rendered (global-search hit) */
   const [jumpMessageId, setJumpMessageId] = useState<string | null>(null)
   const [newChatOpen, setNewChatOpen] = useState(false)
-  const [newChatMode, setNewChatMode] = useState<'dm' | 'group'>('dm')
+  const [newChatMode, setNewChatMode] = useState<'dm' | 'group' | 'channel'>('dm')
   // generation bumps per open-session so the sheet remounts with fresh state;
   // sheetMounted keeps it rendered through the vaul close animation
   const [newChatGeneration, setNewChatGeneration] = useState(0)
@@ -183,7 +183,7 @@ export function MainShell({ me }: { me: AppUser }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const openNewChat = (mode: 'dm' | 'group') => {
+  const openNewChat = (mode: 'dm' | 'group' | 'channel') => {
     setNewChatMode(mode)
     setNewChatGeneration((g) => g + 1)
     setSheetMounted(true)

@@ -341,6 +341,7 @@ export function buildConversationDetail(
     ttlSeconds: conv.ttlSeconds,
     broadcastMode: conv.broadcastMode,
     isSelf: conv.isSelf,
+    description: conv.description,
   }
 }
 

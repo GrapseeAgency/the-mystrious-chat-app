@@ -131,6 +131,18 @@ export interface ConversationSummary {
 
 export type GroupRole = 'admin' | 'member'
 
+/** One row of the broadcast-channel directory (GET /api/channels, R30-c). */
+export interface ChannelSummary {
+  id: string // conversation id
+  name: string
+  description: string
+  createdAt: string
+  memberCount: number // participants (= subscribers)
+  isSubscribed: boolean // viewer has a participant row
+  unread: boolean // viewer has an unread admin message (lastReadAt watermark)
+  preview: string | null // last message content snippet (60 chars, may be null)
+}
+
 /** Full detail for a chat room */
 export interface ConversationDetail {
   id: string
@@ -145,6 +157,7 @@ export interface ConversationDetail {
   ttlSeconds: number // disappearing-message TTL (0 = off)
   broadcastMode: boolean // admin-only posting
   isSelf: boolean // Signal-style Note to Self conversation
+  description: string // channel/group purpose line (R30-c)
 }
 
 /** Public preview of an invite code before joining (GET /api/invite/[code]). */

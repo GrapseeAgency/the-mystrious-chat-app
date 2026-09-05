@@ -12,7 +12,7 @@ import Image from 'next/image'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArrowRight, ChevronRight, FolderPlus, LoaderCircle, Plus, Search, SquarePen, Users, X } from 'lucide-react'
+import { Archive, ArrowRight, ChevronRight, FolderPlus, LoaderCircle, Plus, Radio, Search, SquarePen, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -50,6 +50,7 @@ import {
   fetchFullHistory,
 } from '@/components/chat/chats-actions'
 import { ChatsArchivedPage } from '@/components/chat/chats-archived-page'
+import { ChannelsPage } from '@/components/chat/channels-page'
 
 interface ConversationsResponse {
   conversations: ConversationSummary[]
@@ -257,13 +258,18 @@ export function ChatsTab({
   const typersIn = realtime.typersIn
   const onlineIds = realtime.onlineIds
 
-  // #/chats/archived sub-page — same internal hash pattern the settings
-  // tree uses: open = push '/chats/archived', back = pop to '/'.
+  // #/chats/archived + #/chats/channels sub-pages — same internal hash
+  // pattern the settings tree uses: open = push, back = pop to '/'.
   const { path, navigate, back } = useHashNav()
   const archivedPageOpen = path === '/chats/archived'
   const openArchivedPage = useCallback(() => {
     haptic(6)
     navigate('/chats/archived')
+  }, [navigate])
+  const channelsPageOpen = path === '/chats/channels'
+  const openChannelsPage = useCallback(() => {
+    haptic(6)
+    navigate('/chats/channels')
   }, [navigate])
 
   const [searching, setSearching] = useState(false)
@@ -366,6 +372,11 @@ export function ChatsTab({
   const archivedUnread = useMemo(
     () => archivedRows.reduce((sum, { conv }) => sum + conv.unreadCount, 0),
     [archivedRows],
+  )
+  /** R30-c — channels the viewer is subscribed to (participant row = subscription) */
+  const subscribedChannelCount = useMemo(
+    () => rows.filter(({ conv }) => conv.isGroup && conv.broadcastMode).length,
+    [rows],
   )
 
   /** Freeze "where was I" from the list summary AT TAP TIME (pre-read watermark). */
@@ -1115,6 +1126,22 @@ export function ChatsTab({
                 </span>
               )}
             </motion.button>
+            {/* R30-c — Channels entry: subscribed count → #/chats/channels */}
+            <motion.button
+              type="button"
+              whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+              transition={pressSpring}
+              onClick={openChannelsPage}
+              aria-label={`Open channels — ${subscribedChannelCount} subscribed`}
+              className="glass-pill mx-2 my-1 flex h-11 w-[calc(100%-16px)] items-center gap-2.5 px-3.5 text-left outline-none"
+            >
+              <Radio className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <span className="text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">Channels</span>
+              <span className="ml-auto flex items-center gap-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                {subscribedChannelCount === 1 ? '1 channel' : `${subscribedChannelCount} channels`}
+                <ChevronRight className="size-3.5" aria-hidden />
+              </span>
+            </motion.button>
             {/* R27-e — Archived entry: real count, always reachable → #/chats/archived */}
             <motion.button
               type="button"
@@ -1218,6 +1245,14 @@ export function ChatsTab({
         onLongPress={openSheetFor}
         onPin={(conv) => togglePin.mutate(conv)}
         onArchive={(conv) => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
+      />
+
+      {/* #/chats/channels — R30-c broadcast directory sub-page */}
+      <ChannelsPage
+        open={channelsPageOpen}
+        me={me}
+        onBack={() => back('/')}
+        onOpenConversation={(conversationId) => onOpenConversation(conversationId, null)}
       />
 
       {/* R24-a chat folders manager sheet */}

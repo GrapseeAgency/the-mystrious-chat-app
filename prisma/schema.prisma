@@ -175,6 +175,7 @@ model Conversation {
   id                String                    @id @default(cuid())
   isGroup           Boolean                   @default(false)
   name              String? // group title; null for DMs
+  description       String    @default("") // channel/group purpose line (channel directory + info page)
   inviteCode        String?                   @unique // shareable join code (groups only; null = no active link)
   ttlSeconds        Int                       @default(0) // disappearing-message TTL (0 = off; applied at send time)
   broadcastMode     Boolean                   @default(false) // Discord-stage/Telegram-channel style admin-only posting

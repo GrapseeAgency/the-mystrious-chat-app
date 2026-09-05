@@ -8,9 +8,9 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Check, LoaderCircle, Search, UsersRound, X } from 'lucide-react'
+import { Check, LoaderCircle, MessageCircle, Radio, Search, UsersRound, X } from 'lucide-react'
 import { toast } from 'sonner'
-import type { AppUser, ConversationSummary } from '@/lib/types'
+import type { AppUser, ChannelSummary, ConversationSummary } from '@/lib/types'
 import { apiJson, jsonBody } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
 import {
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { UserAvatar } from '@/components/chat/user-avatar'
 
@@ -30,6 +31,13 @@ interface UsersResponse {
 interface CreateConversationResponse {
   conversation: ConversationSummary
 }
+interface CreateChannelResponse {
+  channel: ChannelSummary & { conversationId: string }
+}
+
+const CHANNEL_NAME_MIN = 2
+const CHANNEL_NAME_MAX = 40
+const CHANNEL_DESCRIPTION_MAX = 200
 
 export function NewChatSheet({
   me,
@@ -41,16 +49,20 @@ export function NewChatSheet({
   me: AppUser
   open: boolean
   onOpenChange: (open: boolean) => void
-  initialMode: 'dm' | 'group'
+  initialMode: 'dm' | 'group' | 'channel'
   onConversationOpened: (conversationId: string) => void
 }) {
   const queryClient = useQueryClient()
   // NOTE: the parent remounts this sheet per open-session (generation key),
   // so local state initializers below are intentionally fresh every time.
-  const [mode, setMode] = useState<'dm' | 'group'>(initialMode)
+  const [mode, setMode] = useState<'dm' | 'group' | 'channel'>(initialMode)
   const [search, setSearch] = useState('')
   const [groupName, setGroupName] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // R30-c channel builder state (two-field step)
+  const [channelName, setChannelName] = useState('')
+  const [channelDescription, setChannelDescription] = useState('')
+  const [channelError, setChannelError] = useState<string | null>(null)
 
   const users = useQuery({
     queryKey: ['users'],
@@ -104,6 +116,45 @@ export function NewChatSheet({
     create.mutate({ memberIds: [...selectedIds], name: groupName.trim() })
   }
 
+  // ── R30-c: broadcast channel creation (two-field step) ──────
+  const createChannel = useMutation({
+    mutationFn: async (payload: { name: string; description: string }) => {
+      return apiJson<CreateChannelResponse>('/api/channels', jsonBody({
+        userId: me.id,
+        name: payload.name,
+        ...(payload.description ? { description: payload.description } : {}),
+      }))
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      queryClient.invalidateQueries({ queryKey: ['channels', me.id] })
+      toast.success(`Channel “${data.channel.name}” created`)
+      onConversationOpened(data.channel.conversationId)
+    },
+    onError: (error: Error) => {
+      // server-side validation (name length, description cap) surfaces inline
+      setChannelError(error.message || 'Could not create the channel')
+    },
+  })
+
+  const channelNameLength = channelName.trim().length
+  const channelValid =
+    channelNameLength >= CHANNEL_NAME_MIN && channelNameLength <= CHANNEL_NAME_MAX
+
+  const handleCreateChannel = () => {
+    if (createChannel.isPending) return
+    if (channelNameLength < CHANNEL_NAME_MIN) {
+      setChannelError(`Name needs at least ${CHANNEL_NAME_MIN} characters.`)
+      return
+    }
+    if (channelNameLength > CHANNEL_NAME_MAX) {
+      setChannelError(`Keep the name under ${CHANNEL_NAME_MAX + 1} characters.`)
+      return
+    }
+    setChannelError(null)
+    createChannel.mutate({ name: channelName.trim(), description: channelDescription.trim() })
+  }
+
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent className="mx-auto w-full max-w-[420px] rounded-t-[1.75rem] border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -128,16 +179,17 @@ export function NewChatSheet({
             </Button>
           </div>
 
-          {/* segmented control */}
+          {/* segmented control — R30-c adds the New channel action */}
           <div
             role="tablist"
             aria-label="Conversation type"
-            className="mb-3 grid grid-cols-2 gap-1 rounded-full bg-zinc-100 p-1 dark:bg-zinc-800"
+            className="mb-3 grid grid-cols-3 gap-1 rounded-full bg-zinc-100 p-1 dark:bg-zinc-800"
           >
             {(
               [
-                { id: 'dm', label: 'Direct message' },
-                { id: 'group', label: 'New group' },
+                { id: 'dm', label: 'Direct', icon: MessageCircle },
+                { id: 'group', label: 'Group', icon: UsersRound },
+                { id: 'channel', label: 'Channel', icon: Radio },
               ] as const
             ).map((seg) => {
               const isActive = mode === seg.id
@@ -160,13 +212,16 @@ export function NewChatSheet({
                       className="absolute inset-0 rounded-full bg-white shadow-sm dark:bg-zinc-700"
                     />
                   ) : null}
-                  <span className="relative">{seg.label}</span>
+                  <span className="relative flex items-center justify-center gap-1">
+                    <seg.icon className="size-3.5" aria-hidden />
+                    {seg.label}
+                  </span>
                 </button>
               )
             })}
           </div>
 
-          {/* search (DM) / group name (group) */}
+          {/* search (DM) / group name (group) / channel fields (channel) */}
           {mode === 'dm' ? (
             <div className="relative mb-2">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
@@ -178,7 +233,7 @@ export function NewChatSheet({
                 className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
               />
             </div>
-          ) : (
+          ) : mode === 'group' ? (
             <div className="mb-2 space-y-1.5">
               <Input
                 value={groupName}
@@ -193,9 +248,48 @@ export function NewChatSheet({
                 {groupValid ? `${totalMembers} ${totalMembers === 1 ? 'member' : 'members'} selected` : `${totalMembers} of 3+ members picked`} · include yourself plus at least 2 people
               </p>
             </div>
+          ) : (
+            <div className="mb-2 space-y-1.5">
+              <div className="relative">
+                <Radio className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+                <Input
+                  value={channelName}
+                  onChange={(e) => {
+                    setChannelName(e.target.value.slice(0, CHANNEL_NAME_MAX))
+                    if (channelError) setChannelError(null)
+                  }}
+                  placeholder="Channel name"
+                  aria-label="Channel name"
+                  aria-invalid={channelError !== null}
+                  maxLength={CHANNEL_NAME_MAX}
+                  autoComplete="off"
+                  className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-emerald-500/60 aria-invalid:border-rose-400 aria-invalid:ring-rose-500/30 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </div>
+              <Textarea
+                value={channelDescription}
+                onChange={(e) => setChannelDescription(e.target.value.slice(0, CHANNEL_DESCRIPTION_MAX))}
+                placeholder="Description — what is this channel about? (optional)"
+                aria-label="Channel description"
+                rows={2}
+                className="min-h-0 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+              />
+              {channelError ? (
+                <p role="alert" className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                  {channelError}
+                </p>
+              ) : (
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                  {channelDescription.length > 0
+                    ? `${CHANNEL_DESCRIPTION_MAX - channelDescription.length} characters left`
+                    : 'You will be the admin — only admins can post in a channel.'}
+                </p>
+              )}
+            </div>
           )}
 
-          {/* people list */}
+          {/* people list — hidden on the channel step */}
+          {mode !== 'channel' ? (
           <div className="pulse-scroll max-h-[46dvh] min-h-0 overflow-y-auto overscroll-contain rounded-xl">
             {users.isPending ? (
               <div role="status" aria-label="Loading people">
@@ -256,6 +350,7 @@ export function NewChatSheet({
               </ul>
             )}
           </div>
+          ) : null}
 
           {/* footer action */}
           {mode === 'group' ? (
@@ -271,6 +366,25 @@ export function NewChatSheet({
                 </>
               ) : (
                 `Create group · ${totalMembers} ${totalMembers === 1 ? 'member' : 'members'}`
+              )}
+            </Button>
+          ) : null}
+          {mode === 'channel' ? (
+            <Button
+              onClick={handleCreateChannel}
+              disabled={!channelValid || createChannel.isPending}
+              className="mt-3 h-11 w-full gap-1.5 rounded-xl bg-emerald-600 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 transition-all hover:bg-emerald-500 active:scale-[0.98]"
+            >
+              {createChannel.isPending ? (
+                <>
+                  <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                  Creating channel…
+                </>
+              ) : (
+                <>
+                  <Radio className="size-4" aria-hidden />
+                  Create channel
+                </>
               )}
             </Button>
           ) : null}
