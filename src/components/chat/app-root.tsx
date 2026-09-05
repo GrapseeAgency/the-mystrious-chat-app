@@ -16,6 +16,7 @@ import { Providers } from '@/components/chat/providers'
 import { OnboardingScreen } from '@/components/chat/onboarding-screen'
 import { MainShell } from '@/components/chat/main-shell'
 import { ParticleLayer } from '@/components/fx/particle-layer'
+import { WebGLAmbient } from '@/components/fx/webgl-glow'
 
 type BootStatus = 'checking' | 'onboarding' | 'ready'
 
@@ -120,7 +121,10 @@ function BootGate() {
 export function AppRoot() {
   return (
     <Providers>
-      {/* global FX layer — fixed z-[95], survives route/tab switches */}
+      {/* global FX layers — fixed, survive route/tab switches.
+          WebGLAmbient renders the prefs-selected shader field ('off' → nothing);
+          ParticleLayer suppresses itself while a WebGL mode is active (R26-e contract). */}
+      <WebGLAmbient layered />
       <ParticleLayer />
       <BootGate />
     </Providers>

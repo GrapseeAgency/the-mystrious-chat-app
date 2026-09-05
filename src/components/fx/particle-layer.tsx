@@ -12,6 +12,14 @@
 // · Hard cap of 400 simultaneous particles (oldest dropped).
 // · prefers-reduced-motion → bursts are skipped entirely.
 // · Everything lives in refs — no React state per particle.
+//
+// R26-e coordination contract: when prefs 'fx.webglMode' selects a
+// non-off ambient mode AND the WebGLAmbient canvas (webgl-glow.tsx)
+// is actually alive, this DOM particle layer renders nothing so the
+// two full-screen FX systems never overdraw simultaneously. If WebGL
+// is unavailable (or the ambient is unmounted) the burst layer keeps
+// working exactly as before. External API unchanged (mounted bare by
+// app-root.tsx).
 // ─────────────────────────────────────────────────────────────
 'use client'
 
@@ -22,6 +30,12 @@ import {
   type ParticleKind,
   prefersReducedMotion,
 } from '@/lib/motion'
+import { usePrefs } from '@/lib/prefs'
+import {
+  PREF_KEY_WEBGL_MODE,
+  isWebglMode,
+  useWebglAmbientAvailable,
+} from '@/components/fx/webgl-glow'
 
 const MAX_PARTICLES = 400
 const DEFAULT_COUNT = 80
@@ -229,7 +243,14 @@ function drawBurst(ctx: CanvasRenderingContext2D, p: Particle, alpha: number): v
 export const ParticleLayer = memo(function ParticleLayer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
+  // R26-e: same prefs key the WebGLAmbient reads — one owner of the
+  // full-screen FX surface at a time (and only when it truly renders).
+  const webglModeRaw = usePrefs((s) => (s.prefs as unknown as Record<string, unknown>)[PREF_KEY_WEBGL_MODE])
+  const ambientAlive = useWebglAmbientAvailable()
+  const webglAmbientActive = isWebglMode(webglModeRaw) && webglModeRaw !== 'off' && ambientAlive
+
   useEffect(() => {
+    if (webglAmbientActive) return // WebGL ambient owns the background — layer disabled
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -341,7 +362,9 @@ export const ParticleLayer = memo(function ParticleLayer() {
       state.raf = 0
       particles.length = 0
     }
-  }, [])
+  }, [webglAmbientActive])
+
+  if (webglAmbientActive) return null
 
   return (
     <canvas

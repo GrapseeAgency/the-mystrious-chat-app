@@ -261,6 +261,78 @@
   box-shadow: var(--ui-specular, none), 0 8px 32px rgba(0, 0, 0, 0.08);
 }
 
+/* ── R26 glass recipe system — the locked reference language.
+   Specular top rim + glossy diagonal sheen + soft deep shadow +
+   inner glow, tuned per light/dark. Compose onto any surface. ── */
+
+:root {
+  --glass-rim: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  --glass-gloss: linear-gradient(118deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.08) 34%, rgba(255, 255, 255, 0) 52%);
+  --glass-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.28), 0 4px 14px -6px rgba(0, 0, 0, 0.12);
+  --glass-inner: inset 0 -10px 24px -14px rgba(0, 0, 0, 0.1);
+  --glass-row-hover: rgba(0, 0, 0, 0.05);
+}
+.dark {
+  --glass-rim: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --glass-gloss: linear-gradient(118deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 36%, rgba(255, 255, 255, 0) 54%);
+  --glass-shadow: 0 28px 70px -20px rgba(0, 0, 0, 0.72), 0 6px 18px -8px rgba(0, 0, 0, 0.5);
+  --glass-inner: inset 0 -12px 28px -16px rgba(0, 0, 0, 0.55);
+  --glass-row-hover: rgba(255, 255, 255, 0.07);
+}
+
+/* Deep glass surface — cards, hero panels, sub-page shells */
+.glass-deep {
+  background: var(--ui-panel-bg, rgba(255, 255, 255, 0.66));
+  -webkit-backdrop-filter: blur(calc(var(--ui-blur, 28px) + 6px)) saturate(1.65);
+  backdrop-filter: blur(calc(var(--ui-blur, 28px) + 6px)) saturate(1.65);
+  border: 1px solid var(--ui-panel-border, rgba(255, 255, 255, 0.22));
+  box-shadow: var(--glass-rim), var(--glass-shadow), var(--glass-inner);
+  position: relative;
+  isolation: isolate;
+}
+
+/* Glossy diagonal reflection band — the signature liquid-glass sheen */
+.glass-sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-gloss);
+  pointer-events: none;
+}
+
+/* Compact frosted action menu (msg actions, nav overflow, contact menu) */
+.glass-menu-panel {
+  background: color-mix(in srgb, var(--ui-panel-bg, rgba(255, 255, 255, 0.72)) 88%, transparent);
+  -webkit-backdrop-filter: blur(26px) saturate(1.8);
+  backdrop-filter: blur(26px) saturate(1.8);
+  border: 1px solid var(--ui-panel-border, rgba(255, 255, 255, 0.2));
+  box-shadow: var(--glass-rim), var(--glass-shadow);
+  transform-origin: var(--menu-origin, bottom left);
+}
+
+/* Glass pill button / input chip (Back · Cancel · Create ref) */
+.glass-pill {
+  background: color-mix(in srgb, var(--ui-panel-bg, rgba(255, 255, 255, 0.6)) 82%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid var(--ui-panel-border, rgba(255, 255, 255, 0.24));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 10px 26px -12px rgba(0, 0, 0, 0.25);
+  border-radius: 9999px;
+}
+.dark .glass-pill {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 10px 26px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* Row hover pill inside glass surfaces */
+.glass-row-hover {
+  transition: background-color 0.16s ease, transform 0.16s ease;
+}
+.glass-row-hover:hover {
+  background-color: var(--glass-row-hover);
+}
+
 /* ── Pulse chat additions: thin custom scrollbars + hide helper ── */
 @layer utilities {
   .pulse-scroll {

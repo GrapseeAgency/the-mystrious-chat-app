@@ -24,6 +24,8 @@ export type PulsePrefs = {
   readReceipts: boolean
   /** Reduce non-essential motion (effects/parallax) app-wide. */
   reducedMotion: boolean
+  /** WebGL ambient field mode — see src/components/fx/webgl-glow.tsx (WEBGL_MODES). */
+  'fx.webglMode'?: string
 }
 
 export const DEFAULT_PREFERENCES: PulsePrefs = {
@@ -41,6 +43,7 @@ export const DEFAULT_PREFERENCES: PulsePrefs = {
 const RADIUS = ['md', 'lg', 'pill']
 const DENSITY = ['cozy', 'compact']
 const WALLPAPER = ['none', 'aurora', 'dusk', 'forest', 'mono']
+const WEBGL_MODES_OK = ['off', 'aurora', 'caustics', 'mesh', 'stars']
 
 /**
  * Shallow-merge a stored/sent partial prefs object over the defaults,
@@ -58,6 +61,9 @@ export function mergePrefs(raw: unknown): PulsePrefs {
   }
   if (typeof p.wallpaper === 'string' && WALLPAPER.includes(p.wallpaper)) {
     out.wallpaper = p.wallpaper as PulsePrefs['wallpaper']
+  }
+  if (typeof p['fx.webglMode'] === 'string' && WEBGL_MODES_OK.includes(p['fx.webglMode'])) {
+    out['fx.webglMode'] = p['fx.webglMode']
   }
   for (const k of [
     'notifPreviews',

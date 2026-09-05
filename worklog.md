@@ -1031,3 +1031,54 @@ Work Log:
 Stage Summary:
 - Full Pulse history (R23 red packets/games/kanban/events, R24 stage/spatial/economy/tournaments/folders/anonymous/topics, R25 UI-language + 13-style nav) is now on GitHub
 - Branch main tracks origin/main; pushes are non-interactive from here on
+
+---
+Task ID: R26-a
+Agent: lead
+Task: R26 wave — sub-page router + glass design language + shell cleanup (user verdict: settings/profile/nav/chat-menu all wrong; top overlay+search removed on orders)
+
+Work Log:
+- Studied 5 locked design refs (dark glass elements, frosted input card, frosted icon menus, glass menu over photo, glass button anatomy)
+- Created src/lib/hash-router.ts — real sub-page routing on /: useHashRoute/navigateHash/replaceHash/backHash, browser back works (#/settings/..., #/profile/edit, #/user/...)
+- Created src/components/ui/glass-menu.tsx — compact frosted menu primitives (GlassMenu/GlassMenuItem/GlassMenuSeparator/GlassMenuLabel/GlassMenuStrip + glassMenuMotion) replacing all giant action overlays
+- globals.css: added R26 glass recipe system — --glass-rim/gloss/shadow/inner/row-hover tokens, .glass-deep, .glass-sheen, .glass-menu-panel, .glass-pill, .glass-row-hover (light+dark)
+- main-shell.tsx: REMOVED the top capsule (label + Search + Settings) per user order; added #/settings deep-link on boot; cleaned imports
+- Parallel crew launched: R26-b chat-room (glass msg menu + avatar profile fix), R26-c settings (section sub-pages, no search), R26-d profile (edit sub-page + social profile + sheet upgrade), R26-e nav elements + WebGL multi-mode
+
+Stage Summary:
+- Contracts: prefs key 'fx.webglMode' (string) is the settings<->WebGL link; GlassMenu + hash-router are the shared foundations; exclusive file ownership — b: chat-room.tsx, c: settings-screen.tsx, d: profile-tab.tsx + user-profile-sheet.tsx, e: nav-router.tsx + fx/*
+
+---
+Task ID: R26-b/c/d/e
+Agent: lead (verification of parallel crew work — crew reports were lost to infra timeouts, but all file work + their live QA screenshots landed)
+Task: Verify and integrate the four parallel R26 agents' output (chat menu, settings, profile, nav+WebGL)
+
+Work Log:
+- Verified all 6 target files compiled (tsc clean) and agents' QA screenshots exist (qa-r26c-01/02, qa-r26e-*, r26b-profile-sheet)
+- R26-b VERIFIED LIVE: message long-press/tap menu is now a compact frosted GlassMenu (role=menu/menuitem, reaction strip, Reply/Thread/Copy/Forward/Save/Task/Pin/Info/Edit/Delete groups) replacing the giant overlay; "View Bob's profile" opens a real data sheet (name, @handle copy, stats, Message button) — user complaint fixed
+- R26-c VERIFIED LIVE: settings rebuilt section-by-section (PERSONAL: Account/Appearance/Chat/Notifications; SYSTEM: Privacy/Real-time/Accessibility/Data/About) with live value hints, NO search bar, NO top overlay; GlassMenu sub-menus for theme/nav pickers
+- R26-d VERIFIED LIVE: profile = social hero (cover, presence ring, handle chip, Edit profile pill); Edit Profile is a REAL sub-page at #/profile/edit (identity + Lucide status glyph picker + avatar colors); appearance section removed from profile (settings owns it)
+- R26-e VERIFIED LIVE: NAV_ITEMS registry data-driven (grows with features); capsule = Chats/Hub/compose/Contacts/Profile/More; overflow GlassMenu = Settings/Search/Saved/Stories; island/radial/etc. all compile; WEBGL_MODES off/aurora/caustics/mesh/stars fragment-shader system with DPR cap, hidden-pause, reduced-motion, no-WebGL fallback
+
+Stage Summary:
+- Crew work integrated and live-verified; all four complaint areas fixed with real behavior
+- Crew gaps picked up by lead: WebGLAmbient was never mounted + no settings UI; island overflow auto-collapse killed the open menu; backHash exited the site on deep-link boots; frozen deepLink snapshot kept settings uncloseable — all fixed by lead (see R26-f)
+
+---
+Task ID: R26-f
+Agent: lead
+Task: R26 wave close-out — glass foundations, shell surgery, WebGL wiring, router hardening, E2E proofs
+
+Work Log:
+- Foundations (R26-a): src/lib/hash-router.ts (push-depth-aware back, live subscribe), src/components/ui/glass-menu.tsx, globals.css glass recipe system (.glass-deep/.glass-sheen/.glass-menu-panel/.glass-pill/.glass-row-hover + rim/gloss/shadow/inner tokens), main-shell top capsule (search+settings) REMOVED per user order
+- Router hardening: backHash no longer history.back()s past in-app entries (deep-link boots fell out of the site); replaceHash + subscribe now notify unconditionally (snapshot-cache race swallowed updates → settings sections went stale); exported subscribeHash
+- main-shell: deep-link boot via useSyncExternalStore(subscribeHash) — #/settings… opens settings on any mount order and closing clears the hash; NavContextAction routing (saved→profile tab, stories→chats tab, search→spotlight, settings→tree)
+- WebGL wired end-to-end: WebGLAmbient mounted layered in app-root (fixed pointer-transparent veil, soft-light/screen blend, opt-in `layered` prop keeps onboarding's inline WebglGlow intact); prefs key 'fx.webglMode' added to PulsePrefs + mergePrefs sanitization; settings Appearance gained the 5-mode PillPicker; ParticleLayer self-suppresses when a WebGL mode is active (verified 2→1 canvases)
+- Island fix: overflow menu open-state now pauses the 4.2s auto-collapse (menu used to vanish mid-read)
+- E2E proofs (agent-browser, screenshots in download/): qa-r26-msg-menu (glass menu), qa-r26-avatar-profile (Bob profile with real stats), qa-r26-edit-subpage (#/profile/edit), qa-r26-webgl-veil/stars (shader veil + mode persistence), qa-r26-debug-state (settings root after deep-link round-trip); chat send verified (R26 final check delivered); nav returns with 6 elements after settings close
+- tsc: 0 errors · eslint: clean
+
+Stage Summary:
+- SHIPPED: glass design language on all new surfaces; real hash sub-pages (#/settings/*, #/profile/edit); compact glass action menus; profile-from-chat with real data; WebGL ambient system with settings control; nav overflow + registry; top overlay+search gone
+- Contracts: subscribeHash/navigateHash/backHash (push-depth aware); GlassMenu primitives; prefs['fx.webglMode']; WebGLAmbient(layered) single mount; NavContextAction union extended
+- Honest gaps (next waves): chat-list rows still show legacy emoji DATA from stored messages (content, not chrome); profile edit lacks avatar image upload (no API); sub-pages for hub/contacts not yet started; casual-feature sweep (pin/mute/archive/search-in-room) queued; GestureNav drag-up + radial host-claim still pending from R25

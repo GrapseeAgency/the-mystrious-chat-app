@@ -1,12 +1,21 @@
 // ─────────────────────────────────────────────────────────────
-// Pulse — other-user profile sheet (R25-b).
-// Opened from chat room contact info, group member rows and the
-// contacts list. Premium layout: color hero with presence ring,
-// name + member badge, tap-to-copy @handle, status, bio, REAL
-// stats from /api/users/[id]/stats, mutual rooms from the live
-// conversations cache, working Message action (creates the DM via
-// POST /api/conversations when the caller does not supply
-// onMessage), member-since / last-active footer.
+// Pulse — other-user profile sheet (R26-d).
+// Opened from chat room member taps, group info rows and the
+// contacts list. Immersive glass page-style layout: a deep-glass
+// hero (specular rim + glossy sheen) with the user's gradient
+// orbs, presence-ring avatar, name + member badge, tap-to-copy
+// @handle pill, status glyph + text, bio — then REAL stats from
+// /api/users/[id]/stats, mutual rooms from the live conversations
+// cache, member-since / last-active footer and the working
+// Message action (creates the DM via POST /api/conversations when
+// the caller does not supply onMessage).
+//
+// NEVER-EMPTY CONTRACT: the content remounts per user id, stats
+// render skeleton → data → explicit error line (never blank),
+// bio/handle have explicit fallbacks, and mutual rooms only mount
+// when the overlap is real. If a caller reports "nothing shows",
+// audit the CALLER first (see worklog R26-d: chat-room DM bubbles
+// render no avatar at all — chat-room.tsx owns that gate).
 //
 // z-layering: content sits at z-[80] so it also opens above the
 // full-screen GroupInfoSheet (z-[70]) when tapping a member row.
@@ -53,7 +62,7 @@ function StatCell({ label, value }: { label: string; value: number }) {
     <motion.div
       whileHover={{ y: -2 }}
       transition={pressSpring}
-      className="rounded-xl bg-zinc-100/80 px-2 py-2.5 text-center dark:bg-zinc-800/60"
+      className="rounded-2xl border border-zinc-200/60 bg-white/55 px-2 py-2.5 text-center dark:border-white/[0.06] dark:bg-white/[0.05]"
     >
       <p className="text-base font-bold tabular-nums text-zinc-800 dark:text-zinc-100">
         {value.toLocaleString('en-US')}
@@ -187,7 +196,7 @@ export function UserProfileSheet({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="z-[80] max-h-[85dvh]">
+      <DrawerContent className="z-[80] max-h-[88dvh]">
         <DrawerHeader className="sr-only">
           <DrawerTitle>{user.name}&apos;s profile</DrawerTitle>
         </DrawerHeader>
@@ -197,31 +206,52 @@ export function UserProfileSheet({
           initial="hidden"
           animate="shown"
           variants={listVariants}
-          className="-mt-2 flex flex-col gap-4 px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-1"
+          className="-mt-2 flex flex-col gap-3.5 px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-1"
         >
-          {/* ── hero ── */}
+          {/* ── glass hero — deep glass + sheen + gradient orbs ── */}
           <motion.div
             variants={itemVariants}
-            className={cn('relative -mx-4 overflow-hidden px-4 pb-4 pt-5', gradient)}
+            className="glass-deep glass-sheen relative isolate overflow-hidden rounded-3xl p-4"
           >
-            <span aria-hidden className="absolute -right-8 -top-10 size-36 rounded-full bg-white/15 blur-2xl" />
-            <span aria-hidden className="absolute -left-10 bottom-0 size-28 rounded-full bg-black/10 blur-2xl" />
+            {/* identity-tinted glow orbs behind the content */}
+            <span
+              aria-hidden
+              className={cn(
+                'absolute -right-10 -top-12 size-36 rounded-full bg-gradient-to-br opacity-35 blur-2xl',
+                gradient,
+              )}
+            />
+            <span
+              aria-hidden
+              className={cn(
+                'absolute -bottom-12 -left-10 size-28 rounded-full bg-gradient-to-tr opacity-25 blur-2xl',
+                gradient,
+              )}
+            />
             <div className="relative flex items-center gap-3.5">
+              {/* presence avatar in a specular gradient ring */}
               <motion.div
                 initial={reducedMotion ? false : { scale: 0.85, rotate: -4 }}
                 animate={{ scale: 1, rotate: 0 }}
                 transition={spring.bouncy}
-                className="rounded-full bg-white/25 p-[3px]"
+                className={cn('shrink-0 rounded-full bg-gradient-to-br p-[3px] shadow-lg shadow-black/10', gradient)}
               >
-                <div className="rounded-full bg-black/10 p-[2px]">
-                  <UserAvatar name={user.name} color={user.color} size={72} showPresence online={online} className="rounded-full" />
+                <div className="rounded-full bg-white/90 p-[2px] dark:bg-zinc-900/90">
+                  <UserAvatar
+                    name={user.name}
+                    color={user.color}
+                    size={68}
+                    showPresence
+                    online={online}
+                    className="rounded-full"
+                  />
                 </div>
               </motion.div>
-              <div className="min-w-0 flex-1 text-white">
-                <p className="flex items-center gap-1.5 text-lg font-bold leading-tight">
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 text-lg font-bold leading-tight text-zinc-900 dark:text-zinc-50">
                   <span className="truncate">{user.name}</span>
                   <span title="Registered member" aria-label="Registered member" className="shrink-0">
-                    <BadgeCheck className="size-4.5 fill-white text-black/40" aria-hidden />
+                    <BadgeCheck className="size-4.5 fill-[var(--ui-accent,#10b981)] text-white dark:text-zinc-900" aria-hidden />
                   </span>
                 </p>
                 {user.username ? (
@@ -231,38 +261,44 @@ export function UserProfileSheet({
                     whileTap={reducedMotion ? undefined : pressTap}
                     transition={pressSpring}
                     aria-label={`Copy handle @${user.username}`}
-                    className="mt-1 flex min-h-[28px] items-center gap-1 rounded-full bg-black/25 px-2.5 py-0.5 text-xs font-bold text-white outline-none transition-colors hover:bg-black/35 active:bg-black/45"
+                    className="glass-pill mt-1.5 flex min-h-[28px] items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold text-[var(--ui-accent,#10b981)] outline-none"
                   >
-                    @{user.username}
-                    <Copy className="size-3" aria-hidden />
+                    {handleCopied ? (
+                      <>
+                        <Check className="size-3" strokeWidth={3} aria-hidden />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        @{user.username}
+                        <Copy className="size-3" aria-hidden />
+                      </>
+                    )}
                   </motion.button>
                 ) : (
-                  <p className="mt-1 text-[11px] font-medium text-white/70">No handle yet</p>
+                  <p className="mt-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">No handle yet</p>
                 )}
-                <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-white/85">
+                <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
                   <span
                     aria-hidden
-                    className={cn('inline-block size-1.5 rounded-full', online ? 'bg-white' : 'bg-white/40')}
+                    className={cn(
+                      'inline-block size-1.5 rounded-full',
+                      online ? 'bg-[var(--ui-accent,#10b981)]' : 'bg-zinc-300 dark:bg-zinc-600',
+                    )}
                   />
                   {online ? 'Online now' : 'Offline'}
                 </p>
               </div>
             </div>
             {user.statusEmoji || user.statusText ? (
-              <p className="relative mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-white/95">
-                {user.statusEmoji ? <StatusGlyph value={user.statusEmoji} className="size-4" /> : null}
+              <p className="relative mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">
+                {user.statusEmoji ? <StatusGlyph value={user.statusEmoji} className="size-4 text-[var(--ui-accent,#10b981)]" /> : null}
                 {user.statusText}
               </p>
             ) : null}
-          </motion.div>
-
-          {/* ── about ── */}
-          <motion.div
-            variants={itemVariants}
-            className="rounded-2xl border border-zinc-200 p-3.5 dark:border-zinc-800"
-          >
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">About</p>
-            <p className="mt-1 text-sm leading-relaxed text-zinc-700 dark:text-zinc-200">{user.about}</p>
+            <p className="relative mt-1.5 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              {user.about?.trim() ? user.about : 'No bio yet'}
+            </p>
           </motion.div>
 
           {/* ── real stats ── */}
@@ -286,7 +322,7 @@ export function UserProfileSheet({
             ) : (
               <div className="grid grid-cols-3 gap-2">
                 {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-[56px] rounded-xl" />
+                  <Skeleton key={i} className="h-[56px] rounded-2xl" />
                 ))}
               </div>
             )}
@@ -296,15 +332,15 @@ export function UserProfileSheet({
           {me && mutualRooms.length > 0 ? (
             <motion.div
               variants={itemVariants}
-              className="rounded-2xl border border-zinc-200 p-2 dark:border-zinc-800"
+              className="glass-deep glass-sheen relative isolate rounded-3xl p-2"
             >
-              <p className="px-1.5 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              <p className="px-1.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                 Rooms in common
               </p>
               <ul className="space-y-0.5">
                 {mutualRooms.slice(0, 3).map((room) => (
                   <li key={room.id}>
-                    <div className="flex min-h-[44px] items-center gap-2.5 rounded-xl px-1.5 py-1.5">
+                    <div className="glass-row-hover flex min-h-[44px] items-center gap-2.5 rounded-xl px-1.5 py-1.5">
                       <GroupAvatar title={room.name ?? 'Group'} id={room.id} size={32} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">
@@ -319,7 +355,7 @@ export function UserProfileSheet({
                 ))}
               </ul>
               {mutualRooms.length > 3 ? (
-                <p className="px-1.5 pb-1 pt-0.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+                <p className="px-1.5 pb-1.5 pt-0.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
                   +{mutualRooms.length - 3} more
                 </p>
               ) : null}
@@ -348,7 +384,7 @@ export function UserProfileSheet({
             ) : null}
           </motion.p>
 
-          {/* ── actions ── */}
+          {/* ── actions — one primary button + two quiet copy pills ── */}
           <motion.div variants={itemVariants} className="flex items-center gap-2">
             <motion.div
               whileTap={reducedMotion ? undefined : { scale: 0.98 }}
@@ -375,7 +411,7 @@ export function UserProfileSheet({
               transition={pressSpring}
               aria-label="Copy account ID"
               title="Copy account ID"
-              className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-700 active:bg-zinc-200 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              className="glass-pill flex size-12 shrink-0 items-center justify-center rounded-2xl text-zinc-500 outline-none dark:text-zinc-300"
             >
               <Copy className="size-4" aria-hidden />
             </motion.button>
@@ -387,7 +423,7 @@ export function UserProfileSheet({
                 transition={pressSpring}
                 aria-label={`Copy handle @${user.username}`}
                 title="Copy handle"
-                className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 text-[var(--ui-accent,#10b981)] outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                className="glass-pill flex size-12 shrink-0 items-center justify-center rounded-2xl text-[var(--ui-accent,#10b981)] outline-none"
               >
                 {handleCopied ? <Check className="size-4" strokeWidth={3} /> : <Copy className="size-4" aria-hidden />}
               </motion.button>

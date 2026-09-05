@@ -13,6 +13,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react'
 import { AnimatePresence, animate, motion, useMotionValue, useSpring, useTransform, useVelocity } from 'framer-motion'
@@ -53,6 +54,7 @@ import {
   MessagesSquare,
   Mic,
   Minus,
+  PartyPopper,
   Pause,
   Pencil,
   Pin,
@@ -62,6 +64,7 @@ import {
   Play,
   Plus,
   Podcast,
+  Radio,
   Reply,
   RotateCcw,
   Search,
@@ -83,6 +86,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import type {
   AppUser,
@@ -116,6 +120,12 @@ import { spring, ease, pressTap, pressSpring, fireParticles, type ParticleKind }
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
 import { pulseOutboxStore, outboxCount } from '@/lib/pulse-outbox'
 import { ForwardSheet } from '@/components/chat/forward-sheet'
+import {
+  GlassMenu,
+  GlassMenuItem,
+  GlassMenuSeparator,
+  GlassMenuStrip,
+} from '@/components/ui/glass-menu'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -232,12 +242,12 @@ const SLASH_COMMANDS = [
   { cmd: '/help', args: '', help: 'Show every command' },
 ] as const
 
-/** Emoji shorthand for effect toasts / chips. */
-const EFFECT_EMOJI: Record<MessageEffectName, string> = {
-  confetti: '🎉',
-  lasers: '⚡️',
-  echo: '🌀',
-  sparkles: '✨',
+/** Lucide glyph for effect toasts / chips (R26-b emoji purge). */
+const EFFECT_ICON: Record<MessageEffectName, LucideIcon> = {
+  confetti: PartyPopper,
+  lasers: Zap,
+  echo: Radio,
+  sparkles: Sparkles,
 }
 
 /** Parse one rolled die — returns null on malformed input. */
@@ -388,12 +398,12 @@ function applySlash(
     case 'roll': {
       if (arg.length === 0) {
         const roll = rollDice('1d6')
-        return { kind: 'send', content: `🎲 Rolled **1d6**: *${roll?.total ?? '?'}*` }
+        return { kind: 'send', content: `Rolled **1d6**: *${roll?.total ?? '?'}*` }
       }
       const roll = rollDice(arg)
       if (!roll) return { kind: 'error', message: 'Usage: /roll AdM — e.g. /roll 2d6' }
       const parts = roll.rolls.join(' + ')
-      return { kind: 'send', content: `🎲 Rolled **${arg.toLowerCase()}**: ${parts} = *${roll.total}*` }
+      return { kind: 'send', content: `Rolled **${arg.toLowerCase()}**: ${parts} = *${roll.total}*` }
     }
     case 'poll':
       return { kind: 'poll' }
@@ -593,6 +603,8 @@ export function ChatRoom({
   /** header menu → inline mute preset choices */
   const [muteChoicesOpen, setMuteChoicesOpen] = useState(false)
   const [selected, setSelected] = useState<ChatMessage | null>(null)
+  /** viewport point the action menu sprouts from (null = keyboard-open → center) */
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [showJump, setShowJump] = useState(false)
   /** messages that landed while scrolled away — badge on the jump-to-latest pill */
@@ -710,6 +722,10 @@ export function ChatRoom({
     setHasMoreHistory(next)
   }, [])
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** pointer coords captured at press-start → menu anchor when the hold fires */
+  const menuPointRef = useRef<{ x: number; y: number } | null>(null)
+  /** until this timestamp, the click that ends a long-press is swallowed */
+  const suppressPressRef = useRef(0)
   /** flipped (inside rAF) after the first history fetch so render stays ref-free */
   const [historyLoaded, setHistoryLoaded] = useState(false)
   /** pending scroll-anchor restore after prepending an older page */
@@ -2242,7 +2258,16 @@ export function ChatRoom({
         setProfileUser(member)
         return
       }
-      toast.info('This member is no longer part of the chat')
+      // Author embed is stale / the member list lagged behind → fetch the full
+      // profile so the sheet NEVER renders empty (R26-b root-cause hardening).
+      void (async () => {
+        try {
+          const res = await apiJson<{ user: AppUser }>(`/api/users/${encodeURIComponent(sender.id)}`)
+          setProfileUser(res.user)
+        } catch {
+          toast.info('This member is no longer part of the chat')
+        }
+      })()
     },
     [detailData],
   )
@@ -2434,7 +2459,7 @@ export function ChatRoom({
           })
         } else {
           setPendingEffect(outcome.effect)
-          toast(`${EFFECT_EMOJI[outcome.effect]} ${outcome.effect} armed — type a message and send`)
+          toast(`${outcome.effect} effect armed — type a message and send`)
           requestAnimationFrame(() => textareaRef.current?.focus())
         }
         return
@@ -2661,7 +2686,7 @@ export function ChatRoom({
         clearDraft()
         if (isMessageEffect(effect)) {
           setPendingEffect(effect)
-          toast(`${EFFECT_EMOJI[effect]} ${effect} armed — type a message and send`)
+          toast(`${effect} effect armed — type a message and send`)
         }
         requestAnimationFrame(() => textareaRef.current?.focus())
         return
@@ -3046,16 +3071,42 @@ export function ChatRoom({
     }
   }, [])
 
-  const startLongPress = useCallback(
-    (message: ChatMessage) => {
+  /** Open the anchored glass action menu for a message (tap or long-press). */
+  const openMessageMenu = useCallback(
+    (message: ChatMessage, point?: { x: number; y: number }) => {
+      if (Date.now() < suppressPressRef.current) {
+        suppressPressRef.current = 0 // swallow the click that ends a long-press
+        return
+      }
       clearLongPress()
-      longPressRef.current = setTimeout(() => {
-        setSelected(message)
-        longPressRef.current = null
-      }, 450)
+      setMenuAnchor(point ?? null)
+      setSelected(message)
     },
     [clearLongPress],
   )
+
+  const startLongPress = useCallback(
+    (message: ChatMessage, point?: { x: number; y: number }) => {
+      clearLongPress()
+      menuPointRef.current = point ?? null
+      longPressRef.current = setTimeout(() => {
+        suppressPressRef.current = Date.now() + 700 // the release click must not re-open
+        openMessageMenu(message, menuPointRef.current ?? undefined)
+        longPressRef.current = null
+      }, 450)
+    },
+    [clearLongPress, openMessageMenu],
+  )
+
+  /** Esc dismisses the anchored message menu. */
+  useEffect(() => {
+    if (selected === null) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelected(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selected])
 
   const copySelected = async () => {
     if (!selected) return
@@ -3121,15 +3172,36 @@ export function ChatRoom({
           <ChevronLeft className="size-6" aria-hidden />
         </Button>
         {isGroup ? (
-          <GroupAvatar title={displayName} id={conversationId} size={36} />
+          <button
+            type="button"
+            aria-label="Show group info"
+            onClick={() => {
+              haptic(10)
+              setInfoOpen(true)
+            }}
+            className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
+          >
+            <GroupAvatar title={displayName} id={conversationId} size={36} />
+          </button>
         ) : (
-          <UserAvatar
-            name={other?.name ?? displayName}
-            color={other?.color}
-            size={36}
-            showPresence
-            online={other ? realtime.onlineIds.has(other.id) : false}
-          />
+          <button
+            type="button"
+            aria-label={other ? `View ${other.name}'s profile` : 'Show info'}
+            onClick={() => {
+              haptic(10)
+              if (other) openProfileForUser(other)
+              else setInfoOpen(true)
+            }}
+            className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
+          >
+            <UserAvatar
+              name={other?.name ?? displayName}
+              color={other?.color}
+              size={36}
+              showPresence
+              online={other ? realtime.onlineIds.has(other.id) : false}
+            />
+          </button>
         )}
         <button
           type="button"
@@ -3524,7 +3596,7 @@ export function ChatRoom({
                       ? readByLast
                       : null
                   }
-                  onPress={setSelected}
+                  onPress={openMessageMenu}
                   onStartLongPress={startLongPress}
                   onEndLongPress={clearLongPress}
                   onToggleReaction={handleToggleReaction}
@@ -3801,7 +3873,7 @@ export function ChatRoom({
               <div className="mb-2 flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/30">
                 <Sparkles className="size-3.5 shrink-0" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">
-                  {EFFECT_EMOJI[pendingEffect]} {pendingEffect} effect armed — next message pops
+                  {pendingEffect} effect armed — next message pops
                 </span>
                 <button
                   type="button"
@@ -4039,24 +4111,27 @@ export function ChatRoom({
                   role="group"
                   aria-label="Arm a message effect"
                 >
-                  {(Object.keys(EFFECT_EMOJI) as MessageEffectName[]).map((effectName) => (
-                    <motion.button
-                      key={effectName}
-                      type="button"
-                      whileTap={{ scale: 0.92 }}
-                      transition={spring.bouncy}
-                      onClick={() => {
-                        setPendingEffect(effectName)
-                        setTray(false)
-                        toast(`${EFFECT_EMOJI[effectName]} ${effectName} armed — type a message and send`)
-                        requestAnimationFrame(() => textareaRef.current?.focus())
-                      }}
-                      className="flex flex-1 items-center justify-center gap-1 rounded-full bg-violet-500/10 py-2 text-[11px] font-bold text-violet-700 ring-1 ring-inset ring-violet-500/25 outline-none transition-colors hover:bg-violet-500/20 dark:text-violet-300"
-                    >
-                      <span aria-hidden>{EFFECT_EMOJI[effectName]}</span>
-                      {effectName}
-                    </motion.button>
-                  ))}
+                  {(Object.keys(EFFECT_ICON) as MessageEffectName[]).map((effectName) => {
+                    const EffectIcon = EFFECT_ICON[effectName]
+                    return (
+                      <motion.button
+                        key={effectName}
+                        type="button"
+                        whileTap={{ scale: 0.92 }}
+                        transition={spring.bouncy}
+                        onClick={() => {
+                          setPendingEffect(effectName)
+                          setTray(false)
+                          toast(`${effectName} effect armed — type a message and send`)
+                          requestAnimationFrame(() => textareaRef.current?.focus())
+                        }}
+                        className="flex flex-1 items-center justify-center gap-1 rounded-full bg-violet-500/10 py-2 text-[11px] font-bold text-violet-700 ring-1 ring-inset ring-violet-500/25 outline-none transition-colors hover:bg-violet-500/20 dark:text-violet-300"
+                      >
+                        <EffectIcon className="size-3.5 shrink-0" aria-hidden />
+                        {effectName}
+                      </motion.button>
+                    )
+                  })}
                 </motion.div>
               ) : null}
             </motion.div>
@@ -4384,176 +4459,61 @@ export function ChatRoom({
       {/* clearance for the floating bottom dock (composer must never sit under it) */}
       <div className="shrink-0 bg-zinc-100/80 dark:bg-zinc-950/60" style={{ height: dockInset }} aria-hidden />
 
-      {/* message actions */}
-      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-w-[300px] gap-3 rounded-2xl p-4 sm:left-1/2 sm:translate-x-[-50%] dark:bg-zinc-900">
-          <DialogHeader className="text-left">
-            <DialogTitle className="text-sm font-bold tracking-tight">Message options</DialogTitle>
-            <DialogDescription className="text-xs leading-relaxed">
-              {selected?.deletedAt
-                ? 'This message was deleted.'
-                : selected?.content.replace(/\s+/g, ' ').slice(0, 140)}
-            </DialogDescription>
-          </DialogHeader>
-          {selected && !selected.deletedAt ? (
-            <div className="flex items-center justify-between gap-0.5" role="group" aria-label="React with an emoji">
-              {REACTION_CHOICES.map((emoji) => (
-                <motion.button
-                  key={emoji}
-                  type="button"
-                  aria-label={`React with ${emoji}`}
-                  whileTap={{ scale: 0.85 }}
-                  transition={pressSpring}
-                  onClick={(e) => {
-                    const adding = !selected.reactions.some(
-                      (g) => g.emoji === emoji && g.userIds.includes(me.id),
-                    )
-                    if (adding) fireParticlesAt(e.currentTarget, 'hearts', 24)
-                    handleToggleReaction(selected.id, emoji)
-                    setSelected(null)
-                  }}
-                  className="flex size-10 items-center justify-center rounded-full text-xl outline-none transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                >
-                  {emoji}
-                </motion.button>
-              ))}
-            </div>
-          ) : null}
-          <div className="flex flex-col gap-1.5">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (!selected) return
-                setReplyTo(selected)
-                setSelected(null)
-                requestAnimationFrame(() => textareaRef.current?.focus())
-              }}
-              disabled={!!selected?.deletedAt}
-              className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
-            >
-              <Reply className="size-4" aria-hidden />
-              Reply
-            </Button>
-            {selected && selected.parentId === null && !selected.deletedAt ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  const target = selected
-                  setSelected(null)
-                  openThread(target)
-                }}
-                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
-              >
-                <MessageSquare className="size-4 text-violet-500" aria-hidden />
-                Reply in thread
-              </Button>
-            ) : null}
-            {selected && !selected.deletedAt ? (
-              <Button
-                variant="outline"
-                disabled={toggleSaved.isPending}
-                onClick={() => {
-                  toggleSaved.mutate(selected.id)
-                  setSelected(null)
-                }}
-                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
-              >
-                <Star className={cn('size-4', isSavedIds.has(selected.id) ? 'fill-amber-400 text-amber-500' : 'text-amber-500')} aria-hidden />
-                {isSavedIds.has(selected.id) ? 'Unsave' : 'Save message'}
-              </Button>
-            ) : null}
-            {selected && selected.parentId === null && !selected.deletedAt && selected.kind === 'text' ? (
-              <Button
-                variant="outline"
-                disabled={convertToTask.isPending}
-                onClick={() => {
-                  if (!selected) return
-                  convertToTask.mutate(selected.id)
-                }}
-                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
-              >
-                {convertToTask.isPending ? (
-                  <LoaderCircle className="size-4 animate-spin text-teal-500" aria-hidden />
-                ) : (
-                  <ListTodo className="size-4 text-teal-500" aria-hidden />
-                )}
-                Convert to task
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              onClick={copySelected}
-              disabled={!!selected?.deletedAt}
-              className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
-            >
-              <Copy className="size-4" aria-hidden />
-              Copy text
-            </Button>
-            {selected && selected.senderId === me.id && !selected.deletedAt && selected.audioPath === null ? (
-              <Button
-                variant="outline"
-                onClick={() => startEdit(selected)}
-                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
-              >
-                <Pencil className="size-4 text-amber-500" aria-hidden />
-                Edit message
-              </Button>
-            ) : null}
-            {selected && !selected.deletedAt ? (
-              <Button
-                variant="outline"
-                disabled={pinMessage.isPending}
-                onClick={() => {
-                  const targetId = selected.id
-                  setSelected(null)
-                  pinMessage.mutate(targetId)
-                }}
-                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
-              >
-                {selected.pinnedAt ? (
-                  <PinOff className="size-4 text-zinc-400" aria-hidden />
-                ) : (
-                  <Pin className="size-4 text-emerald-500" aria-hidden />
-                )}
-                {selected.pinnedAt ? 'Unpin' : 'Pin'}
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              disabled={!!selected?.deletedAt}
-              onClick={() => {
-                const target = selected
-                setSelected(null)
-                startForward(target)
-              }}
-              className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
-            >
-              <Forward className="size-4" aria-hidden />
-              Forward to chat…
-            </Button>
-            {selected && selected.senderId === me.id ? (
-              <Button
-                variant="outline"
-                disabled={!!selected?.deletedAt}
-                onClick={() => openMessageInfo(selected)}
-                className="h-10 justify-start gap-2 rounded-xl text-sm font-medium"
-              >
-                <Info className="size-4" aria-hidden />
-                Message info
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              disabled={!canDeleteSelected}
-              onClick={() => setConfirmingDelete(true)}
-              className="h-10 justify-start gap-2 rounded-xl border-destructive/40 text-sm font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Trash2 className="size-4" aria-hidden />
-              Delete for everyone
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* message actions — compact frosted glass menu anchored to the bubble (R26-b).
+          Springs in from the tap point, dismisses on backdrop tap or Esc; all
+          previous actions kept (reply, thread, copy, forward, save, task, pin,
+          info, edit, delete-for-everyone). */}
+      <AnimatePresence>
+        {selected !== null ? (
+          <MessageActionMenu
+            key="message-action-menu"
+            message={selected}
+            anchor={menuAnchor}
+            myId={me.id}
+            isSaved={isSavedIds.has(selected.id)}
+            canDelete={canDeleteSelected}
+            savePending={toggleSaved.isPending}
+            taskPending={convertToTask.isPending}
+            pinPending={pinMessage.isPending}
+            onClose={() => setSelected(null)}
+            onReact={(emoji, el) => {
+              const adding = !selected.reactions.some(
+                (g) => g.emoji === emoji && g.userIds.includes(me.id),
+              )
+              if (adding) fireParticlesAt(el, 'hearts', 24)
+              handleToggleReaction(selected.id, emoji)
+              setSelected(null)
+            }}
+            onReply={() => {
+              setReplyTo(selected)
+              setSelected(null)
+              requestAnimationFrame(() => textareaRef.current?.focus())
+            }}
+            onThread={(target) => {
+              setSelected(null)
+              openThread(target)
+            }}
+            onCopy={copySelected}
+            onForward={(target) => {
+              setSelected(null)
+              startForward(target)
+            }}
+            onSave={() => {
+              toggleSaved.mutate(selected.id)
+              setSelected(null)
+            }}
+            onTask={() => convertToTask.mutate(selected.id)}
+            onPin={() => {
+              const targetId = selected.id
+              setSelected(null)
+              pinMessage.mutate(targetId)
+            }}
+            onInfo={() => openMessageInfo(selected)}
+            onEdit={() => startEdit(selected)}
+            onDelete={() => setConfirmingDelete(true)}
+          />
+        ) : null}
+      </AnimatePresence>
 
       <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
         <AlertDialogContent className="max-w-[320px] rounded-2xl bg-white dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">
@@ -4786,16 +4746,27 @@ export function ChatRoom({
                     member: detailData?.members.find((m) => m.id === userId),
                   })) ?? [])
                   .map(({ id, member }) => (
-                    <li key={id} className="flex items-center gap-3 rounded-xl px-2 py-2">
-                      <UserAvatar
-                        name={member?.name ?? 'Unknown'}
-                        color={member?.color ?? 'emerald'}
-                        size={34}
-                      />
-                      <span className="flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
-                        {member?.name ?? 'Unknown'}
-                        {id === me.id ? <span className="ml-1 text-xs text-zinc-400">(you)</span> : null}
-                      </span>
+                    <li key={id}>
+                      <button
+                        type="button"
+                        disabled={member === undefined}
+                        onClick={() => {
+                          if (!member) return
+                          setReactionInfo(null)
+                          openProfileForUser(member)
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 disabled:cursor-default dark:hover:bg-zinc-800/60"
+                      >
+                        <UserAvatar
+                          name={member?.name ?? 'Unknown'}
+                          color={member?.color ?? 'emerald'}
+                          size={34}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                          {member?.name ?? 'Unknown'}
+                          {id === me.id ? <span className="ml-1 text-xs text-zinc-400">(you)</span> : null}
+                        </span>
+                      </button>
                     </li>
                   ))}
               </ul>
@@ -4863,36 +4834,42 @@ export function ChatRoom({
                     const msgMs = Date.parse(infoTarget.createdAt)
                     const read = !Number.isNaN(readMs) && !Number.isNaN(msgMs) && readMs >= msgMs
                     return (
-                      <li
-                        key={member.id}
-                        className="flex items-center gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
-                      >
-                        <span className="relative">
-                          <UserAvatar name={member.name} color={member.color} size={36} />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
-                            {member.name}
-                            {realtime.onlineIds.has(member.id) ? (
-                              <span
-                                aria-label="Online now"
-                                className="ml-1.5 inline-block size-1.5 rounded-full bg-emerald-500 align-middle"
-                              />
-                            ) : null}
+                      <li key={member.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSeenByOpen(false)
+                            openProfileForUser(member)
+                          }}
+                          className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
+                        >
+                          <span className="relative">
+                            <UserAvatar name={member.name} color={member.color} size={36} />
                           </span>
-                          <span className="mt-0.5 block text-[11px] text-zinc-400 dark:text-zinc-500">
-                            {read ? `Read at ${formatTime(member.lastReadAt)}` : 'Delivered'}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                              {member.name}
+                              {realtime.onlineIds.has(member.id) ? (
+                                <span
+                                  aria-label="Online now"
+                                  className="ml-1.5 inline-block size-1.5 rounded-full bg-emerald-500 align-middle"
+                                />
+                              ) : null}
+                            </span>
+                            <span className="mt-0.5 block text-[11px] text-zinc-400 dark:text-zinc-500">
+                              {read ? `Read at ${formatTime(member.lastReadAt)}` : 'Delivered'}
+                            </span>
                           </span>
-                        </span>
-                        {read ? (
-                          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
-                            <CheckCheck className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
-                          </span>
-                        ) : (
-                          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-                            <Check className="size-3.5 text-zinc-400 dark:text-zinc-500" aria-hidden />
-                          </span>
-                        )}
+                          {read ? (
+                            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
+                              <CheckCheck className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                            </span>
+                          ) : (
+                            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
+                              <Check className="size-3.5 text-zinc-400 dark:text-zinc-500" aria-hidden />
+                            </span>
+                          )}
+                        </button>
                       </li>
                     )
                   })}
@@ -5106,6 +5083,7 @@ export function ChatRoom({
         text={threadDraft}
         onTextChange={setThreadDraft}
         onSend={() => submitThreadReply(threadDraft)}
+        onOpenProfile={openProfileForAuthor}
       />
 
       {/* ── R19 toolkit overlays ───────────────────────────────── */}
@@ -5224,12 +5202,211 @@ export function ChatRoom({
         broadcastMode={detailData?.broadcastMode ?? false}
         broadcastPending={toggleBroadcast.isPending}
         onToggleBroadcast={onToggleBroadcast}
+        onOpenMember={openProfileForUser}
       />
     </motion.div>
   )
 }
 
 // ── pieces ───────────────────────────────────────────────────
+
+// ── message action menu (R26-b) — compact frosted glass panel sprouting
+// from the tapped bubble. Replaces the old centered "Message options"
+// dialog: reactions strip on top, icon rows in hairline-separated groups,
+// owner-only rows, destructive delete last. Backdrop tap / Esc dismisses.
+
+interface MessageActionMenuProps {
+  message: ChatMessage
+  /** viewport point the menu sprouts from (null → center fallback) */
+  anchor: { x: number; y: number } | null
+  myId: string
+  isSaved: boolean
+  canDelete: boolean
+  savePending: boolean
+  taskPending: boolean
+  pinPending: boolean
+  onClose: () => void
+  onReact: (emoji: string, el: Element | null) => void
+  onReply: () => void
+  onThread: (target: ChatMessage) => void
+  onCopy: () => void
+  onForward: (target: ChatMessage) => void
+  onSave: () => void
+  onTask: () => void
+  onPin: () => void
+  onInfo: () => void
+  onEdit: () => void
+  onDelete: () => void
+}
+
+function MessageActionMenu({
+  message,
+  anchor,
+  myId,
+  isSaved,
+  canDelete,
+  savePending,
+  taskPending,
+  pinPending,
+  onClose,
+  onReact,
+  onReply,
+  onThread,
+  onCopy,
+  onForward,
+  onSave,
+  onTask,
+  onPin,
+  onInfo,
+  onEdit,
+  onDelete,
+}: MessageActionMenuProps) {
+  const deleted = message.deletedAt !== null
+  const mine = message.senderId === myId
+
+  // Viewport clamp: sprout below the tap point, or above it when the lower
+  // half is crowded; the row stack scrolls when it exceeds its side's space.
+  const geometry = useMemo(() => {
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const width = 260
+    const gap = 10
+    const margin = 8
+    const point = anchor ?? { x: vw / 2, y: vh * 0.42 }
+    const left = Math.min(
+      Math.max(margin, point.x - width / 2),
+      Math.max(margin, vw - width - margin),
+    )
+    const spaceBelow = vh - point.y - gap - margin
+    const spaceAbove = point.y - gap - margin
+    const openUp = spaceAbove > spaceBelow
+    const rowsMax = Math.max(160, Math.min(380, (openUp ? spaceAbove : spaceBelow) - 84))
+    return { left, openUp, rowsMax, gap, point, vh }
+  }, [anchor])
+
+  // --menu-origin steers the glass panel's spring transform-origin toward the tap.
+  const panelStyle: CSSProperties & { '--menu-origin': string } = {
+    left: geometry.left,
+    ...(geometry.openUp
+      ? { bottom: geometry.vh - geometry.point.y + geometry.gap }
+      : { top: geometry.point.y + geometry.gap }),
+    '--menu-origin': geometry.openUp ? 'bottom left' : 'top left',
+  }
+
+  return (
+    <>
+      {/* backdrop — tap anywhere outside to dismiss */}
+      <motion.div
+        key="message-menu-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.16 }}
+        onClick={onClose}
+        aria-hidden
+        className="fixed inset-0 z-[60] bg-zinc-950/25 backdrop-blur-[2px] dark:bg-black/45"
+      />
+      <GlassMenu
+        key="message-action-panel"
+        aria-label="Message actions"
+        className="fixed z-[61] w-[260px] max-w-[calc(100vw-16px)]"
+        style={panelStyle}
+      >
+        {!deleted ? (
+          <GlassMenuStrip role="group" aria-label="React to this message">
+            {REACTION_CHOICES.map((emoji) => {
+              const active = message.reactions.some(
+                (g) => g.emoji === emoji && g.userIds.includes(myId),
+              )
+              return (
+                <motion.button
+                  key={emoji}
+                  type="button"
+                  aria-label={`React with ${emoji}`}
+                  aria-pressed={active}
+                  whileTap={{ scale: 0.82 }}
+                  transition={pressSpring}
+                  onClick={(e) => onReact(emoji, e.currentTarget)}
+                  className={cn(
+                    'flex size-9 items-center justify-center rounded-full text-xl outline-none transition-colors',
+                    active
+                      ? 'bg-emerald-500/15 ring-1 ring-inset ring-emerald-400/50'
+                      : 'hover:bg-zinc-900/[0.06] dark:hover:bg-white/[0.08]',
+                  )}
+                >
+                  {emoji}
+                </motion.button>
+              )
+            })}
+          </GlassMenuStrip>
+        ) : (
+          <p className="px-3 pb-1.5 pt-2 text-[12px] font-medium italic text-zinc-400 dark:text-zinc-500">
+            This message was deleted.
+          </p>
+        )}
+
+        <div className="pulse-scroll overflow-y-auto" style={{ maxHeight: geometry.rowsMax }}>
+          <GlassMenuSeparator />
+          <GlassMenuItem icon={Reply} label="Reply" disabled={deleted} onClick={onReply} />
+          {message.parentId === null && !deleted ? (
+            <GlassMenuItem
+              icon={MessageSquare}
+              label="Reply in thread"
+              onClick={() => onThread(message)}
+            />
+          ) : null}
+          <GlassMenuSeparator />
+          <GlassMenuItem icon={Copy} label="Copy text" disabled={deleted} onClick={onCopy} />
+          <GlassMenuItem
+            icon={Forward}
+            label="Forward to chat…"
+            disabled={deleted}
+            onClick={() => onForward(message)}
+          />
+          {!deleted ? (
+            <GlassMenuItem
+              icon={Star}
+              label={isSaved ? 'Unsave' : 'Save message'}
+              active={isSaved}
+              disabled={savePending}
+              onClick={onSave}
+            />
+          ) : null}
+          {message.parentId === null && !deleted && message.kind === 'text' ? (
+            <GlassMenuItem
+              icon={taskPending ? LoaderCircle : ListTodo}
+              label="Convert to task"
+              disabled={taskPending}
+              onClick={onTask}
+            />
+          ) : null}
+          {!deleted ? (
+            <GlassMenuItem
+              icon={message.pinnedAt ? PinOff : Pin}
+              label={message.pinnedAt ? 'Unpin' : 'Pin'}
+              disabled={pinPending}
+              onClick={onPin}
+            />
+          ) : null}
+          {mine ? (
+            <GlassMenuItem icon={Info} label="Message info" disabled={deleted} onClick={onInfo} />
+          ) : null}
+          {mine && !deleted && message.audioPath === null ? (
+            <GlassMenuItem icon={Pencil} label="Edit message" onClick={onEdit} />
+          ) : null}
+          <GlassMenuSeparator />
+          <GlassMenuItem
+            icon={Trash2}
+            label="Delete for everyone"
+            destructive
+            disabled={!canDelete}
+            onClick={onDelete}
+          />
+        </div>
+      </GlassMenu>
+    </>
+  )
+}
 
 function TypingDots({ reducedMotion = false }: { reducedMotion?: boolean }) {
   return (
@@ -5390,8 +5567,9 @@ interface MessageRowProps {
   highlighted: boolean
   /** live Slack/Zulip reply count for THIS thread root (0 = none) */
   threadCount: number
-  onPress: (message: ChatMessage) => void
-  onStartLongPress: (message: ChatMessage) => void
+  /** tap (or keyboard Enter) on the bubble → anchored action menu; point = pointer coords */
+  onPress: (message: ChatMessage, point?: { x: number; y: number }) => void
+  onStartLongPress: (message: ChatMessage, point?: { x: number; y: number }) => void
   onEndLongPress: () => void
   onToggleReaction: (messageId: string, emoji: string) => void
   onReply: (message: ChatMessage) => void
@@ -5879,7 +6057,7 @@ const MessageRow = memo(function MessageRow({
   /** R24-b: incognito sends wear a neutral zinc mask instead of name/avatar */
   const anonMasked = !deleted && message.anon && message.anonAlias !== null
   const senderLabel =
-    anonMasked && message.anonAlias ? `🕶️ ${message.anonAlias}` : message.sender.name
+    anonMasked && message.anonAlias ? message.anonAlias : message.sender.name
   /** jumbo-emoji, stickers and location cards render without bubble chrome */
   const plainChrome = !deleted && (jumbo || isSticker || isLocation || ((isRedPacket && redPacketInfo !== null) || (isGame && gameInfo !== null) || (isTournament && tournamentInfo !== null)))
   /** Snapchat/WhatsApp view-once gates */
@@ -6026,9 +6204,11 @@ const MessageRow = memo(function MessageRow({
             // R23: clicks inside self-contained cards (red packet, game board)
             // belong to the card — never open the message-options sheet
             if (e.target instanceof Element && e.target.closest('[data-card-interactive]')) return
-            if (interactive && !isImage) onPress(message)
+            if (interactive && !isImage) onPress(message, { x: e.clientX, y: e.clientY })
           }}
-          onPointerDown={() => interactive && onStartLongPress(message)}
+          onPointerDown={(e) => {
+            if (interactive) onStartLongPress(message, { x: e.clientX, y: e.clientY })
+          }}
           onPointerUp={onEndLongPress}
           onPointerLeave={onEndLongPress}
           onDoubleClick={(e) => {
@@ -6472,6 +6652,7 @@ function InfoDialog({
   broadcastMode,
   broadcastPending,
   onToggleBroadcast,
+  onOpenMember,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -6493,6 +6674,8 @@ function InfoDialog({
   broadcastMode: boolean
   broadcastPending: boolean
   onToggleBroadcast: (broadcast: boolean) => void
+  /** member avatar/name tap → other-user profile sheet (R26-b) */
+  onOpenMember: (member: AppUser) => void
 }) {
   // group-management local state (all resets happen in event handlers)
   const [editingName, setEditingName] = useState(false)
@@ -6567,13 +6750,22 @@ function InfoDialog({
               (() => {
                 const o = otherMemberOf(detail, me.id)
                 return (
-                  <UserAvatar
-                    name={o?.name ?? title}
-                    color={o?.color}
-                    size={44}
-                    showPresence
-                    online={o ? onlineIds.has(o.id) : false}
-                  />
+                  <button
+                    type="button"
+                    aria-label={o ? `View ${o.name}'s profile` : 'Show info'}
+                    onClick={() => {
+                      if (o) onOpenMember(o)
+                    }}
+                    className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
+                  >
+                    <UserAvatar
+                      name={o?.name ?? title}
+                      color={o?.color}
+                      size={44}
+                      showPresence
+                      online={o ? onlineIds.has(o.id) : false}
+                    />
+                  </button>
                 )
               })()
             )}
@@ -6742,13 +6934,24 @@ function InfoDialog({
                     key={member.id}
                     className="flex items-start gap-3 rounded-xl bg-zinc-50 p-2.5 dark:bg-zinc-800/60"
                   >
-                    <UserAvatar name={member.name} color={member.color} size={38} showPresence online={online} />
+                    <button
+                      type="button"
+                      aria-label={`View ${member.name}'s profile`}
+                      onClick={() => onOpenMember(member)}
+                      className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
+                    >
+                      <UserAvatar name={member.name} color={member.color} size={38} showPresence online={online} />
+                    </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <p className="min-w-0 truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                        <button
+                          type="button"
+                          onClick={() => onOpenMember(member)}
+                          className="min-w-0 truncate text-sm font-medium text-zinc-900 outline-none transition-colors hover:text-emerald-600 dark:text-zinc-100 dark:hover:text-emerald-400"
+                        >
                           {member.name}
                           {isMe ? <span className="ml-1 text-xs font-normal text-zinc-400">(you)</span> : null}
-                        </p>
+                        </button>
                         {detail.isGroup && member.role === 'admin' ? (
                           <span
                             aria-label={`${member.role === 'admin' ? member.name : ''} is a group admin`}
@@ -7332,6 +7535,7 @@ function ThreadSheet({
   text,
   onTextChange,
   onSend,
+  onOpenProfile,
 }: {
   root: ChatMessage | null
   onClose: () => void
@@ -7341,6 +7545,8 @@ function ThreadSheet({
   text: string
   onTextChange: (value: string) => void
   onSend: () => void
+  /** sender avatar tap → other-user profile sheet (R26-b) */
+  onOpenProfile?: (sender: MessageAuthor) => void
 }) {
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -7384,7 +7590,18 @@ function ThreadSheet({
           {root ? (
             <div className="mb-2 rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
               <div className="flex items-center gap-2">
-                <UserAvatar name={root.sender.name} color={root.sender.color} size={22} />
+                {onOpenProfile ? (
+                  <button
+                    type="button"
+                    aria-label={`View ${root.sender.name}'s profile`}
+                    onClick={() => onOpenProfile(root.sender)}
+                    className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
+                  >
+                    <UserAvatar name={root.sender.name} color={root.sender.color} size={22} />
+                  </button>
+                ) : (
+                  <UserAvatar name={root.sender.name} color={root.sender.color} size={22} />
+                )}
                 <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
                   {root.sender.id === myId ? 'You' : root.sender.name}
                 </span>
@@ -7413,7 +7630,18 @@ function ThreadSheet({
                   <p key={m.id} className="pl-1 text-[11px] italic text-zinc-400">reply was deleted</p>
                 ) : (
                   <div key={m.id} className={cn('flex items-start gap-2', mine && 'flex-row-reverse')}>
-                    <UserAvatar name={m.sender.name} color={m.sender.color} size={26} />
+                    {onOpenProfile ? (
+                      <button
+                        type="button"
+                        aria-label={`View ${m.sender.name}'s profile`}
+                        onClick={() => onOpenProfile(m.sender)}
+                        className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
+                      >
+                        <UserAvatar name={m.sender.name} color={m.sender.color} size={26} />
+                      </button>
+                    ) : (
+                      <UserAvatar name={m.sender.name} color={m.sender.color} size={26} />
+                    )}
                     <div className={cn('max-w-[76%]', mine && 'text-right')}>
                       <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
                         {mine ? 'You' : m.sender.name}

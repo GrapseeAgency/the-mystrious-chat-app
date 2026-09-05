@@ -8,16 +8,16 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, Settings as SettingsIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { haptic } from '@/lib/pulse-settings'
 import type { AppUser } from '@/lib/types'
 import { apiJson } from '@/lib/pulse-utils'
 import { usePrefs } from '@/lib/prefs'
-import { ease, pressSpring, pressTap } from '@/lib/motion'
+import { ease } from '@/lib/motion'
+import { navigateHash, subscribeHash } from '@/lib/hash-router'
 import { useUiTheme } from '@/lib/ui-theme'
 import {
   PulseNavBar,
@@ -73,8 +73,6 @@ export function MainShell({ me }: { me: AppUser }) {
   }, [])
   const [navStyle] = useNavStyle()
   const navZone = zoneFor(navStyle)
-  /** floating-top / command-bar render their own top bar — the default header hides */
-  const headerOwnedByNav = navZone === 'top'
   const [uiTheme] = useUiTheme()
   const [openConversationId, setOpenConversationId] = useState<string | null>(null)
   /** frozen pre-open read watermark for the open conversation (unread divider) */
@@ -87,9 +85,19 @@ export function MainShell({ me }: { me: AppUser }) {
   // sheetMounted keeps it rendered through the vaul close animation
   const [newChatGeneration, setNewChatGeneration] = useState(0)
   const [sheetMounted, setSheetMounted] = useState(false)
-  // system overlays — Spotlight search palette + full-screen Settings tree
+  // system overlays — Spotlight search palette + full-screen Settings tree.
+  // Deep-link boot: the hash is read through a snapshot subscription (no
+  // setState-in-effect) so #/settings… opens settings on ANY mount order;
+  // closing settings clears the hash (SettingsScreen.closeAll → navigate('/')),
+  // which flips the snapshot back — one source of truth, zero effects.
   const [spotlightOpen, setSpotlightOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsDeepLink = useSyncExternalStore(
+    subscribeHash,
+    () => typeof window !== 'undefined' && window.location.hash.startsWith('#/settings'),
+    () => false,
+  )
+  const settingsVisible = settingsOpen || settingsDeepLink
   const queryClient = useQueryClient()
   const hydratePrefs = usePrefs((s) => s.hydrate)
   const reducedMotion = useReducedMotion()
@@ -143,13 +151,15 @@ export function MainShell({ me }: { me: AppUser }) {
     setTimeout(() => setNewChatOpen(true), 30)
   }
 
-  /** contextual-dock chip — per-tab action wired to the same flows as the shell */
+  /** contextual-dock chip + R26-e overflow menu — per-tab actions wired to the same flows as the shell */
   const handleContextAction = useCallback((action: NavContextAction) => {
     if (action === 'new-chat') openNewChat('dm')
     else if (action === 'new-group') openNewChat('group')
     else if (action === 'search') setSpotlightOpen(true)
+    else if (action === 'saved') changeTab('profile') // Saved library lives in the profile tab
+    else if (action === 'stories') changeTab('chats') // Stories rail lives atop the chats tab
     else setSettingsOpen(true)
-  }, [])
+  }, [changeTab])
 
   const handleSheetClose = (next: boolean) => {
     setNewChatOpen(next)
@@ -164,7 +174,7 @@ export function MainShell({ me }: { me: AppUser }) {
   // carousels are never hijacked; intent cancels the moment it turns vertical.
   const onContentTouchStart = (e: React.TouchEvent) => {
     if (reducedMotion) return
-    if (openConversationId !== null || settingsOpen || spotlightOpen) return
+    if (openConversationId !== null || settingsVisible || spotlightOpen) return
     const t = e.touches[0]
     if (!t) return
     const edge: 'left' | 'right' | null =
@@ -222,45 +232,11 @@ export function MainShell({ me }: { me: AppUser }) {
 
   return (
     <div data-ui={`ui-${uiTheme}`} className="ui-root relative flex h-full flex-col overflow-hidden">
-      {/* system command bar — floating capsule top bar (Spotlight ⌘K + Settings).
-          Hidden while a chat room owns the screen or the nav style brings its own. */}
-      {openConversationId === null && !headerOwnedByNav ? (
-        <header
-          className="sticky top-0 z-[65] mx-2 mt-1.5 flex h-11 shrink-0 items-center gap-1 rounded-full border border-zinc-200/70 bg-white/70 px-3 shadow-[0_6px_24px_-8px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.55)] backdrop-blur-2xl backdrop-saturate-150 [will-change:transform] dark:border-white/10 dark:bg-zinc-900/65 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_6px_24px_-8px_rgba(0,0,0,0.5)]"
-        >
-          <span
-            aria-hidden
-            className="inline-block size-1.5 shrink-0 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600"
-          />
-          <span className="pl-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-400 dark:text-zinc-500">
-            {TAB_LABEL[tab]}
-          </span>
-          <div className="flex-1" />
-          <motion.button
-            type="button"
-            aria-label="Search"
-            onClick={() => setSpotlightOpen(true)}
-            whileTap={reducedMotion ? undefined : pressTap}
-            transition={pressSpring}
-            className="flex size-10 items-center justify-center rounded-full text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-          >
-            <Search className="size-[18px]" aria-hidden />
-          </motion.button>
-          <motion.button
-            type="button"
-            aria-label="Settings"
-            onClick={() => setSettingsOpen(true)}
-            whileTap={reducedMotion ? undefined : pressTap}
-            transition={pressSpring}
-            className="flex size-10 items-center justify-center rounded-full text-zinc-500 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-          >
-            <SettingsIcon className="size-[18px]" aria-hidden />
-          </motion.button>
-        </header>
-      ) : null}
+      {/* R26: the old top capsule (label + Search + Settings) is REMOVED by design —
+          settings + search live in the nav system and hash sub-pages now. */}
 
       <div className="flex min-h-0 flex-1">
-        {navZone === 'side' && !settingsOpen ? (
+        {navZone === 'side' && !settingsVisible ? (
           <PulseNavBar
             me={me}
             active={tab}
@@ -364,7 +340,7 @@ export function MainShell({ me }: { me: AppUser }) {
           zones float here; the side rail renders in the flex row above. Hidden
           while a chat room, Settings or a blocking sheet owns the screen. */}
       <AnimatePresence>
-        {openConversationId === null && navZone !== 'side' && !settingsOpen && !sheetMounted && pendingInviteCode === null ? (
+        {openConversationId === null && navZone !== 'side' && !settingsVisible && !sheetMounted && pendingInviteCode === null ? (
           <PulseNavBar
             key={`nav-${navStyle}`}
             me={me}
@@ -410,10 +386,16 @@ export function MainShell({ me }: { me: AppUser }) {
 
       {/* Settings — full-screen tree (z-70, above tab content; dock hidden while open) */}
       <AnimatePresence>
-        {settingsOpen ? (
+        {settingsVisible ? (
           <SettingsScreen
             open
-            onClose={() => setSettingsOpen(false)}
+            onClose={() => {
+              setSettingsOpen(false)
+              // clear a deep-link hash so the boot snapshot releases (any close path)
+              if (typeof window !== 'undefined' && window.location.hash.startsWith('#/settings')) {
+                navigateHash('/')
+              }
+            }}
             me={me}
             onOpenHub={() => {
               setSettingsOpen(false)
