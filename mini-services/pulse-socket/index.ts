@@ -12,6 +12,12 @@
  *                          socket.io rooms; `stage:join|hand|approve|mute|end|leave` → `stage:state`
  *  - Spatial presence    : Gather-style positions in `spaceRooms` Map + `space:{conversationId}`
  *                          socket.io rooms; `space:join|move|leave` → `space:state`
+ *  - 1:1 call signaling  : R33-a — `call:offer|answer|ice|reject|cancel|hangup`
+ *                          relayed between the two parties' `user:{userId}`
+ *                          rooms; in-memory `callSessions` Map with a 30s ring
+ *                          timeout (`call:cancel` reason 'timeout') and busy/
+ *                          offline guards. NO media flows through here — WebRTC
+ *                          peer-to-peer carries audio/video; this is signal only.
  *  - HTTP relay API      : POST /notify (message:new|message:deleted|message:read), POST /typing
  *  - Health probe        : GET / (or anything unknown) → { ok:true, service:'pulse-socket' }
  *
@@ -389,6 +395,84 @@ function leaveSpaceRoom(socketId: string, reason: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// 1:1 call signaling (R33-a) — pure in-memory, signal ONLY (no media, no DB).
+// Wire contract lives in src/lib/call-types.ts (client) — mirrored here.
+// A call session is born on `call:offer` and dies on answer+hangup, reject,
+// cancel, the 30s ring timeout, or either party disconnecting.
+// ---------------------------------------------------------------------------
+interface CallSession {
+  callId: string
+  conversationId: string
+  callerId: string
+  calleeId: string
+  kind: 'voice' | 'video'
+  /** Ring phase (offer sent, no answer yet) when false. */
+  answered: boolean
+  createdAt: number
+  timer: ReturnType<typeof setTimeout>
+}
+
+const CALL_RING_TIMEOUT_MS = 30_000
+const CALL_SDP_MAX_CHARS = 64 * 1024
+const CALL_ICE_MAX_CHARS = 4 * 1024
+
+/** callId -> live session */
+const callSessions = new Map<string, CallSession>()
+/** userId -> callId the user is currently ringing in / talking on (one per user) */
+const callByUser = new Map<string, string>()
+
+function callKindOf(value: unknown): 'voice' | 'video' | null {
+  return value === 'voice' || value === 'video' ? value : null
+}
+
+/** Session torn down; survivor(s) notified. reason picks the wire event. */
+function dropCallSession(
+  callId: string,
+  reason: 'timeout' | 'cancel' | 'hangup' | 'error',
+  endedByUserId: string | null,
+): void {
+  const session = callSessions.get(callId)
+  if (!session) return
+  clearTimeout(session.timer)
+  callSessions.delete(callId)
+  if (callByUser.get(session.callerId) === callId) callByUser.delete(session.callerId)
+  if (callByUser.get(session.calleeId) === callId) callByUser.delete(session.calleeId)
+
+  const base = {
+    callId,
+    conversationId: session.conversationId,
+    kind: session.kind,
+  }
+  if (session.answered && (reason === 'hangup' || reason === 'error')) {
+    // Active call torn down — the surviving party stops the media UI.
+    const survivorId = endedByUserId === session.callerId ? session.calleeId : session.callerId
+    io.to(roomOf(survivorId)).emit('call:hangup', {
+      ...base,
+      from: endedByUserId ?? '',
+      to: survivorId,
+      durationSec: Math.round((Date.now() - session.createdAt) / 1000),
+    })
+  } else if (!session.answered) {
+    // Ring torn down — BOTH sides drop the ringer (terminal before media).
+    io.to(roomOf(session.callerId)).emit('call:cancel', {
+      ...base,
+      from: endedByUserId ?? session.calleeId,
+      to: session.callerId,
+      reason: reason === 'timeout' ? 'timeout' : 'cancel',
+    })
+    io.to(roomOf(session.calleeId)).emit('call:cancel', {
+      ...base,
+      from: endedByUserId ?? session.callerId,
+      to: session.calleeId,
+      reason: reason === 'timeout' ? 'timeout' : 'cancel',
+    })
+  }
+  console.log(
+    `[call] drop call=${callId} caller=${session.callerId} callee=${session.calleeId} answered=${session.answered} reason=${reason}`,
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Payload helpers
 // ---------------------------------------------------------------------------
 function asTrimmedString(value: unknown): string {
@@ -583,6 +667,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     voiceRooms: voiceRooms.size,
     stageRooms: stageRooms.size,
     spaceRooms: spaceRooms.size,
+    callSessions: callSessions.size,
     uptimeSec: Math.round(process.uptime()),
   })
 }
@@ -1055,6 +1140,196 @@ io.on('connection', (socket: Socket) => {
     leaveSpaceRoom(socket.id, 'explicit')
   })
 
+  // ── 1:1 call signaling events (R33-a) ─────────────────────
+
+  /**
+   * call:offer { callId, conversationId, to, kind, sdp, callerName, callerColor, callerAvatar }
+   * Identity-gated: the socket must be registered as `from`. Guards: callee
+   * offline ('offline') or busy — already ringing/in a call ('busy'). A live
+   * session arms the 30s ring timeout that cancels for BOTH parties.
+   */
+  socket.on('call:offer', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const callId = asTrimmedString(data.callId).slice(0, 64)
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const from = asTrimmedString(data.from).slice(0, 64)
+    const to = asTrimmedString(data.to).slice(0, 64)
+    const kind = callKindOf(data.kind)
+    const sdp =
+      typeof data.sdp === 'string' && data.sdp.length > 0 && data.sdp.length <= CALL_SDP_MAX_CHARS
+        ? data.sdp
+        : null
+    if (!callId || !conversationId || !from || !to || from === to || !kind || !sdp) return
+    // Identity gate: you may only ring people AS the user your socket joined as.
+    if (socketUser.get(socket.id) !== from) return
+    if (!onlineUsers.has(to)) {
+      socket.emit('call:cancel', { callId, conversationId, from, to, kind, reason: 'offline' })
+      console.log(`[call] offer rejected (callee offline) call=${callId} from=${from} to=${to}`)
+      return
+    }
+    const calleeBusy = callByUser.get(to)
+    if (calleeBusy) {
+      socket.emit('call:cancel', { callId, conversationId, from, to, kind, reason: 'busy' })
+      console.log(`[call] offer rejected (busy) call=${callId} from=${from} to=${to} against=${calleeBusy}`)
+      return
+    }
+    // Defensive: a stale session of the caller's own never blocks a new ring.
+    const callerBusy = callByUser.get(from)
+    if (callerBusy) dropCallSession(callerBusy, 'cancel', from)
+
+    const session: CallSession = {
+      callId,
+      conversationId,
+      callerId: from,
+      calleeId: to,
+      kind,
+      answered: false,
+      createdAt: Date.now(),
+      timer: setTimeout(() => dropCallSession(callId, 'timeout', null), CALL_RING_TIMEOUT_MS),
+    }
+    callSessions.set(callId, session)
+    callByUser.set(from, callId)
+    callByUser.set(to, callId)
+
+    io.to(roomOf(to)).emit('call:offer', {
+      callId,
+      conversationId,
+      from,
+      to,
+      kind,
+      sdp,
+      callerName: asTrimmedString(data.callerName).slice(0, 64) || 'Someone',
+      callerColor: asTrimmedString(data.callerColor).slice(0, 24) || 'emerald',
+      callerAvatar:
+        typeof data.callerAvatar === 'string' && data.callerAvatar.length > 0 && data.callerAvatar.length <= 256
+          ? data.callerAvatar
+          : null,
+    })
+    console.log(`[call] offer call=${callId} from=${from} to=${to} kind=${kind}`)
+  })
+
+  /**
+   * call:answer { callId, sdp } — callee only (identity-gated). Disarms the
+   * ring timeout and relays the WebRTC answer to the caller's room.
+   */
+  socket.on('call:answer', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const callId = asTrimmedString(data.callId).slice(0, 64)
+    const from = asTrimmedString(data.from).slice(0, 64)
+    const sdp =
+      typeof data.sdp === 'string' && data.sdp.length > 0 && data.sdp.length <= CALL_SDP_MAX_CHARS
+        ? data.sdp
+        : null
+    const session = callSessions.get(callId)
+    if (!session || !sdp) return
+    if (socketUser.get(socket.id) !== from || from !== session.calleeId) return
+    session.answered = true
+    clearTimeout(session.timer)
+    io.to(roomOf(session.callerId)).emit('call:answer', {
+      callId,
+      conversationId: session.conversationId,
+      from,
+      to: session.callerId,
+      kind: session.kind,
+      sdp,
+    })
+    console.log(`[call] answer call=${callId} from=${from} → caller=${session.callerId}`)
+  })
+
+  /**
+   * call:ice { callId, candidate, sdpMid, sdpMLineIndex } — either party;
+   * relayed to the OTHER side (works while ringing too — clients queue early
+   * candidates until their peer connection exists).
+   */
+  socket.on('call:ice', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const callId = asTrimmedString(data.callId).slice(0, 64)
+    const from = asTrimmedString(data.from).slice(0, 64)
+    const candidate =
+      typeof data.candidate === 'string' && data.candidate.length > 0 && data.candidate.length <= CALL_ICE_MAX_CHARS
+        ? data.candidate
+        : null
+    const session = callSessions.get(callId)
+    if (!session || !candidate) return
+    if (socketUser.get(socket.id) !== from) return
+    if (from !== session.callerId && from !== session.calleeId) return
+    const to = from === session.callerId ? session.calleeId : session.callerId
+    io.to(roomOf(to)).emit('call:ice', {
+      callId,
+      conversationId: session.conversationId,
+      from,
+      to,
+      kind: session.kind,
+      candidate,
+      sdpMid: typeof data.sdpMid === 'string' ? data.sdpMid : null,
+      sdpMLineIndex:
+        typeof data.sdpMLineIndex === 'number' && Number.isFinite(data.sdpMLineIndex)
+          ? Math.floor(data.sdpMLineIndex)
+          : null,
+    })
+  })
+
+  /**
+   * call:reject { callId } — callee only (identity-gated): the caller receives
+   * `call:reject` (their client logs 'declined'), the callee gets `call:cancel`.
+   */
+  socket.on('call:reject', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const callId = asTrimmedString(data.callId).slice(0, 64)
+    const from = asTrimmedString(data.from).slice(0, 64)
+    const session = callSessions.get(callId)
+    if (!session) return
+    if (socketUser.get(socket.id) !== from || from !== session.calleeId) return
+    clearTimeout(session.timer)
+    callSessions.delete(callId)
+    if (callByUser.get(session.callerId) === callId) callByUser.delete(session.callerId)
+    if (callByUser.get(session.calleeId) === callId) callByUser.delete(session.calleeId)
+    io.to(roomOf(session.callerId)).emit('call:reject', {
+      callId,
+      conversationId: session.conversationId,
+      from,
+      to: session.callerId,
+      kind: session.kind,
+    })
+    io.to(roomOf(session.calleeId)).emit('call:cancel', {
+      callId,
+      conversationId: session.conversationId,
+      from,
+      to: session.calleeId,
+      kind: session.kind,
+      reason: 'cancel',
+    })
+    console.log(`[call] reject call=${callId} by=${from} → caller=${session.callerId}`)
+  })
+
+  /**
+   * call:cancel { callId } — caller aborts while ringing (identity-gated):
+   * BOTH parties are told (the caller's client logs 'missed').
+   */
+  socket.on('call:cancel', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const callId = asTrimmedString(data.callId).slice(0, 64)
+    const from = asTrimmedString(data.from).slice(0, 64)
+    const session = callSessions.get(callId)
+    if (!session) return
+    if (socketUser.get(socket.id) !== from || from !== session.callerId) return
+    dropCallSession(callId, 'cancel', from)
+  })
+
+  /**
+   * call:hangup { callId } — either party ends an ACTIVE call (identity-gated);
+   * the surviving party receives `call:hangup` with the elapsed duration.
+   */
+  socket.on('call:hangup', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const callId = asTrimmedString(data.callId).slice(0, 64)
+    const from = asTrimmedString(data.from).slice(0, 64)
+    const session = callSessions.get(callId)
+    if (!session) return
+    if (socketUser.get(socket.id) !== from || (from !== session.callerId && from !== session.calleeId)) return
+    dropCallSession(callId, 'hangup', from)
+  })
+
   socket.on('error', (error) => {
     console.error(`[ws] socket error (${socket.id}):`, error instanceof Error ? error.message : error)
   })
@@ -1065,6 +1340,13 @@ io.on('connection', (socket: Socket) => {
     // Stage + spatial presence rosters follow (mirror cleanup).
     leaveStageRoom(socket.id, `disconnect:${reason}`)
     leaveSpaceRoom(socket.id, `disconnect:${reason}`)
+    // Calls: the departed party tears the session down for both sides
+    // (unanswered ring → 'timeout' cancel; active call → hangup to survivor).
+    const departedUserId = socketUser.get(socket.id)
+    if (departedUserId) {
+      const callId = callByUser.get(departedUserId)
+      if (callId) dropCallSession(callId, 'timeout', departedUserId)
+    }
     const wentOffline = dropPresence(socket.id)
     if (wentOffline) {
       io.emit('presence:snapshot', { onlineUserIds: presenceSnapshot() })

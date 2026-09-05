@@ -7,7 +7,7 @@
 
 import { memo, useCallback, useRef, useState } from 'react'
 import { motion, useReducedMotion, type PanInfo } from 'framer-motion'
-import { Archive, ArchiveRestore, BellOff, Flame, MoreVertical, PencilLine, Pin, PinOff } from 'lucide-react'
+import { Archive, ArchiveRestore, BellOff, Flame, Hourglass, MoreVertical, PencilLine, Pin, PinOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ease, pressSpring, pressTap, spring, stagger } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
@@ -36,6 +36,11 @@ export interface ConversationRowProps {
   typing: boolean
   /** R31-a: viewer's LIVE chat-streak count for this row (0/undefined = no chip) */
   streakCount?: number
+  /** R33-b: live-but-dies-tonight streak (lastDay = yesterday UTC, count >= 2)
+   *  — replaces the plain flame chip with the amber "ends tonight" nudge */
+  streakAtRisk?: { count: number; lastDay: string } | null
+  /** R33-b: channel/group photo path — circular image above the palette tile */
+  photo?: string | null
   /** row lives in the archived sub-page (swipe chip flips to Unarchive) */
   archived: boolean
   /** stagger slot for the initial-mount entrance (null = animate nothing) */
@@ -95,6 +100,8 @@ export const ConversationRow = memo(function ConversationRow({
   muted,
   typing,
   streakCount = 0,
+  streakAtRisk = null,
+  photo = null,
   archived,
   entranceIndex,
   onPress,
@@ -250,7 +257,7 @@ export const ConversationRow = memo(function ConversationRow({
             <span className="relative shrink-0">
               {!isGroup && online ? <PresenceGlow reduced={reducedMotion === true} /> : null}
               {isGroup ? (
-                <GroupAvatar title={groupTitle} id={id} size={48} />
+                <GroupAvatar title={groupTitle} id={id} size={48} photo={photo} />
               ) : (
                 <UserAvatar name={dmName ?? name} color={dmColor} size={48} showPresence online={online} />
               )}
@@ -274,8 +281,18 @@ export const ConversationRow = memo(function ConversationRow({
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5">
-                  {/* R31-a: subtle live-streak chip (muted amber, glass) */}
-                  {streakCount > 0 ? (
+                  {/* R33-b: streak-at-risk nudge — a 2+ day chain whose lastDay is
+                      yesterday dies at tonight's UTC midnight; amber glass chip
+                      replaces the plain flame count until a message revives it. */}
+                  {streakAtRisk ? (
+                    <span
+                      aria-label={`${streakAtRisk.count}-day streak ends tonight — send a message to keep it`}
+                      className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-amber-500/25 dark:text-amber-400"
+                    >
+                      <Hourglass className="size-3" aria-hidden />
+                      ends tonight
+                    </span>
+                  ) : streakCount > 0 ? (
                     <span
                       aria-label={`${streakCount}-day streak`}
                       className="flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400"

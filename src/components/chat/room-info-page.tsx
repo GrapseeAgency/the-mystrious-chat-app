@@ -10,19 +10,22 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   BellOff,
+  Camera,
   ChevronLeft,
   ChevronRight,
   Copy,
   Crown,
   Flame,
   Image as ImageIcon,
+  Hourglass,
   Link2,
   LoaderCircle,
+  LogOut,
   Megaphone,
   Palette,
   Pin,
@@ -45,6 +48,7 @@ import { RoomMemberAddPage } from '@/components/chat/room-member-add'
 import { ConvThemePicker } from '@/components/chat/conv-theme-picker'
 import { convThemeSummary } from '@/lib/conv-theme'
 import { usePrefsValues } from '@/lib/prefs'
+import { uploadConversationPhoto } from '@/lib/upload-photo'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
@@ -262,8 +266,8 @@ export function RoomInfoPage({
     }
   }
 
-  // two-tap confirm for destructive row actions (remove / dismiss-admin)
-  type ArmedConfirm = { id: string; kind: 'remove' | 'demote' }
+  // two-tap confirm for destructive row actions (remove / dismiss-admin / leave)
+  type ArmedConfirm = { id: string; kind: 'remove' | 'demote' | 'leave' }
   const [confirm, setConfirm] = useState<ArmedConfirm | null>(null)
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const armConfirm = (kind: ArmedConfirm['kind'], userId: string) => {
@@ -296,6 +300,75 @@ export function RoomInfoPage({
 
   // R28-b: full-screen add-members sub-view INSIDE the info page
   const [addOpen, setAddOpen] = useState(false)
+
+  // R33-b — channel/group photo: admins get an "Edit photo" overlay on the
+  // hero avatar (real upload chain: file → /api/uploads → PATCH photo).
+  const photoInputRef = useRef<HTMLInputElement | null>(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const setPhotoMutation = useMutation({
+    mutationFn: async (photo: string) => {
+      return apiJson<{ conversation: ConversationDetail }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}`,
+        { method: 'PATCH', body: JSON.stringify({ requesterId: me.id, photo }) },
+      )
+    },
+    onMutate: async (photo: string) => {
+      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+      const prev = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+        old ? { ...old, photo } : old,
+      )
+      return { prev }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      void queryClient.invalidateQueries({ queryKey: ['channels', me.id] })
+      toast.success('Photo updated')
+      haptic(12)
+    },
+    onError: (error, _photo, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['conversation', conversationId], ctx.prev)
+      toast.error(error instanceof Error ? error.message : 'Could not update the photo')
+    },
+  })
+
+  const handlePhotoPicked = async (file: File) => {
+    if (photoBusy) return
+    haptic(10)
+    setPhotoBusy(true)
+    try {
+      const path = await uploadConversationPhoto(file)
+      setPhotoMutation.mutate(path)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not upload that photo')
+    } finally {
+      setPhotoBusy(false)
+    }
+  }
+
+  // R33-b — honest channel succession: leaving a broadcast channel. An admin
+  // may leave while another admin remains; the LAST admin is blocked (the
+  // server 403s — the UI says so before it ever fires).
+  const leaveMutation = useMutation({
+    mutationFn: async () => {
+      return apiJson<{ ok: boolean }>(
+        `/api/channels/${encodeURIComponent(conversationId)}/subscribe`,
+        { method: 'DELETE', body: JSON.stringify({ userId: me.id }) },
+      )
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      void queryClient.invalidateQueries({ queryKey: ['channels', me.id] })
+      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+      toast.success(`You left ${title}`)
+      haptic(14)
+      onClose()
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : 'Could not leave the channel'),
+  })
+  const leaveArmed = confirm?.id === me.id && confirm.kind === 'leave'
 
   // R29-a: per-conversation chat theme (wallpaper/tint) — inline picker
   const prefs = usePrefsValues()
@@ -353,7 +426,29 @@ export function RoomInfoPage({
           />
           <div className="flex items-center gap-4">
             {isGroup ? (
-              <GroupAvatar title={title} id={conversationId} size={68} />
+              <span className="relative shrink-0">
+                <GroupAvatar title={title} id={conversationId} size={68} photo={detail?.photo ?? null} />
+                {/* R33-b — "Edit photo" overlay for admins: opens the real
+                    upload chain (file → /api/uploads → PATCH conversation). */}
+                {isAdmin && detail !== undefined ? (
+                  <button
+                    type="button"
+                    aria-label={detail.photo ? 'Edit channel photo' : 'Add channel photo'}
+                    disabled={photoBusy || setPhotoMutation.isPending}
+                    onClick={() => {
+                      haptic(8)
+                      photoInputRef.current?.click()
+                    }}
+                    className="glass-pill absolute -right-1 -bottom-1 z-10 flex size-8 items-center justify-center rounded-full text-emerald-600 shadow-md outline-none transition-transform active:scale-90 disabled:opacity-60 dark:text-emerald-400"
+                  >
+                    {photoBusy || setPhotoMutation.isPending ? (
+                      <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+                    ) : (
+                      <Camera className="size-3.5" aria-hidden />
+                    )}
+                  </button>
+                ) : null}
+              </span>
             ) : (
               <UserAvatar
                 name={other?.name ?? title}
@@ -498,25 +593,40 @@ export function RoomInfoPage({
             </span>
           </div>
 
-          {/* R31-a: viewer's live chat streak in THIS conversation */}
+          {/* R31-a: viewer's chat streak in THIS conversation — R33-b adds the
+              honest at-risk tone: a live chain whose lastDay is yesterday dies
+              at tonight's UTC midnight unless the viewer sends a message. */}
           <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
-            <Flame
-              className={cn(
-                'size-4 shrink-0',
-                detail?.myStreak ? 'text-amber-500' : 'text-zinc-400',
-              )}
-              aria-hidden
-            />
+            {detail?.deadStreak ? (
+              <Hourglass className="size-4 shrink-0 text-amber-500" aria-hidden />
+            ) : (
+              <Flame
+                className={cn(
+                  'size-4 shrink-0',
+                  detail?.myStreak ? 'text-amber-500' : 'text-zinc-400',
+                )}
+                aria-hidden
+              />
+            )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
                 Chat streak
               </p>
-              <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+              <p
+                className={cn(
+                  'truncate text-[11px]',
+                  detail?.deadStreak
+                    ? 'font-semibold text-amber-600 dark:text-amber-400'
+                    : 'text-zinc-400 dark:text-zinc-500',
+                )}
+              >
                 {detail === undefined
                   ? '…'
-                  : detail.myStreak
-                    ? `${detail.myStreak.count}-day streak · best ${detail.myStreak.best}`
-                    : 'No active streak yet'}
+                  : detail.deadStreak
+                    ? `${detail.deadStreak.count}-day streak ends tonight — say something`
+                    : detail.myStreak
+                      ? `${detail.myStreak.count}-day streak · best ${detail.myStreak.best}`
+                      : 'No active streak yet'}
               </p>
             </div>
           </div>
@@ -633,6 +743,54 @@ export function RoomInfoPage({
                 Manage group — roles, webhooks, more
               </p>
               <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden />
+            </button>
+          ) : null}
+
+          {/* R33-b — leave channel (broadcast rooms only; group leave lives in
+              the classic manager). Honest succession: the LAST admin cannot
+              leave until they promote a successor via "Make admin" above —
+              the row says so, and the server 403s as the backstop. */}
+          {isChannel ? (
+            <button
+              type="button"
+              aria-label={leaveArmed ? 'Confirm leaving the channel' : 'Leave this channel'}
+              disabled={leaveMutation.isPending}
+              onClick={() => {
+                haptic(8)
+                if (isAdmin && adminCount <= 1) {
+                  toast.error(
+                    'You are the last admin — promote another admin ("Make admin") before leaving.',
+                  )
+                  return
+                }
+                tapConfirm('leave', me.id, () => leaveMutation.mutate())
+              }}
+              className={cn(
+                'glass-row-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors',
+                leaveArmed && 'bg-rose-500/10',
+              )}
+            >
+              <LogOut className="size-4 shrink-0 text-rose-500" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span
+                  className={cn(
+                    'block truncate text-sm font-medium',
+                    leaveArmed ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-800 dark:text-zinc-100',
+                  )}
+                >
+                  {leaveArmed ? 'Tap again to leave' : 'Leave channel'}
+                </span>
+                <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                  {isAdmin && adminCount <= 1
+                    ? 'You stay until another admin exists'
+                    : isAdmin
+                      ? 'Another admin will keep the channel running'
+                      : 'You will stop receiving this channel'}
+                </span>
+              </span>
+              {leaveMutation.isPending ? (
+                <LoaderCircle className="size-4 shrink-0 animate-spin text-rose-500" aria-hidden />
+              ) : null}
             </button>
           ) : null}
         </motion.div>
@@ -860,6 +1018,20 @@ export function RoomInfoPage({
           />
         ) : null}
       </AnimatePresence>
+
+      {/* R33-b: hidden photo picker — the real upload chain handles the rest */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        disabled={photoBusy}
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = '' // allow re-picking the same file
+          if (file) void handlePhotoPicked(file)
+        }}
+      />
     </motion.div>
   )
 }

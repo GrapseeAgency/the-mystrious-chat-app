@@ -27,6 +27,7 @@ import { spring, stagger } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
+import { GroupAvatar } from '@/components/chat/user-avatar'
 
 interface ChannelsResponse {
   channels: ChannelSummary[]
@@ -89,11 +90,19 @@ function ChannelRow({
         aria-label={`Open ${channel.name}`}
         className="flex min-w-0 flex-1 items-center gap-3 outline-none"
       >
-        <span
-          aria-hidden
-          className="glass-deep relative flex size-11 shrink-0 items-center justify-center rounded-2xl"
-        >
-          <Radio className="size-5 text-emerald-600 dark:text-emerald-400" />
+        {/* R33-b — circular channel photo when one is set; the broadcast-icon
+            glass tile stays the fallback (unread dot overlays both). */}
+        <span className="relative shrink-0">
+          {channel.photo ? (
+            <GroupAvatar title={channel.name} id={channel.id} size={44} photo={channel.photo} />
+          ) : (
+            <span
+              aria-hidden
+              className="glass-deep relative flex size-11 items-center justify-center rounded-2xl"
+            >
+              <Radio className="size-5 text-emerald-600 dark:text-emerald-400" />
+            </span>
+          )}
           {channel.unread ? (
             <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-zinc-900" />
           ) : null}

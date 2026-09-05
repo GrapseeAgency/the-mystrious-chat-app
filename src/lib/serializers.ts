@@ -52,6 +52,17 @@ export function isLiveStreakDay(lastDay: string): boolean {
   return lastDay === dayKey(new Date(Date.now() - 86_400_000))
 }
 
+/**
+ * R33-b — streak-at-risk: a chain whose lastDay is YESTERDAY (UTC) is still
+ * live today, but it dies at tonight's UTC midnight unless the viewer sends
+ * a message today. Only chains of 2+ days are worth nudging about.
+ * Returns the wire shape for the additive `deadStreak` field (null = safe).
+ */
+export function atRiskStreak(lastDay: string, count: number): { count: number; lastDay: string } | null {
+  if (count < 2) return null
+  return lastDay === dayKey(new Date(Date.now() - 86_400_000)) ? { count, lastDay } : null
+}
+
 /** Suggest the nearest free variant of a taken handle (append 2..99). */
 export async function suggestUsername(base: string): Promise<string> {
   for (let n = 2; n < 100; n += 1) {
@@ -332,6 +343,10 @@ export async function buildConversationSummary(
     unreadCount,
     myStreak:
       streakRow && isLiveStreakDay(streakRow.lastDay) ? { count: streakRow.count } : null,
+    // R33-b additive — derived from the SAME streak row (no extra query):
+    // live-but-dies-tonight chains surface the 'ends tonight' nudge.
+    deadStreak: streakRow ? atRiskStreak(streakRow.lastDay, streakRow.count) : null,
+    photo: conv.photo ?? null,
     pinnedAt: mine?.pinnedAt ? mine.pinnedAt.toISOString() : null,
     mutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
     archivedAt: mine?.archivedAt ? mine.archivedAt.toISOString() : null,
@@ -368,6 +383,9 @@ export async function buildConversationDetail(
       streakRow && isLiveStreakDay(streakRow.lastDay)
         ? { count: streakRow.count, best: streakRow.best }
         : null,
+    // R33-b additive — at-risk nudge + channel/group photo, same row/record.
+    deadStreak: streakRow ? atRiskStreak(streakRow.lastDay, streakRow.count) : null,
+    photo: conv.photo ?? null,
     inviteCode: conv.isGroup ? (conv.inviteCode ?? null) : null,
     ttlSeconds: conv.ttlSeconds,
     broadcastMode: conv.broadcastMode,

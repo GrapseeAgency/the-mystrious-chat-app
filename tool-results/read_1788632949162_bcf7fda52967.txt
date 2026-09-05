@@ -1,0 +1,866 @@
+     1→     1→// ─────────────────────────────────────────────────────────────
+     2→     2→// Pulse — room info sub-page (#/room/<id>/info) — R27-c · R28-b.
+     3→     3→// Full-screen glass sheet above the chat room: hero by room type,
+     4→     4→// member list with roles (Lucide Crown) + live socket presence,
+     5→     5→// tap-to-profile (routes to the global #/user/:id page), REAL
+     6→     6→// admin actions (add members sub-view · remove member · promote/
+     7→     7→// demote via the members API · invite link per /invite API),
+     8→     8→// mute toggle (real mute API), disappearing-TTL display and
+     9→     9→// honest quick-stats computed from the room's loaded messages.
+    10→    10→// ─────────────────────────────────────────────────────────────
+    11→    11→'use client'
+    12→    12→
+    13→    13→import { useMemo, useRef, useState } from 'react'
+    14→    14→import { AnimatePresence, motion } from 'framer-motion'
+    15→    15→import { useMutation, useQueryClient } from '@tanstack/react-query'
+    16→    16→import {
+    17→    17→  BellOff,
+    18→    18→  ChevronLeft,
+    19→    19→  ChevronRight,
+    20→    20→  Copy,
+    21→    21→  Crown,
+    22→    22→  Flame,
+    23→    23→  Image as ImageIcon,
+    24→    24→  Link2,
+    25→    25→  LoaderCircle,
+    26→    26→  Megaphone,
+    27→    27→  Palette,
+    28→    28→  Pin,
+    29→    29→  Search,
+    30→    30→  SearchX,
+    31→    31→  Timer,
+    32→    32→  UserRoundMinus,
+    33→    33→  UserRoundPlus,
+    34→    34→  Users,
+    35→    35→  VolumeX,
+    36→    36→} from 'lucide-react'
+    37→    37→import type { AppUser, ChatMessage, ConversationDetail, GroupRole } from '@/lib/types'
+    38→    38→import { navigateHash } from '@/lib/hash-router'
+    39→    39→import { apiJson, gradientFor, groupGradientFor, jsonBody, formatListStamp } from '@/lib/pulse-utils'
+    40→    40→import { ease, spring, stagger } from '@/lib/motion'
+    41→    41→import { haptic } from '@/lib/pulse-settings'
+    42→    42→import { toast } from 'sonner'
+    43→    43→import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
+    44→    44→import { RoomMemberAddPage } from '@/components/chat/room-member-add'
+    45→    45→import { ConvThemePicker } from '@/components/chat/conv-theme-picker'
+    46→    46→import { convThemeSummary } from '@/lib/conv-theme'
+    47→    47→import { usePrefsValues } from '@/lib/prefs'
+    48→    48→import { Skeleton } from '@/components/ui/skeleton'
+    49→    49→import { cn } from '@/lib/utils'
+    50→    50→
+    51→    51→export interface RoomInfoPageProps {
+    52→    52→  me: AppUser
+    53→    53→  conversationId: string
+    54→    54→  /** cache-shared with the room's ['conversation', id] query */
+    55→    55→  detail?: ConversationDetail
+    56→    56→  /** live presence from the socket context */
+    57→    57→  onlineIds: ReadonlySet<string>
+    58→    58→  /** the room's real loaded message window — quick-stats source */
+    59→    59→  loadedMessages: ChatMessage[]
+    60→    60→  /** authoritative pinned count (GET /pinned cache) */
+    61→    61→  pinnedCount: number
+    62→    62→  /** true when older history exists beyond the loaded window */
+    63→    63→  historyPartial: boolean
+    64→    64→  reducedMotion?: boolean
+    65→    65→  /** backHash() — returns to the room */
+    66→    66→  onClose: () => void
+    67→    67→  /** open the classic full group-manager sheet (kept reachable) */
+    68→    68→  onOpenManager: () => void
+    69→    69→}
+    70→    70→
+    71→    71→/** Disappearing-message TTL → short label (mirrors the room header menu). */
+    72→    72→function ttlLabel(ttlSeconds: number): string {
+    73→    73→  if (ttlSeconds <= 0) return 'Off'
+    74→    74→  if (ttlSeconds === 86_400) return '24h'
+    75→    75→  if (ttlSeconds === 604_800) return '7d'
+    76→    76→  if (ttlSeconds === 2_592_000) return '30d'
+    77→    77→  return `${Math.max(1, Math.round(ttlSeconds / 86_400))}d`
+    78→    78→}
+    79→    79→
+    80→    80→export function RoomInfoPage({
+    81→    81→  me,
+    82→    82→  conversationId,
+    83→    83→  detail,
+    84→    84→  onlineIds,
+    85→    85→  loadedMessages,
+    86→    86→  pinnedCount,
+    87→    87→  historyPartial,
+    88→    88→  reducedMotion = false,
+    89→    89→  onClose,
+    90→    90→  onOpenManager,
+    91→    91→}: RoomInfoPageProps) {
+    92→    92→  const queryClient = useQueryClient()
+    93→    93→
+    94→    94→  const isGroup = detail?.isGroup ?? false
+    95→    95→  const other = !isGroup ? detail?.members.find((m) => m.id !== me.id) : undefined
+    96→    96→  const title = isGroup ? detail?.name || 'Group' : other?.name ?? 'Chat'
+    97→    97→  const myRole = detail?.members.find((m) => m.id === me.id)?.role
+    98→    98→  const isAdmin = myRole === 'admin'
+    99→    99→  /** R30-c — broadcast channel (WhatsApp-Channels style): subscribers language */
+   100→   100→  const isChannel = isGroup && (detail?.broadcastMode ?? false)
+   101→   101→
+   102→   102→  const isMuted =
+   103→   103→    detail?.myMutedUntil != null && Date.parse(detail.myMutedUntil) > Date.now()
+   104→   104→
+   105→   105→  /** honest quick-stats — counts over the real loaded messages only */
+   106→   106→  const stats = useMemo(() => {
+   107→   107→    let media = 0
+   108→   108→    let links = 0
+   109→   109→    for (const m of loadedMessages) {
+   110→   110→      if (m.deletedAt !== null) continue
+   111→   111→      if (m.imagePath !== null) media += 1
+   112→   112→      if (m.linkUrl !== null || /https?:\/\//i.test(m.content)) links += 1
+   113→   113→    }
+   114→   114→    return { media, links }
+   115→   115→  }, [loadedMessages])
+   116→   116→
+   117→   117→  const onlineCount = useMemo(
+   118→   118→    () => (detail?.members ?? []).filter((m) => onlineIds.has(m.id)).length,
+   119→   119→    [detail, onlineIds],
+   120→   120→  )
+   121→   121→
+   122→   122→  /** admins first, then name — stable view order */
+   123→   123→  const members = useMemo(() => {
+   124→   124→    const list = [...(detail?.members ?? [])]
+   125→   125→    list.sort((a, b) => {
+   126→   126→      const adminDelta = (a.role === 'admin' ? 0 : 1) - (b.role === 'admin' ? 0 : 1)
+   127→   127→      if (adminDelta !== 0) return adminDelta
+   128→   128→      return a.name.localeCompare(b.name)
+   129→   129→    })
+   130→   130→    return list
+   131→   131→  }, [detail])
+   132→   132→
+   133→   133→  const adminCount = useMemo(
+   134→   134→    () => members.filter((m) => m.role === 'admin').length,
+   135→   135→    [members],
+   136→   136→  )
+   137→   137→
+   138→   138→  /** directory ids already in the group — the add-members view subtracts them */
+   139→   139→  const existingIds = useMemo(
+   140→   140→    () => new Set((detail?.members ?? []).map((m) => m.id)),
+   141→   141→    [detail],
+   142→   142→  )
+   143→   143→
+   144→   144→  // ── member-list search (only surfaced past 8 members) ─────
+   145→   145→
+   146→   146→  const [memberFilter, setMemberFilter] = useState('')
+   147→   147→  const memberQuery = memberFilter.trim().toLowerCase()
+   148→   148→  const visibleMembers = useMemo(() => {
+   149→   149→    if (members.length <= 8 || memberQuery.length === 0) return members
+   150→   150→    return members.filter(
+   151→   151→      (m) =>
+   152→   152→        m.name.toLowerCase().includes(memberQuery) ||
+   153→   153→        (m.username ?? '').toLowerCase().includes(memberQuery),
+   154→   154→    )
+   155→   155→  }, [members, memberQuery])
+   156→   156→
+   157→   157→  // ── real actions ─────────────────────────────────────────
+   158→   158→
+   159→   159→  const muteMutation = useMutation({
+   160→   160→    mutationFn: async (until: '8h' | '1w' | 'always' | null) => {
+   161→   161→      return apiJson<{ ok: boolean; mutedUntil: string | null }>(
+   162→   162→        `/api/conversations/${encodeURIComponent(conversationId)}/mute`,
+   163→   163→        jsonBody({ userId: me.id, until }),
+   164→   164→      )
+   165→   165→    },
+   166→   166→    onSuccess: (data) => {
+   167→   167→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   168→   168→        old ? { ...old, myMutedUntil: data.mutedUntil } : old,
+   169→   169→      )
+   170→   170→      toast.success(data.mutedUntil === null ? 'Notifications unmuted' : 'Notifications muted')
+   171→   171→      haptic(12)
+   172→   172→    },
+   173→   173→    onError: () => toast.error('Could not update the mute'),
+   174→   174→  })
+   175→   175→
+   176→   176→  const inviteMutation = useMutation({
+   177→   177→    mutationFn: async () => {
+   178→   178→      return apiJson<{ inviteCode: string }>(
+   179→   179→        `/api/conversations/${encodeURIComponent(conversationId)}/invite`,
+   180→   180→        jsonBody({ requesterId: me.id, regenerate: false }),
+   181→   181→      )
+   182→   182→    },
+   183→   183→    onSuccess: (res) => {
+   184→   184→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   185→   185→        old ? { ...old, inviteCode: res.inviteCode } : old,
+   186→   186→      )
+   187→   187→      void copyInvite(res.inviteCode)
+   188→   188→    },
+   189→   189→    onError: (error) =>
+   190→   190→      toast.error(error instanceof Error ? error.message : 'Could not create the invite link'),
+   191→   191→  })
+   192→   192→
+   193→   193→  // POST /members/{userId} is DELETE-only (PATCH = role change) — the R27
+   194→   194→  // draft sent method:POST via jsonBody and got a silent 405. Fixed here.
+   195→   195→  const removeMutation = useMutation({
+   196→   196→    mutationFn: async (userId: string) => {
+   197→   197→      return apiJson<{ ok: boolean }>(
+   198→   198→        `/api/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
+   199→   199→        { method: 'DELETE', body: JSON.stringify({ requesterId: me.id }) },
+   200→   200→      )
+   201→   201→    },
+   202→   202→    onMutate: async (userId: string) => {
+   203→   203→      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+   204→   204→      const prev = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+   205→   205→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   206→   206→        old ? { ...old, members: old.members.filter((m) => m.id !== userId) } : old,
+   207→   207→      )
+   208→   208→      return { prev }
+   209→   209→    },
+   210→   210→    onSuccess: () => {
+   211→   211→      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+   212→   212→      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   213→   213→      toast.success('Removed from the group')
+   214→   214→      haptic(14)
+   215→   215→    },
+   216→   216→    onError: (error, _userId, ctx) => {
+   217→   217→      if (ctx?.prev) queryClient.setQueryData(['conversation', conversationId], ctx.prev)
+   218→   218→      toast.error(error instanceof Error ? error.message : 'Could not remove the member')
+   219→   219→    },
+   220→   220→  })
+   221→   221→
+   222→   222→  // PATCH /members/{userId} { requesterId, action: 'promote' | 'demote' }
+   223→   223→  // Admin-only server-side; demote 400s when the target is the last admin.
+   224→   224→  const roleMutation = useMutation({
+   225→   225→    mutationFn: async ({ userId, action }: { userId: string; action: 'promote' | 'demote' }) => {
+   226→   226→      return apiJson<{ conversation: ConversationDetail }>(
+   227→   227→        `/api/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
+   228→   228→        { method: 'PATCH', body: JSON.stringify({ requesterId: me.id, action }) },
+   229→   229→      )
+   230→   230→    },
+   231→   231→    onSuccess: (_data, vars) => {
+   232→   232→      // Surgical role patch — the response detail is built for the TARGET
+   233→   233→      // viewer (its myMutedUntil is not ours), so never cache it wholesale.
+   234→   234→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   235→   235→        old
+   236→   236→          ? {
+   237→   237→              ...old,
+   238→   238→              members: old.members.map((m) =>
+   239→   239→                m.id === vars.userId
+   240→   240→                  ? { ...m, role: (vars.action === 'promote' ? 'admin' : 'member') as GroupRole }
+   241→   241→                  : m,
+   242→   242→              ),
+   243→   243→            }
+   244→   244→          : old,
+   245→   245→      )
+   246→   246→      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+   247→   247→      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   248→   248→      toast.success(vars.action === 'promote' ? 'Promoted to admin' : 'Role set to member')
+   249→   249→      haptic(12)
+   250→   250→    },
+   251→   251→    onError: (error) =>
+   252→   252→      toast.error(error instanceof Error ? error.message : 'Could not update the role'),
+   253→   253→  })
+   254→   254→
+   255→   255→  const copyInvite = async (code: string) => {
+   256→   256→    const link = `${window.location.origin}/?join=${code}`
+   257→   257→    try {
+   258→   258→      await navigator.clipboard.writeText(link)
+   259→   259→      toast.success('Invite link copied to clipboard')
+   260→   260→    } catch {
+   261→   261→      toast.error('Could not copy the link')
+   262→   262→    }
+   263→   263→  }
+   264→   264→
+   265→   265→  // two-tap confirm for destructive row actions (remove / dismiss-admin)
+   266→   266→  type ArmedConfirm = { id: string; kind: 'remove' | 'demote' }
+   267→   267→  const [confirm, setConfirm] = useState<ArmedConfirm | null>(null)
+   268→   268→  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   269→   269→  const armConfirm = (kind: ArmedConfirm['kind'], userId: string) => {
+   270→   270→    if (confirmTimerRef.current !== null) clearTimeout(confirmTimerRef.current)
+   271→   271→    setConfirm({ id: userId, kind })
+   272→   272→    haptic(8)
+   273→   273→    confirmTimerRef.current = setTimeout(() => {
+   274→   274→      confirmTimerRef.current = null
+   275→   275→      setConfirm(null)
+   276→   276→    }, 2600)
+   277→   277→  }
+   278→   278→  const tapConfirm = (kind: ArmedConfirm['kind'], userId: string, run: () => void) => {
+   279→   279→    if (confirm?.id === userId && confirm.kind === kind) {
+   280→   280→      if (confirmTimerRef.current !== null) {
+   281→   281→        clearTimeout(confirmTimerRef.current)
+   282→   282→        confirmTimerRef.current = null
+   283→   283→      }
+   284→   284→      setConfirm(null)
+   285→   285→      run()
+   286→   286→    } else {
+   287→   287→      armConfirm(kind, userId)
+   288→   288→    }
+   289→   289→  }
+   290→   290→  // remove keeps the R27 two-tap shape — armRemove / tapRemove
+   291→   291→  const armRemove = (userId: string) => armConfirm('remove', userId)
+   292→   292→  const tapRemove = (userId: string) =>
+   293→   293→    tapConfirm('remove', userId, () => removeMutation.mutate(userId))
+   294→   294→  const tapDemote = (userId: string) =>
+   295→   295→    tapConfirm('demote', userId, () => roleMutation.mutate({ userId, action: 'demote' }))
+   296→   296→
+   297→   297→  // R28-b: full-screen add-members sub-view INSIDE the info page
+   298→   298→  const [addOpen, setAddOpen] = useState(false)
+   299→   299→
+   300→   300→  // R29-a: per-conversation chat theme (wallpaper/tint) — inline picker
+   301→   301→  const prefs = usePrefsValues()
+   302→   302→  const themeSummary = convThemeSummary(prefs, conversationId)
+   303→   303→  const [themeOpen, setThemeOpen] = useState(false)
+   304→   304→
+   305→   305→  const anim = {
+   306→   306→    initial: reducedMotion ? false : { opacity: 0, y: 10 },
+   307→   307→    animate: { opacity: 1, y: 0 },
+   308→   308→  }
+   309→   309→
+   310→   310→  return (
+   311→   311→    <motion.div
+   312→   312→      initial={reducedMotion ? false : { y: '100%' }}
+   313→   313→      animate={{ y: 0 }}
+   314→   314→      exit={{ y: '100%' }}
+   315→   315→      transition={spring.soft}
+   316→   316→      role="dialog"
+   317→   317→      aria-label={isGroup ? `About ${title}` : `About ${title}`}
+   318→   318→      className="absolute inset-0 z-[55] flex flex-col bg-zinc-100/85 backdrop-blur-2xl dark:bg-black/70"
+   319→   319→    >
+   320→   320→      {/* header */}
+   321→   321→      <div className="flex min-h-14 shrink-0 items-center gap-1.5 px-2 pt-[env(safe-area-inset-top)]">
+   322→   322→        <button
+   323→   323→          type="button"
+   324→   324→          aria-label="Back to conversation"
+   325→   325→          onClick={() => {
+   326→   326→            haptic(6)
+   327→   327→            onClose()
+   328→   328→          }}
+   329→   329→          className="glass-pill flex size-10 shrink-0 items-center justify-center text-zinc-600 outline-none transition-transform active:scale-90 dark:text-zinc-300"
+   330→   330→        >
+   331→   331→          <ChevronLeft className="size-6" aria-hidden />
+   332→   332→        </button>
+   333→   333→        <p className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+   334→   334→          {isGroup ? 'Group info' : 'Chat info'}
+   335→   335→        </p>
+   336→   336→      </div>
+   337→   337→
+   338→   338→      <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-1 pb-8">
+   339→   339→        {/* hero */}
+   340→   340→        <motion.div
+   341→   341→          {...anim}
+   342→   342→          transition={spring.soft}
+   343→   343→          className="glass-deep glass-sheen relative overflow-hidden rounded-3xl p-5"
+   344→   344→        >
+   345→   345→          <div
+   346→   346→            aria-hidden
+   347→   347→            className="pointer-events-none absolute -top-16 -right-14 size-44 rounded-full opacity-25 blur-2xl"
+   348→   348→            style={{
+   349→   349→              backgroundImage: isGroup
+   350→   350→                ? groupGradientFor(conversationId)
+   351→   351→                : gradientFor(other?.color ?? 'emerald'),
+   352→   352→            }}
+   353→   353→          />
+   354→   354→          <div className="flex items-center gap-4">
+   355→   355→            {isGroup ? (
+   356→   356→              <GroupAvatar title={title} id={conversationId} size={68} />
+   357→   357→            ) : (
+   358→   358→              <UserAvatar
+   359→   359→                name={other?.name ?? title}
+   360→   360→                color={other?.color}
+   361→   361→                avatar={other?.avatar}
+   362→   362→                size={68}
+   363→   363→                showPresence
+   364→   364→                online={other ? onlineIds.has(other.id) : false}
+   365→   365→              />
+   366→   366→            )}
+   367→   367→            <div className="min-w-0 flex-1">
+   368→   368→              <div className="truncate text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+   369→   369→                {detail === undefined ? <Skeleton className="h-6 w-36 rounded-lg" /> : title}
+   370→   370→              </div>
+   371→   371→              {detail === undefined ? (
+   372→   372→                <Skeleton className="mt-1.5 h-4 w-24 rounded-md" />
+   373→   373→              ) : isGroup ? (
+   374→   374→                <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+   375→   375→                  {members.length} {members.length === 1 ? (isChannel ? 'subscriber' : 'member') : isChannel ? 'subscribers' : 'members'} · {onlineCount} online
+   376→   376→                </p>
+   377→   377→              ) : (
+   378→   378→                <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+   379→   379→                  {other ? (onlineIds.has(other.id) ? 'Online now' : 'Offline') : 'Direct chat'}
+   380→   380→                </p>
+   381→   381→              )}
+   382→   382→              {/* R30-c — channel purpose line (display-only: the info page has no
+   383→   383→                  inline-edit pattern; renames live in the classic group manager) */}
+   384→   384→              {detail !== undefined && detail.description ? (
+   385→   385→                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+   386→   386→                  {detail.description}
+   387→   387→                </p>
+   388→   388→              ) : null}
+   389→   389→              <div className="mt-2 flex flex-wrap gap-1.5">
+   390→   390→                {isGroup && (detail?.broadcastMode ?? false) ? (
+   391→   391→                  <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+   392→   392→                    <Megaphone className="size-3" aria-hidden />
+   393→   393→                    Announcements only
+   394→   394→                  </span>
+   395→   395→                ) : null}
+   396→   396→                {detail && detail.ttlSeconds > 0 ? (
+   397→   397→                  <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+   398→   398→                    <Timer className="size-3" aria-hidden />
+   399→   399→                    Disappearing · {ttlLabel(detail.ttlSeconds)}
+   400→   400→                  </span>
+   401→   401→                ) : null}
+   402→   402→              </div>
+   403→   403→            </div>
+   404→   404→          </div>
+   405→   405→        </motion.div>
+   406→   406→
+   407→   407→        {/* quick stats — real counts over the loaded window */}
+   408→   408→        <motion.div {...anim} transition={{ ...spring.soft, delay: stagger(1) }} className="mt-3 grid grid-cols-3 gap-2">
+   409→   409→          {[
+   410→   410→            { icon: ImageIcon, label: 'Photos', value: stats.media },
+   411→   411→            { icon: Link2, label: 'Links', value: stats.links },
+   412→   412→            { icon: Pin, label: 'Pinned', value: pinnedCount },
+   413→   413→          ].map((tile) => (
+   414→   414→            <div
+   415→   415→              key={tile.label}
+   416→   416→              className="glass-deep glass-sheen flex flex-col items-center gap-0.5 rounded-2xl px-2 py-3"
+   417→   417→            >
+   418→   418→              <tile.icon className="size-4 text-emerald-500" aria-hidden />
+   419→   419→              <span className="text-base font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
+   420→   420→                {tile.value}
+   421→   421→              </span>
+   422→   422→              <span className="text-[10px] font-semibold tracking-wide text-zinc-400 uppercase dark:text-zinc-500">
+   423→   423→                {tile.label}
+   424→   424→              </span>
+   425→   425→            </div>
+   426→   426→          ))}
+   427→   427→        </motion.div>
+   428→   428→        {historyPartial ? (
+   429→   429→          <p className="mt-1.5 px-1 text-center text-[10px] text-zinc-400 dark:text-zinc-500">
+   430→   430→            Counted from loaded history — older messages exist.
+   431→   431→          </p>
+   432→   432→        ) : null}
+   433→   433→
+   434→   434→        {/* actions */}
+   435→   435→        <motion.div
+   436→   436→          {...anim}
+   437→   437→          transition={{ ...spring.soft, delay: stagger(2) }}
+   438→   438→          className="glass-deep glass-sheen mt-3 overflow-hidden rounded-3xl p-1.5"
+   439→   439→        >
+   440→   440→          {/* mute — real per-user watermark API */}
+   441→   441→          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+   442→   442→            {isMuted ? (
+   443→   443→              <VolumeX className="size-4 shrink-0 text-emerald-500" aria-hidden />
+   444→   444→            ) : (
+   445→   445→              <BellOff className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   446→   446→            )}
+   447→   447→            <div className="min-w-0 flex-1">
+   448→   448→              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   449→   449→                {isMuted ? 'Notifications muted' : 'Mute notifications'}
+   450→   450→              </p>
+   451→   451→              {isMuted && detail?.myMutedUntil ? (
+   452→   452→                <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+   453→   453→                  until {formatListStamp(detail.myMutedUntil)}
+   454→   454→                </p>
+   455→   455→              ) : null}
+   456→   456→            </div>
+   457→   457→            {isMuted ? (
+   458→   458→              <button
+   459→   459→                type="button"
+   460→   460→                disabled={muteMutation.isPending}
+   461→   461→                onClick={() => muteMutation.mutate(null)}
+   462→   462→                className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 disabled:opacity-50 dark:text-emerald-400"
+   463→   463→              >
+   464→   464→                Unmute
+   465→   465→              </button>
+   466→   466→            ) : (
+   467→   467→              <div className="flex shrink-0 gap-1" role="group" aria-label="Mute duration">
+   468→   468→                {(['8h', '1w', 'always'] as const).map((preset) => (
+   469→   469→                  <button
+   470→   470→                    key={preset}
+   471→   471→                    type="button"
+   472→   472→                    disabled={muteMutation.isPending}
+   473→   473→                    onClick={() => muteMutation.mutate(preset)}
+   474→   474→                    className="h-8 rounded-full bg-zinc-900/[0.05] px-2.5 text-[11px] font-bold text-zinc-600 outline-none transition-transform hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:text-emerald-400"
+   475→   475→                  >
+   476→   476→                    {preset === 'always' ? 'Always' : preset}
+   477→   477→                  </button>
+   478→   478→                ))}
+   479→   479→              </div>
+   480→   480→            )}
+   481→   481→          </div>
+   482→   482→
+   483→   483→          {/* disappearing TTL — display-only (changing lives in the room menu) */}
+   484→   484→          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+   485→   485→            <Timer className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   486→   486→            <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   487→   487→              Disappearing messages
+   488→   488→            </p>
+   489→   489→            <span
+   490→   490→              className={cn(
+   491→   491→                'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold',
+   492→   492→                (detail?.ttlSeconds ?? 0) > 0
+   493→   493→                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+   494→   494→                  : 'bg-zinc-900/[0.05] text-zinc-500 dark:bg-white/[0.07] dark:text-zinc-400',
+   495→   495→              )}
+   496→   496→            >
+   497→   497→              {detail === undefined ? '…' : ttlLabel(detail.ttlSeconds)}
+   498→   498→            </span>
+   499→   499→          </div>
+   500→   500→
+   501→   501→          {/* R31-a: viewer's live chat streak in THIS conversation */}
+   502→   502→          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+   503→   503→            <Flame
+   504→   504→              className={cn(
+   505→   505→                'size-4 shrink-0',
+   506→   506→                detail?.myStreak ? 'text-amber-500' : 'text-zinc-400',
+   507→   507→              )}
+   508→   508→              aria-hidden
+   509→   509→            />
+   510→   510→            <div className="min-w-0 flex-1">
+   511→   511→              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   512→   512→                Chat streak
+   513→   513→              </p>
+   514→   514→              <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   515→   515→                {detail === undefined
+   516→   516→                  ? '…'
+   517→   517→                  : detail.myStreak
+   518→   518→                    ? `${detail.myStreak.count}-day streak · best ${detail.myStreak.best}`
+   519→   519→                    : 'No active streak yet'}
+   520→   520→              </p>
+   521→   521→            </div>
+   522→   522→          </div>
+   523→   523→
+   524→   524→          {/* R29-a: chat theme — per-conversation wallpaper/tint override.
+   525→   525→              Row shows the effective theme; Customize expands the picker
+   526→   526→              inline (slide inside the page, not a route/overlay). */}
+   527→   527→          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+   528→   528→            <Palette className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   529→   529→            <div className="min-w-0 flex-1">
+   530→   530→              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   531→   531→                Chat theme
+   532→   532→              </p>
+   533→   533→              <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   534→   534→                {themeSummary.text}
+   535→   535→              </p>
+   536→   536→            </div>
+   537→   537→            <button
+   538→   538→              type="button"
+   539→   539→              aria-expanded={themeOpen}
+   540→   540→              onClick={() => {
+   541→   541→                haptic(8)
+   542→   542→                setThemeOpen((v) => !v)
+   543→   543→              }}
+   544→   544→              className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 dark:text-emerald-400"
+   545→   545→            >
+   546→   546→              {themeOpen ? 'Close' : 'Customize'}
+   547→   547→            </button>
+   548→   548→          </div>
+   549→   549→          <AnimatePresence initial={false}>
+   550→   550→            {themeOpen ? (
+   551→   551→              <motion.div
+   552→   552→                key="conv-theme-picker"
+   553→   553→                initial={reducedMotion ? false : { opacity: 0, height: 0 }}
+   554→   554→                animate={{ opacity: 1, height: 'auto' }}
+   555→   555→                exit={reducedMotion ? undefined : { opacity: 0, height: 0 }}
+   556→   556→                transition={spring.soft}
+   557→   557→                className="overflow-hidden"
+   558→   558→              >
+   559→   559→                <ConvThemePicker conversationId={conversationId} reducedMotion={reducedMotion} />
+   560→   560→              </motion.div>
+   561→   561→            ) : null}
+   562→   562→          </AnimatePresence>
+   563→   563→
+   564→   564→          {/* invite link — real /invite API, groups + admin only (hidden honestly) */}
+   565→   565→          {isGroup && isAdmin ? (
+   566→   566→            <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+   567→   567→              <Users className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   568→   568→              <div className="min-w-0 flex-1">
+   569→   569→                <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   570→   570→                  Invite link
+   571→   571→                </p>
+   572→   572→                <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   573→   573→                  {detail?.inviteCode ? `Code ${detail.inviteCode}` : 'No active link yet'}
+   574→   574→                </p>
+   575→   575→              </div>
+   576→   576→              <button
+   577→   577→                type="button"
+   578→   578→                disabled={inviteMutation.isPending}
+   579→   579→                onClick={() => {
+   580→   580→                  haptic(8)
+   581→   581→                  if (detail?.inviteCode) void copyInvite(detail.inviteCode)
+   582→   582→                  else inviteMutation.mutate()
+   583→   583→                }}
+   584→   584→                className="glass-pill flex h-8 shrink-0 items-center gap-1 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 disabled:opacity-50 dark:text-emerald-400"
+   585→   585→              >
+   586→   586→                {inviteMutation.isPending ? (
+   587→   587→                  <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+   588→   588→                ) : (
+   589→   589→                  <Copy className="size-3.5" aria-hidden />
+   590→   590→                )}
+   591→   591→                {detail?.inviteCode ? 'Copy' : 'Create'}
+   592→   592→              </button>
+   593→   593→            </div>
+   594→   594→          ) : null}
+   595→   595→
+   596→   596→          {/* add members — POST /members is admins-only server-side (403 otherwise),
+   597→   597→              so the row renders for admins only — no dead UI for members */}
+   598→   598→          {isGroup && isAdmin && detail ? (
+   599→   599→            <button
+   600→   600→              type="button"
+   601→   601→              onClick={() => {
+   602→   602→                haptic(8)
+   603→   603→                setAddOpen(true)
+   604→   604→              }}
+   605→   605→              className="glass-row-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none"
+   606→   606→            >
+   607→   607→              <UserRoundPlus className="size-4 shrink-0 text-emerald-500" aria-hidden />
+   608→   608→              <div className="min-w-0 flex-1">
+   609→   609→                <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   610→   610→                  Add members
+   611→   611→                </p>
+   612→   612→                <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   613→   613→                  From the Pulse directory
+   614→   614→                </p>
+   615→   615→              </div>
+   616→   616→              <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   617→   617→            </button>
+   618→   618→          ) : null}
+   619→   619→
+   620→   620→          {/* classic group manager — kept reachable from its natural home */}
+   621→   621→          {isGroup ? (
+   622→   622→            <button
+   623→   623→              type="button"
+   624→   624→              onClick={() => {
+   625→   625→                haptic(8)
+   626→   626→                onClose()
+   627→   627→                onOpenManager()
+   628→   628→              }}
+   629→   629→              className="glass-row-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none"
+   630→   630→            >
+   631→   631→              <Users className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   632→   632→              <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   633→   633→                Manage group — roles, webhooks, more
+   634→   634→              </p>
+   635→   635→              <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   636→   636→            </button>
+   637→   637→          ) : null}
+   638→   638→        </motion.div>
+   639→   639→
+   640→   640→        {/* members */}
+   641→   641→        <motion.p
+   642→   642→          {...anim}
+   643→   643→          transition={{ ...spring.soft, delay: stagger(3) }}
+   644→   644→          className="px-2 pt-4 pb-1.5 text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase dark:text-zinc-500"
+   645→   645→        >
+   646→   646→          {isChannel ? 'Subscribers' : 'Members'}{detail ? ` · ${members.length}` : ''}
+   647→   647→        </motion.p>
+   648→   648→        <motion.div
+   649→   649→          {...anim}
+   650→   650→          transition={{ ...spring.soft, delay: stagger(3) }}
+   651→   651→          className="glass-deep glass-sheen overflow-hidden rounded-3xl p-1.5"
+   652→   652→        >
+   653→   653→          {detail === undefined ? (
+   654→   654→            <div className="space-y-2 p-1" role="status" aria-label="Loading members">
+   655→   655→              <Skeleton className="h-11 w-full rounded-2xl" />
+   656→   656→              <Skeleton className="h-11 w-full rounded-2xl" />
+   657→   657→              <Skeleton className="h-11 w-4/5 rounded-2xl" />
+   658→   658→            </div>
+   659→   659→          ) : (
+   660→   660→            <>
+   661→   661→              {/* R28-b: glass filter — only surfaced past 8 members */}
+   662→   662→              {members.length > 8 ? (
+   663→   663→                <motion.div
+   664→   664→                  initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+   665→   665→                  animate={{ opacity: 1, y: 0 }}
+   666→   666→                  transition={{ duration: 0.2, ease: ease.out }}
+   667→   667→                  className="glass-pill relative m-0.5 mb-1"
+   668→   668→                >
+   669→   669→                  <Search
+   670→   670→                    className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-zinc-400"
+   671→   671→                    aria-hidden
+   672→   672→                  />
+   673→   673→                  <input
+   674→   674→                    value={memberFilter}
+   675→   675→                    onChange={(e) => setMemberFilter(e.target.value.slice(0, 40))}
+   676→   676→                    placeholder="Search members"
+   677→   677→                    aria-label="Search members"
+   678→   678→                    autoComplete="off"
+   679→   679→                    className="h-9 w-full rounded-full bg-transparent pr-8 pl-9 text-[13px] text-zinc-900 placeholder:text-zinc-400 outline-none dark:text-zinc-100"
+   680→   680→                  />
+   681→   681→                  {memberFilter.length > 0 ? (
+   682→   682→                    <button
+   683→   683→                      type="button"
+   684→   684→                      aria-label="Clear member search"
+   685→   685→                      onClick={() => setMemberFilter('')}
+   686→   686→                      className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-full p-1.5 text-zinc-400 outline-none transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+   687→   687→                    >
+   688→   688→                      <SearchX className="size-3.5" aria-hidden />
+   689→   689→                    </button>
+   690→   690→                  ) : null}
+   691→   691→                </motion.div>
+   692→   692→              ) : null}
+   693→   693→              <ul>
+   694→   694→                {visibleMembers.map((member, i) => {
+   695→   695→                  const isMe = member.id === me.id
+   696→   696→                  const online = onlineIds.has(member.id)
+   697→   697→                  // mirror of the API's real guards: DELETE /members/[userId] is
+   698→   698→                  // admin-only, 400s on self, 403s on admin targets — no dead UI
+   699→   699→                  const canRemove =
+   700→   700→                    isAdmin && !isMe && member.role !== 'admin' && !removeMutation.isPending
+   701→   701→                  const rolePendingHere =
+   702→   702→                    roleMutation.isPending && roleMutation.variables?.userId === member.id
+   703→   703→                  const roleBusy = roleMutation.isPending && !rolePendingHere
+   704→   704→                  const demoteArmed = confirm?.id === member.id && confirm.kind === 'demote'
+   705→   705→                  const removeArmed = confirm?.id === member.id && confirm.kind === 'remove'
+   706→   706→                  return (
+   707→   707→                    <motion.li
+   708→   708→                      key={member.id}
+   709→   709→                      initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+   710→   710→                      animate={{ opacity: 1, y: 0 }}
+   711→   711→                      transition={{
+   712→   712→                        duration: 0.2,
+   713→   713→                        delay: Math.min(i * 0.03, 0.24),
+   714→   714→                        ease: ease.out,
+   715→   715→                      }}
+   716→   716→                      className="glass-row-hover flex items-center gap-3 rounded-2xl px-2 py-2"
+   717→   717→                    >
+   718→   718→                      <button
+   719→   719→                        type="button"
+   720→   720→                        aria-label={isMe ? 'Your profile' : `View ${member.name}'s profile`}
+   721→   721→                        onClick={() => {
+   722→   722→                          haptic(8)
+   723→   723→                          // push straight through: info unmounts, browser back
+   724→   724→                          // returns to #/room/<id>/info — no async back-race
+   725→   725→                          navigateHash(`#/user/${encodeURIComponent(member.id)}`)
+   726→   726→                        }}
+   727→   727→                        className="shrink-0 rounded-full outline-none transition-transform active:scale-90"
+   728→   728→                      >
+   729→   729→                        <UserAvatar
+   730→   730→                          name={member.name}
+   731→   731→                          color={member.color}
+   732→   732→                          avatar={member.avatar}
+   733→   733→                          size={38}
+   734→   734→                          showPresence
+   735→   735→                          online={online}
+   736→   736→                        />
+   737→   737→                      </button>
+   738→   738→                      <button
+   739→   739→                        type="button"
+   740→   740→                        onClick={() => {
+   741→   741→                          haptic(8)
+   742→   742→                          // push straight through: info unmounts, browser back
+   743→   743→                          // returns to #/room/<id>/info — no async back-race
+   744→   744→                          navigateHash(`#/user/${encodeURIComponent(member.id)}`)
+   745→   745→                        }}
+   746→   746→                        className="min-w-0 flex-1 text-left outline-none"
+   747→   747→                      >
+   748→   748→                        <span className="flex min-w-0 items-center gap-1.5">
+   749→   749→                          <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+   750→   750→                            {member.name}
+   751→   751→                          </span>
+   752→   752→                          {member.role === 'admin' ? (
+   753→   753→                            <Crown className="size-3.5 shrink-0 text-amber-500" aria-label="Admin" />
+   754→   754→                          ) : null}
+   755→   755→                          {isMe ? (
+   756→   756→                            <span className="shrink-0 text-[11px] font-medium text-zinc-400">(you)</span>
+   757→   757→                          ) : null}
+   758→   758→                        </span>
+   759→   759→                        <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   760→   760→                          {member.role === 'admin' ? 'Admin · ' : ''}
+   761→   761→                          {member.username ? `@${member.username}` : member.about || 'Member'}
+   762→   762→                        </span>
+   763→   763→                      </button>
+   764→   764→                      {/* R28-b: role actions — PATCH /members/[userId] is admin-only;
+   765→   765→                          the last admin is never dismissable (server 400s, we hide) */}
+   766→   766→                      {isAdmin && !isMe ? (
+   767→   767→                        member.role === 'member' ? (
+   768→   768→                          <button
+   769→   769→                            type="button"
+   770→   770→                            disabled={roleBusy}
+   771→   771→                            aria-label={`Make ${member.name} an admin`}
+   772→   772→                            onClick={() => {
+   773→   773→                              haptic(8)
+   774→   774→                              roleMutation.mutate({ userId: member.id, action: 'promote' })
+   775→   775→                            }}
+   776→   776→                            className="flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold text-zinc-400 outline-none transition-all hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-95 disabled:opacity-40 dark:text-zinc-500 dark:hover:text-emerald-400"
+   777→   777→                          >
+   778→   778→                            {rolePendingHere ? (
+   779→   779→                              <LoaderCircle className="size-3 animate-spin" aria-hidden />
+   780→   780→                            ) : (
+   781→   781→                              <Crown className="size-3" aria-hidden />
+   782→   782→                            )}
+   783→   783→                            Make admin
+   784→   784→                          </button>
+   785→   785→                        ) : adminCount > 1 ? (
+   786→   786→                          <button
+   787→   787→                            type="button"
+   788→   788→                            disabled={roleBusy}
+   789→   789→                            aria-label={demoteArmed ? `Confirm demoting ${member.name}` : `Demote ${member.name}`}
+   790→   790→                            onClick={() => tapDemote(member.id)}
+   791→   791→                            className={cn(
+   792→   792→                              'flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold outline-none transition-all active:scale-95 disabled:opacity-40',
+   793→   793→                              demoteArmed
+   794→   794→                                ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+   795→   795→                                : 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400',
+   796→   796→                            )}
+   797→   797→                          >
+   798→   798→                            {rolePendingHere ? (
+   799→   799→                              <LoaderCircle className="size-3 animate-spin" aria-hidden />
+   800→   800→                            ) : (
+   801→   801→                              <Crown className="size-3" aria-hidden />
+   802→   802→                            )}
+   803→   803→                            {demoteArmed ? 'Dismiss?' : 'Admin'}
+   804→   804→                          </button>
+   805→   805→                        ) : (
+   806→   806→                          <span
+   807→   807→                            aria-label="Last admin of this group"
+   808→   808→                            className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-2.5 text-[11px] font-bold text-amber-600 dark:text-amber-400"
+   809→   809→                          >
+   810→   810→                            <Crown className="size-3" aria-hidden />
+   811→   811→                            Admin
+   812→   812→                          </span>
+   813→   813→                        )
+   814→   814→                      ) : null}
+   815→   815→                      {canRemove ? (
+   816→   816→                        removeArmed ? (
+   817→   817→                          <button
+   818→   818→                            type="button"
+   819→   819→                            onClick={() => tapRemove(member.id)}
+   820→   820→                            className="shrink-0 rounded-full bg-rose-500/15 px-2.5 py-1 text-[11px] font-bold text-rose-600 outline-none transition-transform active:scale-95 dark:text-rose-400"
+   821→   821→                          >
+   822→   822→                            Remove?
+   823→   823→                          </button>
+   824→   824→                        ) : (
+   825→   825→                          <button
+   826→   826→                            type="button"
+   827→   827→                            aria-label={`Remove ${member.name}`}
+   828→   828→                            onClick={() => tapRemove(member.id)}
+   829→   829→                            className="flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 active:scale-90"
+   830→   830→                          >
+   831→   831→                            <UserRoundMinus className="size-4" aria-hidden />
+   832→   832→                          </button>
+   833→   833→                        )
+   834→   834→                      ) : null}
+   835→   835→                    </motion.li>
+   836→   836→                  )
+   837→   837→                })}
+   838→   838→              </ul>
+   839→   839→              {visibleMembers.length === 0 && members.length > 0 ? (
+   840→   840→                <p className="flex items-center gap-2 px-3 py-4 text-xs text-zinc-400 dark:text-zinc-500">
+   841→   841→                  <SearchX className="size-3.5 shrink-0" aria-hidden />
+   842→   842→                  No members match “{memberFilter.trim()}”
+   843→   843→                </p>
+   844→   844→              ) : null}
+   845→   845→            </>
+   846→   846→          )}
+   847→   847→        </motion.div>
+   848→   848→      </div>
+   849→   849→
+   850→   850→      {/* R28-b: add-members glass sub-view — slides INSIDE the info page (not a route) */}
+   851→   851→      <AnimatePresence>
+   852→   852→        {addOpen ? (
+   853→   853→          <RoomMemberAddPage
+   854→   854→            key="room-member-add"
+   855→   855→            me={me}
+   856→   856→            conversationId={conversationId}
+   857→   857→            existingIds={existingIds}
+   858→   858→            reducedMotion={reducedMotion}
+   859→   859→            onClose={() => setAddOpen(false)}
+   860→   860→          />
+   861→   861→        ) : null}
+   862→   862→      </AnimatePresence>
+   863→   863→    </motion.div>
+   864→   864→  )
+   865→   865→}
+   866→   866→

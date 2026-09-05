@@ -5,7 +5,16 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { useQueryClient } from '@tanstack/react-query'
 import type {
@@ -27,6 +36,35 @@ import {
   type TypingEntry,
   type TypingSignalOptions,
 } from '@/hooks/use-pulse-socket'
+
+// ── R33-a: call-signaling channel ────────────────────────────
+// A dedicated context (NOT an extension of PulseRealtimeValue — that contract
+// lives in hooks/use-pulse-socket.ts which other crews consume) that gives the
+// call overlay access to the SHARED socket for `call:*` events. The provider
+// re-attaches every subscriber whenever the socket is (re)created, so a call
+// listener survives reconnects exactly like the chat listeners above.
+
+export type CallEventListener = (event: string, payload: unknown) => void
+
+export interface PulseCallChannelValue {
+  /** Subscribe to every `call:*` event arriving on the shared socket. */
+  subscribeCallEvents: (listener: CallEventListener) => () => void
+  /** Emit a `call:*` event through the shared socket (no-op when offline). */
+  emitCallEvent: (event: string, payload: unknown) => void
+  /** True while the shared socket is connected (calls need it for signaling). */
+  callChannelConnected: boolean
+}
+
+export const PulseCallChannelContext = createContext<PulseCallChannelValue | null>(null)
+
+/** Consumer hook for the call-signaling channel (throws outside the provider). */
+export function usePulseCallChannel(): PulseCallChannelValue {
+  const ctx = useContext(PulseCallChannelContext)
+  if (!ctx) {
+    throw new Error('usePulseCallChannel must be used inside <PulseRealtimeProvider>')
+  }
+  return ctx
+}
 
 interface TypingTrackerState {
   userName: string
@@ -246,6 +284,8 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
   const activeConvRef = useRef<string | null>(null)
   const typingManagersRef = useRef<Map<string, ConversationTypingManager>>(new Map())
   const readTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // R33-a: live call-event subscribers, re-attached on every socket (re)creation.
+  const callListenersRef = useRef<Set<CallEventListener>>(new Set())
 
   // ── helpers ────────────────────────────────────────────────
 
@@ -592,6 +632,19 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ['conversations', myId] })
     }
 
+    // R33-a: fan every `call:*` event out to the call channel subscribers.
+    const onAnyCall = (event: string, ...args: unknown[]) => {
+      if (!event.startsWith('call:')) return
+      const payload = args[0]
+      for (const listener of callListenersRef.current) {
+        try {
+          listener(event, payload)
+        } catch {
+          // one bad listener must never kill the fan-out
+        }
+      }
+    }
+
     sock.on('connect', onConnect)
     sock.on('disconnect', onDisconnect)
     sock.on('joined', applySnapshot)
@@ -608,6 +661,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     sock.on('message:viewed', onMessageReplaced)
     sock.on('message:read', onMessageRead)
     sock.on('conversation:updated', onConversationUpdated)
+    sock.onAny(onAnyCall)
 
     // Warm audio during the first gesture so later pings can play unmuted.
     const warm = () => primeSound()
@@ -615,6 +669,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
 
     return () => {
       window.removeEventListener('pointerdown', warm)
+      sock.offAny(onAnyCall)
       sock.off()
       sock.disconnect()
       socketRef.current = null
@@ -646,5 +701,32 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     [onlineIds, isConnected, typersIn, setActiveConversation, signalTyping, cancelTyping],
   )
 
-  return <PulseRealtimeContext.Provider value={value}>{children}</PulseRealtimeContext.Provider>
+  // ── R33-a: call channel value (stable across socket swaps) ──
+  const subscribeCallEvents = useCallback((listener: CallEventListener) => {
+    callListenersRef.current.add(listener)
+    return () => {
+      callListenersRef.current.delete(listener)
+    }
+  }, [])
+
+  const emitCallEvent = useCallback((event: string, payload: unknown) => {
+    const sock = socketRef.current
+    if (!sock || !event.startsWith('call:')) return
+    sock.emit(event, payload)
+  }, [])
+
+  const callChannel = useMemo<PulseCallChannelValue>(
+    () => ({
+      subscribeCallEvents,
+      emitCallEvent,
+      callChannelConnected: isConnected,
+    }),
+    [subscribeCallEvents, emitCallEvent, isConnected],
+  )
+
+  return (
+    <PulseRealtimeContext.Provider value={value}>
+      <PulseCallChannelContext.Provider value={callChannel}>{children}</PulseCallChannelContext.Provider>
+    </PulseRealtimeContext.Provider>
+  )
 }

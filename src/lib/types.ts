@@ -122,6 +122,12 @@ export interface ConversationSummary {
   lastMessage: ChatMessage | null
   unreadCount: number // count of non-deleted messages from others newer than my lastReadAt
   myStreak: { count: number } | null // R31-a viewer's LIVE chat streak (null = none / broken)
+  /** R33-b additive: streak whose lastDay is YESTERDAY UTC with count >= 2 —
+   *  still live (myStreak stays populated) but dies at tonight's UTC midnight
+   *  unless the viewer messages today. null/absent = nothing at risk. */
+  deadStreak?: { count: number; lastDay: string } | null
+  /** R33-b additive: channel/group photo path ("/api/uploads/<file>") — null = palette avatar fallback */
+  photo: string | null
   pinnedAt: string | null // viewer's pin watermark (null = not pinned)
   mutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
   archivedAt: string | null // viewer's archive watermark (null = active chat)
@@ -142,6 +148,8 @@ export interface ChannelSummary {
   isSubscribed: boolean // viewer has a participant row
   unread: boolean // viewer has an unread admin message (lastReadAt watermark)
   preview: string | null // last message content snippet (60 chars, may be null)
+  /** R33-b additive: channel photo path ("/api/uploads/<file>") — null = broadcast-icon glass fallback */
+  photo: string | null
 }
 
 /** Full detail for a chat room */
@@ -155,6 +163,11 @@ export interface ConversationDetail {
   members: Array<AppUser & { lastReadAt: string; role: GroupRole }>
   myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
   myStreak: { count: number; best: number } | null // R31-a viewer's LIVE chat streak (null = none / broken)
+  /** R33-b additive — same semantics as ConversationSummary.deadStreak:
+   *  live-but-dies-tonight streak (lastDay = yesterday UTC, count >= 2). */
+  deadStreak?: { count: number; lastDay: string } | null
+  /** R33-b additive: channel/group photo path ("/api/uploads/<file>") — null = palette avatar fallback */
+  photo: string | null
   inviteCode: string | null // shareable join code (groups only; null = no active link)
   ttlSeconds: number // disappearing-message TTL (0 = off)
   broadcastMode: boolean // admin-only posting

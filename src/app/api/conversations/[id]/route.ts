@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-// /api/conversations/[id] — detail · group rename
+// /api/conversations/[id] — detail · group rename · photo (R33-b)
 // ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -18,6 +18,9 @@ export const dynamic = 'force-dynamic'
 interface RouteCtx {
   params: Promise<{ id: string }>
 }
+
+/** R33-b — accepted stored photo paths: "/api/uploads/<uuid>.<image-ext>". */
+const PHOTO_PATH_RE = /^\/api\/uploads\/([A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp))$/
 
 /**
  * GET /api/conversations/[id]?userId=X
@@ -44,11 +47,12 @@ export async function GET(req: Request, { params }: RouteCtx) {
 }
 
 /**
- * PATCH /api/conversations/[id]  body { requesterId, name?, broadcast? }
+ * PATCH /api/conversations/[id]  body { requesterId, name?, broadcast?, photo? }
  * Group-only meta changes. ADMINS ONLY. `name` renames; `broadcast`
  * toggles announcement mode (Discord stage / Telegram channel: only
- * admins may post while on). → { conversation: ConversationDetail }
- * · relays conversation:updated.
+ * admins may post while on); `photo` (R33-b) sets the channel/group photo
+ * to a validated "/api/uploads/<file>" path — '' clears it.
+ * → { conversation: ConversationDetail } · relays conversation:updated.
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params
@@ -71,9 +75,26 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
       )
     }
   }
-  if (!hasName && !hasBroadcast) {
+  // R33-b — photo is additive: '' clears (stored null), a validated upload
+  // path sets it, anything else is a 400.
+  const hasPhoto = body.photo !== undefined
+  let photo: string | null = null
+  if (hasPhoto) {
+    const raw = typeof body.photo === 'string' ? body.photo.trim() : ''
+    if (raw === '') {
+      photo = null
+    } else if (PHOTO_PATH_RE.test(raw)) {
+      photo = raw
+    } else {
+      return NextResponse.json(
+        { error: 'photo must be an uploaded image path ("/api/uploads/<file>").' },
+        { status: 400 },
+      )
+    }
+  }
+  if (!hasName && !hasBroadcast && !hasPhoto) {
     return NextResponse.json(
-      { error: 'Nothing to update — provide name and/or broadcast.' },
+      { error: 'Nothing to update — provide name, broadcast and/or photo.' },
       { status: 400 },
     )
   }
@@ -84,7 +105,13 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   }
   if (!conv.isGroup) {
     return NextResponse.json(
-      { error: hasName ? 'Direct conversations cannot be renamed.' : 'Announcement mode is groups-only.' },
+      {
+        error: hasName
+          ? 'Direct conversations cannot be renamed.'
+          : hasPhoto
+            ? 'Photos are for groups and channels.'
+            : 'Announcement mode is groups-only.',
+      },
       { status: 400 },
     )
   }
@@ -97,7 +124,13 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   }
   if (participant.role !== 'admin') {
     return NextResponse.json(
-      { error: hasName ? 'Only group admins can rename this group.' : 'Only group admins can change announcement mode.' },
+      {
+        error: hasName
+          ? 'Only group admins can rename this group.'
+          : hasPhoto
+            ? 'Only group admins can change the photo.'
+            : 'Only group admins can change announcement mode.',
+      },
       { status: 403 },
     )
   }
@@ -107,6 +140,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     data: {
       ...(hasName ? { name } : {}),
       ...(hasBroadcast ? { broadcastMode: body.broadcast as boolean } : {}),
+      ...(hasPhoto ? { photo } : {}),
     },
     include: CONVERSATION_FULL_INCLUDE,
   })

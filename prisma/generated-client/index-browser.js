@@ -155,6 +155,17 @@ exports.Prisma.ConversationStreakScalarFieldEnum = {
   best: 'best'
 };
 
+exports.Prisma.CallLogScalarFieldEnum = {
+  id: 'id',
+  conversationId: 'conversationId',
+  callerId: 'callerId',
+  calleeId: 'calleeId',
+  kind: 'kind',
+  status: 'status',
+  durationSec: 'durationSec',
+  startedAt: 'startedAt'
+};
+
 exports.Prisma.UserWalletScalarFieldEnum = {
   userId: 'userId',
   coins: 'coins',
@@ -225,6 +236,7 @@ exports.Prisma.ConversationScalarFieldEnum = {
   isGroup: 'isGroup',
   name: 'name',
   description: 'description',
+  photo: 'photo',
   inviteCode: 'inviteCode',
   ttlSeconds: 'ttlSeconds',
   broadcastMode: 'broadcastMode',
@@ -509,6 +521,7 @@ exports.Prisma.ModelName = {
   User: 'User',
   Reminder: 'Reminder',
   ConversationStreak: 'ConversationStreak',
+  CallLog: 'CallLog',
   UserWallet: 'UserWallet',
   WalletLedger: 'WalletLedger',
   HubTask: 'HubTask',

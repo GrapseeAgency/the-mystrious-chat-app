@@ -1,0 +1,1137 @@
+     1→/**
+     2→ * Pulse Chat — realtime mini service (socket.io)
+     3→ * ------------------------------------------------
+     4→ * Port: 3003 (hardcoded — reached from Next.js/preview via Caddy `/?XTransformPort=3003`).
+     5→ *
+     6→ * Responsibilities (NO database access ever):
+     7→ *  - Presence tracking   : onlineUsers Map<userId, Set<socketId>>, rooms `user:{userId}`
+     8→ *  - Client→client relay : `typing`
+     9→ *  - Live voice rooms    : in-memory rosters `voiceRooms` Map + `voice:{conversationId}`
+    10→ *                          socket.io rooms; `voice:join|leave|roster|ptt|chunk` relay
+    11→ *  - Stage rooms (R24-c) : Clubhouse hierarchy in `stageRooms` Map + `stage:{conversationId}`
+    12→ *                          socket.io rooms; `stage:join|hand|approve|mute|end|leave` → `stage:state`
+    13→ *  - Spatial presence    : Gather-style positions in `spaceRooms` Map + `space:{conversationId}`
+    14→ *                          socket.io rooms; `space:join|move|leave` → `space:state`
+    15→ *  - HTTP relay API      : POST /notify (message:new|message:deleted|message:read), POST /typing
+    16→ *  - Health probe        : GET / (or anything unknown) → { ok:true, service:'pulse-socket' }
+    17→ *
+    18→ * Routing note (verified against engine.io@6.6.9 source): because our socket.io
+    19→ * path is '/', engine.io's attach() interceptor matches EVERY url and it would
+    20→ * swallow our JSON endpoints (and fall back to pre-existing listeners ONLY on
+    21→ * mismatch). We therefore attach socket.io normally, capture its registered
+    22→ * 'request'/'upgrade' handlers, then reinstall ONE unified dispatcher that:
+    23→ *   • hands engine-protocol requests (query contains EIO=..&transport=..)
+    24→ *     straight back to the captured engine handlers, untouched;
+    25→ *   • serves /notify, /typing, OPTIONS and the health probe itself.
+    26→ */
+    27→import { createServer } from 'node:http'
+    28→import type { IncomingMessage, ServerResponse } from 'node:http'
+    29→import { Server } from 'socket.io'
+    30→import type { Socket } from 'socket.io'
+    31→
+    32→const PORT = 3003
+    33→
+    34→// ---------------------------------------------------------------------------
+    35→// Bootstrap http server + socket.io (options copied from examples/websocket)
+    36→// ---------------------------------------------------------------------------
+    37→const httpServer = createServer()
+    38→
+    39→const io = new Server(httpServer, {
+    40→  // DO NOT change the path, it is used by Caddy to forward the request to the correct port
+    41→  path: '/',
+    42→  cors: {
+    43→    origin: '*',
+    44→    methods: ['GET', 'POST'],
+    45→  },
+    46→  pingTimeout: 60000,
+    47→  pingInterval: 25000,
+    48→  serveClient: false, // client bundle is served by Next.js, keep listener list minimal
+    49→})
+    50→
+    51→// Reclaim the unified request/upgrade dispatchers (see file header).
+    52→const ENGINE_REQUEST_HANDLERS = httpServer.listeners('request').slice()
+    53→const ENGINE_UPGRADE_HANDLERS = httpServer.listeners('upgrade').slice()
+    54→httpServer.removeAllListeners('request')
+    55→httpServer.removeAllListeners('upgrade')
+    56→
+    57→// ---------------------------------------------------------------------------
+    58→// Presence model
+    59→// ---------------------------------------------------------------------------
+    60→/** userId -> connected socketIds of that user */
+    61→const onlineUsers = new Map<string, Set<string>>()
+    62→/** socketId -> userId (reverse index) */
+    63→const socketUser = new Map<string, string>()
+    64→
+    65→const roomOf = (userId: string) => `user:${userId}`
+    66→
+    67→const presenceSnapshot = (): string[] => Array.from(onlineUsers.keys()).sort()
+    68→
+    69→function addPresence(userId: string, socketId: string): void {
+    70→  let sockets = onlineUsers.get(userId)
+    71→  if (!sockets) {
+    72→    sockets = new Set<string>()
+    73→    onlineUsers.set(userId, sockets)
+    74→  }
+    75→  sockets.add(socketId)
+    76→}
+    77→
+    78→/**
+    79→ * Removes a socket from the presence maps.
+    80→ * @returns true when this was the LAST socket of that user (user went offline).
+    81→ */
+    82→function dropPresence(socketId: string): boolean {
+    83→  const userId = socketUser.get(socketId)
+    84→  if (!userId) return false
+    85→  socketUser.delete(socketId)
+    86→  const sockets = onlineUsers.get(userId)
+    87→  if (!sockets) return false
+    88→  sockets.delete(socketId)
+    89→  if (sockets.size === 0) {
+    90→    onlineUsers.delete(userId)
+    91→    return true // last socket closed -> user fully offline
+    92→  }
+    93→  return false
+    94→}
+    95→
+    96→// ---------------------------------------------------------------------------
+    97→// Live voice rooms (R21-b) — pure in-memory, ephemeral by design.
+    98→// ---------------------------------------------------------------------------
+    99→interface VoicePeer {
+   100→  userId: string
+   101→  name: string
+   102→  username: string | null
+   103→  color: string
+   104→  socketId: string
+   105→  joinedAt: number
+   106→}
+   107→
+   108→/** conversationId -> (userId -> peer) — a socket.io room `voice:{conversationId}` backs each entry */
+   109→const voiceRooms = new Map<string, Map<string, VoicePeer>>()
+   110→/** socketId -> conversationId this socket's mic is attached to (max ONE voice room per socket) */
+   111→const socketVoiceRoom = new Map<string, string>()
+   112→
+   113→const voiceRoomName = (conversationId: string) => `voice:${conversationId}`
+   114→
+   115→function voiceRosterSnapshot(conversationId: string): VoicePeer[] {
+   116→  const room = voiceRooms.get(conversationId)
+   117→  if (!room) return []
+   118→  return Array.from(room.values()).sort((a, b) => a.joinedAt - b.joinedAt)
+   119→}
+   120→
+   121→/** Public-safe roster payload (never leaks socketIds). */
+   122→function rosterPayload(conversationId: string) {
+   123→  return {
+   124→    conversationId,
+   125→    peers: voiceRosterSnapshot(conversationId).map((p) => ({
+   126→      id: p.userId,
+   127→      name: p.name,
+   128→      username: p.username,
+   129→      color: p.color,
+   130→    })),
+   131→  }
+   132→}
+   133→
+   134→function broadcastVoiceRoster(conversationId: string): void {
+   135→  io.to(voiceRoomName(conversationId)).emit('voice:roster', rosterPayload(conversationId))
+   136→}
+   137→
+   138→/**
+   139→ * Removes a socket from its voice room (explicit leave or disconnect).
+   140→ * Broadcasts the fresh roster to the remaining peers.
+   141→ */
+   142→function leaveVoiceRoom(socketId: string, reason: string): void {
+   143→  const conversationId = socketVoiceRoom.get(socketId)
+   144→  if (!conversationId) return
+   145→  socketVoiceRoom.delete(socketId)
+   146→  const room = voiceRooms.get(conversationId)
+   147→  if (!room) return
+   148→
+   149→  let removedUserId: string | null = null
+   150→  for (const [userId, peer] of room) {
+   151→    if (peer.socketId === socketId) {
+   152→      room.delete(userId)
+   153→      removedUserId = userId
+   154→      break
+   155→    }
+   156→  }
+   157→  if (room.size === 0) {
+   158→    voiceRooms.delete(conversationId)
+   159→  } else {
+   160→    broadcastVoiceRoster(conversationId)
+   161→  }
+   162→  if (removedUserId) {
+   163→    // everyone still transmitting from the departed socket stops glowing
+   164→    io.to(voiceRoomName(conversationId)).emit('voice:ptt', {
+   165→      conversationId,
+   166→      userId: removedUserId,
+   167→      on: false,
+   168→    })
+   169→  }
+   170→  console.log(`[voice] leave user=${removedUserId ?? '?'} conv=${conversationId} sock=${socketId} reason=${reason} peers=${room.size}`)
+   171→}
+   172→
+   173→/**
+   174→ * Stage-room enforcement hook (R24-c): force-removes ONE user's voice peer from
+   175→ * the conversation's voice roster (e.g. the host muted them from the stage).
+   176→ * The roster map stays the single source of truth, so the identity gates on
+   177→ * `voice:ptt` / `voice:chunk` immediately reject the removed user — a muted
+   178→ * speaker can never keep transmitting through a laggy/malicious client.
+   179→ */
+   180→function removeVoicePeerByUser(conversationId: string, userId: string, reason: string): void {
+   181→  const room = voiceRooms.get(conversationId)
+   182→  const peer = room?.get(userId)
+   183→  if (!room || !peer) return
+   184→  room.delete(userId)
+   185→  if (room.size === 0) {
+   186→    voiceRooms.delete(conversationId)
+   187→  } else {
+   188→    io.to(voiceRoomName(conversationId)).emit('voice:roster', rosterPayload(conversationId))
+   189→  }
+   190→  // their socket no longer holds a voice seat; also stop any glowing ring
+   191→  if (socketVoiceRoom.get(peer.socketId) === conversationId) socketVoiceRoom.delete(peer.socketId)
+   192→  io.to(voiceRoomName(conversationId)).emit('voice:ptt', { conversationId, userId, on: false })
+   193→  console.log(`[voice] force-remove user=${userId} conv=${conversationId} reason=${reason}`)
+   194→}
+   195→
+   196→// ---------------------------------------------------------------------------
+   197→// Stage rooms (R24-c) — Clubhouse-style hierarchy, pure in-memory, ephemeral.
+   198→// host → speakers → listeners, plus a FIFO raised-hands queue. No DB access.
+   199→// TRUST MODEL (honest): roles are claimed by clients; the host seat is granted
+   200→// to the first joiner of a fresh room and re-claimable via `asHost` ONLY while
+   201→// the seat is empty. All rosters are identity-gated to the registering socket.
+   202→// ---------------------------------------------------------------------------
+   203→interface StagePerson {
+   204→  userId: string
+   205→  name: string
+   206→  username: string | null
+   207→  color: string
+   208→  socketId: string
+   209→  joinedAt: number
+   210→}
+   211→
+   212→interface StageRoom {
+   213→  hostId: string | null
+   214→  speakers: Map<string, StagePerson>
+   215→  /** userId -> raised hand (FIFO by raisedAt) */
+   216→  hands: Map<string, { user: StagePerson; raisedAt: number }>
+   217→  listeners: Map<string, StagePerson>
+   218→}
+   219→
+   220→/** conversationId -> stage state — a socket.io room `stage:{conversationId}` backs each entry */
+   221→const stageRooms = new Map<string, StageRoom>()
+   222→/** socketId -> conversationId of the stage this socket occupies (max ONE stage per socket) */
+   223→const socketStageRoom = new Map<string, string>()
+   224→
+   225→const stageRoomName = (conversationId: string) => `stage:${conversationId}`
+   226→
+   227→/** The host is always a speaker; if they vanished from every roster the seat is empty. */
+   228→function stageLiveHost(room: StageRoom): StagePerson | null {
+   229→  if (!room.hostId) return null
+   230→  return room.speakers.get(room.hostId) ?? null
+   231→}
+   232→
+   233→/**
+   234→ * Public-safe stage payload. Contract fields: host, speakers, hands,
+   235→ * listenerCount. `listeners` is an ADDITIVE extra (names row in the sheet UI).
+   236→ */
+   237→function stageStatePayload(conversationId: string) {
+   238→  const room = stageRooms.get(conversationId)
+   239→  if (!room) return null
+   240→  const host = stageLiveHost(room)
+   241→  const speakers = Array.from(room.speakers.values()).sort((a, b) => {
+   242→    if (host && a.userId === host.userId) return -1
+   243→    if (host && b.userId === host.userId) return 1
+   244→    return a.joinedAt - b.joinedAt
+   245→  })
+   246→  const hands = Array.from(room.hands.values())
+   247→    .sort((a, b) => a.raisedAt - b.raisedAt)
+   248→    .map((h) => h.user)
+   249→  const listeners = Array.from(room.listeners.values()).sort((a, b) => a.joinedAt - b.joinedAt)
+   250→  return {
+   251→    conversationId,
+   252→    host: host ? { id: host.userId, name: host.name, color: host.color } : null,
+   253→    speakers: speakers.map((s) => ({ id: s.userId, name: s.name, color: s.color })),
+   254→    hands: hands.map((h) => ({ id: h.userId, name: h.name, color: h.color })),
+   255→    listeners: listeners.map((l) => ({ id: l.userId, name: l.name, color: l.color })),
+   256→    listenerCount: room.listeners.size,
+   257→  }
+   258→}
+   259→
+   260→function broadcastStageState(conversationId: string): void {
+   261→  const payload = stageStatePayload(conversationId)
+   262→  if (!payload) return
+   263→  io.to(stageRoomName(conversationId)).emit('stage:state', payload)
+   264→}
+   265→
+   266→/** Removes a user from EVERY roster of one stage room (host seat empties, no auto-promotion). */
+   267→function removeStageUser(room: StageRoom, userId: string): boolean {
+   268→  let present = false
+   269→  if (room.speakers.delete(userId)) present = true
+   270→  if (room.hands.delete(userId)) present = true
+   271→  if (room.listeners.delete(userId)) present = true
+   272→  if (room.hostId === userId) room.hostId = null
+   273→  return present
+   274→}
+   275→
+   276→/**
+   277→ * Removes a socket from its stage room (explicit leave or disconnect).
+   278→ * Mirrors `leaveVoiceRoom`: the server-side map is authoritative.
+   279→ */
+   280→function leaveStageRoom(socketId: string, reason: string): void {
+   281→  const conversationId = socketStageRoom.get(socketId)
+   282→  if (!conversationId) return
+   283→  socketStageRoom.delete(socketId)
+   284→  const room = stageRooms.get(conversationId)
+   285→  if (!room) return
+   286→
+   287→  // find the roster entry owned by THIS socket (rosters are keyed by userId)
+   288→  let removedUserId: string | null = null
+   289→  for (const map of [room.speakers, room.listeners]) {
+   290→    for (const [userId, person] of map) {
+   291→      if (person.socketId === socketId) {
+   292→        removedUserId = userId
+   293→        break
+   294→      }
+   295→    }
+   296→    if (removedUserId) break
+   297→  }
+   298→  if (!removedUserId) {
+   299→    for (const [userId, hand] of room.hands) {
+   300→      if (hand.user.socketId === socketId) {
+   301→        removedUserId = userId
+   302→        break
+   303→      }
+   304→    }
+   305→  }
+   306→  if (removedUserId) removeStageUser(room, removedUserId)
+   307→
+   308→  const empty = room.speakers.size === 0 && room.hands.size === 0 && room.listeners.size === 0
+   309→  if (empty) {
+   310→    stageRooms.delete(conversationId)
+   311→  } else {
+   312→    broadcastStageState(conversationId)
+   313→  }
+   314→  console.log(`[stage] leave user=${removedUserId ?? '?'} conv=${conversationId} sock=${socketId} reason=${reason}`)
+   315→}
+   316→
+   317→// ---------------------------------------------------------------------------
+   318→// Spatial presence (R24-c) — Gather.town-style office, pure in-memory.
+   319→// Positions are normalized 0..1; movement is throttled + clamped server-side.
+   320→// ---------------------------------------------------------------------------
+   321→interface SpacePlayer {
+   322→  userId: string
+   323→  name: string
+   324→  username: string | null
+   325→  color: string
+   326→  socketId: string
+   327→  x: number // normalized 0..1
+   328→  y: number // normalized 0..1
+   329→  lastMoveAt: number
+   330→}
+   331→
+   332→/** conversationId -> (userId -> player) — a socket.io room `space:{conversationId}` backs each entry */
+   333→const spaceRooms = new Map<string, Map<string, SpacePlayer>>()
+   334→/** socketId -> conversationId of the space this socket occupies (max ONE space per socket) */
+   335→const socketSpaceRoom = new Map<string, string>()
+   336→
+   337→const spaceRoomName = (conversationId: string) => `space:${conversationId}`
+   338→const SPACE_MOVE_THROTTLE_MS = 80
+   339→const SPACE_IDLE_PRUNE_MS = 5 * 60_000
+   340→
+   341→const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
+   342→
+   343→/** Drops players idle for over 5 minutes (no accepted move) and empty rooms. */
+   344→function pruneSpaceRoom(conversationId: string): void {
+   345→  const room = spaceRooms.get(conversationId)
+   346→  if (!room) return
+   347→  const now = Date.now()
+   348→  for (const [userId, player] of room) {
+   349→    if (now - player.lastMoveAt > SPACE_IDLE_PRUNE_MS) room.delete(userId)
+   350→  }
+   351→  if (room.size === 0) spaceRooms.delete(conversationId)
+   352→}
+   353→
+   354→function spaceStatePayload(conversationId: string): { conversationId: string; players: Array<{ id: string; name: string; color: string; x: number; y: number }> } {
+   355→  const room = spaceRooms.get(conversationId)
+   356→  const round4 = (value: number): number => Math.round(value * 10_000) / 10_000
+   357→  const players = room
+   358→    ? Array.from(room.values())
+   359→        .sort((a, b) => a.userId.localeCompare(b.userId))
+   360→        .map((p) => ({ id: p.userId, name: p.name, color: p.color, x: round4(p.x), y: round4(p.y) }))
+   361→    : []
+   362→  return { conversationId, players }
+   363→}
+   364→
+   365→function broadcastSpaceState(conversationId: string): void {
+   366→  pruneSpaceRoom(conversationId)
+   367→  io.to(spaceRoomName(conversationId)).emit('space:state', spaceStatePayload(conversationId))
+   368→}
+   369→
+   370→/** Removes a socket from its space room (explicit leave or disconnect). */
+   371→function leaveSpaceRoom(socketId: string, reason: string): void {
+   372→  const conversationId = socketSpaceRoom.get(socketId)
+   373→  if (!conversationId) return
+   374→  socketSpaceRoom.delete(socketId)
+   375→  const room = spaceRooms.get(conversationId)
+   376→  if (!room) return
+   377→
+   378→  let removedUserId: string | null = null
+   379→  for (const [userId, player] of room) {
+   380→    if (player.socketId === socketId) {
+   381→      room.delete(userId)
+   382→      removedUserId = userId
+   383→      break
+   384→    }
+   385→  }
+   386→  if (room.size === 0) spaceRooms.delete(conversationId)
+   387→  if (removedUserId) broadcastSpaceState(conversationId)
+   388→  console.log(`[space] leave user=${removedUserId ?? '?'} conv=${conversationId} sock=${socketId} reason=${reason}`)
+   389→}
+   390→
+   391→// ---------------------------------------------------------------------------
+   392→// Payload helpers
+   393→// ---------------------------------------------------------------------------
+   394→function asTrimmedString(value: unknown): string {
+   395→  return typeof value === 'string' ? value.trim() : ''
+   396→}
+   397→
+   398→/**
+   399→ * recipients: unique non-empty strings; defensively excludes the sender id.
+   400→ */
+   401→function sanitizeRecipients(raw: unknown, excludeUserId?: string): string[] {
+   402→  if (!Array.isArray(raw)) return []
+   403→  const out = new Set<string>()
+   404→  for (const item of raw) {
+   405→    const id = asTrimmedString(item)
+   406→    if (id && id !== excludeUserId) out.add(id)
+   407→  }
+   408→  return Array.from(out)
+   409→}
+   410→
+   411→function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unknown> {
+   412→  return new Promise((resolve, reject) => {
+   413→    const chunks: Buffer[] = []
+   414→    let size = 0
+   415→    req.on('data', (chunk: Buffer) => {
+   416→      size += chunk.length
+   417→      if (size > maxBytes) {
+   418→        reject(new Error('payload too large'))
+   419→        req.destroy()
+   420→        return
+   421→      }
+   422→      chunks.push(chunk)
+   423→    })
+   424→    req.on('end', () => {
+   425→      try {
+   426→        const text = Buffer.concat(chunks).toString('utf8')
+   427→        resolve(text ? JSON.parse(text) : null)
+   428→      } catch (err) {
+   429→        reject(err instanceof Error ? err : new Error('invalid JSON'))
+   430→      }
+   431→    })
+   432→    req.on('error', reject)
+   433→  })
+   434→}
+   435→
+   436→// ---------------------------------------------------------------------------
+   437→// Internal HTTP relay endpoints (called by Next.js API routes)
+   438→// ---------------------------------------------------------------------------
+   439→const NOTIFY_EVENTS = new Set(['message:new', 'message:deleted', 'message:read', 'message:react', 'message:edited', 'message:pinned', 'message:viewed', 'poll:voted', 'link:preview', 'translation:added', 'conversation:updated'])
+   440→
+   441→type NotifyBody = { event?: unknown; recipients?: unknown; payload?: unknown }
+   442→
+   443→async function handleNotify(req: IncomingMessage, res: ServerResponse): Promise<void> {
+   444→  let body: NotifyBody
+   445→  try {
+   446→    body = (await readJsonBody(req)) as NotifyBody
+   447→  } catch {
+   448→    sendJson(res, 400, { ok: false, error: 'invalid JSON body' })
+   449→    return
+   450→  }
+   451→
+   452→  const event = asTrimmedString(body?.event)
+   453→  if (!NOTIFY_EVENTS.has(event)) {
+   454→    sendJson(res, 400, { ok: false, error: `event must be one of ${Array.from(NOTIFY_EVENTS).join(', ')}` })
+   455→    return
+   456→  }
+   457→  if (!Array.isArray(body?.recipients)) {
+   458→    sendJson(res, 400, { ok: false, error: 'recipients must be an array of userIds' })
+   459→    return
+   460→  }
+   461→
+   462→  const recipients = sanitizeRecipients(body.recipients)
+   463→  let delivered = 0
+   464→  for (const recipient of recipients) {
+   465→    io.to(roomOf(recipient)).emit(event, body.payload ?? null)
+   466→    delivered++
+   467→  }
+   468→  console.log(`[http] notify event=${event} delivered=${delivered}/${recipients.length}`)
+   469→  sendJson(res, 200, { ok: true, delivered })
+   470→}
+   471→
+   472→type TypingBody = {
+   473→  recipients?: unknown
+   474→  conversationId?: unknown
+   475→  userId?: unknown
+   476→  userName?: unknown
+   477→  isTyping?: unknown
+   478→}
+   479→
+   480→async function handleTypingHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
+   481→  let body: TypingBody
+   482→  try {
+   483→    body = (await readJsonBody(req)) as TypingBody
+   484→  } catch {
+   485→    sendJson(res, 400, { ok: false, error: 'invalid JSON body' })
+   486→    return
+   487→  }
+   488→  if (typeof body?.recipients === 'undefined') {
+   489→    sendJson(res, 400, { ok: false, error: 'recipients must be an array of userIds' })
+   490→    return
+   491→  }
+   492→
+   493→  const conversationId = asTrimmedString(body.conversationId)
+   494→  const userId = asTrimmedString(body.userId)
+   495→  if (!conversationId || !userId) {
+   496→    sendJson(res, 400, { ok: false, error: 'conversationId and userId are required' })
+   497→    return
+   498→  }
+   499→
+   500→  const payload = {
+   501→    conversationId,
+   502→    userId,
+   503→    userName: typeof body.userName === 'string' ? body.userName.slice(0, 32) : '',
+   504→    isTyping: body.isTyping === true,
+   505→  }
+   506→  const recipients = sanitizeRecipients(body.recipients, userId)
+   507→
+   508→  let delivered = 0
+   509→  for (const recipient of recipients) {
+   510→    io.to(roomOf(recipient)).emit('typing', payload)
+   511→    delivered++
+   512→  }
+   513→  console.log(`[http] typing user=${userId} conv=${conversationId} isTyping=${payload.isTyping} delivered=${delivered}`)
+   514→  sendJson(res, 200, { ok: true, delivered })
+   515→}
+   516→
+   517→// ---------------------------------------------------------------------------
+   518→// Unified HTTP router (single 'request' listener — see file header)
+   519→// ---------------------------------------------------------------------------
+   520→const BASE_URL = `http://localhost:${PORT}`
+   521→
+   522→function isEngineIoRequest(searchParams: URLSearchParams): boolean {
+   523→  // Engine.IO v4 handshake/poll requests always carry both params.
+   524→  return searchParams.has('EIO') && searchParams.has('transport')
+   525→}
+   526→
+   527→function applyCorsHeaders(res: ServerResponse): void {
+   528→  res.setHeader('Access-Control-Allow-Origin', '*')
+   529→  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+   530→  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+   531→}
+   532→
+   533→function sendJson(res: ServerResponse, status: number, body: unknown): void {
+   534→  if (res.writableEnded || res.headersSent) return
+   535→  applyCorsHeaders(res)
+   536→  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
+   537→  res.end(JSON.stringify(body))
+   538→}
+   539→
+   540→async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
+   541→  let pathname = '/'
+   542→  let searchParams = new URLSearchParams()
+   543→  try {
+   544→    const url = new URL(req.url ?? '/', BASE_URL)
+   545→    pathname = url.pathname
+   546→    searchParams = url.searchParams
+   547→  } catch {
+   548→    // unparsable url -> treat as root below
+   549→  }
+   550→
+   551→  // 1. socket.io engine traffic: give it back to engine.io untouched.
+   552→  if (isEngineIoRequest(searchParams)) {
+   553→    for (const handler of ENGINE_REQUEST_HANDLERS) {
+   554→      handler.call(httpServer, req, res)
+   555→    }
+   556→    return
+   557→  }
+   558→
+   559→  // 2. CORS preflight for our JSON endpoints.
+   560→  if (req.method === 'OPTIONS') {
+   561→    applyCorsHeaders(res)
+   562→    res.writeHead(204)
+   563→    res.end()
+   564→    return
+   565→  }
+   566→
+   567→  // 3. relay endpoints (Next.js API routes call these internally)
+   568→  if (req.method === 'POST' && pathname === '/notify') {
+   569→    await handleNotify(req, res)
+   570→    return
+   571→  }
+   572→  if (req.method === 'POST' && pathname === '/typing') {
+   573→    await handleTypingHttp(req, res)
+   574→    return
+   575→  }
+   576→
+   577→  // 4. everything else (incl GET /) -> health probe friendly identity JSON
+   578→  sendJson(res, 200, {
+   579→    ok: true,
+   580→    service: 'pulse-socket',
+   581→    port: PORT,
+   582→    online: onlineUsers.size,
+   583→    voiceRooms: voiceRooms.size,
+   584→    stageRooms: stageRooms.size,
+   585→    spaceRooms: spaceRooms.size,
+   586→    uptimeSec: Math.round(process.uptime()),
+   587→  })
+   588→}
+   589→
+   590→httpServer.on('request', (req, res) => {
+   591→  route(req, res).catch((err) => {
+   592→    console.error('[http] handler error:', err instanceof Error ? err.message : err)
+   593→    sendJson(res, 500, { ok: false, error: 'internal error' })
+   594→  })
+   595→})
+   596→
+   597→httpServer.on('upgrade', (req, socket, head) => {
+   598→  let engineRequest = false
+   599→  try {
+   600→    engineRequest = isEngineIoRequest(new URL(req.url ?? '/', BASE_URL).searchParams)
+   601→  } catch {
+   602→    engineRequest = false
+   603→  }
+   604→  if (!engineRequest) {
+   605→    socket.destroy()
+   606→    return
+   607→  }
+   608→  for (const handler of ENGINE_UPGRADE_HANDLERS) {
+   609→    handler.call(httpServer, req, socket, head)
+   610→  }
+   611→})
+   612→
+   613→// ---------------------------------------------------------------------------
+   614→// Socket lifecycle & realtime events
+   615→// ---------------------------------------------------------------------------
+   616→io.on('connection', (socket: Socket) => {
+   617→  console.log(`[ws] connect sock=${socket.id} clients=${io.engine.clientsCount}`)
+   618→
+   619→  /** join { userId } — register presence, enter personal room, ack + snapshot broadcast */
+   620→  socket.on('join', (raw: unknown) => {
+   621→    const userId = asTrimmedString((raw as { userId?: unknown })?.userId ?? null)
+   622→    if (!userId || userId.length > 64) {
+   623→      console.warn(`[ws] join rejected sock=${socket.id} (bad userId)`)
+   624→      return
+   625→    }
+   626→
+   627→    // Defensive re-join: forget previous mapping of THIS socket first.
+   628→    if (socketUser.has(socket.id)) dropPresence(socket.id)
+   629→
+   630→    socketUser.set(socket.id, userId)
+   631→    addPresence(userId, socket.id)
+   632→    void socket.join(roomOf(userId))
+   633→
+   634→    socket.emit('joined', { onlineUserIds: presenceSnapshot() })
+   635→    io.emit('presence:snapshot', { onlineUserIds: presenceSnapshot() })
+   636→    console.log(`[ws] join user=${userId} sock=${socket.id} online=${onlineUsers.size}`)
+   637→  })
+   638→
+   639→  /**
+   640→   * typing { recipients, conversationId, userId, userName, isTyping }
+   641→   * Direct client→client relay; sender's own ids are excluded defensively.
+   642→   */
+   643→  socket.on('typing', (raw: unknown) => {
+   644→    const data = (raw ?? {}) as TypingBody
+   645→    const conversationId = asTrimmedString(data.conversationId)
+   646→    const userId = asTrimmedString(data.userId)
+   647→    if (!conversationId || !userId) return
+   648→
+   649→    const payload = {
+   650→      conversationId,
+   651→      userId,
+   652→      userName: typeof data.userName === 'string' ? data.userName.slice(0, 32) : '',
+   653→      isTyping: data.isTyping === true,
+   654→    }
+   655→    const recipients = sanitizeRecipients(data.recipients, userId)
+   656→    for (const recipient of recipients) {
+   657→      io.to(roomOf(recipient)).emit('typing', payload)
+   658→    }
+   659→    if (recipients.length > 0) {
+   660→      console.log(`[ws] typing relay user=${userId} conv=${conversationId} isTyping=${payload.isTyping} targets=${recipients.length}`)
+   661→    }
+   662→  })
+   663→
+   664→  // ── Live voice room events (R21-b) ─────────────────────────
+   665→
+   666→  /**
+   667→   * voice:join { conversationId, user: { id, name, username, color } }
+   668→   * Joins the socket to room `voice:{conversationId}`, upserts the in-memory
+   669→   * roster and broadcasts `voice:roster` to every peer in that voice room.
+   670→   */
+   671→  socket.on('voice:join', (raw: unknown) => {
+   672→    const data = (raw ?? {}) as {
+   673→      conversationId?: unknown
+   674→      user?: { id?: unknown; name?: unknown; username?: unknown; color?: unknown }
+   675→    }
+   676→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+   677→    const userId = asTrimmedString(data.user?.id).slice(0, 64)
+   678→    if (!conversationId || !userId) {
+   679→      console.warn(`[voice] join rejected sock=${socket.id} (bad conversationId/userId)`)
+   680→      return
+   681→    }
+   682→
+   683→    // One voice room per socket: silently drop any previous membership first.
+   684→    leaveVoiceRoom(socket.id, 'switch')
+   685→
+   686→    const peer: VoicePeer = {
+   687→      userId,
+   688→      name: asTrimmedString(data.user?.name).slice(0, 64) || 'Someone',
+   689→      username:
+   690→        typeof data.user?.username === 'string' && data.user.username.trim().length > 0
+   691→          ? data.user.username.trim().slice(0, 32)
+   692→          : null,
+   693→      color: asTrimmedString(data.user?.color).slice(0, 24) || 'emerald',
+   694→      socketId: socket.id,
+   695→      joinedAt: Date.now(),
+   696→    }
+   697→
+   698→    let room = voiceRooms.get(conversationId)
+   699→    if (!room) {
+   700→      room = new Map<string, VoicePeer>()
+   701→      voiceRooms.set(conversationId, room)
+   702→    }
+   703→    room.set(userId, peer) // last session wins on duplicate userId
+   704→    socketVoiceRoom.set(socket.id, conversationId)
+   705→    void socket.join(voiceRoomName(conversationId))
+   706→
+   707→    broadcastVoiceRoster(conversationId)
+   708→    console.log(`[voice] join user=${userId} conv=${conversationId} sock=${socket.id} peers=${room.size}`)
+   709→  })
+   710→
+   711→  /** voice:leave { conversationId? } — explicit exit (conversationId optional; map is the truth). */
+   712→  socket.on('voice:leave', (raw: unknown) => {
+   713→    const data = (raw ?? {}) as { conversationId?: unknown }
+   714→    const claimed = asTrimmedString(data.conversationId).slice(0, 128)
+   715→    const actual = socketVoiceRoom.get(socket.id)
+   716→    // Defensively ignore mismatched claims — the server-side map is authoritative.
+   717→    if (actual && claimed && claimed !== actual) return
+   718→    leaveVoiceRoom(socket.id, 'explicit')
+   719→  })
+   720→
+   721→  /**
+   722→   * voice:ptt { conversationId, userId, on } — push-to-talk state relay.
+   723→   * Broadcast to the WHOLE voice room (sender included) so self rings glow too.
+   724→   */
+   725→  socket.on('voice:ptt', (raw: unknown) => {
+   726→    const data = (raw ?? {}) as { conversationId?: unknown; userId?: unknown; on?: unknown }
+   727→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+   728→    const userId = asTrimmedString(data.userId).slice(0, 64)
+   729→    if (!conversationId || !userId) return
+   730→    // Only peers actually in this voice room may flip its transmit state.
+   731→    const room = voiceRooms.get(conversationId)
+   732→    const peer = room?.get(userId)
+   733→    if (!peer || peer.socketId !== socket.id) return
+   734→    io.to(voiceRoomName(conversationId)).emit('voice:ptt', {
+   735→      conversationId,
+   736→      userId,
+   737→      on: data.on === true,
+   738→    })
+   739→  })
+   740→
+   741→  /**
+   742→   * voice:chunk { conversationId, userId, seq, data(base64 PCM) } — audio relay.
+   743→   * Broadcast to the voice room EXCEPT the sender. Size-capped, identity-checked.
+   744→   */
+   745→  const MAX_VOICE_CHUNK_CHARS = 96 * 1024
+   746→  socket.on('voice:chunk', (raw: unknown) => {
+   747→    const data = (raw ?? {}) as { conversationId?: unknown; userId?: unknown; seq?: unknown; data?: unknown }
+   748→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+   749→    const userId = asTrimmedString(data.userId).slice(0, 64)
+   750→    const seq = typeof data.seq === 'number' && Number.isFinite(data.seq) ? Math.floor(data.seq) : -1
+   751→    if (!conversationId || !userId || seq < 0) return
+   752→    if (typeof data.data !== 'string' || data.data.length === 0 || data.data.length > MAX_VOICE_CHUNK_CHARS) return
+   753→    // Identity gate: a socket may only stream chunks AS the peer it registered.
+   754→    const room = voiceRooms.get(conversationId)
+   755→    const peer = room?.get(userId)
+   756→    if (!peer || peer.socketId !== socket.id) return
+   757→    socket.to(voiceRoomName(conversationId)).emit('voice:chunk', {
+   758→      conversationId,
+   759→      userId,
+   760→      seq,
+   761→      data: data.data,
+   762→    })
+   763→  })
+   764→
+   765→  // ── Stage room events (R24-c) ─────────────────────────────
+   766→
+   767→  /**
+   768→   * stage:join { conversationId, user: { id, name, username, color }, asHost? }
+   769→   * Joins the socket to room `stage:{conversationId}` and upserts the roster.
+   770→   * First joiner of a FRESH room becomes host; `asHost` claims are honored ONLY
+   771→   * while the host seat is empty (trust model documented in the header above).
+   772→   * Re-joins (resync) keep the role the user already had.
+   773→   */
+   774→  socket.on('stage:join', (raw: unknown) => {
+   775→    const data = (raw ?? {}) as {
+   776→      conversationId?: unknown
+   777→      asHost?: unknown
+   778→      user?: { id?: unknown; name?: unknown; username?: unknown; color?: unknown }
+   779→    }
+   780→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+   781→    const userId = asTrimmedString(data.user?.id).slice(0, 64)
+   782→    if (!conversationId || !userId) {
+   783→      console.warn(`[stage] join rejected sock=${socket.id} (bad conversationId/userId)`)
+   784→      return
+   785→    }
+   786→
+   787→    // One stage per socket: silently drop any previous stage membership first.
+   788→    leaveStageRoom(socket.id, 'switch')
+   789→
+   790→    let room = stageRooms.get(conversationId)
+   791→    if (!room) {
+   792→      room = { hostId: null, speakers: new Map(), hands: new Map(), listeners: new Map() }
+   793→      stageRooms.set(conversationId, room)
+   794→    }
+   795→
+   796→    // Defensive: if the recorded host vanished from every roster, free the seat.
+   797→    if (
+   798→      room.hostId &&
+   799→      !room.speakers.has(room.hostId) &&
+   800→      !room.hands.has(room.hostId) &&
+   801→      !room.listeners.has(room.hostId)
+   802→    ) {
+   803→      room.hostId = null
+   804→    }
+   805→
+   806→    const wasHost = room.hostId === userId
+   807→    const prevRole = room.speakers.has(userId)
+   808→      ? 'speaker'
+   809→      : room.listeners.has(userId)
+   810→        ? 'listener'
+   811→        : room.hands.has(userId)
+   812→          ? 'hand'
+   813→          : null
+   814→    const prevRaisedAt = prevRole === 'hand' ? (room.hands.get(userId)?.raisedAt ?? Date.now()) : 0
+   815→    room.speakers.delete(userId)
+   816→    room.hands.delete(userId)
+   817→    room.listeners.delete(userId)
+   818→
+   819→    const person: StagePerson = {
+   820→      userId,
+   821→      name: asTrimmedString(data.user?.name).slice(0, 64) || 'Someone',
+   822→      username:
+   823→        typeof data.user?.username === 'string' && data.user.username.trim().length > 0
+   824→          ? data.user.username.trim().slice(0, 32)
+   825→          : null,
+   826→      color: asTrimmedString(data.user?.color).slice(0, 24) || 'emerald',
+   827→      socketId: socket.id,
+   828→      joinedAt: Date.now(),
+   829→    }
+   830→
+   831→    const freshRoom = room.speakers.size === 0 && room.hands.size === 0 && room.listeners.size === 0
+   832→    let role: 'host' | 'speaker' | 'hand' | 'listener'
+   833→    if (wasHost || (freshRoom && room.hostId === null) || (data.asHost === true && room.hostId === null)) {
+   834→      room.hostId = userId
+   835→      room.speakers.set(userId, person)
+   836→      role = 'host'
+   837→    } else if (prevRole === 'speaker') {
+   838→      room.speakers.set(userId, person) // resync keeps the speaker seat
+   839→      role = 'speaker'
+   840→    } else if (prevRole === 'hand') {
+   841→      room.hands.set(userId, { user: person, raisedAt: prevRaisedAt }) // resync keeps the raised hand
+   842→      role = 'hand'
+   843→    } else {
+   844→      room.listeners.set(userId, person)
+   845→      role = 'listener'
+   846→    }
+   847→
+   848→    socketStageRoom.set(socket.id, conversationId)
+   849→    void socket.join(stageRoomName(conversationId))
+   850→
+   851→    broadcastStageState(conversationId)
+   852→    console.log(`[stage] join user=${userId} conv=${conversationId} sock=${socket.id} role=${role}`)
+   853→  })
+   854→
+   855→  /**
+   856→   * stage:hand { conversationId, user: { id }, raised } — ONLY listeners may
+   857→   * toggle their own hand, and only from the socket that registered them.
+   858→   */
+   859→  socket.on('stage:hand', (raw: unknown) => {
+   860→    const data = (raw ?? {}) as { conversationId?: unknown; user?: { id?: unknown }; raised?: unknown }
+   861→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+   862→    const userId = asTrimmedString(data.user?.id).slice(0, 64)
+   863→    if (!conversationId || !userId) return
+   864→    const room = stageRooms.get(conversationId)
+   865→    if (!room) return
+   866→    const listener = room.listeners.get(userId)
+   867→    if (!listener || listener.socketId !== socket.id) return
+   868→    if (data.raised === true) {
+   869→      if (!room.hands.has(userId)) room.hands.set(userId, { user: listener, raisedAt: Date.now() })
+   870→    } else {
+   871→      room.hands.delete(userId)
+   872→    }
+   873→    broadcastStageState(conversationId)
+   874→    console.log(`[stage] hand user=${userId} conv=${conversationId} raised=${data.raised === true}`)
+   875→  })
+   876→
+   877→  /**
+   878→   * stage:approve { conversationId, byUserId, targetUserId } — host-only:
+   879→   * moves a raised hand into the speakers roster (hand + listener entries cleared).
+   880→   */
+   881→  socket.on('stage:approve', (raw: unknown) => {
+   882→    const data = (raw ?? {}) as { conversationId?: unknown; byUserId?: unknown; targetUserId?: unknown }
+   883→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+   884→    const byUserId = asTrimmedString(data.byUserId).slice(0, 64)
+   885→    const targetUserId = asTrimmedString(data.targetUserId).slice(0, 64)
+   886→    if (!conversationId || !byUserId || !targetUserId) return
+   887→    const room = stageRooms.get(conversationId)
+   888→    if (!room) return
+   889→    const host = stageLiveHost(room)
+   890→    // host-only, identity-gated to the socket the host registered from
+   891→    if (!host || host.userId !== byUserId || host.socketId !== socket.id) return
+   892→    const hand = room.hands.get(targetUserId)
+   893→    if (!hand) return
+   894→    room.hands.delete(targetUserId)
+   895→    room.listeners.delete(targetUserId)
+   896→    room.speakers.set(targetUserId, hand.user)
+   897→    broadcastStageState(conversationId)
+   898→    console.log(`[stage] approve target=${targetUserId} conv=${conversationId} by=${byUserId}`)
+   899→  })
+   900→
+   901→  /**
+   902→   * stage:mute { conversationId, byUserId, targetUserId } — host-only.
+   903→   * Speaker → listener (contract). The host seat itself is immune.
+   904→   * Also dismisses a raised hand (the sheet's hand-queue "Mute" affordance)
+   905→   * and force-removes the target's voice seat so a muted speaker cannot keep
+   906→   * transmitting through a laggy client (real enforcement, not client-trust).
+   907→   */
+   908→  socket.on('stage:mute', (raw: unknown) => {
+   909→    const data = (raw ?? {}) as { conversationId?: unknown; byUserId?: unknown; targetUserId?: unknown }
+   910→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+   911→    const byUserId = asTrimmedString(data.byUserId).slice(0, 64)
+   912→    const targetUserId = asTrimmedString(data.targetUserId).slice(0, 64)
+   913→    if (!conversationId || !byUserId || !targetUserId) return
+   914→    const room = stageRooms.get(conversationId)
+   915→    if (!room) return
+   916→    const host = stageLiveHost(room)
+   917→    if (!host || host.userId !== byUserId || host.socketId !== socket.id) return
+   918→    if (targetUserId === room.hostId) return // the host cannot mute themselves via this event
+   919→
+   920→    let acted: 'speaker' | 'hand' | null = null
+   921→    if (room.speakers.has(targetUserId)) {
+   922→      const person = room.speakers.get(targetUserId)
+   923→      if (person) {
+   924→        room.speakers.delete(targetUserId)
+   925→        room.hands.delete(targetUserId)
+   926→        room.listeners.set(targetUserId, person)
+   927→        acted = 'speaker'
+   928→        // real enforcement: strip their mic seat from the voice roster immediately
+   929→        removeVoicePeerByUser(conversationId, targetUserId, 'stage-mute')
+   930→      }
+   931→    } else if (room.hands.has(targetUserId)) {
+   932→      room.hands.delete(targetUserId)
+   933→      acted = 'hand'
+   934→    }
+   935→    if (!acted) return
+   936→    broadcastStageState(conversationId)
+   937→    console.log(`[stage] mute target=${targetUserId} conv=${conversationId} by=${byUserId} acted=${acted}`)
+   938→  })
+   939→
+   940→  /**
+   941→   * stage:end { conversationId, byUserId } — host-only: deletes the stage and
+   942→   * tells everyone (`stage:ended`), then force-cleans the io room + map indices.
+   943→   */
+   944→  socket.on('stage:end', (raw: unknown) => {
+   945→    const data = (raw ?? {}) as { conversationId?: unknown; byUserId?: unknown }
+   946→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+   947→    const byUserId = asTrimmedString(data.byUserId).slice(0, 64)
+   948→    if (!conversationId || !byUserId) return
+   949→    const room = stageRooms.get(conversationId)
+   950→    if (!room) return
+   951→    const host = stageLiveHost(room)
+   952→    if (!host || host.userId !== byUserId || host.socketId !== socket.id) return
+   953→
+   954→    stageRooms.delete(conversationId)
+   955→    io.to(stageRoomName(conversationId)).emit('stage:ended', { conversationId })
+   956→    io.in(stageRoomName(conversationId)).socketsLeave(stageRoomName(conversationId))
+   957→    for (const [sockId, conv] of socketStageRoom) {
+   958→      if (conv === conversationId) socketStageRoom.delete(sockId)
+   959→    }
+   960→    console.log(`[stage] end conv=${conversationId} by=${byUserId}`)
+   961→  })
+   962→
+   963→  /** stage:leave { conversationId? } — explicit exit; the server map is authoritative. */
+   964→  socket.on('stage:leave', (raw: unknown) => {
+   965→    const data = (raw ?? {}) as { conversationId?: unknown }
+   966→    const claimed = asTrimmedString(data.conversationId).slice(0, 128)
+   967→    const actual = socketStageRoom.get(socket.id)
+   968→    if (actual && claimed && claimed !== actual) return
+   969→    leaveStageRoom(socket.id, 'explicit')
+   970→  })
+   971→
+   972→  // ── Spatial presence events (R24-c) ───────────────────────
+   973→
+   974→  /**
+   975→   * space:join { conversationId, user: { id, name, username, color } }
+   976→   * Upserts the player (x=0.5, y=0.5 default; previous position kept on re-join)
+   977→   * and broadcasts `space:state` to the whole `space:{conversationId}` room.
+   978→   */
+   979→  socket.on('space:join', (raw: unknown) => {
+   980→    const data = (raw ?? {}) as {
+   981→      conversationId?: unknown
+   982→      user?: { id?: unknown; name?: unknown; username?: unknown; color?: unknown }
+   983→    }
+   984→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+   985→    const userId = asTrimmedString(data.user?.id).slice(0, 64)
+   986→    if (!conversationId || !userId) {
+   987→      console.warn(`[space] join rejected sock=${socket.id} (bad conversationId/userId)`)
+   988→      return
+   989→    }
+   990→
+   991→    // One space per socket: silently drop any previous space membership first.
+   992→    leaveSpaceRoom(socket.id, 'switch')
+   993→
+   994→    let room = spaceRooms.get(conversationId)
+   995→    if (!room) {
+   996→      room = new Map<string, SpacePlayer>()
+   997→      spaceRooms.set(conversationId, room)
+   998→    }
+   999→    const existing = room.get(userId)
+  1000→    const player: SpacePlayer = {
+  1001→      userId,
+  1002→      name: asTrimmedString(data.user?.name).slice(0, 64) || 'Someone',
+  1003→      username:
+  1004→        typeof data.user?.username === 'string' && data.user.username.trim().length > 0
+  1005→          ? data.user.username.trim().slice(0, 32)
+  1006→          : null,
+  1007→      color: asTrimmedString(data.user?.color).slice(0, 24) || 'emerald',
+  1008→      socketId: socket.id,
+  1009→      x: existing ? existing.x : 0.5,
+  1010→      y: existing ? existing.y : 0.5,
+  1011→      lastMoveAt: Date.now(),
+  1012→    }
+  1013→    room.set(userId, player) // last session wins on duplicate userId
+  1014→    socketSpaceRoom.set(socket.id, conversationId)
+  1015→    void socket.join(spaceRoomName(conversationId))
+  1016→
+  1017→    broadcastSpaceState(conversationId)
+  1018→    console.log(`[space] join user=${userId} conv=${conversationId} sock=${socket.id} players=${room.size}`)
+  1019→  })
+  1020→
+  1021→  /**
+  1022→   * space:move { conversationId, x, y } — identity-gated, clamped to 0..1 and
+  1023→   * throttled to one accepted move per 80 ms per player (non-finite → ignored).
+  1024→   */
+  1025→  socket.on('space:move', (raw: unknown) => {
+  1026→    const data = (raw ?? {}) as { conversationId?: unknown; x?: unknown; y?: unknown }
+  1027→    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+  1028→    if (!conversationId) return
+  1029→    const room = spaceRooms.get(conversationId)
+  1030→    if (!room) return
+  1031→    let player: SpacePlayer | null = null
+  1032→    for (const candidate of room.values()) {
+  1033→      if (candidate.socketId === socket.id) {
+  1034→        player = candidate
+  1035→        break
+  1036→      }
+  1037→    }
+  1038→    if (!player) return
+  1039→    if (typeof data.x !== 'number' || !Number.isFinite(data.x)) return
+  1040→    if (typeof data.y !== 'number' || !Number.isFinite(data.y)) return
+  1041→    const now = Date.now()
+  1042→    if (now - player.lastMoveAt < SPACE_MOVE_THROTTLE_MS) return // throttle: ignore rapid-fire moves
+  1043→    player.x = clamp01(data.x)
+  1044→    player.y = clamp01(data.y)
+  1045→    player.lastMoveAt = now
+  1046→    broadcastSpaceState(conversationId)
+  1047→  })
+  1048→
+  1049→  /** space:leave { conversationId? } — explicit exit; the server map is authoritative. */
+  1050→  socket.on('space:leave', (raw: unknown) => {
+  1051→    const data = (raw ?? {}) as { conversationId?: unknown }
+  1052→    const claimed = asTrimmedString(data.conversationId).slice(0, 128)
+  1053→    const actual = socketSpaceRoom.get(socket.id)
+  1054→    if (actual && claimed && claimed !== actual) return
+  1055→    leaveSpaceRoom(socket.id, 'explicit')
+  1056→  })
+  1057→
+  1058→  socket.on('error', (error) => {
+  1059→    console.error(`[ws] socket error (${socket.id}):`, error instanceof Error ? error.message : error)
+  1060→  })
+  1061→
+  1062→  socket.on('disconnect', (reason: string) => {
+  1063→    // Voice rooms clean up FIRST: the departed mic must never keep the stage.
+  1064→    leaveVoiceRoom(socket.id, `disconnect:${reason}`)
+  1065→    // Stage + spatial presence rosters follow (mirror cleanup).
+  1066→    leaveStageRoom(socket.id, `disconnect:${reason}`)
+  1067→    leaveSpaceRoom(socket.id, `disconnect:${reason}`)
+  1068→    const wentOffline = dropPresence(socket.id)
+  1069→    if (wentOffline) {
+  1070→      io.emit('presence:snapshot', { onlineUserIds: presenceSnapshot() })
+  1071→      console.log(`[ws] disconnect sock=${socket.id} reason=${reason} — user went OFFLINE, online=${onlineUsers.size}`)
+  1072→    } else {
+  1073→      console.log(`[ws] disconnect sock=${socket.id} reason=${reason} (other sessions remain, online=${onlineUsers.size})`)
+  1074→    }
+  1075→  })
+  1076→})
+  1077→
+  1078→// ---------------------------------------------------------------------------
+  1079→// Scheduled-send dispatcher ticker.
+  1080→// This service intentionally has NO database access; it simply pokes the
+  1081→// Next.js maintenance endpoint on an interval, which flushes due Telegram-style
+  1082→// delayed messages through the exact same pipeline as a live send.
+  1083→// ---------------------------------------------------------------------------
+  1084→const NEXT_APP_URL = process.env.PULSE_ORIGIN ?? 'http://localhost:3000'
+  1085→const DISPATCH_INTERVAL_MS = 20_000
+  1086→const DISPATCH_KEY = process.env.CRON_SECRET ?? 'pulse-dispatch-key'
+  1087→
+  1088→async function tickDispatch(): Promise<void> {
+  1089→  try {
+  1090→    const res = await fetch(`${NEXT_APP_URL}/api/maintenance/dispatch`, {
+  1091→      method: 'POST',
+  1092→      headers: { 'x-pulse-key': DISPATCH_KEY },
+  1093→      signal: AbortSignal.timeout(8000),
+  1094→    })
+  1095→    const body = (await res.json().catch(() => null)) as { dispatched?: number } | null
+  1096→    if (body && typeof body.dispatched === 'number' && body.dispatched > 0) {
+  1097→      console.log(`[cron] dispatched ${body.dispatched} scheduled message(s)`)
+  1098→    }
+  1099→  } catch (error) {
+  1100→    // app may be mid-restart — the next tick retries silently
+  1101→    if (process.env.PULSE_DISPATCH_DEBUG === '1') {
+  1102→      console.log('[cron] dispatch probe failed:', error instanceof Error ? error.message : error)
+  1103→    }
+  1104→  }
+  1105→}
+  1106→setInterval(() => void tickDispatch(), DISPATCH_INTERVAL_MS)
+  1107→
+  1108→// ---------------------------------------------------------------------------
+  1109→// Safety nets + start + graceful shutdown
+  1110→// ---------------------------------------------------------------------------
+  1111→process.on('uncaughtException', (err) => {
+  1112→  console.error('[fatal] uncaughtException:', err instanceof Error ? err.stack ?? err.message : err)
+  1113→})
+  1114→process.on('unhandledRejection', (err) => {
+  1115→  console.error('[fatal] unhandledRejection:', err instanceof Error ? err.stack ?? String(err) : String(err))
+  1116→})
+  1117→
+  1118→httpServer.listen(PORT, () => {
+  1119→  console.log(`Pulse socket service listening on port ${PORT} (path "/", presence+relay+voice+stage+space ready)`)
+  1120→})
+  1121→
+  1122→let shuttingDown = false
+  1123→function shutdown(signal: string): void {
+  1124→  if (shuttingDown) return
+  1125→  shuttingDown = true
+  1126→  console.log(`Received ${signal} signal, shutting down server...`)
+  1127→  io.disconnectSockets(true)
+  1128→  httpServer.close(() => {
+  1129→    console.log('WebSocket server closed')
+  1130→    process.exit(0)
+  1131→  })
+  1132→  // Never hang the process on lingering keep-alive connections.
+  1133→  setTimeout(() => process.exit(0), 2000).unref()
+  1134→}
+  1135→process.on('SIGTERM', () => shutdown('SIGTERM'))
+  1136→process.on('SIGINT', () => shutdown('SIGINT'))
+  1137→

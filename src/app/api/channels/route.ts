@@ -17,6 +17,17 @@ const DESCRIPTION_MAX = 200
 const PREVIEW_MAX = 60
 const FIRST_MESSAGE = 'Channel created — say it loud.'
 
+/** R33-b — accepted stored photo paths: "/api/uploads/<uuid>.<image-ext>". */
+const PHOTO_PATH_RE = /^\/api\/uploads\/([A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp))$/
+
+/** Validated upload path or null — '' clears (stored as null). */
+function normalizePhotoPath(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined
+  const raw = typeof value === 'string' ? value.trim() : ''
+  if (raw === '') return null
+  return PHOTO_PATH_RE.test(raw) ? raw : undefined
+}
+
 /** Clip the last message into a one-line directory snippet. */
 function snippet(content: string): string | null {
   const trimmed = content.trim()
@@ -49,6 +60,7 @@ export async function GET(req: Request) {
       id: true,
       name: true,
       description: true,
+      photo: true,
       createdAt: true,
       participants: { select: { userId: true, lastReadAt: true } },
       messages: {
@@ -77,6 +89,7 @@ export async function GET(req: Request) {
       isSubscribed: mine !== undefined,
       unread,
       preview: last && !last.deletedAt ? snippet(last.content) : null,
+      photo: conv.photo ?? null,
     }
   })
 
@@ -91,10 +104,11 @@ export async function GET(req: Request) {
 }
 
 /**
- * POST /api/channels  body { userId, name, description? }
+ * POST /api/channels  body { userId, name, description?, photo? }
  * Creates a broadcast channel: isGroup + broadcastMode, the creator lands as
  * role:"admin" participant, and a REAL first message is posted from them.
- * → 201 { channel: ChannelSummary & { conversationId } }
+ * `photo` (optional) is a validated "/api/uploads/<file>" path from the
+ * shared upload chain. → 201 { channel: ChannelSummary & { conversationId } }
  */
 export async function POST(req: Request) {
   const body = await safeJson(req)
@@ -120,6 +134,15 @@ export async function POST(req: Request) {
     )
   }
 
+  // R33-b — optional channel photo at creation (same upload chain as profiles)
+  const photo = normalizePhotoPath(body.photo)
+  if (photo === undefined) {
+    return NextResponse.json(
+      { error: 'photo must be an uploaded image path ("/api/uploads/<file>").' },
+      { status: 400 },
+    )
+  }
+
   const creator = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
   if (!creator) {
     return NextResponse.json({ error: 'Unknown user.' }, { status: 404 })
@@ -132,6 +155,7 @@ export async function POST(req: Request) {
       broadcastMode: true,
       name,
       description,
+      ...(photo ? { photo } : {}),
       participants: {
         create: { userId, role: 'admin', lastReadAt: now },
       },
@@ -161,6 +185,7 @@ export async function POST(req: Request) {
     isSubscribed: true,
     unread: false,
     preview: snippet(FIRST_MESSAGE),
+    photo: photo ?? null,
   }
   return NextResponse.json({ channel }, { status: 201 })
 }

@@ -1300,3 +1300,42 @@ Stage Summary:
 - SHIPPED: glass system upgraded to the reference recipe at TOKEN level (globals.css + glass-card) so every surface inherits; core surfaces re-decorated
 - Honest gaps: remaining pages (contacts/profile deep sub-pages) inherit tokens automatically but deserve their own decoration pass; hub category pages not re-shot
 - Evidence: download/qa-r32-before-*.png + qa-r32-{light,dark}-*.png + lead qa-r32-lead-dark-chats.png
+
+---
+Task ID: R33-a
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: 1:1 voice + video calls end-to-end (WhatsApp/Signal paradigm — the last big missing map feature)
+
+Work Log:
+- Schema (pre-pushed by lead): CallLog { conversationId, callerId, calleeId, kind voice|video, status completed|missed|declined, durationSec, startedAt, dual indexes }
+- Socket service (mini-services/pulse-socket): call:offer|answer|ice|reject|cancel|hangup relayed via user:{userId} rooms; in-memory callSessions + callByUser (one live call per user), 30s ring timeout → call:cancel reason 'timeout', busy/offline guards, SDP 64KB / ICE 4KB caps; SERVICE RESTARTED clean on :3003
+- NEW src/lib/call-types.ts (call wire contract, keeps types.ts untouched for parallel crew), NEW /api/calls (GET history merged caller+callee with peer resolution, POST terminal rows — caller-writes rule documented), NEW src/components/chat/call-overlay.tsx: full-screen glass call UX (outgoing ring w/ pulsing avatar, incoming accept/decline, active w/ live timer + mute + camera toggles, ended summary card); REAL getUserMedia + RTCPeerConnection + STUN; mic-denied → honest glass error card; no-camera → voice fallback + toast
+- chat-room.tsx: Phone + Video header buttons (DMs only) + overlay mount; pulse-realtime-provider.tsx: NEW PulseCallChannelContext (subscribeCallEvents/emitCallEvent/callChannelConnected) surviving socket swaps
+- LEAD LIVE PROOF (via gateway :81 — NOTE: sockets only connect through Caddy; loading :3000 directly kills realtime — earlier 'offline' toasts were an artifact of that): dial → full-screen ring renders ('Calling...', pulsing BO avatar) → headless mic denial → honest permission card + CallLog 'missed' row via API; 30s-timeout missed path + declined logging via API rows; peer media flow not provable headless (honest gap)
+- tsc src: 0 · lint clean
+
+Stage Summary:
+- SHIPPED: 1:1 voice/video calls — signaling, WebRTC peer connection, full glass call UI, call history API; DM header Phone/Video buttons
+- Contract: call:* events {callId, conversationId, from, to, kind, sdp?/candidate?}; caller writes ALL terminal CallLog rows; GET /api/calls → { items: [{ id, conversationId, kind, status, durationSec, startedAt, outgoing, peer{...} }] }
+- Honest gaps: incoming-call ring surfaces in-room only (shell-level incoming UI deferred); real audio/video not verifiable in headless sandbox; group calls out of scope
+- Evidence: download/qa-r33a-01…03 + lead qa-r33-lead-call-live.png / qa-r33-lead-call-ring.png
+
+---
+Task ID: R33-b
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: channel photos + ownership succession + streak-at-risk nudges + shell-level reminder loop
+
+Work Log:
+- Schema (pre-pushed by lead): Conversation.photo String?
+- Channel photos end-to-end: serializers/types additive `photo` on conversation summaries + /api/channels; conversations/[id] PATCH accepts photo; room-info 'Edit photo' camera badge (upload → PATCH, mirrors profile-avatar flow); creation-time photo in new-chat-sheet; channels page + chats rows render photo w/ glass fallback
+- Transfer/succession: admins may leave when another admin remains; last-admin leave honestly blocked (UI + API guard); promote surfaced as the succession path
+- Streak-at-risk: conversations list carries additive deadStreak {count, lastDay} (2+ day streaks whose lastDay==yesterday UTC); chats-row amber 'ends tonight' chip; room-info streak row shows 'N-day streak ends tonight — say something'; sending revives (count+1) and clears
+- Shell reminder loop: useReminderDueLoop now a module-level singleton (idempotent owner) + mounted in main-shell so nudges fire on every tab; double-mount safe
+- LEAD LIVE PROOF: chats row shows 'image Pulse Daily' (photo flows to rows) + Bob row '3-day streak ends tonight — send a message to keep it'; reminder shell loop + singleton verified in code + earlier curl due-fire
+- tsc src: 0 · lint clean
+
+Stage Summary:
+- SHIPPED: channel identity (photos everywhere), honest ownership succession, streak-death warnings, global reminder nudges
+- Contract: summaries gain photo + deadStreak (additive); PATCH conversation accepts photo; leave-guard = needs another admin
+- Honest gaps: no group-photo management parity beyond channels (groups get the same field via info page only if route allows — verified for channels); deadStreak only flags 2+ day streaks
+- Evidence: download/qa-r33b-01…09 + lead probes

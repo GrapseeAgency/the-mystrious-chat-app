@@ -59,6 +59,7 @@ import {
   PartyPopper,
   Pause,
   Pencil,
+  Phone,
   Pin,
   PinOff,
   Presentation,
@@ -82,6 +83,7 @@ import {
   UserPlus,
   UserRoundMinus,
   VenetianMask,
+  Video,
   Vote,
   VolumeX,
   X,
@@ -216,6 +218,8 @@ import {
   useReminderDueLoop,
   type ReminderJumpDetail,
 } from '@/components/chat/reminders-sheet'
+// ── R33-a: 1:1 voice/video calls — glass overlay + WebRTC call session ──
+import { CallOverlay, useCallSession } from '@/components/chat/call-overlay'
 
 interface DetailResponse {
   conversation: ConversationDetail
@@ -1122,6 +1126,20 @@ export function ChatRoom({
   )
   const isGroup = detailData?.isGroup ?? false
   const displayName = detailData ? conversationDisplayName(detailData, me.id) : ''
+
+  // ── R33-a: 1:1 voice/video calls — the hook owns the WebRTC + signaling
+  // state machine; <CallOverlay> renders it. DMs only (no peer in groups).
+  const callSession = useCallSession({
+    meId: me.id,
+    meName: me.name,
+    meColor: me.color,
+    meAvatar: me.avatar,
+    conversationId,
+    peer:
+      !isGroup && other
+        ? { id: other.id, name: other.name, color: other.color, avatar: other.avatar }
+        : null,
+  })
 
   const recipients = useMemo(
     () => (detailData ? detailData.members.filter((m) => m.id !== me.id).map((m) => m.id) : []),
@@ -3358,6 +3376,36 @@ export function ChatRoom({
           </AnimatePresence>
         </button>
 
+        {/* R33-a: DM-only call buttons — voice always, video beside it */}
+        {!isGroup && other ? (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Start voice call with ${other.name}`}
+              onClick={() => {
+                haptic(10)
+                callSession.startCall('voice')
+              }}
+              className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+            >
+              <Phone className="size-5" aria-hidden />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Start video call with ${other.name}`}
+              onClick={() => {
+                haptic(10)
+                callSession.startCall('video')
+              }}
+              className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+            >
+              <Video className="size-5" aria-hidden />
+            </Button>
+          </>
+        ) : null}
+
         <Button
           variant="ghost"
           size="icon"
@@ -4939,6 +4987,10 @@ export function ChatRoom({
           />
         ) : null}
       </AnimatePresence>
+
+      {/* 1:1 voice/video calls (R33-a) — full-screen glass overlay; rises over
+          every sheet while the DM room is open */}
+      <CallOverlay session={callSession} />
 
       {/* who-reacted sheet */}
       <Drawer open={reactionInfo !== null} onOpenChange={(open) => !open && setReactionInfo(null)}>

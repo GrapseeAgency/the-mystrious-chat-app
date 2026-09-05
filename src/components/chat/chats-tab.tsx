@@ -337,6 +337,9 @@ export function ChatsTab({
           muted: conv.mutedUntil !== null && Date.parse(conv.mutedUntil) > Date.now(),
           typing: typersIn(conv.id, me.id).length > 0,
           streakCount: conv.myStreak?.count ?? 0, // R31-a: live-streak chip
+          // R33-b: at-risk nudge + channel/group photo straight from the summary
+          streakAtRisk: conv.deadStreak ?? null,
+          photo: conv.photo ?? null,
           archived: conv.archivedAt !== null,
         },
       }

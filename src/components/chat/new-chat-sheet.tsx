@@ -5,13 +5,14 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Check, LoaderCircle, MessageCircle, Radio, Search, UsersRound, X } from 'lucide-react'
+import { Camera, Check, LoaderCircle, MessageCircle, Radio, Search, UsersRound, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ChannelSummary, ConversationSummary } from '@/lib/types'
 import { apiJson, jsonBody } from '@/lib/pulse-utils'
+import { fileToSquareDataUrl, uploadDataUrlPhoto } from '@/lib/upload-photo'
 import { cn } from '@/lib/utils'
 import {
   Drawer,
@@ -63,6 +64,12 @@ export function NewChatSheet({
   const [channelName, setChannelName] = useState('')
   const [channelDescription, setChannelDescription] = useState('')
   const [channelError, setChannelError] = useState<string | null>(null)
+  // R33-b: optional channel photo, uploaded through the REAL /api/uploads
+  // chain at pick time so Create posts a validated "/api/uploads/<file>" path.
+  const channelPhotoInputRef = useRef<HTMLInputElement | null>(null)
+  const [channelPhoto, setChannelPhoto] = useState<string | null>(null)
+  const [channelPhotoBusy, setChannelPhotoBusy] = useState(false)
+  const [channelPhotoPreview, setChannelPhotoPreview] = useState<string | null>(null)
 
   const users = useQuery({
     queryKey: ['users'],
@@ -118,11 +125,12 @@ export function NewChatSheet({
 
   // ── R30-c: broadcast channel creation (two-field step) ──────
   const createChannel = useMutation({
-    mutationFn: async (payload: { name: string; description: string }) => {
+    mutationFn: async (payload: { name: string; description: string; photo?: string }) => {
       return apiJson<CreateChannelResponse>('/api/channels', jsonBody({
         userId: me.id,
         name: payload.name,
         ...(payload.description ? { description: payload.description } : {}),
+        ...(payload.photo ? { photo: payload.photo } : {}),
       }))
     },
     onSuccess: (data) => {
@@ -151,8 +159,31 @@ export function NewChatSheet({
       setChannelError(`Keep the name under ${CHANNEL_NAME_MAX + 1} characters.`)
       return
     }
+    if (channelPhotoBusy) return
     setChannelError(null)
-    createChannel.mutate({ name: channelName.trim(), description: channelDescription.trim() })
+    createChannel.mutate({
+      name: channelName.trim(),
+      description: channelDescription.trim(),
+      ...(channelPhoto ? { photo: channelPhoto } : {}),
+    })
+  }
+
+  /** R33-b: pick → optimize (local preview) → upload now; Create posts the stored path. */
+  const handleChannelPhotoPicked = async (file: File) => {
+    if (channelPhotoBusy) return
+    setChannelPhotoBusy(true)
+    try {
+      const dataUrl = await fileToSquareDataUrl(file)
+      setChannelPhotoPreview(dataUrl)
+      const path = await uploadDataUrlPhoto(dataUrl)
+      setChannelPhoto(path)
+      setChannelPhotoPreview(null)
+    } catch (error) {
+      setChannelPhotoPreview(null)
+      toast.error(error instanceof Error ? error.message : 'Could not upload that photo')
+    } finally {
+      setChannelPhotoBusy(false)
+    }
   }
 
   return (
@@ -250,6 +281,54 @@ export function NewChatSheet({
             </div>
           ) : (
             <div className="mb-2 space-y-1.5">
+              {/* R33-b — optional channel photo: round glass tile (Camera icon)
+                  that uploads through the real /api/uploads chain at pick time */}
+              <div className="flex items-center gap-3 pb-0.5">
+                <button
+                  type="button"
+                  aria-label={channelPhoto ? 'Replace channel photo' : 'Add a channel photo'}
+                  disabled={channelPhotoBusy}
+                  onClick={() => {
+                    channelPhotoInputRef.current?.click()
+                  }}
+                  className="relative size-14 shrink-0 overflow-hidden rounded-full ring-1 ring-zinc-200 outline-none transition-transform active:scale-95 disabled:opacity-60 dark:ring-zinc-700"
+                >
+                  {channelPhotoPreview || channelPhoto ? (
+                    <img
+                      src={channelPhotoPreview ?? channelPhoto ?? undefined}
+                      alt="Channel photo preview"
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex size-full items-center justify-center bg-zinc-100 dark:bg-zinc-800">
+                      <Camera className="size-5 text-zinc-400" aria-hidden />
+                    </span>
+                  )}
+                  {channelPhotoBusy ? (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/40">
+                      <LoaderCircle className="size-4 animate-spin text-white" aria-hidden />
+                    </span>
+                  ) : null}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">
+                    Channel photo
+                  </p>
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                    {channelPhoto ? 'Uploaded — shown everywhere' : 'Optional — you can add one later from the channel info'}
+                  </p>
+                </div>
+                {channelPhoto ? (
+                  <button
+                    type="button"
+                    aria-label="Remove channel photo"
+                    onClick={() => setChannelPhoto(null)}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 active:scale-90"
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                ) : null}
+              </div>
               <div className="relative">
                 <Radio className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
                 <Input
@@ -285,6 +364,19 @@ export function NewChatSheet({
                     : 'You will be the admin — only admins can post in a channel.'}
                 </p>
               )}
+              {/* hidden picker for the optional channel photo (R33-b) */}
+              <input
+                ref={channelPhotoInputRef}
+                type="file"
+                accept="image/*"
+                disabled={channelPhotoBusy}
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  e.target.value = '' // allow re-picking the same file
+                  if (file) void handleChannelPhotoPicked(file)
+                }}
+              />
             </div>
           )}
 

@@ -83,6 +83,24 @@ model ConversationStreak {
 }
 
 /**
+ * WhatsApp-style call history row — written when a 1:1 call reaches a
+ * terminal state (completed / missed / declined). Drives the Calls page.
+ */
+model CallLog {
+  id             String   @id @default(cuid())
+  conversationId String
+  callerId       String
+  calleeId       String
+  kind           String   @default("voice") // voice | video
+  status         String   @default("missed") // completed | missed | declined
+  durationSec    Int      @default(0)
+  startedAt      DateTime @default(now())
+
+  @@index([calleeId, startedAt])
+  @@index([callerId, startedAt])
+}
+
+/**
  * Hub economy wallet — real balances moved by check-ins, transfers, swaps,
  * red packets and marketplace trades (every change writes a ledger row).
  */
@@ -196,6 +214,7 @@ model Conversation {
   isGroup           Boolean                   @default(false)
   name              String? // group title; null for DMs
   description       String                    @default("") // channel/group purpose line (channel directory + info page)
+  photo             String? // channel/group photo path (/uploads/<uuid>.<ext>) — null = palette icon fallback
   inviteCode        String?                   @unique // shareable join code (groups only; null = no active link)
   ttlSeconds        Int                       @default(0) // disappearing-message TTL (0 = off; applied at send time)
   broadcastMode     Boolean                   @default(false) // Discord-stage/Telegram-channel style admin-only posting

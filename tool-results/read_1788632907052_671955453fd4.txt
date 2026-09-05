@@ -1,0 +1,664 @@
+     1→generator client {
+     2→  provider = "prisma-client-js"
+     3→  output   = "../prisma/generated-client" // project-relative output — Turbopack re-reads project files (node_modules/.prisma cache went stale after the avatar push)
+     4→}
+     5→
+     6→datasource db {
+     7→  provider = "sqlite"
+     8→  url      = env("DATABASE_URL")
+     9→}
+    10→
+    11→// ─────────────────────────────────────────────────────────────
+    12→// Pulse Chat — mobile messenger schema (no mocks, all real data)
+    13→// ─────────────────────────────────────────────────────────────
+    14→
+    15→model User {
+    16→  id                String                    @id @default(cuid())
+    17→  name              String
+    18→  username          String?                   @unique // @handle (3-20 chars) — replaces raw IDs everywhere in the UI
+    19→  about             String                    @default("Hey there! I'm using Pulse.")
+    20→  color             String                    @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
+    21→  avatar            String? // profile photo path (/uploads/<uuid>.<ext>) — null = palette avatar fallback
+    22→  statusEmoji       String? // Discord-style custom status glyph (null = none)
+    23→  statusText        String? // Discord-style custom status line (null = none)
+    24→  preferences       String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
+    25→  createdAt         DateTime                  @default(now())
+    26→  lastSeenAt        DateTime                  @default(now())
+    27→  appInstalls       AppInstall[]
+    28→  wallet            UserWallet?
+    29→  ledger            WalletLedger[]
+    30→  hubTasks          HubTask[]
+    31→  logEvents         LogEvent[]
+    32→  marketListings    MarketListing[]           @relation("MarketSeller")
+    33→  marketPurchases   MarketListing[]           @relation("MarketBuyer")
+    34→  participations    ConversationParticipant[]
+    35→  messages          Message[]
+    36→  savedMessages     SavedMessage[]
+    37→  quickPhrases      QuickPhrase[]
+    38→  stories           StatusStory[]
+    39→  folders           Folder[]
+    40→  xp                Int                       @default(0) // Twitch-style channel points earned by real activity
+    41→  xpToday           Int                       @default(0) // XP earned today (daily-cap accounting)
+    42→  xpDay             String                    @default("") // UTC 'YYYY-MM-DD' bucket xpToday belongs to
+    43→  tournamentEntries TournamentPlayer[]
+    44→  reminders         Reminder[]
+    45→  streaks           ConversationStreak[]
+    46→
+    47→  @@index([name])
+    48→}
+    49→
+    50→/**
+    51→ * Beeper/Zulip-style per-message reminder — the app nudges the owner
+    52→ * when remindAt passes (client due-loop toasts + Reminders sheet).
+    53→ */
+    54→model Reminder {
+    55→  id             String    @id @default(cuid())
+    56→  userId         String
+    57→  conversationId String
+    58→  messageId      String? // anchor message (null = conversation-level reminder)
+    59→  note           String    @default("") // free-text context shown in the nudge
+    60→  remindAt       DateTime
+    61→  firedAt        DateTime? // set once the nudge has been delivered
+    62→  createdAt      DateTime  @default(now())
+    63→  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    64→
+    65→  @@index([userId, remindAt])
+    66→}
+    67→
+    68→/**
+    69→ * Snapchat-style per-user-per-conversation daily streak — bumped on the
+    70→ * FIRST message a user sends in a conversation each UTC day.
+    71→ */
+    72→model ConversationStreak {
+    73→  id             String @id @default(cuid())
+    74→  conversationId String
+    75→  userId         String
+    76→  lastDay        String // UTC 'YYYY-MM-DD' of the last streaked day
+    77→  count          Int    @default(0)
+    78→  best           Int    @default(0) // all-time high
+    79→  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    80→
+    81→  @@unique([conversationId, userId])
+    82→  @@index([userId, lastDay])
+    83→}
+    84→
+    85→/**
+    86→ * WhatsApp-style call history row — written when a 1:1 call reaches a
+    87→ * terminal state (completed / missed / declined). Drives the Calls page.
+    88→ */
+    89→model CallLog {
+    90→  id             String   @id @default(cuid())
+    91→  conversationId String
+    92→  callerId       String
+    93→  calleeId       String
+    94→  kind           String   @default("voice") // voice | video
+    95→  status         String   @default("missed") // completed | missed | declined
+    96→  durationSec    Int      @default(0)
+    97→  startedAt      DateTime @default(now())
+    98→
+    99→  @@index([calleeId, startedAt])
+   100→  @@index([callerId, startedAt])
+   101→}
+   102→
+   103→/**
+   104→ * Hub economy wallet — real balances moved by check-ins, transfers, swaps,
+   105→ * red packets and marketplace trades (every change writes a ledger row).
+   106→ */
+   107→model UserWallet {
+   108→  userId      String    @id
+   109→  coins       Int       @default(0) // Pulse Coins (PC)
+   110→  gems        Int       @default(0) // Gems (GEM)
+   111→  streak      Int       @default(0) // consecutive daily check-ins
+   112→  lastCheckIn DateTime? // last daily check-in watermark (UTC day gate)
+   113→  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+   114→}
+   115→
+   116→/**
+   117→ * Immutable money trail — every balance mutation appends exactly one row.
+   118→ */
+   119→model WalletLedger {
+   120→  id             String   @id @default(cuid())
+   121→  userId         String
+   122→  kind           String // checkin|transfer_in|transfer_out|swap|gift|redpacket_send|redpacket_claim|market_sell|market_buy
+   123→  asset          String // "PC" | "GEM"
+   124→  amount         Int // signed from the owner's perspective (+in / -out)
+   125→  note           String   @default("")
+   126→  counterpartyId String? // other user in transfers / red packets / trades
+   127→  createdAt      DateTime @default(now())
+   128→  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+   129→
+   130→  @@index([userId, createdAt])
+   131→}
+   132→
+   133→/**
+   134→ * Hub personal kanban task (Chanty/Ryver parity) — three real columns.
+   135→ */
+   136→model HubTask {
+   137→  id        String   @id @default(cuid())
+   138→  ownerId   String
+   139→  title     String
+   140→  status    String   @default("todo") // "todo" | "doing" | "done"
+   141→  createdAt DateTime @default(now())
+   142→  updatedAt DateTime @updatedAt
+   143→  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+   144→
+   145→  @@index([ownerId, status])
+   146→}
+   147→
+   148→/**
+   149→ * Hub Apps ecosystem — a user's real connection to a catalog app
+   150→ * (hub-catalog.ts ids). One row per (user, app); status toggles.
+   151→ */
+   152→model AppInstall {
+   153→  id          String   @id @default(cuid())
+   154→  userId      String
+   155→  appId       String // hub-catalog app id (e.g. "telegram", "discord")
+   156→  installedAt DateTime @default(now())
+   157→  status      String   @default("connected") // connected | muted
+   158→  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+   159→
+   160→  @@unique([userId, appId])
+   161→  @@index([appId])
+   162→}
+   163→
+   164→/**
+   165→ * Hub marketplace listing — real coin-priced offers between users.
+   166→ */
+   167→model MarketListing {
+   168→  id          String   @id @default(cuid())
+   169→  sellerId    String
+   170→  title       String
+   171→  description String   @default("")
+   172→  price       Int
+   173→  asset       String   @default("PC")
+   174→  status      String   @default("open") // "open" | "sold"
+   175→  buyerId     String?
+   176→  createdAt   DateTime @default(now())
+   177→  seller      User     @relation("MarketSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+   178→  buyer       User?    @relation("MarketBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+   179→
+   180→  @@index([status, createdAt])
+   181→}
+   182→
+   183→/**
+   184→ * DevOps terminal stream — every economy/social action appends a real event.
+   185→ */
+   186→model LogEvent {
+   187→  id        String   @id @default(cuid())
+   188→  userId    String?
+   189→  kind      String // checkin|transfer|swap|redpacket|market|hand|system|message
+   190→  message   String
+   191→  meta      String? // optional JSON blob
+   192→  createdAt DateTime @default(now())
+   193→  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+   194→
+   195→  @@index([createdAt])
+   196→}
+   197→
+   198→/**
+   199→ * User-authored one-tap phrases (Among Us wheel / canned responses — real data).
+   200→ */
+   201→model QuickPhrase {
+   202→  id        String   @id @default(cuid())
+   203→  userId    String
+   204→  text      String
+   205→  position  Int      @default(0) // sort order within the user's rail
+   206→  createdAt DateTime @default(now())
+   207→  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+   208→
+   209→  @@index([userId, position])
+   210→}
+   211→
+   212→model Conversation {
+   213→  id                String                    @id @default(cuid())
+   214→  isGroup           Boolean                   @default(false)
+   215→  name              String? // group title; null for DMs
+   216→  description       String    @default("") // channel/group purpose line (channel directory + info page)
+   217→  photo             String? // channel/group photo path (/uploads/<uuid>.<ext>) — null = palette icon fallback
+   218→  inviteCode        String?                   @unique // shareable join code (groups only; null = no active link)
+   219→  ttlSeconds        Int                       @default(0) // disappearing-message TTL (0 = off; applied at send time)
+   220→  broadcastMode     Boolean                   @default(false) // Discord-stage/Telegram-channel style admin-only posting
+   221→  isSelf            Boolean                   @default(false) // Signal-style Note to Self (single participant = owner)
+   222→  appKey            String?                   @unique // hub Apps-matrix community chat (app number as string, e.g. "4")
+   223→  createdAt         DateTime                  @default(now())
+   224→  updatedAt         DateTime                  @updatedAt // bumped on every new message → list sort
+   225→  participants      ConversationParticipant[]
+   226→  messages          Message[]
+   227→  scheduledMessages ScheduledMessage[]
+   228→  webhooks          Webhook[]
+   229→  kanbanCards       KanbanCard[]
+   230→  events            GroupEvent[]
+   231→  gameMatches       GameMatch[]
+   232→  topics            Topic[]
+   233→  tournaments       Tournament[]
+   234→  folderEntries     FolderConversation[]
+   235→
+   236→  @@index([updatedAt])
+   237→}
+   238→
+   239→/**
+   240→ * Discord-style incoming webhook — external services POST to
+   241→ * /api/webhooks/[token] and land as a named bot message in the room.
+   242→ */
+   243→model Webhook {
+   244→  id             String       @id @default(cuid())
+   245→  conversationId String
+   246→  token          String       @unique @default(cuid())
+   247→  name           String
+   248→  avatarColor    String       @default("emerald")
+   249→  createdBy      String
+   250→  createdAt      DateTime     @default(now())
+   251→  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   252→}
+   253→
+   254→/**
+   255→ * Collaborative whiteboard — every stroke is a persisted polyline so the
+   256→ * canvas survives close/reopen and syncs across members by timestamp polling.
+   257→ */
+   258→model WhiteboardStroke {
+   259→  id             String   @id @default(cuid())
+   260→  conversationId String
+   261→  userId         String
+   262→  color          String
+   263→  width          Float
+   264→  points         String // JSON [[x,y], ...] normalized 0..1 canvas coords
+   265→  createdAt      DateTime @default(now())
+   266→
+   267→  @@index([conversationId, createdAt])
+   268→}
+   269→
+   270→/**
+   271→ * BeReal/Telegram-style 24h status story (image or text-on-gradient).
+   272→ */
+   273→model StatusStory {
+   274→  id         String      @id @default(cuid())
+   275→  userId     String
+   276→  imagePath  String? // uploaded image (via /api/uploads); null = text story
+   277→  caption    String      @default("")
+   278→  background String      @default("emerald") // gradient key for text stories
+   279→  createdAt  DateTime    @default(now())
+   280→  expiresAt  DateTime // createdAt + 24h — hard-filtered everywhere after
+   281→  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+   282→  views      StoryView[]
+   283→
+   284→  @@index([userId, expiresAt])
+   285→}
+   286→
+   287→model StoryView {
+   288→  id        String      @id @default(cuid())
+   289→  storyId   String
+   290→  userId    String
+   291→  createdAt DateTime    @default(now())
+   292→  story     StatusStory @relation(fields: [storyId], references: [id], onDelete: Cascade)
+   293→
+   294→  @@unique([storyId, userId])
+   295→}
+   296→
+   297→model ConversationParticipant {
+   298→  id             String       @id @default(cuid())
+   299→  userId         String
+   300→  conversationId String
+   301→  role           String       @default("member") // "admin" | "member" (groups: creator is admin)
+   302→  joinedAt       DateTime     @default(now()) // join watermark (tie-breaker for admin succession)
+   303→  lastReadAt     DateTime     @default(now()) // read receipts / unread counts
+   304→  pinnedAt       DateTime? // per-user pinned-to-top
+   305→  mutedUntil     DateTime? // per-user notification mute watermark (null = unmuted)
+   306→  archivedAt     DateTime? // per-user archive watermark (null = active; cleared when others send new msgs)
+   307→  handRaisedAt   DateTime? // Clubhouse-style raised hand (null = lowered)
+   308→  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+   309→  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   310→
+   311→  @@unique([userId, conversationId])
+   312→  @@index([conversationId])
+   313→  @@index([userId])
+   314→}
+   315→
+   316→model Message {
+   317→  id             String               @id @default(cuid())
+   318→  conversationId String
+   319→  senderId       String
+   320→  content        String
+   321→  deletedAt      DateTime? // soft delete → "message deleted" tombstone
+   322→  replyToId      String? // quoted message (reply feature)
+   323→  imagePath      String? // stored image filename via /api/uploads (image message)
+   324→  audioPath      String? // stored voice-note filename via /api/uploads (audio message)
+   325→  durationMs     Int? // voice-note length in milliseconds
+   326→  editedAt       DateTime? // last edit timestamp (null = never edited → "edited" label)
+   327→  pinnedAt       DateTime? // pinned within the conversation (null = not pinned)
+   328→  pinnedBy       String? // userId who pinned (display attribution)
+   329→  parentId       String? // Slack/Zulip thread root this reply belongs to (null = top-level)
+   330→  topicId        String? // Zulip-style topic this message is filed under (null = General)
+   331→  anon           Boolean              @default(false) // Session/SimpleX-style anonymous send
+   332→  anonAlias      String? // deterministic per-(user,conversation) incognito alias (sender-side display)
+   333→  viewOnce       Boolean              @default(false) // Snapchat/WhatsApp view-once media gate
+   334→  viewedAt       DateTime? // when the non-sender consumed a view-once attachment
+   335→  viewedBy       String? // who consumed it
+   336→  expiresAt      DateTime? // disappearing-message deadline (hard-purged after)
+   337→  linkUrl        String? // canonical preview link (og unfurl) attached to this message
+   338→  kind           String               @default("text") // text|image|audio|sticker|location|code|task|redpacket
+   339→  payload        String? // JSON payload for rich kinds (sticker pack/glyph, lat/lng, code lang/source, tx data)
+   340→  createdAt      DateTime             @default(now())
+   341→  sender         User                 @relation(fields: [senderId], references: [id], onDelete: Cascade)
+   342→  conversation   Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   343→  replyTo        Message?             @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+   344→  replies        Message[]            @relation("MessageReplies")
+   345→  parent         Message?             @relation("MessageThreads", fields: [parentId], references: [id], onDelete: Cascade)
+   346→  threadReplies  Message[]            @relation("MessageThreads")
+   347→  reactions      Reaction[]
+   348→  poll           Poll?
+   349→  topic          Topic?               @relation(fields: [topicId], references: [id], onDelete: SetNull)
+   350→  redPacket      RedPacket?
+   351→  translations   MessageTranslation[]
+   352→  linkPreview    LinkPreview?         @relation(fields: [linkUrl], references: [url])
+   353→  savedBy        SavedMessage[]
+   354→
+   355→  @@index([conversationId, createdAt])
+   356→  @@index([replyToId])
+   357→  @@index([parentId])
+   358→}
+   359→
+   360→/**
+   361→ * Live poll card attached to exactly one message (Discord/Slack-style).
+   362→ */
+   363→model Poll {
+   364→  id        String       @id @default(cuid())
+   365→  messageId String       @unique
+   366→  question  String
+   367→  closedAt  DateTime? // null = voting open; set by the creator → final results frozen
+   368→  createdAt DateTime     @default(now())
+   369→  message   Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+   370→  options   PollOption[]
+   371→}
+   372→
+   373→model PollOption {
+   374→  id       String     @id @default(cuid())
+   375→  pollId   String
+   376→  text     String
+   377→  position Int        @default(0) // display order (stable across tally updates)
+   378→  poll     Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+   379→  votes    PollVote[]
+   380→
+   381→  @@index([pollId, position])
+   382→}
+   383→
+   384→model PollVote {
+   385→  id        String     @id @default(cuid())
+   386→  pollId    String
+   387→  optionId  String
+   388→  userId    String
+   389→  createdAt DateTime   @default(now())
+   390→  option    PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+   391→
+   392→  @@unique([pollId, userId]) // single-choice polls — revote moves the vote
+   393→}
+   394→
+   395→/**
+   396→ * Telegram-style saved/starred messages (per-user bookmarks).
+   397→ */
+   398→model SavedMessage {
+   399→  id        String   @id @default(cuid())
+   400→  userId    String
+   401→  messageId String
+   402→  savedAt   DateTime @default(now())
+   403→  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+   404→  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+   405→
+   406→  @@unique([userId, messageId])
+   407→  @@index([userId, savedAt])
+   408→}
+   409→
+   410→/**
+   411→ * Telegram/WhatsApp-style delayed send — flushed to a real message by the dispatch sweep.
+   412→ */
+   413→model ScheduledMessage {
+   414→  id             String       @id @default(cuid())
+   415→  conversationId String
+   416→  senderId       String
+   417→  content        String
+   418→  scheduledAt    DateTime
+   419→  sentAt         DateTime? // null = pending
+   420→  createdAt      DateTime     @default(now())
+   421→  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   422→
+   423→  @@index([scheduledAt, sentAt])
+   424→  @@index([conversationId, senderId])
+   425→}
+   426→
+   427→/**
+   428→ * Per-language LLM translation persisted on demand (Webex-style caption translation).
+   429→ */
+   430→model MessageTranslation {
+   431→  id        String   @id @default(cuid())
+   432→  messageId String
+   433→  lang      String
+   434→  text      String
+   435→  createdAt DateTime @default(now())
+   436→  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+   437→
+   438→  @@unique([messageId, lang])
+   439→  @@index([messageId])
+   440→}
+   441→
+   442→/**
+   443→ * Cached OG/link metadata — fetched live from the web, keyed by canonical URL.
+   444→ */
+   445→model LinkPreview {
+   446→  url         String    @id
+   447→  title       String?
+   448→  description String?
+   449→  imageUrl    String?
+   450→  siteName    String?
+   451→  fetchedAt   DateTime  @default(now())
+   452→  messages    Message[]
+   453→}
+   454→
+   455→model Reaction {
+   456→  id        String   @id @default(cuid())
+   457→  messageId String
+   458→  userId    String
+   459→  emoji     String
+   460→  createdAt DateTime @default(now())
+   461→  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+   462→
+   463→  @@unique([messageId, userId, emoji])
+   464→  @@index([messageId])
+   465→}
+   466→
+   467→// ═══════════════════════════════════════════════════════════════
+   468→// R24 — beyond-chat wave 3: topics, folders, xp/tournaments
+   469→// ═══════════════════════════════════════════════════════════════
+   470→
+   471→/**
+   472→ * Zulip-style topic — first-class information architecture inside a group.
+   473→ * "time is a terrible information architecture": topics turn the chat river
+   474→ * into indexed knowledge. Messages may file under one topic (null = General).
+   475→ */
+   476→model Topic {
+   477→  id             String       @id @default(cuid())
+   478→  conversationId String
+   479→  name           String
+   480→  emoji          String       @default("💬")
+   481→  createdById    String?
+   482→  createdAt      DateTime     @default(now())
+   483→  lastMessageAt  DateTime     @default(now()) // bumped on every filed message → topic sort
+   484→  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   485→  messages       Message[]
+   486→
+   487→  @@unique([conversationId, name])
+   488→  @@index([conversationId, lastMessageAt])
+   489→}
+   490→
+   491→/**
+   492→ * Signal/Beeper-style chat folder — user-scoped bucket ordering the chats list.
+   493→ */
+   494→model Folder {
+   495→  id        String               @id @default(cuid())
+   496→  userId    String
+   497→  name      String
+   498→  emoji     String               @default("📂")
+   499→  position  Int                  @default(0)
+   500→  createdAt DateTime             @default(now())
+   501→  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+   502→  entries   FolderConversation[]
+   503→
+   504→  @@index([userId, position])
+   505→}
+   506→
+   507→model FolderConversation {
+   508→  id             String       @id @default(cuid())
+   509→  folderId       String
+   510→  conversationId String
+   511→  position       Int          @default(0)
+   512→  folder         Folder       @relation(fields: [folderId], references: [id], onDelete: Cascade)
+   513→  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   514→
+   515→  @@unique([folderId, conversationId])
+   516→  @@index([folderId, position])
+   517→}
+   518→
+   519→/**
+   520→ * Twitch/Plato-style tournament season inside one conversation. While
+   521→ * status = "running", every game win in that room feeds the standings.
+   522→ */
+   523→model Tournament {
+   524→  id             String             @id @default(cuid())
+   525→  conversationId String
+   526→  name           String
+   527→  game           String             @default("tictactoe")
+   528→  status         String             @default("running") // running | finished
+   529→  createdById    String?
+   530→  endsAt         DateTime?
+   531→  createdAt      DateTime           @default(now())
+   532→  conversation   Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   533→  entries        TournamentPlayer[]
+   534→
+   535→  @@index([conversationId, status])
+   536→}
+   537→
+   538→model TournamentPlayer {
+   539→  id           String     @id @default(cuid())
+   540→  tournamentId String
+   541→  userId       String
+   542→  points       Int        @default(0) // +1 per game win while the season runs
+   543→  wins         Int        @default(0)
+   544→  losses       Int        @default(0)
+   545→  draws        Int        @default(0)
+   546→  joinedAt     DateTime   @default(now())
+   547→  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+   548→  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+   549→
+   550→  @@unique([tournamentId, userId])
+   551→  @@index([tournamentId, points])
+   552→}
+   553→
+   554→// ═══════════════════════════════════════════════════════════════
+   555→// R23 — beyond-chat wave 2: red packets, games, kanban, events
+   556→// ═══════════════════════════════════════════════════════════════
+   557→
+   558→/**
+   559→ * WeChat-style red packet riding a chat message — the sender's wallet is
+   560→ * debited atomically at creation; `slices` holds a precomputed random split
+   561→ * (JSON number[] summing exactly to `total`) and `grabbed` is the atomic
+   562→ * cursor into it. Unclaimed slices refund to the sender after `expiresAt`.
+   563→ */
+   564→model RedPacket {
+   565→  id        String          @id @default(cuid())
+   566→  messageId String          @unique
+   567→  senderId  String
+   568→  total     Int // PC debited from the sender at creation
+   569→  count     Int // number of grab slices
+   570→  grabbed   Int             @default(0) // atomic counter — next slice index
+   571→  slices    String // JSON number[] — random split summing exactly to total
+   572→  note      String          @default("") // festive caption on the bubble
+   573→  expiresAt DateTime // createdAt + 24h
+   574→  createdAt DateTime        @default(now())
+   575→  message   Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+   576→  grabs     RedPacketGrab[]
+   577→}
+   578→
+   579→model RedPacketGrab {
+   580→  id        String    @id @default(cuid())
+   581→  packetId  String
+   582→  userId    String
+   583→  amount    Int
+   584→  createdAt DateTime  @default(now())
+   585→  packet    RedPacket @relation(fields: [packetId], references: [id], onDelete: Cascade)
+   586→
+   587→  @@unique([packetId, userId])
+   588→  @@index([packetId, createdAt])
+   589→}
+   590→
+   591→/**
+   592→ * In-chat game match — tic-tac-toe first. `board` is 9 chars
+   593→ * (' ' empty / 'X' / 'O'), `playerOId` null = open challenge any room
+   594→ * member can claim via the join button on the card.
+   595→ */
+   596→model GameMatch {
+   597→  id             String       @id @default(cuid())
+   598→  conversationId String
+   599→  game           String       @default("tictactoe")
+   600→  playerXId      String // creator plays X
+   601→  playerOId      String? // null = open challenge (join button on card)
+   602→  board          String       @default("         ")
+   603→  turn           String       @default("X") // side to move: "X" | "O"
+   604→  status         String       @default("active") // active|x_won|o_won|draw|abandoned
+   605→  winnerId       String?
+   606→  winLine        String? // JSON number[] — winning triple for the highlight
+   607→  moveCount      Int          @default(0)
+   608→  createdAt      DateTime     @default(now())
+   609→  updatedAt      DateTime     @updatedAt
+   610→  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   611→
+   612→  @@index([conversationId, createdAt])
+   613→}
+   614→
+   615→/**
+   616→ * Group kanban card — three real columns per conversation, position-stable
+   617→ * ordering, optional assignee resolved against room members client-side.
+   618→ */
+   619→model KanbanCard {
+   620→  id              String       @id @default(cuid())
+   621→  conversationId  String
+   622→  title           String
+   623→  column          String       @default("todo") // todo|doing|done
+   624→  position        Int          @default(0) // stable sort within (conversation, column)
+   625→  assigneeId      String?
+   626→  createdById     String?
+   627→  sourceMessageId String? // Chanty-style provenance: card born from a chat message
+   628→  createdAt       DateTime     @default(now())
+   629→  updatedAt       DateTime     @updatedAt
+   630→  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   631→
+   632→  @@index([conversationId, column, position])
+   633→}
+   634→
+   635→/**
+   636→ * Group calendar event with per-member RSVP.
+   637→ */
+   638→model GroupEvent {
+   639→  id             String       @id @default(cuid())
+   640→  conversationId String
+   641→  title          String
+   642→  description    String       @default("")
+   643→  location       String       @default("")
+   644→  startsAt       DateTime
+   645→  createdById    String?
+   646→  createdAt      DateTime     @default(now())
+   647→  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+   648→  rsvps          EventRsvp[]
+   649→
+   650→  @@index([conversationId, startsAt])
+   651→}
+   652→
+   653→model EventRsvp {
+   654→  id          String     @id @default(cuid())
+   655→  eventId     String
+   656→  userId      String
+   657→  status      String     @default("going") // going|maybe|no
+   658→  checkedInAt DateTime? // BAND-style attendance stamp (set during the event window)
+   659→  createdAt   DateTime   @default(now())
+   660→  event       GroupEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+   661→
+   662→  @@unique([eventId, userId])
+   663→}
+   664→

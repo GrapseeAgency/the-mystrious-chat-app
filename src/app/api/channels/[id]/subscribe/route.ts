@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 // /api/channels/[id]/subscribe — join / leave a broadcast channel
-// (R30-c). Joining lands a role:"member" participant row; admins
-// (channel creators) cannot leave their own channel.
+// (R30-c, leave succession reworked R33-b). Joining lands a role:"member"
+// participant row; an admin may leave only while another admin remains —
+// the last admin must promote a successor first.
 // ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -87,8 +88,11 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
 /**
  * DELETE /api/channels/[id]/subscribe  body { userId }
- * Leave the channel (participant row removed). The admin/creator cannot
- * leave their own channel → 403 'Transfer or delete the channel instead.'
+ * Leave the channel (participant row removed). R33-b honest succession:
+ * an admin may leave ONLY while at least one OTHER admin remains (counted
+ * live from participant roles); the LAST admin is blocked with 403 until
+ * they promote someone via "Make admin" on the channel info page.
+ * Members leave freely.
  */
 export async function DELETE(req: Request, { params }: RouteCtx) {
   const { id } = await params
@@ -110,10 +114,19 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'You are not subscribed to this channel.' }, { status: 404 })
   }
   if (participant.role === 'admin') {
-    return NextResponse.json(
-      { error: 'Transfer or delete the channel instead.' },
-      { status: 403 },
-    )
+    // Real succession check — leave is fine when another admin stays behind.
+    const otherAdmins = await db.conversationParticipant.count({
+      where: { conversationId: id, role: 'admin', NOT: { userId } },
+    })
+    if (otherAdmins === 0) {
+      return NextResponse.json(
+        {
+          error:
+            'You are the last admin of this channel — promote another admin ("Make admin" on the channel info) before leaving.',
+        },
+        { status: 403 },
+      )
+    }
   }
 
   await db.conversationParticipant.delete({ where: { id: participant.id } })

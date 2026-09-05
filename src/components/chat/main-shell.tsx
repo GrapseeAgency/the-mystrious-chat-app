@@ -36,6 +36,7 @@ import { NewChatSheet } from '@/components/chat/new-chat-sheet'
 import { JoinGroupSheet } from '@/components/chat/join-sheet'
 import { SettingsScreen } from '@/components/chat/settings-screen'
 import { SpotlightOverlay } from '@/components/chat/spotlight'
+import { useReminderDueLoop } from '@/components/chat/reminders-sheet'
 
 const TAB_LABEL: Record<PulseTab, string> = {
   chats: 'Chats',
@@ -169,6 +170,12 @@ export function MainShell({ me }: { me: AppUser }) {
   useEffect(() => {
     void hydratePrefs(me.id)
   }, [hydratePrefs, me.id])
+
+  // R33-b — shell-level reminder due loop: nudges fire on EVERY tab while no
+  // room is open. The hook is a module-level singleton (owner flag), so this
+  // mount and the per-room mounts in chat-room never double-poll or
+  // double-toast — whichever mounts first owns the single 30s poll timer.
+  useReminderDueLoop(me.id)
 
   // ⌘K / Ctrl+K toggles Spotlight from anywhere in the shell
   useEffect(() => {

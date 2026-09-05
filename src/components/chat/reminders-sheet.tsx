@@ -178,9 +178,21 @@ const deliveredReminderIds = new Set<string>()
 const DUE_POLL_MS = 30_000
 
 /**
- * Poll due reminders every 30s while mounted; toast each one once with a
- * View action that fires REMINDER_JUMP_EVENT, then PATCH it fired. Skipped
- * while the tab is hidden (a visibility-change back to visible polls at once).
+ * R33-b — module-level SINGLETON guard for the due loop. The first mounted
+ * hook instance (per user id) becomes the owner and runs the ONLY poll
+ * timer; every other mounted instance (chat-room per room + the main-shell
+ * mount) becomes a no-op. Multiple mounts therefore never double-poll or
+ * double-toast — combined with the deliveredReminderIds Set the guarantee
+ * is belt-and-braces.
+ */
+let dueLoopOwner: { meId: string } | null = null
+
+/**
+ * Poll due reminders every 30s from wherever this is mounted (shell-level
+ * mount R33-b: nudges fire on every tab, no room required). Toasts each one
+ * once with a View action that fires REMINDER_JUMP_EVENT, then PATCHes it
+ * fired. Skipped while the tab is hidden (a visibility-change back to
+ * visible polls at once).
  */
 export function useReminderDueLoop(meId: string): void {
   const queryClient = useQueryClient()
@@ -188,6 +200,9 @@ export function useReminderDueLoop(meId: string): void {
 
   useEffect(() => {
     if (!meId) return
+    // Singleton: only the first mount for this user owns the interval.
+    if (dueLoopOwner !== null && dueLoopOwner.meId === meId) return
+    dueLoopOwner = { meId }
     let cancelled = false
 
     const poll = async () => {
@@ -250,6 +265,9 @@ export function useReminderDueLoop(meId: string): void {
       cancelled = true
       clearInterval(interval)
       document.removeEventListener('visibilitychange', onVisibility)
+      // Release ownership so a surviving mount can take over on its next
+      // effect run (main-shell outlives rooms in practice).
+      if (dueLoopOwner?.meId === meId) dueLoopOwner = null
     }
   }, [meId, queryClient])
 }

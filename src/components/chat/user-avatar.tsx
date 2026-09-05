@@ -6,6 +6,9 @@
 // --glass-rim token) gives photo + palette a specular edge.
 // Backward compatible — callers that pass only name/color keep
 // the palette glyph (photo simply absent → falsy avatar).
+// R33-b: GroupAvatar gains the same optional `photo` (channels and
+// groups) — a circular image above the gradient+initials fallback.
+// Callers that never pass it keep the exact palette tile.
 // ─────────────────────────────────────────────────────────────
 'use client'
 
@@ -95,6 +98,8 @@ export interface GroupAvatarProps {
   id: string
   size?: number
   className?: string
+  /** R33-b: channel/group photo path ("/api/uploads/<file>") — null/undefined = palette tile */
+  photo?: string | null
 }
 
 export const GroupAvatar = memo(function GroupAvatar({
@@ -102,23 +107,57 @@ export const GroupAvatar = memo(function GroupAvatar({
   id,
   size = 48,
   className,
+  photo,
 }: GroupAvatarProps) {
+  const hasPhoto = typeof photo === 'string' && photo.length > 0
+  const gradient = groupGradientFor(id)
+  const initials = title.trim().length > 0 ? initialsOf(title) : null
+  if (hasPhoto) {
+    // R33-b — circular photo with the SAME gradient+initials as fallback
+    // (a broken path can never crash the surface: Radix re-shows the tile)
+    return (
+      <div className={cn('relative shrink-0', className)} style={{ width: size, height: size }}>
+        <Avatar className="size-full" style={{ width: size, height: size }}>
+          <AvatarImage
+            src={photo}
+            alt={title || 'Group'}
+            className="size-full rounded-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+          <AvatarFallback
+            className={cn(
+              'flex items-center justify-center rounded-full bg-gradient-to-br font-semibold text-white select-none',
+              gradient,
+            )}
+            style={{ fontSize: Math.max(11, Math.round(size * 0.34)) }}
+          >
+            {initials ?? <UsersRound style={{ width: size * 0.5, height: size * 0.5 }} />}
+          </AvatarFallback>
+        </Avatar>
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-full"
+          style={{ boxShadow: 'var(--glass-rim)' }}
+        />
+      </div>
+    )
+  }
   return (
     <div
       aria-hidden
       className={cn(
         'flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-sm',
-        groupGradientFor(id),
+        gradient,
         className,
       )}
       style={{ width: size, height: size, borderRadius: Math.max(10, size * 0.28) }}
     >
-      {title.trim().length > 0 ? (
+      {initials ? (
         <span
           className="font-semibold tracking-tight"
           style={{ fontSize: Math.max(11, Math.round(size * 0.34)) }}
         >
-          {initialsOf(title)}
+          {initials}
         </span>
       ) : (
         <UsersRound style={{ width: size * 0.5, height: size * 0.5 }} />
