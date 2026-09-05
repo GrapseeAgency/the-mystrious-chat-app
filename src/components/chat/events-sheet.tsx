@@ -1,10 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-// Pulse — group events & RSVP sheet (Task R23-d "Beyond Chat" 2).
+// Pulse — group events & RSVP sheet (Task R23-d "Beyond Chat" 2;
+// R30-a adds BAND-style attendance check-in).
 // A dark bottom sheet over the chat: schedule events, RSVP
-// Going/Maybe/Can't, watch live countdowns. Everything is REAL —
-// GroupEvent + EventRsvp rows via the events REST API, polled
-// every 5s while open (paused when the tab is hidden), with an
-// optimistic RSVP patch so pills snap instantly.
+// Going/Maybe/Can't, watch live countdowns, and CHECK IN during
+// the event window (start −15 min … start +2 h). Everything is
+// REAL — GroupEvent + EventRsvp rows via the events REST API,
+// polled every 5s while open (paused when the tab is hidden),
+// with an optimistic RSVP/check-in patch so pills snap instantly.
 //
 // Wiring contract for chat-room (lead): mount once per room —
 //   const events = useEventsSheet(conversationId, me.id, members)
@@ -23,12 +25,15 @@ import {
 } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  BadgeCheck,
   CalendarDays,
   CalendarPlus,
   ChevronDown,
+  Clock,
   LoaderCircle,
   MapPin,
   Trash2,
+  UserCheck,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -53,6 +58,8 @@ export interface EventRsvpWire {
   userId: string
   name: string
   status: EventRsvpStatus
+  /** Attendance stamp (ISO) — null until the member checks in. */
+  checkedInAt: string | null
 }
 
 export interface EventCounts {
@@ -93,6 +100,20 @@ interface RsvpResponse {
   counts: EventCounts
 }
 
+interface CheckinResponse {
+  checkIn: {
+    id: string
+    eventId: string
+    userId: string
+    status: string
+    checkedInAt: string | null
+    createdAt: string
+  } | null
+  xpAwarded: boolean
+  checkedInCount: number
+  alreadyCheckedIn: boolean
+}
+
 interface DeleteResponse {
   ok: boolean
 }
@@ -115,6 +136,10 @@ const TICK_MS = 30_000
 const DELETE_CONFIRM_MS = 2600
 const TITLE_MAX = 120
 const LOCATION_MAX = 200
+
+/** Check-in window — mirrors POST /api/events/[id]/checkin exactly. */
+const CHECKIN_OPEN_BEFORE_MS = 15 * 60 * 1000
+const CHECKIN_CLOSE_AFTER_MS = 2 * 60 * 60 * 1000
 
 const RSVP_CHOICES: ReadonlyArray<{ status: EventRsvpStatus; label: string }> = [
   { status: 'going', label: 'Going' },
@@ -193,7 +218,8 @@ function DateTile({ startsAtMs }: { startsAtMs: number }) {
   )
 }
 
-/** Initials avatar stack of the going members (up to 4 + '+n'). */
+/** Initials avatar stack of the going members (up to 4 + '+n');
+ *  checked-in members wear a subtle emerald verification dot. */
 function GoingStack({
   rsvps,
   memberById,
@@ -203,21 +229,32 @@ function GoingStack({
 }) {
   const going = rsvps.filter((r) => r.status === 'going')
   if (going.length === 0) return null
+  const here = going.filter((r) => r.checkedInAt).length
   const shown = going.slice(0, 4)
   const extra = going.length - shown.length
   return (
-    <div className="flex items-center" role="img" aria-label={`${going.length} going`}>
+    <div
+      className="flex items-center"
+      role="img"
+      aria-label={here > 0 ? `${going.length} going · ${here} checked in` : `${going.length} going`}
+    >
       {shown.map((r, i) => (
         <span
           key={r.userId}
-          title={r.name}
+          title={r.checkedInAt ? `${r.name} — checked in` : r.name}
           className={cn(
-            'flex size-[22px] items-center justify-center rounded-full bg-gradient-to-br text-[9px] font-bold text-white ring-2 ring-zinc-950',
+            'relative flex size-[22px] items-center justify-center rounded-full bg-gradient-to-br text-[9px] font-bold text-white ring-2 ring-zinc-950',
             gradientFor(memberById.get(r.userId)?.color ?? 'emerald'),
           )}
           style={{ marginLeft: i === 0 ? 0 : -6 }}
         >
           {initialsOf(r.name)}
+          {r.checkedInAt ? (
+            <span
+              aria-hidden
+              className="absolute right-0 bottom-0 size-2 rounded-full bg-emerald-400 ring-2 ring-zinc-950"
+            />
+          ) : null}
         </span>
       ))}
       {extra > 0 ? (
@@ -314,9 +351,16 @@ export function EventsSheet({
           events: old.events.map((e) => {
             if (e.id !== eventId) return e
             const others = e.rsvps.filter((r) => r.userId !== me.id)
+            const mine = e.rsvps.find((r) => r.userId === me.id)
             const rsvps: EventRsvpWire[] = [
               ...others,
-              { userId: me.id, name: memberById.get(me.id)?.name ?? 'You', status },
+              {
+                userId: me.id,
+                name: memberById.get(me.id)?.name ?? 'You',
+                status,
+                // a revote never wipes an existing attendance stamp
+                checkedInAt: mine?.checkedInAt ?? null,
+              },
             ]
             return { ...e, rsvps, counts: tallyOf(rsvps), myStatus: status }
           }),
@@ -352,6 +396,52 @@ export function EventsSheet({
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Could not schedule the event.')
+    },
+  })
+
+  const checkinMutation = useMutation({
+    mutationFn: ({ eventId }: { eventId: string }) =>
+      apiJson<CheckinResponse>(`/api/events/${encodeURIComponent(eventId)}/checkin`, {
+        method: 'POST',
+        body: JSON.stringify({ userId: me.id }),
+      }),
+    // optimistic: stamp my row instantly — the roster chip + dot
+    // pop on the next render, the 5s poll confirms server truth
+    onMutate: async ({ eventId }) => {
+      await queryClient.cancelQueries({ queryKey: ['events', conversationId] })
+      const prev = queryClient.getQueryData<EventsGetResponse>(['events', conversationId])
+      queryClient.setQueryData<EventsGetResponse>(['events', conversationId], (old) => {
+        if (!old) return old
+        const stamp = new Date().toISOString()
+        return {
+          events: old.events.map((e) =>
+            e.id !== eventId
+              ? e
+              : {
+                  ...e,
+                  rsvps: e.rsvps.map((r) =>
+                    r.userId === me.id && !r.checkedInAt ? { ...r, checkedInAt: stamp } : r,
+                  ),
+                },
+          ),
+        }
+      })
+      return { prev }
+    },
+    onError: (error, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['events', conversationId], ctx.prev)
+      toast.error(error instanceof Error ? error.message : 'Check-in failed — try again.')
+    },
+    onSuccess: (res) => {
+      haptic(16)
+      if (res.alreadyCheckedIn) {
+        toast.info('Already checked in.')
+      } else {
+        toast.success(res.xpAwarded ? 'Checked in — see you there · +15 XP' : 'Checked in — see you there')
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['events', conversationId] })
     },
   })
 
@@ -421,6 +511,14 @@ export function EventsSheet({
     const startsAtMs = new Date(e.startsAt).getTime()
     const canDelete = me.id === e.createdById || myRole === 'admin'
     const creatorName = (e.createdById ? memberById.get(e.createdById)?.name : undefined) ?? e.createdByName
+    // ── attendance (R30-a): window, eligibility, roster count ──
+    const myCheckedInAt = e.rsvps.find((r) => r.userId === me.id)?.checkedInAt ?? null
+    const windowOpen =
+      startsAtMs - CHECKIN_OPEN_BEFORE_MS <= nowMs && nowMs <= startsAtMs + CHECKIN_CLOSE_AFTER_MS
+    const canCheckIn = windowOpen && e.myStatus === 'going' && !myCheckedInAt
+    const showCheckinHint =
+      !windowOpen && !myCheckedInAt && e.myStatus === 'going' && nowMs < startsAtMs - CHECKIN_OPEN_BEFORE_MS
+    const hereCount = e.rsvps.reduce((n, r) => (r.checkedInAt ? n + 1 : n), 0)
     return (
       <motion.div
         key={e.id}
@@ -521,8 +619,72 @@ export function EventsSheet({
               )
             })}
           </div>
-          <GoingStack rsvps={e.rsvps} memberById={memberById} />
+          <div className="flex shrink-0 items-center gap-2">
+            {hereCount > 0 ? (
+              <span
+                aria-label={`${hereCount} checked in here`}
+                className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-bold text-emerald-400"
+              >
+                <UserCheck className="size-3" aria-hidden />
+                <span className="tabular-nums">{hereCount}</span> here
+              </span>
+            ) : null}
+            <GoingStack rsvps={e.rsvps} memberById={memberById} />
+          </div>
         </div>
+
+        {/* attendance — prominent glass check-in while the window is open,
+            spring-pop "Checked in" chip after, muted pre-window hint */}
+        {canCheckIn ? (
+          <motion.button
+            type="button"
+            whileTap={reduce ? undefined : pressTap}
+            disabled={checkinMutation.isPending}
+            aria-label={`Check in to ${e.title}`}
+            onClick={() => {
+              haptic(10)
+              checkinMutation.mutate({ eventId: e.id })
+            }}
+            initial={reduce ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={spring.soft}
+            style={{ willChange: 'transform' }}
+            className="relative mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-emerald-400/30 bg-emerald-500/15 text-[13px] font-bold text-emerald-300 outline-none ring-emerald-400/60 backdrop-blur-md transition-colors duration-150 hover:bg-emerald-500/25 focus-visible:ring-2 disabled:opacity-60"
+          >
+            {!reduce ? (
+              <motion.span
+                aria-hidden
+                className="absolute inset-0 rounded-xl border border-emerald-400/50"
+                animate={{ opacity: [0.5, 0], scale: [1, 1.06] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
+              />
+            ) : null}
+            {checkinMutation.isPending ? (
+              <LoaderCircle className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <UserCheck className="size-4" aria-hidden />
+            )}
+            Check in
+          </motion.button>
+        ) : myCheckedInAt ? (
+          <motion.div
+            initial={reduce ? false : { opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={spring.bouncy}
+            style={{ willChange: 'transform' }}
+            role="status"
+            aria-label={`Checked in to ${e.title}`}
+            className="mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-400/25 bg-emerald-500/10 text-[12.5px] font-bold text-emerald-300"
+          >
+            <BadgeCheck className="size-4" aria-hidden />
+            Checked in
+          </motion.div>
+        ) : showCheckinHint ? (
+          <p className="mt-2.5 flex items-center gap-1.5 px-1 text-[11px] font-medium text-zinc-500">
+            <Clock className="size-3 shrink-0" aria-hidden />
+            Check-in opens 15 min before start
+          </p>
+        ) : null}
       </motion.div>
     )
   }

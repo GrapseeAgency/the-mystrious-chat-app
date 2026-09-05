@@ -9,7 +9,7 @@
 //   GET  ?userId=<member id>
 //        → { events: [{ id, title, description, location, startsAt,
 //              createdById, createdByName,
-//              rsvps: [{ userId, name, status }],
+//              rsvps: [{ userId, name, status, checkedInAt }],
 //              counts: { going, maybe, no },
 //              myStatus: 'going'|'maybe'|'no'|null }] }
 //        Upcoming (startsAt >= now) ascending first, then past
@@ -84,7 +84,7 @@ type EventRow = {
   location: string
   startsAt: Date
   createdById: string | null
-  rsvps: Array<{ userId: string; status: string }>
+  rsvps: Array<{ userId: string; status: string; checkedInAt: Date | null }>
 }
 
 /** Shape a DB row for the wire against a userId→name map. */
@@ -100,7 +100,7 @@ function serializeEvent(
   startsAt: string
   createdById: string | null
   createdByName: string | null
-  rsvps: Array<{ userId: string; name: string; status: RsvpStatus }>
+  rsvps: Array<{ userId: string; name: string; status: RsvpStatus; checkedInAt: string | null }>
   counts: { going: number; maybe: number; no: number }
   myStatus: RsvpStatus | null
 } {
@@ -108,6 +108,7 @@ function serializeEvent(
     userId: r.userId,
     name: names.get(r.userId) ?? 'Former member',
     status: asStatus(r.status),
+    checkedInAt: r.checkedInAt ? r.checkedInAt.toISOString() : null,
   }))
   return {
     id: row.id,
@@ -157,7 +158,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
       include: {
         rsvps: {
           orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-          select: { userId: true, status: true },
+          select: { userId: true, status: true, checkedInAt: true },
         },
       },
     }),
@@ -168,7 +169,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
       include: {
         rsvps: {
           orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-          select: { userId: true, status: true },
+          select: { userId: true, status: true, checkedInAt: true },
         },
       },
     }),
@@ -233,7 +234,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     include: {
       rsvps: {
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        select: { userId: true, status: true },
+        select: { userId: true, status: true, checkedInAt: true },
       },
     },
   })

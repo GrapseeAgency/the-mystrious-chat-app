@@ -1,0 +1,570 @@
+Yes. The distinction is now clear.
+
+You are **not** asking me which platform has the most features. You are asking me to dissect each product as a **messaging experience**:
+
+**1. What is the single most important messaging feature?**
+**2. What does an ordinary user actually do, step by step?**
+**3. How is that feature presented/decorated in the interface?**
+**4. What is the systematic structure underneath it?**
+**5. What does the platform add beyond plain messaging?**
+
+That is the useful benchmark for designing a serious messaging application.
+
+I have also tightened the research standard here: where an item is not actually a standalone platform, has been discontinued, or I cannot verify the product you intended, I will say so rather than manufacture a feature.
+
+---
+
+# The 100-platform messaging benchmark
+
+## 1–10
+
+| #      | Platform     | Crucial messaging feature                          | Ordinary flow                                                                           | How the interface/system is organised                                                                                                                                                                                                                                                                                                                                | Beyond chat                                                                                      |
+| ------ | ------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **1**  | **Discord**  | **Server/channel communication**                   | Join server → open channel → read/send → reply/thread → jump to voice                   | Server on left → channel hierarchy → message stream → right-side member/presence layer. Channels, threads, forums, voice and apps are separated by purpose.                                                                                                                                                                                                          | Forums, voice, stages, Activities, apps, roles, events                                           |
+| **2**  | **Slack**    | **Contextual team conversation**                   | Workspace → channel/DM → message → thread → action                                      | Workspace → channels/DMs → conversation pane → contextual side panels. Canvases and Lists are deliberately separate from the raw chat stream. Slack explicitly positions channels, Huddles, Canvases, Lists and integrations as one work system. ([Slack][1])                                                                                                        | Huddles, Canvas, Lists, workflows, integrations, AI                                              |
+| **3**  | **WhatsApp** | **Extremely frictionless private/group messaging** | Chats → open contact/group → message → media/voice → call                               | Very restrained chat list, contact identity, message bubbles, familiar attachment tray, calls/status/community kept as distinct sections rather than cluttering the thread.                                                                                                                                                                                          | Communities, Channels, Status, business services, payments in supported markets                  |
+| **4**  | **Telegram** | **Rich, large-scale messaging**                    | Contact/group/channel → message → reply/forward/media → optional bot/Mini App           | Very information-dense but modular: chat list, pinned items, folders, topics, media, bots and channels each have their own interaction model.                                                                                                                                                                                                                        | Channels, massive groups, topics, bots, Mini Apps                                                |
+| **5**  | **Signal**   | **Private end-to-end encrypted messaging**         | Contact/group → message → reply/react/edit/disappear → call                             | Deliberately quiet UI; privacy controls are embedded into the conversation rather than presented as a giant security dashboard. Signal currently supports polls, pinned messages, usernames/number privacy, Stories, folders, scheduling, screen sharing, themes, disappearing messages and Note to Self. ([Signal Support][2])                                      | Private Stories, disappearing messages, encrypted calls, Note to Self, privacy identity controls |
+| **6**  | **Element**  | **Room-based federated messaging**                 | Homeserver/account → Space → room → message/thread → call                               | Spaces act as higher-level containers; rooms are the actual conversations. This prevents one enormous global chat list.                                                                                                                                                                                                                                              | Federation, bridges, widgets, calls, communities                                                 |
+| **7**  | **Revolt**   | **Server/channel messaging**                       | Server → channel → message → reply → voice                                              | Similar mental model to Discord: persistent servers, channels, permissions and community organisation rather than a flat contact inbox.                                                                                                                                                                                                                              | Community spaces, voice, roles, open ecosystem                                                   |
+| **8**  | **Beeper**   | **Unified multi-network inbox**                    | Open one inbox → see conversations from multiple networks → reply without changing apps | The decoration is intentionally **inbox-centric**, not network-centric. Different networks are abstracted behind a common conversation list. Beeper currently advertises connections including WhatsApp, Instagram, Telegram, Signal, Messenger, X, Google Messages, Google Chat, LinkedIn, Discord and Slack, together with reminders and scheduling. ([Beeper][3]) | Multi-network aggregation, reminders, scheduling, unified search/workflow                        |
+| **9**  | **Threema**  | **Privacy-preserving direct/group messaging**      | Contact/group → compose → send → call/share                                             | Minimal secure-messenger presentation; identity and privacy controls are secondary layers rather than dominating the message surface.                                                                                                                                                                                                                                | Encrypted calls, groups, polls, business/enterprise functions                                    |
+| **10** | **Viber**    | **Expressive messaging**                           | Chat → text/photo/video/voice → sticker/GIF → reaction/call                             | Very visual composer and expression tools; sticker/GIF choices are treated as a communication language rather than obscure add-ons. Viber officially highlights stickers/GIFs, voice/video, group chat, Communities, edit/delete, disappearing messages and full device sync. ([Viber][4])                                                                           | Stickers, GIFs, Communities, Viber Out, calls                                                    |
+
+---
+
+## 11–20
+
+| #      | Platform              | Crucial messaging feature               | Ordinary flow                                                            | Interface/system logic                                                                                                                                                                                                                                                                                | Beyond chat                                                         |
+| ------ | --------------------- | --------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **11** | **WeChat**            | **Messaging as a gateway to services**  | Contact/group → message → shared content/service → transaction/action    | Messaging is one major tab within a much larger ecosystem; services can feel native rather than “opened externally”.                                                                                                                                                                                  | Mini Programs, Channels, payments, commerce, services               |
+| **12** | **LINE**              | **Stickers + rich personal messaging**  | Chat → text → sticker/media → call                                       | Strong visual identity, character/sticker-first expression and separate social/service areas.                                                                                                                                                                                                         | OpenChat, official accounts, stickers, games/services               |
+| **13** | **KakaoTalk**         | **Persistent social messaging**         | Contact/group → chat → media/sticker → call/service                      | Clean conversation area surrounded by a larger Kakao service ecosystem; identity and contacts are central.                                                                                                                                                                                            | Open Chat, Channels, commerce/gifts, wider Kakao services           |
+| **14** | **Session**           | **Pseudonymous private messaging**      | Create identity → connect → message → disappearing/private communication | Interface remains messenger-like, but the system deliberately avoids making the phone-number identity model the centre.                                                                                                                                                                               | Decentralised privacy architecture                                  |
+| **15** | **Wickr / AWS Wickr** | **Ephemeral secure communication**      | DM/room → send → timed expiry/burn-on-read → call/file                   | Security controls are exposed as room/message policies rather than decorative effects. AWS Wickr supports 1:1/group messages, 1–5 GB-class file sharing depending on offering, expiry timers, burn-on-read, audio/video calls, screen sharing and administrative controls. ([Amazon Web Services][5]) | Compliance, federation, retention, bots, enterprise security        |
+| **16** | **Matrix**            | **Federated room messaging**            | Client → server → room → message → federation/bridge                     | Matrix itself has no single UI; that is precisely the point. Clients can design different experiences over the same communication protocol.                                                                                                                                                           | Federation, bridges, interoperability, decentralised infrastructure |
+| **17** | **Twitch**            | **Live chat beside live content**       | Enter stream → watch → read chat → react/emote → participate             | **Video gets the dominant visual area; chat becomes the persistent audience layer.** That hierarchy is the important design decision.                                                                                                                                                                 | Subscriptions, Bits, raids, clips, channel points, moderation       |
+| **18** | **Microsoft Teams**   | **Conversation tied to workspaces**     | Team/channel/chat → message → thread/reaction → file/meeting/action      | Teams separates chat, channels and meetings but lets documents and collaborative components appear in context.                                                                                                                                                                                        | Meetings, files, Loop, apps, workflows, Microsoft 365               |
+| **19** | **Google Chat**       | **Spaces + threaded work conversation** | Space/DM → message → thread → file/app/meeting                           | Space-centric organisation keeps work conversations grouped; Google Workspace objects can enter the same context.                                                                                                                                                                                     | Meet, Drive, Workspace apps, bots, shared tasks/content             |
+| **20** | **Zoom**              | **Chat attached to meetings/work**      | DM/team → chat → meeting → follow-up content                             | Conversation, meetings, clips, docs and whiteboards are increasingly presented as adjacent work surfaces. Zoom's current AI layer can work from meetings/chats/docs and generate work artefacts.                                                                                                      | Meetings, Clips, Docs, Whiteboard, AI Companion                     |
+
+---
+
+# 21–30
+
+| #      | Platform        | Crucial messaging feature                  | Ordinary flow                                                      | Decoration/system                                                                                                                                                                                                                 | Beyond chat                                                             |
+| ------ | --------------- | ------------------------------------------ | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **21** | **Webex**       | **Persistent meeting-space communication** | Space → message → meeting/call → files                             | Spaces provide continuity between asynchronous chat and synchronous meetings.                                                                                                                                                     | Meetings, whiteboards, calling, integrations                            |
+| **22** | **Chanty**      | **Message → task conversion**              | Chat → message → convert message to task → assign/due date → track | The task is deliberately born **inside the conversation**, instead of forcing copying into another system. Chanty officially lists tasks, Kanban, calls, pins, search, integrations and message-to-task conversion. ([Chanty][6]) | Tasks, Kanban, Teambook, integrations                                   |
+| **23** | **Flock**       | **Channel-centred team communication**     | Join channel → message → file/link → call                          | Public/private channels establish the social structure first; Flock explicitly uses channels as the central hub and separates calls, search and voice notes as communication modes. ([Flock][7])                                  | Calls, guests, search, integrations, workflow tools                     |
+| **24** | **Ryver**       | **Chat vs topic vs task separation**       | People/team/forum → Chat or Topic → discussion → task/call         | This is unusually explicit: **Chat = immediate**, **Topics = focused discussion**, **Tasks = execution**, **Calls = synchronous**. Ryver also lets a chat message become a Topic or Task. ([Ryver Support][8])                    | Forums, topics, tasks, Kanban, calls                                    |
+| **25** | **Mattermost**  | **Structured operational/team messaging**  | Team → channel → message/thread → operational action               | Channel-centric, administration-heavy and designed to keep operational discussions organised.                                                                                                                                     | Playbooks, integrations, calls, self-hosting                            |
+| **26** | **Rocket.Chat** | **Multi-channel unified conversation**     | Omnichannel/room → message → thread → agent/team action            | Rooms, channels, threads and external customer channels are unified rather than treated as unrelated products.                                                                                                                    | Omnichannel support, Livechat, integrations, automation                 |
+| **27** | **Zulip**       | **Topic-based messaging**                  | Stream → topic → conversation → replies                            | This is one of the most important information-architecture ideas in the entire list: multiple discussions coexist inside one stream because **topics label the conversation itself**. ([Zulip][9])                                | Bots, integrations, reminders, polls, workflows                         |
+| **28** | **Fumble**      | **Unverified**                             | —                                                                  | I cannot establish a sufficiently reliable current communication-product profile for the “Fumble” you intended. I will not invent its feature architecture.                                                                       | —                                                                       |
+| **29** | **Guilded**     | **Gaming-community communication**         | Server → channel → community activity → voice/text                 | Historically, its strength was combining communication with gaming-oriented organisation rather than only channels.                                                                                                               | Calendars, forums, gaming communities — **but Guilded has been sunset** |
+| **30** | **TeamSpeak**   | **Highly controllable voice channels**     | Server → channel → join voice → speak                              | Tree-like channel hierarchy and permissions are the interface's organising principle. TeamSpeak 6 exposes separate server and channel permission groups. ([TeamSpeak][10])                                                        | Server administration, voice infrastructure                             |
+
+---
+
+# 31–40
+
+| #      | Platform         | Crucial messaging feature                          | Ordinary flow                                               | Decoration/system                                                                                                                                                                                                        | Beyond chat                                                    |
+| ------ | ---------------- | -------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| **31** | **Mumble**       | **Low-latency/positional voice**                   | Join voice → talk → hear people spatially                   | The interface is relatively utilitarian because **audio behaviour** is the core product. Positional audio changes volume/direction according to another participant's position. ([Mumble][11])                           | Positional audio, gaming integration                           |
+| **32** | **Steam Chat**   | **Messaging tied to game presence**                | Friend/game group → message → voice/group → join game       | Friends are contextualised by what they are doing rather than merely being “online”.                                                                                                                                     | Game presence, groups, voice, gaming ecosystem                 |
+| **33** | **Skype**        | **Internet calling + messaging**                   | Contact → chat → call/video/share                           | Historically integrated messaging and calling into one communication surface.                                                                                                                                            | Calling, file sharing, screen sharing — **retired 5 May 2025** |
+| **34** | **VRChat**       | **Spatial social communication**                   | Enter world → instance → see avatars → talk → move/interact | The *world itself* replaces conventional chat-screen hierarchy. Presence, avatar, distance and spatial audio are the interface. VRChat instances determine who can share a particular world session. ([VRChat Wiki][12]) | Worlds, avatars, groups, user-generated environments           |
+| **35** | **Rec Room**     | **Social communication through shared activities** | Enter room → meet people → talk → play/build                | UI is subordinated to the room/experience. You interact with people through the world, not solely through a message list.                                                                                                | User-created rooms, Maker Pen, games, events                   |
+| **36** | **Snapchat**     | **Camera-first messaging**                         | Camera → capture → send/chat → Story → reply                | Camera is the starting surface, not a text inbox. Ephemeral content has its own presentation, while chat remains a separate layer.                                                                                       | Stories, Spotlight, Lenses, Map                                |
+| **37** | **Instagram DM** | **Sharing native visual objects**                  | See post/Reel/Story → share to person/group → react/reply   | The message is visually rich because Instagram objects remain visually recognisable inside the conversation.                                                                                                             | Reels/Stories/media graph, creator sharing                     |
+| **38** | **TikTok Inbox** | **Conversation around discovered media**           | Discover video → share → inbox → reply                      | Messaging inherits TikTok's media-first visual language instead of becoming an ordinary text messenger.                                                                                                                  | Video discovery and social sharing                             |
+| **39** | **X DMs**        | **Private channel attached to public discourse**   | Public post/Space → share privately → DM → conversation     | Public and private communication are linked; a public object can become the starting point for a private discussion.                                                                                                     | Posts, Communities, Spaces, media                              |
+| **40** | **Threads**      | **Public conversational posts**                    | Compose post → replies → quote/repost → follow discussion   | Its conversation architecture is primarily public and feed-based rather than DM-first.                                                                                                                                   | Public discussion, communities/social graph                    |
+
+---
+
+# 41–50
+
+| #      | Platform             | Crucial messaging feature               | Ordinary flow                                                     | Decoration/system                                                                                                                                                                    | Beyond chat                                                    |
+| ------ | -------------------- | --------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| **41** | **iMessage**         | **Deeply integrated private messaging** | Messages → rich media/reaction → call/share/content               | Apple prioritises clean bubbles and contextual actions, while system-level features reduce the feeling of switching apps.                                                            | Reactions, effects, shared content, calling, location/features |
+| **42** | **Google Messages**  | **RCS rich messaging**                  | Contact → message → typing/read/media → call/share                | Familiar SMS-derived layout enhanced with richer conversation controls. Google Messages supports RCS features such as typing/read indicators and richer media. ([Signal Support][2]) | RCS, multimedia messaging, device ecosystem                    |
+| **43** | **RCS Chat**         | **Modern carrier messaging protocol**   | Compose → carrier/RCS network → deliver/read/reply                | **Not one app**, so there is no universal RCS decoration. Individual clients determine the visual experience.                                                                        | Rich messaging at protocol level                               |
+| **44** | **Voxer**            | **Push-to-talk voice messaging**        | Hold/tap → speak → recipient listens immediately or later → reply | Voice has the interaction priority, essentially recreating walkie-talkie behaviour without requiring a live phone call.                                                              | Text, images, live/asynchronous voice                          |
+| **45** | **Zello**            | **Push-to-talk coordination**           | Select channel/person → press talk → release → listen             | Extremely action-oriented: the interface revolves around one fast communication gesture.                                                                                             | Channels, location/team use, dispatch-style communication      |
+| **46** | **Marco Polo**       | **Asynchronous video messages**         | Record video → send → recipient watches later → responds          | Video takes the place of voice notes, but remains asynchronous.                                                                                                                      | Video-first relationships                                      |
+| **47** | **Clubhouse**        | **Live audio rooms**                    | Discover room → enter → listen → raise hand → speak               | Speaker/listener hierarchy replaces traditional chat hierarchy. The room itself is the social object.                                                                                | Live discovery, clubs, events                                  |
+| **48** | **Twitter/X Spaces** | **Live audio attached to social graph** | See Space → enter → listen/request speaker → talk                 | Live audio is surfaced through the existing X network rather than being isolated from the feed.                                                                                      | Live events, public discussion                                 |
+| **49** | **BeReal**           | **Ritualised ephemeral social sharing** | Prompt → camera → post → see friends → react/comment              | The defining decoration is the **time-based ritual** rather than a huge feature surface.                                                                                             | Friends feed, reactions/comments                               |
+| **50** | **Bere.al**          | **Not a separate messenger platform**   | —                                                                 | This should not be counted as an independent messaging architecture.                                                                                                                 | —                                                              |
+
+---
+
+# 51–60
+
+| #      | Platform              | Crucial messaging feature                             | Ordinary flow                                                                     | Decoration/system                                                                                                                                                                                                 | Beyond chat                                      |
+| ------ | --------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **51** | **Status**            | **Decentralised private messaging**                   | Identity → contact → chat → community/transaction                                 | Messaging coexists with wallet/community concepts rather than being a conventional social inbox.                                                                                                                  | Wallet, decentralised communities                |
+| **52** | **Status IM**         | **Same Status messaging ecosystem**                   | Same underlying model as Status                                                   | Not a genuinely separate product architecture from #51.                                                                                                                                                           | Same ecosystem                                   |
+| **53** | **Status Network**    | **Infrastructure, not messaging UI**                  | App/protocol → network                                                            | It is a blockchain/L2 environment, not a normal messenger benchmark.                                                                                                                                              | Network infrastructure                           |
+| **54** | **Session Messaging** | **Same Session architecture**                         | Same conceptual model as #14                                                      | Duplicate of the Session messenger category rather than another independent app.                                                                                                                                  | Decentralised/privacy infrastructure             |
+| **55** | **SimpleX Chat**      | **Messaging without permanent user IDs**              | Create/connect → establish contact → chat → optionally use incognito/disappearing | Identity is intentionally less prominent than ordinary username/phone-number systems. SimpleX documents anonymous pairwise identifiers, groups, files and other private communication features. ([Tars Docs][13]) | Privacy architecture, anonymous identity         |
+| **56** | **Briar**             | **Resilient messaging under disconnected conditions** | Find contact → connect → message → synchronise when possible                      | The architecture is designed around network failure rather than assuming a normal always-online cloud messenger. Briar supports synchronisation through Bluetooth/Wi-Fi/Internet/Tor-style communication paths.   | Forums, blogs, offline/local networking          |
+| **57** | **Jami**              | **Distributed communications**                        | Contact/group → message/call → share → conference                                 | Peer/distributed architecture supports a broader communications toolkit.                                                                                                                                          | Calls, screen sharing, conferences, extensions   |
+| **58** | **Tox**               | **Peer-to-peer secure messaging**                     | Identify peer → message/call → file exchange                                      | The system emphasises decentralised communication rather than a conventional central social graph.                                                                                                                | P2P voice/video/files                            |
+| **59** | **Wire**              | **Secure collaboration around messages/files**        | Team/conversation → message → file → call → collaborative action                  | Security remains integrated into ordinary collaboration rather than becoming a separate “secure mode”.                                                                                                            | Calls, files, meetings, enterprise collaboration |
+| **60** | **Dust**              | **Ephemeral/private communication**                   | Message → temporary exchange → disappearance                                      | The product philosophy centres on reducing the permanence of communication rather than accumulating a giant archive.                                                                                              | Privacy/ephemerality                             |
+
+---
+
+# 61–70
+
+| #      | Platform                   | Crucial messaging feature                                  | Ordinary flow                                                             | Decoration/system                                                                                                                                                                                                           | Beyond chat                                               |
+| ------ | -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **61** | **Keybase**                | **Cryptographically verified identity + chat**             | Identity/team → chat → verify/share                                       | Trust is part of the information architecture rather than merely a profile badge.                                                                                                                                           | Teams, cryptographic identity, secure files/Git           |
+| **62** | **Spike**                  | **Email made conversational**                              | Open inbox → choose person → read/send like chat                          | Removes traditional email visual ceremony: subject-heavy message stacks become conversational threads.                                                                                                                      | Notes, tasks, meetings, collaborative email               |
+| **63** | **Missive**                | **Internal collaboration around an external conversation** | Customer email → private team comment → draft → assign → send             | External message and internal discussion coexist but remain visually distinct. Missive supports comments, mentions, assignments and shared drafts. ([Missive][14])                                                          | Shared inboxes, team spaces, chatrooms, tasks, automation |
+| **64** | **Front**                  | **Operational shared inbox**                               | Incoming conversation → assign → internal comment → reply → archive       | Front treats the inbox like a work queue: Open, Archived, Snoozed, Trash, Spam. Internal comments are invisible to the customer. It also routes channels into shared inboxes. ([Front Help Center][15])                     | Assignment, routing, rules, analytics, AI                 |
+| **65** | **Intercom**               | **Customer conversation → support operation**              | Customer starts conversation → agent inbox → reply/AI → ticket/escalation | Conversation and ticket are separate conceptual objects; current Intercom also integrates Copilot into the right sidebar and can use conversation history, internal/public knowledge and external content. ([Intercom][16]) | AI agent, tickets, help centre, workflows, omnichannel    |
+| **66** | **Drift**                  | **Conversational qualification**                           | Visitor → chat → qualify → route → book meeting                           | The interface is designed around an outcome instead of open-ended social conversation.                                                                                                                                      | Sales automation, routing, scheduling                     |
+| **67** | **Crisp**                  | **Shared customer conversations**                          | Visitor → message → shared inbox → team answer                            | Team collaboration happens around the customer thread rather than duplicating it.                                                                                                                                           | Chatbots, inbox, knowledge/support                        |
+| **68** | **Tidio**                  | **Human + automated support**                              | Customer → chatbot/flow → human if needed → resolution                    | The critical design is handoff: automation begins the conversation but the human inherits context. Tidio currently combines live chat, macros, transcripts, tickets, Flows and its Lyro AI agent. ([Tidio][17])             | AI support, ticketing, automation                         |
+| **69** | **Zendesk Chat/Messaging** | **Persistent customer messaging**                          | Customer → message → bot/agent → ticket/case → resolution                 | Conversation is increasingly treated as persistent customer history instead of temporary website chat. Zendesk specifically highlights persistence, AI agents and omnichannel messaging. ([Zendesk Support][18])            | Tickets, AI agents, knowledge, omnichannel                |
+| **70** | **HubSpot Chat**           | **Chat tied to CRM identity**                              | Visitor → chat → identify → CRM record → sales/support action             | Messaging is useful because the system can connect the conversation to a customer record and lifecycle.                                                                                                                     | CRM, marketing, sales, automation                         |
+
+---
+
+# 71–80
+
+| #      | Platform              | Crucial messaging feature                          | Ordinary flow                                                      | Decoration/system                                                                                                                                                                                                              | Beyond chat                                                  |
+| ------ | --------------------- | -------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| **71** | **ManyChat**          | **Automated social conversations**                 | Trigger/comment → automatic public reply → DM → flow → goal        | The system is a **visual automation builder**, not merely an inbox. Manychat currently supports comment-triggered public replies followed by DMs and automation flows. ([Manychat Help][19])                                   | Automation, lead capture, AI                                 |
+| **72** | **Chatfuel**          | **No-code automated messaging**                    | Trigger → bot → condition → response → next branch                 | Conversation appears as a flow rather than a chronological inbox.                                                                                                                                                              | Automation, lead generation                                  |
+| **73** | **MobileMonkey**      | **Social-channel automation**                      | Social event → trigger → DM → automated conversation               | Public engagement and private messaging are connected into a single automation funnel.                                                                                                                                         | Automation, CRM/marketing workflows                          |
+| **74** | **Landbot**           | **Conversation as an interface**                   | Bot opens → question → user answer → next question                 | Its visual builder presents dialogue as a flowchart; the conversation itself replaces the conventional form.                                                                                                                   | Forms, lead capture, automation                              |
+| **75** | **Tars**              | **Structured conversational journey**              | Agent → “Gambit” → user input → branch → next Gambit               | Tars explicitly models each interaction as a connected conversational building block on a visual canvas. ([Tars Docs][13])                                                                                                     | AI agents, forms, conversion flows                           |
+| **76** | **Typeform Chat**     | **Conversational data collection**                 | Question → answer → branch → relevant next question                | The interface reduces the intimidating appearance of a traditional long form by revealing only the next relevant step.                                                                                                         | Forms, branching, AI, FAQ assistance                         |
+| **77** | **Jostle**            | **People-centric organisational communication**    | Find person/team → message/info → knowledge/action                 | The interface prioritises people, organisational context and discovery rather than a giant chat feed. Jostle explicitly focuses on discovering who can help by skill/role and finding organisational knowledge. ([Jostle][20]) | Intranet, knowledge, recognition, organisational directory   |
+| **78** | **Workplace by Meta** | **Social-style organisational communication**      | Group → post/chat → reactions/comments → organisation-wide sharing | Historically used Facebook-like social conventions for internal organisations.                                                                                                                                                 | Groups, announcements, live video — **closed May 2026**      |
+| **79** | **Basecamp**          | **Conversation separated by permanence**           | Project → Message Board/Campfire → discussion → task               | This is one of the cleanest architectures: Message Boards for durable discussions, Campfire for casual chat, To-dos for commitments. Every project gets a dedicated home. ([Basecamp][21])                                     | Projects, to-dos, files, schedules, Hill Charts, Card Tables |
+| **80** | **ClickUp Chat**      | **Conversation directly attached to work objects** | Chat → idea → task/doc/whiteboard → execution                      | It tries to remove the “copy this from chat into project management” step. Whiteboards and Docs can connect directly with tasks.                                                                                               | Tasks, Docs, Whiteboards, projects, automation               |
+
+---
+
+# 81–90
+
+| #      | Platform            | Crucial messaging feature                              | Ordinary flow                                               | Decoration/system                                                                                                                                                                   | Beyond chat                                                             |
+| ------ | ------------------- | ------------------------------------------------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **81** | **Asana Chat**      | **Communication tied to accountability**               | Team/project → update/comment → task/owner → completion     | Conversation sits on the work object, so discussion does not become detached from ownership.                                                                                        | Tasks, projects, goals, automation, AI                                  |
+| **82** | **monday.com Chat** | **Communication over structured work data**            | Board/team → conversation → record/action → workflow        | The important layer is the work database underneath the discussion; chat can point toward structured objects.                                                                       | Boards, automations, dashboards, AI agents                              |
+| **83** | **Notion**          | **Conversation attached to shared knowledge**          | Page/database → comment → edit/context → knowledge retained | Comments and conversations live with the actual page or block. The document, rather than the inbox, becomes the durable object.                                                     | Wiki, databases, docs, AI, project management                           |
+| **84** | **Miro**            | **Visual collaboration rather than text-first chat**   | Board → object → comment/discuss → modify canvas            | Infinite canvas acts as the conversation space; people communicate *through things they place on the canvas*.                                                                       | Workshops, diagrams, planning, AI workflows                             |
+| **85** | **Figma**           | **Conversation anchored directly to design artefacts** | Select object → comment → reply → revise → resolve          | This is one of the strongest designs in the entire benchmark: discussion is attached to the exact visual object instead of floating in a general chat.                              | Multiplayer editing, audio, cursor presence, prototyping, presentations |
+| **86** | **Gather.town**     | **Spatial workplace messaging**                        | Enter map → approach person → chat/call → move to room      | Location becomes metadata. The map itself tells you where people are and therefore gives communication context.                                                                     | Virtual offices, events, spatial meetings                               |
+| **87** | **Kumospace**       | **Proximity-based social conversation**                | Enter space → approach group → video/audio/chat             | Spatial positioning is used to mimic the social logic of physical rooms.                                                                                                            | Virtual offices/events                                                  |
+| **88** | **Topia**           | **Social interaction through virtual spaces**          | Enter world → move → meet → talk/interact                   | Environment and movement provide hierarchy instead of lists of rooms alone.                                                                                                         | Virtual events/worlds                                                   |
+| **89** | **Spatial**         | **Immersive social communication**                     | Enter 3D environment → avatar → interact → talk             | Avatar + environment + spatial interaction replace conventional message-centric UI.                                                                                                 | 3D worlds, events, creative spaces                                      |
+| **90** | **Roblox Chat**     | **Communication inside an experience**                 | Enter experience → play → chat → react/coordinate           | Chat is secondary to the shared activity; the game/world gives conversation its context. Roblox's current safety system includes age-checking and age-based communication controls. | Games, experiences, creator ecosystem                                   |
+
+---
+
+# 91–100
+
+| #       | Platform           | Crucial messaging feature                     | Ordinary flow                                                               | Decoration/system                                                                                                                                                                                                | Beyond chat                                                                          |
+| ------- | ------------------ | --------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **91**  | **Minecraft Chat** | **Communication while creating/exploring**    | Join world/server → build/explore → chat/command → continue activity        | The actual world is the dominant interface; chat overlays activity rather than replacing it.                                                                                                                     | Building, servers, commands, communities                                             |
+| **92**  | **Among Us Chat**  | **Communication as a gameplay mechanic**      | Play → meeting → discussion → vote → return to game                         | Communication appears at strategically meaningful moments; it directly affects the game's outcome.                                                                                                               | Deduction, voting, gameplay                                                          |
+| **93**  | **Plato**          | **Chat wrapped around games**                 | Friend/group → choose game → play → chat → continue                         | The shared activity is always nearby, preventing the conversation from becoming socially empty.                                                                                                                  | Casual multiplayer games                                                             |
+| **94**  | **Hago**           | **Social interaction through games**          | Discover room/game → join → play → voice/chat                               | The game is the social bridge; messaging does not have to carry the entire relationship by itself.                                                                                                               | Games, live rooms, social activities                                                 |
+| **95**  | **Yubo**           | **People discovery + live interaction**       | Discover person/live → join → interact → chat                               | Discovery is the first-class surface, with messaging as one stage in relationship building.                                                                                                                      | Live interaction, social discovery                                                   |
+| **96**  | **Leket**          | **Unverified**                                | —                                                                           | I cannot reliably identify the exact current “Leket” platform you intended from authoritative material. I will not manufacture its features.                                                                     | —                                                                                    |
+| **97**  | **Amino**          | **Interest-specific community messaging**     | Choose community → profile → chat/feed → participate                        | The key design was that different communities could have their own culture and identity instead of one universal social context.                                                                                 | Communities, fandoms — **service shut down December 2025**                           |
+| **98**  | **BAND**           | **Group-life organisation**                   | Band → announcement/chat → calendar/poll/file/task → event                  | This is an excellent example of designing around the *group's purpose*, not around messaging alone. BAND combines posts, chats, calendars, polls, files, attendance and other group tools.                       | Events, polls, calendars, files, livestreams                                         |
+| **99**  | **MeWe**           | **User-controlled social/group conversation** | Feed/group → post/chat → media/reaction → group interaction                 | Groups have their own communication and storage contexts; the experience is designed around user control rather than a single opaque algorithmic feed.                                                           | Groups, pages, stories, storage, voice/video                                         |
+| **100** | **Nextdoor**       | **Location-based community conversation**     | Neighbourhood → local post/question → replies/recommendation → local action | Geography is the organising system. The same conversation has meaning because it is attached to a real neighbourhood. Nextdoor also now uses AI to synthesise neighbourhood knowledge in features such as Faves. | Local alerts, recommendations, events, businesses, marketplace/community information |
+
+---
+
+# Now look at the architecture underneath all 100
+
+This is where the comparison becomes much more useful for your own product.
+
+There are **not actually 100 different messaging philosophies**.
+
+Most of them fall into a relatively small number of architectural families.
+
+### Family A — **The Inbox Messenger**
+
+WhatsApp
+Signal
+Viber
+Threema
+iMessage
+Google Messages
+Session
+SimpleX
+Beeper
+
+The fundamental object is:
+
+**Person → Conversation → Message**
+
+The interface therefore prioritises:
+
+**contact identity → last message → unread state → composer**
+
+This is the cleanest form of messaging.
+
+---
+
+### Family B — **The Community Messenger**
+
+Discord
+Revolt
+Telegram
+Element
+Matrix
+Viber Communities
+Kakao Open Chat
+Amino
+
+The fundamental object becomes:
+
+**Community → Space → Channel/Room → Conversation**
+
+That extra level is enormously important.
+
+Instead of:
+
+> “Who am I talking to?”
+
+the application asks:
+
+> **“Which world am I currently inside?”**
+
+That is why Discord does not feel like WhatsApp.
+
+---
+
+### Family C — **The Work Messenger**
+
+Slack
+Teams
+Google Chat
+Webex
+Mattermost
+Chanty
+Flock
+Ryver
+Zulip
+
+The fundamental object is:
+
+**Workspace → team/channel → conversation → work**
+
+And the most intelligent products explicitly distinguish different temporal purposes.
+
+Ryver demonstrates this particularly clearly:
+
+**Chat → immediate**
+**Topic → focused**
+**Task → actionable**
+**Call → synchronous** ([Ryver Support][8])
+
+Zulip goes even further:
+
+**Stream + Topic**
+
+so that multiple conversations can live simultaneously without destroying readability. ([Zulip][9])
+
+---
+
+### Family D — **Conversation → Action**
+
+Chanty
+Ryver
+Slack
+ClickUp
+Asana
+Basecamp
+Front
+Missive
+Intercom
+
+These platforms ask:
+
+> “Now that somebody has said something, what happens?”
+
+That gives you:
+
+**message → task**
+
+or
+
+**message → assignment**
+
+or
+
+**message → ticket**
+
+or
+
+**message → document**
+
+or
+
+**message → workflow**
+
+This is one of the most important patterns in the entire benchmark.
+
+---
+
+### Family E — **Conversation around a thing**
+
+Instagram DM
+TikTok Inbox
+Figma
+Miro
+Notion
+Intercom
+Front
+Teams
+
+Here the message is **not the primary object**.
+
+Instead:
+
+**Post → conversation**
+
+**Design object → conversation**
+
+**Document → conversation**
+
+**Customer problem → conversation**
+
+**Ticket → conversation**
+
+This is an incredibly powerful design technique because it eliminates ambiguity.
+
+Figma is the perfect illustration:
+
+Instead of saying:
+
+> “I mean that button near the top-left.”
+
+the user comments **on the actual button**.
+
+That makes the conversation contextual.
+
+---
+
+### Family F — **Conversation around an activity**
+
+Twitch
+VRChat
+Rec Room
+Roblox
+Minecraft
+Among Us
+Plato
+Hago
+Gather
+Kumospace
+
+Here the user does not merely communicate.
+
+They **exist somewhere or do something together**.
+
+That means:
+
+**Activity → social interaction**
+
+rather than:
+
+**social interaction → maybe find something to do**
+
+This is why these products can feel much more alive than traditional messengers.
+
+---
+
+# And then there is the most sophisticated layer
+
+The best products do **not** simply put more buttons into the chat.
+
+They change the **object model**.
+
+Compare these:
+
+### Ordinary messenger
+
+`Chat → Message → Reply`
+
+### Discord
+
+`Server → Channel → Message → Thread/Forum → Voice/Activity`
+
+### Slack
+
+`Workspace → Channel → Message → Canvas/List/Workflow/Huddle`
+
+### Basecamp
+
+`Project → Message Board / Chat / To-do / Calendar`
+
+### Front
+
+`Inbox → Conversation → Internal Comment → Assignment → Reply`
+
+### Intercom
+
+`Customer → Conversation → AI/Agent → Ticket → Resolution`
+
+### Figma
+
+`File → Canvas → Object → Comment → Revision`
+
+### Nextdoor
+
+`Neighbourhood → Local post → Discussion → Recommendation → Local action`
+
+That is the difference between a **feature-rich application** and a **systematically designed platform**.
+
+---
+
+# How the “decoration” actually works
+
+This is another point that is easy to misunderstand.
+
+The platforms that look beautiful are usually **not beautiful because they decorate every feature**.
+
+They use decoration as a hierarchy system.
+
+For example:
+
+**Discord**
+
+* server identity
+* channel hierarchy
+* member presence
+* role colours
+* compact message composition
+
+**Slack**
+
+* restrained workspace chrome
+* channel identity
+* subtle status/presence
+* side panels for secondary context
+* object-specific surfaces such as Canvas
+
+**Signal**
+
+* almost no unnecessary visual decoration
+* privacy controls appear exactly when relevant
+* conversation remains dominant
+
+**Snapchat**
+
+* camera dominates
+* visual media dominates
+* ephemeral content gets its own treatment
+
+**Twitch**
+
+* video dominates
+* chat supports the video
+
+**Figma**
+
+* canvas dominates
+* comments attach to the canvas
+
+**Gather**
+
+* environment dominates
+* communication exists inside the environment
+
+So the question should not be:
+
+> “How many beautiful elements should we put in the app?”
+
+It should be:
+
+> **“What is the most important object right now, and does the visual hierarchy make that obvious?”**
+
+That is the systematic part.
+
+---
+
+# The most important discovery from your 100 platforms
+
+There is a hierarchy of messaging-product maturity:
+
+**Level 1 — Send messages**
+
+WhatsApp, Signal, iMessage
+
+↓
+
+**Level 2 — Organise messages**
+
+Discord, Telegram, Zulip, Slack
+
+↓
+
+**Level 3 — Attach context**
+
+Figma, Instagram, Front, Intercom, Notion
+
+↓
+
+**Level 4 — Turn communication into action**
+
+Chanty, Ryver, Slack, ClickUp, Asana, Basecamp
+
+↓
+
+**Level 5 — Make communication part of an activity**
+
+Twitch, Roblox, VRChat, Rec Room, Gather
+
+↓
+
+**Level 6 — Make the platform itself an ecosystem**
+
+WeChat, Telegram, Teams, Slack, Status, Nextdoor
+
+And **that is the reason the strongest platforms do not feel like “100 features thrown into one screen.”**
+
+They progressively transform:
+
+**message → conversation → context → object → action → environment → ecosystem**
+
+That is the actual design intelligence behind them.
+
+A key factual caveat: several names in your original 100 are duplicates, protocols, features, domains, or discontinued services rather than independent current messaging products; I have deliberately marked those instead of pretending otherwise. AWS Wickr, Front, Intercom, Manychat, Tidio, Basecamp, Slack and the other current products above were checked against current first-party documentation where available. ([Amazon Web Services][5])
+
+The **most valuable next step for a messaging-app design benchmark** would therefore be to turn these 100 into a much deeper matrix of **~30–50 individual messaging features per platform**—composer, replies, threads, reactions, forwarding, quoting, editing, deletion, pins, search, media, files, voice notes, calls, presence, status, read receipts, typing indicators, mentions, polls, events, rooms, channels, profiles, privacy, moderation, discovery, automation, AI, etc.—and then identify exactly **which platform executes each feature best and how its UI solves it**.
+
+[1]: https://slack.com/help/articles/115003205446-Slack-plans-and-features?utm_source=chatgpt.com "Slack plans and features | Slack"
+[2]: https://support.signal.org/hc/en-us/sections/360001602792-Signal-Messenger-Features?utm_source=chatgpt.com "Signal Messenger Features – Signal Support"
+[3]: https://www.beeper.com/?utm_source=chatgpt.com "Beeper — All your chats in one app"
+[4]: https://www.viber.com/en/features/?utm_source=chatgpt.com "Features | Viber"
+[5]: https://aws.amazon.com/wickr/features/?utm_source=chatgpt.com "Secure Messaging and Collaboration - AWS Wickr Features - AWS"
+[6]: https://www.chanty.com/help/faq/what-features-does-chanty-offer/?utm_source=chatgpt.com "What features does Chanty offer? – Сhanty Help Center"
+[7]: https://www.flock.com/features/communication/channel-messaging/?utm_source=chatgpt.com "Channel Messaging | Flock"
+[8]: https://support.ryver.com/ryver-quick-start/?utm_source=chatgpt.com "Quick Start Guide | Ryver Support"
+[9]: https://community.zulip.com/help/introduction-to-topics?utm_source=chatgpt.com "Introduction to topics | Zulip help center"
+[10]: https://support.teamspeak.com/hc/en-us/articles/360002757557-Where-are-the-permissions?utm_source=chatgpt.com "Where are the permissions? – TeamSpeak"
+[11]: https://www.mumble.info/documentation/user/positional-audio/?utm_source=chatgpt.com "Mumble Positional Audio Documentation | Mumble"
+[12]: https://wiki.vrchat.com/wiki/Instances?utm_source=chatgpt.com "Instances - VRChat Wiki"
+[13]: https://docs.hellotars.com/?utm_source=chatgpt.com "Understanding Tars - Tars Docs"
+[14]: https://missiveapp.com/docs/core-features/conversations/collaboration?utm_source=chatgpt.com "Collaboration | Missive Docs"
+[15]: https://help.front.com/en/articles/2076?utm_source=chatgpt.com "Understanding inbox and channel settings"
+[16]: https://www.intercom.com/help/en/articles/6955446-ai-features-available-in-the-inbox?utm_source=chatgpt.com "AI features available in the Inbox | Intercom Help"
+[17]: https://www.tidio.com/faq/?utm_source=chatgpt.com "FAQ | Tidio"
+[18]: https://support.zendesk.com/hc/en-us/articles/4408834108186-Why-migrating-from-live-chat-to-messaging-is-the-right-choice?utm_source=chatgpt.com "Why migrating from live chat to messaging is the right choice – Zendesk help"
+[19]: https://help.manychat.com/hc/en-us/articles/16654065283100-Quick-Automation-Auto-DM-links-for-comments?utm_source=chatgpt.com "Quick Automation: Auto-DM links from comments – Manychat Help"
+[20]: https://jostle.me/solutions/find-information/?utm_source=chatgpt.com "Find information | Jostle"
+[21]: https://basecamp.com/features?utm_source=chatgpt.com "Basecamp — Features, benefits, benefits, and benefits"

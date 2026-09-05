@@ -1193,3 +1193,38 @@ Stage Summary:
 - Prefs key contract: User.preferences['chat.convThemes'] = Record<conversationId, {wallpaper: 'none'|'aurora'|'dusk'|'forest'|'mono', tint?: 'emerald'|'rose'|'amber'|'violet'|'teal'}> — sanitized by sanitizeConvThemeMap (max 48 entries, 4KB-safe), passthrough registered in mergePrefs; tint = top-glow color swap in chat-room (no global tint concept exists)
 - Honest gaps: (1) tint-only overrides seed wallpaper from the global default at set-time (entry type requires wallpaper) — later global changes do not propagate to seeded rooms; (2) reset leaves an empty {} map in the blob (semantically correct, tiny residue); (3) per-user prefs = per-user themes (the OTHER party does not see your override — by design, client-side pref like iMessage); (4) 48-override cap is silent (drop-beyond-cap)
 - Evidence: download/qa-r29a-01-room-before.png … qa-r29a-07-reset-to-default.png
+
+---
+Task ID: R30-a
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: BAND-style event attendance check-in (map #98 "group-life organisation")
+
+Work Log:
+- Schema (pre-pushed by lead): EventRsvp.checkedInAt DateTime? added
+- NEW src/app/api/events/[id]/checkin/route.ts — POST { userId }: no-RSVP/status-no → 400; window = startsAt−15min … +2h else 409; idempotent re-check-in 200; atomic updateMany guarded on checkedInAt:null so a double-tap race awards the +15 XP exactly once (loser answers alreadyCheckedIn:true); XP increment mirrors messages-route convention (no WalletLedger — XP is not a wallet asset); returns { checkIn, xpAwarded, checkedInCount }
+- events-sheet.tsx: check-in button gated to window + RSVP 'going', optimistic stamp with rollback, success toast, 'X here' UserCheck attendance chip, checked-in badge/dot + title on roster avatars, muted pre-window hint
+- Crew E2E (screenshots verified by lead): created real event via sheet, RSVP'd going, check-in button → Checked in state + '1 here' chip → reload persists. qa-r30a-01…07 + debug.
+
+Stage Summary:
+- SHIPPED: attendance check-in end-to-end (window guard, race-safe single XP award, roster badges)
+- Contract: POST /api/events/[id]/checkin { userId } → { checkIn{checkedInAt}, xpAwarded, checkedInCount, alreadyCheckedIn }
+- Evidence: download/qa-r30a-0*.png
+
+---
+Task ID: R30-b
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: Beeper/Zulip-style per-message reminders, end to end
+
+Work Log:
+- Schema (pre-pushed by lead): Reminder model (userId, conversationId, messageId?, note, remindAt, firedAt?, @@index([userId, remindAt]))
+- NEW /api/reminders (GET list w/ conversation labels + 120-char snippets + ?due=1 filter; POST validate 60s-past-tolerance/90d-horizon/280c note) + /api/reminders/[id] (PATCH mark-fired, DELETE cancel)
+- NEW src/components/chat/reminders-sheet.tsx (498 lines): glass sheet with upcoming + fired history sections, countdown formatting, jump event, optimistic cancel; useReminderDueLoop(meId) polls ?due=1 every 30s (skips document.hidden), toasts with View action, PATCHes fired, Set-ref idempotence
+- chat-room.tsx surgical: due loop mounted once per room (L2117), REMINDER_JUMP_EVENT listener using existing scroll-to-message machinery (L1010), 'Remind me' glass-menu section (picker: 1h/3h/Tomorrow 9:00/Next week/Custom datetime-local), header Bell with badge, RemindersSheet mount
+- slash-palette.tsx: /remind entry; legacy parser creates conversation-level reminder from 'note in <time>' drafts
+- Lead-verified E2E: menu → 'Remind me' → picker → toast; curl reminder at +20s fired the due-loop toast with View within 50s (firedAt set); sheet shows 'due now' + 'in 58m'; cancel removes. qa-r30b-01…09
+
+Stage Summary:
+- SHIPPED: reminders end-to-end (per-message + conversation-level + slash + due-loop nudges)
+- Contract: Reminder wire = { id, conversationId, messageId?, note, remindAt, firedAt, conversation{id,name,isGroup}, snippet? }; GET ?due=1 → due-unfired only
+- Honest gaps: cross-room jump falls back to toast (same-room jump only); due-loop is per-room (settings-level global loop deferred)
+- Evidence: download/qa-r30b-0*.png

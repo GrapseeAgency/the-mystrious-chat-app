@@ -133,6 +133,17 @@ exports.Prisma.UserScalarFieldEnum = {
   xp: 'xp'
 };
 
+exports.Prisma.ReminderScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  conversationId: 'conversationId',
+  messageId: 'messageId',
+  note: 'note',
+  remindAt: 'remindAt',
+  firedAt: 'firedAt',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.UserWalletScalarFieldEnum = {
   userId: 'userId',
   coins: 'coins',
@@ -467,6 +478,7 @@ exports.Prisma.EventRsvpScalarFieldEnum = {
   eventId: 'eventId',
   userId: 'userId',
   status: 'status',
+  checkedInAt: 'checkedInAt',
   createdAt: 'createdAt'
 };
 
@@ -483,6 +495,7 @@ exports.Prisma.NullsOrder = {
 
 exports.Prisma.ModelName = {
   User: 'User',
+  Reminder: 'Reminder',
   UserWallet: 'UserWallet',
   WalletLedger: 'WalletLedger',
   HubTask: 'HubTask',

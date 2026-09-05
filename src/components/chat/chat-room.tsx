@@ -21,6 +21,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
 import {
   ArrowDown,
+  Bell,
   BellOff,
   CalendarClock,
   CalendarDays,
@@ -93,6 +94,7 @@ import type {
   ConversationDetail,
   ConversationSummary,
   MessageAuthor,
+  ReminderItem,
   SavedItem,
   ScheduledItem,
   TopicSummary,
@@ -122,6 +124,7 @@ import { ForwardSheet } from '@/components/chat/forward-sheet'
 import {
   GlassMenu,
   GlassMenuItem,
+  GlassMenuLabel,
   GlassMenuSeparator,
   GlassMenuStrip,
 } from '@/components/ui/glass-menu'
@@ -202,6 +205,16 @@ import { useHashRoute, navigateHash, replaceHash, backHash } from '@/lib/hash-ro
 import { RoomInfoPage } from '@/components/chat/room-info-page'
 import { RoomSearchPage } from '@/components/chat/room-search-page'
 import { RoomPinsSheet } from '@/components/chat/room-pins-sheet'
+// ── R30-b: per-message reminders — glass sheet + due-loop + jump event ──
+import {
+  RemindersSheet,
+  REMINDER_JUMP_EVENT,
+  fetchReminders,
+  parseRelativeReminder,
+  remindersKey,
+  useReminderDueLoop,
+  type ReminderJumpDetail,
+} from '@/components/chat/reminders-sheet'
 
 interface DetailResponse {
   conversation: ConversationDetail
@@ -376,6 +389,7 @@ function applySlash(
   | SlashOutcome
   | { kind: 'poll' }
   | { kind: 'schedule' }
+  | { kind: 'remind'; arg: string }
   | { kind: 'help' }
   | { kind: 'sticker' }
   | { kind: 'location' }
@@ -413,6 +427,10 @@ function applySlash(
       return { kind: 'poll' }
     case 'schedule':
       return { kind: 'schedule' }
+    case 'remind':
+      // R30-b: conversation-level reminder — the chat-room body parses the
+      // trailing relative time (via parseRelativeReminder) and POSTs it.
+      return { kind: 'remind', arg }
     case 'sticker':
       return { kind: 'sticker' }
     case 'location':
@@ -463,6 +481,29 @@ const EFFECT_PARTICLES: Record<MessageEffectName, ParticleKind> = {
   lasers: 'burst',
   echo: 'burst',
   sparkles: 'stars',
+}
+
+/** R30-b: quick remind presets — dates are computed per open, never cached. */
+function remindPresets(): Array<{ label: string; at: Date }> {
+  const now = new Date()
+  const tomorrow9 = new Date(now)
+  tomorrow9.setDate(tomorrow9.getDate() + 1)
+  tomorrow9.setHours(9, 0, 0, 0)
+  const nextWeek = new Date(now)
+  nextWeek.setDate(nextWeek.getDate() + 7)
+  return [
+    { label: 'In 1 hour', at: new Date(now.getTime() + 3_600_000) },
+    { label: 'In 3 hours', at: new Date(now.getTime() + 3 * 3_600_000) },
+    { label: 'Tomorrow 9:00', at: tomorrow9 },
+    { label: 'Next week', at: nextWeek },
+  ]
+}
+
+/** Local-time min attribute for the custom reminder datetime-local input. */
+function remindMinAttr(): string {
+  const d = new Date(Date.now() - 60_000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 /**
@@ -637,6 +678,13 @@ export function ChatRoom({
   const [editing, setEditing] = useState<ChatMessage | null>(null)
   /** pinned-messages sheet */
   const [pinnedOpen, setPinnedOpen] = useState(false)
+  // ── R30-b: reminders sheet + per-message remind picker ─────
+  const [remindersOpen, setRemindersOpen] = useState(false)
+  /** message the remind picker anchors to (null = picker closed) */
+  const [remindTarget, setRemindTarget] = useState<ChatMessage | null>(null)
+  /** picker's inline custom datetime row visibility + value */
+  const [remindCustom, setRemindCustom] = useState(false)
+  const [remindCustomAt, setRemindCustomAt] = useState('')
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   /** {message, emoji} → who-reacted sheet */
   const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
@@ -942,6 +990,26 @@ export function ChatRoom({
     },
     [jumpToMessage],
   )
+
+  // ── R30-b: reminder jumps — same room → scroll to the anchor message;
+  // other room → close the sheet and point at the right chat (cross-room
+  // jump is a known gap, the toast keeps the outcome honest) ──
+  useEffect(() => {
+    const onReminderJump = (event: Event) => {
+      const detail = (event as CustomEvent<ReminderJumpDetail>).detail
+      if (!detail) return
+      setRemindersOpen(false)
+      if (detail.conversationId === conversationId) {
+        if (detail.messageId) void jumpToMessage(detail.messageId)
+      } else {
+        toast.info(
+          `That reminder lives in ${detail.conversationName || 'another chat'} — open it to see the message`,
+        )
+      }
+    }
+    window.addEventListener(REMINDER_JUMP_EVENT, onReminderJump)
+    return () => window.removeEventListener(REMINDER_JUMP_EVENT, onReminderJump)
+  }, [conversationId, jumpToMessage])
 
   // ── R27-c: hash-routed room sub-pages (#/room/<id>/info | /search) ──
   // The room itself is state-mounted (not hash-driven); its sub-pages ride
@@ -2045,6 +2113,42 @@ export function ChatRoom({
   const kanban = useKanbanSheet(conversationId, me.id, sheetMembers, myRole)
   const events = useEventsSheet(conversationId, me.id, sheetMembers, myRole)
 
+  // ── R30-b: per-message reminders — due-loop toasts, badge count, create ──
+  useReminderDueLoop(me.id)
+  const remindersQuery = useQuery({
+    queryKey: remindersKey(me.id),
+    queryFn: () => fetchReminders(me.id),
+    staleTime: 15_000,
+  })
+  const upcomingReminderCount = (remindersQuery.data ?? []).filter(
+    (item) => item.firedAt === null,
+  ).length
+
+  const createReminder = useCallback(
+    async (messageId: string | null, remindAt: Date, note = ''): Promise<boolean> => {
+      try {
+        await apiJson<{ item: ReminderItem }>('/api/reminders', {
+          method: 'POST',
+          body: JSON.stringify({
+            userId: me.id,
+            conversationId,
+            ...(messageId ? { messageId } : {}),
+            note,
+            remindAt: remindAt.toISOString(),
+          }),
+        })
+        toast.success('Reminder set')
+        haptic(12)
+        await queryClient.invalidateQueries({ queryKey: remindersKey(me.id) })
+        return true
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Could not set the reminder')
+        return false
+      }
+    },
+    [conversationId, me.id, queryClient],
+  )
+
   // ── R24-b: Zulip-style topic rail data (groups only) ─────────
   const topicsQuery = useQuery({
     queryKey: ['topics', conversationId],
@@ -2393,6 +2497,18 @@ export function ChatRoom({
         setInput('')
         pulseDraftsStore.getState().clearDraft(conversationId)
         requestAnimationFrame(autosize)
+        return
+      }
+      if (outcome.kind === 'remind') {
+        setInput('')
+        pulseDraftsStore.getState().clearDraft(conversationId)
+        requestAnimationFrame(autosize)
+        const parsed = parseRelativeReminder(outcome.arg)
+        if (!parsed) {
+          toast.error('Usage: /remind buy milk in 30m — try 30m, 2h, tomorrow, tonight, next week')
+          return
+        }
+        void createReminder(null, parsed.remindAt, parsed.note)
         return
       }
       if (outcome.kind === 'sticker') {
@@ -3244,6 +3360,28 @@ export function ChatRoom({
           className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
         >
           <Search className="size-5" aria-hidden />
+        </Button>
+        {/* R30-b: reminders — opens the glass reminders sheet; badge = upcoming count */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={
+            upcomingReminderCount > 0
+              ? `Reminders — ${upcomingReminderCount} upcoming`
+              : 'Reminders'
+          }
+          onClick={() => {
+            haptic(8)
+            setRemindersOpen(true)
+          }}
+          className="relative size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+        >
+          <Bell className="size-5" aria-hidden />
+          {upcomingReminderCount > 0 ? (
+            <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold leading-none text-white">
+              {upcomingReminderCount > 9 ? '9+' : upcomingReminderCount}
+            </span>
+          ) : null}
         </Button>
         <Button
           variant="ghost"
@@ -4498,6 +4636,15 @@ export function ChatRoom({
               setSelected(null)
             }}
             onTask={() => convertToTask.mutate(selected.id)}
+            onRemind={() => {
+              const target = selected
+              setSelected(null)
+              if (target) {
+                setRemindTarget(target)
+                setRemindCustom(false)
+                setRemindCustomAt('')
+              }
+            }}
             onPin={() => {
               const targetId = selected.id
               setSelected(null)
@@ -4507,6 +4654,82 @@ export function ChatRoom({
             onEdit={() => startEdit(selected)}
             onDelete={() => setConfirmingDelete(true)}
           />
+        ) : null}
+      </AnimatePresence>
+
+      {/* R30-b: remind-me time picker — compact glass panel for the selected message */}
+      <AnimatePresence>
+        {remindTarget !== null ? (
+          <>
+            <motion.button
+              key="remind-picker-backdrop"
+              type="button"
+              aria-hidden
+              tabIndex={-1}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.16 }}
+              onClick={() => setRemindTarget(null)}
+              className="fixed inset-0 z-[60] cursor-default bg-zinc-950/25 outline-none backdrop-blur-[2px] dark:bg-black/45"
+            />
+            <GlassMenu
+              key="remind-picker-panel"
+              aria-label="Pick a reminder time"
+              className="fixed bottom-[max(0.9rem,env(safe-area-inset-bottom))] left-1/2 z-[61] w-[min(320px,calc(100vw-16px))] -translate-x-1/2 rounded-2xl"
+            >
+              <GlassMenuLabel>Remind me</GlassMenuLabel>
+              <GlassMenuSeparator className="mt-0.5" />
+              {remindPresets().map((preset) => (
+                <GlassMenuItem
+                  key={preset.label}
+                  icon={Clock}
+                  label={preset.label}
+                  onClick={() => {
+                    const target = remindTarget
+                    setRemindTarget(null)
+                    void createReminder(target.id, preset.at)
+                  }}
+                />
+              ))}
+              <GlassMenuItem
+                icon={CalendarClock}
+                label="Custom…"
+                active={remindCustom}
+                onClick={() => setRemindCustom((v) => !v)}
+              />
+              {remindCustom ? (
+                <div className="flex items-center gap-1.5 px-2 pb-1.5 pt-1">
+                  <Input
+                    type="datetime-local"
+                    value={remindCustomAt}
+                    min={remindMinAttr()}
+                    onChange={(e) => setRemindCustomAt(e.target.value)}
+                    aria-label="Custom reminder date and time"
+                    className="h-9 flex-1 rounded-xl bg-zinc-100 text-[12px] dark:bg-zinc-800"
+                  />
+                  <Button
+                    variant="outline"
+                    disabled={remindCustomAt.length === 0}
+                    onClick={() => {
+                      const target = remindTarget
+                      if (!target) return
+                      const at = new Date(remindCustomAt)
+                      if (Number.isNaN(at.getTime()) || at.getTime() < Date.now() - 60_000) {
+                        toast.error('Pick a future date and time')
+                        return
+                      }
+                      setRemindTarget(null)
+                      void createReminder(target.id, at)
+                    }}
+                    className="h-9 rounded-xl px-3 text-xs font-bold"
+                  >
+                    Set
+                  </Button>
+                </div>
+              ) : null}
+            </GlassMenu>
+          </>
         ) : null}
       </AnimatePresence>
 
@@ -4662,6 +4885,19 @@ export function ChatRoom({
               void jumpToMessage(messageId)
             }}
             onUnpin={(messageId) => pinMessage.mutate(messageId)}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      {/* reminders — compact glass sheet (R30-b); close refreshes the badge */}
+      <AnimatePresence>
+        {remindersOpen ? (
+          <RemindersSheet
+            myId={me.id}
+            onClose={() => {
+              setRemindersOpen(false)
+              void queryClient.invalidateQueries({ queryKey: remindersKey(me.id) })
+            }}
           />
         ) : null}
       </AnimatePresence>
@@ -5057,6 +5293,7 @@ interface MessageActionMenuProps {
   onForward: (target: ChatMessage) => void
   onSave: () => void
   onTask: () => void
+  onRemind: () => void
   onPin: () => void
   onInfo: () => void
   onEdit: () => void
@@ -5080,6 +5317,7 @@ function MessageActionMenu({
   onForward,
   onSave,
   onTask,
+  onRemind,
   onPin,
   onInfo,
   onEdit,
@@ -5203,6 +5441,9 @@ function MessageActionMenu({
               disabled={taskPending}
               onClick={onTask}
             />
+          ) : null}
+          {!deleted ? (
+            <GlassMenuItem icon={Bell} label="Remind me" onClick={onRemind} />
           ) : null}
           {!deleted ? (
             <GlassMenuItem

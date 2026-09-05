@@ -13,34 +13,53 @@ datasource db {
 // ─────────────────────────────────────────────────────────────
 
 model User {
-  id             String                    @id @default(cuid())
-  name           String
-  username      String?  @unique // @handle (3-20 chars) — replaces raw IDs everywhere in the UI
-  about          String                    @default("Hey there! I'm using Pulse.")
-  color          String                    @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
-  avatar         String? // profile photo path (/uploads/<uuid>.<ext>) — null = palette avatar fallback
-  statusEmoji    String? // Discord-style custom status glyph (null = none)
-  statusText     String? // Discord-style custom status line (null = none)
-  preferences    String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
-  createdAt      DateTime                  @default(now())
-  lastSeenAt     DateTime                  @default(now())
-  appInstalls    AppInstall[]
-  wallet         UserWallet?
-  ledger         WalletLedger[]
-  hubTasks       HubTask[]
-  logEvents      LogEvent[]
-  marketListings MarketListing[] @relation("MarketSeller")
-  marketPurchases MarketListing[] @relation("MarketBuyer")
-  participations ConversationParticipant[]
-  messages       Message[]
-  savedMessages  SavedMessage[]
-  quickPhrases   QuickPhrase[]
-  stories        StatusStory[]
-  folders        Folder[]
-  xp             Int                    @default(0) // Twitch-style channel points earned by real activity
+  id                String                    @id @default(cuid())
+  name              String
+  username          String?                   @unique // @handle (3-20 chars) — replaces raw IDs everywhere in the UI
+  about             String                    @default("Hey there! I'm using Pulse.")
+  color             String                    @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
+  avatar            String? // profile photo path (/uploads/<uuid>.<ext>) — null = palette avatar fallback
+  statusEmoji       String? // Discord-style custom status glyph (null = none)
+  statusText        String? // Discord-style custom status line (null = none)
+  preferences       String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
+  createdAt         DateTime                  @default(now())
+  lastSeenAt        DateTime                  @default(now())
+  appInstalls       AppInstall[]
+  wallet            UserWallet?
+  ledger            WalletLedger[]
+  hubTasks          HubTask[]
+  logEvents         LogEvent[]
+  marketListings    MarketListing[]           @relation("MarketSeller")
+  marketPurchases   MarketListing[]           @relation("MarketBuyer")
+  participations    ConversationParticipant[]
+  messages          Message[]
+  savedMessages     SavedMessage[]
+  quickPhrases      QuickPhrase[]
+  stories           StatusStory[]
+  folders           Folder[]
+  xp                Int                       @default(0) // Twitch-style channel points earned by real activity
   tournamentEntries TournamentPlayer[]
+  reminders         Reminder[]
 
   @@index([name])
+}
+
+/**
+ * Beeper/Zulip-style per-message reminder — the app nudges the owner
+ * when remindAt passes (client due-loop toasts + Reminders sheet).
+ */
+model Reminder {
+  id             String    @id @default(cuid())
+  userId         String
+  conversationId String
+  messageId      String? // anchor message (null = conversation-level reminder)
+  note           String    @default("") // free-text context shown in the nudge
+  remindAt       DateTime
+  firedAt        DateTime? // set once the nudge has been delivered
+  createdAt      DateTime  @default(now())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, remindAt])
 }
 
 /**
@@ -48,27 +67,27 @@ model User {
  * red packets and marketplace trades (every change writes a ledger row).
  */
 model UserWallet {
-  userId      String        @id
-  coins       Int           @default(0) // Pulse Coins (PC)
-  gems        Int           @default(0) // Gems (GEM)
-  streak      Int           @default(0) // consecutive daily check-ins
+  userId      String    @id
+  coins       Int       @default(0) // Pulse Coins (PC)
+  gems        Int       @default(0) // Gems (GEM)
+  streak      Int       @default(0) // consecutive daily check-ins
   lastCheckIn DateTime? // last daily check-in watermark (UTC day gate)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /**
  * Immutable money trail — every balance mutation appends exactly one row.
  */
 model WalletLedger {
-  id             String     @id @default(cuid())
+  id             String   @id @default(cuid())
   userId         String
   kind           String // checkin|transfer_in|transfer_out|swap|gift|redpacket_send|redpacket_claim|market_sell|market_buy
   asset          String // "PC" | "GEM"
   amount         Int // signed from the owner's perspective (+in / -out)
-  note           String     @default("")
+  note           String   @default("")
   counterpartyId String? // other user in transfers / red packets / trades
-  createdAt      DateTime   @default(now())
-  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
 }
@@ -433,13 +452,13 @@ model Topic {
  * Signal/Beeper-style chat folder — user-scoped bucket ordering the chats list.
  */
 model Folder {
-  id        String              @id @default(cuid())
+  id        String               @id @default(cuid())
   userId    String
   name      String
-  emoji     String              @default("📂")
-  position  Int                 @default(0)
-  createdAt DateTime            @default(now())
-  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String               @default("📂")
+  position  Int                  @default(0)
+  createdAt DateTime             @default(now())
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   entries   FolderConversation[]
 
   @@index([userId, position])
@@ -462,15 +481,15 @@ model FolderConversation {
  * status = "running", every game win in that room feeds the standings.
  */
 model Tournament {
-  id             String            @id @default(cuid())
+  id             String             @id @default(cuid())
   conversationId String
   name           String
-  game           String            @default("tictactoe")
-  status         String            @default("running") // running | finished
+  game           String             @default("tictactoe")
+  status         String             @default("running") // running | finished
   createdById    String?
   endsAt         DateTime?
-  createdAt      DateTime          @default(now())
-  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
+  conversation   Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   entries        TournamentPlayer[]
 
   @@index([conversationId, status])
@@ -559,16 +578,16 @@ model GameMatch {
  */
 model KanbanCard {
   id              String       @id @default(cuid())
-  conversationId String
-  title          String
-  column         String       @default("todo") // todo|doing|done
-  position       Int          @default(0) // stable sort within (conversation, column)
-  assigneeId     String?
-  createdById    String?
+  conversationId  String
+  title           String
+  column          String       @default("todo") // todo|doing|done
+  position        Int          @default(0) // stable sort within (conversation, column)
+  assigneeId      String?
+  createdById     String?
   sourceMessageId String? // Chanty-style provenance: card born from a chat message
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, column, position])
 }
@@ -592,12 +611,13 @@ model GroupEvent {
 }
 
 model EventRsvp {
-  id        String     @id @default(cuid())
-  eventId   String
-  userId    String
-  status    String     @default("going") // going|maybe|no
-  createdAt DateTime   @default(now())
-  event     GroupEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id          String     @id @default(cuid())
+  eventId     String
+  userId      String
+  status      String     @default("going") // going|maybe|no
+  checkedInAt DateTime? // BAND-style attendance stamp (set during the event window)
+  createdAt   DateTime   @default(now())
+  event       GroupEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, userId])
 }

@@ -39,8 +39,27 @@ model User {
   folders           Folder[]
   xp                Int                       @default(0) // Twitch-style channel points earned by real activity
   tournamentEntries TournamentPlayer[]
+  reminders         Reminder[]
 
   @@index([name])
+}
+
+/**
+ * Beeper/Zulip-style per-message reminder — the app nudges the owner
+ * when remindAt passes (client due-loop toasts + Reminders sheet).
+ */
+model Reminder {
+  id             String    @id @default(cuid())
+  userId         String
+  conversationId String
+  messageId      String? // anchor message (null = conversation-level reminder)
+  note           String    @default("") // free-text context shown in the nudge
+  remindAt       DateTime
+  firedAt        DateTime? // set once the nudge has been delivered
+  createdAt      DateTime  @default(now())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, remindAt])
 }
 
 /**
@@ -592,12 +611,13 @@ model GroupEvent {
 }
 
 model EventRsvp {
-  id        String     @id @default(cuid())
-  eventId   String
-  userId    String
-  status    String     @default("going") // going|maybe|no
-  createdAt DateTime   @default(now())
-  event     GroupEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id          String     @id @default(cuid())
+  eventId     String
+  userId      String
+  status      String     @default("going") // going|maybe|no
+  checkedInAt DateTime? // BAND-style attendance stamp (set during the event window)
+  createdAt   DateTime   @default(now())
+  event       GroupEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, userId])
 }

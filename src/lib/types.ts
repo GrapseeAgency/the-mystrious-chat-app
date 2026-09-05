@@ -181,6 +181,24 @@ export interface ScheduledItem {
   sentAt: string | null
 }
 
+/** Beeper/Zulip-style per-message reminder row (GET/POST /api/reminders). */
+export interface ReminderItem {
+  id: string
+  conversationId: string
+  /** anchored message — null = conversation-level reminder */
+  messageId: string | null
+  /** free-text context shown in the nudge (may be empty when anchored) */
+  note: string
+  remindAt: string // ISO
+  /** set once the due-loop has delivered the nudge */
+  firedAt: string | null
+  createdAt: string // ISO
+  /** minimal conversation info for sheet rows (name = group name or DM peer) */
+  conversation: { id: string; name: string; isGroup: boolean }
+  /** first ~120 chars of the anchored message; null when deleted/missing/unanchored */
+  snippet: string | null
+}
+
 // ── R24 — topics, folders, tournaments, leaderboard ──────────
 
 /** Zulip-style topic chip row (GET /api/conversations/[id]/topics). */

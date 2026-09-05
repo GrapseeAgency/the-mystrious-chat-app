@@ -19,6 +19,13 @@ export type PrismaPromise<T> = $Public.PrismaPromise<T>
  */
 export type User = $Result.DefaultSelection<Prisma.$UserPayload>
 /**
+ * Model Reminder
+ * *
+ *  * Beeper/Zulip-style per-message reminder — the app nudges the owner
+ *  * when remindAt passes (client due-loop toasts + Reminders sheet).
+ */
+export type Reminder = $Result.DefaultSelection<Prisma.$ReminderPayload>
+/**
  * Model UserWallet
  * *
  *  * Hub economy wallet — real balances moved by check-ins, transfers, swaps,
@@ -346,6 +353,16 @@ export class PrismaClient<
     * ```
     */
   get user(): Prisma.UserDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.reminder`: Exposes CRUD operations for the **Reminder** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more Reminders
+    * const reminders = await prisma.reminder.findMany()
+    * ```
+    */
+  get reminder(): Prisma.ReminderDelegate<ExtArgs, ClientOptions>;
 
   /**
    * `prisma.userWallet`: Exposes CRUD operations for the **UserWallet** model.
@@ -1118,6 +1135,7 @@ export namespace Prisma {
 
   export const ModelName: {
     User: 'User',
+    Reminder: 'Reminder',
     UserWallet: 'UserWallet',
     WalletLedger: 'WalletLedger',
     HubTask: 'HubTask',
@@ -1169,7 +1187,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp"
+      modelProps: "user" | "reminder" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -1244,6 +1262,80 @@ export namespace Prisma {
           count: {
             args: Prisma.UserCountArgs<ExtArgs>
             result: $Utils.Optional<UserCountAggregateOutputType> | number
+          }
+        }
+      }
+      Reminder: {
+        payload: Prisma.$ReminderPayload<ExtArgs>
+        fields: Prisma.ReminderFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ReminderFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ReminderFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload>
+          }
+          findFirst: {
+            args: Prisma.ReminderFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ReminderFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload>
+          }
+          findMany: {
+            args: Prisma.ReminderFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload>[]
+          }
+          create: {
+            args: Prisma.ReminderCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload>
+          }
+          createMany: {
+            args: Prisma.ReminderCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ReminderCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload>[]
+          }
+          delete: {
+            args: Prisma.ReminderDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload>
+          }
+          update: {
+            args: Prisma.ReminderUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload>
+          }
+          deleteMany: {
+            args: Prisma.ReminderDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ReminderUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ReminderUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload>[]
+          }
+          upsert: {
+            args: Prisma.ReminderUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderPayload>
+          }
+          aggregate: {
+            args: Prisma.ReminderAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateReminder>
+          }
+          groupBy: {
+            args: Prisma.ReminderGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ReminderGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ReminderCountArgs<ExtArgs>
+            result: $Utils.Optional<ReminderCountAggregateOutputType> | number
           }
         }
       }
@@ -3786,6 +3878,7 @@ export namespace Prisma {
   }
   export type GlobalOmitConfig = {
     user?: UserOmit
+    reminder?: ReminderOmit
     userWallet?: UserWalletOmit
     walletLedger?: WalletLedgerOmit
     hubTask?: HubTaskOmit
@@ -3912,6 +4005,7 @@ export namespace Prisma {
     stories: number
     folders: number
     tournamentEntries: number
+    reminders: number
   }
 
   export type UserCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -3928,6 +4022,7 @@ export namespace Prisma {
     stories?: boolean | UserCountOutputTypeCountStoriesArgs
     folders?: boolean | UserCountOutputTypeCountFoldersArgs
     tournamentEntries?: boolean | UserCountOutputTypeCountTournamentEntriesArgs
+    reminders?: boolean | UserCountOutputTypeCountRemindersArgs
   }
 
   // Custom InputTypes
@@ -4030,6 +4125,13 @@ export namespace Prisma {
    */
   export type UserCountOutputTypeCountTournamentEntriesArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: TournamentPlayerWhereInput
+  }
+
+  /**
+   * UserCountOutputType without action
+   */
+  export type UserCountOutputTypeCountRemindersArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ReminderWhereInput
   }
 
 
@@ -4763,6 +4865,7 @@ export namespace Prisma {
     stories?: boolean | User$storiesArgs<ExtArgs>
     folders?: boolean | User$foldersArgs<ExtArgs>
     tournamentEntries?: boolean | User$tournamentEntriesArgs<ExtArgs>
+    reminders?: boolean | User$remindersArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["user"]>
 
@@ -4827,6 +4930,7 @@ export namespace Prisma {
     stories?: boolean | User$storiesArgs<ExtArgs>
     folders?: boolean | User$foldersArgs<ExtArgs>
     tournamentEntries?: boolean | User$tournamentEntriesArgs<ExtArgs>
+    reminders?: boolean | User$remindersArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type UserIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
@@ -4849,6 +4953,7 @@ export namespace Prisma {
       stories: Prisma.$StatusStoryPayload<ExtArgs>[]
       folders: Prisma.$FolderPayload<ExtArgs>[]
       tournamentEntries: Prisma.$TournamentPlayerPayload<ExtArgs>[]
+      reminders: Prisma.$ReminderPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -5271,6 +5376,7 @@ export namespace Prisma {
     stories<T extends User$storiesArgs<ExtArgs> = {}>(args?: Subset<T, User$storiesArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$StatusStoryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     folders<T extends User$foldersArgs<ExtArgs> = {}>(args?: Subset<T, User$foldersArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$FolderPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     tournamentEntries<T extends User$tournamentEntriesArgs<ExtArgs> = {}>(args?: Subset<T, User$tournamentEntriesArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$TournamentPlayerPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    reminders<T extends User$remindersArgs<ExtArgs> = {}>(args?: Subset<T, User$remindersArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -6029,6 +6135,30 @@ export namespace Prisma {
   }
 
   /**
+   * User.reminders
+   */
+  export type User$remindersArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    where?: ReminderWhereInput
+    orderBy?: ReminderOrderByWithRelationInput | ReminderOrderByWithRelationInput[]
+    cursor?: ReminderWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: ReminderScalarFieldEnum | ReminderScalarFieldEnum[]
+  }
+
+  /**
    * User without action
    */
   export type UserDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -6044,6 +6174,1101 @@ export namespace Prisma {
      * Choose, which related nodes to fetch as well
      */
     include?: UserInclude<ExtArgs> | null
+  }
+
+
+  /**
+   * Model Reminder
+   */
+
+  export type AggregateReminder = {
+    _count: ReminderCountAggregateOutputType | null
+    _min: ReminderMinAggregateOutputType | null
+    _max: ReminderMaxAggregateOutputType | null
+  }
+
+  export type ReminderMinAggregateOutputType = {
+    id: string | null
+    userId: string | null
+    conversationId: string | null
+    messageId: string | null
+    note: string | null
+    remindAt: Date | null
+    firedAt: Date | null
+    createdAt: Date | null
+  }
+
+  export type ReminderMaxAggregateOutputType = {
+    id: string | null
+    userId: string | null
+    conversationId: string | null
+    messageId: string | null
+    note: string | null
+    remindAt: Date | null
+    firedAt: Date | null
+    createdAt: Date | null
+  }
+
+  export type ReminderCountAggregateOutputType = {
+    id: number
+    userId: number
+    conversationId: number
+    messageId: number
+    note: number
+    remindAt: number
+    firedAt: number
+    createdAt: number
+    _all: number
+  }
+
+
+  export type ReminderMinAggregateInputType = {
+    id?: true
+    userId?: true
+    conversationId?: true
+    messageId?: true
+    note?: true
+    remindAt?: true
+    firedAt?: true
+    createdAt?: true
+  }
+
+  export type ReminderMaxAggregateInputType = {
+    id?: true
+    userId?: true
+    conversationId?: true
+    messageId?: true
+    note?: true
+    remindAt?: true
+    firedAt?: true
+    createdAt?: true
+  }
+
+  export type ReminderCountAggregateInputType = {
+    id?: true
+    userId?: true
+    conversationId?: true
+    messageId?: true
+    note?: true
+    remindAt?: true
+    firedAt?: true
+    createdAt?: true
+    _all?: true
+  }
+
+  export type ReminderAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which Reminder to aggregate.
+     */
+    where?: ReminderWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Reminders to fetch.
+     */
+    orderBy?: ReminderOrderByWithRelationInput | ReminderOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: ReminderWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Reminders from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Reminders.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned Reminders
+    **/
+    _count?: true | ReminderCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: ReminderMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: ReminderMaxAggregateInputType
+  }
+
+  export type GetReminderAggregateType<T extends ReminderAggregateArgs> = {
+        [P in keyof T & keyof AggregateReminder]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateReminder[P]>
+      : GetScalarType<T[P], AggregateReminder[P]>
+  }
+
+
+
+
+  export type ReminderGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ReminderWhereInput
+    orderBy?: ReminderOrderByWithAggregationInput | ReminderOrderByWithAggregationInput[]
+    by: ReminderScalarFieldEnum[] | ReminderScalarFieldEnum
+    having?: ReminderScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ReminderCountAggregateInputType | true
+    _min?: ReminderMinAggregateInputType
+    _max?: ReminderMaxAggregateInputType
+  }
+
+  export type ReminderGroupByOutputType = {
+    id: string
+    userId: string
+    conversationId: string
+    messageId: string | null
+    note: string
+    remindAt: Date
+    firedAt: Date | null
+    createdAt: Date
+    _count: ReminderCountAggregateOutputType | null
+    _min: ReminderMinAggregateOutputType | null
+    _max: ReminderMaxAggregateOutputType | null
+  }
+
+  type GetReminderGroupByPayload<T extends ReminderGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ReminderGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ReminderGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ReminderGroupByOutputType[P]>
+            : GetScalarType<T[P], ReminderGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ReminderSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    userId?: boolean
+    conversationId?: boolean
+    messageId?: boolean
+    note?: boolean
+    remindAt?: boolean
+    firedAt?: boolean
+    createdAt?: boolean
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["reminder"]>
+
+  export type ReminderSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    userId?: boolean
+    conversationId?: boolean
+    messageId?: boolean
+    note?: boolean
+    remindAt?: boolean
+    firedAt?: boolean
+    createdAt?: boolean
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["reminder"]>
+
+  export type ReminderSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    userId?: boolean
+    conversationId?: boolean
+    messageId?: boolean
+    note?: boolean
+    remindAt?: boolean
+    firedAt?: boolean
+    createdAt?: boolean
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["reminder"]>
+
+  export type ReminderSelectScalar = {
+    id?: boolean
+    userId?: boolean
+    conversationId?: boolean
+    messageId?: boolean
+    note?: boolean
+    remindAt?: boolean
+    firedAt?: boolean
+    createdAt?: boolean
+  }
+
+  export type ReminderOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "conversationId" | "messageId" | "note" | "remindAt" | "firedAt" | "createdAt", ExtArgs["result"]["reminder"]>
+  export type ReminderInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type ReminderIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type ReminderIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }
+
+  export type $ReminderPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "Reminder"
+    objects: {
+      user: Prisma.$UserPayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      userId: string
+      conversationId: string
+      messageId: string | null
+      note: string
+      remindAt: Date
+      firedAt: Date | null
+      createdAt: Date
+    }, ExtArgs["result"]["reminder"]>
+    composites: {}
+  }
+
+  type ReminderGetPayload<S extends boolean | null | undefined | ReminderDefaultArgs> = $Result.GetResult<Prisma.$ReminderPayload, S>
+
+  type ReminderCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ReminderFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ReminderCountAggregateInputType | true
+    }
+
+  export interface ReminderDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['Reminder'], meta: { name: 'Reminder' } }
+    /**
+     * Find zero or one Reminder that matches the filter.
+     * @param {ReminderFindUniqueArgs} args - Arguments to find a Reminder
+     * @example
+     * // Get one Reminder
+     * const reminder = await prisma.reminder.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ReminderFindUniqueArgs>(args: SelectSubset<T, ReminderFindUniqueArgs<ExtArgs>>): Prisma__ReminderClient<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one Reminder that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ReminderFindUniqueOrThrowArgs} args - Arguments to find a Reminder
+     * @example
+     * // Get one Reminder
+     * const reminder = await prisma.reminder.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ReminderFindUniqueOrThrowArgs>(args: SelectSubset<T, ReminderFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ReminderClient<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first Reminder that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderFindFirstArgs} args - Arguments to find a Reminder
+     * @example
+     * // Get one Reminder
+     * const reminder = await prisma.reminder.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ReminderFindFirstArgs>(args?: SelectSubset<T, ReminderFindFirstArgs<ExtArgs>>): Prisma__ReminderClient<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first Reminder that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderFindFirstOrThrowArgs} args - Arguments to find a Reminder
+     * @example
+     * // Get one Reminder
+     * const reminder = await prisma.reminder.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ReminderFindFirstOrThrowArgs>(args?: SelectSubset<T, ReminderFindFirstOrThrowArgs<ExtArgs>>): Prisma__ReminderClient<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more Reminders that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all Reminders
+     * const reminders = await prisma.reminder.findMany()
+     * 
+     * // Get first 10 Reminders
+     * const reminders = await prisma.reminder.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const reminderWithIdOnly = await prisma.reminder.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends ReminderFindManyArgs>(args?: SelectSubset<T, ReminderFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a Reminder.
+     * @param {ReminderCreateArgs} args - Arguments to create a Reminder.
+     * @example
+     * // Create one Reminder
+     * const Reminder = await prisma.reminder.create({
+     *   data: {
+     *     // ... data to create a Reminder
+     *   }
+     * })
+     * 
+     */
+    create<T extends ReminderCreateArgs>(args: SelectSubset<T, ReminderCreateArgs<ExtArgs>>): Prisma__ReminderClient<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many Reminders.
+     * @param {ReminderCreateManyArgs} args - Arguments to create many Reminders.
+     * @example
+     * // Create many Reminders
+     * const reminder = await prisma.reminder.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends ReminderCreateManyArgs>(args?: SelectSubset<T, ReminderCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many Reminders and returns the data saved in the database.
+     * @param {ReminderCreateManyAndReturnArgs} args - Arguments to create many Reminders.
+     * @example
+     * // Create many Reminders
+     * const reminder = await prisma.reminder.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many Reminders and only return the `id`
+     * const reminderWithIdOnly = await prisma.reminder.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends ReminderCreateManyAndReturnArgs>(args?: SelectSubset<T, ReminderCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a Reminder.
+     * @param {ReminderDeleteArgs} args - Arguments to delete one Reminder.
+     * @example
+     * // Delete one Reminder
+     * const Reminder = await prisma.reminder.delete({
+     *   where: {
+     *     // ... filter to delete one Reminder
+     *   }
+     * })
+     * 
+     */
+    delete<T extends ReminderDeleteArgs>(args: SelectSubset<T, ReminderDeleteArgs<ExtArgs>>): Prisma__ReminderClient<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one Reminder.
+     * @param {ReminderUpdateArgs} args - Arguments to update one Reminder.
+     * @example
+     * // Update one Reminder
+     * const reminder = await prisma.reminder.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends ReminderUpdateArgs>(args: SelectSubset<T, ReminderUpdateArgs<ExtArgs>>): Prisma__ReminderClient<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more Reminders.
+     * @param {ReminderDeleteManyArgs} args - Arguments to filter Reminders to delete.
+     * @example
+     * // Delete a few Reminders
+     * const { count } = await prisma.reminder.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends ReminderDeleteManyArgs>(args?: SelectSubset<T, ReminderDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more Reminders.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many Reminders
+     * const reminder = await prisma.reminder.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends ReminderUpdateManyArgs>(args: SelectSubset<T, ReminderUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more Reminders and returns the data updated in the database.
+     * @param {ReminderUpdateManyAndReturnArgs} args - Arguments to update many Reminders.
+     * @example
+     * // Update many Reminders
+     * const reminder = await prisma.reminder.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more Reminders and only return the `id`
+     * const reminderWithIdOnly = await prisma.reminder.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends ReminderUpdateManyAndReturnArgs>(args: SelectSubset<T, ReminderUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one Reminder.
+     * @param {ReminderUpsertArgs} args - Arguments to update or create a Reminder.
+     * @example
+     * // Update or create a Reminder
+     * const reminder = await prisma.reminder.upsert({
+     *   create: {
+     *     // ... data to create a Reminder
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the Reminder we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ReminderUpsertArgs>(args: SelectSubset<T, ReminderUpsertArgs<ExtArgs>>): Prisma__ReminderClient<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of Reminders.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderCountArgs} args - Arguments to filter Reminders to count.
+     * @example
+     * // Count the number of Reminders
+     * const count = await prisma.reminder.count({
+     *   where: {
+     *     // ... the filter for the Reminders we want to count
+     *   }
+     * })
+    **/
+    count<T extends ReminderCountArgs>(
+      args?: Subset<T, ReminderCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ReminderCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a Reminder.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ReminderAggregateArgs>(args: Subset<T, ReminderAggregateArgs>): Prisma.PrismaPromise<GetReminderAggregateType<T>>
+
+    /**
+     * Group by Reminder.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends ReminderGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ReminderGroupByArgs['orderBy'] }
+        : { orderBy?: ReminderGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ReminderGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetReminderGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the Reminder model
+   */
+  readonly fields: ReminderFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for Reminder.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ReminderClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    user<T extends UserDefaultArgs<ExtArgs> = {}>(args?: Subset<T, UserDefaultArgs<ExtArgs>>): Prisma__UserClient<$Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the Reminder model
+   */
+  interface ReminderFieldRefs {
+    readonly id: FieldRef<"Reminder", 'String'>
+    readonly userId: FieldRef<"Reminder", 'String'>
+    readonly conversationId: FieldRef<"Reminder", 'String'>
+    readonly messageId: FieldRef<"Reminder", 'String'>
+    readonly note: FieldRef<"Reminder", 'String'>
+    readonly remindAt: FieldRef<"Reminder", 'DateTime'>
+    readonly firedAt: FieldRef<"Reminder", 'DateTime'>
+    readonly createdAt: FieldRef<"Reminder", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * Reminder findUnique
+   */
+  export type ReminderFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    /**
+     * Filter, which Reminder to fetch.
+     */
+    where: ReminderWhereUniqueInput
+  }
+
+  /**
+   * Reminder findUniqueOrThrow
+   */
+  export type ReminderFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    /**
+     * Filter, which Reminder to fetch.
+     */
+    where: ReminderWhereUniqueInput
+  }
+
+  /**
+   * Reminder findFirst
+   */
+  export type ReminderFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    /**
+     * Filter, which Reminder to fetch.
+     */
+    where?: ReminderWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Reminders to fetch.
+     */
+    orderBy?: ReminderOrderByWithRelationInput | ReminderOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for Reminders.
+     */
+    cursor?: ReminderWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Reminders from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Reminders.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of Reminders.
+     */
+    distinct?: ReminderScalarFieldEnum | ReminderScalarFieldEnum[]
+  }
+
+  /**
+   * Reminder findFirstOrThrow
+   */
+  export type ReminderFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    /**
+     * Filter, which Reminder to fetch.
+     */
+    where?: ReminderWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Reminders to fetch.
+     */
+    orderBy?: ReminderOrderByWithRelationInput | ReminderOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for Reminders.
+     */
+    cursor?: ReminderWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Reminders from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Reminders.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of Reminders.
+     */
+    distinct?: ReminderScalarFieldEnum | ReminderScalarFieldEnum[]
+  }
+
+  /**
+   * Reminder findMany
+   */
+  export type ReminderFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    /**
+     * Filter, which Reminders to fetch.
+     */
+    where?: ReminderWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Reminders to fetch.
+     */
+    orderBy?: ReminderOrderByWithRelationInput | ReminderOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing Reminders.
+     */
+    cursor?: ReminderWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Reminders from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Reminders.
+     */
+    skip?: number
+    distinct?: ReminderScalarFieldEnum | ReminderScalarFieldEnum[]
+  }
+
+  /**
+   * Reminder create
+   */
+  export type ReminderCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    /**
+     * The data needed to create a Reminder.
+     */
+    data: XOR<ReminderCreateInput, ReminderUncheckedCreateInput>
+  }
+
+  /**
+   * Reminder createMany
+   */
+  export type ReminderCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many Reminders.
+     */
+    data: ReminderCreateManyInput | ReminderCreateManyInput[]
+  }
+
+  /**
+   * Reminder createManyAndReturn
+   */
+  export type ReminderCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * The data used to create many Reminders.
+     */
+    data: ReminderCreateManyInput | ReminderCreateManyInput[]
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * Reminder update
+   */
+  export type ReminderUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    /**
+     * The data needed to update a Reminder.
+     */
+    data: XOR<ReminderUpdateInput, ReminderUncheckedUpdateInput>
+    /**
+     * Choose, which Reminder to update.
+     */
+    where: ReminderWhereUniqueInput
+  }
+
+  /**
+   * Reminder updateMany
+   */
+  export type ReminderUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update Reminders.
+     */
+    data: XOR<ReminderUpdateManyMutationInput, ReminderUncheckedUpdateManyInput>
+    /**
+     * Filter which Reminders to update
+     */
+    where?: ReminderWhereInput
+    /**
+     * Limit how many Reminders to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * Reminder updateManyAndReturn
+   */
+  export type ReminderUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * The data used to update Reminders.
+     */
+    data: XOR<ReminderUpdateManyMutationInput, ReminderUncheckedUpdateManyInput>
+    /**
+     * Filter which Reminders to update
+     */
+    where?: ReminderWhereInput
+    /**
+     * Limit how many Reminders to update.
+     */
+    limit?: number
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderIncludeUpdateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * Reminder upsert
+   */
+  export type ReminderUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    /**
+     * The filter to search for the Reminder to update in case it exists.
+     */
+    where: ReminderWhereUniqueInput
+    /**
+     * In case the Reminder found by the `where` argument doesn't exist, create a new Reminder with this data.
+     */
+    create: XOR<ReminderCreateInput, ReminderUncheckedCreateInput>
+    /**
+     * In case the Reminder was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ReminderUpdateInput, ReminderUncheckedUpdateInput>
+  }
+
+  /**
+   * Reminder delete
+   */
+  export type ReminderDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
+    /**
+     * Filter which Reminder to delete.
+     */
+    where: ReminderWhereUniqueInput
+  }
+
+  /**
+   * Reminder deleteMany
+   */
+  export type ReminderDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which Reminders to delete
+     */
+    where?: ReminderWhereInput
+    /**
+     * Limit how many Reminders to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * Reminder without action
+   */
+  export type ReminderDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Reminder
+     */
+    select?: ReminderSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Reminder
+     */
+    omit?: ReminderOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReminderInclude<ExtArgs> | null
   }
 
 
@@ -42176,6 +43401,7 @@ export namespace Prisma {
     eventId: string | null
     userId: string | null
     status: string | null
+    checkedInAt: Date | null
     createdAt: Date | null
   }
 
@@ -42184,6 +43410,7 @@ export namespace Prisma {
     eventId: string | null
     userId: string | null
     status: string | null
+    checkedInAt: Date | null
     createdAt: Date | null
   }
 
@@ -42192,6 +43419,7 @@ export namespace Prisma {
     eventId: number
     userId: number
     status: number
+    checkedInAt: number
     createdAt: number
     _all: number
   }
@@ -42202,6 +43430,7 @@ export namespace Prisma {
     eventId?: true
     userId?: true
     status?: true
+    checkedInAt?: true
     createdAt?: true
   }
 
@@ -42210,6 +43439,7 @@ export namespace Prisma {
     eventId?: true
     userId?: true
     status?: true
+    checkedInAt?: true
     createdAt?: true
   }
 
@@ -42218,6 +43448,7 @@ export namespace Prisma {
     eventId?: true
     userId?: true
     status?: true
+    checkedInAt?: true
     createdAt?: true
     _all?: true
   }
@@ -42299,6 +43530,7 @@ export namespace Prisma {
     eventId: string
     userId: string
     status: string
+    checkedInAt: Date | null
     createdAt: Date
     _count: EventRsvpCountAggregateOutputType | null
     _min: EventRsvpMinAggregateOutputType | null
@@ -42324,6 +43556,7 @@ export namespace Prisma {
     eventId?: boolean
     userId?: boolean
     status?: boolean
+    checkedInAt?: boolean
     createdAt?: boolean
     event?: boolean | GroupEventDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["eventRsvp"]>
@@ -42333,6 +43566,7 @@ export namespace Prisma {
     eventId?: boolean
     userId?: boolean
     status?: boolean
+    checkedInAt?: boolean
     createdAt?: boolean
     event?: boolean | GroupEventDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["eventRsvp"]>
@@ -42342,6 +43576,7 @@ export namespace Prisma {
     eventId?: boolean
     userId?: boolean
     status?: boolean
+    checkedInAt?: boolean
     createdAt?: boolean
     event?: boolean | GroupEventDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["eventRsvp"]>
@@ -42351,10 +43586,11 @@ export namespace Prisma {
     eventId?: boolean
     userId?: boolean
     status?: boolean
+    checkedInAt?: boolean
     createdAt?: boolean
   }
 
-  export type EventRsvpOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "eventId" | "userId" | "status" | "createdAt", ExtArgs["result"]["eventRsvp"]>
+  export type EventRsvpOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "eventId" | "userId" | "status" | "checkedInAt" | "createdAt", ExtArgs["result"]["eventRsvp"]>
   export type EventRsvpInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     event?: boolean | GroupEventDefaultArgs<ExtArgs>
   }
@@ -42375,6 +43611,7 @@ export namespace Prisma {
       eventId: string
       userId: string
       status: string
+      checkedInAt: Date | null
       createdAt: Date
     }, ExtArgs["result"]["eventRsvp"]>
     composites: {}
@@ -42804,6 +44041,7 @@ export namespace Prisma {
     readonly eventId: FieldRef<"EventRsvp", 'String'>
     readonly userId: FieldRef<"EventRsvp", 'String'>
     readonly status: FieldRef<"EventRsvp", 'String'>
+    readonly checkedInAt: FieldRef<"EventRsvp", 'DateTime'>
     readonly createdAt: FieldRef<"EventRsvp", 'DateTime'>
   }
     
@@ -43246,6 +44484,20 @@ export namespace Prisma {
   export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
 
 
+  export const ReminderScalarFieldEnum: {
+    id: 'id',
+    userId: 'userId',
+    conversationId: 'conversationId',
+    messageId: 'messageId',
+    note: 'note',
+    remindAt: 'remindAt',
+    firedAt: 'firedAt',
+    createdAt: 'createdAt'
+  };
+
+  export type ReminderScalarFieldEnum = (typeof ReminderScalarFieldEnum)[keyof typeof ReminderScalarFieldEnum]
+
+
   export const UserWalletScalarFieldEnum: {
     userId: 'userId',
     coins: 'coins',
@@ -43676,6 +44928,7 @@ export namespace Prisma {
     eventId: 'eventId',
     userId: 'userId',
     status: 'status',
+    checkedInAt: 'checkedInAt',
     createdAt: 'createdAt'
   };
 
@@ -43771,6 +45024,7 @@ export namespace Prisma {
     stories?: StatusStoryListRelationFilter
     folders?: FolderListRelationFilter
     tournamentEntries?: TournamentPlayerListRelationFilter
+    reminders?: ReminderListRelationFilter
   }
 
   export type UserOrderByWithRelationInput = {
@@ -43800,6 +45054,7 @@ export namespace Prisma {
     stories?: StatusStoryOrderByRelationAggregateInput
     folders?: FolderOrderByRelationAggregateInput
     tournamentEntries?: TournamentPlayerOrderByRelationAggregateInput
+    reminders?: ReminderOrderByRelationAggregateInput
   }
 
   export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -43832,6 +45087,7 @@ export namespace Prisma {
     stories?: StatusStoryListRelationFilter
     folders?: FolderListRelationFilter
     tournamentEntries?: TournamentPlayerListRelationFilter
+    reminders?: ReminderListRelationFilter
   }, "id" | "username">
 
   export type UserOrderByWithAggregationInput = {
@@ -43870,6 +45126,76 @@ export namespace Prisma {
     createdAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     lastSeenAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     xp?: IntWithAggregatesFilter<"User"> | number
+  }
+
+  export type ReminderWhereInput = {
+    AND?: ReminderWhereInput | ReminderWhereInput[]
+    OR?: ReminderWhereInput[]
+    NOT?: ReminderWhereInput | ReminderWhereInput[]
+    id?: StringFilter<"Reminder"> | string
+    userId?: StringFilter<"Reminder"> | string
+    conversationId?: StringFilter<"Reminder"> | string
+    messageId?: StringNullableFilter<"Reminder"> | string | null
+    note?: StringFilter<"Reminder"> | string
+    remindAt?: DateTimeFilter<"Reminder"> | Date | string
+    firedAt?: DateTimeNullableFilter<"Reminder"> | Date | string | null
+    createdAt?: DateTimeFilter<"Reminder"> | Date | string
+    user?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }
+
+  export type ReminderOrderByWithRelationInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    conversationId?: SortOrder
+    messageId?: SortOrderInput | SortOrder
+    note?: SortOrder
+    remindAt?: SortOrder
+    firedAt?: SortOrderInput | SortOrder
+    createdAt?: SortOrder
+    user?: UserOrderByWithRelationInput
+  }
+
+  export type ReminderWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    AND?: ReminderWhereInput | ReminderWhereInput[]
+    OR?: ReminderWhereInput[]
+    NOT?: ReminderWhereInput | ReminderWhereInput[]
+    userId?: StringFilter<"Reminder"> | string
+    conversationId?: StringFilter<"Reminder"> | string
+    messageId?: StringNullableFilter<"Reminder"> | string | null
+    note?: StringFilter<"Reminder"> | string
+    remindAt?: DateTimeFilter<"Reminder"> | Date | string
+    firedAt?: DateTimeNullableFilter<"Reminder"> | Date | string | null
+    createdAt?: DateTimeFilter<"Reminder"> | Date | string
+    user?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }, "id">
+
+  export type ReminderOrderByWithAggregationInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    conversationId?: SortOrder
+    messageId?: SortOrderInput | SortOrder
+    note?: SortOrder
+    remindAt?: SortOrder
+    firedAt?: SortOrderInput | SortOrder
+    createdAt?: SortOrder
+    _count?: ReminderCountOrderByAggregateInput
+    _max?: ReminderMaxOrderByAggregateInput
+    _min?: ReminderMinOrderByAggregateInput
+  }
+
+  export type ReminderScalarWhereWithAggregatesInput = {
+    AND?: ReminderScalarWhereWithAggregatesInput | ReminderScalarWhereWithAggregatesInput[]
+    OR?: ReminderScalarWhereWithAggregatesInput[]
+    NOT?: ReminderScalarWhereWithAggregatesInput | ReminderScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"Reminder"> | string
+    userId?: StringWithAggregatesFilter<"Reminder"> | string
+    conversationId?: StringWithAggregatesFilter<"Reminder"> | string
+    messageId?: StringNullableWithAggregatesFilter<"Reminder"> | string | null
+    note?: StringWithAggregatesFilter<"Reminder"> | string
+    remindAt?: DateTimeWithAggregatesFilter<"Reminder"> | Date | string
+    firedAt?: DateTimeNullableWithAggregatesFilter<"Reminder"> | Date | string | null
+    createdAt?: DateTimeWithAggregatesFilter<"Reminder"> | Date | string
   }
 
   export type UserWalletWhereInput = {
@@ -46145,6 +47471,7 @@ export namespace Prisma {
     eventId?: StringFilter<"EventRsvp"> | string
     userId?: StringFilter<"EventRsvp"> | string
     status?: StringFilter<"EventRsvp"> | string
+    checkedInAt?: DateTimeNullableFilter<"EventRsvp"> | Date | string | null
     createdAt?: DateTimeFilter<"EventRsvp"> | Date | string
     event?: XOR<GroupEventScalarRelationFilter, GroupEventWhereInput>
   }
@@ -46154,6 +47481,7 @@ export namespace Prisma {
     eventId?: SortOrder
     userId?: SortOrder
     status?: SortOrder
+    checkedInAt?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     event?: GroupEventOrderByWithRelationInput
   }
@@ -46167,6 +47495,7 @@ export namespace Prisma {
     eventId?: StringFilter<"EventRsvp"> | string
     userId?: StringFilter<"EventRsvp"> | string
     status?: StringFilter<"EventRsvp"> | string
+    checkedInAt?: DateTimeNullableFilter<"EventRsvp"> | Date | string | null
     createdAt?: DateTimeFilter<"EventRsvp"> | Date | string
     event?: XOR<GroupEventScalarRelationFilter, GroupEventWhereInput>
   }, "id" | "eventId_userId">
@@ -46176,6 +47505,7 @@ export namespace Prisma {
     eventId?: SortOrder
     userId?: SortOrder
     status?: SortOrder
+    checkedInAt?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     _count?: EventRsvpCountOrderByAggregateInput
     _max?: EventRsvpMaxOrderByAggregateInput
@@ -46190,6 +47520,7 @@ export namespace Prisma {
     eventId?: StringWithAggregatesFilter<"EventRsvp"> | string
     userId?: StringWithAggregatesFilter<"EventRsvp"> | string
     status?: StringWithAggregatesFilter<"EventRsvp"> | string
+    checkedInAt?: DateTimeNullableWithAggregatesFilter<"EventRsvp"> | Date | string | null
     createdAt?: DateTimeWithAggregatesFilter<"EventRsvp"> | Date | string
   }
 
@@ -46220,6 +47551,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateInput = {
@@ -46249,6 +47581,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserUpdateInput = {
@@ -46278,6 +47611,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateInput = {
@@ -46307,6 +47641,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateManyInput = {
@@ -46352,6 +47687,82 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type ReminderCreateInput = {
+    id?: string
+    conversationId: string
+    messageId?: string | null
+    note?: string
+    remindAt: Date | string
+    firedAt?: Date | string | null
+    createdAt?: Date | string
+    user: UserCreateNestedOneWithoutRemindersInput
+  }
+
+  export type ReminderUncheckedCreateInput = {
+    id?: string
+    userId: string
+    conversationId: string
+    messageId?: string | null
+    note?: string
+    remindAt: Date | string
+    firedAt?: Date | string | null
+    createdAt?: Date | string
+  }
+
+  export type ReminderUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    messageId?: NullableStringFieldUpdateOperationsInput | string | null
+    note?: StringFieldUpdateOperationsInput | string
+    remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    user?: UserUpdateOneRequiredWithoutRemindersNestedInput
+  }
+
+  export type ReminderUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    messageId?: NullableStringFieldUpdateOperationsInput | string | null
+    note?: StringFieldUpdateOperationsInput | string
+    remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ReminderCreateManyInput = {
+    id?: string
+    userId: string
+    conversationId: string
+    messageId?: string | null
+    note?: string
+    remindAt: Date | string
+    firedAt?: Date | string | null
+    createdAt?: Date | string
+  }
+
+  export type ReminderUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    messageId?: NullableStringFieldUpdateOperationsInput | string | null
+    note?: StringFieldUpdateOperationsInput | string
+    remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ReminderUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    messageId?: NullableStringFieldUpdateOperationsInput | string | null
+    note?: StringFieldUpdateOperationsInput | string
+    remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
   export type UserWalletCreateInput = {
@@ -48726,6 +50137,7 @@ export namespace Prisma {
     id?: string
     userId: string
     status?: string
+    checkedInAt?: Date | string | null
     createdAt?: Date | string
     event: GroupEventCreateNestedOneWithoutRsvpsInput
   }
@@ -48735,6 +50147,7 @@ export namespace Prisma {
     eventId: string
     userId: string
     status?: string
+    checkedInAt?: Date | string | null
     createdAt?: Date | string
   }
 
@@ -48742,6 +50155,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     userId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
+    checkedInAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     event?: GroupEventUpdateOneRequiredWithoutRsvpsNestedInput
   }
@@ -48751,6 +50165,7 @@ export namespace Prisma {
     eventId?: StringFieldUpdateOperationsInput | string
     userId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
+    checkedInAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -48759,6 +50174,7 @@ export namespace Prisma {
     eventId: string
     userId: string
     status?: string
+    checkedInAt?: Date | string | null
     createdAt?: Date | string
   }
 
@@ -48766,6 +50182,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     userId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
+    checkedInAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -48774,6 +50191,7 @@ export namespace Prisma {
     eventId?: StringFieldUpdateOperationsInput | string
     userId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
+    checkedInAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -48904,6 +50322,12 @@ export namespace Prisma {
     none?: TournamentPlayerWhereInput
   }
 
+  export type ReminderListRelationFilter = {
+    every?: ReminderWhereInput
+    some?: ReminderWhereInput
+    none?: ReminderWhereInput
+  }
+
   export type SortOrderInput = {
     sort: SortOrder
     nulls?: NullsOrder
@@ -48954,6 +50378,10 @@ export namespace Prisma {
   }
 
   export type TournamentPlayerOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
+  export type ReminderOrderByRelationAggregateInput = {
     _count?: SortOrder
   }
 
@@ -49090,6 +50518,53 @@ export namespace Prisma {
     isNot?: UserWhereInput
   }
 
+  export type ReminderCountOrderByAggregateInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    conversationId?: SortOrder
+    messageId?: SortOrder
+    note?: SortOrder
+    remindAt?: SortOrder
+    firedAt?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ReminderMaxOrderByAggregateInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    conversationId?: SortOrder
+    messageId?: SortOrder
+    note?: SortOrder
+    remindAt?: SortOrder
+    firedAt?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ReminderMinOrderByAggregateInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    conversationId?: SortOrder
+    messageId?: SortOrder
+    note?: SortOrder
+    remindAt?: SortOrder
+    firedAt?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type DateTimeNullableWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel> | null
+    in?: Date[] | string[] | null
+    notIn?: Date[] | string[] | null
+    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    not?: NestedDateTimeNullableWithAggregatesFilter<$PrismaModel> | Date | string | null
+    _count?: NestedIntNullableFilter<$PrismaModel>
+    _min?: NestedDateTimeNullableFilter<$PrismaModel>
+    _max?: NestedDateTimeNullableFilter<$PrismaModel>
+  }
+
   export type UserWalletCountOrderByAggregateInput = {
     userId?: SortOrder
     coins?: SortOrder
@@ -49124,20 +50599,6 @@ export namespace Prisma {
     coins?: SortOrder
     gems?: SortOrder
     streak?: SortOrder
-  }
-
-  export type DateTimeNullableWithAggregatesFilter<$PrismaModel = never> = {
-    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel> | null
-    in?: Date[] | string[] | null
-    notIn?: Date[] | string[] | null
-    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    not?: NestedDateTimeNullableWithAggregatesFilter<$PrismaModel> | Date | string | null
-    _count?: NestedIntNullableFilter<$PrismaModel>
-    _min?: NestedDateTimeNullableFilter<$PrismaModel>
-    _max?: NestedDateTimeNullableFilter<$PrismaModel>
   }
 
   export type WalletLedgerCountOrderByAggregateInput = {
@@ -50583,6 +52044,7 @@ export namespace Prisma {
     eventId?: SortOrder
     userId?: SortOrder
     status?: SortOrder
+    checkedInAt?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -50591,6 +52053,7 @@ export namespace Prisma {
     eventId?: SortOrder
     userId?: SortOrder
     status?: SortOrder
+    checkedInAt?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -50599,6 +52062,7 @@ export namespace Prisma {
     eventId?: SortOrder
     userId?: SortOrder
     status?: SortOrder
+    checkedInAt?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -50699,6 +52163,13 @@ export namespace Prisma {
     connect?: TournamentPlayerWhereUniqueInput | TournamentPlayerWhereUniqueInput[]
   }
 
+  export type ReminderCreateNestedManyWithoutUserInput = {
+    create?: XOR<ReminderCreateWithoutUserInput, ReminderUncheckedCreateWithoutUserInput> | ReminderCreateWithoutUserInput[] | ReminderUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ReminderCreateOrConnectWithoutUserInput | ReminderCreateOrConnectWithoutUserInput[]
+    createMany?: ReminderCreateManyUserInputEnvelope
+    connect?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+  }
+
   export type AppInstallUncheckedCreateNestedManyWithoutUserInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -50794,6 +52265,13 @@ export namespace Prisma {
     connectOrCreate?: TournamentPlayerCreateOrConnectWithoutUserInput | TournamentPlayerCreateOrConnectWithoutUserInput[]
     createMany?: TournamentPlayerCreateManyUserInputEnvelope
     connect?: TournamentPlayerWhereUniqueInput | TournamentPlayerWhereUniqueInput[]
+  }
+
+  export type ReminderUncheckedCreateNestedManyWithoutUserInput = {
+    create?: XOR<ReminderCreateWithoutUserInput, ReminderUncheckedCreateWithoutUserInput> | ReminderCreateWithoutUserInput[] | ReminderUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ReminderCreateOrConnectWithoutUserInput | ReminderCreateOrConnectWithoutUserInput[]
+    createMany?: ReminderCreateManyUserInputEnvelope
+    connect?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
   }
 
   export type StringFieldUpdateOperationsInput = {
@@ -51008,6 +52486,20 @@ export namespace Prisma {
     deleteMany?: TournamentPlayerScalarWhereInput | TournamentPlayerScalarWhereInput[]
   }
 
+  export type ReminderUpdateManyWithoutUserNestedInput = {
+    create?: XOR<ReminderCreateWithoutUserInput, ReminderUncheckedCreateWithoutUserInput> | ReminderCreateWithoutUserInput[] | ReminderUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ReminderCreateOrConnectWithoutUserInput | ReminderCreateOrConnectWithoutUserInput[]
+    upsert?: ReminderUpsertWithWhereUniqueWithoutUserInput | ReminderUpsertWithWhereUniqueWithoutUserInput[]
+    createMany?: ReminderCreateManyUserInputEnvelope
+    set?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+    disconnect?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+    delete?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+    connect?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+    update?: ReminderUpdateWithWhereUniqueWithoutUserInput | ReminderUpdateWithWhereUniqueWithoutUserInput[]
+    updateMany?: ReminderUpdateManyWithWhereWithoutUserInput | ReminderUpdateManyWithWhereWithoutUserInput[]
+    deleteMany?: ReminderScalarWhereInput | ReminderScalarWhereInput[]
+  }
+
   export type AppInstallUncheckedUpdateManyWithoutUserNestedInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -51200,14 +52692,42 @@ export namespace Prisma {
     deleteMany?: TournamentPlayerScalarWhereInput | TournamentPlayerScalarWhereInput[]
   }
 
-  export type UserCreateNestedOneWithoutWalletInput = {
-    create?: XOR<UserCreateWithoutWalletInput, UserUncheckedCreateWithoutWalletInput>
-    connectOrCreate?: UserCreateOrConnectWithoutWalletInput
+  export type ReminderUncheckedUpdateManyWithoutUserNestedInput = {
+    create?: XOR<ReminderCreateWithoutUserInput, ReminderUncheckedCreateWithoutUserInput> | ReminderCreateWithoutUserInput[] | ReminderUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ReminderCreateOrConnectWithoutUserInput | ReminderCreateOrConnectWithoutUserInput[]
+    upsert?: ReminderUpsertWithWhereUniqueWithoutUserInput | ReminderUpsertWithWhereUniqueWithoutUserInput[]
+    createMany?: ReminderCreateManyUserInputEnvelope
+    set?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+    disconnect?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+    delete?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+    connect?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+    update?: ReminderUpdateWithWhereUniqueWithoutUserInput | ReminderUpdateWithWhereUniqueWithoutUserInput[]
+    updateMany?: ReminderUpdateManyWithWhereWithoutUserInput | ReminderUpdateManyWithWhereWithoutUserInput[]
+    deleteMany?: ReminderScalarWhereInput | ReminderScalarWhereInput[]
+  }
+
+  export type UserCreateNestedOneWithoutRemindersInput = {
+    create?: XOR<UserCreateWithoutRemindersInput, UserUncheckedCreateWithoutRemindersInput>
+    connectOrCreate?: UserCreateOrConnectWithoutRemindersInput
     connect?: UserWhereUniqueInput
   }
 
   export type NullableDateTimeFieldUpdateOperationsInput = {
     set?: Date | string | null
+  }
+
+  export type UserUpdateOneRequiredWithoutRemindersNestedInput = {
+    create?: XOR<UserCreateWithoutRemindersInput, UserUncheckedCreateWithoutRemindersInput>
+    connectOrCreate?: UserCreateOrConnectWithoutRemindersInput
+    upsert?: UserUpsertWithoutRemindersInput
+    connect?: UserWhereUniqueInput
+    update?: XOR<XOR<UserUpdateToOneWithWhereWithoutRemindersInput, UserUpdateWithoutRemindersInput>, UserUncheckedUpdateWithoutRemindersInput>
+  }
+
+  export type UserCreateNestedOneWithoutWalletInput = {
+    create?: XOR<UserCreateWithoutWalletInput, UserUncheckedCreateWithoutWalletInput>
+    connectOrCreate?: UserCreateOrConnectWithoutWalletInput
+    connect?: UserWhereUniqueInput
   }
 
   export type UserUpdateOneRequiredWithoutWalletNestedInput = {
@@ -53505,6 +55025,35 @@ export namespace Prisma {
     data: TournamentPlayerCreateManyUserInput | TournamentPlayerCreateManyUserInput[]
   }
 
+  export type ReminderCreateWithoutUserInput = {
+    id?: string
+    conversationId: string
+    messageId?: string | null
+    note?: string
+    remindAt: Date | string
+    firedAt?: Date | string | null
+    createdAt?: Date | string
+  }
+
+  export type ReminderUncheckedCreateWithoutUserInput = {
+    id?: string
+    conversationId: string
+    messageId?: string | null
+    note?: string
+    remindAt: Date | string
+    firedAt?: Date | string | null
+    createdAt?: Date | string
+  }
+
+  export type ReminderCreateOrConnectWithoutUserInput = {
+    where: ReminderWhereUniqueInput
+    create: XOR<ReminderCreateWithoutUserInput, ReminderUncheckedCreateWithoutUserInput>
+  }
+
+  export type ReminderCreateManyUserInputEnvelope = {
+    data: ReminderCreateManyUserInput | ReminderCreateManyUserInput[]
+  }
+
   export type AppInstallUpsertWithWhereUniqueWithoutUserInput = {
     where: AppInstallWhereUniqueInput
     update: XOR<AppInstallUpdateWithoutUserInput, AppInstallUncheckedUpdateWithoutUserInput>
@@ -53908,6 +55457,168 @@ export namespace Prisma {
     joinedAt?: DateTimeFilter<"TournamentPlayer"> | Date | string
   }
 
+  export type ReminderUpsertWithWhereUniqueWithoutUserInput = {
+    where: ReminderWhereUniqueInput
+    update: XOR<ReminderUpdateWithoutUserInput, ReminderUncheckedUpdateWithoutUserInput>
+    create: XOR<ReminderCreateWithoutUserInput, ReminderUncheckedCreateWithoutUserInput>
+  }
+
+  export type ReminderUpdateWithWhereUniqueWithoutUserInput = {
+    where: ReminderWhereUniqueInput
+    data: XOR<ReminderUpdateWithoutUserInput, ReminderUncheckedUpdateWithoutUserInput>
+  }
+
+  export type ReminderUpdateManyWithWhereWithoutUserInput = {
+    where: ReminderScalarWhereInput
+    data: XOR<ReminderUpdateManyMutationInput, ReminderUncheckedUpdateManyWithoutUserInput>
+  }
+
+  export type ReminderScalarWhereInput = {
+    AND?: ReminderScalarWhereInput | ReminderScalarWhereInput[]
+    OR?: ReminderScalarWhereInput[]
+    NOT?: ReminderScalarWhereInput | ReminderScalarWhereInput[]
+    id?: StringFilter<"Reminder"> | string
+    userId?: StringFilter<"Reminder"> | string
+    conversationId?: StringFilter<"Reminder"> | string
+    messageId?: StringNullableFilter<"Reminder"> | string | null
+    note?: StringFilter<"Reminder"> | string
+    remindAt?: DateTimeFilter<"Reminder"> | Date | string
+    firedAt?: DateTimeNullableFilter<"Reminder"> | Date | string | null
+    createdAt?: DateTimeFilter<"Reminder"> | Date | string
+  }
+
+  export type UserCreateWithoutRemindersInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    appInstalls?: AppInstallCreateNestedManyWithoutUserInput
+    wallet?: UserWalletCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantCreateNestedManyWithoutUserInput
+    messages?: MessageCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseCreateNestedManyWithoutUserInput
+    stories?: StatusStoryCreateNestedManyWithoutUserInput
+    folders?: FolderCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+  }
+
+  export type UserUncheckedCreateWithoutRemindersInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
+    wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskUncheckedCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventUncheckedCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingUncheckedCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingUncheckedCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantUncheckedCreateNestedManyWithoutUserInput
+    messages?: MessageUncheckedCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageUncheckedCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseUncheckedCreateNestedManyWithoutUserInput
+    stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
+    folders?: FolderUncheckedCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+  }
+
+  export type UserCreateOrConnectWithoutRemindersInput = {
+    where: UserWhereUniqueInput
+    create: XOR<UserCreateWithoutRemindersInput, UserUncheckedCreateWithoutRemindersInput>
+  }
+
+  export type UserUpsertWithoutRemindersInput = {
+    update: XOR<UserUpdateWithoutRemindersInput, UserUncheckedUpdateWithoutRemindersInput>
+    create: XOR<UserCreateWithoutRemindersInput, UserUncheckedCreateWithoutRemindersInput>
+    where?: UserWhereInput
+  }
+
+  export type UserUpdateToOneWithWhereWithoutRemindersInput = {
+    where?: UserWhereInput
+    data: XOR<UserUpdateWithoutRemindersInput, UserUncheckedUpdateWithoutRemindersInput>
+  }
+
+  export type UserUpdateWithoutRemindersInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUpdateManyWithoutUserNestedInput
+    messages?: MessageUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUpdateManyWithoutUserNestedInput
+    folders?: FolderUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+  }
+
+  export type UserUncheckedUpdateWithoutRemindersInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUncheckedUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUncheckedUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUncheckedUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUncheckedUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUncheckedUpdateManyWithoutUserNestedInput
+    messages?: MessageUncheckedUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUncheckedUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUncheckedUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
+    folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+  }
+
   export type UserCreateWithoutWalletInput = {
     id?: string
     name: string
@@ -53934,6 +55645,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutWalletInput = {
@@ -53962,6 +55674,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutWalletInput = {
@@ -54006,6 +55719,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutWalletInput = {
@@ -54034,6 +55748,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutLedgerInput = {
@@ -54062,6 +55777,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutLedgerInput = {
@@ -54090,6 +55806,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutLedgerInput = {
@@ -54134,6 +55851,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLedgerInput = {
@@ -54162,6 +55880,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutHubTasksInput = {
@@ -54190,6 +55909,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutHubTasksInput = {
@@ -54218,6 +55938,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutHubTasksInput = {
@@ -54262,6 +55983,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutHubTasksInput = {
@@ -54290,6 +56012,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutAppInstallsInput = {
@@ -54318,6 +56041,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutAppInstallsInput = {
@@ -54346,6 +56070,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutAppInstallsInput = {
@@ -54390,6 +56115,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutAppInstallsInput = {
@@ -54418,6 +56144,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutMarketListingsInput = {
@@ -54446,6 +56173,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutMarketListingsInput = {
@@ -54474,6 +56202,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutMarketListingsInput = {
@@ -54507,6 +56236,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutMarketPurchasesInput = {
@@ -54535,6 +56265,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutMarketPurchasesInput = {
@@ -54579,6 +56310,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketListingsInput = {
@@ -54607,6 +56339,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserUpsertWithoutMarketPurchasesInput = {
@@ -54646,6 +56379,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketPurchasesInput = {
@@ -54674,6 +56408,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutLogEventsInput = {
@@ -54702,6 +56437,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutLogEventsInput = {
@@ -54730,6 +56466,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutLogEventsInput = {
@@ -54774,6 +56511,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLogEventsInput = {
@@ -54802,6 +56540,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutQuickPhrasesInput = {
@@ -54830,6 +56569,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutQuickPhrasesInput = {
@@ -54858,6 +56598,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutQuickPhrasesInput = {
@@ -54902,6 +56643,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutQuickPhrasesInput = {
@@ -54930,6 +56672,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type ConversationParticipantCreateWithoutConversationInput = {
@@ -55680,6 +57423,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutStoriesInput = {
@@ -55708,6 +57452,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutStoriesInput = {
@@ -55773,6 +57518,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutStoriesInput = {
@@ -55801,6 +57547,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type StoryViewUpsertWithWhereUniqueWithoutStoryInput = {
@@ -55911,6 +57658,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutParticipationsInput = {
@@ -55939,6 +57687,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutParticipationsInput = {
@@ -56032,6 +57781,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutParticipationsInput = {
@@ -56060,6 +57810,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type ConversationUpsertWithoutParticipantsInput = {
@@ -56143,6 +57894,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutMessagesInput = {
@@ -56171,6 +57923,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutMessagesInput = {
@@ -56723,6 +58476,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMessagesInput = {
@@ -56751,6 +58505,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type ConversationUpsertWithoutMessagesInput = {
@@ -57553,6 +59308,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutSavedMessagesInput = {
@@ -57581,6 +59337,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutSavedMessagesInput = {
@@ -57696,6 +59453,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutSavedMessagesInput = {
@@ -57724,6 +59482,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type MessageUpsertWithoutSavedByInput = {
@@ -58515,6 +60274,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseCreateNestedManyWithoutUserInput
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutFoldersInput = {
@@ -58543,6 +60303,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseUncheckedCreateNestedManyWithoutUserInput
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutFoldersInput = {
@@ -58608,6 +60369,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseUpdateManyWithoutUserNestedInput
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutFoldersInput = {
@@ -58636,6 +60398,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseUncheckedUpdateManyWithoutUserNestedInput
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type FolderConversationUpsertWithWhereUniqueWithoutFolderInput = {
@@ -59012,6 +60775,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseCreateNestedManyWithoutUserInput
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutTournamentEntriesInput = {
@@ -59040,6 +60804,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseUncheckedCreateNestedManyWithoutUserInput
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutTournamentEntriesInput = {
@@ -59117,6 +60882,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseUpdateManyWithoutUserNestedInput
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutTournamentEntriesInput = {
@@ -59145,6 +60911,7 @@ export namespace Prisma {
     quickPhrases?: QuickPhraseUncheckedUpdateManyWithoutUserNestedInput
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type MessageCreateWithoutRedPacketInput = {
@@ -59674,6 +61441,7 @@ export namespace Prisma {
     id?: string
     userId: string
     status?: string
+    checkedInAt?: Date | string | null
     createdAt?: Date | string
   }
 
@@ -59681,6 +61449,7 @@ export namespace Prisma {
     id?: string
     userId: string
     status?: string
+    checkedInAt?: Date | string | null
     createdAt?: Date | string
   }
 
@@ -59772,6 +61541,7 @@ export namespace Prisma {
     eventId?: StringFilter<"EventRsvp"> | string
     userId?: StringFilter<"EventRsvp"> | string
     status?: StringFilter<"EventRsvp"> | string
+    checkedInAt?: DateTimeNullableFilter<"EventRsvp"> | Date | string | null
     createdAt?: DateTimeFilter<"EventRsvp"> | Date | string
   }
 
@@ -59966,6 +61736,16 @@ export namespace Prisma {
     losses?: number
     draws?: number
     joinedAt?: Date | string
+  }
+
+  export type ReminderCreateManyUserInput = {
+    id?: string
+    conversationId: string
+    messageId?: string | null
+    note?: string
+    remindAt: Date | string
+    firedAt?: Date | string | null
+    createdAt?: Date | string
   }
 
   export type AppInstallUpdateWithoutUserInput = {
@@ -60383,6 +62163,36 @@ export namespace Prisma {
     losses?: IntFieldUpdateOperationsInput | number
     draws?: IntFieldUpdateOperationsInput | number
     joinedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ReminderUpdateWithoutUserInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    messageId?: NullableStringFieldUpdateOperationsInput | string | null
+    note?: StringFieldUpdateOperationsInput | string
+    remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ReminderUncheckedUpdateWithoutUserInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    messageId?: NullableStringFieldUpdateOperationsInput | string | null
+    note?: StringFieldUpdateOperationsInput | string
+    remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ReminderUncheckedUpdateManyWithoutUserInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    messageId?: NullableStringFieldUpdateOperationsInput | string | null
+    note?: StringFieldUpdateOperationsInput | string
+    remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
   export type ConversationParticipantCreateManyConversationInput = {
@@ -61603,6 +63413,7 @@ export namespace Prisma {
     id?: string
     userId: string
     status?: string
+    checkedInAt?: Date | string | null
     createdAt?: Date | string
   }
 
@@ -61610,6 +63421,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     userId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
+    checkedInAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -61617,6 +63429,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     userId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
+    checkedInAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -61624,6 +63437,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     userId?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
+    checkedInAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
