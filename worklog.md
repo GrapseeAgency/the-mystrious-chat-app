@@ -1164,3 +1164,32 @@ Stage Summary:
 - Contracts: PipChat mounts in TWO guarded places (room overlay + shell when openConversationId===null && !settingsVisible); pip store persists normalized nx/ny; PIP_OPEN_CONVERSATION_EVENT = 'pulse:open-conversation' (pane → main-shell room open) preserved; members API: POST add (admins-only)/DELETE/PATCH promote|demote.
 - Honest gaps: panes render per-shell-instance so a pane is hidden while a blocking sheet/settings own the screen (by design); stack pill flow (≥2 panes) verified in code + store but only single-pane E2E'd live (opening two panes requires two rooms — manual QA queued); members cannot add members (API is admins-only); member-add hides honestly for non-admins.
 - Next queue: locate user's .txt feature map (not on this filesystem — ask user or proceed from preserved list), unique features from the preserved list (broadcast channels, proximity voice, per-conversation themes, BAND attendance, XP caps+streaks), second WebGL type, UI accuracy pass vs the 5 glass reference pictures.
+---
+Task ID: R29-a
+Agent: general-purpose
+Task: Pulse per-conversation themes (iMessage-style chat wallpaper/tint per room)
+
+Work Log:
+- Studied the global wallpaper system end-to-end first: prefs-defaults (PulsePrefs.wallpaper 'none|aurora|dusk|forest|mono', strict-whitelist mergePrefs), usePrefs zustand store (optimistic set + debounced PATCH /api/settings, rollback on failure), chat-room wallpaperGlows() consumption, settings-screen Appearance tiles (inline JSX, NOT a reusable component → replicated the exact tile visuals)
+- NEW src/lib/conv-theme.ts: ConvThemeMap = Record<convId, {wallpaper, tint?}>; helpers getConvTheme / setConvTheme / clearConvTheme / effectiveConvWallpaper / applyConvTint / convThemeSummary / sanitizeConvThemeMap — all pure + full JSDoc. Wallpaper options typed as PulsePrefs['wallpaper'] (compile error if the global set drifts); tint set per task spec (emerald|rose|amber|violet|teal); sanitizer drops unknown ids/tokens (regex key guard + __proto__/constructor/prototype rejection) and caps at 48 entries to stay under the API's 4KB serialized-prefs budget
+- OWNERSHIP EXCEPTION (additive, justified): edited src/lib/prefs-defaults.ts — mergePrefs is a strict whitelist shared by BOTH the client store (save() strips unknown keys before set) and the server PATCH clamp, so without registering the key there, 'chat.convThemes' would be silently dropped on the very first save AND every server write. Added: 'chat.convThemes'?: ConvThemeMap field + one mergePrefs branch (isRecord → sanitizeConvThemeMap). Not on the do-not-touch list; mirrors the existing fx.webglMode pattern. No api/**, main-shell, app-root, settings-screen, contacts/hub/profile files touched
+- NEW src/components/chat/conv-theme-picker.tsx: glass picker — 5 wallpaper swatch tiles (identical preview classes to Settings→Appearance, min-h-44px targets, staggered springs, Check+ring on effective, dot marker on live override), tint chip row (44px round chips + No-tint chip), "Reset to default" rendered ONLY when an override exists, honest caption ("Following Appearance default · X" / "Custom for this chat only")
+- room-info-page.tsx: "Chat theme" row in the actions card directly below Disappearing messages (Palette icon, live summary via convThemeSummary, Customize/Close pill) + ConvThemePicker in an AnimatePresence height-slide INSIDE the page (not a route, no overlay). RoomInfoPageProps untouched. Reads prefs via usePrefsValues so the row + picker update live
+- chat-room.tsx SURGICAL (3 lines + import): the single wallpaperGlows(prefs.wallpaper, isDark) call now resolves effectiveConvWallpaper(prefs, conversationId) and applyConvTint(..., tint) (tint replaces the TOP glow so it is visible even on the 'none' wallpaper; bottom glow keeps wallpaper character). Nothing else restructured; re-render rides the existing usePrefsValues subscription
+
+Verification:
+- bunx tsc --noEmit (filtered): 0 errors · bun run lint: clean
+- LIVE E2E (agent-browser, Alice Chen, room Bot & Webhook QA cmtn1844z0000nhhcxv5i1f8p, global wallpaper = dusk):
+  • Room before: top glow rgba(245,158,11,0.10) (dusk) — qa-r29a-01
+  • Chat info → Chat theme → Customize: picker shows Dusk checked + "Following Appearance default · Dusk", no Reset (honest) — qa-r29a-02
+  • Picked Forest → live behind-info glow flipped to rgba(5,150,105,0.12); picked Rose tint → top glow rgba(244,63,94,0.16); summary "Custom · Forest · Rose tint" — qa-r29a-03
+  • Server truth (curl /api/settings): "chat.convThemes":{"cmtn1844z0000nhhcxv5i1f8p":{"wallpaper":"forest","tint":"rose"}}
+  • Full reload → room STILL forest+rose (hydrate from server) — qa-r29a-05; another room ("yooo") still renders global dusk — per-conversation isolation — qa-r29a-06
+  • Reset to default → caption "Following Appearance default · Dusk", glows back to dusk, server key = {} (entry removed) — qa-r29a-07
+  • agent-browser errors: zero · console: clean · 7 screenshots download/qa-r29a-01..07-*.png
+
+Stage Summary:
+- SHIPPED: per-conversation chat themes end-to-end — picker UI on #/room/<id>/info, prefs-persisted server-side, chat-room consumes effective wallpaper + tint; global Appearance page untouched and remains the default; clearing falls back to global
+- Prefs key contract: User.preferences['chat.convThemes'] = Record<conversationId, {wallpaper: 'none'|'aurora'|'dusk'|'forest'|'mono', tint?: 'emerald'|'rose'|'amber'|'violet'|'teal'}> — sanitized by sanitizeConvThemeMap (max 48 entries, 4KB-safe), passthrough registered in mergePrefs; tint = top-glow color swap in chat-room (no global tint concept exists)
+- Honest gaps: (1) tint-only overrides seed wallpaper from the global default at set-time (entry type requires wallpaper) — later global changes do not propagate to seeded rooms; (2) reset leaves an empty {} map in the blob (semantically correct, tiny residue); (3) per-user prefs = per-user themes (the OTHER party does not see your override — by design, client-side pref like iMessage); (4) 48-override cap is silent (drop-beyond-cap)
+- Evidence: download/qa-r29a-01-room-before.png … qa-r29a-07-reset-to-default.png

@@ -23,6 +23,7 @@ import {
   Link2,
   LoaderCircle,
   Megaphone,
+  Palette,
   Pin,
   Search,
   SearchX,
@@ -40,6 +41,9 @@ import { haptic } from '@/lib/pulse-settings'
 import { toast } from 'sonner'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 import { RoomMemberAddPage } from '@/components/chat/room-member-add'
+import { ConvThemePicker } from '@/components/chat/conv-theme-picker'
+import { convThemeSummary } from '@/lib/conv-theme'
+import { usePrefsValues } from '@/lib/prefs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
@@ -290,6 +294,11 @@ export function RoomInfoPage({
   // R28-b: full-screen add-members sub-view INSIDE the info page
   const [addOpen, setAddOpen] = useState(false)
 
+  // R29-a: per-conversation chat theme (wallpaper/tint) — inline picker
+  const prefs = usePrefsValues()
+  const themeSummary = convThemeSummary(prefs, conversationId)
+  const [themeOpen, setThemeOpen] = useState(false)
+
   const anim = {
     initial: reducedMotion ? false : { opacity: 0, y: 10 },
     animate: { opacity: 1, y: 0 },
@@ -478,6 +487,46 @@ export function RoomInfoPage({
               {detail === undefined ? '…' : ttlLabel(detail.ttlSeconds)}
             </span>
           </div>
+
+          {/* R29-a: chat theme — per-conversation wallpaper/tint override.
+              Row shows the effective theme; Customize expands the picker
+              inline (slide inside the page, not a route/overlay). */}
+          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+            <Palette className="size-4 shrink-0 text-zinc-400" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                Chat theme
+              </p>
+              <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                {themeSummary.text}
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-expanded={themeOpen}
+              onClick={() => {
+                haptic(8)
+                setThemeOpen((v) => !v)
+              }}
+              className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 dark:text-emerald-400"
+            >
+              {themeOpen ? 'Close' : 'Customize'}
+            </button>
+          </div>
+          <AnimatePresence initial={false}>
+            {themeOpen ? (
+              <motion.div
+                key="conv-theme-picker"
+                initial={reducedMotion ? false : { opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={reducedMotion ? undefined : { opacity: 0, height: 0 }}
+                transition={spring.soft}
+                className="overflow-hidden"
+              >
+                <ConvThemePicker conversationId={conversationId} reducedMotion={reducedMotion} />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
           {/* invite link — real /invite API, groups + admin only (hidden honestly) */}
           {isGroup && isAdmin ? (

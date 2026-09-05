@@ -153,6 +153,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 import { useMounted } from '@/hooks/use-mounted'
 import { usePrefsValues } from '@/lib/prefs'
+import { applyConvTint, effectiveConvWallpaper, getConvTheme } from '@/lib/conv-theme'
 import type { PulsePrefs } from '@/lib/prefs-defaults'
 import {
   MessageEffectsLayer,
@@ -3113,7 +3114,12 @@ export function ChatRoom({
   const isDark = themeMounted && resolvedTheme === 'dark'
   const dotColor = isDark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.05)'
   // layered wallpaper (prefs): soft glows over the dot grid — aurora/dusk/forest/mono/none
-  const [glowTop, glowBottom] = wallpaperGlows(prefs.wallpaper, isDark)
+  // R29-a: per-conversation override (chat.convThemes) wins over the global default;
+  // optional tint replaces the top glow color. Everything else unchanged.
+  const [glowTop, glowBottom] = applyConvTint(
+    wallpaperGlows(effectiveConvWallpaper(prefs, conversationId), isDark),
+    getConvTheme(prefs, conversationId)?.tint,
+  )
 
   return (
     <motion.div

@@ -5,6 +5,9 @@
  * store (src/lib/prefs.ts) so validation never drifts.
  */
 
+import type { ConvThemeMap } from '@/lib/conv-theme'
+import { sanitizeConvThemeMap } from '@/lib/conv-theme'
+
 export type PulsePrefs = {
   /** Chat bubble corner style consumed by chat-room bubbles. */
   bubbleRadius: 'md' | 'lg' | 'pill'
@@ -26,6 +29,8 @@ export type PulsePrefs = {
   reducedMotion: boolean
   /** WebGL ambient field mode — see src/components/fx/webgl-glow.tsx (WEBGL_MODES). */
   'fx.webglMode'?: string
+  /** Per-conversation chat themes (R29-a) — sanitized by src/lib/conv-theme.ts. */
+  'chat.convThemes'?: ConvThemeMap
 }
 
 export const DEFAULT_PREFERENCES: PulsePrefs = {
@@ -44,6 +49,10 @@ const RADIUS = ['md', 'lg', 'pill']
 const DENSITY = ['cozy', 'compact']
 const WALLPAPER = ['none', 'aurora', 'dusk', 'forest', 'mono']
 const WEBGL_MODES_OK = ['off', 'aurora', 'caustics', 'mesh', 'stars']
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 /**
  * Shallow-merge a stored/sent partial prefs object over the defaults,
@@ -64,6 +73,9 @@ export function mergePrefs(raw: unknown): PulsePrefs {
   }
   if (typeof p['fx.webglMode'] === 'string' && WEBGL_MODES_OK.includes(p['fx.webglMode'])) {
     out['fx.webglMode'] = p['fx.webglMode']
+  }
+  if (isRecord(p['chat.convThemes'])) {
+    out['chat.convThemes'] = sanitizeConvThemeMap(p['chat.convThemes'])
   }
   for (const k of [
     'notifPreviews',
