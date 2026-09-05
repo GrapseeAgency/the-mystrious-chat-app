@@ -1,16 +1,17 @@
 // ─────────────────────────────────────────────────────────────
-// Pulse — room info sub-page (#/room/<id>/info) — R27-c.
+// Pulse — room info sub-page (#/room/<id>/info) — R27-c · R28-b.
 // Full-screen glass sheet above the chat room: hero by room type,
 // member list with roles (Lucide Crown) + live socket presence,
 // tap-to-profile (routes to the global #/user/:id page), REAL
-// admin actions (remove member · invite link per /invite API),
+// admin actions (add members sub-view · remove member · promote/
+// demote via the members API · invite link per /invite API),
 // mute toggle (real mute API), disappearing-TTL display and
 // honest quick-stats computed from the room's loaded messages.
 // ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   BellOff,
@@ -23,18 +24,22 @@ import {
   LoaderCircle,
   Megaphone,
   Pin,
+  Search,
+  SearchX,
   Timer,
   UserRoundMinus,
+  UserRoundPlus,
   Users,
   VolumeX,
 } from 'lucide-react'
-import type { AppUser, ChatMessage, ConversationDetail } from '@/lib/types'
+import type { AppUser, ChatMessage, ConversationDetail, GroupRole } from '@/lib/types'
 import { navigateHash } from '@/lib/hash-router'
 import { apiJson, gradientFor, groupGradientFor, jsonBody, formatListStamp } from '@/lib/pulse-utils'
 import { ease, spring, stagger } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
 import { toast } from 'sonner'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
+import { RoomMemberAddPage } from '@/components/chat/room-member-add'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
@@ -118,6 +123,30 @@ export function RoomInfoPage({
     return list
   }, [detail])
 
+  const adminCount = useMemo(
+    () => members.filter((m) => m.role === 'admin').length,
+    [members],
+  )
+
+  /** directory ids already in the group — the add-members view subtracts them */
+  const existingIds = useMemo(
+    () => new Set((detail?.members ?? []).map((m) => m.id)),
+    [detail],
+  )
+
+  // ── member-list search (only surfaced past 8 members) ─────
+
+  const [memberFilter, setMemberFilter] = useState('')
+  const memberQuery = memberFilter.trim().toLowerCase()
+  const visibleMembers = useMemo(() => {
+    if (members.length <= 8 || memberQuery.length === 0) return members
+    return members.filter(
+      (m) =>
+        m.name.toLowerCase().includes(memberQuery) ||
+        (m.username ?? '').toLowerCase().includes(memberQuery),
+    )
+  }, [members, memberQuery])
+
   // ── real actions ─────────────────────────────────────────
 
   const muteMutation = useMutation({
@@ -154,21 +183,66 @@ export function RoomInfoPage({
       toast.error(error instanceof Error ? error.message : 'Could not create the invite link'),
   })
 
+  // POST /members/{userId} is DELETE-only (PATCH = role change) — the R27
+  // draft sent method:POST via jsonBody and got a silent 405. Fixed here.
   const removeMutation = useMutation({
     mutationFn: async (userId: string) => {
       return apiJson<{ ok: boolean }>(
         `/api/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
-        jsonBody({ requesterId: me.id }),
+        { method: 'DELETE', body: JSON.stringify({ requesterId: me.id }) },
       )
     },
+    onMutate: async (userId: string) => {
+      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+      const prev = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+        old ? { ...old, members: old.members.filter((m) => m.id !== userId) } : old,
+      )
+      return { prev }
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
-      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
       toast.success('Removed from the group')
       haptic(14)
     },
+    onError: (error, _userId, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['conversation', conversationId], ctx.prev)
+      toast.error(error instanceof Error ? error.message : 'Could not remove the member')
+    },
+  })
+
+  // PATCH /members/{userId} { requesterId, action: 'promote' | 'demote' }
+  // Admin-only server-side; demote 400s when the target is the last admin.
+  const roleMutation = useMutation({
+    mutationFn: async ({ userId, action }: { userId: string; action: 'promote' | 'demote' }) => {
+      return apiJson<{ conversation: ConversationDetail }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
+        { method: 'PATCH', body: JSON.stringify({ requesterId: me.id, action }) },
+      )
+    },
+    onSuccess: (_data, vars) => {
+      // Surgical role patch — the response detail is built for the TARGET
+      // viewer (its myMutedUntil is not ours), so never cache it wholesale.
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+        old
+          ? {
+              ...old,
+              members: old.members.map((m) =>
+                m.id === vars.userId
+                  ? { ...m, role: (vars.action === 'promote' ? 'admin' : 'member') as GroupRole }
+                  : m,
+              ),
+            }
+          : old,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      toast.success(vars.action === 'promote' ? 'Promoted to admin' : 'Role set to member')
+      haptic(12)
+    },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : 'Could not remove the member'),
+      toast.error(error instanceof Error ? error.message : 'Could not update the role'),
   })
 
   const copyInvite = async (code: string) => {
@@ -181,30 +255,40 @@ export function RoomInfoPage({
     }
   }
 
-  // two-tap confirm for member removal (no heavy dialog)
-  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
+  // two-tap confirm for destructive row actions (remove / dismiss-admin)
+  type ArmedConfirm = { id: string; kind: 'remove' | 'demote' }
+  const [confirm, setConfirm] = useState<ArmedConfirm | null>(null)
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const armRemove = (userId: string) => {
+  const armConfirm = (kind: ArmedConfirm['kind'], userId: string) => {
     if (confirmTimerRef.current !== null) clearTimeout(confirmTimerRef.current)
-    setConfirmRemoveId(userId)
+    setConfirm({ id: userId, kind })
     haptic(8)
     confirmTimerRef.current = setTimeout(() => {
       confirmTimerRef.current = null
-      setConfirmRemoveId(null)
+      setConfirm(null)
     }, 2600)
   }
-  const tapRemove = (userId: string) => {
-    if (confirmRemoveId === userId) {
+  const tapConfirm = (kind: ArmedConfirm['kind'], userId: string, run: () => void) => {
+    if (confirm?.id === userId && confirm.kind === kind) {
       if (confirmTimerRef.current !== null) {
         clearTimeout(confirmTimerRef.current)
         confirmTimerRef.current = null
       }
-      setConfirmRemoveId(null)
-      removeMutation.mutate(userId)
+      setConfirm(null)
+      run()
     } else {
-      armRemove(userId)
+      armConfirm(kind, userId)
     }
   }
+  // remove keeps the R27 two-tap shape — armRemove / tapRemove
+  const armRemove = (userId: string) => armConfirm('remove', userId)
+  const tapRemove = (userId: string) =>
+    tapConfirm('remove', userId, () => removeMutation.mutate(userId))
+  const tapDemote = (userId: string) =>
+    tapConfirm('demote', userId, () => roleMutation.mutate({ userId, action: 'demote' }))
+
+  // R28-b: full-screen add-members sub-view INSIDE the info page
+  const [addOpen, setAddOpen] = useState(false)
 
   const anim = {
     initial: reducedMotion ? false : { opacity: 0, y: 10 },
@@ -262,6 +346,7 @@ export function RoomInfoPage({
               <UserAvatar
                 name={other?.name ?? title}
                 color={other?.color}
+                avatar={other?.avatar}
                 size={68}
                 showPresence
                 online={other ? onlineIds.has(other.id) : false}
@@ -426,6 +511,30 @@ export function RoomInfoPage({
             </div>
           ) : null}
 
+          {/* add members — POST /members is admins-only server-side (403 otherwise),
+              so the row renders for admins only — no dead UI for members */}
+          {isGroup && isAdmin && detail ? (
+            <button
+              type="button"
+              onClick={() => {
+                haptic(8)
+                setAddOpen(true)
+              }}
+              className="glass-row-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none"
+            >
+              <UserRoundPlus className="size-4 shrink-0 text-emerald-500" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                  Add members
+                </p>
+                <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                  From the Pulse directory
+                </p>
+              </div>
+              <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden />
+            </button>
+          ) : null}
+
           {/* classic group manager — kept reachable from its natural home */}
           {isGroup ? (
             <button
@@ -466,96 +575,209 @@ export function RoomInfoPage({
               <Skeleton className="h-11 w-4/5 rounded-2xl" />
             </div>
           ) : (
-            <ul>
-              {members.map((member, i) => {
-                const isMe = member.id === me.id
-                const online = onlineIds.has(member.id)
-                const canRemove =
-                  isAdmin && !isMe && member.role !== 'admin' && !removeMutation.isPending
-                return (
-                  <motion.li
-                    key={member.id}
-                    initial={reducedMotion ? false : { opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: 0.2,
-                      delay: Math.min(i * 0.03, 0.24),
-                      ease: ease.out,
-                    }}
-                    className="glass-row-hover flex items-center gap-3 rounded-2xl px-2 py-2"
-                  >
+            <>
+              {/* R28-b: glass filter — only surfaced past 8 members */}
+              {members.length > 8 ? (
+                <motion.div
+                  initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, ease: ease.out }}
+                  className="glass-pill relative m-0.5 mb-1"
+                >
+                  <Search
+                    className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-zinc-400"
+                    aria-hidden
+                  />
+                  <input
+                    value={memberFilter}
+                    onChange={(e) => setMemberFilter(e.target.value.slice(0, 40))}
+                    placeholder="Search members"
+                    aria-label="Search members"
+                    autoComplete="off"
+                    className="h-9 w-full rounded-full bg-transparent pr-8 pl-9 text-[13px] text-zinc-900 placeholder:text-zinc-400 outline-none dark:text-zinc-100"
+                  />
+                  {memberFilter.length > 0 ? (
                     <button
                       type="button"
-                      aria-label={isMe ? 'Your profile' : `View ${member.name}'s profile`}
-                      onClick={() => {
-                        haptic(8)
-                        // push straight through: info unmounts, browser back
-                        // returns to #/room/<id>/info — no async back-race
-                        navigateHash(`#/user/${encodeURIComponent(member.id)}`)
-                      }}
-                      className="shrink-0 rounded-full outline-none transition-transform active:scale-90"
+                      aria-label="Clear member search"
+                      onClick={() => setMemberFilter('')}
+                      className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-full p-1.5 text-zinc-400 outline-none transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
                     >
-                      <UserAvatar
-                        name={member.name}
-                        color={member.color}
-                        size={38}
-                        showPresence
-                        online={online}
-                      />
+                      <SearchX className="size-3.5" aria-hidden />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        haptic(8)
-                        // push straight through: info unmounts, browser back
-                        // returns to #/room/<id>/info — no async back-race
-                        navigateHash(`#/user/${encodeURIComponent(member.id)}`)
+                  ) : null}
+                </motion.div>
+              ) : null}
+              <ul>
+                {visibleMembers.map((member, i) => {
+                  const isMe = member.id === me.id
+                  const online = onlineIds.has(member.id)
+                  // mirror of the API's real guards: DELETE /members/[userId] is
+                  // admin-only, 400s on self, 403s on admin targets — no dead UI
+                  const canRemove =
+                    isAdmin && !isMe && member.role !== 'admin' && !removeMutation.isPending
+                  const rolePendingHere =
+                    roleMutation.isPending && roleMutation.variables?.userId === member.id
+                  const roleBusy = roleMutation.isPending && !rolePendingHere
+                  const demoteArmed = confirm?.id === member.id && confirm.kind === 'demote'
+                  const removeArmed = confirm?.id === member.id && confirm.kind === 'remove'
+                  return (
+                    <motion.li
+                      key={member.id}
+                      initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        duration: 0.2,
+                        delay: Math.min(i * 0.03, 0.24),
+                        ease: ease.out,
                       }}
-                      className="min-w-0 flex-1 text-left outline-none"
+                      className="glass-row-hover flex items-center gap-3 rounded-2xl px-2 py-2"
                     >
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                          {member.name}
+                      <button
+                        type="button"
+                        aria-label={isMe ? 'Your profile' : `View ${member.name}'s profile`}
+                        onClick={() => {
+                          haptic(8)
+                          // push straight through: info unmounts, browser back
+                          // returns to #/room/<id>/info — no async back-race
+                          navigateHash(`#/user/${encodeURIComponent(member.id)}`)
+                        }}
+                        className="shrink-0 rounded-full outline-none transition-transform active:scale-90"
+                      >
+                        <UserAvatar
+                          name={member.name}
+                          color={member.color}
+                          avatar={member.avatar}
+                          size={38}
+                          showPresence
+                          online={online}
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          haptic(8)
+                          // push straight through: info unmounts, browser back
+                          // returns to #/room/<id>/info — no async back-race
+                          navigateHash(`#/user/${encodeURIComponent(member.id)}`)
+                        }}
+                        className="min-w-0 flex-1 text-left outline-none"
+                      >
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                            {member.name}
+                          </span>
+                          {member.role === 'admin' ? (
+                            <Crown className="size-3.5 shrink-0 text-amber-500" aria-label="Admin" />
+                          ) : null}
+                          {isMe ? (
+                            <span className="shrink-0 text-[11px] font-medium text-zinc-400">(you)</span>
+                          ) : null}
                         </span>
-                        {member.role === 'admin' ? (
-                          <Crown className="size-3.5 shrink-0 text-amber-500" aria-label="Admin" />
-                        ) : null}
-                        {isMe ? (
-                          <span className="shrink-0 text-[11px] font-medium text-zinc-400">(you)</span>
-                        ) : null}
-                      </span>
-                      <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-                        {member.role === 'admin' ? 'Admin · ' : ''}
-                        {member.username ? `@${member.username}` : member.about || 'Member'}
-                      </span>
-                    </button>
-                    {canRemove ? (
-                      confirmRemoveId === member.id ? (
-                        <button
-                          type="button"
-                          onClick={() => tapRemove(member.id)}
-                          className="shrink-0 rounded-full bg-rose-500/15 px-2.5 py-1 text-[11px] font-bold text-rose-600 outline-none transition-transform active:scale-95 dark:text-rose-400"
-                        >
-                          Remove?
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          aria-label={`Remove ${member.name}`}
-                          onClick={() => tapRemove(member.id)}
-                          className="flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 active:scale-90"
-                        >
-                          <UserRoundMinus className="size-4" aria-hidden />
-                        </button>
-                      )
-                    ) : null}
-                  </motion.li>
-                )
-              })}
-            </ul>
+                        <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                          {member.role === 'admin' ? 'Admin · ' : ''}
+                          {member.username ? `@${member.username}` : member.about || 'Member'}
+                        </span>
+                      </button>
+                      {/* R28-b: role actions — PATCH /members/[userId] is admin-only;
+                          the last admin is never dismissable (server 400s, we hide) */}
+                      {isAdmin && !isMe ? (
+                        member.role === 'member' ? (
+                          <button
+                            type="button"
+                            disabled={roleBusy}
+                            aria-label={`Make ${member.name} an admin`}
+                            onClick={() => {
+                              haptic(8)
+                              roleMutation.mutate({ userId: member.id, action: 'promote' })
+                            }}
+                            className="flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold text-zinc-400 outline-none transition-all hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-95 disabled:opacity-40 dark:text-zinc-500 dark:hover:text-emerald-400"
+                          >
+                            {rolePendingHere ? (
+                              <LoaderCircle className="size-3 animate-spin" aria-hidden />
+                            ) : (
+                              <Crown className="size-3" aria-hidden />
+                            )}
+                            Make admin
+                          </button>
+                        ) : adminCount > 1 ? (
+                          <button
+                            type="button"
+                            disabled={roleBusy}
+                            aria-label={demoteArmed ? `Confirm demoting ${member.name}` : `Demote ${member.name}`}
+                            onClick={() => tapDemote(member.id)}
+                            className={cn(
+                              'flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold outline-none transition-all active:scale-95 disabled:opacity-40',
+                              demoteArmed
+                                ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                                : 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400',
+                            )}
+                          >
+                            {rolePendingHere ? (
+                              <LoaderCircle className="size-3 animate-spin" aria-hidden />
+                            ) : (
+                              <Crown className="size-3" aria-hidden />
+                            )}
+                            {demoteArmed ? 'Dismiss?' : 'Admin'}
+                          </button>
+                        ) : (
+                          <span
+                            aria-label="Last admin of this group"
+                            className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-2.5 text-[11px] font-bold text-amber-600 dark:text-amber-400"
+                          >
+                            <Crown className="size-3" aria-hidden />
+                            Admin
+                          </span>
+                        )
+                      ) : null}
+                      {canRemove ? (
+                        removeArmed ? (
+                          <button
+                            type="button"
+                            onClick={() => tapRemove(member.id)}
+                            className="shrink-0 rounded-full bg-rose-500/15 px-2.5 py-1 text-[11px] font-bold text-rose-600 outline-none transition-transform active:scale-95 dark:text-rose-400"
+                          >
+                            Remove?
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label={`Remove ${member.name}`}
+                            onClick={() => tapRemove(member.id)}
+                            className="flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 active:scale-90"
+                          >
+                            <UserRoundMinus className="size-4" aria-hidden />
+                          </button>
+                        )
+                      ) : null}
+                    </motion.li>
+                  )
+                })}
+              </ul>
+              {visibleMembers.length === 0 && members.length > 0 ? (
+                <p className="flex items-center gap-2 px-3 py-4 text-xs text-zinc-400 dark:text-zinc-500">
+                  <SearchX className="size-3.5 shrink-0" aria-hidden />
+                  No members match “{memberFilter.trim()}”
+                </p>
+              ) : null}
+            </>
           )}
         </motion.div>
       </div>
+
+      {/* R28-b: add-members glass sub-view — slides INSIDE the info page (not a route) */}
+      <AnimatePresence>
+        {addOpen ? (
+          <RoomMemberAddPage
+            key="room-member-add"
+            me={me}
+            conversationId={conversationId}
+            existingIds={existingIds}
+            reducedMotion={reducedMotion}
+            onClose={() => setAddOpen(false)}
+          />
+        ) : null}
+      </AnimatePresence>
     </motion.div>
   )
 }

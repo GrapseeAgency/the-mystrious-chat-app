@@ -3125,6 +3125,10 @@ export function ChatRoom({
       role="dialog"
       aria-label={`Conversation with ${headerTitle}`}
     >
+      {/* R28 lead: floating pane manager — panes were orphaned (store writes
+          with no renderer). Mounted once per room overlay, above content. */}
+      <PipChat me={me} />
+
       {/* header */}
       <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-zinc-800 dark:bg-zinc-900">
         <Button

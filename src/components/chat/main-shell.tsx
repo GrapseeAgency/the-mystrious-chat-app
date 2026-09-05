@@ -31,6 +31,7 @@ import { ContactsTab } from '@/components/chat/contacts-tab'
 import { ProfileTab } from '@/components/chat/profile-tab'
 import { HubTab } from '@/components/hub/hub-tab'
 import { ChatRoom } from '@/components/chat/chat-room'
+import { PipChat } from '@/components/chat/pip-chat'
 import { NewChatSheet } from '@/components/chat/new-chat-sheet'
 import { JoinGroupSheet } from '@/components/chat/join-sheet'
 import { SettingsScreen } from '@/components/chat/settings-screen'
@@ -375,6 +376,11 @@ export function MainShell({ me }: { me: AppUser }) {
         </AnimatePresence>
         </div>
       </div>
+
+      {/* R28 lead: shell-level floating panes — visible over the tabs while no
+          room owns the screen (the room mounts its own instance inside its
+          overlay, so the two never co-render). Pointer-transparent wrapper. */}
+      {openConversationId === null && !settingsVisible ? <PipChat me={me} /> : null}
 
       {/* R25 nav system — 12 architectures, one mount point. Bottom/top/overlay
           zones float here; the side rail renders in the flex row above. Hidden
