@@ -15,6 +15,7 @@ import { ApiError, apiJson } from '@/lib/pulse-utils'
 import { Providers } from '@/components/chat/providers'
 import { OnboardingScreen } from '@/components/chat/onboarding-screen'
 import { MainShell } from '@/components/chat/main-shell'
+import UserRoutePage from '@/components/chat/user-route-page'
 import { ParticleLayer } from '@/components/fx/particle-layer'
 import { WebGLAmbient } from '@/components/fx/webgl-glow'
 
@@ -112,6 +113,8 @@ function BootGate() {
       {status !== 'checking' ? (
         <PhoneFrame>
           {status === 'onboarding' ? <OnboardingScreen /> : user ? <MainShell me={user} /> : null}
+          {/* TEMP QA MOUNT (R27-a) — removed after E2E */}
+          <UserRoutePage />
         </PhoneFrame>
       ) : null}
     </>

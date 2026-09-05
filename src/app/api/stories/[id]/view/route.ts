@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '../../../../../../prisma/generated-client'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
 

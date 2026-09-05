@@ -46,6 +46,21 @@ const TAB_LABEL: Record<PulseTab, string> = {
 /** Canonical tab order — drives auto direction for slide/fade transitions. */
 const TAB_ORDER: Array<PulseTab> = ['chats', 'hub', 'contacts', 'profile']
 
+/** Deep links that live INSIDE a tab → owning tab (R27 lead). */
+const TAB_BOOSTS: Array<[prefix: string, tab: PulseTab]> = [
+  ['#/contacts', 'contacts'],
+  ['#/hub', 'hub'],
+  ['#/chats', 'chats'],
+]
+
+/** Initial tab for a boot deep link (SSR-safe; overlays like #/settings stay on chats). */
+function bootTabFromHash(): PulseTab {
+  if (typeof window === 'undefined') return 'chats'
+  const hash = window.location.hash
+  const hit = TAB_BOOSTS.find(([prefix]) => hash.startsWith(prefix))
+  return hit ? hit[1] : 'chats'
+}
+
 /**
  * Direction-aware tab-panel transition (R22): content slides ±24px +
  * fades with the signature swift-out ease. popLayout lets the outgoing
@@ -61,8 +76,13 @@ function makePanelVariants(reduced: boolean): Variants {
 
 export function MainShell({ me }: { me: AppUser }) {
   // tab + last travel direction kept together so AnimatePresence always
-  // knows which way to slide (dock taps: index order · swipes: gesture)
-  const [navState, setNavState] = useState<{ tab: PulseTab; dir: 1 | -1 }>({ tab: 'chats', dir: 1 })
+  // knows which way to slide (dock taps: index order · swipes: gesture).
+  // Initial tab derives from the boot hash — a deep link like #/contacts/add
+  // or #/hub/... opens its owning tab from the very first render (R27 lead).
+  const [navState, setNavState] = useState<{ tab: PulseTab; dir: 1 | -1 }>(() => ({
+    tab: bootTabFromHash(),
+    dir: 1,
+  }))
   const tab = navState.tab
   const changeTab = useCallback((next: PulseTab, dir?: 1 | -1) => {
     setNavState((prev) => {
@@ -98,6 +118,26 @@ export function MainShell({ me }: { me: AppUser }) {
     () => false,
   )
   const settingsVisible = settingsOpen || settingsDeepLink
+
+  // ── R27 lead: deep-link tab boost (live) ──────────────────────
+  // Hash changes landing on a tab-owned route (#/contacts/*, #/hub/*,
+  // #/chats/*) activate that tab while no room overlay owns the screen.
+  // setState runs inside the subscription callback (an external event),
+  // never synchronously in the effect body.
+  const openConversationRef = useRef<string | null>(null)
+  useEffect(() => {
+    openConversationRef.current = openConversationId
+  }, [openConversationId])
+  useEffect(() => {
+    const unsub = subscribeHash(() => {
+      if (openConversationRef.current !== null) return
+      const hash = typeof window !== 'undefined' ? window.location.hash : ''
+      const hit = TAB_BOOSTS.find(([prefix]) => hash.startsWith(prefix))
+      if (hit) setNavState((s) => (s.tab === hit[1] ? s : { tab: hit[1], dir: 1 }))
+    })
+    return unsub
+  }, [])
+  // ── end deep-link tab boost ───────────────────────────────────
   const queryClient = useQueryClient()
   const hydratePrefs = usePrefs((s) => s.hydrate)
   const reducedMotion = useReducedMotion()

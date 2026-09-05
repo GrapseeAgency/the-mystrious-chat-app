@@ -166,3 +166,244 @@ export function categoryCounts(): Record<string, number> {
   }
   return counts
 }
+
+// ─────────────────────────────────────────────────────────────
+// R27-b sub-page metadata — static catalog enrichment. Taglines,
+// category blurbs and accent gradients are EDITORIAL catalog data
+// (never user-specific stats — those always come from Prisma).
+// ─────────────────────────────────────────────────────────────
+
+export interface CategoryMeta {
+  /** URL-safe slug for #/hub/c/<slug> */
+  slug: string
+  /** short chip label */
+  label: string
+  /** one-line editorial description for the category sub-page */
+  blurb: string
+  /** [from, to] CSS colors for the category accent gradient */
+  accent: [string, string]
+}
+
+export const CATEGORY_META: Record<MatrixCategory, CategoryMeta> = {
+  'Dev-Ops / Community Boards': {
+    slug: 'dev-ops',
+    label: 'Dev-Ops',
+    blurb: 'Community engines, guild halls and live-ops command centers.',
+    accent: ['#6366f1', '#2563eb'],
+  },
+  'Workplace Canvas / Dev-Ops': {
+    slug: 'workplace',
+    label: 'Workplace',
+    blurb: 'Structured work chat — boards, threads and operational flows.',
+    accent: ['#0ea5e9', '#0891b2'],
+  },
+  'E-Commerce Showcase': {
+    slug: 'e-commerce',
+    label: 'E-Commerce',
+    blurb: 'Storefront chat, social selling and conversational commerce.',
+    accent: ['#10b981', '#0d9488'],
+  },
+  'E-Commerce / Global FinTech': {
+    slug: 'global-fintech',
+    label: 'Global FinTech',
+    blurb: 'Chat platforms that doubled as national payment rails.',
+    accent: ['#f59e0b', '#ea580c'],
+  },
+  'E-Commerce / Hyper-Apps': {
+    slug: 'hyper-apps',
+    label: 'Hyper-Apps',
+    blurb: 'Everything-apps — messaging fused with services and mini-programs.',
+    accent: ['#84cc16', '#16a34a'],
+  },
+  'Web3 FinTech / Hyper-Apps': {
+    slug: 'web3',
+    label: 'Web3',
+    blurb: 'Wallet-native messengers with on-chain rails in every thread.',
+    accent: ['#8b5cf6', '#7e22ce'],
+  },
+  'Stark Privacy Minimalist': {
+    slug: 'privacy',
+    label: 'Privacy',
+    blurb: 'Zero-knowledge, ephemeral and audit-first communication.',
+    accent: ['#64748b', '#374151'],
+  },
+  'Cross-Server Bridges / Matrix': {
+    slug: 'bridges',
+    label: 'Bridges',
+    blurb: 'Federation fabrics that stitch many networks into one.',
+    accent: ['#06b6d4', '#0284c7'],
+  },
+  'Spatial 3D Environments': {
+    slug: 'spatial-3d',
+    label: 'Spatial 3D',
+    blurb: 'Presence as a place — avatars, rooms and proximity audio.',
+    accent: ['#d946ef', '#9333ea'],
+  },
+  'Spatial 2D/3D Art': {
+    slug: 'spatial-art',
+    label: 'Spatial Art',
+    blurb: 'Expressive canvases — voice stages, visual threads, motion mail.',
+    accent: ['#f43f5e', '#db2777'],
+  },
+}
+
+const SLUG_INDEX: Record<string, MatrixCategory> = Object.fromEntries(
+  (Object.keys(CATEGORY_META) as MatrixCategory[]).map((cat) => [CATEGORY_META[cat].slug, cat]),
+)
+
+/** URL slug for a matrix category. */
+export function slugForCategory(category: MatrixCategory): string {
+  return CATEGORY_META[category].slug
+}
+
+/** Reverse lookup: #/hub/c/<slug> → category, or null for an unknown slug. */
+export function categoryBySlug(slug: string): MatrixCategory | null {
+  return SLUG_INDEX[decodeURIComponent(slug)] ?? null
+}
+
+/** Matrix app by its numeric id (the install/community appId contract). */
+export function appById(n: number): MatrixApp | null {
+  return MATRIX.find((a) => a.n === n) ?? null
+}
+
+/** Brand-true accent overrides, keyed by matrix id. */
+const BRAND_ACCENTS: Record<number, [string, string]> = {
+  1: ['#5865f2', '#404eed'], // Discord
+  3: ['#25d366', '#128c7e'], // WhatsApp
+  4: ['#2aabee', '#229ed9'], // Telegram
+  5: ['#3a76f0', '#1c5cd6'], // Signal
+  11: ['#07c160', '#059a4c'], // WeChat
+  12: ['#06c755', '#04a044'], // LINE
+  17: ['#9146ff', '#6441a5'], // Twitch
+  32: ['#1b2838', '#2a475e'], // Steam Chat
+  51: ['#4360df', '#2c3ea5'], // Status
+  41: ['#34c759', '#0a9e4a'], // iMessage
+}
+
+/** Per-app accent gradient — brand override, else the category accent. */
+export function appAccent(app: MatrixApp): [string, string] {
+  return BRAND_ACCENTS[app.n] ?? CATEGORY_META[app.category].accent
+}
+
+/**
+ * One-line editorial tagline per app (static catalog copy, not user data).
+ */
+export const APP_TAGLINES: Record<number, string> = {
+  1: 'Communities that never sleep, in voice and text',
+  2: 'Where work conversations get organized in channels',
+  3: 'The world in one simple, secure messenger',
+  4: 'Speed-first chats with mini-app superpowers',
+  5: 'Encrypted by default, metadata-free by design',
+  6: 'Open federation for decentralized rooms',
+  7: 'The open-source community hangout',
+  8: 'Every messenger, one unified inbox',
+  9: 'Anonymous IDs instead of phone numbers',
+  10: 'Communities and calls, with hidden text vaults',
+  11: 'Payments, mini-programs and chats in one',
+  12: 'Stickers, communities and everything cute',
+  13: 'Korea\u2019s everything platform for friends',
+  14: 'Untraceable sessions over onion routing',
+  15: 'Enterprise secrecy with shredder timers',
+  16: 'The protocol that became a network',
+  17: 'Live streams with chat as the main stage',
+  18: 'Meetings that turn into message threads',
+  19: 'Google-grade chat inside the workspace',
+  20: 'Video calls that grow a whiteboard',
+  21: 'Webex rooms with live captions and AI tuning',
+  22: 'Small-team chat that ships tasks fast',
+  23: 'Checklists and chats in one dock',
+  24: 'Kanban-built conversations for teams',
+  25: 'Self-hosted DevOps command channels',
+  26: 'Tickets, translators and team inboxes',
+  27: 'Threads with mandatory topic rigor',
+  28: 'Code links land live in the room',
+  29: 'Guilds, brackets and tournament boards',
+  30: 'Voice servers with push-to-talk DNA',
+  31: 'Low-latency voice with directional audio',
+  32: 'Friends, invites and hardware readouts',
+  33: 'Calls to anywhere, blurred backgrounds on',
+  34: 'Be anyone in a world of user rooms',
+  35: 'Rooms, gadgets and creative code',
+  36: 'The camera is the conversation',
+  37: 'Stories-first messaging with loop video',
+  38: 'Trends, sounds and reply-by-video',
+  39: 'Spaces and DMs on the town square',
+  40: 'Text-first threads, branching lanes',
+  41: 'Bubbles with physics and particle joy',
+  42: 'RCS messaging with carrier smarts',
+  43: 'Verified business chat over carrier rails',
+  44: 'Push-to-talk with scrolling waveforms',
+  45: 'Dispatch channels for field crews',
+  46: 'Video diaries your friends answer',
+  47: 'Drop into live audio rooms',
+  48: 'Stage-grade audio with glowing talkers',
+  49: 'Dual-camera posts with realmoji sheets',
+  50: 'Timeline moments on a flat grid',
+  51: 'Web3 chat with on-chain ledgers',
+  52: 'Decentralized IDs meet secure chat',
+  53: 'Cross-app permissions, cryptographic keys',
+  54: 'Onion hops you can actually read',
+  55: 'One-way invite keys, zero metadata',
+  56: 'Mesh networking when the internet is gone',
+  57: 'Peer-to-peer calls without servers',
+  58: 'Uncensorable P2P messaging lanes',
+  59: 'Sovereign encryption for enterprises',
+  60: 'Screenshots detected, messages shredded',
+  61: 'Signed git commits from your chat',
+  62: 'Email reimagined as chat bubbles',
+  63: 'Co-write emails in real time',
+  64: 'Customer conversations with full context',
+  65: 'Help desks that slide into any site',
+  66: 'Calendar popups close the lead',
+  67: 'Watch agents browse with the visitor',
+  68: 'Shopify carts answered in chat',
+  69: 'Macros and tabs for support agents',
+  70: 'CRM timelines inside the thread',
+  71: 'Lead funnels on autopilot',
+  72: 'Carousels and flows for Meta apps',
+  73: 'Ad campaigns that route themselves',
+  74: 'Fullscreen media choice chips',
+  75: 'Thumb-optimized form tunnels',
+  76: 'One question at a time, beautifully',
+  77: 'Internal updates with magazine flair',
+  78: 'The corporate social workplace',
+  79: 'Campfires for project check-ins',
+  80: 'Sprints, docs and chat in one lane',
+  81: 'Task dependencies, verified live',
+  82: 'Status columns that update the room',
+  83: 'Discussions anchored to the page',
+  84: 'Cursor particles on a shared canvas',
+  85: 'Vector feedback in the margin',
+  86: 'Pixel offices with proximity chat',
+  87: 'Floor plans that host presentations',
+  88: 'Video bubbles that fade behind you',
+  89: 'Museums you walk with your wallet',
+  90: 'Play-safe chat for blocky worlds',
+  91: 'Server console in your pocket',
+  92: 'Emergency meetings, voting cards',
+  93: 'Board games with built-in chat',
+  94: 'Gift animations over game rails',
+  95: 'Swipe rooms with equal camera tiles',
+  96: 'Delivery maps meet volunteer routes',
+  97: 'Fandoms with wiki-grade toolsets',
+  98: 'Rosters, check-ins and team balance',
+  99: 'Ad-free feeds, chronological and calm',
+  100: 'Neighbors verified by the block map',
+}
+
+/** Tagline for an app (catalog copy — falls back to the input toolkit line). */
+export function appTagline(app: MatrixApp): string {
+  return APP_TAGLINES[app.n] ?? app.input
+}
+
+/**
+ * Feature list for the app sub-page — derived from REAL matrix fields
+ * (input toolkit, secret UI feature, Pulse nav mapping). No invented stats.
+ */
+export function appFeatures(app: MatrixApp): string[] {
+  return [
+    app.input,
+    app.secret,
+    `Ships with Pulse's ${MATRIX_TO_NAV[app.nav]} nav pattern — switchable live in Profile → Navigation`,
+  ]
+}

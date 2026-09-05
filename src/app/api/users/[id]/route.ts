@@ -40,6 +40,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     username?: string | null
     about?: string
     color?: string
+    avatar?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     lastSeenAt: Date
@@ -99,6 +100,22 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 
   if (body.color !== undefined) {
     data.color = normalizeColor(body.color) // unknown colors fall back to 'emerald'
+  }
+
+  // Profile photo — explicit key; '' or null clears. Must be a server-managed /uploads/ path
+  // (client uploads via POST /api/uploads first, then PATCHes the returned path).
+  if (body.avatar !== undefined) {
+    const avatar = strField(body.avatar)
+    if (avatar.length === 0) {
+      data.avatar = null
+    } else if (!/^\/api\/uploads\/[A-Za-z0-9._-]{8,120}$/.test(avatar)) {
+      return NextResponse.json(
+        { error: "avatar must be a path returned by POST /api/uploads (e.g. /api/uploads/<uuid>.jpg), or empty to clear." },
+        { status: 400 },
+      )
+    } else {
+      data.avatar = avatar
+    }
   }
 
   // Discord-style custom status — explicit keys only; null clears.

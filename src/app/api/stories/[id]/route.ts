@@ -5,7 +5,7 @@
 // after the running dev server cached its Prisma client (see /api/stories).
 // ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '../../../../../prisma/generated-client'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'

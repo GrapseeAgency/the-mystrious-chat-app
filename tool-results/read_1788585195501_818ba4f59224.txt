@@ -1,0 +1,846 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse — Profile tab (R26-d): social-media-style profile.
+     3→//
+     4→// ROOT PAGE (what others see):
+     5→//   • Glass hero — gradient cover from the user's identity color
+     6→//     (gradientFor), specular-ring avatar, name + verified-style
+     7→//     member badge, tap-to-copy @handle chip, status glyph + text,
+     8→//     bio, quick-action pills (Edit profile · Share).
+     9→//   • REAL stats row — /api/users/[id]/stats + /api/hub/wallet
+    10→//     (messages · rooms · coins · member-since). No mock numbers.
+    11→//   • Saved messages (real flow via onOpenSavedMessage) and a
+    12→//     compact Account group (copy ID · sign out).
+    13→//
+    14→// EDIT PROFILE IS A REAL SUB-PAGE (user's #1 fix): a full-screen
+    15→// panel portaled above the nav, driven by the hash router —
+    16→// open = navigateHash('/profile/edit'), close = backHash(), and
+    17→// the hash is read reactively on mount so #/profile/edit
+    18→// deep-links and browser back works. The form edits display name,
+    19→// bio, status glyph/text, avatar color and @handle, and saves
+    20→// through the real PATCH /api/users/[id] with optimistic cache
+    21→// updates + toast + rollback.
+    22→//
+    23→// Appearance / Navigation / Preferences / Data & Storage / About
+    24→// were REMOVED from the profile on purpose — Settings owns them.
+    25→// Zero emojis — Lucide icons + framer-motion microinteractions.
+    26→// ─────────────────────────────────────────────────────────────
+    27→'use client'
+    28→
+    29→import { useEffect, useMemo, useRef, useState } from 'react'
+    30→import { createPortal } from 'react-dom'
+    31→import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+    32→import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+    33→import {
+    34→  ArrowLeft,
+    35→  AtSign,
+    36→  BadgeCheck,
+    37→  Check,
+    38→  Coins,
+    39→  Copy,
+    40→  Fingerprint,
+    41→  Image as ImageIcon,
+    42→  LoaderCircle,
+    43→  LogOut,
+    44→  Mic,
+    45→  Pencil,
+    46→  Share2,
+    47→  Star,
+    48→} from 'lucide-react'
+    49→import { toast } from 'sonner'
+    50→import type { AppUser, SavedItem, UserStats } from '@/lib/types'
+    51→import { usePulseSession } from '@/lib/pulse-store'
+    52→import {
+    53→  AVATAR_GRADIENTS,
+    54→  PULSE_COLORS,
+    55→  apiJson,
+    56→  gradientFor,
+    57→  type AvatarColor,
+    58→} from '@/lib/pulse-utils'
+    59→import { cn } from '@/lib/utils'
+    60→import { ease, pressSpring, pressTap, spring } from '@/lib/motion'
+    61→import { useHashNav } from '@/lib/hash-router'
+    62→import { usePulseRealtime } from '@/hooks/use-pulse-socket'
+    63→import { useMounted } from '@/hooks/use-mounted'
+    64→import { haptic } from '@/lib/pulse-settings'
+    65→import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+    66→import { Button } from '@/components/ui/button'
+    67→import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
+    68→import { Input } from '@/components/ui/input'
+    69→import { Label } from '@/components/ui/label'
+    70→import { Skeleton } from '@/components/ui/skeleton'
+    71→import { Textarea } from '@/components/ui/textarea'
+    72→import { UserAvatar } from '@/components/chat/user-avatar'
+    73→import { ChevronRow, CountUp, ProfileSection, StatTile } from '@/components/profile/profile-primitives'
+    74→import { STATUS_GLYPH_CHOICES, StatusGlyph } from '@/components/profile/status-glyph'
+    75→import { HandleEditorDialog } from '@/components/profile/handle-editor'
+    76→
+    77→const NAME_MAX = 32
+    78→const ABOUT_MAX = 140
+    79→const STATUS_MAX = 48
+    80→
+    81→interface UsersResponse {
+    82→  user: AppUser
+    83→}
+    84→
+    85→export function ProfileTab({
+    86→  me,
+    87→  onOpenSavedMessage,
+    88→}: {
+    89→  me: AppUser
+    90→  /** saved-library row tap → open that chat and flash the message */
+    91→  onOpenSavedMessage?: (conversationId: string, messageId: string) => void
+    92→}) {
+    93→  // remount the editor whenever the underlying identity changes,
+    94→  // which re-initializes all local field state (no sync effects)
+    95→  const identityKey = `${me.id}|${me.name}|${me.about}|${me.color}|${me.username}`
+    96→  return <ProfileEditor key={identityKey} me={me} onOpenSavedMessage={onOpenSavedMessage} />
+    97→}
+    98→
+    99→function ProfileEditor({
+   100→  me,
+   101→  onOpenSavedMessage,
+   102→}: {
+   103→  me: AppUser
+   104→  onOpenSavedMessage?: (conversationId: string, messageId: string) => void
+   105→}) {
+   106→  const queryClient = useQueryClient()
+   107→  const setUser = usePulseSession((s) => s.setUser)
+   108→  const reducedMotion = useReducedMotion()
+   109→  const { onlineIds } = usePulseRealtime()
+   110→  const mounted = useMounted()
+   111→
+   112→  // ── real sub-page routing — '/profile/edit' is owned here ──
+   113→  // open = push the hash, close = history back, and reading the
+   114→  // hash on mount makes #/profile/edit a deep-link.
+   115→  const { path, navigate, back } = useHashNav()
+   116→  const editing = path === '/profile/edit'
+   117→
+   118→  // edit form state (initialized from the committed identity;
+   119→  // the identityKey remount re-syncs it after every save)
+   120→  const [name, setName] = useState(me.name)
+   121→  const [about, setAbout] = useState(me.about)
+   122→  const [color, setColor] = useState<AvatarColor>((me.color as AvatarColor) ?? 'emerald')
+   123→  const [statusEmoji, setStatusEmoji] = useState(me.statusEmoji ?? '')
+   124→  const [statusText, setStatusText] = useState(me.statusText ?? '')
+   125→
+   126→  const [savedOpen, setSavedOpen] = useState(false)
+   127→  const [handleOpen, setHandleOpen] = useState(false)
+   128→  const [switchOpen, setSwitchOpen] = useState(false)
+   129→  /** transient flash on the tap-to-copy handle chip */
+   130→  const [handleCopied, setHandleCopied] = useState(false)
+   131→  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+   132→  useEffect(() => {
+   133→    return () => {
+   134→      if (copiedTimer.current) clearTimeout(copiedTimer.current)
+   135→    }
+   136→  }, [])
+   137→
+   138→  // ── real data: profile stats + hub wallet + saved library ──
+   139→  const statsQ = useQuery({
+   140→    queryKey: ['user-stats', me.id],
+   141→    queryFn: async (): Promise<UserStats> => {
+   142→      const res = await apiJson<{ stats: UserStats }>(`/api/users/${encodeURIComponent(me.id)}/stats`)
+   143→      return res.stats
+   144→    },
+   145→    staleTime: 30_000,
+   146→  })
+   147→
+   148→  const walletQ = useQuery({
+   149→    queryKey: ['hub-wallet', me.id],
+   150→    queryFn: async () => {
+   151→      return apiJson<{ wallet: { coins: number } }>(
+   152→        `/api/hub/wallet?userId=${encodeURIComponent(me.id)}`,
+   153→      )
+   154→    },
+   155→    select: (d) => d.wallet,
+   156→    staleTime: 30_000,
+   157→  })
+   158→
+   159→  const savedQuery = useQuery({
+   160→    queryKey: ['saved', me.id],
+   161→    queryFn: async (): Promise<SavedItem[]> => {
+   162→      const res = await apiJson<{ items: SavedItem[] }>(`/api/users/${encodeURIComponent(me.id)}/saved`)
+   163→      return res.items
+   164→    },
+   165→    enabled: savedOpen,
+   166→  })
+   167→
+   168→  const iAmOnline = onlineIds.has(me.id)
+   169→  const gradient = gradientFor(me.color)
+   170→
+   171→  const dirty =
+   172→    name.trim() !== me.name.trim() ||
+   173→    about.trim() !== me.about.trim() ||
+   174→    color !== me.color ||
+   175→    statusEmoji.trim() !== (me.statusEmoji ?? '') ||
+   176→    statusText.trim() !== (me.statusText ?? '')
+   177→
+   178→  // real save: PATCH /api/users/[id] — optimistic update across the
+   179→  // session store + query caches, toast, and rollback on failure
+   180→  const saveProfile = useMutation({
+   181→    mutationFn: async () => {
+   182→      return apiJson<UsersResponse>(`/api/users/${encodeURIComponent(me.id)}`, {
+   183→        method: 'PATCH',
+   184→        body: JSON.stringify({
+   185→          name: name.trim(),
+   186→          about: about.trim(),
+   187→          color,
+   188→          statusEmoji: statusEmoji.trim(),
+   189→          statusText: statusText.trim(),
+   190→        }),
+   191→      })
+   192→    },
+   193→    onMutate: async () => {
+   194→      const optimistic: AppUser = {
+   195→        ...me,
+   196→        name: name.trim(),
+   197→        about: about.trim(),
+   198→        color,
+   199→        statusEmoji: statusEmoji.trim() || null,
+   200→        statusText: statusText.trim() || null,
+   201→      }
+   202→      setUser(optimistic)
+   203→      queryClient.setQueryData(['me', me.id], optimistic)
+   204→      queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+   205→        old?.map((u) => (u.id === me.id ? optimistic : u)),
+   206→      )
+   207→      return null
+   208→    },
+   209→    onSuccess: (data) => {
+   210→      setUser(data.user)
+   211→      queryClient.setQueryData(['me', me.id], data.user)
+   212→      queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+   213→        old?.map((u) => (u.id === me.id ? data.user : u)),
+   214→      )
+   215→      toast.success('Profile updated')
+   216→      // social-flow: pop the sub-page back to the profile root
+   217→      back("/profile")
+   218→    },
+   219→    onError: (error: Error) => {
+   220→      // rollback to the server-known snapshot
+   221→      setUser(me)
+   222→      queryClient.setQueryData(['me', me.id], me)
+   223→      queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+   224→        old?.map((u) => (u.id === me.id ? me : u)),
+   225→      )
+   226→      toast.error(error.message || 'Could not save your profile')
+   227→    },
+   228→  })
+   229→
+   230→  const canSave = dirty && name.trim().length > 0 && !saveProfile.isPending
+   231→
+   232→  const copyId = async () => {
+   233→    haptic(8)
+   234→    try {
+   235→      await navigator.clipboard.writeText(me.id)
+   236→      toast.success('Account ID copied')
+   237→    } catch {
+   238→      toast.error('Clipboard is unavailable here')
+   239→    }
+   240→  }
+   241→
+   242→  const copyHandle = async () => {
+   243→    if (!me.username) return
+   244→    haptic(8)
+   245→    try {
+   246→      await navigator.clipboard.writeText(`@${me.username}`)
+   247→      setHandleCopied(true)
+   248→      if (copiedTimer.current) clearTimeout(copiedTimer.current)
+   249→      copiedTimer.current = setTimeout(() => setHandleCopied(false), 1600)
+   250→      toast.success('Handle copied')
+   251→    } catch {
+   252→      toast.error('Clipboard is unavailable here')
+   253→    }
+   254→  }
+   255→
+   256→  /** real share: the OS share sheet when available, clipboard fallback */
+   257→  const shareProfile = async () => {
+   258→    haptic(10)
+   259→    if (!me.username) {
+   260→      toast.info('Claim a handle first — it is how people find you')
+   261→      setHandleOpen(true)
+   262→      return
+   263→    }
+   264→    const text = `Find me on Pulse — @${me.username}`
+   265→    try {
+   266→      if (typeof navigator.share === 'function') {
+   267→        await navigator.share({ text })
+   268→        return
+   269→      }
+   270→      await navigator.clipboard.writeText(text)
+   271→      toast.success('Share text copied')
+   272→    } catch (error) {
+   273→      // user dismissed the share sheet — not an error
+   274→      if (error instanceof DOMException && error.name === 'AbortError') return
+   275→      toast.error('Could not share right now')
+   276→    }
+   277→  }
+   278→
+   279→  const signOut = () => {
+   280→    usePulseSession.getState().clear()
+   281→    window.location.reload()
+   282→  }
+   283→
+   284→  const memberSinceShort = useMemo(() => {
+   285→    const d = new Date(me.createdAt)
+   286→    return Number.isNaN(d.getTime())
+   287→      ? ''
+   288→      : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+   289→  }, [me.createdAt])
+   290→
+   291→  // Escape closes the edit sub-page (only when no dialog sits on top)
+   292→  useEffect(() => {
+   293→    if (!editing || handleOpen || savedOpen || switchOpen) return
+   294→    const onKey = (e: KeyboardEvent) => {
+   295→      if (e.key === "Escape") back("/profile")
+   296→    }
+   297→    window.addEventListener('keydown', onKey)
+   298→    return () => window.removeEventListener('keydown', onKey)
+   299→  }, [editing, handleOpen, savedOpen, switchOpen, back])
+   300→
+   301→  return (
+   302→    <div className="absolute inset-0 flex flex-col">
+   303→      {/* ── ROOT PAGE ───────────────────────────────────────── */}
+   304→      <div className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(104px+env(safe-area-inset-bottom))]">
+   305→        {/* ── HERO ── */}
+   306→        <section aria-label="Profile" className="relative">
+   307→          {/* gradient cover from the identity color + glass sheen */}
+   308→          <div
+   309→            className={cn(
+   310→              'relative isolate h-40 overflow-hidden rounded-b-[28px] bg-gradient-to-br sm:h-48',
+   311→              gradient,
+   312→            )}
+   313→          >
+   314→            <span
+   315→              aria-hidden
+   316→              className="absolute inset-0 bg-[radial-gradient(80%_90%_at_18%_0%,rgba(255,255,255,0.32),transparent_55%),radial-gradient(70%_80%_at_88%_18%,rgba(255,255,255,0.16),transparent_50%)]"
+   317→            />
+   318→            <motion.span
+   319→              aria-hidden
+   320→              className="absolute -right-10 -top-14 size-44 rounded-full bg-white/15 blur-2xl"
+   321→              animate={reducedMotion ? undefined : { scale: [1, 1.12, 1], opacity: [0.7, 1, 0.7] }}
+   322→              transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+   323→            />
+   324→            <motion.span
+   325→              aria-hidden
+   326→              className="absolute -left-12 -bottom-8 size-36 rounded-full bg-black/10 blur-2xl"
+   327→              animate={reducedMotion ? undefined : { scale: [1, 1.18, 1], opacity: [0.5, 0.8, 0.5] }}
+   328→              transition={{ duration: 11, delay: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+   329→            />
+   330→          </div>
+   331→
+   332→          <div className="relative px-4">
+   333→            {/* overlapping avatar with specular gradient ring */}
+   334→            <motion.div
+   335→              initial={reducedMotion ? false : { scale: 0.8, opacity: 0, y: 10 }}
+   336→              animate={{ scale: 1, opacity: 1, y: 0 }}
+   337→              transition={spring.bouncy}
+   338→              className={cn(
+   339→                'relative z-10 -mt-12 w-fit rounded-full p-[3px] shadow-lg shadow-black/15',
+   340→                'bg-gradient-to-br',
+   341→                gradient,
+   342→              )}
+   343→            >
+   344→              <div className="rounded-full bg-white p-[3px] dark:bg-zinc-900">
+   345→                <UserAvatar name={me.name} color={me.color} size={92} showPresence online={iAmOnline} />
+   346→              </div>
+   347→            </motion.div>
+   348→
+   349→            {/* name + verified-style member badge */}
+   350→            <motion.div
+   351→              initial={reducedMotion ? false : { opacity: 0, y: 10 }}
+   352→              animate={{ opacity: 1, y: 0 }}
+   353→              transition={{ duration: 0.3, ease: ease.out, delay: 0.05 }}
+   354→              className="mt-3 flex items-center gap-2"
+   355→            >
+   356→              <h1 className="truncate text-2xl font-black tracking-tight text-zinc-900 dark:text-zinc-50">
+   357→                {me.name}
+   358→              </h1>
+   359→              <span
+   360→                title="Registered member"
+   361→                className="flex size-5 shrink-0 items-center justify-center rounded-full"
+   362→                aria-label="Registered member"
+   363→              >
+   364→                <BadgeCheck className="size-5 fill-[var(--ui-accent,#10b981)] text-white dark:text-zinc-900" aria-hidden />
+   365→              </span>
+   366→            </motion.div>
+   367→
+   368→            {/* @handle — tap to copy (editing lives on the sub-page) */}
+   369→            <motion.div
+   370→              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+   371→              animate={{ opacity: 1, y: 0 }}
+   372→              transition={{ duration: 0.3, ease: ease.out, delay: 0.09 }}
+   373→              className="mt-1.5"
+   374→            >
+   375→              <motion.button
+   376→                type="button"
+   377→                whileTap={reducedMotion ? undefined : pressTap}
+   378→                transition={pressSpring}
+   379→                onClick={me.username ? copyHandle : () => setHandleOpen(true)}
+   380→                aria-label={
+   381→                  me.username ? `Copy handle @${me.username}` : 'Set your handle'
+   382→                }
+   383→                className="glass-pill flex min-h-[32px] items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold text-[var(--ui-accent,#10b981)] outline-none"
+   384→              >
+   385→                <AtSign className="size-3.5" aria-hidden />
+   386→                {me.username ? (
+   387→                  handleCopied ? (
+   388→                    <>
+   389→                      <Check className="size-3.5" strokeWidth={3} aria-hidden />
+   390→                      Copied
+   391→                    </>
+   392→                  ) : (
+   393→                    `@${me.username}`
+   394→                  )
+   395→                ) : (
+   396→                  'Set your handle'
+   397→                )}
+   398→              </motion.button>
+   399→            </motion.div>
+   400→
+   401→            {/* status glyph + text */}
+   402→            {me.statusEmoji || me.statusText ? (
+   403→              <motion.p
+   404→                initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+   405→                animate={{ opacity: 1, y: 0 }}
+   406→                transition={{ duration: 0.3, ease: ease.out, delay: 0.12 }}
+   407→                className="mt-2.5 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-700 dark:text-zinc-200"
+   408→              >
+   409→                {me.statusEmoji ? (
+   410→                  <StatusGlyph value={me.statusEmoji} className="size-4 text-[var(--ui-accent,#10b981)]" />
+   411→                ) : null}
+   412→                {me.statusText}
+   413→              </motion.p>
+   414→            ) : null}
+   415→
+   416→            {/* bio */}
+   417→            <motion.p
+   418→              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+   419→              animate={{ opacity: 1, y: 0 }}
+   420→              transition={{ duration: 0.3, ease: ease.out, delay: 0.15 }}
+   421→              className="mt-1.5 max-w-md text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400"
+   422→            >
+   423→              {me.about.trim() || 'No bio yet'}
+   424→            </motion.p>
+   425→
+   426→            {/* quick actions — two designed pills, not a toolbox dump */}
+   427→            <motion.div
+   428→              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+   429→              animate={{ opacity: 1, y: 0 }}
+   430→              transition={{ duration: 0.3, ease: ease.out, delay: 0.18 }}
+   431→              className="mt-4 flex items-center gap-2"
+   432→            >
+   433→              <motion.button
+   434→                type="button"
+   435→                whileTap={reducedMotion ? undefined : pressTap}
+   436→                transition={pressSpring}
+   437→                onClick={() => {
+   438→                  haptic(10)
+   439→                  navigate('/profile/edit')
+   440→                }}
+   441→                aria-label="Edit profile"
+   442→                className="glass-pill flex h-10 items-center gap-2 rounded-full px-4 text-[13px] font-bold text-[var(--ui-accent,#10b981)] outline-none"
+   443→              >
+   444→                <Pencil className="size-4" aria-hidden />
+   445→                Edit profile
+   446→              </motion.button>
+   447→              <motion.button
+   448→                type="button"
+   449→                whileTap={reducedMotion ? undefined : pressTap}
+   450→                transition={pressSpring}
+   451→                onClick={shareProfile}
+   452→                aria-label="Share your profile"
+   453→                className="glass-pill flex h-10 items-center gap-2 rounded-full px-4 text-[13px] font-bold text-zinc-600 outline-none dark:text-zinc-300"
+   454→              >
+   455→                <Share2 className="size-4" aria-hidden />
+   456→                Share
+   457→              </motion.button>
+   458→            </motion.div>
+   459→          </div>
+   460→        </section>
+   461→
+   462→        {/* ── STATS — real data only ── */}
+   463→        <section aria-label="Your activity" className="mt-5 px-4">
+   464→          <div className="glass-deep glass-sheen isolate grid grid-cols-4 gap-1.5 rounded-3xl p-2">
+   465→            {statsQ.isPending ? (
+   466→              Array.from({ length: 4 }).map((_, i) => (
+   467→                <Skeleton key={i} className="h-[58px] rounded-2xl" />
+   468→              ))
+   469→            ) : (
+   470→              <>
+   471→                <StatTile delay={0} label="Messages" value={statsQ.isError ? '—' : <CountUp value={statsQ.data?.messages ?? 0} />} />
+   472→                <StatTile delay={1} label="Rooms" value={statsQ.isError ? '—' : <CountUp value={statsQ.data?.chats ?? 0} />} />
+   473→                <StatTile
+   474→                  delay={2}
+   475→                  accent
+   476→                  label="Coins"
+   477→                  value={
+   478→                    walletQ.isPending ? (
+   479→                      <Skeleton className="h-5 w-10 rounded-md" />
+   480→                    ) : walletQ.isError ? (
+   481→                      '—'
+   482→                    ) : (
+   483→                      <span className="inline-flex items-center gap-1">
+   484→                        <Coins className="size-3.5" aria-hidden />
+   485→                        <CountUp value={walletQ.data?.coins ?? 0} />
+   486→                      </span>
+   487→                    )
+   488→                  }
+   489→                />
+   490→                <StatTile delay={3} label="Member since" value={memberSinceShort || '—'} />
+   491→              </>
+   492→            )}
+   493→          </div>
+   494→        </section>
+   495→
+   496→        {/* ── SAVED — real starred-message library ── */}
+   497→        <div className="px-4">
+   498→          <ProfileSection title="Saved" delay={0.02}>
+   499→            <ChevronRow
+   500→              icon={Star}
+   501→              iconClassName="bg-amber-500/12 text-amber-500"
+   502→              title="Saved messages"
+   503→              description="Long-press any message in a chat, then Save"
+   504→              onPress={() => setSavedOpen(true)}
+   505→            />
+   506→          </ProfileSection>
+   507→        </div>
+   508→
+   509→        {/* ── ACCOUNT ── */}
+   510→        <div className="px-4">
+   511→          <ProfileSection title="Account" delay={0.06}>
+   512→            <div className="p-1">
+   513→              <ChevronRow
+   514→                icon={Fingerprint}
+   515→                title="Copy account ID"
+   516→                description={me.id}
+   517→                onPress={copyId}
+   518→                ariaLabel={`Copy account ID ${me.id}`}
+   519→              />
+   520→              <ChevronRow
+   521→                icon={LogOut}
+   522→                destructive
+   523→                title="Sign out"
+   524→                description="Return to the welcome screen — nothing is deleted"
+   525→                onPress={() => setSwitchOpen(true)}
+   526→              />
+   527→            </div>
+   528→          </ProfileSection>
+   529→        </div>
+   530→      </div>
+   531→
+   532→      {/* ── EDIT PROFILE — real full-screen sub-page (hash-driven) ── */}
+   533→      {mounted
+   534→        ? createPortal(
+   535→            <AnimatePresence>
+   536→              {editing ? (
+   537→                <motion.div
+   538→                  key="edit-profile-subpage"
+   539→                  role="dialog"
+   540→                  aria-modal="true"
+   541→                  aria-label="Edit profile"
+   542→                  initial={reducedMotion ? { opacity: 0 } : { x: '100%' }}
+   543→                  animate={{ x: 0, opacity: 1 }}
+   544→                  exit={reducedMotion ? { opacity: 0, transition: { duration: 0.12 } } : { x: '100%' }}
+   545→                  transition={spring.soft}
+   546→                  className="fixed inset-0 z-[46] flex flex-col"
+   547→                  style={{ background: 'var(--ui-page-bg, #09090b)' }}
+   548→                >
+   549→                  {/* glass sub-header — back pill + title + save */}
+   550→                  <div className="glass-deep glass-sheen isolate flex h-14 shrink-0 items-center gap-2 px-3">
+   551→                    <motion.button
+   552→                      type="button"
+   553→                      whileTap={reducedMotion ? undefined : pressTap}
+   554→                      transition={pressSpring}
+   555→                      onClick={() => {
+   556→                        haptic(10)
+   557→                        back("/profile")
+   558→                      }}
+   559→                      aria-label="Back to profile"
+   560→                      className="glass-pill flex h-9 items-center gap-1.5 rounded-full pl-2 pr-3 text-[13px] font-bold text-zinc-700 outline-none dark:text-zinc-200"
+   561→                    >
+   562→                      <ArrowLeft className="size-4" aria-hidden />
+   563→                      Profile
+   564→                    </motion.button>
+   565→                    <h2 className="text-[15px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+   566→                      Edit profile
+   567→                    </h2>
+   568→                    <div className="flex-1" />
+   569→                    <AnimatePresence>
+   570→                      {dirty ? (
+   571→                        <motion.div
+   572→                          initial={{ opacity: 0, scale: 0.9 }}
+   573→                          animate={{ opacity: 1, scale: 1 }}
+   574→                          exit={{ opacity: 0, scale: 0.9 }}
+   575→                          transition={{ duration: 0.15 }}
+   576→                        >
+   577→                          <Button
+   578→                            size="sm"
+   579→                            onClick={() => saveProfile.mutate()}
+   580→                            disabled={!canSave}
+   581→                            aria-label="Save changes"
+   582→                            className="h-9 rounded-full bg-[var(--ui-accent,#10b981)] px-3.5 text-xs font-bold text-white hover:opacity-90 active:scale-95"
+   583→                          >
+   584→                            {saveProfile.isPending ? (
+   585→                              <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+   586→                            ) : (
+   587→                              <Check className="size-3.5" strokeWidth={3} aria-hidden />
+   588→                            )}
+   589→                            Save
+   590→                          </Button>
+   591→                        </motion.div>
+   592→                      ) : null}
+   593→                    </AnimatePresence>
+   594→                  </div>
+   595→
+   596→                  {/* form body */}
+   597→                  <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-4">
+   598→                    <ProfileSection title="Identity" className="mt-0">
+   599→                      <div className="space-y-3 p-1.5">
+   600→                        <div className="space-y-1.5">
+   601→                          <Label htmlFor="profile-name" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+   602→                            Display name
+   603→                          </Label>
+   604→                          <Input
+   605→                            id="profile-name"
+   606→                            value={name}
+   607→                            maxLength={NAME_MAX}
+   608→                            onChange={(e) => setName(e.target.value.slice(0, NAME_MAX))}
+   609→                            autoComplete="off"
+   610→                            className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800"
+   611→                          />
+   612→                        </div>
+   613→                        <div className="space-y-1.5">
+   614→                          <Label htmlFor="profile-about" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+   615→                            Bio
+   616→                          </Label>
+   617→                          <Textarea
+   618→                            id="profile-about"
+   619→                            value={about}
+   620→                            rows={2}
+   621→                            maxLength={ABOUT_MAX}
+   622→                            placeholder="Hey there! I'm using Pulse."
+   623→                            onChange={(e) => setAbout(e.target.value.slice(0, ABOUT_MAX))}
+   624→                            className="resize-none rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800"
+   625→                          />
+   626→                        </div>
+   627→                      </div>
+   628→                    </ProfileSection>
+   629→
+   630→                    <ProfileSection title="Status">
+   631→                      <div className="space-y-2 p-1.5">
+   632→                        <div role="radiogroup" aria-label="Status glyph" className="flex flex-wrap items-center gap-1.5">
+   633→                          {STATUS_GLYPH_CHOICES.map((g) => {
+   634→                            const selected = statusEmoji === g.value
+   635→                            const Icon = g.icon
+   636→                            return (
+   637→                              <motion.button
+   638→                                key={g.value}
+   639→                                type="button"
+   640→                                role="radio"
+   641→                                aria-checked={selected}
+   642→                                aria-label={g.label}
+   643→                                title={g.label}
+   644→                                onClick={() => {
+   645→                                  haptic(6)
+   646→                                  setStatusEmoji(selected ? '' : g.value)
+   647→                                }}
+   648→                                whileTap={reducedMotion ? undefined : pressTap}
+   649→                                transition={pressSpring}
+   650→                                className={cn(
+   651→                                  'flex size-11 items-center justify-center rounded-2xl outline-none transition-all',
+   652→                                  selected
+   653→                                    ? 'scale-105 bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_16%,transparent)] ring-2 ring-[var(--ui-accent,#10b981)]'
+   654→                                    : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
+   655→                                )}
+   656→                              >
+   657→                                <Icon className="size-4.5" aria-hidden />
+   658→                              </motion.button>
+   659→                            )
+   660→                          })}
+   661→                        </div>
+   662→                        <Input
+   663→                          id="profile-status"
+   664→                          value={statusText}
+   665→                          maxLength={STATUS_MAX}
+   666→                          placeholder="What's happening? (optional)"
+   667→                          onChange={(e) => setStatusText(e.target.value.slice(0, STATUS_MAX))}
+   668→                          autoComplete="off"
+   669→                          aria-label="Status text"
+   670→                          className="h-10 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800"
+   671→                        />
+   672→                      </div>
+   673→                    </ProfileSection>
+   674→
+   675→                    <ProfileSection title="Avatar">
+   676→                      <div className="p-1.5">
+   677→                        <div role="radiogroup" aria-label="Avatar color" className="flex items-center justify-between px-0.5">
+   678→                          {PULSE_COLORS.map((c) => {
+   679→                            const selected = c === color
+   680→                            return (
+   681→                              <motion.button
+   682→                                key={c}
+   683→                                type="button"
+   684→                                role="radio"
+   685→                                aria-checked={selected}
+   686→                                aria-label={`${c} avatar`}
+   687→                                onClick={() => {
+   688→                                  haptic(6)
+   689→                                  setColor(c)
+   690→                                }}
+   691→                                whileTap={reducedMotion ? undefined : pressTap}
+   692→                                transition={pressSpring}
+   693→                                className={cn(
+   694→                                  'flex size-11 items-center justify-center rounded-full bg-gradient-to-br shadow-sm outline-none transition-transform',
+   695→                                  AVATAR_GRADIENTS[c],
+   696→                                  selected
+   697→                                    ? 'scale-105 ring-2 ring-[var(--ui-accent,#10b981)] ring-offset-2 ring-offset-white dark:ring-offset-zinc-900'
+   698→                                    : 'hover:scale-105',
+   699→                                )}
+   700→                              >
+   701→                                {selected ? <Check className="size-4 text-white" strokeWidth={3} /> : null}
+   702→                              </motion.button>
+   703→                            )
+   704→                          })}
+   705→                        </div>
+   706→                      </div>
+   707→                    </ProfileSection>
+   708→
+   709→                    <ProfileSection title="Handle">
+   710→                      <div className="p-1">
+   711→                        <ChevronRow
+   712→                          icon={AtSign}
+   713→                          iconClassName="bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)] text-[var(--ui-accent,#10b981)]"
+   714→                          title="Your handle"
+   715→                          description={me.username ? `@${me.username}` : 'Claim yours — friends can find you by it'}
+   716→                          onPress={() => setHandleOpen(true)}
+   717→                          ariaLabel={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
+   718→                        />
+   719→                      </div>
+   720→                    </ProfileSection>
+   721→
+   722→                    <div className="mt-6">
+   723→                      <Button
+   724→                        onClick={() => saveProfile.mutate()}
+   725→                        disabled={!canSave}
+   726→                        className="h-12 w-full rounded-2xl bg-[var(--ui-accent,#10b981)] text-sm font-bold text-white shadow-lg shadow-black/10 hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+   727→                      >
+   728→                        {saveProfile.isPending ? (
+   729→                          <>
+   730→                            <LoaderCircle className="size-4 animate-spin" aria-hidden />
+   731→                            Saving
+   732→                          </>
+   733→                        ) : (
+   734→                          <>
+   735→                            <Check className="size-4" strokeWidth={3} aria-hidden />
+   736→                            Save changes
+   737→                          </>
+   738→                        )}
+   739→                      </Button>
+   740→                      <p className="mt-2.5 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+   741→                        Changes appear everywhere instantly — profile, chats and mentions.
+   742→                      </p>
+   743→                    </div>
+   744→                  </div>
+   745→                </motion.div>
+   746→              ) : null}
+   747→            </AnimatePresence>,
+   748→            document.body,
+   749→          )
+   750→        : null}
+   751→
+   752→      {/* saved-messages library drawer (real flow) */}
+   753→      <Drawer open={savedOpen} onOpenChange={setSavedOpen}>
+   754→        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+   755→          <DrawerTitle className="sr-only">Saved messages</DrawerTitle>
+   756→          <DrawerDescription className="sr-only">Messages you starred across every chat</DrawerDescription>
+   757→          <div className="pb-2">
+   758→            <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
+   759→              <Star className="size-4 fill-amber-400 text-amber-500" aria-hidden />
+   760→              {savedQuery.isPending
+   761→                ? 'Loading'
+   762→                : `${(savedQuery.data ?? []).length} saved ${(savedQuery.data ?? []).length === 1 ? 'message' : 'messages'}`}
+   763→            </p>
+   764→            {(savedQuery.data ?? []).length === 0 && !savedQuery.isPending ? (
+   765→              <p className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
+   766→                Long-press a message in any chat and choose Save message.
+   767→              </p>
+   768→            ) : (
+   769→              <ul className="pulse-scroll max-h-[52dvh] space-y-2 overflow-y-auto py-1">
+   770→                {(savedQuery.data ?? []).map((item) => (
+   771→                  <li key={`${item.message.id}`}>
+   772→                    <button
+   773→                      type="button"
+   774→                      onClick={() => {
+   775→                        haptic(8)
+   776→                        setSavedOpen(false)
+   777→                        onOpenSavedMessage?.(item.message.conversationId, item.message.id)
+   778→                      }}
+   779→                      className="glass-row-hover w-full rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 text-left outline-none active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800/60"
+   780→                    >
+   781→                      <div className="flex items-center gap-2">
+   782→                        <UserAvatar name={item.message.sender.name} color={item.message.sender.color} size={22} />
+   783→                        <span className="truncate text-xs font-bold text-[var(--ui-accent,#10b981)]">
+   784→                          {item.message.sender.id === me.id ? 'You' : item.message.sender.name}
+   785→                          <span className="ml-1.5 font-medium text-zinc-400">in {item.conversation.name ?? 'chat'}</span>
+   786→                        </span>
+   787→                        <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{item.savedAt.slice(0, 10)}</span>
+   788→                      </div>
+   789→                      <span className="mt-1 flex items-start gap-1.5">
+   790→                        {item.message.imagePath ? (
+   791→                          <ImageIcon className="mt-0.5 size-3.5 shrink-0 text-zinc-400" aria-label="Photo message" />
+   792→                        ) : null}
+   793→                        {item.message.audioPath ? (
+   794→                          <Mic className="mt-0.5 size-3.5 shrink-0 text-zinc-400" aria-label="Voice message" />
+   795→                        ) : null}
+   796→                        <span className="line-clamp-2 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
+   797→                          {item.message.content.replace(/\s+/g, ' ').trim() || '(media)'}
+   798→                        </span>
+   799→                      </span>
+   800→                    </button>
+   801→                  </li>
+   802→                ))}
+   803→              </ul>
+   804→            )}
+   805→          </div>
+   806→        </DrawerContent>
+   807→      </Drawer>
+   808→
+   809→      {/* @handle editor dialog */}
+   810→      <HandleEditorDialog
+   811→        open={handleOpen}
+   812→        onOpenChange={setHandleOpen}
+   813→        me={me}
+   814→        onSaved={(user) => {
+   815→          setUser(user)
+   816→          queryClient.setQueryData(['me', me.id], user)
+   817→          queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+   818→            old?.map((u) => (u.id === user.id ? user : u)),
+   819→          )
+   820→        }}
+   821→      />
+   822→
+   823→      {/* sign-out confirm */}
+   824→      <AlertDialog open={switchOpen} onOpenChange={setSwitchOpen}>
+   825→        <AlertDialogContent className="max-w-[320px] rounded-2xl border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 sm:left-1/2 sm:translate-x-[-50%]">
+   826→          <AlertDialogHeader>
+   827→            <AlertDialogTitle className="tracking-tight">Sign out of this account?</AlertDialogTitle>
+   828→            <AlertDialogDescription className="text-[13px] leading-relaxed">
+   829→              You&apos;ll return to the welcome screen. Nothing is deleted — you can always create or join back in later.
+   830→            </AlertDialogDescription>
+   831→          </AlertDialogHeader>
+   832→          <AlertDialogFooter className="gap-2">
+   833→            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+   834→            <AlertDialogAction
+   835→              onClick={signOut}
+   836→              className="rounded-xl bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40"
+   837→            >
+   838→              Sign out
+   839→            </AlertDialogAction>
+   840→          </AlertDialogFooter>
+   841→        </AlertDialogContent>
+   842→      </AlertDialog>
+   843→    </div>
+   844→  )
+   845→}
+   846→

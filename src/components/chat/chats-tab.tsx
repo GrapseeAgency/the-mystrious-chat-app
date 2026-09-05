@@ -1,14 +1,18 @@
 // ─────────────────────────────────────────────────────────────
 // Pulse Chat — Chats tab: conversation list, search, empty state.
+// R27-e casual sweep: mute-duration strip + clear chat + .txt export
+// through the compact glass option menu (chats-actions.tsx); rows live
+// in chats-row.tsx; #/chats/archived is a REAL hash sub-page
+// (chats-archived-page.tsx) opened from the glass pill row below.
 // ─────────────────────────────────────────────────────────────
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
-import { AnimatePresence, motion, useReducedMotion, type PanInfo } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, FolderPlus, LoaderCircle, MoreVertical, PencilLine, Pin, PinOff, Plus, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
+import { Archive, ArrowRight, ChevronRight, FolderPlus, LoaderCircle, Plus, Search, SquarePen, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -28,9 +32,8 @@ import { pulseSettingsStore } from '@/lib/pulse-settings'
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
-import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
+import { useHashNav } from '@/lib/hash-router'
+import { UserAvatar } from '@/components/chat/user-avatar'
 import { ThemeToggleButton } from '@/components/chat/theme-toggle'
 import {
   StoriesSheet,
@@ -39,6 +42,14 @@ import {
 import type { StoryGroup, StoriesResponse } from '@/components/chat/stories-sheet'
 import { StoryComposerSheet } from '@/components/chat/story-composer-sheet'
 import { FoldersSheet } from '@/components/chat/folders-sheet'
+import { ConversationRow, type ConversationRowData } from '@/components/chat/chats-row'
+import { RowSkeleton } from '@/components/chat/chats-skeleton'
+import {
+  ChatOptionsSheet,
+  downloadTranscript,
+  fetchFullHistory,
+} from '@/components/chat/chats-actions'
+import { ChatsArchivedPage } from '@/components/chat/chats-archived-page'
 
 interface ConversationsResponse {
   conversations: ConversationSummary[]
@@ -48,356 +59,6 @@ interface SearchResponse {
   messages: SearchResultMessage[]
   total: number
 }
-
-interface ConversationRowProps {
-  id: string
-  isGroup: boolean
-  name: string
-  time: string
-  preview: string
-  previewPrefix: string
-  previewDeleted: boolean
-  /** unsent composer draft persisted for this conversation (null = none) */
-  draft: string | null
-  unreadCount: number
-  // avatar inputs
-  dmName: string | null
-  dmColor: string
-  groupTitle: string
-  online: boolean
-  pinned: boolean
-  /** viewer muted this conversation (watermark in the future) */
-  muted: boolean
-  /** someone is typing in this conversation right now */
-  typing: boolean
-  /** row lives in the archived drawer (swipe chip flips to Unarchive) */
-  archived: boolean
-  /** stagger slot for the initial-mount entrance (null = animate nothing) */
-  entranceIndex: number | null
-  onPress: () => void
-  onLongPress: () => void
-  /** existing pin/unpin handler — surfaced as a swipe-left chip */
-  onPin: () => void
-  /** existing archive/unarchive handler — surfaced as a swipe-left chip */
-  onArchive: () => void
-}
-
-const LONG_PRESS_MS = 450
-
-/** Full reveal width of the swipe action tray (2 glass chips). */
-const SWIPE_REVEAL_PX = 112
-/** Drag distance that snaps the tray open (one chip width). */
-const SWIPE_OPEN_THRESHOLD_PX = 56
-
-/** Pulsing emerald presence halo behind online avatars (spring.gentle loop). */
-function PresenceGlow({ reduced }: { reduced: boolean }) {
-  if (reduced) {
-    return <span aria-hidden className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/50" />
-  }
-  return (
-    <motion.span
-      aria-hidden
-      initial={{ scale: 1, opacity: 0.65 }}
-      animate={{ scale: 1.14, opacity: 0.18 }}
-      transition={{ ...spring.gentle, repeat: Infinity, repeatType: 'reverse' }}
-      className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.35)]"
-    />
-  )
-}
-
-const ConversationRow = memo(function ConversationRow({
-  id,
-  isGroup,
-  name,
-  time,
-  preview,
-  previewPrefix,
-  previewDeleted,
-  draft,
-  unreadCount,
-  dmName,
-  dmColor,
-  groupTitle,
-  online,
-  pinned,
-  muted,
-  typing,
-  archived,
-  entranceIndex,
-  onPress,
-  onLongPress,
-  onPin,
-  onArchive,
-}: ConversationRowProps) {
-  const hasUnread = unreadCount > 0
-  const reducedMotion = useReducedMotion()
-  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const longPressFiredRef = useRef(false)
-  /** true between dragStart and the click that follows release — swallows the click */
-  const draggedRef = useRef(false)
-  const [swipeOpen, setSwipeOpen] = useState(false)
-  const entrance = entranceIndex !== null && !reducedMotion
-
-  const clearLongPress = useCallback(() => {
-    if (longPressRef.current !== null) {
-      clearTimeout(longPressRef.current)
-      longPressRef.current = null
-    }
-  }, [])
-
-  const startLongPress = useCallback(() => {
-    draggedRef.current = false
-    clearLongPress()
-    longPressFiredRef.current = false
-    longPressRef.current = setTimeout(() => {
-      longPressFiredRef.current = true
-      longPressRef.current = null
-      haptic(15)
-      onLongPress()
-    }, LONG_PRESS_MS)
-  }, [clearLongPress, onLongPress])
-
-  const handleClick = useCallback(() => {
-    if (draggedRef.current) {
-      draggedRef.current = false
-      return
-    }
-    if (swipeOpen) {
-      setSwipeOpen(false)
-      return
-    }
-    if (!longPressFiredRef.current) onPress()
-    longPressFiredRef.current = false
-  }, [onPress, swipeOpen])
-
-  const handleDragStart = useCallback(() => {
-    draggedRef.current = true
-    clearLongPress()
-  }, [clearLongPress])
-
-  const handleDragEnd = useCallback(
-    (_event: unknown, info: PanInfo) => {
-      const from = swipeOpen ? -SWIPE_REVEAL_PX : 0
-      setSwipeOpen(from + info.offset.x <= -SWIPE_OPEN_THRESHOLD_PX)
-    },
-    [swipeOpen],
-  )
-
-  return (
-    <motion.div
-      initial={entrance ? { opacity: 0, y: 14 } : false}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{
-        duration: 0.32,
-        ease: ease.out,
-        delay: entrance ? stagger(entranceIndex ?? 0, 0.028, 12) : 0,
-      }}
-      className="group relative overflow-hidden px-2"
-    >
-      <div className="relative">
-        {/* swipe-left glass action chips — the same pin/archive handlers the option sheet uses */}
-        <div className="absolute inset-y-1 right-2 z-0 flex items-center gap-1.5 pr-1" inert={!swipeOpen}>
-          <motion.button
-            type="button"
-            tabIndex={swipeOpen ? 0 : -1}
-            aria-hidden={!swipeOpen}
-            whileTap={reducedMotion ? undefined : pressTap}
-            transition={pressSpring}
-            onClick={() => {
-              setSwipeOpen(false)
-              onPin()
-            }}
-            aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`}
-            className="flex size-12 flex-col items-center justify-center gap-0.5 rounded-2xl bg-white/70 shadow-sm outline-none ring-1 ring-white/10 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10"
-          >
-            {pinned ? (
-              <PinOff className="size-[18px] text-amber-500" aria-hidden />
-            ) : (
-              <Pin className="size-[18px] text-emerald-600 dark:text-emerald-400" aria-hidden />
-            )}
-            <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400">
-              {pinned ? 'Unpin' : 'Pin'}
-            </span>
-          </motion.button>
-          <motion.button
-            type="button"
-            tabIndex={swipeOpen ? 0 : -1}
-            aria-hidden={!swipeOpen}
-            whileTap={reducedMotion ? undefined : pressTap}
-            transition={pressSpring}
-            onClick={() => {
-              setSwipeOpen(false)
-              onArchive()
-            }}
-            aria-label={archived ? `Unarchive ${name}` : `Archive ${name}`}
-            className="flex size-12 flex-col items-center justify-center gap-0.5 rounded-2xl bg-white/70 shadow-sm outline-none ring-1 ring-white/10 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10"
-          >
-            {archived ? (
-              <ArchiveRestore className="size-[18px] text-amber-500" aria-hidden />
-            ) : (
-              <Archive className="size-[18px] text-zinc-500 dark:text-zinc-400" aria-hidden />
-            )}
-            <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400">
-              {archived ? 'Unarchive' : 'Archive'}
-            </span>
-          </motion.button>
-        </div>
-
-        {/* swipeable row body — x-drag with direction lock so vertical scroll never fights */}
-        <motion.div
-          drag="x"
-          dragDirectionLock
-          dragConstraints={{ left: -SWIPE_REVEAL_PX, right: 0 }}
-          dragElastic={0.05}
-          dragMomentum={false}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          animate={{ x: swipeOpen ? -SWIPE_REVEAL_PX : 0 }}
-          transition={spring.snappy}
-          whileTap={reducedMotion ? undefined : { scale: 0.975 }}
-          style={{ willChange: 'transform' }}
-          className="relative z-10"
-        >
-          <button
-            type="button"
-            onClick={handleClick}
-            onPointerDown={startLongPress}
-            onPointerUp={clearLongPress}
-            onPointerLeave={clearLongPress}
-            onContextMenu={(e) => e.preventDefault()}
-            className="relative flex w-full touch-manipulation items-center gap-3 overflow-hidden rounded-2xl bg-white px-2 py-2.5 text-left outline-none dark:bg-zinc-900"
-          >
-            {pinned ? (
-              <span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl bg-emerald-500/[0.045] dark:bg-emerald-500/[0.06]" />
-            ) : null}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-2xl bg-zinc-900/[0.04] opacity-0 transition-opacity duration-100 group-active:opacity-100 dark:bg-white/5"
-            />
-            <span className="relative shrink-0">
-              {!isGroup && online ? <PresenceGlow reduced={reducedMotion === true} /> : null}
-              {isGroup ? (
-                <GroupAvatar title={groupTitle} id={id} size={48} />
-              ) : (
-                <UserAvatar name={dmName ?? name} color={dmColor} size={48} showPresence online={online} />
-              )}
-            </span>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-1">
-              {pinned ? (
-                <Pin className="size-3 shrink-0 fill-emerald-500 text-emerald-500" aria-label="Pinned" />
-              ) : null}
-              <span
-                className={cn(
-                  'truncate text-[15px] tracking-tight',
-                  hasUnread
-                    ? 'font-semibold text-zinc-900 dark:text-zinc-50'
-                    : 'font-medium text-zinc-900 dark:text-zinc-100',
-                )}
-              >
-                {name}
-              </span>
-            </span>
-            <motion.span
-              key={time}
-              initial={reducedMotion ? false : { opacity: 0, scale: 0.7 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={spring.bouncy}
-              className={cn(
-                'shrink-0 text-[11px]',
-                hasUnread
-                  ? 'font-semibold text-emerald-600 dark:text-emerald-400'
-                  : 'text-zinc-400 dark:text-zinc-500',
-              )}
-            >
-              {time}
-            </motion.span>
-          </div>
-          <div className="mt-0.5 flex items-center justify-between gap-2">
-            {typing ? (
-              <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium italic text-emerald-600 dark:text-emerald-400">
-                <span className="inline-flex items-center gap-0.5" aria-hidden>
-                  {[0, 1, 2].map((i) => (
-                    <motion.span
-                      key={i}
-                      animate={{ y: [0, -2.5, 0], opacity: [0.45, 1, 0.45] }}
-                      transition={{ repeat: Infinity, duration: 0.9, delay: i * 0.15, ease: 'easeInOut' }}
-                      className="size-[3.5px] rounded-full bg-emerald-500"
-                    />
-                  ))}
-                </span>
-                typing…
-              </p>
-            ) : draft ? (
-              <p className="flex min-w-0 items-center gap-1 truncate text-[13px]">
-                <PencilLine className="size-3 shrink-0 text-amber-500" aria-hidden />
-                <span className="shrink-0 font-semibold text-amber-600 dark:text-amber-400">Draft:</span>
-                <span className="truncate italic text-zinc-500 dark:text-zinc-400">{draft}</span>
-              </p>
-            ) : (
-              <p
-                className={cn(
-                  'truncate text-[13px]',
-                  hasUnread
-                    ? 'font-medium text-zinc-600 dark:text-zinc-300'
-                    : 'text-zinc-500 dark:text-zinc-400',
-                )}
-              >
-                {previewPrefix ? <span className="text-zinc-400 dark:text-zinc-500">{previewPrefix}</span> : null}
-                <span className={previewDeleted ? 'italic' : undefined}>{preview}</span>
-              </p>
-            )}
-            {hasUnread && !muted ? (
-              <motion.span
-                key={unreadCount}
-                initial={reducedMotion ? false : { scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={spring.bouncy}
-                className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
-              >
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </motion.span>
-            ) : muted ? (
-              <motion.span
-                key={unreadCount}
-                initial={reducedMotion ? false : { scale: 0.6, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={spring.bouncy}
-                aria-label={hasUnread ? `Muted — ${unreadCount} unread` : 'Muted'}
-                className={cn(
-                  'flex h-[18px] shrink-0 items-center gap-1 rounded-full px-1.5 text-[10px] font-bold ring-2 ring-white dark:ring-zinc-900',
-                  hasUnread
-                    ? 'bg-zinc-300 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300'
-                    : 'bg-transparent text-zinc-400 ring-0 dark:text-zinc-500',
-                )}
-              >
-                <BellOff className="size-3.5" aria-hidden />
-                {hasUnread ? (unreadCount > 99 ? '99+' : unreadCount) : null}
-              </motion.span>
-            ) : null}
-          </div>
-        </div>
-          </button>
-          {/* overflow options — kept for accessibility (screen readers + keyboard) */}
-          <button
-            type="button"
-            aria-label={`Options for ${name}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              onLongPress()
-            }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-zinc-400 opacity-0 shadow-sm outline-none backdrop-blur transition-opacity hover:text-zinc-600 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-zinc-800/90 dark:hover:text-zinc-200"
-          >
-            <MoreVertical className="size-4" aria-hidden />
-          </button>
-          <div aria-hidden className="ml-[64px] h-px bg-zinc-100 dark:bg-zinc-800" />
-        </motion.div>
-      </div>
-    </motion.div>
-  )
-})
 
 /**
  * Snippet with the first match highlighted — clips a ≤64-char window
@@ -485,18 +146,6 @@ const SearchMessageRow = memo(function SearchMessageRow({
     </motion.button>
   )
 })
-
-function RowSkeleton() {
-  return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <Skeleton className="size-12 rounded-full" />
-      <div className="flex-1 space-y-2">
-        <Skeleton className="h-3.5 w-1/3" />
-        <Skeleton className="h-3 w-2/3" />
-      </div>
-    </div>
-  )
-}
 
 /** Tiny uppercase section header with an emerald count chip. */
 function SearchSection({ label, count }: { label: string; count: number }) {
@@ -607,6 +256,16 @@ export function ChatsTab({
   const realtime = usePulseRealtime()
   const typersIn = realtime.typersIn
   const onlineIds = realtime.onlineIds
+
+  // #/chats/archived sub-page — same internal hash pattern the settings
+  // tree uses: open = push '/chats/archived', back = pop to '/'.
+  const { path, navigate, back } = useHashNav()
+  const archivedPageOpen = path === '/chats/archived'
+  const openArchivedPage = useCallback(() => {
+    haptic(6)
+    navigate('/chats/archived')
+  }, [navigate])
+
   const [searching, setSearching] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -641,7 +300,7 @@ export function ChatsTab({
   // live drafts → "Draft: …" previews in the list (zustand external store)
   const allDrafts = useStore(pulseDraftsStore, (s) => s.drafts)
 
-  const rows = useMemo(() => {
+  const rows = useMemo<Array<{ conv: ConversationSummary; props: ConversationRowData }>>(() => {
     // R24-a: Note-to-Self chats render via their dedicated card below —
     // never as a "DM with myself" row in the regular list.
     return (conversations.data ?? []).filter((conv) => !conv.isSelf).map((conv) => {
@@ -708,8 +367,6 @@ export function ChatsTab({
     () => archivedRows.reduce((sum, { conv }) => sum + conv.unreadCount, 0),
     [archivedRows],
   )
-  /** archived-chats drawer (WhatsApp-style) */
-  const [archivedOpen, setArchivedOpen] = useState(false)
 
   /** Freeze "where was I" from the list summary AT TAP TIME (pre-read watermark). */
   const handlePress = useCallback(
@@ -812,7 +469,7 @@ export function ChatsTab({
     },
   })
 
-  /** per-user notification mute — '8h' | '1w' | 'always' | null */
+  /** per-user notification mute — '8h' | '1w' | 'always' | null (PATCH /mute) */
   const toggleMute = useMutation({
     mutationFn: async ({ conv, until }: { conv: ConversationSummary; until: '8h' | '1w' | 'always' | null }) => {
       return apiJson<{ ok: boolean; mutedUntil: string | null }>(
@@ -823,6 +480,25 @@ export function ChatsTab({
           body: JSON.stringify({ userId: me.id, until }),
         },
       )
+    },
+    // optimistic — the BellOff chip flips before the round-trip lands
+    onMutate: async ({ conv, until }) => {
+      await queryClient.cancelQueries({ queryKey: ['conversations', me.id] })
+      const previous = queryClient.getQueryData<ConversationSummary[]>(['conversations', me.id])
+      if (previous) {
+        const offsetsMs: Record<'8h' | '1w' | 'always', number> = {
+          '8h': 8 * 60 * 60 * 1000,
+          '1w': 7 * 24 * 60 * 60 * 1000,
+          // mirror of the route's 'always' preset (+50y)
+          always: 50 * 365 * 24 * 60 * 60 * 1000,
+        }
+        const mutedUntil = until === null ? null : new Date(Date.now() + offsetsMs[until]).toISOString()
+        queryClient.setQueryData<ConversationSummary[]>(
+          ['conversations', me.id],
+          previous.map((c) => (c.id === conv.id ? { ...c, mutedUntil } : c)),
+        )
+      }
+      return { previous }
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
@@ -835,8 +511,14 @@ export function ChatsTab({
       )
       setSheetConv(null)
     },
-    onError: () => {
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<ConversationSummary[]>(['conversations', me.id], context.previous)
+      }
       toast.error('Could not update the mute')
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
     },
   })
 
@@ -869,8 +551,6 @@ export function ChatsTab({
       haptic(10)
       toast.success(data.archived ? 'Chat archived' : 'Chat unarchived')
       setSheetConv(null)
-      // unarchive → the chat went back to the inbox; leave the archived drawer
-      if (!data.archived) setArchivedOpen(false)
     },
     onError: (_error, _vars, context) => {
       if (context?.previous) {
@@ -883,12 +563,60 @@ export function ChatsTab({
     },
   })
 
-  const openSheetFor = useCallback((conv: ConversationSummary) => setSheetConv(conv), [])
+  /**
+   * Clear chat — soft-delete MY OWN messages only (DELETE /api/messages/[id]
+   * is sender-gated server-side, so other people's messages honestly stay).
+   * Runs sequentially through the room's full real history.
+   */
+  const clearChat = useMutation({
+    mutationFn: async (conv: ConversationSummary) => {
+      const history = await fetchFullHistory(conv.id)
+      const mine = history.filter((m) => m.senderId === me.id && m.deletedAt === null)
+      let cleared = 0
+      for (const message of mine) {
+        try {
+          await apiJson(`/api/messages/${encodeURIComponent(message.id)}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ requesterId: me.id }),
+          })
+          cleared += 1
+        } catch {
+          // keep going — clear as many of my own messages as the server allows
+        }
+      }
+      return { cleared, total: mine.length }
+    },
+    onSuccess: ({ cleared }) => {
+      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+      if (cleared === 0) {
+        toast.info('Nothing to clear — none of your messages are left in this chat.')
+      } else {
+        toast.success(`Cleared ${cleared} ${cleared === 1 ? 'message' : 'messages'}`, {
+          description: 'Your messages were deleted for everyone.',
+        })
+      }
+      setSheetConv(null)
+    },
+    onError: () => {
+      toast.error('Could not clear this chat')
+    },
+  })
 
-  const sheetMuted =
-    sheetConv !== null &&
-    sheetConv.mutedUntil !== null &&
-    Date.parse(sheetConv.mutedUntil) > Date.now()
+  /** Export chat — real paginated history → pulse-<room>-<date>.txt download. */
+  const exportChat = useMutation({
+    mutationFn: async (conv: ConversationSummary) => {
+      const history = await fetchFullHistory(conv.id)
+      return downloadTranscript(conv, me.id, history)
+    },
+    onSuccess: (fileName) => {
+      toast.success('Chat exported', { description: `Saved ${fileName}` })
+    },
+    onError: () => {
+      toast.error('Could not export this chat')
+    },
+  })
+
+  const openSheetFor = useCallback((conv: ConversationSummary) => setSheetConv(conv), [])
 
   // ── R24-a Signal-style chat folders + Note to Self ─────────
   const reducedMotion = useReducedMotion()
@@ -1387,30 +1115,27 @@ export function ChatsTab({
                 </span>
               )}
             </motion.button>
-            {archivedRows.length > 0 ? (
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.985 }}
-                transition={pressSpring}
-                onClick={() => {
-                  haptic(6)
-                  setArchivedOpen(true)
-                }}
-                className="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 pl-[26px] text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800"
-              >
-                <Archive className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">Archived</span>
-                {archivedUnread > 0 ? (
-                  <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
-                    {archivedUnread > 99 ? '99+' : archivedUnread}
-                  </span>
-                ) : null}
-                <span className="ml-auto flex items-center gap-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-                  {archivedRows.length}
-                  <ChevronRight className="size-3.5" aria-hidden />
+            {/* R27-e — Archived entry: real count, always reachable → #/chats/archived */}
+            <motion.button
+              type="button"
+              whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+              transition={pressSpring}
+              onClick={openArchivedPage}
+              aria-label={`Open archived chats — ${archivedRows.length}`}
+              className="glass-pill mx-2 my-1 flex h-11 w-[calc(100%-16px)] items-center gap-2.5 px-3.5 text-left outline-none"
+            >
+              <Archive className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <span className="text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">Archived</span>
+              {archivedUnread > 0 ? (
+                <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+                  {archivedUnread > 99 ? '99+' : archivedUnread}
                 </span>
-              </motion.button>
-            ) : null}
+              ) : null}
+              <span className="ml-auto flex items-center gap-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                {archivedRows.length === 1 ? '1 chat' : `${archivedRows.length} chats`}
+                <ChevronRight className="size-3.5" aria-hidden />
+              </span>
+            </motion.button>
             {/* folder switch springs the whole list block (R24-a) */}
             <motion.div
               key={activeFolderId ?? 'all'}
@@ -1451,141 +1176,49 @@ export function ChatsTab({
         )}
       </div>
 
-      {/* long-press action sheet — pin / archive / mute */}
-      <Drawer open={sheetConv !== null} onOpenChange={(open) => !open && setSheetConv(null)}>
-        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
-          <DrawerTitle className="sr-only">Conversation options</DrawerTitle>
-          <DrawerDescription className="sr-only">Pin, archive or mute this chat</DrawerDescription>
-          {sheetConv ? (
-            <div className="pb-2">
-              <p className="px-2 pb-2 pt-1 text-center text-xs font-medium text-zinc-400 dark:text-zinc-500">
-                {conversationDisplayName(sheetConv, me.id)}
-              </p>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={togglePin.isPending}
-                onClick={() => togglePin.mutate(sheetConv)}
-                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-sm font-semibold text-zinc-800 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              >
-                {sheetConv.pinnedAt ? (
-                  <>
-                    <PinOff className="size-5 text-amber-500" aria-hidden />
-                    Unpin from top
-                  </>
-                ) : (
-                  <>
-                    <Pin className="size-5 text-emerald-500" aria-hidden />
-                    Pin to top
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={toggleArchive.isPending}
-                onClick={() => toggleArchive.mutate({ conv: sheetConv, archived: sheetConv.archivedAt === null })}
-                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-sm font-semibold text-zinc-800 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              >
-                {sheetConv.archivedAt !== null ? (
-                  <>
-                    <ArchiveRestore className="size-5 text-amber-500" aria-hidden />
-                    Unarchive chat
-                  </>
-                ) : (
-                  <>
-                    <Archive className="size-5 text-zinc-500 dark:text-zinc-400" aria-hidden />
-                    Archive chat
-                  </>
-                )}
-              </button>
-              {sheetMuted ? (
-                <>
-                  <p className="flex items-center gap-1.5 px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                    <BellOff className="size-3" aria-hidden />
-                    Muted until {formatListStamp(sheetConv.mutedUntil as string)}
-                  </p>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={toggleMute.isPending}
-                    onClick={() => toggleMute.mutate({ conv: sheetConv, until: null })}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-sm font-semibold text-zinc-800 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                  >
-                    <VolumeX className="size-5 text-emerald-500" aria-hidden />
-                    Unmute notifications
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                    Mute notifications
-                  </p>
-                  <div className="flex gap-1.5 px-1 pb-1">
-                    {([
-                      { until: '8h', label: '8 hours' },
-                      { until: '1w', label: '1 week' },
-                      { until: 'always', label: 'Always' },
-                    ] as const).map((preset) => (
-                      <button
-                        key={preset.until}
-                        type="button"
-                        role="menuitem"
-                        disabled={toggleMute.isPending}
-                        onClick={() => toggleMute.mutate({ conv: sheetConv, until: preset.until })}
-                        className="h-10 flex-1 rounded-xl bg-zinc-100 text-[13px] font-semibold text-zinc-700 outline-none transition-colors hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-emerald-500/15 dark:hover:text-emerald-400"
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => setSheetConv(null)}
-                className="flex w-full items-center justify-center rounded-2xl px-3 py-3 text-left text-sm font-medium text-zinc-500 outline-none transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : null}
-        </DrawerContent>
-      </Drawer>
+      {/* long-press glass option menu — pin / archive / mute strip / export / clear */}
+      <ChatOptionsSheet
+        conv={sheetConv}
+        me={me}
+        pinPending={togglePin.isPending}
+        archivePending={toggleArchive.isPending}
+        mutePending={toggleMute.isPending}
+        clearPending={clearChat.isPending}
+        exportPending={exportChat.isPending}
+        onPin={() => {
+          if (sheetConv) togglePin.mutate(sheetConv)
+        }}
+        onArchive={() => {
+          if (sheetConv) toggleArchive.mutate({ conv: sheetConv, archived: sheetConv.archivedAt === null })
+        }}
+        onMute={(until) => {
+          if (sheetConv) toggleMute.mutate({ conv: sheetConv, until })
+        }}
+        onUnmute={() => {
+          if (sheetConv) toggleMute.mutate({ conv: sheetConv, until: null })
+        }}
+        onExport={() => {
+          if (sheetConv) exportChat.mutate(sheetConv)
+        }}
+        onClear={() => {
+          if (sheetConv) clearChat.mutate(sheetConv)
+        }}
+        onClose={() => setSheetConv(null)}
+      />
 
-      {/* archived chats drawer — WhatsApp-style inbox */}
-      <Drawer open={archivedOpen} onOpenChange={(open) => !open && setArchivedOpen(false)}>
-        <DrawerContent className="mx-auto flex max-h-[82dvh] max-w-[420px] flex-col rounded-t-3xl bg-white px-1.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 dark:bg-zinc-900">
-          <DrawerDescription className="sr-only">Your archived conversations</DrawerDescription>
-          <DrawerTitle className="flex items-center gap-2 px-4 pb-1.5 pt-2 text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
-            <Archive className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
-            Archived
-            <span className="ml-auto text-xs font-medium text-zinc-400 dark:text-zinc-500">
-              {archivedRows.length === 1 ? '1 chat' : `${archivedRows.length} chats`}
-            </span>
-          </DrawerTitle>
-          <p className="px-4 pb-1 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-            Muted here — a new message moves a chat back to your inbox.
-          </p>
-          <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {archivedRows.map(({ conv, props }, i) => (
-              <ConversationRow
-                key={props.id}
-                {...props}
-                entranceIndex={entranceOn && archivedOpen ? i : null}
-                onPress={() => {
-                  setArchivedOpen(false)
-                  handlePress(conv)
-                }}
-                onLongPress={() => openSheetFor(conv)}
-                onPin={() => togglePin.mutate(conv)}
-                onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
-              />
-            ))}
-          </div>
-        </DrawerContent>
-      </Drawer>
+      {/* #/chats/archived — real hash-routed glass sub-page */}
+      <ChatsArchivedPage
+        open={archivedPageOpen}
+        me={me}
+        rows={archivedRows}
+        loading={conversations.isPending}
+        entrance={entranceOn}
+        onBack={() => back('/')}
+        onPress={handlePress}
+        onLongPress={openSheetFor}
+        onPin={(conv) => togglePin.mutate(conv)}
+        onArchive={(conv) => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
+      />
 
       {/* R24-a chat folders manager sheet */}
       <FoldersSheet

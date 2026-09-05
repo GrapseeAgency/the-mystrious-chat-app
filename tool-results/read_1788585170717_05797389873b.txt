@@ -1,0 +1,1655 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse Chat — Chats tab: conversation list, search, empty state.
+     3→// ─────────────────────────────────────────────────────────────
+     4→'use client'
+     5→
+     6→import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+     7→import Image from 'next/image'
+     8→import { AnimatePresence, motion, useReducedMotion, type PanInfo } from 'framer-motion'
+     9→import { useStore } from 'zustand'
+    10→import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+    11→import { Archive, ArchiveRestore, ArrowRight, BellOff, ChevronRight, FolderPlus, LoaderCircle, MoreVertical, PencilLine, Pin, PinOff, Plus, Search, SquarePen, Users, VolumeX, X } from 'lucide-react'
+    12→import { toast } from 'sonner'
+    13→import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
+    14→import { usePulseRealtime } from '@/hooks/use-pulse-socket'
+    15→import {
+    16→  apiJson,
+    17→  conversationDisplayName,
+    18→  conversationPreview,
+    19→  conversationPreviewPrefix,
+    20→  formatListStamp,
+    21→  otherMemberOf,
+    22→} from '@/lib/pulse-utils'
+    23→import { cn } from '@/lib/utils'
+    24→import { ease, pressSpring, pressTap, spring, stagger } from '@/lib/motion'
+    25→import { haptic } from '@/lib/pulse-settings'
+    26→import type { ChatsListFilter } from '@/lib/pulse-settings'
+    27→import { pulseSettingsStore } from '@/lib/pulse-settings'
+    28→import { pulseDraftsStore } from '@/lib/pulse-drafts'
+    29→import { Button } from '@/components/ui/button'
+    30→import { Input } from '@/components/ui/input'
+    31→import { Skeleton } from '@/components/ui/skeleton'
+    32→import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
+    33→import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
+    34→import { ThemeToggleButton } from '@/components/chat/theme-toggle'
+    35→import {
+    36→  StoriesSheet,
+    37→  storiesQueryKey,
+    38→} from '@/components/chat/stories-sheet'
+    39→import type { StoryGroup, StoriesResponse } from '@/components/chat/stories-sheet'
+    40→import { StoryComposerSheet } from '@/components/chat/story-composer-sheet'
+    41→import { FoldersSheet } from '@/components/chat/folders-sheet'
+    42→
+    43→interface ConversationsResponse {
+    44→  conversations: ConversationSummary[]
+    45→}
+    46→
+    47→interface SearchResponse {
+    48→  messages: SearchResultMessage[]
+    49→  total: number
+    50→}
+    51→
+    52→interface ConversationRowProps {
+    53→  id: string
+    54→  isGroup: boolean
+    55→  name: string
+    56→  time: string
+    57→  preview: string
+    58→  previewPrefix: string
+    59→  previewDeleted: boolean
+    60→  /** unsent composer draft persisted for this conversation (null = none) */
+    61→  draft: string | null
+    62→  unreadCount: number
+    63→  // avatar inputs
+    64→  dmName: string | null
+    65→  dmColor: string
+    66→  groupTitle: string
+    67→  online: boolean
+    68→  pinned: boolean
+    69→  /** viewer muted this conversation (watermark in the future) */
+    70→  muted: boolean
+    71→  /** someone is typing in this conversation right now */
+    72→  typing: boolean
+    73→  /** row lives in the archived drawer (swipe chip flips to Unarchive) */
+    74→  archived: boolean
+    75→  /** stagger slot for the initial-mount entrance (null = animate nothing) */
+    76→  entranceIndex: number | null
+    77→  onPress: () => void
+    78→  onLongPress: () => void
+    79→  /** existing pin/unpin handler — surfaced as a swipe-left chip */
+    80→  onPin: () => void
+    81→  /** existing archive/unarchive handler — surfaced as a swipe-left chip */
+    82→  onArchive: () => void
+    83→}
+    84→
+    85→const LONG_PRESS_MS = 450
+    86→
+    87→/** Full reveal width of the swipe action tray (2 glass chips). */
+    88→const SWIPE_REVEAL_PX = 112
+    89→/** Drag distance that snaps the tray open (one chip width). */
+    90→const SWIPE_OPEN_THRESHOLD_PX = 56
+    91→
+    92→/** Pulsing emerald presence halo behind online avatars (spring.gentle loop). */
+    93→function PresenceGlow({ reduced }: { reduced: boolean }) {
+    94→  if (reduced) {
+    95→    return <span aria-hidden className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/50" />
+    96→  }
+    97→  return (
+    98→    <motion.span
+    99→      aria-hidden
+   100→      initial={{ scale: 1, opacity: 0.65 }}
+   101→      animate={{ scale: 1.14, opacity: 0.18 }}
+   102→      transition={{ ...spring.gentle, repeat: Infinity, repeatType: 'reverse' }}
+   103→      className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.35)]"
+   104→    />
+   105→  )
+   106→}
+   107→
+   108→const ConversationRow = memo(function ConversationRow({
+   109→  id,
+   110→  isGroup,
+   111→  name,
+   112→  time,
+   113→  preview,
+   114→  previewPrefix,
+   115→  previewDeleted,
+   116→  draft,
+   117→  unreadCount,
+   118→  dmName,
+   119→  dmColor,
+   120→  groupTitle,
+   121→  online,
+   122→  pinned,
+   123→  muted,
+   124→  typing,
+   125→  archived,
+   126→  entranceIndex,
+   127→  onPress,
+   128→  onLongPress,
+   129→  onPin,
+   130→  onArchive,
+   131→}: ConversationRowProps) {
+   132→  const hasUnread = unreadCount > 0
+   133→  const reducedMotion = useReducedMotion()
+   134→  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   135→  const longPressFiredRef = useRef(false)
+   136→  /** true between dragStart and the click that follows release — swallows the click */
+   137→  const draggedRef = useRef(false)
+   138→  const [swipeOpen, setSwipeOpen] = useState(false)
+   139→  const entrance = entranceIndex !== null && !reducedMotion
+   140→
+   141→  const clearLongPress = useCallback(() => {
+   142→    if (longPressRef.current !== null) {
+   143→      clearTimeout(longPressRef.current)
+   144→      longPressRef.current = null
+   145→    }
+   146→  }, [])
+   147→
+   148→  const startLongPress = useCallback(() => {
+   149→    draggedRef.current = false
+   150→    clearLongPress()
+   151→    longPressFiredRef.current = false
+   152→    longPressRef.current = setTimeout(() => {
+   153→      longPressFiredRef.current = true
+   154→      longPressRef.current = null
+   155→      haptic(15)
+   156→      onLongPress()
+   157→    }, LONG_PRESS_MS)
+   158→  }, [clearLongPress, onLongPress])
+   159→
+   160→  const handleClick = useCallback(() => {
+   161→    if (draggedRef.current) {
+   162→      draggedRef.current = false
+   163→      return
+   164→    }
+   165→    if (swipeOpen) {
+   166→      setSwipeOpen(false)
+   167→      return
+   168→    }
+   169→    if (!longPressFiredRef.current) onPress()
+   170→    longPressFiredRef.current = false
+   171→  }, [onPress, swipeOpen])
+   172→
+   173→  const handleDragStart = useCallback(() => {
+   174→    draggedRef.current = true
+   175→    clearLongPress()
+   176→  }, [clearLongPress])
+   177→
+   178→  const handleDragEnd = useCallback(
+   179→    (_event: unknown, info: PanInfo) => {
+   180→      const from = swipeOpen ? -SWIPE_REVEAL_PX : 0
+   181→      setSwipeOpen(from + info.offset.x <= -SWIPE_OPEN_THRESHOLD_PX)
+   182→    },
+   183→    [swipeOpen],
+   184→  )
+   185→
+   186→  return (
+   187→    <motion.div
+   188→      initial={entrance ? { opacity: 0, y: 14 } : false}
+   189→      animate={{ opacity: 1, y: 0 }}
+   190→      transition={{
+   191→        duration: 0.32,
+   192→        ease: ease.out,
+   193→        delay: entrance ? stagger(entranceIndex ?? 0, 0.028, 12) : 0,
+   194→      }}
+   195→      className="group relative overflow-hidden px-2"
+   196→    >
+   197→      <div className="relative">
+   198→        {/* swipe-left glass action chips — the same pin/archive handlers the option sheet uses */}
+   199→        <div className="absolute inset-y-1 right-2 z-0 flex items-center gap-1.5 pr-1" inert={!swipeOpen}>
+   200→          <motion.button
+   201→            type="button"
+   202→            tabIndex={swipeOpen ? 0 : -1}
+   203→            aria-hidden={!swipeOpen}
+   204→            whileTap={reducedMotion ? undefined : pressTap}
+   205→            transition={pressSpring}
+   206→            onClick={() => {
+   207→              setSwipeOpen(false)
+   208→              onPin()
+   209→            }}
+   210→            aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`}
+   211→            className="flex size-12 flex-col items-center justify-center gap-0.5 rounded-2xl bg-white/70 shadow-sm outline-none ring-1 ring-white/10 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10"
+   212→          >
+   213→            {pinned ? (
+   214→              <PinOff className="size-[18px] text-amber-500" aria-hidden />
+   215→            ) : (
+   216→              <Pin className="size-[18px] text-emerald-600 dark:text-emerald-400" aria-hidden />
+   217→            )}
+   218→            <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400">
+   219→              {pinned ? 'Unpin' : 'Pin'}
+   220→            </span>
+   221→          </motion.button>
+   222→          <motion.button
+   223→            type="button"
+   224→            tabIndex={swipeOpen ? 0 : -1}
+   225→            aria-hidden={!swipeOpen}
+   226→            whileTap={reducedMotion ? undefined : pressTap}
+   227→            transition={pressSpring}
+   228→            onClick={() => {
+   229→              setSwipeOpen(false)
+   230→              onArchive()
+   231→            }}
+   232→            aria-label={archived ? `Unarchive ${name}` : `Archive ${name}`}
+   233→            className="flex size-12 flex-col items-center justify-center gap-0.5 rounded-2xl bg-white/70 shadow-sm outline-none ring-1 ring-white/10 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10"
+   234→          >
+   235→            {archived ? (
+   236→              <ArchiveRestore className="size-[18px] text-amber-500" aria-hidden />
+   237→            ) : (
+   238→              <Archive className="size-[18px] text-zinc-500 dark:text-zinc-400" aria-hidden />
+   239→            )}
+   240→            <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400">
+   241→              {archived ? 'Unarchive' : 'Archive'}
+   242→            </span>
+   243→          </motion.button>
+   244→        </div>
+   245→
+   246→        {/* swipeable row body — x-drag with direction lock so vertical scroll never fights */}
+   247→        <motion.div
+   248→          drag="x"
+   249→          dragDirectionLock
+   250→          dragConstraints={{ left: -SWIPE_REVEAL_PX, right: 0 }}
+   251→          dragElastic={0.05}
+   252→          dragMomentum={false}
+   253→          onDragStart={handleDragStart}
+   254→          onDragEnd={handleDragEnd}
+   255→          animate={{ x: swipeOpen ? -SWIPE_REVEAL_PX : 0 }}
+   256→          transition={spring.snappy}
+   257→          whileTap={reducedMotion ? undefined : { scale: 0.975 }}
+   258→          style={{ willChange: 'transform' }}
+   259→          className="relative z-10"
+   260→        >
+   261→          <button
+   262→            type="button"
+   263→            onClick={handleClick}
+   264→            onPointerDown={startLongPress}
+   265→            onPointerUp={clearLongPress}
+   266→            onPointerLeave={clearLongPress}
+   267→            onContextMenu={(e) => e.preventDefault()}
+   268→            className="relative flex w-full touch-manipulation items-center gap-3 overflow-hidden rounded-2xl bg-white px-2 py-2.5 text-left outline-none dark:bg-zinc-900"
+   269→          >
+   270→            {pinned ? (
+   271→              <span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl bg-emerald-500/[0.045] dark:bg-emerald-500/[0.06]" />
+   272→            ) : null}
+   273→            <span
+   274→              aria-hidden
+   275→              className="pointer-events-none absolute inset-0 rounded-2xl bg-zinc-900/[0.04] opacity-0 transition-opacity duration-100 group-active:opacity-100 dark:bg-white/5"
+   276→            />
+   277→            <span className="relative shrink-0">
+   278→              {!isGroup && online ? <PresenceGlow reduced={reducedMotion === true} /> : null}
+   279→              {isGroup ? (
+   280→                <GroupAvatar title={groupTitle} id={id} size={48} />
+   281→              ) : (
+   282→                <UserAvatar name={dmName ?? name} color={dmColor} size={48} showPresence online={online} />
+   283→              )}
+   284→            </span>
+   285→
+   286→        <div className="min-w-0 flex-1">
+   287→          <div className="flex items-baseline justify-between gap-2">
+   288→            <span className="flex min-w-0 items-center gap-1">
+   289→              {pinned ? (
+   290→                <Pin className="size-3 shrink-0 fill-emerald-500 text-emerald-500" aria-label="Pinned" />
+   291→              ) : null}
+   292→              <span
+   293→                className={cn(
+   294→                  'truncate text-[15px] tracking-tight',
+   295→                  hasUnread
+   296→                    ? 'font-semibold text-zinc-900 dark:text-zinc-50'
+   297→                    : 'font-medium text-zinc-900 dark:text-zinc-100',
+   298→                )}
+   299→              >
+   300→                {name}
+   301→              </span>
+   302→            </span>
+   303→            <motion.span
+   304→              key={time}
+   305→              initial={reducedMotion ? false : { opacity: 0, scale: 0.7 }}
+   306→              animate={{ opacity: 1, scale: 1 }}
+   307→              transition={spring.bouncy}
+   308→              className={cn(
+   309→                'shrink-0 text-[11px]',
+   310→                hasUnread
+   311→                  ? 'font-semibold text-emerald-600 dark:text-emerald-400'
+   312→                  : 'text-zinc-400 dark:text-zinc-500',
+   313→              )}
+   314→            >
+   315→              {time}
+   316→            </motion.span>
+   317→          </div>
+   318→          <div className="mt-0.5 flex items-center justify-between gap-2">
+   319→            {typing ? (
+   320→              <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium italic text-emerald-600 dark:text-emerald-400">
+   321→                <span className="inline-flex items-center gap-0.5" aria-hidden>
+   322→                  {[0, 1, 2].map((i) => (
+   323→                    <motion.span
+   324→                      key={i}
+   325→                      animate={{ y: [0, -2.5, 0], opacity: [0.45, 1, 0.45] }}
+   326→                      transition={{ repeat: Infinity, duration: 0.9, delay: i * 0.15, ease: 'easeInOut' }}
+   327→                      className="size-[3.5px] rounded-full bg-emerald-500"
+   328→                    />
+   329→                  ))}
+   330→                </span>
+   331→                typing…
+   332→              </p>
+   333→            ) : draft ? (
+   334→              <p className="flex min-w-0 items-center gap-1 truncate text-[13px]">
+   335→                <PencilLine className="size-3 shrink-0 text-amber-500" aria-hidden />
+   336→                <span className="shrink-0 font-semibold text-amber-600 dark:text-amber-400">Draft:</span>
+   337→                <span className="truncate italic text-zinc-500 dark:text-zinc-400">{draft}</span>
+   338→              </p>
+   339→            ) : (
+   340→              <p
+   341→                className={cn(
+   342→                  'truncate text-[13px]',
+   343→                  hasUnread
+   344→                    ? 'font-medium text-zinc-600 dark:text-zinc-300'
+   345→                    : 'text-zinc-500 dark:text-zinc-400',
+   346→                )}
+   347→              >
+   348→                {previewPrefix ? <span className="text-zinc-400 dark:text-zinc-500">{previewPrefix}</span> : null}
+   349→                <span className={previewDeleted ? 'italic' : undefined}>{preview}</span>
+   350→              </p>
+   351→            )}
+   352→            {hasUnread && !muted ? (
+   353→              <motion.span
+   354→                key={unreadCount}
+   355→                initial={reducedMotion ? false : { scale: 0 }}
+   356→                animate={{ scale: 1 }}
+   357→                transition={spring.bouncy}
+   358→                className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
+   359→              >
+   360→                {unreadCount > 99 ? '99+' : unreadCount}
+   361→              </motion.span>
+   362→            ) : muted ? (
+   363→              <motion.span
+   364→                key={unreadCount}
+   365→                initial={reducedMotion ? false : { scale: 0.6, opacity: 0 }}
+   366→                animate={{ scale: 1, opacity: 1 }}
+   367→                transition={spring.bouncy}
+   368→                aria-label={hasUnread ? `Muted — ${unreadCount} unread` : 'Muted'}
+   369→                className={cn(
+   370→                  'flex h-[18px] shrink-0 items-center gap-1 rounded-full px-1.5 text-[10px] font-bold ring-2 ring-white dark:ring-zinc-900',
+   371→                  hasUnread
+   372→                    ? 'bg-zinc-300 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300'
+   373→                    : 'bg-transparent text-zinc-400 ring-0 dark:text-zinc-500',
+   374→                )}
+   375→              >
+   376→                <BellOff className="size-3.5" aria-hidden />
+   377→                {hasUnread ? (unreadCount > 99 ? '99+' : unreadCount) : null}
+   378→              </motion.span>
+   379→            ) : null}
+   380→          </div>
+   381→        </div>
+   382→          </button>
+   383→          {/* overflow options — kept for accessibility (screen readers + keyboard) */}
+   384→          <button
+   385→            type="button"
+   386→            aria-label={`Options for ${name}`}
+   387→            onClick={(e) => {
+   388→              e.stopPropagation()
+   389→              onLongPress()
+   390→            }}
+   391→            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-zinc-400 opacity-0 shadow-sm outline-none backdrop-blur transition-opacity hover:text-zinc-600 focus-visible:opacity-100 group-hover:opacity-100 dark:bg-zinc-800/90 dark:hover:text-zinc-200"
+   392→          >
+   393→            <MoreVertical className="size-4" aria-hidden />
+   394→          </button>
+   395→          <div aria-hidden className="ml-[64px] h-px bg-zinc-100 dark:bg-zinc-800" />
+   396→        </motion.div>
+   397→      </div>
+   398→    </motion.div>
+   399→  )
+   400→})
+   401→
+   402→/**
+   403→ * Snippet with the first match highlighted — clips a ≤64-char window
+   404→ * around the hit so long messages stay one tidy line.
+   405→ */
+   406→function SearchSnippet({ content, query }: { content: string; query: string }) {
+   407→  const lower = content.toLowerCase()
+   408→  const q = query.toLowerCase()
+   409→  const idx = q.length > 0 ? lower.indexOf(q) : -1
+   410→  let from = 0
+   411→  let clippedHead = false
+   412→  if (idx > 28) {
+   413→    from = idx - 24
+   414→    clippedHead = true
+   415→  }
+   416→  const end = Math.min(content.length, idx + q.length + 28)
+   417→  const clippedTail = end < content.length
+   418→  const body = content.slice(from, end)
+   419→  const localIdx = idx - from
+   420→  return (
+   421→    <p className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">
+   422→      {clippedHead ? <span className="text-zinc-300 dark:text-zinc-600">…</span> : null}
+   423→      {idx >= 0 ? (
+   424→        <>
+   425→          {body.slice(0, localIdx)}
+   426→          <mark className="rounded bg-emerald-500/20 px-0.5 font-semibold text-emerald-700 dark:bg-emerald-500/25 dark:text-emerald-300">
+   427→            {body.slice(localIdx, localIdx + q.length)}
+   428→          </mark>
+   429→          {body.slice(localIdx + q.length)}
+   430→        </>
+   431→      ) : (
+   432→        body
+   433→      )}
+   434→      {clippedTail ? <span className="text-zinc-300 dark:text-zinc-600">…</span> : null}
+   435→    </p>
+   436→  )
+   437→}
+   438→
+   439→/** One server-side message hit — sender avatar, chat title, highlighted snippet. */
+   440→const SearchMessageRow = memo(function SearchMessageRow({
+   441→  hit,
+   442→  query,
+   443→  onPress,
+   444→}: {
+   445→  hit: SearchResultMessage
+   446→  query: string
+   447→  onPress: (hit: SearchResultMessage) => void
+   448→}) {
+   449→  const deleted = hit.deletedAt !== null
+   450→  return (
+   451→    <motion.button
+   452→      type="button"
+   453→      initial={{ opacity: 0, y: 4 }}
+   454→      animate={{ opacity: 1, y: 0 }}
+   455→      transition={{ duration: 0.16 }}
+   456→      whileTap={{ scale: 0.975 }}
+   457→      onClick={() => onPress(hit)}
+   458→      className="flex w-full touch-manipulation items-center gap-3 rounded-2xl px-2 py-2.5 text-left outline-none transition-colors active:bg-zinc-100 dark:active:bg-zinc-800"
+   459→    >
+   460→      <span className="relative shrink-0">
+   461→        <UserAvatar name={hit.sender.name} color={hit.sender.color} size={40} />
+   462→        {hit.isGroup ? (
+   463→          <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-zinc-200 ring-2 ring-white dark:bg-zinc-700 dark:ring-zinc-900">
+   464→            <Users className="size-2.5 text-zinc-500 dark:text-zinc-300" aria-hidden />
+   465→          </span>
+   466→        ) : null}
+   467→      </span>
+   468→      <span className="min-w-0 flex-1">
+   469→        <span className="flex items-baseline justify-between gap-2">
+   470→          <span className="min-w-0 truncate text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">
+   471→            {hit.conversationName}
+   472→          </span>
+   473→          <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">
+   474→            {formatListStamp(hit.createdAt)}
+   475→          </span>
+   476→        </span>
+   477→        {deleted ? (
+   478→          <p className="truncate text-[13px] italic text-zinc-400 dark:text-zinc-500">Deleted message</p>
+   479→        ) : hit.imagePath && hit.content.length === 0 ? (
+   480→          <p className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">📷 Photo</p>
+   481→        ) : (
+   482→          <SearchSnippet content={hit.content} query={query} />
+   483→        )}
+   484→      </span>
+   485→    </motion.button>
+   486→  )
+   487→})
+   488→
+   489→function RowSkeleton() {
+   490→  return (
+   491→    <div className="flex items-center gap-3 px-4 py-3">
+   492→      <Skeleton className="size-12 rounded-full" />
+   493→      <div className="flex-1 space-y-2">
+   494→        <Skeleton className="h-3.5 w-1/3" />
+   495→        <Skeleton className="h-3 w-2/3" />
+   496→      </div>
+   497→    </div>
+   498→  )
+   499→}
+   500→
+   501→/** Tiny uppercase section header with an emerald count chip. */
+   502→function SearchSection({ label, count }: { label: string; count: number }) {
+   503→  return (
+   504→    <div className="flex items-center gap-2 px-3 pb-0.5 pt-3">
+   505→      <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+   506→        {label}
+   507→      </span>
+   508→      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500/15 px-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+   509→        {count > 99 ? '99+' : count}
+   510→      </span>
+   511→      <span aria-hidden className="h-px flex-1 bg-zinc-100 dark:bg-zinc-800" />
+   512→    </div>
+   513→  )
+   514→}
+   515→
+   516→// ── 24h status stories ──────────────────────────────────────
+   517→
+   518→const STORY_RING_SIZE = 56
+   519→
+   520→/**
+   521→ * One avatar cell in the Status row. `ring`: 'unseen' → animated
+   522→ * emerald→teal conic ring · 'seen' → static zinc ring · 'none' → plain
+   523→ * (used by "My status" when no story is live; renders the "+" badge).
+   524→ */
+   525→const StoryRingCell = memo(function StoryRingCell({
+   526→  name,
+   527→  color,
+   528→  ring,
+   529→  plus = false,
+   530→  label,
+   531→  onPress,
+   532→  index,
+   533→}: {
+   534→  name: string
+   535→  color: string
+   536→  ring: 'unseen' | 'seen' | 'none'
+   537→  plus?: boolean
+   538→  label: string
+   539→  onPress: () => void
+   540→  index: number
+   541→}) {
+   542→  const reducedMotion = useReducedMotion()
+   543→  const inner = STORY_RING_SIZE - 5
+   544→  return (
+   545→    <motion.button
+   546→      type="button"
+   547→      initial={reducedMotion ? false : 'hidden'}
+   548→      animate="shown"
+   549→      whileTap={reducedMotion ? undefined : 'tap'}
+   550→      variants={{
+   551→        hidden: {
+   552→          opacity: 0,
+   553→          y: 10,
+   554→          transition: { duration: 0.28, ease: ease.out, delay: stagger(index, 0.03, 10) },
+   555→        },
+   556→        shown: { opacity: 1, y: 0, scale: 1, transition: spring.bouncy },
+   557→        tap: { opacity: 1, y: 0, scale: 0.92, transition: spring.bouncy },
+   558→      }}
+   559→      onClick={onPress}
+   560→      aria-label={ring === 'unseen' ? `${label} — new status` : label}
+   561→      className="flex w-16 shrink-0 snap-start flex-col items-center gap-1 rounded-2xl pb-1 pt-0.5 outline-none"
+   562→    >
+   563→      <span className="relative block" style={{ width: STORY_RING_SIZE, height: STORY_RING_SIZE }}>
+   564→        {ring === 'unseen' ? (
+   565→          <span
+   566→            aria-hidden
+   567→            className="pulse-story-spin absolute inset-0 rounded-full [background:conic-gradient(from_0deg,#34d399,#14b8a6,#6ee7b7,#10b981,#34d399)]"
+   568→          />
+   569→        ) : (
+   570→          <span
+   571→            aria-hidden
+   572→            className={cn(
+   573→              'absolute inset-0 rounded-full',
+   574→              ring === 'seen' ? 'bg-zinc-300 dark:bg-zinc-600' : 'bg-zinc-200 dark:bg-zinc-700',
+   575→            )}
+   576→          />
+   577→        )}
+   578→        <span className="absolute inset-[2.5px] overflow-hidden rounded-full bg-white dark:bg-zinc-900">
+   579→          <UserAvatar name={name} color={color} size={inner} />
+   580→        </span>
+   581→        {plus ? (
+   582→          <span className="absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full bg-emerald-500 text-white ring-2 ring-white dark:ring-zinc-900">
+   583→            <Plus className="size-3" strokeWidth={3} aria-hidden />
+   584→          </span>
+   585→        ) : null}
+   586→      </span>
+   587→      <span className="w-full truncate text-center text-[11px] font-medium leading-tight text-zinc-600 dark:text-zinc-400">
+   588→        {label}
+   589→      </span>
+   590→    </motion.button>
+   591→  )
+   592→})
+   593→
+   594→export function ChatsTab({
+   595→  me,
+   596→  onOpenConversation,
+   597→  onOpenContacts,
+   598→  onRequestNewChat,
+   599→  onGoProfile,
+   600→}: {
+   601→  me: AppUser
+   602→  onOpenConversation: (conversationId: string, unreadAnchorMs: number | null, jumpMessageId?: string) => void
+   603→  onOpenContacts: () => void
+   604→  onRequestNewChat: () => void
+   605→  onGoProfile: () => void
+   606→}) {
+   607→  const realtime = usePulseRealtime()
+   608→  const typersIn = realtime.typersIn
+   609→  const onlineIds = realtime.onlineIds
+   610→  const [searching, setSearching] = useState(false)
+   611→  const [searchFocused, setSearchFocused] = useState(false)
+   612→  const [searchQuery, setSearchQuery] = useState('')
+   613→  /** debounced mirror of searchQuery feeding the server message search */
+   614→  const [deferredQuery, setDeferredQuery] = useState('')
+   615→  const deferredTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   616→
+   617→  const conversations = useQuery({
+   618→    queryKey: ['conversations', me.id],
+   619→    queryFn: async (): Promise<ConversationSummary[]> => {
+   620→      const res = await apiJson<ConversationsResponse>(
+   621→        `/api/conversations?userId=${encodeURIComponent(me.id)}`,
+   622→      )
+   623→      return res.conversations
+   624→    },
+   625→    refetchInterval: 6_000,
+   626→  })
+   627→
+   628→  /**
+   629→   * Entrance stagger plays ONLY on the tab's first list render — the flag flips
+   630→   * right after the first commit that has rows, so refetches/edits never re-animate.
+   631→   * (setState is deferred off the effect body to keep the commit clean.)
+   632→   */
+   633→  const [entranceOn, setEntranceOn] = useState(true)
+   634→  useEffect(() => {
+   635→    if ((conversations.data ?? []).length > 0) {
+   636→      const t = setTimeout(() => setEntranceOn(false), 0)
+   637→      return () => clearTimeout(t)
+   638→    }
+   639→  })
+   640→
+   641→  // live drafts → "Draft: …" previews in the list (zustand external store)
+   642→  const allDrafts = useStore(pulseDraftsStore, (s) => s.drafts)
+   643→
+   644→  const rows = useMemo(() => {
+   645→    // R24-a: Note-to-Self chats render via their dedicated card below —
+   646→    // never as a "DM with myself" row in the regular list.
+   647→    return (conversations.data ?? []).filter((conv) => !conv.isSelf).map((conv) => {
+   648→      const previewInfo = conversationPreview(conv, me.id)
+   649→      const other = conv.isGroup ? null : otherMemberOf(conv, me.id)
+   650→      const groupName =
+   651→        conv.name?.trim() || conv.members.filter((m) => m.id !== me.id).map((m) => m.name).join(', ') || 'Group'
+   652→      const displayName = conversationDisplayName(conv, me.id)
+   653→      return {
+   654→        conv,
+   655→        props: {
+   656→          id: conv.id,
+   657→          isGroup: conv.isGroup,
+   658→          name: displayName,
+   659→          time: conv.lastMessage
+   660→            ? formatListStamp(conv.lastMessage.createdAt)
+   661→            : formatListStamp(conv.updatedAt),
+   662→          preview: previewInfo.text,
+   663→          previewPrefix: conversationPreviewPrefix(previewInfo, conv.isGroup),
+   664→          previewDeleted: previewInfo.deleted,
+   665→          draft: allDrafts[conv.id] ?? null,
+   666→          unreadCount: conv.unreadCount,
+   667→          dmName: other?.name ?? null,
+   668→          dmColor: other?.color ?? 'emerald',
+   669→          groupTitle: groupName,
+   670→          online: !conv.isGroup && other !== null && onlineIds.has(other.id),
+   671→          pinned: conv.pinnedAt !== null,
+   672→          muted: conv.mutedUntil !== null && Date.parse(conv.mutedUntil) > Date.now(),
+   673→          typing: typersIn(conv.id, me.id).length > 0,
+   674→          archived: conv.archivedAt !== null,
+   675→        },
+   676→      }
+   677→    })
+   678→  }, [conversations.data, me.id, onlineIds, typersIn, allDrafts])
+   679→
+   680→  const filteredRows = useMemo(() => {
+   681→    const q = searchQuery.trim().toLowerCase()
+   682→    if (!q) return rows
+   683→    return rows.filter(({ conv, props }) => {
+   684→      if (props.name.toLowerCase().includes(q)) return true
+   685→      if (props.draft?.toLowerCase().includes(q)) return true
+   686→      if (conv.lastMessage && !conv.lastMessage.deletedAt && conv.lastMessage.content.toLowerCase().includes(q)) return true
+   687→      return false
+   688→    })
+   689→  }, [rows, searchQuery])
+   690→
+   691→  /** main-list rows exclude the viewer's archived chats */
+   692→  const activeRows = useMemo(() => rows.filter(({ conv }) => conv.archivedAt === null), [rows])
+   693→  const archivedRows = useMemo(() => rows.filter(({ conv }) => conv.archivedAt !== null), [rows])
+   694→
+   695→  // Telegram-style folder filter (persisted preference)
+   696→  const listFilter = useStore(pulseSettingsStore, (s) => s.listFilter)
+   697→  const setListFilter = useStore(pulseSettingsStore, (s) => s.setListFilter)
+   698→  const unreadTotal = useMemo(
+   699→    () => activeRows.reduce((sum, { conv }) => sum + conv.unreadCount, 0),
+   700→    [activeRows],
+   701→  )
+   702→  const folderFiltered = useMemo(() => {
+   703→    if (listFilter === 'unread') return activeRows.filter(({ conv }) => conv.unreadCount > 0)
+   704→    if (listFilter === 'groups') return activeRows.filter(({ conv }) => conv.isGroup)
+   705→    return activeRows
+   706→  }, [activeRows, listFilter])
+   707→  const archivedUnread = useMemo(
+   708→    () => archivedRows.reduce((sum, { conv }) => sum + conv.unreadCount, 0),
+   709→    [archivedRows],
+   710→  )
+   711→  /** archived-chats drawer (WhatsApp-style) */
+   712→  const [archivedOpen, setArchivedOpen] = useState(false)
+   713→
+   714→  /** Freeze "where was I" from the list summary AT TAP TIME (pre-read watermark). */
+   715→  const handlePress = useCallback(
+   716→    (conv: ConversationSummary) => {
+   717→      const mine = conv.members.find((m) => m.id === me.id) as
+   718→        | (AppUser & { lastReadAt?: string })
+   719→        | undefined
+   720→      const wm = mine?.lastReadAt ? Date.parse(mine.lastReadAt) : Number.NaN
+   721→      const anchor = conv.unreadCount > 0 && !Number.isNaN(wm) ? wm : null
+   722→      onOpenConversation(conv.id, anchor)
+   723→    },
+   724→    [onOpenConversation, me.id],
+   725→  )
+   726→
+   727→  const closeSearch = useCallback(() => {
+   728→    if (deferredTimerRef.current !== null) {
+   729→      clearTimeout(deferredTimerRef.current)
+   730→      deferredTimerRef.current = null
+   731→    }
+   732→    setSearching(false)
+   733→    setSearchFocused(false)
+   734→    setSearchQuery('')
+   735→    setDeferredQuery('')
+   736→  }, [])
+   737→
+   738→  /** typing in the search field: instant local filter + 250ms-debounced server search */
+   739→  const handleSearchInput = useCallback((value: string) => {
+   740→    setSearchQuery(value)
+   741→    if (deferredTimerRef.current !== null) clearTimeout(deferredTimerRef.current)
+   742→    const v = value.trim()
+   743→    deferredTimerRef.current = setTimeout(() => {
+   744→      deferredTimerRef.current = null
+   745→      setDeferredQuery(v)
+   746→    }, 250)
+   747→  }, [])
+   748→
+   749→  const serverSearch = useQuery({
+   750→    queryKey: ['global-search', me.id, deferredQuery],
+   751→    enabled: searching && deferredQuery.length >= 2,
+   752→    staleTime: 15_000,
+   753→    queryFn: async (): Promise<SearchResponse> =>
+   754→      apiJson<SearchResponse>(
+   755→        `/api/search?userId=${encodeURIComponent(me.id)}&q=${encodeURIComponent(deferredQuery)}`,
+   756→      ),
+   757→  })
+   758→  const serverHits = searching && deferredQuery.length >= 2 ? (serverSearch.data?.messages ?? []) : []
+   759→
+   760→  // ── row long-press action sheet (pin/unpin) ───────────────
+   761→  const [sheetConv, setSheetConv] = useState<ConversationSummary | null>(null)
+   762→  const queryClient = useQueryClient()
+   763→
+   764→  // ── 24h status stories (ring row + viewer/composer sheets) ──
+   765→  const storiesQ = useQuery({
+   766→    queryKey: storiesQueryKey(me.id),
+   767→    queryFn: async (): Promise<StoriesResponse> =>
+   768→      apiJson<StoriesResponse>(`/api/stories?requesterId=${encodeURIComponent(me.id)}`),
+   769→    staleTime: 15_000,
+   770→    refetchInterval: 60_000,
+   771→  })
+   772→  const storyGroups = useMemo(() => storiesQ.data?.groups ?? [], [storiesQ.data])
+   773→  const myStoryGroup = useMemo(() => storyGroups.find((g) => g.mine) ?? null, [storyGroups])
+   774→  const otherStoryGroups = useMemo(() => storyGroups.filter((g) => !g.mine), [storyGroups])
+   775→
+   776→  /** open viewer at a specific user's first story (null = closed) */
+   777→  const [viewerStart, setViewerStart] = useState<{ userId: string; storyId: string } | null>(null)
+   778→  const [composerOpen, setComposerOpen] = useState(false)
+   779→
+   780→  const openMyStatus = useCallback(() => {
+   781→    haptic(6)
+   782→    if (myStoryGroup && myStoryGroup.stories.length > 0) {
+   783→      setViewerStart({ userId: myStoryGroup.user.id, storyId: myStoryGroup.stories[0].id })
+   784→    } else {
+   785→      setComposerOpen(true)
+   786→    }
+   787→  }, [myStoryGroup])
+   788→
+   789→  const openStoryGroup = useCallback((group: StoryGroup) => {
+   790→    haptic(6)
+   791→    setViewerStart({ userId: group.user.id, storyId: group.stories[0].id })
+   792→  }, [])
+   793→
+   794→  const togglePin = useMutation({
+   795→    mutationFn: async (conv: ConversationSummary) => {
+   796→      return apiJson<{ ok: boolean; pinned: boolean }>(
+   797→        `/api/conversations/${encodeURIComponent(conv.id)}/pin`,
+   798→        {
+   799→          method: 'PATCH',
+   800→          headers: { 'Content-Type': 'application/json' },
+   801→          body: JSON.stringify({ userId: me.id }),
+   802→        },
+   803→      )
+   804→    },
+   805→    onSuccess: (data) => {
+   806→      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   807→      toast.success(data.pinned ? 'Pinned to top' : 'Unpinned')
+   808→      setSheetConv(null)
+   809→    },
+   810→    onError: () => {
+   811→      toast.error('Could not update the pin')
+   812→    },
+   813→  })
+   814→
+   815→  /** per-user notification mute — '8h' | '1w' | 'always' | null */
+   816→  const toggleMute = useMutation({
+   817→    mutationFn: async ({ conv, until }: { conv: ConversationSummary; until: '8h' | '1w' | 'always' | null }) => {
+   818→      return apiJson<{ ok: boolean; mutedUntil: string | null }>(
+   819→        `/api/conversations/${encodeURIComponent(conv.id)}/mute`,
+   820→        {
+   821→          method: 'PATCH',
+   822→          headers: { 'Content-Type': 'application/json' },
+   823→          body: JSON.stringify({ userId: me.id, until }),
+   824→        },
+   825→      )
+   826→    },
+   827→    onSuccess: (data) => {
+   828→      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   829→      toast.success(
+   830→        data.mutedUntil === null
+   831→          ? 'Notifications unmuted'
+   832→          : data.mutedUntil !== null && Date.parse(data.mutedUntil) - Date.now() > 20 * 365 * 24 * 3600 * 1000
+   833→            ? 'Muted — always'
+   834→            : `Muted until ${formatListStamp(data.mutedUntil as string)}`,
+   835→      )
+   836→      setSheetConv(null)
+   837→    },
+   838→    onError: () => {
+   839→      toast.error('Could not update the mute')
+   840→    },
+   841→  })
+   842→
+   843→  /** archive / unarchive — optimistic so the row moves instantly */
+   844→  const toggleArchive = useMutation({
+   845→    mutationFn: async ({ conv, archived }: { conv: ConversationSummary; archived: boolean }) => {
+   846→      return apiJson<{ ok: boolean; archived: boolean }>(
+   847→        `/api/conversations/${encodeURIComponent(conv.id)}/archive`,
+   848→        {
+   849→          method: 'PATCH',
+   850→          headers: { 'Content-Type': 'application/json' },
+   851→          body: JSON.stringify({ userId: me.id, archived }),
+   852→        },
+   853→      )
+   854→    },
+   855→    onMutate: async ({ conv, archived }) => {
+   856→      await queryClient.cancelQueries({ queryKey: ['conversations', me.id] })
+   857→      const previous = queryClient.getQueryData<ConversationSummary[]>(['conversations', me.id])
+   858→      if (previous) {
+   859→        queryClient.setQueryData<ConversationSummary[]>(
+   860→          ['conversations', me.id],
+   861→          previous.map((c) =>
+   862→            c.id === conv.id ? { ...c, archivedAt: archived ? new Date().toISOString() : null } : c,
+   863→          ),
+   864→        )
+   865→      }
+   866→      return { previous }
+   867→    },
+   868→    onSuccess: (data) => {
+   869→      haptic(10)
+   870→      toast.success(data.archived ? 'Chat archived' : 'Chat unarchived')
+   871→      setSheetConv(null)
+   872→      // unarchive → the chat went back to the inbox; leave the archived drawer
+   873→      if (!data.archived) setArchivedOpen(false)
+   874→    },
+   875→    onError: (_error, _vars, context) => {
+   876→      if (context?.previous) {
+   877→        queryClient.setQueryData<ConversationSummary[]>(['conversations', me.id], context.previous)
+   878→      }
+   879→      toast.error('Could not update the archive')
+   880→    },
+   881→    onSettled: () => {
+   882→      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   883→    },
+   884→  })
+   885→
+   886→  const openSheetFor = useCallback((conv: ConversationSummary) => setSheetConv(conv), [])
+   887→
+   888→  const sheetMuted =
+   889→    sheetConv !== null &&
+   890→    sheetConv.mutedUntil !== null &&
+   891→    Date.parse(sheetConv.mutedUntil) > Date.now()
+   892→
+   893→  // ── R24-a Signal-style chat folders + Note to Self ─────────
+   894→  const reducedMotion = useReducedMotion()
+   895→  const [foldersOpen, setFoldersOpen] = useState(false)
+   896→  /** active rail folder (null = All) */
+   897→  const [activeFolderId, setActiveFolderId] = useState<string | null>(null)
+   898→
+   899→  const foldersQ = useQuery({
+   900→    queryKey: ['folders', me.id],
+   901→    queryFn: async (): Promise<FolderSummary[]> => {
+   902→      const res = await apiJson<{ folders: FolderSummary[] }>(
+   903→        `/api/folders?userId=${encodeURIComponent(me.id)}`,
+   904→      )
+   905→      return res.folders
+   906→    },
+   907→    staleTime: 10_000,
+   908→  })
+   909→  const folders = useMemo(() => foldersQ.data ?? [], [foldersQ.data])
+   910→
+   911→  // folder deleted (or lost) elsewhere → fall back to All
+   912→  useEffect(() => {
+   913→    if (activeFolderId !== null && !folders.some((f) => f.id === activeFolderId)) {
+   914→      setActiveFolderId(null)
+   915→    }
+   916→  }, [activeFolderId, folders])
+   917→
+   918→  /** per-folder rail badge: its chats present in the active (non-archived) list */
+   919→  const folderCounts = useMemo(() => {
+   920→    const activeIds = new Set(activeRows.map(({ conv }) => conv.id))
+   921→    const counts = new Map<string, number>()
+   922→    for (const folder of folders) {
+   923→      counts.set(folder.id, folder.conversationIds.reduce((n, id) => (activeIds.has(id) ? n + 1 : n), 0))
+   924→    }
+   925→    return counts
+   926→  }, [folders, activeRows])
+   927→
+   928→  /** rows of the currently active folder (rail filter on top of the Telegram filter) */
+   929→  const visibleRows = useMemo(() => {
+   930→    if (activeFolderId === null) return folderFiltered
+   931→    const ids = new Set(folders.find((f) => f.id === activeFolderId)?.conversationIds ?? [])
+   932→    return folderFiltered.filter(({ conv }) => ids.has(conv.id))
+   933→  }, [folderFiltered, activeFolderId, folders])
+   934→
+   935→  /** the viewer's private Note to Self chat (null = not created yet) */
+   936→  const selfConv = useMemo(
+   937→    () => (conversations.data ?? []).find((conv) => conv.isSelf) ?? null,
+   938→    [conversations.data],
+   939→  )
+   940→
+   941→  const createSelfChat = useMutation({
+   942→    mutationFn: async () =>
+   943→      apiJson<{ conversation: ConversationSummary }>('/api/conversations/self', {
+   944→        method: 'POST',
+   945→        headers: { 'Content-Type': 'application/json' },
+   946→        body: JSON.stringify({ userId: me.id }),
+   947→      }),
+   948→    onSuccess: (res) => {
+   949→      queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   950→      onOpenConversation(res.conversation.id, null)
+   951→    },
+   952→    onError: () => {
+   953→      toast.error('Could not open Note to Self')
+   954→    },
+   955→  })
+   956→
+   957→  const handleSelfPress = useCallback(() => {
+   958→    haptic(6)
+   959→    if (selfConv) handlePress(selfConv)
+   960→    else createSelfChat.mutate()
+   961→  }, [selfConv, handlePress, createSelfChat])
+   962→
+   963→  const data = conversations.data ?? []
+   964→
+   965→  return (
+   966→    <div className="absolute inset-0 flex flex-col bg-white dark:bg-zinc-900">
+   967→      {/* slow conic shimmer for unseen story rings — CSS, transform-only, honors reduced-motion */}
+   968→      <style>{`@keyframes pulse-story-spin{to{transform:rotate(360deg)}}.pulse-story-spin{animation:pulse-story-spin 6s linear infinite;will-change:transform}@media (prefers-reduced-motion:reduce){.pulse-story-spin{animation:none}}`}</style>
+   969→      {/* header */}
+   970→      <header className="shrink-0 border-b border-zinc-200 pt-[max(0px,env(safe-area-inset-top))] dark:border-zinc-800">
+   971→        {searching ? (
+   972→          <motion.div
+   973→            initial={{ opacity: 0, y: -8 }}
+   974→            animate={{ opacity: 1, y: 0 }}
+   975→            transition={{ duration: 0.2, ease: ease.out }}
+   976→            className="flex items-center gap-2 px-3 py-2.5"
+   977→          >
+   978→            {/* glass pill — the search icon expands into the full input */}
+   979→            <motion.div
+   980→              initial={{ opacity: 0, scale: 0.96 }}
+   981→              animate={{ opacity: 1, scale: 1 }}
+   982→              transition={{ duration: 0.2, ease: ease.out }}
+   983→              className="relative flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-full bg-zinc-100/80 px-4 ring-1 ring-zinc-200/70 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10"
+   984→            >
+   985→              <motion.span
+   986→                aria-hidden
+   987→                animate={{ opacity: searchFocused ? 1 : 0 }}
+   988→                transition={spring.soft}
+   989→                className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.25)] ring-2 ring-emerald-500/50"
+   990→              />
+   991→              <Search className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
+   992→              <motion.div
+   993→                initial={{ opacity: 0, x: -10 }}
+   994→                animate={{ opacity: 1, x: 0 }}
+   995→                transition={{ duration: 0.2, ease: ease.out }}
+   996→                className="min-w-0 flex-1"
+   997→              >
+   998→                <Input
+   999→                  autoFocus
+  1000→                  value={searchQuery}
+  1001→                  onChange={(e) => handleSearchInput(e.target.value)}
+  1002→                  onFocus={() => setSearchFocused(true)}
+  1003→                  onBlur={() => setSearchFocused(false)}
+  1004→                  placeholder="Search chats and messages…"
+  1005→                  aria-label="Search conversations"
+  1006→                  className="h-full border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+  1007→                />
+  1008→              </motion.div>
+  1009→              <AnimatePresence initial={false}>
+  1010→                {searchQuery ? (
+  1011→                  <motion.button
+  1012→                    key="clear-search"
+  1013→                    type="button"
+  1014→                    initial={{ scale: 0, opacity: 0 }}
+  1015→                    animate={{ scale: 1, opacity: 1 }}
+  1016→                    exit={{ scale: 0, opacity: 0 }}
+  1017→                    transition={spring.bouncy}
+  1018→                    onClick={() => handleSearchInput('')}
+  1019→                    aria-label="Clear search"
+  1020→                    className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-300/70 text-zinc-600 outline-none dark:bg-zinc-700 dark:text-zinc-300"
+  1021→                  >
+  1022→                    <X className="size-3.5" aria-hidden />
+  1023→                  </motion.button>
+  1024→                ) : null}
+  1025→              </AnimatePresence>
+  1026→            </motion.div>
+  1027→            <AnimatePresence initial={false} mode="popLayout">
+  1028→              <motion.span
+  1029→                key={`close-search-${searchFocused && searchQuery ? 'hot' : 'idle'}`}
+  1030→                initial={{ opacity: 0, scale: 0.6 }}
+  1031→                animate={{ opacity: 1, scale: 1 }}
+  1032→                exit={{ opacity: 0, scale: 0.6 }}
+  1033→                transition={spring.bouncy}
+  1034→              >
+  1035→                <Button
+  1036→                  variant="ghost"
+  1037→                  size="icon"
+  1038→                  aria-label="Close search"
+  1039→                  onClick={closeSearch}
+  1040→                  className={cn(
+  1041→                    'size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300',
+  1042→                    searchFocused && searchQuery && 'text-emerald-600 dark:text-emerald-400',
+  1043→                  )}
+  1044→                >
+  1045→                  <X className="size-5" aria-hidden />
+  1046→                </Button>
+  1047→              </motion.span>
+  1048→            </AnimatePresence>
+  1049→          </motion.div>
+  1050→        ) : (
+  1051→          <motion.div
+  1052→            initial={{ opacity: 0 }}
+  1053→            animate={{ opacity: 1 }}
+  1054→            transition={{ duration: 0.2, ease: ease.out }}
+  1055→            className="flex items-center gap-2 px-3 py-2.5"
+  1056→          >
+  1057→            <motion.button
+  1058→              type="button"
+  1059→              aria-label="Open my profile"
+  1060→              onClick={onGoProfile}
+  1061→              whileTap={{ scale: 0.92 }}
+  1062→              transition={pressSpring}
+  1063→              className="rounded-full outline-none"
+  1064→            >
+  1065→              <UserAvatar name={me.name} color={me.color} size={36} />
+  1066→            </motion.button>
+  1067→            <h1 className="mr-auto flex items-center gap-1.5 pl-1 text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+  1068→              Pulse
+  1069→              <span aria-hidden className="inline-block size-1.5 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600" />
+  1070→            </h1>
+  1071→            <Button
+  1072→              variant="ghost"
+  1073→              size="icon"
+  1074→              aria-label="New chat"
+  1075→              onClick={onRequestNewChat}
+  1076→              className="size-10 rounded-full text-zinc-500 hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-95 dark:hover:text-emerald-400"
+  1077→            >
+  1078→              <SquarePen className="size-[19px]" aria-hidden />
+  1079→            </Button>
+  1080→            <ThemeToggleButton />
+  1081→          </motion.div>
+  1082→        )}
+  1083→        {!searching ? (
+  1084→          <motion.div
+  1085→            initial={{ opacity: 0, y: -6 }}
+  1086→            animate={{ opacity: 1, y: 0 }}
+  1087→            transition={{ duration: 0.2, ease: ease.out }}
+  1088→            className="px-3 pb-2.5"
+  1089→          >
+  1090→            <motion.button
+  1091→              type="button"
+  1092→              aria-label="Start searching"
+  1093→              onClick={() => setSearching(true)}
+  1094→              whileTap={{ scale: 0.985 }}
+  1095→              transition={pressSpring}
+  1096→              className="flex h-10 w-full items-center gap-2.5 rounded-full bg-zinc-100/80 px-4 text-left outline-none ring-1 ring-zinc-200/70 backdrop-blur-xl transition-colors hover:bg-zinc-200/70 dark:bg-zinc-900/60 dark:ring-white/10 dark:hover:bg-zinc-800/70"
+  1097→            >
+  1098→              <Search className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
+  1099→              <span className="text-sm text-zinc-400 dark:text-zinc-500">Search chats and messages</span>
+  1100→            </motion.button>
+  1101→          </motion.div>
+  1102→        ) : null}
+  1103→      </header>
+  1104→
+  1105→      {/* Telegram-style folder filter chips */}
+  1106→      {!searching ? (
+  1107→        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto px-3 pb-1.5 pt-1.5" role="tablist" aria-label="Chat filters">
+  1108→          {([
+  1109→            { key: 'all', label: 'All' },
+  1110→            { key: 'unread', label: 'Unread' },
+  1111→            { key: 'groups', label: 'Groups' },
+  1112→          ] as Array<{ key: ChatsListFilter; label: string }>).map((f) => {
+  1113→            const active = listFilter === f.key
+  1114→            return (
+  1115→              <motion.button
+  1116→                key={f.key}
+  1117→                type="button"
+  1118→                role="tab"
+  1119→                aria-selected={active}
+  1120→                onClick={() => {
+  1121→                  haptic(6)
+  1122→                  setListFilter(f.key)
+  1123→                }}
+  1124→                whileTap={pressTap}
+  1125→                transition={pressSpring}
+  1126→                className={cn(
+  1127→                  'relative flex h-7 shrink-0 items-center rounded-full px-3 text-[12px] font-semibold outline-none transition-colors',
+  1128→                  active
+  1129→                    ? 'text-white'
+  1130→                    : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200/70 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
+  1131→                )}
+  1132→              >
+  1133→                {active ? (
+  1134→                  <motion.span
+  1135→                    layoutId="chats-filter-pill"
+  1136→                    transition={spring.snappy}
+  1137→                    className="absolute inset-0 rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/25"
+  1138→                  />
+  1139→                ) : null}
+  1140→                <span className="relative z-10 flex items-center gap-1">
+  1141→                  {f.label === 'Unread' && unreadTotal > 0 && !active ? (
+  1142→                    <span className="flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-emerald-500/20 px-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+  1143→                      {unreadTotal > 99 ? '99+' : unreadTotal}
+  1144→                    </span>
+  1145→                  ) : null}
+  1146→                  {f.label}
+  1147→                </span>
+  1148→              </motion.button>
+  1149→            )
+  1150→          })}
+  1151→        </div>
+  1152→      ) : null}
+  1153→
+  1154→      {/* 24h status stories row */}
+  1155→      {!searching ? (
+  1156→        <div className="shrink-0 border-b border-zinc-100 pb-2 pt-1 dark:border-zinc-800/70">
+  1157→          <h2 className="sr-only">Status</h2>
+  1158→          <div className="no-scrollbar flex snap-x snap-mandatory items-start gap-3 overflow-x-auto px-3 pt-1 [mask-image:linear-gradient(to_right,transparent_0,black_12px,black_calc(100%-12px),transparent_100%)]">
+  1159→            <StoryRingCell
+  1160→              name={me.name}
+  1161→              color={me.color}
+  1162→              ring={myStoryGroup ? 'unseen' : 'none'}
+  1163→              plus={!myStoryGroup}
+  1164→              label="My status"
+  1165→              onPress={openMyStatus}
+  1166→              index={0}
+  1167→            />
+  1168→            {otherStoryGroups.map((group, i) => (
+  1169→              <StoryRingCell
+  1170→                key={group.user.id}
+  1171→                name={group.user.name}
+  1172→                color={group.user.color}
+  1173→                ring={group.allSeen ? 'seen' : 'unseen'}
+  1174→                label={group.user.name}
+  1175→                onPress={() => openStoryGroup(group)}
+  1176→                index={i + 1}
+  1177→              />
+  1178→            ))}
+  1179→          </div>
+  1180→        </div>
+  1181→      ) : null}
+  1182→
+  1183→      {/* R24-a Signal-style chat folder rail */}
+  1184→      {!searching ? (
+  1185→        <div
+  1186→          className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto px-3 pb-1.5 pt-0.5"
+  1187→          role="tablist"
+  1188→          aria-label="Chat folders"
+  1189→        >
+  1190→          <motion.button
+  1191→            type="button"
+  1192→            role="tab"
+  1193→            aria-selected={activeFolderId === null}
+  1194→            aria-label="All chats"
+  1195→            onClick={() => {
+  1196→              haptic(6)
+  1197→              setActiveFolderId(null)
+  1198→            }}
+  1199→            whileTap={reducedMotion ? undefined : pressTap}
+  1200→            transition={pressSpring}
+  1201→            className={cn(
+  1202→              'relative flex h-11 shrink-0 items-center rounded-full px-4 text-[13px] font-semibold outline-none transition-colors',
+  1203→              activeFolderId === null
+  1204→                ? 'text-white'
+  1205→                : 'bg-white/70 text-zinc-600 ring-1 ring-zinc-200/70 backdrop-blur-xl hover:bg-zinc-100 dark:bg-zinc-900/60 dark:text-zinc-300 dark:ring-white/10 dark:hover:bg-zinc-800/70',
+  1206→            )}
+  1207→          >
+  1208→            {activeFolderId === null ? (
+  1209→              <motion.span
+  1210→                layoutId="folders-rail-pill"
+  1211→                transition={spring.snappy}
+  1212→                className="absolute inset-0 rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/25"
+  1213→              />
+  1214→            ) : null}
+  1215→            <span className="relative z-10">All</span>
+  1216→          </motion.button>
+  1217→          {folders.map((folder) => {
+  1218→            const active = activeFolderId === folder.id
+  1219→            const count = folderCounts.get(folder.id) ?? 0
+  1220→            return (
+  1221→              <motion.button
+  1222→                key={folder.id}
+  1223→                type="button"
+  1224→                role="tab"
+  1225→                aria-selected={active}
+  1226→                aria-label={`Folder ${folder.name} — ${count} ${count === 1 ? 'chat' : 'chats'}`}
+  1227→                onClick={() => {
+  1228→                  haptic(6)
+  1229→                  setActiveFolderId(active ? null : folder.id)
+  1230→                }}
+  1231→                whileTap={reducedMotion ? undefined : pressTap}
+  1232→                transition={pressSpring}
+  1233→                className={cn(
+  1234→                  'relative flex h-11 shrink-0 items-center rounded-full px-3.5 text-[13px] font-semibold outline-none transition-colors',
+  1235→                  active
+  1236→                    ? 'text-white'
+  1237→                    : 'bg-white/70 text-zinc-600 ring-1 ring-zinc-200/70 backdrop-blur-xl hover:bg-zinc-100 dark:bg-zinc-900/60 dark:text-zinc-300 dark:ring-white/10 dark:hover:bg-zinc-800/70',
+  1238→                )}
+  1239→              >
+  1240→                {active ? (
+  1241→                  <motion.span
+  1242→                    layoutId="folders-rail-pill"
+  1243→                    transition={spring.snappy}
+  1244→                    className="absolute inset-0 rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/25"
+  1245→                  />
+  1246→                ) : null}
+  1247→                <span className="relative z-10 flex items-center gap-1.5">
+  1248→                  <span aria-hidden>{folder.emoji}</span>
+  1249→                  <span className="max-w-[96px] truncate">{folder.name}</span>
+  1250→                  {count > 0 ? (
+  1251→                    <span
+  1252→                      className={cn(
+  1253→                        'flex h-[15px] min-w-[15px] items-center justify-center rounded-full px-1 text-[9px] font-bold',
+  1254→                        active
+  1255→                          ? 'bg-white/25 text-white'
+  1256→                          : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',
+  1257→                      )}
+  1258→                    >
+  1259→                      {count > 99 ? '99+' : count}
+  1260→                    </span>
+  1261→                  ) : null}
+  1262→                </span>
+  1263→              </motion.button>
+  1264→            )
+  1265→          })}
+  1266→          <motion.button
+  1267→            type="button"
+  1268→            aria-label="Manage chat folders"
+  1269→            onClick={() => {
+  1270→              haptic(6)
+  1271→              setFoldersOpen(true)
+  1272→            }}
+  1273→            whileTap={reducedMotion ? undefined : pressTap}
+  1274→            transition={pressSpring}
+  1275→            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-500 ring-1 ring-zinc-200/70 backdrop-blur-xl outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 focus-visible:ring-2 focus-visible:ring-emerald-500/60 dark:bg-zinc-900/60 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-zinc-800/70 dark:hover:text-emerald-400"
+  1276→          >
+  1277→            <FolderPlus className="size-[18px]" aria-hidden />
+  1278→          </motion.button>
+  1279→        </div>
+  1280→      ) : null}
+  1281→
+  1282→      {/* list */}
+  1283→      <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
+  1284→        {conversations.isPending ? (
+  1285→          <div role="status" aria-label="Loading conversations" className="pt-2">
+  1286→            <RowSkeleton /><RowSkeleton /><RowSkeleton /><RowSkeleton /><RowSkeleton /><RowSkeleton />
+  1287→          </div>
+  1288→        ) : searching ? (
+  1289→          <div className="py-1">
+  1290→            {filteredRows.length > 0 ? (
+  1291→              <>
+  1292→                <SearchSection label="Chats" count={filteredRows.length} />
+  1293→                {filteredRows.map(({ conv, props }, i) => (
+  1294→                  <ConversationRow
+  1295→                    key={props.id}
+  1296→                    {...props}
+  1297→                    entranceIndex={entranceOn ? i : null}
+  1298→                    onPress={() => handlePress(conv)}
+  1299→                    onLongPress={() => openSheetFor(conv)}
+  1300→                    onPin={() => togglePin.mutate(conv)}
+  1301→                    onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
+  1302→                  />
+  1303→                ))}
+  1304→              </>
+  1305→            ) : null}
+  1306→
+  1307→            {deferredQuery.length >= 2 ? (
+  1308→              serverSearch.isPending ? (
+  1309→                <div className="flex items-center justify-center gap-2 py-6" role="status" aria-label="Searching messages">
+  1310→                  <LoaderCircle className="size-4 animate-spin text-emerald-500" aria-hidden />
+  1311→                  <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Searching messages…</span>
+  1312→                </div>
+  1313→              ) : serverHits.length > 0 ? (
+  1314→                <>
+  1315→                  <SearchSection label="Messages" count={serverSearch.data?.total ?? serverHits.length} />
+  1316→                  {serverHits.map((hit) => (
+  1317→                    <SearchMessageRow
+  1318→                      key={hit.id}
+  1319→                      hit={hit}
+  1320→                      query={deferredQuery}
+  1321→                      onPress={(h) => onOpenConversation(h.conversationId, null, h.id)}
+  1322→                    />
+  1323→                  ))}
+  1324→                </>
+  1325→              ) : null
+  1326→            ) : deferredQuery.length > 0 ? (
+  1327→              <p className="px-4 pt-3 text-center text-xs text-zinc-400 dark:text-zinc-500">
+  1328→                Keep typing to search inside messages…
+  1329→              </p>
+  1330→            ) : null}
+  1331→
+  1332→            {filteredRows.length === 0 &&
+  1333→            (deferredQuery.length < 2 || (!serverSearch.isPending && serverHits.length === 0)) ? (
+  1334→              <div className="flex flex-col items-center justify-center gap-2 px-8 pt-24 text-center">
+  1335→                <Search className="size-8 text-zinc-300 dark:text-zinc-600" aria-hidden />
+  1336→                <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">No matches</p>
+  1337→                <p className="text-xs text-zinc-400 dark:text-zinc-500">
+  1338→                  Nothing here for “{searchQuery}”.
+  1339→                </p>
+  1340→              </div>
+  1341→            ) : null}
+  1342→          </div>
+  1343→        ) : rows.length === 0 ? (
+  1344→          <EmptyChats onSayHi={onOpenContacts} />
+  1345→        ) : (
+  1346→          <div className="py-1">
+  1347→            {/* R24-a Note to Self — private notebook chat (above regular chats) */}
+  1348→            <motion.button
+  1349→              type="button"
+  1350→              onClick={handleSelfPress}
+  1351→              whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+  1352→              transition={pressSpring}
+  1353→              aria-label={
+  1354→                selfConv
+  1355→                  ? 'Open Note to Self — your private space'
+  1356→                  : 'Create Note to Self — your private space'
+  1357→              }
+  1358→              className="mx-2 mb-1 mt-0.5 flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-gradient-to-r from-emerald-500/[0.08] to-teal-500/[0.05] px-3 py-2.5 text-left outline-none transition-colors hover:border-emerald-500/45 dark:border-emerald-400/20 dark:from-emerald-400/[0.07] dark:to-teal-400/[0.04] dark:hover:border-emerald-400/45"
+  1359→            >
+  1360→              <span
+  1361→                aria-hidden
+  1362→                className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[17px] shadow-sm shadow-emerald-600/30"
+  1363→              >
+  1364→                📝
+  1365→              </span>
+  1366→              <span className="min-w-0 flex-1">
+  1367→                <span className="block truncate text-[14px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+  1368→                  Note to Self
+  1369→                </span>
+  1370→                <span className="block truncate text-[11.5px] text-zinc-500 dark:text-zinc-400">
+  1371→                  Your private space — notes, links, ideas
+  1372→                </span>
+  1373→              </span>
+  1374→              {createSelfChat.isPending ? (
+  1375→                <LoaderCircle className="size-4 shrink-0 animate-spin text-emerald-500" aria-hidden />
+  1376→              ) : (
+  1377→                <span
+  1378→                  className={cn(
+  1379→                    'flex shrink-0 items-center gap-0.5 rounded-full py-1 pl-2 pr-1 text-[11px] font-bold',
+  1380→                    selfConv
+  1381→                      ? 'text-emerald-600 dark:text-emerald-400'
+  1382→                      : 'bg-emerald-500 text-white shadow-sm shadow-emerald-600/30',
+  1383→                  )}
+  1384→                >
+  1385→                  {selfConv ? 'Open' : 'Create'}
+  1386→                  <ChevronRight className="size-3.5" aria-hidden />
+  1387→                </span>
+  1388→              )}
+  1389→            </motion.button>
+  1390→            {archivedRows.length > 0 ? (
+  1391→              <motion.button
+  1392→                type="button"
+  1393→                whileTap={{ scale: 0.985 }}
+  1394→                transition={pressSpring}
+  1395→                onClick={() => {
+  1396→                  haptic(6)
+  1397→                  setArchivedOpen(true)
+  1398→                }}
+  1399→                className="flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 pl-[26px] text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800"
+  1400→              >
+  1401→                <Archive className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+  1402→                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">Archived</span>
+  1403→                {archivedUnread > 0 ? (
+  1404→                  <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+  1405→                    {archivedUnread > 99 ? '99+' : archivedUnread}
+  1406→                  </span>
+  1407→                ) : null}
+  1408→                <span className="ml-auto flex items-center gap-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+  1409→                  {archivedRows.length}
+  1410→                  <ChevronRight className="size-3.5" aria-hidden />
+  1411→                </span>
+  1412→              </motion.button>
+  1413→            ) : null}
+  1414→            {/* folder switch springs the whole list block (R24-a) */}
+  1415→            <motion.div
+  1416→              key={activeFolderId ?? 'all'}
+  1417→              initial={reducedMotion ? false : { opacity: 0, y: 10 }}
+  1418→              animate={{ opacity: 1, y: 0 }}
+  1419→              transition={spring.soft}
+  1420→              style={{ willChange: 'transform' }}
+  1421→            >
+  1422→              {visibleRows.map(({ conv, props }, i) => (
+  1423→                <ConversationRow
+  1424→                  key={props.id}
+  1425→                  {...props}
+  1426→                  entranceIndex={entranceOn ? i : null}
+  1427→                  onPress={() => handlePress(conv)}
+  1428→                  onLongPress={() => openSheetFor(conv)}
+  1429→                  onPin={() => togglePin.mutate(conv)}
+  1430→                  onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
+  1431→                />
+  1432→              ))}
+  1433→            </motion.div>
+  1434→            {visibleRows.length === 0 && activeRows.length > 0 ? (
+  1435→              <p className="px-8 pb-4 pt-10 text-center text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+  1436→                {activeFolderId !== null
+  1437→                  ? 'This folder is empty — tap the folder button on the rail to add chats.'
+  1438→                  : listFilter === 'unread'
+  1439→                    ? 'No unread chats — you are all caught up.'
+  1440→                    : 'No groups yet — start one from Contacts.'}
+  1441→              </p>
+  1442→            ) : null}
+  1443→            {activeRows.length === 0 && archivedRows.length > 0 ? (
+  1444→              <p className="px-8 pb-4 pt-10 text-center text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+  1445→                Every chat is archived.
+  1446→                <br />
+  1447→                New messages bring chats back here.
+  1448→              </p>
+  1449→            ) : null}
+  1450→          </div>
+  1451→        )}
+  1452→      </div>
+  1453→
+  1454→      {/* long-press action sheet — pin / archive / mute */}
+  1455→      <Drawer open={sheetConv !== null} onOpenChange={(open) => !open && setSheetConv(null)}>
+  1456→        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
+  1457→          <DrawerTitle className="sr-only">Conversation options</DrawerTitle>
+  1458→          <DrawerDescription className="sr-only">Pin, archive or mute this chat</DrawerDescription>
+  1459→          {sheetConv ? (
+  1460→            <div className="pb-2">
+  1461→              <p className="px-2 pb-2 pt-1 text-center text-xs font-medium text-zinc-400 dark:text-zinc-500">
+  1462→                {conversationDisplayName(sheetConv, me.id)}
+  1463→              </p>
+  1464→              <button
+  1465→                type="button"
+  1466→                role="menuitem"
+  1467→                disabled={togglePin.isPending}
+  1468→                onClick={() => togglePin.mutate(sheetConv)}
+  1469→                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-sm font-semibold text-zinc-800 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
+  1470→              >
+  1471→                {sheetConv.pinnedAt ? (
+  1472→                  <>
+  1473→                    <PinOff className="size-5 text-amber-500" aria-hidden />
+  1474→                    Unpin from top
+  1475→                  </>
+  1476→                ) : (
+  1477→                  <>
+  1478→                    <Pin className="size-5 text-emerald-500" aria-hidden />
+  1479→                    Pin to top
+  1480→                  </>
+  1481→                )}
+  1482→              </button>
+  1483→              <button
+  1484→                type="button"
+  1485→                role="menuitem"
+  1486→                disabled={toggleArchive.isPending}
+  1487→                onClick={() => toggleArchive.mutate({ conv: sheetConv, archived: sheetConv.archivedAt === null })}
+  1488→                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-sm font-semibold text-zinc-800 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
+  1489→              >
+  1490→                {sheetConv.archivedAt !== null ? (
+  1491→                  <>
+  1492→                    <ArchiveRestore className="size-5 text-amber-500" aria-hidden />
+  1493→                    Unarchive chat
+  1494→                  </>
+  1495→                ) : (
+  1496→                  <>
+  1497→                    <Archive className="size-5 text-zinc-500 dark:text-zinc-400" aria-hidden />
+  1498→                    Archive chat
+  1499→                  </>
+  1500→                )}
+  1501→              </button>
+  1502→              {sheetMuted ? (
+  1503→                <>
+  1504→                  <p className="flex items-center gap-1.5 px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+  1505→                    <BellOff className="size-3" aria-hidden />
+  1506→                    Muted until {formatListStamp(sheetConv.mutedUntil as string)}
+  1507→                  </p>
+  1508→                  <button
+  1509→                    type="button"
+  1510→                    role="menuitem"
+  1511→                    disabled={toggleMute.isPending}
+  1512→                    onClick={() => toggleMute.mutate({ conv: sheetConv, until: null })}
+  1513→                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-sm font-semibold text-zinc-800 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
+  1514→                  >
+  1515→                    <VolumeX className="size-5 text-emerald-500" aria-hidden />
+  1516→                    Unmute notifications
+  1517→                  </button>
+  1518→                </>
+  1519→              ) : (
+  1520→                <>
+  1521→                  <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+  1522→                    Mute notifications
+  1523→                  </p>
+  1524→                  <div className="flex gap-1.5 px-1 pb-1">
+  1525→                    {([
+  1526→                      { until: '8h', label: '8 hours' },
+  1527→                      { until: '1w', label: '1 week' },
+  1528→                      { until: 'always', label: 'Always' },
+  1529→                    ] as const).map((preset) => (
+  1530→                      <button
+  1531→                        key={preset.until}
+  1532→                        type="button"
+  1533→                        role="menuitem"
+  1534→                        disabled={toggleMute.isPending}
+  1535→                        onClick={() => toggleMute.mutate({ conv: sheetConv, until: preset.until })}
+  1536→                        className="h-10 flex-1 rounded-xl bg-zinc-100 text-[13px] font-semibold text-zinc-700 outline-none transition-colors hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-emerald-500/15 dark:hover:text-emerald-400"
+  1537→                      >
+  1538→                        {preset.label}
+  1539→                      </button>
+  1540→                    ))}
+  1541→                  </div>
+  1542→                </>
+  1543→              )}
+  1544→              <button
+  1545→                type="button"
+  1546→                role="menuitem"
+  1547→                onClick={() => setSheetConv(null)}
+  1548→                className="flex w-full items-center justify-center rounded-2xl px-3 py-3 text-left text-sm font-medium text-zinc-500 outline-none transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+  1549→              >
+  1550→                Cancel
+  1551→              </button>
+  1552→            </div>
+  1553→          ) : null}
+  1554→        </DrawerContent>
+  1555→      </Drawer>
+  1556→
+  1557→      {/* archived chats drawer — WhatsApp-style inbox */}
+  1558→      <Drawer open={archivedOpen} onOpenChange={(open) => !open && setArchivedOpen(false)}>
+  1559→        <DrawerContent className="mx-auto flex max-h-[82dvh] max-w-[420px] flex-col rounded-t-3xl bg-white px-1.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 dark:bg-zinc-900">
+  1560→          <DrawerDescription className="sr-only">Your archived conversations</DrawerDescription>
+  1561→          <DrawerTitle className="flex items-center gap-2 px-4 pb-1.5 pt-2 text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+  1562→            <Archive className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+  1563→            Archived
+  1564→            <span className="ml-auto text-xs font-medium text-zinc-400 dark:text-zinc-500">
+  1565→              {archivedRows.length === 1 ? '1 chat' : `${archivedRows.length} chats`}
+  1566→            </span>
+  1567→          </DrawerTitle>
+  1568→          <p className="px-4 pb-1 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+  1569→            Muted here — a new message moves a chat back to your inbox.
+  1570→          </p>
+  1571→          <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+  1572→            {archivedRows.map(({ conv, props }, i) => (
+  1573→              <ConversationRow
+  1574→                key={props.id}
+  1575→                {...props}
+  1576→                entranceIndex={entranceOn && archivedOpen ? i : null}
+  1577→                onPress={() => {
+  1578→                  setArchivedOpen(false)
+  1579→                  handlePress(conv)
+  1580→                }}
+  1581→                onLongPress={() => openSheetFor(conv)}
+  1582→                onPin={() => togglePin.mutate(conv)}
+  1583→                onArchive={() => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
+  1584→              />
+  1585→            ))}
+  1586→          </div>
+  1587→        </DrawerContent>
+  1588→      </Drawer>
+  1589→
+  1590→      {/* R24-a chat folders manager sheet */}
+  1591→      <FoldersSheet
+  1592→        open={foldersOpen}
+  1593→        onClose={() => setFoldersOpen(false)}
+  1594→        me={me}
+  1595→        conversations={data}
+  1596→      />
+  1597→
+  1598→      {/* status story viewer + composer (full-screen overlays) */}
+  1599→      <AnimatePresence>
+  1600→        {composerOpen ? (
+  1601→          <StoryComposerSheet key="story-composer" me={me} onClose={() => setComposerOpen(false)} />
+  1602→        ) : null}
+  1603→        {viewerStart !== null && storyGroups.length > 0 ? (
+  1604→          <StoriesSheet
+  1605→            key="stories-viewer"
+  1606→            me={me}
+  1607→            groups={storyGroups}
+  1608→            start={viewerStart}
+  1609→            onClose={() => {
+  1610→              setViewerStart(null)
+  1611→              void queryClient.invalidateQueries({ queryKey: storiesQueryKey(me.id) })
+  1612→            }}
+  1613→          />
+  1614→        ) : null}
+  1615→      </AnimatePresence>
+  1616→    </div>
+  1617→  )
+  1618→}
+  1619→
+  1620→function EmptyChats({ onSayHi }: { onSayHi: () => void }) {
+  1621→  const reducedMotion = useReducedMotion()
+  1622→  return (
+  1623→    <motion.div
+  1624→      initial={reducedMotion ? false : { opacity: 0, y: 14 }}
+  1625→      animate={{ opacity: 1, y: 0 }}
+  1626→      transition={{ duration: 0.35, ease: ease.out }}
+  1627→      className="flex flex-col items-center justify-center gap-4 px-8 pt-16 text-center"
+  1628→    >
+  1629→      <Image
+  1630→        src="/empty-chats.png"
+  1631→        alt="No conversations illustration"
+  1632→        width={168}
+  1633→        height={168}
+  1634→        className="rounded-3xl shadow-md shadow-zinc-200/70 dark:shadow-none"
+  1635→      />
+  1636→      <div>
+  1637→        <h2 className="text-base font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">
+  1638→          No conversations yet
+  1639→        </h2>
+  1640→        <p className="mx-auto mt-1 max-w-[240px] text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+  1641→          Your next great chat is one tap away. Find someone and break the ice.
+  1642→        </p>
+  1643→      </div>
+  1644→      <Button
+  1645→        onClick={onSayHi}
+  1646→        variant="outline"
+  1647→        className="h-10 gap-1.5 rounded-full border-emerald-500/40 px-5 text-sm font-semibold text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-400 active:scale-[0.98]"
+  1648→      >
+  1649→        Say hi to someone
+  1650→        <ArrowRight className="size-4" aria-hidden />
+  1651→      </Button>
+  1652→    </motion.div>
+  1653→  )
+  1654→}
+  1655→

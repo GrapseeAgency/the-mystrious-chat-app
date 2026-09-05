@@ -68,7 +68,6 @@ import {
   Reply,
   RotateCcw,
   Search,
-  SearchX,
   SendHorizontal,
   Smile,
   Sparkles,
@@ -197,7 +196,11 @@ import { PipChat } from '@/components/chat/pip-chat'
 import { usePipChat } from '@/components/chat/pip-store'
 import { GroupInfoSheet } from '@/components/chat/group-info-sheet'
 import { useNavStyle } from '@/components/chat/nav-router'
-import { UserProfileSheet } from '@/components/chat/user-profile-sheet'
+import { useHashRoute, navigateHash, replaceHash, backHash } from '@/lib/hash-router'
+// ── R27-c: chat-room hash sub-pages + compact glass pins sheet ──
+import { RoomInfoPage } from '@/components/chat/room-info-page'
+import { RoomSearchPage } from '@/components/chat/room-search-page'
+import { RoomPinsSheet } from '@/components/chat/room-pins-sheet'
 
 interface DetailResponse {
   conversation: ConversationDetail
@@ -653,11 +656,7 @@ export function ChatRoom({
   const [sendingVoice, setSendingVoice] = useState(false)
 
   // ── search overlay + jump-to-message ───────────────────────
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [searchDraft, setSearchDraft] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** message currently flashing (search hit / quoted-reply jump) */
+  /** message currently flashing (sub-page search hit / reply jump) */
   const [highlight, setHighlight] = useState<{ id: string; nonce: number } | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -692,8 +691,6 @@ export function ChatRoom({
   const [pendingEffect, setPendingEffect] = useState<MessageEffectName | null>(null)
   /** Esc-dismisses the slash palette until the draft changes again */
   const [slashDismissed, setSlashDismissed] = useState(false)
-  /** other-user profile sheet (sender avatars · member rows) */
-  const [profileUser, setProfileUser] = useState<AppUser | null>(null)
   /** full-screen group management sheet (R19-c contract) */
   const [groupInfoOpen, setGroupInfoOpen] = useState(false)
 
@@ -945,37 +942,29 @@ export function ChatRoom({
     [jumpToMessage],
   )
 
-  // ── search overlay plumbing ────────────────────────────────
+  // ── R27-c: hash-routed room sub-pages (#/room/<id>/info | /search) ──
+  // The room itself is state-mounted (not hash-driven); its sub-pages ride
+  // the real hash router so browser back works. Only a hash scoped to THIS
+  // conversation opens a sub-page.
+  const hashPath = useHashRoute().path
+  const roomSubPage = useMemo<'info' | 'search' | null>(() => {
+    if (!hashPath.startsWith('/room/')) return null
+    const rest = hashPath.slice('/room/'.length)
+    const slash = rest.indexOf('/')
+    if (slash <= 0) return null
+    if (rest.slice(0, slash) !== conversationId) return null
+    const leaf = rest.slice(slash + 1)
+    return leaf === 'info' || leaf === 'search' ? leaf : null
+  }, [hashPath, conversationId])
 
-  /** Debounced commit of the search draft (same pattern as drafts). */
-  const handleSearchChange = (value: string) => {
-    setSearchDraft(value)
-    if (searchTimerRef.current !== null) clearTimeout(searchTimerRef.current)
-    searchTimerRef.current = setTimeout(() => {
-      searchTimerRef.current = null
-      setSearchQuery(value.trim())
-    }, 220)
-  }
-
-  const closeSearch = useCallback(() => {
-    if (searchTimerRef.current !== null) {
-      clearTimeout(searchTimerRef.current)
-      searchTimerRef.current = null
+  // room close / in-room switch → clear a lingering #/room/… hash in place
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.location.hash.startsWith('#/room/')) {
+        replaceHash('/')
+      }
     }
-    setSearchOpen(false)
-  }, [])
-
-  const searchResults = useQuery({
-    queryKey: ['message-search', conversationId, searchQuery],
-    enabled: searchOpen && searchQuery.length > 0,
-    staleTime: 20_000,
-    queryFn: async (): Promise<{ items: ChatMessage[]; total: number }> => {
-      const res = await apiJson<SearchResponse>(
-        `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=100&q=${encodeURIComponent(searchQuery)}`,
-      )
-      return { items: res.messages, total: res.total ?? res.messages.length }
-    },
-  })
+  }, [conversationId])
 
   // ── forward-message sheet ─────────────────────────────────
 
@@ -993,10 +982,9 @@ export function ChatRoom({
     if (!next) setTimeout(() => setForwardMounted(false), 300)
   }, [])
 
-  // unmount safety: clear search/highlight timers
+  // unmount safety: clear highlight timers
   useEffect(
     () => () => {
-      if (searchTimerRef.current !== null) clearTimeout(searchTimerRef.current)
       if (highlightTimerRef.current !== null) clearTimeout(highlightTimerRef.current)
     },
     [],
@@ -1165,7 +1153,7 @@ export function ChatRoom({
     if (Number.isNaN(createdMs)) return null
     const members = detailData.members
       .filter((m) => m.id !== me.id && Date.parse(m.lastReadAt) >= createdMs)
-      .map((m) => ({ id: m.id, name: m.name, color: m.color }))
+      .map((m) => ({ id: m.id, name: m.name, color: m.color, avatar: m.avatar }))
     const others = detailData.members.length - 1
     return members.length > 0 ? { members, all: members.length >= others } : null
   }, [lastOwnMessage, detailData, me.id])
@@ -1512,7 +1500,7 @@ export function ChatRoom({
         payload: payload ? JSON.stringify(payload) : null,
         deletedAt: null,
         createdAt: new Date().toISOString(),
-        sender: { id: me.id, name: me.name, username: me.username, color: me.color },
+        sender: { id: me.id, name: me.name, username: me.username, color: me.color, avatar: me.avatar },
         reactions: [],
         replyTo: parentSnapshot,
         imagePath: imagePath ?? null,
@@ -2217,9 +2205,6 @@ export function ChatRoom({
       setCaptionDraft('')
       setPendingEffect(null)
       setMenuOpen(false)
-      setSearchOpen(false)
-      setSearchQuery('')
-      setSearchDraft('')
       setHighlight(null)
       setThreadRoot(null)
       setActiveTopicId(null)
@@ -2250,32 +2235,15 @@ export function ChatRoom({
     [me.id, queryClient, switchRoom],
   )
 
-  /** Sender avatar tap in a bubble → profile sheet (full user from members). */
-  const openProfileForAuthor = useCallback(
-    (sender: MessageAuthor) => {
-      const member = detailData?.members.find((m) => m.id === sender.id)
-      if (member) {
-        setProfileUser(member)
-        return
-      }
-      // Author embed is stale / the member list lagged behind → fetch the full
-      // profile so the sheet NEVER renders empty (R26-b root-cause hardening).
-      void (async () => {
-        try {
-          const res = await apiJson<{ user: AppUser }>(`/api/users/${encodeURIComponent(sender.id)}`)
-          setProfileUser(res.user)
-        } catch {
-          toast.info('This member is no longer part of the chat')
-        }
-      })()
-    },
-    [detailData],
-  )
+  /** Sender/member avatar tap → the GLOBAL profile page (R27-a owns #/user/:id). */
+  const openProfileForAuthor = useCallback((sender: MessageAuthor) => {
+    navigateHash(`#/user/${encodeURIComponent(sender.id)}`)
+  }, [])
 
-  /** Member row tap in the info dialog → profile sheet. */
+  /** Member row tap → global profile page; closes any open dialog first. */
   const openProfileForUser = useCallback((user: AppUser) => {
     setInfoOpen(false)
-    setProfileUser(user)
+    navigateHash(`#/user/${encodeURIComponent(user.id)}`)
   }, [])
 
   // ── @mention autocomplete (composer) ────────────────────
@@ -2496,7 +2464,7 @@ export function ChatRoom({
         createdAt: new Date().toISOString(),
         kind: 'text',
         payload: null,
-        sender: { id: me.id, name: me.name, username: me.username, color: me.color },
+        sender: { id: me.id, name: me.name, username: me.username, color: me.color, avatar: me.avatar },
         reactions: [],
         replyTo: replyTarget
           ? {
@@ -2531,7 +2499,7 @@ export function ChatRoom({
         conversationId,
         content,
         ...(replyTarget ? { replyToId: replyTarget.id } : {}),
-        sender: { id: me.id, name: me.name, username: me.username, color: me.color },
+        sender: { id: me.id, name: me.name, username: me.username, color: me.color, avatar: me.avatar },
         replySnapshot: queuedTemp.replyTo,
         queuedAt: queuedTemp.createdAt,
       })
@@ -3177,7 +3145,7 @@ export function ChatRoom({
             aria-label="Show group info"
             onClick={() => {
               haptic(10)
-              setInfoOpen(true)
+              navigateHash(`#/room/${conversationId}/info`)
             }}
             className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
           >
@@ -3189,8 +3157,8 @@ export function ChatRoom({
             aria-label={other ? `View ${other.name}'s profile` : 'Show info'}
             onClick={() => {
               haptic(10)
-              if (other) openProfileForUser(other)
-              else setInfoOpen(true)
+              if (other) navigateHash(`#/user/${encodeURIComponent(other.id)}`)
+              else navigateHash(`#/room/${conversationId}/info`)
             }}
             className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
           >
@@ -3205,8 +3173,8 @@ export function ChatRoom({
         )}
         <button
           type="button"
-          onClick={() => setInfoOpen(true)}
-          aria-label="Show info"
+          onClick={() => navigateHash(`#/room/${conversationId}/info`)}
+          aria-label="Chat info"
           className="ml-1.5 min-w-0 flex-1 text-left outline-none"
         >
           <p className="flex items-center gap-1 truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -3254,6 +3222,19 @@ export function ChatRoom({
         >
           <PictureInPicture2 className="size-5" aria-hidden />
         </Button>
+        {/* R27-c: header sub-page entries — search + info for every room */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Search messages"
+          onClick={() => {
+            haptic(8)
+            navigateHash(`#/room/${conversationId}/search`)
+          }}
+          className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+        >
+          <Search className="size-5" aria-hidden />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -3270,20 +3251,18 @@ export function ChatRoom({
         >
           <Mic className="size-5" aria-hidden />
         </Button>
-        {isGroup ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Group info"
-            onClick={() => {
-              haptic(8)
-              setGroupInfoOpen(true)
-            }}
-            className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
-          >
-            <Info className="size-5" aria-hidden />
-          </Button>
-        ) : null}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Chat info"
+          onClick={() => {
+            haptic(8)
+            navigateHash(`#/room/${conversationId}/info`)
+          }}
+          className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+        >
+          <Info className="size-5" aria-hidden />
+        </Button>
 
         <Button
           variant="ghost"
@@ -3323,9 +3302,7 @@ export function ChatRoom({
                   role="menuitem"
                   onClick={() => {
                     setMenuOpen(false)
-                    setSearchDraft('')
-                    setSearchQuery('')
-                    setSearchOpen(true)
+                    navigateHash(`#/room/${conversationId}/search`)
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
                 >
@@ -3342,7 +3319,7 @@ export function ChatRoom({
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
                 >
                   <Info className="size-4 text-zinc-400" aria-hidden />
-                  {isGroup ? 'Group info' : 'Contact info'}
+                  {isGroup ? 'Manage group' : 'Manage chat'}
                 </button>
                 {isRoomMuted ? (
                   <button
@@ -3466,13 +3443,19 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
-      {/* pinned banner (Telegram/WhatsApp-style) */}
+      {/* pinned banner — slim glass strip (R27-c); tap → compact glass pins sheet */}
       {latestPinned ? (
-        <button
+        <motion.button
           type="button"
-          onClick={() => setPinnedOpen(true)}
+          initial={prefs.reducedMotion ? false : { opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={spring.snappy}
+          onClick={() => {
+            haptic(8)
+            setPinnedOpen(true)
+          }}
           aria-label={`Open pinned messages — ${pinnedCount} pinned`}
-          className="flex shrink-0 items-center gap-2 border-b border-emerald-500/15 bg-white/85 px-3 py-1.5 text-left backdrop-blur transition-colors hover:bg-white dark:border-emerald-400/10 dark:bg-zinc-900/85 dark:hover:bg-zinc-900"
+          className="glass-sheen relative flex shrink-0 items-center gap-2 border-b border-zinc-200/70 bg-white/60 px-3 py-1.5 text-left backdrop-blur-xl transition-colors hover:bg-white/80 dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:hover:bg-zinc-900/80"
         >
           <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10" aria-hidden>
             <Pin className="size-3 rotate-45 text-emerald-500" />
@@ -3485,7 +3468,8 @@ export function ChatRoom({
               {latestPinned.content.replace(/\s+/g, ' ').trim().slice(0, 80) || 'Photo'}
             </span>
           </span>
-        </button>
+          <ChevronUp className="size-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden />
+        </motion.button>
       ) : null}
 
       {/* R24-b: Zulip-style topic rail — General + real topic chips (groups only) */}
@@ -3649,12 +3633,13 @@ export function ChatRoom({
                           color={
                             detailData?.members.find((m) => m.id === typer.userId)?.color ?? 'emerald'
                           }
+                          avatar={detailData?.members.find((m) => m.id === typer.userId)?.avatar ?? null}
                           size={28}
                         />
                       )
                     })()
                   ) : other ? (
-                    <UserAvatar name={other.name} color={other.color} size={28} />
+                    <UserAvatar name={other.name} color={other.color} avatar={other.avatar} size={28} />
                   ) : null}
                   {/* Telegram-style morphing pill: borderRadius breathes with the dots */}
                   <motion.div
@@ -4193,7 +4178,7 @@ export function ChatRoom({
                       : 'hover:bg-zinc-100 dark:hover:bg-zinc-700',
                   )}
                 >
-                  <UserAvatar name={m.name} color={m.color} size={26} />
+                  <UserAvatar name={m.name} color={m.color} avatar={m.avatar} size={26} />
                   <span className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">{m.name}</span>
                   {m.id === me.id ? (
                     <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">(you)</span>
@@ -4653,75 +4638,23 @@ export function ChatRoom({
         </DrawerContent>
       </Drawer>
 
-      {/* pinned messages sheet */}
-      <Drawer open={pinnedOpen} onOpenChange={setPinnedOpen}>
-        <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
-          <DrawerTitle className="sr-only">Pinned messages</DrawerTitle>
-          <DrawerDescription className="sr-only">Messages pinned in this chat</DrawerDescription>
-          <div className="pb-2">
-            <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
-              <Pin className="size-4 rotate-45 text-emerald-500" aria-hidden />
-              {pinnedCount === 1 ? '1 pinned message' : `${pinnedCount} pinned messages`}
-            </p>
-            {pinnedQuery.isPending ? (
-              <div className="space-y-2 py-2" role="status" aria-label="Loading pinned messages">
-                <Skeleton className="h-16 w-full rounded-2xl" />
-                <Skeleton className="h-16 w-full rounded-2xl" />
-              </div>
-            ) : pinnedList.length === 0 ? (
-              <p className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                Nothing pinned yet — long-press a message and choose Pin.
-              </p>
-            ) : (
-              <ul className="pulse-scroll max-h-[52dvh] space-y-2 overflow-y-auto py-1">
-                {pinnedList.map((m) => (
-                  <li
-                    key={m.id}
-                    className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-2.5 dark:border-zinc-700 dark:bg-zinc-800/60"
-                  >
-                    <div className="flex items-center gap-2">
-                      <UserAvatar name={m.sender.name} color={m.sender.color} size={24} />
-                      <span className="truncate text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                        {m.sender.id === me.id ? 'You' : m.sender.name}
-                      </span>
-                      <span className="ml-auto shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500">
-                        {formatListStamp(m.createdAt)}
-                      </span>
-                    </div>
-                    <p className="mt-1 line-clamp-3 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
-                      {m.content.replace(/\s+/g, ' ').trim() || 'Photo'}
-                    </p>
-                    <div className="mt-1.5 flex gap-1.5">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setPinnedOpen(false)
-                          void jumpToMessage(m.id)
-                        }}
-                        className="h-7 gap-1 rounded-full px-3 text-[11px] font-semibold"
-                      >
-                        <ArrowDown className="size-3" aria-hidden />
-                        Jump
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={pinMessage.isPending}
-                        onClick={() => pinMessage.mutate(m.id)}
-                        className="h-7 gap-1 rounded-full px-3 text-[11px] font-semibold text-zinc-500 hover:text-destructive"
-                      >
-                        <PinOff className="size-3" aria-hidden />
-                        Unpin
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </DrawerContent>
-      </Drawer>
+      {/* pinned messages — compact glass sheet (R27-c) */}
+      <AnimatePresence>
+        {pinnedOpen ? (
+          <RoomPinsSheet
+            onClose={() => setPinnedOpen(false)}
+            pins={pinnedList}
+            loading={pinnedQuery.isPending && pinnedList.length === 0}
+            myId={me.id}
+            unpinPending={pinMessage.isPending}
+            onJump={(messageId) => {
+              setPinnedOpen(false)
+              void jumpToMessage(messageId)
+            }}
+            onUnpin={(messageId) => pinMessage.mutate(messageId)}
+          />
+        ) : null}
+      </AnimatePresence>
 
       {/* who-reacted sheet */}
       <Drawer open={reactionInfo !== null} onOpenChange={(open) => !open && setReactionInfo(null)}>
@@ -4844,7 +4777,7 @@ export function ChatRoom({
                           className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left outline-none transition-colors hover:bg-zinc-50 active:bg-zinc-100 dark:hover:bg-zinc-800/60"
                         >
                           <span className="relative">
-                            <UserAvatar name={member.name} color={member.color} size={36} />
+                            <UserAvatar name={member.name} color={member.color} avatar={member.avatar} size={36} />
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
@@ -4887,148 +4820,33 @@ export function ChatRoom({
         </DrawerContent>
       </Drawer>
 
-      {/* full-screen message-search overlay */}
+      {/* R27-c: hash-routed room sub-pages — info + search slide up over the room */}
       <AnimatePresence>
-        {searchOpen ? (
-          <motion.div
-            key="search-overlay"
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 340, damping: 34 }}
-            role="dialog"
-            aria-label={`Search messages in ${headerTitle}`}
-            className="absolute inset-0 z-50 flex flex-col bg-white dark:bg-zinc-900"
-          >
-            <div className="flex min-h-14 shrink-0 items-center gap-1.5 border-b border-zinc-200 bg-white px-2 pt-[env(safe-area-inset-top)] dark:border-zinc-800 dark:bg-zinc-900">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Back to conversation"
-                onClick={closeSearch}
-                className="size-10 shrink-0 rounded-full text-zinc-600 hover:bg-transparent hover:text-zinc-900 active:scale-95 dark:text-zinc-300 dark:hover:text-white"
-              >
-                <ChevronLeft className="size-6" aria-hidden />
-              </Button>
-              <div className="relative min-w-0 flex-1">
-                <Search
-                  className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400"
-                  aria-hidden
-                />
-                <Input
-                  autoFocus
-                  value={searchDraft}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  placeholder={`Search in ${headerTitle}`}
-                  aria-label="Search messages"
-                  autoComplete="off"
-                  className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pr-9 pl-9 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
-                />
-                {searchDraft.length > 0 ? (
-                  <button
-                    type="button"
-                    aria-label="Clear search"
-                    onClick={() => handleSearchChange('')}
-                    className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-1 text-zinc-400 outline-none transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
-                  >
-                    <X className="size-4" aria-hidden />
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain bg-zinc-50 px-3 pt-4 pb-4 dark:bg-black/25">
-              {searchQuery.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                  <div
-                    aria-hidden
-                    className="flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/15 to-emerald-600/10 text-emerald-500 dark:from-emerald-400/10 dark:to-emerald-600/5"
-                  >
-                    <Search className="size-7" aria-hidden />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
-                      Search this conversation
-                    </p>
-                    <p className="mt-1 max-w-[220px] text-xs text-zinc-400 dark:text-zinc-500">
-                      Find any message by its text — jump straight back to it.
-                    </p>
-                  </div>
-                </div>
-              ) : searchResults.isPending ? (
-                <div role="status" aria-label="Searching messages" className="flex justify-center py-10">
-                  <LoaderCircle className="size-5 animate-spin text-zinc-400" aria-hidden />
-                </div>
-              ) : !searchResults.data || searchResults.data.items.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                  <div
-                    aria-hidden
-                    className="flex size-14 items-center justify-center rounded-2xl bg-zinc-200/60 text-zinc-400 dark:bg-zinc-800"
-                  >
-                    <SearchX className="size-6" aria-hidden />
-                  </div>
-                  <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-                    No matches for “{searchQuery}”
-                  </p>
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                    Try a shorter or different phrase.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="mb-2.5 flex justify-center">
-                    <span className="rounded-full bg-zinc-200/70 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-white/5">
-                      {(() => {
-                        const n = searchResults.data.total
-                        return `${n === 1 ? '1 match' : `${n} matches`} for “${searchQuery}”`
-                      })()}
-                    </span>
-                  </div>
-                  {[...searchResults.data.items].reverse().map((m, idx) => (
-                    <motion.button
-                      key={m.id}
-                      type="button"
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.16, delay: Math.min(idx * 0.02, 0.24) }}
-                      onClick={() => {
-                        closeSearch()
-                        void jumpToMessage(m.id)
-                      }}
-                      className="mb-1.5 flex w-full items-start gap-2.5 rounded-xl border border-zinc-200 bg-white p-2.5 text-left shadow-sm outline-none transition-colors hover:border-emerald-300 active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800"
-                    >
-                      <UserAvatar name={m.sender.name} color={m.sender.color} size={30} />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-baseline justify-between gap-2">
-                          <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                            {m.sender.id === me.id ? 'You' : m.sender.name}
-                          </span>
-                          <span className="shrink-0 text-[10px] tabular-nums text-zinc-400 dark:text-zinc-500">
-                            {(() => {
-                              const stamp = formatListStamp(m.createdAt)
-                              const time = formatTime(m.createdAt)
-                              return stamp === time ? time : `${stamp} · ${time}`
-                            })()}
-                          </span>
-                        </span>
-                        <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug break-words text-zinc-600 dark:text-zinc-300">
-                          {m.imagePath ? 'Photo ' : ''}
-                          {m.audioPath ? 'Voice note ' : ''}
-                          <MatchedText
-                            content={
-                              m.content.replace(/\s+/g, ' ').trim() ||
-                              (m.imagePath ? 'Photo' : 'Voice message')
-                            }
-                            query={searchQuery}
-                          />
-                        </span>
-                      </span>
-                    </motion.button>
-                  ))}
-                </>
-              )}
-            </div>
-          </motion.div>
+        {roomSubPage === 'info' ? (
+          <RoomInfoPage
+            key="room-info-page"
+            me={me}
+            conversationId={conversationId}
+            detail={detailData}
+            onlineIds={realtime.onlineIds}
+            loadedMessages={messages.data ?? []}
+            pinnedCount={pinnedCount}
+            historyPartial={hasMoreHistory}
+            reducedMotion={prefs.reducedMotion}
+            onClose={() => backHash('/')}
+            onOpenManager={() => setGroupInfoOpen(true)}
+          />
+        ) : null}
+        {roomSubPage === 'search' ? (
+          <RoomSearchPage
+            key="room-search-page"
+            me={me}
+            conversationId={conversationId}
+            loadedMessages={messages.data ?? []}
+            reducedMotion={prefs.reducedMotion}
+            onClose={() => backHash('/')}
+            onJump={(messageId) => void jumpToMessage(messageId)}
+          />
         ) : null}
       </AnimatePresence>
 
@@ -5122,13 +4940,9 @@ export function ChatRoom({
       {stage.node}
       {space.node}
       {tournament.node}
-      <UserProfileSheet
-        user={profileUser}
-        open={profileUser !== null}
-        onOpenChange={(v) => {
-          if (!v) setProfileUser(null)
-        }}
-      />
+      {/* R27-c: profile taps route to the global #/user/:id page — the
+          in-room UserProfileSheet mount is gone; the sheet component stays
+          in use by contacts-tab + group-info-sheet. */}
       <PipChat me={me} />
       {/* full-screen message effects — one canvas, queue upstream, zero pointer events */}
       <div className="pointer-events-none fixed inset-0 z-[80]" aria-hidden>
@@ -5562,7 +5376,7 @@ interface MessageRowProps {
   /** member display names (stable ref) — drives @mention chips */
   memberNames: string[]
   /** group read-by stack for the last own message (null otherwise) */
-  readBy: { members: Array<{ id: string; name: string; color: string }>; all: boolean } | null
+  readBy: { members: Array<{ id: string; name: string; color: string; avatar: string | null }>; all: boolean } | null
   /** search/reply jump flash — ring-pulse this bubble briefly */
   highlighted: boolean
   /** live Slack/Zulip reply count for THIS thread root (0 = none) */
@@ -5597,21 +5411,6 @@ interface MessageRowProps {
   justArrived: boolean
   /** prefs.reducedMotion mirror — gates entrance/tap/particle motion */
   reducedMotion: boolean
-}
-
-/** Renders text with the first case-insensitive occurrence of `query` highlighted. */
-function MatchedText({ content, query }: { content: string; query: string }) {
-  const idx = query.length > 0 ? content.toLowerCase().indexOf(query.toLowerCase()) : -1
-  if (idx < 0) return <>{content}</>
-  return (
-    <>
-      {content.slice(0, idx)}
-      <mark className="rounded bg-emerald-500/20 px-0.5 font-semibold text-emerald-700 dark:text-emerald-300">
-        {content.slice(idx, idx + query.length)}
-      </mark>
-      {content.slice(idx + query.length)}
-    </>
-  )
 }
 
 /** Escapes a member name for safe embedding in a RegExp. */
@@ -6127,7 +5926,7 @@ const MessageRow = memo(function MessageRow({
                   onOpenProfile(message.sender)
                 }}
               >
-                <UserAvatar name={message.sender.name} color={message.sender.color} size={28} />
+                <UserAvatar name={message.sender.name} color={message.sender.color} avatar={message.sender.avatar} size={28} />
               </button>
             )}
           </div>
@@ -6583,7 +6382,7 @@ const MessageRow = memo(function MessageRow({
                     key={member.id}
                     className="overflow-hidden rounded-full ring-2 ring-zinc-50 dark:ring-zinc-900"
                   >
-                    <UserAvatar name={member.name} color={member.color} size={14} />
+                    <UserAvatar name={member.name} color={member.color} avatar={member.avatar} size={14} />
                   </span>
                 ))}
               </span>
@@ -6761,6 +6560,7 @@ function InfoDialog({
                     <UserAvatar
                       name={o?.name ?? title}
                       color={o?.color}
+                      avatar={o?.avatar}
                       size={44}
                       showPresence
                       online={o ? onlineIds.has(o.id) : false}
@@ -6940,7 +6740,7 @@ function InfoDialog({
                       onClick={() => onOpenMember(member)}
                       className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
                     >
-                      <UserAvatar name={member.name} color={member.color} size={38} showPresence online={online} />
+                      <UserAvatar name={member.name} color={member.color} avatar={member.avatar} size={38} showPresence online={online} />
                     </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 items-center gap-1.5">
@@ -7597,10 +7397,10 @@ function ThreadSheet({
                     onClick={() => onOpenProfile(root.sender)}
                     className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
                   >
-                    <UserAvatar name={root.sender.name} color={root.sender.color} size={22} />
+                    <UserAvatar name={root.sender.name} color={root.sender.color} avatar={root.sender.avatar} size={22} />
                   </button>
                 ) : (
-                  <UserAvatar name={root.sender.name} color={root.sender.color} size={22} />
+                  <UserAvatar name={root.sender.name} color={root.sender.color} avatar={root.sender.avatar} size={22} />
                 )}
                 <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
                   {root.sender.id === myId ? 'You' : root.sender.name}
@@ -7637,10 +7437,10 @@ function ThreadSheet({
                         onClick={() => onOpenProfile(m.sender)}
                         className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
                       >
-                        <UserAvatar name={m.sender.name} color={m.sender.color} size={26} />
+                        <UserAvatar name={m.sender.name} color={m.sender.color} avatar={m.sender.avatar} size={26} />
                       </button>
                     ) : (
-                      <UserAvatar name={m.sender.name} color={m.sender.color} size={26} />
+                      <UserAvatar name={m.sender.name} color={m.sender.color} avatar={m.sender.avatar} size={26} />
                     )}
                     <div className={cn('max-w-[76%]', mine && 'text-right')}>
                       <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">

@@ -5,7 +5,7 @@
 // Server-only — never import from client components.
 // ─────────────────────────────────────────────────────────────
 import path from 'node:path'
-import type { Prisma } from '@prisma/client'
+import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
 import type {
   AppUser,
@@ -110,6 +110,7 @@ interface UserRow {
   username?: string | null
   about: string
   color: string
+  avatar: string | null
   statusEmoji: string | null
   statusText: string | null
   createdAt: Date
@@ -117,7 +118,7 @@ interface UserRow {
 }
 
 function mapAuthor(user: UserRow): MessageAuthor {
-  return { id: user.id, name: user.name, username: user.username ?? null, color: user.color }
+  return { id: user.id, name: user.name, username: user.username ?? null, color: user.color, avatar: user.avatar ?? null }
 }
 
 export function mapUser(user: UserRow): AppUser {
@@ -127,6 +128,7 @@ export function mapUser(user: UserRow): AppUser {
     username: user.username ?? null,
     about: user.about,
     color: user.color,
+    avatar: user.avatar ?? null,
     statusEmoji: user.statusEmoji ?? null,
     statusText: user.statusText ?? null,
     createdAt: user.createdAt.toISOString(),

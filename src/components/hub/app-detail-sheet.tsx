@@ -1,280 +1,78 @@
 // ─────────────────────────────────────────────────────────────
-// Pulse Hub — App detail subpage (3-tab dense deck) + the real
-// install & community plumbing.
-//   Overview   — blueprint fields + live install card (R19-e)
-//   Community  — real app community group (GET/POST
-//                /api/hub/apps/[appId]/community) → open in chats
-//   Connectors — live installer rows (GET /api/hub/apps/[appId]/install)
-// appId = String(MATRIX app.n) · zero mocks — every value from Prisma.
-// Also hosts the shared "installed set" cache (client-known appIds)
-// that the Apps panel tiles + My apps view read from.
+// Pulse Hub — #/hub/app/<appId> app sub-page (R27-b).
+// Replaces the R19-e overlay sheet with a REAL hash-routed page:
+// accent hero (brand-true gradient + icon tile + tagline), real
+// wallet chip, feature list, install/community/connectors with
+// optimistic mutations, and a related-apps rail. The "Open" action
+// keeps the existing contract — the app's community conversation
+// is opened in the main chat surface via onOpenConversation.
+// appId = String(MATRIX app.n) · zero mocks — every live value
+// comes from /api/hub/* → Prisma. Shared plumbing lives in
+// hub-data.tsx; glass primitives in hub-primitives.tsx.
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   AnimatePresence,
-  animate,
   motion,
-  useMotionValue,
-  useTransform,
+  useReducedMotion,
 } from 'framer-motion'
 import type { Variants } from 'framer-motion'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { QueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
 import {
+  BadgeCheck,
   Cable,
   Check,
+  Coins,
   Crown,
+  Ellipsis,
+  Gem,
   Loader2,
   Megaphone,
   MessagesSquare,
   Plus,
-  RotateCcw,
+  ShieldQuestion,
   Sparkles,
   UserPlus,
   Users,
 } from 'lucide-react'
-import type { AppUser, ConversationDetail } from '@/lib/types'
-import { apiJson, initialsOf } from '@/lib/pulse-utils'
+import type { AppUser } from '@/lib/types'
+import { buzz } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
-import { MATRIX, MATRIX_TO_NAV, type MatrixApp } from '@/lib/hub-catalog'
+import { backHash, navigateHash } from '@/lib/hash-router'
+import {
+  MATRIX,
+  MATRIX_TO_NAV,
+  appAccent,
+  appFeatures,
+  appTagline,
+  slugForCategory,
+} from '@/lib/hub-catalog'
+import { spring } from '@/lib/motion'
+import {
+  CountUp,
+  LoadErrorCard,
+  SkeletonDots,
+  useAppCommunity,
+  useAppInstallStatus,
+  useInstallToggle,
+  useJoinCommunity,
+  useWalletMini,
+} from '@/components/hub/hub-data'
+import type { AppCommunityQuery, InstallInstaller, JoinCommunityMutation } from '@/components/hub/hub-data'
+import {
+  AppIconTile,
+  ConnectedBadge,
+  HubSubHeader,
+  staggerChild,
+  staggerParent,
+} from '@/components/hub/hub-primitives'
+import { GlassMenu, GlassMenuItem, GlassMenuLabel, GlassMenuSeparator } from '@/components/ui/glass-menu'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/chat/user-avatar'
 
-// ── Install API contract ─────────────────────────────────────
-
-export interface InstallInstaller {
-  id: string
-  name: string
-  username: string | null
-  color: string
-}
-
-export interface InstallStatus {
-  installed: boolean
-  status: string | null
-  installedAt: string | null
-  installs: number
-  installers: InstallInstaller[]
-}
-
-const installedSetKey = (meId: string) => ['hub-apps-installed-set', meId] as const
-const perAppKey = (appId: string, meId: string) => ['hub-app-install', appId, meId] as const
-
-/**
- * Client-known set of connected appIds. Hydrated by the 100-app
- * Promise.all on "My apps" chip activation (cached 60s), kept
- * fresh by connect/disconnect mutations + per-app detail fetches.
- */
-export async function fetchInstalledSet(meId: string): Promise<string[]> {
-  const results = await Promise.all(
-    MATRIX.map(async (app) => {
-      const res = await apiJson<{ installed: boolean }>(
-        `/api/hub/apps/${app.n}/install?userId=${encodeURIComponent(meId)}`,
-      )
-      return res.installed ? String(app.n) : null
-    }),
-  )
-  return results.filter((id): id is string => id !== null)
-}
-
-/** Fetch-on-demand hydration — dedupes, respects a 60s freshness window. */
-export function hydrateInstalledSet(qc: QueryClient, meId: string): Promise<string[]> {
-  return qc.fetchQuery({
-    queryKey: installedSetKey(meId),
-    queryFn: () => fetchInstalledSet(meId),
-    staleTime: 60_000,
-  })
-}
-
-/** Merge one app's server truth into the client-known set. */
-export function patchInstalledSet(qc: QueryClient, meId: string, appId: string, installed: boolean): void {
-  qc.setQueryData<string[]>(installedSetKey(meId), (prev) => {
-    if (!installed && prev === undefined) return undefined // never materialize a false-empty set
-    const base = prev ?? []
-    const has = base.includes(appId)
-    if (installed && !has) return [...base, appId]
-    if (!installed && has) return base.filter((id) => id !== appId)
-    return base
-  })
-}
-
-/** Cache-only subscription (enabled: false — data lands via hydrate/patches). */
-export function useInstalledSet(meId: string) {
-  return useQuery({
-    queryKey: installedSetKey(meId),
-    queryFn: () => fetchInstalledSet(meId),
-    enabled: false,
-    staleTime: 60_000,
-  })
-}
-
-/** Per-app install status — GET truth; also patches the client-known set. */
-export function useAppInstallStatus(appId: string, meId: string) {
-  const qc = useQueryClient()
-  return useQuery({
-    queryKey: perAppKey(appId, meId),
-    queryFn: async () => {
-      const res = await apiJson<InstallStatus>(
-        `/api/hub/apps/${appId}/install?userId=${encodeURIComponent(meId)}`,
-      )
-      patchInstalledSet(qc, meId, appId, res.installed)
-      return res
-    },
-    staleTime: 30_000,
-  })
-}
-
-/**
- * Connect (POST) / disconnect (DELETE) with optimistic flip +
- * rollback + error toast. Success shows as the UI flip itself
- * (check pulse on tiles/detail), plus a short confirmation toast.
- */
-export function useInstallToggle(app: { n: number; name: string }, meId: string) {
-  const qc = useQueryClient()
-  const appId = String(app.n)
-  return useMutation({
-    mutationFn: async (next: boolean) => {
-      const res = await apiJson<{ installed: boolean; installs: number }>(
-        `/api/hub/apps/${appId}/install`,
-        { method: next ? 'POST' : 'DELETE', body: JSON.stringify({ userId: meId }) },
-      )
-      return res
-    },
-    onMutate: async (next) => {
-      await qc.cancelQueries({ queryKey: perAppKey(appId, meId) })
-      const prevStatus = qc.getQueryData<InstallStatus>(perAppKey(appId, meId))
-      const prevSet = qc.getQueryData<string[]>(installedSetKey(meId))
-      if (prevStatus) {
-        qc.setQueryData<InstallStatus>(perAppKey(appId, meId), {
-          ...prevStatus,
-          installed: next,
-          status: next ? 'connected' : null,
-          installedAt: next ? (prevStatus.installedAt ?? new Date().toISOString()) : null,
-          installs: Math.max(0, prevStatus.installs + (next ? 1 : -1)),
-        })
-      } else if (next) {
-        qc.setQueryData<InstallStatus>(perAppKey(appId, meId), {
-          installed: true,
-          status: 'connected',
-          installedAt: new Date().toISOString(),
-          installs: 1,
-          installers: [],
-        })
-      }
-      patchInstalledSet(qc, meId, appId, next)
-      return { prevStatus, prevSet }
-    },
-    onError: (err: Error, _next, ctx) => {
-      if (ctx?.prevStatus !== undefined) qc.setQueryData(perAppKey(appId, meId), ctx.prevStatus)
-      else qc.removeQueries({ queryKey: perAppKey(appId, meId) })
-      if (ctx?.prevSet !== undefined) qc.setQueryData(installedSetKey(meId), ctx.prevSet)
-      else qc.removeQueries({ queryKey: installedSetKey(meId) })
-      toast.error(err instanceof Error ? err.message : 'Could not update the connection')
-    },
-    onSuccess: (res) => {
-      toast.success(res.installed ? `Connected to ${app.name}` : `Disconnected from ${app.name}`)
-      qc.setQueryData<InstallStatus>(perAppKey(appId, meId), (old) =>
-        old ? { ...old, installed: res.installed, installs: res.installs } : old,
-      )
-    },
-    onSettled: () => {
-      // marks stale even without observers → next detail mount refetches truth
-      void qc.invalidateQueries({ queryKey: perAppKey(appId, meId) })
-    },
-  })
-}
-
-// ── Community API contract ───────────────────────────────────
-// GET  /api/hub/apps/[appId]/community?userId= →
-//   { conversation: ConversationDetail | null, memberCount, joined }
-//   (conversation === null → nobody has joined yet — founder moment)
-// POST /api/hub/apps/[appId]/community { userId } →
-//   { conversation: ConversationDetail, joined: true }
-//   (auto-provisions the group on first join; founder = admin)
-
-export interface AppCommunityState {
-  conversation: ConversationDetail | null
-  memberCount: number
-  joined: boolean
-}
-
-const communityKey = (appId: string, meId: string) => ['app-community', appId, meId] as const
-
-export type AppCommunityQuery = ReturnType<typeof useAppCommunity>
-export type JoinCommunityMutation = ReturnType<typeof useJoinCommunity>
-
-/** Live app-community state — refetches on window focus. */
-export function useAppCommunity(appId: string, meId: string) {
-  return useQuery({
-    queryKey: communityKey(appId, meId),
-    queryFn: () =>
-      apiJson<AppCommunityState>(
-        `/api/hub/apps/${appId}/community?userId=${encodeURIComponent(meId)}`,
-      ),
-    staleTime: 15_000,
-    refetchOnWindowFocus: true,
-  })
-}
-
-/**
- * Join (or found) the community — POST is idempotent on the server.
- * onSuccess reconciles the query cache with server truth, teaches
- * the chat list about the room, toasts, then hands the conversation
- * id to `onJoined` (→ auto-open in the main chat surface).
- * Hook-level callbacks keep firing even if the sheet unmounts on
- * navigation, so the open-chat handoff is never dropped.
- */
-export function useJoinCommunity(
-  app: { n: number; name: string },
-  meId: string,
-  opts?: { onJoined?: (conversationId: string) => void },
-) {
-  const qc = useQueryClient()
-  const appId = String(app.n)
-  return useMutation({
-    mutationFn: async () => {
-      const prior = qc.getQueryData<AppCommunityState>(communityKey(appId, meId))
-      const res = await apiJson<{ conversation: ConversationDetail; joined: boolean }>(
-        `/api/hub/apps/${appId}/community`,
-        { method: 'POST', body: JSON.stringify({ userId: meId }) },
-      )
-      return { res, founding: (prior?.conversation ?? null) === null }
-    },
-    onSuccess: ({ res, founding }) => {
-      const name =
-        res.conversation.name ?? `#${String(app.n).padStart(3, '0')} · ${app.name} community`
-      toast.success(`${founding ? 'Founded' : 'Joined'} ${name}`)
-      qc.setQueryData<AppCommunityState>(communityKey(appId, meId), {
-        conversation: res.conversation,
-        memberCount: res.conversation.members.length,
-        joined: true,
-      })
-      void qc.invalidateQueries({ queryKey: communityKey(appId, meId) })
-      void qc.invalidateQueries({ queryKey: ['conversations', meId] }) // chat list learns the room
-      opts?.onJoined?.(res.conversation.id)
-    },
-    onError: (err: Error) => {
-      toast.error(err instanceof Error ? err.message : 'Could not join the community')
-    },
-  })
-}
-
-// ── Shared micro-bits ────────────────────────────────────────
-
-/** 300ms count-up (framer motion values — no re-render churn). */
-export function CountUp({ value, className }: { value: number; className?: string }) {
-  const mv = useMotionValue(0)
-  const text = useTransform(mv, (v) => Math.round(v).toLocaleString())
-  useEffect(() => {
-    const controls = animate(mv, value, { duration: 0.3, ease: 'easeOut' })
-    return () => controls.stop()
-  }, [value, mv])
-  return <motion.span className={className}>{text}</motion.span>
-}
+// ── shared micro-bits (page-local) ───────────────────────────
 
 /** Spring-pops whenever the value changes (join-success count pulse). */
 function CountPulse({ value, className }: { value: number; className?: string }) {
@@ -291,37 +89,22 @@ function CountPulse({ value, className }: { value: number; className?: string })
   )
 }
 
-/** Spotlight-grade loading dots. */
-export function SkeletonDots({ className, label = 'Loading' }: { className?: string; label?: string }) {
-  return (
-    <div className={cn('flex items-center gap-1.5', className)} role="status" aria-label={label}>
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="size-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500"
-          animate={{ opacity: [0.25, 1, 0.25], scale: [0.85, 1.15, 0.85] }}
-          transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.18, ease: 'easeInOut' }}
-        />
-      ))}
-    </div>
-  )
+function formatDay(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-/** Error card with retry — used by the detail tabs and the My apps view. */
-export function LoadErrorCard({ onRetry, message }: { onRetry: () => void; message?: string }) {
-  return (
-    <div
-      role="alert"
-      className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-rose-400/50 bg-rose-500/5 px-4 py-5 text-center"
-    >
-      <p className="text-[13px] font-medium text-rose-600 dark:text-rose-400">
-        {message ?? 'Could not load connection data.'}
-      </p>
-      <Button size="sm" variant="outline" onClick={onRetry} className="h-9 gap-1.5">
-        <RotateCcw className="size-3.5" /> Retry
-      </Button>
-    </div>
-  )
+/** Relative stamp for the viewer's own connector row ("3h ago"). */
+function formatRelative(iso: string, now: Date = new Date()): string {
+  const ms = now.getTime() - new Date(iso).getTime()
+  if (!Number.isFinite(ms)) return ''
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return formatDay(iso)
 }
 
 /** Up to 6 most-recent installers (real users) + "+N" overflow. */
@@ -347,34 +130,6 @@ function InstallerStack({ installers, extra }: { installers: InstallInstaller[];
       </div>
     </div>
   )
-}
-
-/** Stagger-in choreography for dense rows (members, connectors). */
-const staggerParent: Variants = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.045 } },
-}
-const staggerChild: Variants = {
-  hidden: { opacity: 0, y: 10 },
-  show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 460, damping: 32 } },
-}
-
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-/** Relative stamp for the viewer's own connector row ("3h ago"). */
-function formatRelative(iso: string, now: Date = new Date()): string {
-  const ms = now.getTime() - new Date(iso).getTime()
-  if (!Number.isFinite(ms)) return ''
-  const mins = Math.floor(ms / 60_000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  return formatDay(iso)
 }
 
 // ── Tab chrome ───────────────────────────────────────────────
@@ -414,7 +169,10 @@ function DetailTabBar({
             id={`app-detail-tab-${t.id}`}
             aria-selected={selected}
             aria-controls={`app-detail-panel-${t.id}`}
-            onClick={() => onChange(t.id)}
+            onClick={() => {
+              buzz(6)
+              onChange(t.id)
+            }}
             className={cn(
               'relative flex h-11 min-w-[44px] flex-1 items-center justify-center gap-1.5 text-[12.5px] font-semibold transition-colors',
               selected
@@ -454,78 +212,135 @@ function DetailTabBar({
   )
 }
 
-// ── Overview tab (blueprint + live install card) ─────────────
+// ── Hero (identity + live install card + actions) ────────────
 
-interface TabPanelBaseProps {
-  app: MatrixApp
-  me: AppUser
+function AppHero({
+  appId,
+  statusQ,
+  toggle,
+  join,
+  communityQ,
+  walletQ,
+  onOpenConversation,
+}: {
+  appId: string
   statusQ: ReturnType<typeof useAppInstallStatus>
   toggle: ReturnType<typeof useInstallToggle>
-}
-
-function OverviewPanel({ app, statusQ, toggle }: TabPanelBaseProps) {
+  join: JoinCommunityMutation
+  communityQ: AppCommunityQuery
+  walletQ: ReturnType<typeof useWalletMini>
+  onOpenConversation?: (conversationId: string) => void
+}) {
+  const app = MATRIX.find((a) => String(a.n) === appId)!
   const status = statusQ.data
   const installed = Boolean(status?.installed)
-  return (
-    <>
-      {/* live connection hero */}
-      <div className="rounded-2xl border border-zinc-200/80 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent p-4 dark:border-white/10 dark:from-emerald-500/15 dark:via-transparent">
-        <div className="flex items-center gap-3">
-          <div
-            aria-hidden
-            className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-base font-black text-white shadow-md"
-          >
-            {initialsOf(app.name)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-base font-bold">{app.name}</p>
-            <p className="mt-0.5 truncate text-[11px] font-medium text-zinc-500">
-              #{String(app.n).padStart(3, '0')} · {app.category}
-            </p>
-          </div>
-        </div>
+  const conversation = communityQ.data?.conversation ?? null
+  const joined = Boolean(communityQ.data?.joined)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const wallet = walletQ.data
 
-        <div className="mt-3 flex items-end justify-between gap-2">
-          <div className="min-h-[42px]">
-            {statusQ.isLoading ? (
-              <div className="flex h-full flex-col justify-center">
-                <SkeletonDots label="Loading connection stats" />
-              </div>
-            ) : statusQ.isError || !status ? (
-              <p className="text-[11px] font-medium text-rose-500">Connection stats unavailable</p>
+  const openChat = () => {
+    if (conversation) {
+      onOpenConversation?.(conversation.id)
+      backHash('/hub') // the sheet used to close itself — the page pops its route
+      return
+    }
+    // not a member yet — join (idempotent, auto-provisions) then hand off
+    join.mutate()
+  }
+
+  return (
+    <div className="glass-deep glass-sheen relative overflow-hidden rounded-2xl p-4">
+      {/* accent wash */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-12 -top-14 size-44 rounded-full opacity-[0.28] blur-2xl"
+        style={{ backgroundImage: `linear-gradient(135deg, ${appAccent(app)[0]}, ${appAccent(app)[1]})` }}
+      />
+
+      <div className="relative flex items-start gap-3">
+        <AppIconTile app={app} size={60} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-[17px] font-black leading-tight">{app.name}</p>
+            {installed ? <ConnectedBadge appName={app.name} className="hidden h-6 px-2 text-[10px] sm:inline-flex" /> : null}
+          </div>
+          <p className="mt-0.5 text-[12.5px] font-medium leading-snug text-zinc-600 dark:text-zinc-300">
+            {appTagline(app)}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => navigateHash(`/hub/c/${slugForCategory(app.category)}`)}
+              className="glass-pill inline-flex h-7 items-center rounded-full px-2.5 text-[10px] font-bold text-zinc-600 transition-transform active:scale-95 dark:text-zinc-300"
+              aria-label={`Open ${app.category} category`}
+            >
+              {app.category}
+            </button>
+            <span className="inline-flex h-7 items-center rounded-full border border-zinc-200/80 px-2.5 text-[10px] font-semibold tabular-nums text-zinc-500 dark:border-white/10 dark:text-zinc-400">
+              #{String(app.n).padStart(3, '0')}
+            </span>
+            {wallet ? (
+              <span
+                className="glass-pill inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-400"
+                aria-label={`Wallet balance ${wallet.coins} Pulse Coins`}
+              >
+                <Coins className="size-3" aria-hidden /> {wallet.coins.toLocaleString()} PC
+                <Gem className="ml-1 size-3 text-sky-500" aria-hidden /> {wallet.gems}
+              </span>
             ) : (
-              <>
-                <p className="flex items-baseline gap-1.5 text-2xl font-black leading-none tabular-nums text-emerald-600 dark:text-emerald-400">
-                  <CountUp value={status.installs} />
-                  <Users className="size-4 translate-y-0.5" aria-hidden />
-                </p>
-                <p className="mt-1 text-[11px] font-medium text-zinc-500">
-                  member{status.installs === 1 ? '' : 's'} connected
-                </p>
-              </>
+              <SkeletonDots className="h-7 items-center px-1" label="Loading wallet" />
             )}
           </div>
-          <InstallerStack
-            installers={status?.installers ?? []}
-            extra={Math.max(0, (status?.installs ?? 0) - (status?.installers.length ?? 0))}
-          />
         </div>
+      </div>
 
-        {installed && status?.installedAt ? (
-          <p className="mt-2.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-            Connected on {formatDay(status.installedAt)}
-          </p>
-        ) : null}
+      {/* live install stats */}
+      <div className="relative mt-3 flex items-end justify-between gap-2">
+        <div className="min-h-[42px]">
+          {statusQ.isLoading ? (
+            <div className="flex h-full flex-col justify-center">
+              <SkeletonDots label="Loading connection stats" />
+            </div>
+          ) : statusQ.isError || !status ? (
+            <p className="text-[11px] font-medium text-rose-500">Connection stats unavailable</p>
+          ) : (
+            <>
+              <p className="flex items-baseline gap-1.5 text-2xl font-black leading-none tabular-nums text-emerald-600 dark:text-emerald-400">
+                <CountUp value={status.installs} />
+                <Users className="size-4 translate-y-0.5" aria-hidden />
+              </p>
+              <p className="mt-1 text-[11px] font-medium text-zinc-500">
+                member{status.installs === 1 ? '' : 's'} connected
+              </p>
+            </>
+          )}
+        </div>
+        <InstallerStack
+          installers={status?.installers ?? []}
+          extra={Math.max(0, (status?.installs ?? 0) - (status?.installers.length ?? 0))}
+        />
+      </div>
+      {installed && status?.installedAt ? (
+        <p className="relative mt-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+          Connected on {formatDay(status.installedAt)}
+        </p>
+      ) : null}
 
+      {/* actions — install · open · overflow */}
+      <div className="relative mt-3 flex items-center gap-2">
         <Button
           className={cn(
-            'mt-3 h-11 w-full text-sm font-bold',
+            'h-11 flex-1 text-sm font-bold',
             installed &&
               'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300',
           )}
           variant={installed ? 'outline' : 'default'}
           disabled={toggle.isPending || statusQ.isLoading}
-          onClick={() => toggle.mutate(!installed)}
+          onClick={() => {
+            buzz(12)
+            toggle.mutate(!installed)
+          }}
           aria-pressed={installed}
           aria-label={installed ? `Disconnect from ${app.name}` : `Connect to ${app.name}`}
         >
@@ -547,7 +362,7 @@ function OverviewPanel({ app, statusQ, toggle }: TabPanelBaseProps) {
                 <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
               </motion.span>
               <Check className="mr-0.5 size-4" aria-hidden />
-              Connected — tap to disconnect
+              Connected
             </>
           ) : (
             <>
@@ -555,22 +370,133 @@ function OverviewPanel({ app, statusQ, toggle }: TabPanelBaseProps) {
             </>
           )}
         </Button>
-      </div>
 
-      {/* blueprint fields */}
-      <div className="rounded-xl border border-zinc-200/80 p-3 dark:border-white/10">
+        <Button
+          className="h-11 shrink-0 text-sm font-bold"
+          variant="secondary"
+          disabled={join.isPending || (communityQ.isLoading && !conversation)}
+          onClick={() => {
+            buzz(12)
+            openChat()
+          }}
+          aria-label={conversation ? `Open the ${app.name} community chat` : `Join the ${app.name} community chat`}
+        >
+          {join.isPending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : conversation ? (
+            <>
+              <MessagesSquare className="mr-1.5 size-4" aria-hidden /> Open
+            </>
+          ) : (
+            <>
+              <UserPlus className="mr-1.5 size-4" aria-hidden /> Join
+            </>
+          )}
+        </Button>
+
+        {/* overflow — real destructive actions only (mute has no server contract yet) */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            aria-label="More actions"
+            aria-expanded={menuOpen}
+            onClick={() => {
+              buzz(8)
+              setMenuOpen((v) => !v)
+            }}
+            className="glass-pill flex size-11 items-center justify-center text-zinc-600 outline-none transition-transform active:scale-90 dark:text-zinc-300"
+          >
+            <Ellipsis className="size-[18px]" aria-hidden />
+          </button>
+          <AnimatePresence>
+            {menuOpen ? (
+              <>
+                <div
+                  className="fixed inset-0 z-[80]"
+                  role="presentation"
+                  onClick={() => setMenuOpen(false)}
+                />
+                <GlassMenu className="absolute right-0 top-[52px] z-[90]" role="menu">
+                  <GlassMenuLabel>{app.name}</GlassMenuLabel>
+                  <GlassMenuItem
+                    icon={BadgeCheck}
+                    label={installed ? 'Connection active' : 'Not connected'}
+                    trailing={installed ? 'on' : 'off'}
+                    active
+                    onClick={() => setMenuOpen(false)}
+                  />
+                  <GlassMenuSeparator />
+                  <GlassMenuItem
+                    icon={Check}
+                    label="Remove connection"
+                    destructive
+                    disabled={!installed || toggle.isPending}
+                    onClick={() => {
+                      setMenuOpen(false)
+                      toggle.mutate(false)
+                    }}
+                  />
+                </GlassMenu>
+              </>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Feature list (real matrix fields) ────────────────────────
+
+function FeatureList({ appId }: { appId: string }) {
+  const app = MATRIX.find((a) => String(a.n) === appId)!
+  const features = appFeatures(app)
+  return (
+    <motion.section
+      variants={staggerParent}
+      initial="hidden"
+      animate="show"
+      aria-label={`${app.name} features`}
+      className="glass-deep glass-sheen overflow-hidden rounded-2xl"
+    >
+      <p className="border-b border-zinc-200/70 px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500 dark:border-white/[0.06]">
+        What it ships
+      </p>
+      <motion.ul className="divide-y divide-zinc-200/60 dark:divide-white/[0.05]">
+        {features.map((f, i) => (
+          <motion.li
+            key={i}
+            variants={staggerChild}
+            className="flex items-start gap-2.5 px-4 py-2.5"
+          >
+            {i === features.length - 1 ? (
+              <Sparkles className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+            ) : (
+              <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+            )}
+            <span className="text-[12.5px] font-medium leading-snug text-zinc-700 dark:text-zinc-200">{f}</span>
+          </motion.li>
+        ))}
+      </motion.ul>
+    </motion.section>
+  )
+}
+
+// ── Overview tab (blueprint fields) ──────────────────────────
+
+function OverviewPanel({ appId, statusQ }: { appId: string; statusQ: ReturnType<typeof useAppInstallStatus> }) {
+  const app = MATRIX.find((a) => String(a.n) === appId)!
+  return (
+    <>
+      <div className="glass-deep glass-sheen rounded-xl p-3">
         <p className="text-[11px] font-semibold uppercase text-zinc-500">Mobile nav style</p>
         <p className="mt-1 text-sm font-medium">{app.nav}</p>
       </div>
-      <div className="rounded-xl border border-zinc-200/80 p-3 dark:border-white/10">
+      <div className="glass-deep glass-sheen rounded-xl p-3">
         <p className="text-[11px] font-semibold uppercase text-zinc-500">Input toolkit</p>
         <p className="mt-1 text-sm font-medium">{app.input}</p>
       </div>
-      <div className="rounded-xl border border-zinc-200/80 p-3 dark:border-white/10">
-        <p className="text-[11px] font-semibold uppercase text-zinc-500">Sub-page category</p>
-        <p className="mt-1 text-sm font-medium">{app.category}</p>
-      </div>
-      <div className="rounded-xl border border-emerald-300/60 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-950/30">
+      <div className="glass-deep glass-sheen rounded-xl border-emerald-300/60 p-3 dark:border-emerald-500/30">
         <p className="text-[11px] font-semibold uppercase text-emerald-700 dark:text-emerald-400">
           Secret UI architecture feature
         </p>
@@ -581,7 +507,6 @@ function OverviewPanel({ app, statusQ, toggle }: TabPanelBaseProps) {
         <strong className="text-emerald-600 dark:text-emerald-400">{MATRIX_TO_NAV[app.nav]}</strong> — switch it live
         from the Profile → Navigation panel.
       </div>
-
       {statusQ.isError ? <LoadErrorCard onRetry={() => void statusQ.refetch()} /> : null}
     </>
   )
@@ -594,7 +519,7 @@ function CommunitySkeleton() {
     <div
       role="status"
       aria-label="Loading community"
-      className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60"
+      className="glass-deep glass-sheen rounded-2xl p-4"
     >
       <div className="flex items-center gap-3">
         <div className="size-12 shrink-0 animate-pulse rounded-2xl bg-zinc-200 dark:bg-white/10" />
@@ -610,20 +535,19 @@ function CommunitySkeleton() {
 }
 
 function CommunityPanel({
-  app,
+  appId,
   me,
   query,
   join,
   onOpenConversation,
-  onClose,
 }: {
-  app: MatrixApp
+  appId: string
   me: AppUser
   query: AppCommunityQuery
   join: JoinCommunityMutation
   onOpenConversation?: (conversationId: string) => void
-  onClose: () => void
 }) {
+  const app = MATRIX.find((a) => String(a.n) === appId)!
   const state = query.data
   const conversation = state?.conversation ?? null
   const memberCount = state?.memberCount ?? 0
@@ -643,7 +567,7 @@ function CommunityPanel({
   // founder moment — nobody has provisioned this app's group yet
   if (!conversation) {
     return (
-      <div className="rounded-2xl border border-dashed border-zinc-300 p-5 text-center dark:border-white/15">
+      <div className="glass-deep glass-sheen rounded-2xl border border-dashed border-zinc-300 p-5 text-center dark:border-white/15">
         <div
           aria-hidden
           className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-100/60 dark:border-white/15 dark:bg-white/5"
@@ -685,14 +609,9 @@ function CommunityPanel({
   return (
     <>
       {/* community identity card */}
-      <div className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60">
+      <div className="glass-deep glass-sheen rounded-2xl p-4">
         <div className="flex items-center gap-3">
-          <div
-            aria-hidden
-            className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-base font-black text-white shadow-md"
-          >
-            {initialsOf(app.name)}
-          </div>
+          <AppIconTile app={app} size={48} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold">{conversation.name ?? fallbackName}</p>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -752,7 +671,7 @@ function CommunityPanel({
             <Button
               className="mt-3 h-11 w-full text-sm font-bold"
               onClick={() => {
-                onClose()
+                backHash('/hub')
                 onOpenConversation?.(conversation.id)
               }}
               disabled={!onOpenConversation}
@@ -794,20 +713,20 @@ function CommunityPanel({
         variants={staggerParent}
         initial="hidden"
         animate="show"
-        className="overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60"
+        className="glass-deep glass-sheen overflow-hidden rounded-2xl"
       >
-        <div className="flex items-center justify-between border-b border-zinc-200/80 px-4 py-2.5 dark:border-white/10">
+        <div className="flex items-center justify-between border-b border-zinc-200/70 px-4 py-2.5 dark:border-white/[0.06]">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">Members</p>
           <span className="text-[12px] font-black tabular-nums text-emerald-600 dark:text-emerald-400">
             {conversation.members.length}
           </span>
         </div>
-        <motion.div className="divide-y divide-zinc-200/70 dark:divide-white/5">
+        <motion.div className="divide-y divide-zinc-200/60 dark:divide-white/[0.05]">
           {list.map((m) => (
             <motion.div
               key={m.id}
               variants={staggerChild}
-              className="flex items-center gap-3 px-4 py-2.5"
+              className="glass-row-hover flex items-center gap-3 px-4 py-2.5"
             >
               <UserAvatar name={m.name} color={m.color} size={34} />
               <div className="min-w-0 flex-1">
@@ -844,7 +763,7 @@ function ConnectorsSkeleton() {
     <div
       role="status"
       aria-label="Loading connectors"
-      className="overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60"
+      className="glass-deep glass-sheen overflow-hidden rounded-2xl"
     >
       {[0, 1, 2].map((i) => (
         <div key={i} className="flex items-center gap-3 px-4 py-3">
@@ -859,7 +778,18 @@ function ConnectorsSkeleton() {
   )
 }
 
-function ConnectorsPanel({ app, me, statusQ, toggle }: TabPanelBaseProps) {
+function ConnectorsPanel({
+  appId,
+  me,
+  statusQ,
+  toggle,
+}: {
+  appId: string
+  me: AppUser
+  statusQ: ReturnType<typeof useAppInstallStatus>
+  toggle: ReturnType<typeof useInstallToggle>
+}) {
+  const app = MATRIX.find((a) => String(a.n) === appId)!
   const status = statusQ.data
   const installed = Boolean(status?.installed)
   const installers = status?.installers ?? []
@@ -870,19 +800,12 @@ function ConnectorsPanel({ app, me, statusQ, toggle }: TabPanelBaseProps) {
       {/* viewer's own connect state card */}
       <div
         className={cn(
-          'rounded-2xl border p-4',
-          installed
-            ? 'border-emerald-300/60 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-950/30'
-            : 'border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60',
+          'glass-deep glass-sheen rounded-2xl p-4',
+          installed && 'border-emerald-300/60 dark:border-emerald-500/30',
         )}
       >
         <div className="flex items-center gap-3">
-          <div
-            aria-hidden
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[13px] font-black text-white shadow-sm"
-          >
-            {initialsOf(app.name)}
-          </div>
+          <AppIconTile app={app} size={40} />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-bold">Your connection</p>
             <p className="mt-0.5 truncate text-[11px] font-medium text-zinc-500">
@@ -930,7 +853,7 @@ function ConnectorsPanel({ app, me, statusQ, toggle }: TabPanelBaseProps) {
           message="Could not load connectors."
         />
       ) : installers.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-zinc-300 p-5 text-center dark:border-white/15">
+        <div className="glass-deep glass-sheen rounded-2xl border border-dashed border-zinc-300 p-5 text-center dark:border-white/15">
           <Cable className="mx-auto size-5 text-zinc-400" aria-hidden />
           <p className="mt-2 text-[13px] font-bold">No connectors yet</p>
           <p className="mt-1 text-[11px] font-medium text-zinc-500">
@@ -942,9 +865,9 @@ function ConnectorsPanel({ app, me, statusQ, toggle }: TabPanelBaseProps) {
           variants={staggerParent}
           initial="hidden"
           animate="show"
-          className="overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60"
+          className="glass-deep glass-sheen overflow-hidden rounded-2xl"
         >
-          <div className="flex items-center justify-between border-b border-zinc-200/80 px-4 py-2.5 dark:border-white/10">
+          <div className="flex items-center justify-between border-b border-zinc-200/70 px-4 py-2.5 dark:border-white/[0.06]">
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">
               Connected members
             </p>
@@ -953,14 +876,14 @@ function ConnectorsPanel({ app, me, statusQ, toggle }: TabPanelBaseProps) {
               className="text-[12px] font-black tabular-nums text-emerald-600 dark:text-emerald-400"
             />
           </div>
-          <motion.div className="divide-y divide-zinc-200/70 dark:divide-white/5">
+          <motion.div className="divide-y divide-zinc-200/60 dark:divide-white/[0.05]">
             {installers.map((u) => {
               const isViewer = u.id === me.id
               return (
                 <motion.div
                   key={u.id}
                   variants={staggerChild}
-                  className="flex items-center gap-3 px-4 py-2.5"
+                  className="glass-row-hover flex items-center gap-3 px-4 py-2.5"
                 >
                   <UserAvatar name={u.name} color={u.color} size={34} />
                   <div className="min-w-0 flex-1">
@@ -986,7 +909,7 @@ function ConnectorsPanel({ app, me, statusQ, toggle }: TabPanelBaseProps) {
             })}
           </motion.div>
           {extra > 0 ? (
-            <div className="border-t border-zinc-200/70 px-4 py-2.5 text-center text-[11px] font-medium text-zinc-500 dark:border-white/5">
+            <div className="border-t border-zinc-200/60 px-4 py-2.5 text-center text-[11px] font-medium text-zinc-500 dark:border-white/[0.05]">
               +{extra} more connected
             </div>
           ) : null}
@@ -996,28 +919,133 @@ function ConnectorsPanel({ app, me, statusQ, toggle }: TabPanelBaseProps) {
   )
 }
 
-// ── The detail subpage ───────────────────────────────────────
+// ── Related apps rail (same category, real install dots) ─────
 
-export function AppDetailSheet({
-  app,
+function RelatedRail({ appId }: { appId: string }) {
+  const app = MATRIX.find((a) => String(a.n) === appId)!
+  const related = MATRIX.filter((a) => a.category === app.category && a.n !== app.n).slice(0, 10)
+  if (related.length === 0) return null
+
+  return (
+    <section aria-label="Related apps in this category">
+      <div className="flex items-center justify-between px-1">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">More in {app.category.split(' /')[0]}</p>
+        <button
+          type="button"
+          onClick={() => navigateHash(`/hub/c/${slugForCategory(app.category)}`)}
+          className="text-[11px] font-bold text-emerald-600 outline-none hover:underline dark:text-emerald-400"
+          aria-label={`Open the ${app.category} category page`}
+        >
+          See all
+        </button>
+      </div>
+      <motion.ul
+        variants={staggerParent}
+        initial="hidden"
+        animate="show"
+        className="pulse-scroll -mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-2"
+      >
+        {related.map((r) => (
+          <motion.li key={r.n} variants={staggerChild} className="shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                buzz(10)
+                navigateHash(`/hub/app/${r.n}`)
+              }}
+              aria-label={`Open ${r.name} page`}
+              className="glass-deep glass-sheen glass-row-hover flex w-[104px] flex-col items-center gap-1.5 rounded-2xl px-2 py-3 outline-none transition-transform active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+            >
+              <AppIconTile app={r} size={44} />
+              <span className="w-full truncate text-center text-[11.5px] font-bold">{r.name}</span>
+              <span className="text-[9.5px] font-semibold text-zinc-400">#{String(r.n).padStart(3, '0')}</span>
+            </button>
+          </motion.li>
+        ))}
+      </motion.ul>
+    </section>
+  )
+}
+
+// ── Page skeleton ────────────────────────────────────────────
+
+function AppPageSkeleton() {
+  return (
+    <div role="status" aria-label="Loading app" className="flex flex-col gap-3 p-4">
+      <div className="glass-deep glass-sheen flex flex-col gap-3 rounded-2xl p-4">
+        <div className="flex items-center gap-3">
+          <div className="size-[60px] shrink-0 animate-pulse rounded-2xl bg-zinc-200 dark:bg-white/10" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-1/2 animate-pulse rounded bg-zinc-200 dark:bg-white/10" />
+            <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-200 dark:bg-white/10" />
+            <div className="h-5 w-2/3 animate-pulse rounded-full bg-zinc-200 dark:bg-white/10" />
+          </div>
+        </div>
+        <div className="h-11 animate-pulse rounded-xl bg-zinc-200 dark:bg-white/10" />
+      </div>
+      <div className="glass-deep glass-sheen h-24 rounded-2xl" />
+      <div className="glass-deep glass-sheen h-40 rounded-2xl" />
+    </div>
+  )
+}
+
+// ── The app sub-page ─────────────────────────────────────────
+
+const heroEntrance: Variants = {
+  hidden: { opacity: 0, y: 16, scale: 0.985 },
+  show: { opacity: 1, y: 0, scale: 1, transition: { ...spring.soft } },
+}
+
+export function AppDetailPage({
+  appId,
   me,
-  onClose,
   onOpenConversation,
+  direction = 'forward',
 }: {
-  app: MatrixApp
+  appId: string
   me: AppUser
-  onClose: () => void
-  /** open the app community conversation in the main chat surface (optional) */
+  /** open the app community conversation in the main chat surface */
   onOpenConversation?: (conversationId: string) => void
+  /** slide direction for push vs pop (category→app = forward) */
+  direction?: 'forward' | 'back'
 }) {
-  const appId = String(app.n)
+  const reduced = Boolean(useReducedMotion())
+  const numeric = Number(appId)
+  const app = Number.isInteger(numeric) ? MATRIX.find((a) => a.n === numeric) ?? null : null
+
   const statusQ = useAppInstallStatus(appId, me.id)
-  const toggle = useInstallToggle(app, me.id)
+  const toggle = useInstallToggle(app ?? { n: 0, name: 'App' }, me.id)
   const communityQ = useAppCommunity(appId, me.id)
-  const join = useJoinCommunity(app, me.id, {
+  const join = useJoinCommunity(app ?? { n: 0, name: 'App' }, me.id, {
     onJoined: (conversationId) => onOpenConversation?.(conversationId),
   })
+  const walletQ = useWalletMini(me.id)
   const [tab, setTab] = useState<DetailTab>('overview')
+
+  // unknown id — honest 404 state, back to the hub
+  if (!app) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 z-[70] flex flex-col bg-background"
+        role="region"
+        aria-label="Unknown app"
+      >
+        <HubSubHeader title="Unknown app" onBack={() => backHash('/hub')} backLabel="Back to Hub" />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
+          <ShieldQuestion className="size-8 text-zinc-400" aria-hidden />
+          <p className="text-[13px] font-medium text-zinc-500">
+            No platform in the matrix answers to &quot;{appId}&quot;.
+          </p>
+          <Button size="sm" variant="outline" className="h-9" onClick={() => backHash('/hub')}>
+            Back to the Hub
+          </Button>
+        </div>
+      </motion.div>
+    )
+  }
 
   const status = statusQ.data
   const installed = Boolean(status?.installed)
@@ -1031,51 +1059,85 @@ export function AppDetailSheet({
   ]
 
   return (
-    <div className="flex h-full flex-col bg-background" aria-label={`${app.name} app details`}>
-      <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200/80 px-3 py-2.5 dark:border-white/10">
-        <Button variant="ghost" size="sm" className="h-10 px-3" onClick={onClose}>
-          ‹ Back
-        </Button>
-        <p className="truncate text-sm font-bold">
-          #{String(app.n).padStart(3, '0')} · {app.name}
-        </p>
-        {installed ? (
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-            <span className="size-1.5 rounded-full bg-emerald-500" /> Connected
-          </span>
-        ) : null}
-      </div>
+    <motion.div
+      initial={reduced ? { opacity: 0 } : direction === 'forward' ? { opacity: 0, x: 44 } : { opacity: 0, x: -44 }}
+      animate={{ opacity: 1, x: 0, transition: { type: 'spring', stiffness: 300, damping: 28 } }}
+      exit={
+        reduced
+          ? { opacity: 0, transition: { duration: 0.12 } }
+          : direction === 'forward'
+            ? { opacity: 0, x: -32, transition: { duration: 0.18, ease: 'easeIn' } }
+            : { opacity: 0, x: 32, transition: { duration: 0.18, ease: 'easeIn' } }
+      }
+      className="absolute inset-0 z-[70] flex flex-col bg-background"
+      role="region"
+      aria-label={`${app.name} app page`}
+    >
+      <HubSubHeader
+        title={app.name}
+        subtitle={app.category}
+        onBack={() => backHash('/hub')}
+        backLabel={`Back, from ${app.name}`}
+        trailing={
+          installed ? <ConnectedBadge appName={app.name} className="mr-1 h-7 px-2.5 text-[10px]" /> : undefined
+        }
+      />
 
-      <DetailTabBar active={tab} onChange={setTab} tabs={tabs} appName={app.name} />
+      {statusQ.isLoading && !status ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <AppPageSkeleton />
+        </div>
+      ) : (
+        <>
+          <DetailTabBar active={tab} onChange={setTab} tabs={tabs} appName={app.name} />
 
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={tab}
-          role="tabpanel"
-          id={`app-detail-panel-${tab}`}
-          aria-labelledby={`app-detail-tab-${tab}`}
-          initial={{ opacity: 0, x: 14 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -10 }}
-          transition={{ duration: 0.16, ease: 'easeOut' }}
-          className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4"
-        >
-          {tab === 'overview' ? (
-            <OverviewPanel app={app} me={me} statusQ={statusQ} toggle={toggle} />
-          ) : tab === 'community' ? (
-            <CommunityPanel
-              app={app}
-              me={me}
-              query={communityQ}
-              join={join}
-              onOpenConversation={onOpenConversation}
-              onClose={onClose}
-            />
-          ) : (
-            <ConnectorsPanel app={app} me={me} statusQ={statusQ} toggle={toggle} />
-          )}
-        </motion.div>
-      </AnimatePresence>
-    </div>
+          <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-10 pt-3">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={tab}
+                role="tabpanel"
+                id={`app-detail-panel-${tab}`}
+                aria-labelledby={`app-detail-tab-${tab}`}
+                initial={{ opacity: 0, x: 14 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.16, ease: 'easeOut' }}
+                className="flex flex-col gap-3"
+              >
+                {tab === 'overview' ? (
+                  <>
+                    <motion.div variants={reduced ? undefined : heroEntrance} initial={reduced ? false : 'hidden'} animate="show">
+                      <AppHero
+                        appId={String(app.n)}
+                        statusQ={statusQ}
+                        toggle={toggle}
+                        join={join}
+                        communityQ={communityQ}
+                        walletQ={walletQ}
+                        onOpenConversation={onOpenConversation}
+                      />
+                    </motion.div>
+                    <motion.div variants={reduced ? undefined : heroEntrance} initial={reduced ? false : 'hidden'} animate="show" transition={{ delay: 0.05 }}>
+                      <FeatureList appId={String(app.n)} />
+                    </motion.div>
+                    <RelatedRail appId={String(app.n)} />
+                  </>
+                ) : tab === 'community' ? (
+                  <CommunityPanel
+                    appId={String(app.n)}
+                    me={me}
+                    query={communityQ}
+                    join={join}
+                    onOpenConversation={onOpenConversation}
+                  />
+                ) : (
+                  <ConnectorsPanel appId={String(app.n)} me={me} statusQ={statusQ} toggle={toggle} />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </>
+      )}
+    </motion.div>
   )
 }

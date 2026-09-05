@@ -1,0 +1,1082 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse Hub — App detail subpage (3-tab dense deck) + the real
+     3→// install & community plumbing.
+     4→//   Overview   — blueprint fields + live install card (R19-e)
+     5→//   Community  — real app community group (GET/POST
+     6→//                /api/hub/apps/[appId]/community) → open in chats
+     7→//   Connectors — live installer rows (GET /api/hub/apps/[appId]/install)
+     8→// appId = String(MATRIX app.n) · zero mocks — every value from Prisma.
+     9→// Also hosts the shared "installed set" cache (client-known appIds)
+    10→// that the Apps panel tiles + My apps view read from.
+    11→// ─────────────────────────────────────────────────────────────
+    12→'use client'
+    13→
+    14→import { useEffect, useState } from 'react'
+    15→import {
+    16→  AnimatePresence,
+    17→  animate,
+    18→  motion,
+    19→  useMotionValue,
+    20→  useTransform,
+    21→} from 'framer-motion'
+    22→import type { Variants } from 'framer-motion'
+    23→import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+    24→import type { QueryClient } from '@tanstack/react-query'
+    25→import { toast } from 'sonner'
+    26→import {
+    27→  Cable,
+    28→  Check,
+    29→  Crown,
+    30→  Loader2,
+    31→  Megaphone,
+    32→  MessagesSquare,
+    33→  Plus,
+    34→  RotateCcw,
+    35→  Sparkles,
+    36→  UserPlus,
+    37→  Users,
+    38→} from 'lucide-react'
+    39→import type { AppUser, ConversationDetail } from '@/lib/types'
+    40→import { apiJson, initialsOf } from '@/lib/pulse-utils'
+    41→import { cn } from '@/lib/utils'
+    42→import { MATRIX, MATRIX_TO_NAV, type MatrixApp } from '@/lib/hub-catalog'
+    43→import { Badge } from '@/components/ui/badge'
+    44→import { Button } from '@/components/ui/button'
+    45→import { UserAvatar } from '@/components/chat/user-avatar'
+    46→
+    47→// ── Install API contract ─────────────────────────────────────
+    48→
+    49→export interface InstallInstaller {
+    50→  id: string
+    51→  name: string
+    52→  username: string | null
+    53→  color: string
+    54→}
+    55→
+    56→export interface InstallStatus {
+    57→  installed: boolean
+    58→  status: string | null
+    59→  installedAt: string | null
+    60→  installs: number
+    61→  installers: InstallInstaller[]
+    62→}
+    63→
+    64→const installedSetKey = (meId: string) => ['hub-apps-installed-set', meId] as const
+    65→const perAppKey = (appId: string, meId: string) => ['hub-app-install', appId, meId] as const
+    66→
+    67→/**
+    68→ * Client-known set of connected appIds. Hydrated by the 100-app
+    69→ * Promise.all on "My apps" chip activation (cached 60s), kept
+    70→ * fresh by connect/disconnect mutations + per-app detail fetches.
+    71→ */
+    72→export async function fetchInstalledSet(meId: string): Promise<string[]> {
+    73→  const results = await Promise.all(
+    74→    MATRIX.map(async (app) => {
+    75→      const res = await apiJson<{ installed: boolean }>(
+    76→        `/api/hub/apps/${app.n}/install?userId=${encodeURIComponent(meId)}`,
+    77→      )
+    78→      return res.installed ? String(app.n) : null
+    79→    }),
+    80→  )
+    81→  return results.filter((id): id is string => id !== null)
+    82→}
+    83→
+    84→/** Fetch-on-demand hydration — dedupes, respects a 60s freshness window. */
+    85→export function hydrateInstalledSet(qc: QueryClient, meId: string): Promise<string[]> {
+    86→  return qc.fetchQuery({
+    87→    queryKey: installedSetKey(meId),
+    88→    queryFn: () => fetchInstalledSet(meId),
+    89→    staleTime: 60_000,
+    90→  })
+    91→}
+    92→
+    93→/** Merge one app's server truth into the client-known set. */
+    94→export function patchInstalledSet(qc: QueryClient, meId: string, appId: string, installed: boolean): void {
+    95→  qc.setQueryData<string[]>(installedSetKey(meId), (prev) => {
+    96→    if (!installed && prev === undefined) return undefined // never materialize a false-empty set
+    97→    const base = prev ?? []
+    98→    const has = base.includes(appId)
+    99→    if (installed && !has) return [...base, appId]
+   100→    if (!installed && has) return base.filter((id) => id !== appId)
+   101→    return base
+   102→  })
+   103→}
+   104→
+   105→/** Cache-only subscription (enabled: false — data lands via hydrate/patches). */
+   106→export function useInstalledSet(meId: string) {
+   107→  return useQuery({
+   108→    queryKey: installedSetKey(meId),
+   109→    queryFn: () => fetchInstalledSet(meId),
+   110→    enabled: false,
+   111→    staleTime: 60_000,
+   112→  })
+   113→}
+   114→
+   115→/** Per-app install status — GET truth; also patches the client-known set. */
+   116→export function useAppInstallStatus(appId: string, meId: string) {
+   117→  const qc = useQueryClient()
+   118→  return useQuery({
+   119→    queryKey: perAppKey(appId, meId),
+   120→    queryFn: async () => {
+   121→      const res = await apiJson<InstallStatus>(
+   122→        `/api/hub/apps/${appId}/install?userId=${encodeURIComponent(meId)}`,
+   123→      )
+   124→      patchInstalledSet(qc, meId, appId, res.installed)
+   125→      return res
+   126→    },
+   127→    staleTime: 30_000,
+   128→  })
+   129→}
+   130→
+   131→/**
+   132→ * Connect (POST) / disconnect (DELETE) with optimistic flip +
+   133→ * rollback + error toast. Success shows as the UI flip itself
+   134→ * (check pulse on tiles/detail), plus a short confirmation toast.
+   135→ */
+   136→export function useInstallToggle(app: { n: number; name: string }, meId: string) {
+   137→  const qc = useQueryClient()
+   138→  const appId = String(app.n)
+   139→  return useMutation({
+   140→    mutationFn: async (next: boolean) => {
+   141→      const res = await apiJson<{ installed: boolean; installs: number }>(
+   142→        `/api/hub/apps/${appId}/install`,
+   143→        { method: next ? 'POST' : 'DELETE', body: JSON.stringify({ userId: meId }) },
+   144→      )
+   145→      return res
+   146→    },
+   147→    onMutate: async (next) => {
+   148→      await qc.cancelQueries({ queryKey: perAppKey(appId, meId) })
+   149→      const prevStatus = qc.getQueryData<InstallStatus>(perAppKey(appId, meId))
+   150→      const prevSet = qc.getQueryData<string[]>(installedSetKey(meId))
+   151→      if (prevStatus) {
+   152→        qc.setQueryData<InstallStatus>(perAppKey(appId, meId), {
+   153→          ...prevStatus,
+   154→          installed: next,
+   155→          status: next ? 'connected' : null,
+   156→          installedAt: next ? (prevStatus.installedAt ?? new Date().toISOString()) : null,
+   157→          installs: Math.max(0, prevStatus.installs + (next ? 1 : -1)),
+   158→        })
+   159→      } else if (next) {
+   160→        qc.setQueryData<InstallStatus>(perAppKey(appId, meId), {
+   161→          installed: true,
+   162→          status: 'connected',
+   163→          installedAt: new Date().toISOString(),
+   164→          installs: 1,
+   165→          installers: [],
+   166→        })
+   167→      }
+   168→      patchInstalledSet(qc, meId, appId, next)
+   169→      return { prevStatus, prevSet }
+   170→    },
+   171→    onError: (err: Error, _next, ctx) => {
+   172→      if (ctx?.prevStatus !== undefined) qc.setQueryData(perAppKey(appId, meId), ctx.prevStatus)
+   173→      else qc.removeQueries({ queryKey: perAppKey(appId, meId) })
+   174→      if (ctx?.prevSet !== undefined) qc.setQueryData(installedSetKey(meId), ctx.prevSet)
+   175→      else qc.removeQueries({ queryKey: installedSetKey(meId) })
+   176→      toast.error(err instanceof Error ? err.message : 'Could not update the connection')
+   177→    },
+   178→    onSuccess: (res) => {
+   179→      toast.success(res.installed ? `Connected to ${app.name}` : `Disconnected from ${app.name}`)
+   180→      qc.setQueryData<InstallStatus>(perAppKey(appId, meId), (old) =>
+   181→        old ? { ...old, installed: res.installed, installs: res.installs } : old,
+   182→      )
+   183→    },
+   184→    onSettled: () => {
+   185→      // marks stale even without observers → next detail mount refetches truth
+   186→      void qc.invalidateQueries({ queryKey: perAppKey(appId, meId) })
+   187→    },
+   188→  })
+   189→}
+   190→
+   191→// ── Community API contract ───────────────────────────────────
+   192→// GET  /api/hub/apps/[appId]/community?userId= →
+   193→//   { conversation: ConversationDetail | null, memberCount, joined }
+   194→//   (conversation === null → nobody has joined yet — founder moment)
+   195→// POST /api/hub/apps/[appId]/community { userId } →
+   196→//   { conversation: ConversationDetail, joined: true }
+   197→//   (auto-provisions the group on first join; founder = admin)
+   198→
+   199→export interface AppCommunityState {
+   200→  conversation: ConversationDetail | null
+   201→  memberCount: number
+   202→  joined: boolean
+   203→}
+   204→
+   205→const communityKey = (appId: string, meId: string) => ['app-community', appId, meId] as const
+   206→
+   207→export type AppCommunityQuery = ReturnType<typeof useAppCommunity>
+   208→export type JoinCommunityMutation = ReturnType<typeof useJoinCommunity>
+   209→
+   210→/** Live app-community state — refetches on window focus. */
+   211→export function useAppCommunity(appId: string, meId: string) {
+   212→  return useQuery({
+   213→    queryKey: communityKey(appId, meId),
+   214→    queryFn: () =>
+   215→      apiJson<AppCommunityState>(
+   216→        `/api/hub/apps/${appId}/community?userId=${encodeURIComponent(meId)}`,
+   217→      ),
+   218→    staleTime: 15_000,
+   219→    refetchOnWindowFocus: true,
+   220→  })
+   221→}
+   222→
+   223→/**
+   224→ * Join (or found) the community — POST is idempotent on the server.
+   225→ * onSuccess reconciles the query cache with server truth, teaches
+   226→ * the chat list about the room, toasts, then hands the conversation
+   227→ * id to `onJoined` (→ auto-open in the main chat surface).
+   228→ * Hook-level callbacks keep firing even if the sheet unmounts on
+   229→ * navigation, so the open-chat handoff is never dropped.
+   230→ */
+   231→export function useJoinCommunity(
+   232→  app: { n: number; name: string },
+   233→  meId: string,
+   234→  opts?: { onJoined?: (conversationId: string) => void },
+   235→) {
+   236→  const qc = useQueryClient()
+   237→  const appId = String(app.n)
+   238→  return useMutation({
+   239→    mutationFn: async () => {
+   240→      const prior = qc.getQueryData<AppCommunityState>(communityKey(appId, meId))
+   241→      const res = await apiJson<{ conversation: ConversationDetail; joined: boolean }>(
+   242→        `/api/hub/apps/${appId}/community`,
+   243→        { method: 'POST', body: JSON.stringify({ userId: meId }) },
+   244→      )
+   245→      return { res, founding: (prior?.conversation ?? null) === null }
+   246→    },
+   247→    onSuccess: ({ res, founding }) => {
+   248→      const name =
+   249→        res.conversation.name ?? `#${String(app.n).padStart(3, '0')} · ${app.name} community`
+   250→      toast.success(`${founding ? 'Founded' : 'Joined'} ${name}`)
+   251→      qc.setQueryData<AppCommunityState>(communityKey(appId, meId), {
+   252→        conversation: res.conversation,
+   253→        memberCount: res.conversation.members.length,
+   254→        joined: true,
+   255→      })
+   256→      void qc.invalidateQueries({ queryKey: communityKey(appId, meId) })
+   257→      void qc.invalidateQueries({ queryKey: ['conversations', meId] }) // chat list learns the room
+   258→      opts?.onJoined?.(res.conversation.id)
+   259→    },
+   260→    onError: (err: Error) => {
+   261→      toast.error(err instanceof Error ? err.message : 'Could not join the community')
+   262→    },
+   263→  })
+   264→}
+   265→
+   266→// ── Shared micro-bits ────────────────────────────────────────
+   267→
+   268→/** 300ms count-up (framer motion values — no re-render churn). */
+   269→export function CountUp({ value, className }: { value: number; className?: string }) {
+   270→  const mv = useMotionValue(0)
+   271→  const text = useTransform(mv, (v) => Math.round(v).toLocaleString())
+   272→  useEffect(() => {
+   273→    const controls = animate(mv, value, { duration: 0.3, ease: 'easeOut' })
+   274→    return () => controls.stop()
+   275→  }, [value, mv])
+   276→  return <motion.span className={className}>{text}</motion.span>
+   277→}
+   278→
+   279→/** Spring-pops whenever the value changes (join-success count pulse). */
+   280→function CountPulse({ value, className }: { value: number; className?: string }) {
+   281→  return (
+   282→    <motion.span
+   283→      key={value}
+   284→      className={cn('inline-block', className)}
+   285→      initial={{ scale: 1.4, opacity: 0.35 }}
+   286→      animate={{ scale: 1, opacity: 1 }}
+   287→      transition={{ type: 'spring', stiffness: 520, damping: 15 }}
+   288→    >
+   289→      <CountUp value={value} />
+   290→    </motion.span>
+   291→  )
+   292→}
+   293→
+   294→/** Spotlight-grade loading dots. */
+   295→export function SkeletonDots({ className, label = 'Loading' }: { className?: string; label?: string }) {
+   296→  return (
+   297→    <div className={cn('flex items-center gap-1.5', className)} role="status" aria-label={label}>
+   298→      {[0, 1, 2].map((i) => (
+   299→        <motion.span
+   300→          key={i}
+   301→          className="size-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500"
+   302→          animate={{ opacity: [0.25, 1, 0.25], scale: [0.85, 1.15, 0.85] }}
+   303→          transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.18, ease: 'easeInOut' }}
+   304→        />
+   305→      ))}
+   306→    </div>
+   307→  )
+   308→}
+   309→
+   310→/** Error card with retry — used by the detail tabs and the My apps view. */
+   311→export function LoadErrorCard({ onRetry, message }: { onRetry: () => void; message?: string }) {
+   312→  return (
+   313→    <div
+   314→      role="alert"
+   315→      className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-rose-400/50 bg-rose-500/5 px-4 py-5 text-center"
+   316→    >
+   317→      <p className="text-[13px] font-medium text-rose-600 dark:text-rose-400">
+   318→        {message ?? 'Could not load connection data.'}
+   319→      </p>
+   320→      <Button size="sm" variant="outline" onClick={onRetry} className="h-9 gap-1.5">
+   321→        <RotateCcw className="size-3.5" /> Retry
+   322→      </Button>
+   323→    </div>
+   324→  )
+   325→}
+   326→
+   327→/** Up to 6 most-recent installers (real users) + "+N" overflow. */
+   328→function InstallerStack({ installers, extra }: { installers: InstallInstaller[]; extra: number }) {
+   329→  if (installers.length === 0) return null
+   330→  return (
+   331→    <div className="flex shrink-0 items-center">
+   332→      <div className="flex -space-x-2">
+   333→        {installers.map((u) => (
+   334→          <UserAvatar
+   335→            key={u.id}
+   336→            name={u.name}
+   337→            color={u.color}
+   338→            size={26}
+   339→            className="rounded-full ring-2 ring-white dark:ring-zinc-900"
+   340→          />
+   341→        ))}
+   342→        {extra > 0 ? (
+   343→          <div className="flex size-[26px] items-center justify-center rounded-full bg-zinc-200 text-[9px] font-bold text-zinc-600 ring-2 ring-white dark:bg-zinc-700 dark:text-zinc-300 dark:ring-zinc-900">
+   344→            +{extra}
+   345→          </div>
+   346→        ) : null}
+   347→      </div>
+   348→    </div>
+   349→  )
+   350→}
+   351→
+   352→/** Stagger-in choreography for dense rows (members, connectors). */
+   353→const staggerParent: Variants = {
+   354→  hidden: {},
+   355→  show: { transition: { staggerChildren: 0.045 } },
+   356→}
+   357→const staggerChild: Variants = {
+   358→  hidden: { opacity: 0, y: 10 },
+   359→  show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 460, damping: 32 } },
+   360→}
+   361→
+   362→function formatDay(iso: string): string {
+   363→  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+   364→}
+   365→
+   366→/** Relative stamp for the viewer's own connector row ("3h ago"). */
+   367→function formatRelative(iso: string, now: Date = new Date()): string {
+   368→  const ms = now.getTime() - new Date(iso).getTime()
+   369→  if (!Number.isFinite(ms)) return ''
+   370→  const mins = Math.floor(ms / 60_000)
+   371→  if (mins < 1) return 'just now'
+   372→  if (mins < 60) return `${mins}m ago`
+   373→  const hours = Math.floor(mins / 60)
+   374→  if (hours < 24) return `${hours}h ago`
+   375→  const days = Math.floor(hours / 24)
+   376→  if (days < 7) return `${days}d ago`
+   377→  return formatDay(iso)
+   378→}
+   379→
+   380→// ── Tab chrome ───────────────────────────────────────────────
+   381→
+   382→type DetailTab = 'overview' | 'community' | 'connectors'
+   383→
+   384→interface DetailTabDef {
+   385→  id: DetailTab
+   386→  label: string
+   387→  badge?: number
+   388→}
+   389→
+   390→function DetailTabBar({
+   391→  active,
+   392→  onChange,
+   393→  tabs,
+   394→  appName,
+   395→}: {
+   396→  active: DetailTab
+   397→  onChange: (tab: DetailTab) => void
+   398→  tabs: DetailTabDef[]
+   399→  appName: string
+   400→}) {
+   401→  return (
+   402→    <div
+   403→      role="tablist"
+   404→      aria-label={`${appName} detail sections`}
+   405→      className="relative flex shrink-0 border-b border-zinc-200/80 px-2 dark:border-white/10"
+   406→    >
+   407→      {tabs.map((t) => {
+   408→        const selected = active === t.id
+   409→        return (
+   410→          <button
+   411→            key={t.id}
+   412→            type="button"
+   413→            role="tab"
+   414→            id={`app-detail-tab-${t.id}`}
+   415→            aria-selected={selected}
+   416→            aria-controls={`app-detail-panel-${t.id}`}
+   417→            onClick={() => onChange(t.id)}
+   418→            className={cn(
+   419→              'relative flex h-11 min-w-[44px] flex-1 items-center justify-center gap-1.5 text-[12.5px] font-semibold transition-colors',
+   420→              selected
+   421→                ? 'text-emerald-600 dark:text-emerald-400'
+   422→                : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200',
+   423→            )}
+   424→          >
+   425→            {t.label}
+   426→            {t.badge !== undefined && t.badge > 0 ? (
+   427→              <motion.span
+   428→                key={t.badge}
+   429→                className="inline-flex"
+   430→                initial={{ scale: 1.4 }}
+   431→                animate={{ scale: 1 }}
+   432→                transition={{ type: 'spring', stiffness: 520, damping: 16 }}
+   433→              >
+   434→                <Badge
+   435→                  variant="secondary"
+   436→                  className="h-[17px] min-w-[17px] rounded-full border-transparent bg-zinc-200/80 px-1.5 py-0 text-[10px] font-bold tabular-nums text-zinc-600 dark:bg-white/10 dark:text-zinc-300"
+   437→                >
+   438→                  {t.badge}
+   439→                </Badge>
+   440→              </motion.span>
+   441→            ) : null}
+   442→            {selected ? (
+   443→              <motion.span
+   444→                layoutId="app-detail-tab-underline"
+   445→                className="absolute inset-x-4 bottom-0 h-[2.5px] rounded-full bg-gradient-to-r from-emerald-400 to-teal-500"
+   446→                transition={{ type: 'spring', stiffness: 500, damping: 36 }}
+   447→                aria-hidden
+   448→              />
+   449→            ) : null}
+   450→          </button>
+   451→        )
+   452→      })}
+   453→    </div>
+   454→  )
+   455→}
+   456→
+   457→// ── Overview tab (blueprint + live install card) ─────────────
+   458→
+   459→interface TabPanelBaseProps {
+   460→  app: MatrixApp
+   461→  me: AppUser
+   462→  statusQ: ReturnType<typeof useAppInstallStatus>
+   463→  toggle: ReturnType<typeof useInstallToggle>
+   464→}
+   465→
+   466→function OverviewPanel({ app, statusQ, toggle }: TabPanelBaseProps) {
+   467→  const status = statusQ.data
+   468→  const installed = Boolean(status?.installed)
+   469→  return (
+   470→    <>
+   471→      {/* live connection hero */}
+   472→      <div className="rounded-2xl border border-zinc-200/80 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent p-4 dark:border-white/10 dark:from-emerald-500/15 dark:via-transparent">
+   473→        <div className="flex items-center gap-3">
+   474→          <div
+   475→            aria-hidden
+   476→            className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-base font-black text-white shadow-md"
+   477→          >
+   478→            {initialsOf(app.name)}
+   479→          </div>
+   480→          <div className="min-w-0 flex-1">
+   481→            <p className="truncate text-base font-bold">{app.name}</p>
+   482→            <p className="mt-0.5 truncate text-[11px] font-medium text-zinc-500">
+   483→              #{String(app.n).padStart(3, '0')} · {app.category}
+   484→            </p>
+   485→          </div>
+   486→        </div>
+   487→
+   488→        <div className="mt-3 flex items-end justify-between gap-2">
+   489→          <div className="min-h-[42px]">
+   490→            {statusQ.isLoading ? (
+   491→              <div className="flex h-full flex-col justify-center">
+   492→                <SkeletonDots label="Loading connection stats" />
+   493→              </div>
+   494→            ) : statusQ.isError || !status ? (
+   495→              <p className="text-[11px] font-medium text-rose-500">Connection stats unavailable</p>
+   496→            ) : (
+   497→              <>
+   498→                <p className="flex items-baseline gap-1.5 text-2xl font-black leading-none tabular-nums text-emerald-600 dark:text-emerald-400">
+   499→                  <CountUp value={status.installs} />
+   500→                  <Users className="size-4 translate-y-0.5" aria-hidden />
+   501→                </p>
+   502→                <p className="mt-1 text-[11px] font-medium text-zinc-500">
+   503→                  member{status.installs === 1 ? '' : 's'} connected
+   504→                </p>
+   505→              </>
+   506→            )}
+   507→          </div>
+   508→          <InstallerStack
+   509→            installers={status?.installers ?? []}
+   510→            extra={Math.max(0, (status?.installs ?? 0) - (status?.installers.length ?? 0))}
+   511→          />
+   512→        </div>
+   513→
+   514→        {installed && status?.installedAt ? (
+   515→          <p className="mt-2.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+   516→            Connected on {formatDay(status.installedAt)}
+   517→          </p>
+   518→        ) : null}
+   519→
+   520→        <Button
+   521→          className={cn(
+   522→            'mt-3 h-11 w-full text-sm font-bold',
+   523→            installed &&
+   524→              'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300',
+   525→          )}
+   526→          variant={installed ? 'outline' : 'default'}
+   527→          disabled={toggle.isPending || statusQ.isLoading}
+   528→          onClick={() => toggle.mutate(!installed)}
+   529→          aria-pressed={installed}
+   530→          aria-label={installed ? `Disconnect from ${app.name}` : `Connect to ${app.name}`}
+   531→        >
+   532→          {toggle.isPending ? (
+   533→            <>
+   534→              <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden />
+   535→              {installed ? 'Disconnecting…' : 'Connecting…'}
+   536→            </>
+   537→          ) : installed ? (
+   538→            <>
+   539→              <motion.span
+   540→                key="check"
+   541→                className="relative mr-1.5 flex size-2"
+   542→                initial={{ scale: 0.4 }}
+   543→                animate={{ scale: [1.7, 1] }}
+   544→                transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+   545→              >
+   546→                <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-50" />
+   547→                <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+   548→              </motion.span>
+   549→              <Check className="mr-0.5 size-4" aria-hidden />
+   550→              Connected — tap to disconnect
+   551→            </>
+   552→          ) : (
+   553→            <>
+   554→              <Plus className="mr-1.5 size-4" aria-hidden /> Connect
+   555→            </>
+   556→          )}
+   557→        </Button>
+   558→      </div>
+   559→
+   560→      {/* blueprint fields */}
+   561→      <div className="rounded-xl border border-zinc-200/80 p-3 dark:border-white/10">
+   562→        <p className="text-[11px] font-semibold uppercase text-zinc-500">Mobile nav style</p>
+   563→        <p className="mt-1 text-sm font-medium">{app.nav}</p>
+   564→      </div>
+   565→      <div className="rounded-xl border border-zinc-200/80 p-3 dark:border-white/10">
+   566→        <p className="text-[11px] font-semibold uppercase text-zinc-500">Input toolkit</p>
+   567→        <p className="mt-1 text-sm font-medium">{app.input}</p>
+   568→      </div>
+   569→      <div className="rounded-xl border border-zinc-200/80 p-3 dark:border-white/10">
+   570→        <p className="text-[11px] font-semibold uppercase text-zinc-500">Sub-page category</p>
+   571→        <p className="mt-1 text-sm font-medium">{app.category}</p>
+   572→      </div>
+   573→      <div className="rounded-xl border border-emerald-300/60 bg-emerald-50 p-3 dark:border-emerald-500/30 dark:bg-emerald-950/30">
+   574→        <p className="text-[11px] font-semibold uppercase text-emerald-700 dark:text-emerald-400">
+   575→          Secret UI architecture feature
+   576→        </p>
+   577→        <p className="mt-1 text-sm font-medium">{app.secret}</p>
+   578→      </div>
+   579→      <div className="rounded-xl border border-dashed border-zinc-300 p-3 text-center text-[11px] text-zinc-500 dark:border-white/15">
+   580→        Pulse implements this app&apos;s nav pattern as{' '}
+   581→        <strong className="text-emerald-600 dark:text-emerald-400">{MATRIX_TO_NAV[app.nav]}</strong> — switch it live
+   582→        from the Profile → Navigation panel.
+   583→      </div>
+   584→
+   585→      {statusQ.isError ? <LoadErrorCard onRetry={() => void statusQ.refetch()} /> : null}
+   586→    </>
+   587→  )
+   588→}
+   589→
+   590→// ── Community tab ────────────────────────────────────────────
+   591→
+   592→function CommunitySkeleton() {
+   593→  return (
+   594→    <div
+   595→      role="status"
+   596→      aria-label="Loading community"
+   597→      className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60"
+   598→    >
+   599→      <div className="flex items-center gap-3">
+   600→        <div className="size-12 shrink-0 animate-pulse rounded-2xl bg-zinc-200 dark:bg-white/10" />
+   601→        <div className="flex-1 space-y-2">
+   602→          <div className="h-3.5 w-2/3 animate-pulse rounded bg-zinc-200 dark:bg-white/10" />
+   603→          <div className="h-2.5 w-1/3 animate-pulse rounded bg-zinc-200 dark:bg-white/10" />
+   604→        </div>
+   605→      </div>
+   606→      <div className="mt-4 h-3 w-28 animate-pulse rounded bg-zinc-200 dark:bg-white/10" />
+   607→      <div className="mt-4 h-11 animate-pulse rounded-xl bg-zinc-200 dark:bg-white/10" />
+   608→    </div>
+   609→  )
+   610→}
+   611→
+   612→function CommunityPanel({
+   613→  app,
+   614→  me,
+   615→  query,
+   616→  join,
+   617→  onOpenConversation,
+   618→  onClose,
+   619→}: {
+   620→  app: MatrixApp
+   621→  me: AppUser
+   622→  query: AppCommunityQuery
+   623→  join: JoinCommunityMutation
+   624→  onOpenConversation?: (conversationId: string) => void
+   625→  onClose: () => void
+   626→}) {
+   627→  const state = query.data
+   628→  const conversation = state?.conversation ?? null
+   629→  const memberCount = state?.memberCount ?? 0
+   630→  const joined = Boolean(state?.joined)
+   631→  const fallbackName = `#${String(app.n).padStart(3, '0')} · ${app.name} community`
+   632→
+   633→  if (query.isLoading) return <CommunitySkeleton />
+   634→  if (query.isError || !state) {
+   635→    return (
+   636→      <LoadErrorCard
+   637→        onRetry={() => void query.refetch()}
+   638→        message="Could not load the community."
+   639→      />
+   640→    )
+   641→  }
+   642→
+   643→  // founder moment — nobody has provisioned this app's group yet
+   644→  if (!conversation) {
+   645→    return (
+   646→      <div className="rounded-2xl border border-dashed border-zinc-300 p-5 text-center dark:border-white/15">
+   647→        <div
+   648→          aria-hidden
+   649→          className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-100/60 dark:border-white/15 dark:bg-white/5"
+   650→        >
+   651→          <Users className="size-5 text-zinc-400" />
+   652→        </div>
+   653→        <p className="mt-2.5 text-sm font-bold">Be the first to start the community</p>
+   654→        <p className="mt-1 text-[11px] font-medium text-zinc-500">
+   655→          No members yet — the room {fallbackName} gets created on first join.
+   656→        </p>
+   657→        <Button
+   658→          className="mt-3 h-11 w-full text-sm font-bold"
+   659→          onClick={() => join.mutate()}
+   660→          disabled={join.isPending}
+   661→          aria-label={`Found the ${fallbackName}`}
+   662→        >
+   663→          {join.isPending ? (
+   664→            <>
+   665→              <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden /> Founding…
+   666→            </>
+   667→          ) : (
+   668→            <>
+   669→              <Sparkles className="mr-1.5 size-4" aria-hidden /> Found the community
+   670→            </>
+   671→          )}
+   672→        </Button>
+   673→        <p className="mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+   674→          You&apos;ll be the founding admin.
+   675→        </p>
+   676→      </div>
+   677→    )
+   678→  }
+   679→
+   680→  const stack = conversation.members.slice(0, 8)
+   681→  const extra = Math.max(0, memberCount - stack.length)
+   682→  const list = conversation.members.slice(0, 8)
+   683→  const listExtra = Math.max(0, conversation.members.length - list.length)
+   684→
+   685→  return (
+   686→    <>
+   687→      {/* community identity card */}
+   688→      <div className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60">
+   689→        <div className="flex items-center gap-3">
+   690→          <div
+   691→            aria-hidden
+   692→            className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-base font-black text-white shadow-md"
+   693→          >
+   694→            {initialsOf(app.name)}
+   695→          </div>
+   696→          <div className="min-w-0 flex-1">
+   697→            <p className="truncate text-sm font-bold">{conversation.name ?? fallbackName}</p>
+   698→            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+   699→              <span
+   700→                className={cn(
+   701→                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+   702→                  joined
+   703→                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+   704→                    : 'border-zinc-300 text-zinc-500 dark:border-white/15 dark:text-zinc-400',
+   705→                )}
+   706→              >
+   707→                {joined ? 'Member' : 'Not joined'}
+   708→              </span>
+   709→              {conversation.broadcastMode ? (
+   710→                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+   711→                  <Megaphone className="size-3" aria-hidden /> Admins post only
+   712→                </span>
+   713→              ) : null}
+   714→            </div>
+   715→          </div>
+   716→        </div>
+   717→
+   718→        <div className="mt-3 flex items-end justify-between gap-2">
+   719→          <p className="flex items-baseline gap-1.5">
+   720→            <CountPulse
+   721→              value={memberCount}
+   722→              className="text-2xl font-black leading-none tabular-nums text-emerald-600 dark:text-emerald-400"
+   723→            />
+   724→            <span className="text-[11px] font-medium text-zinc-500">
+   725→              member{memberCount === 1 ? '' : 's'}
+   726→            </span>
+   727→          </p>
+   728→          <div
+   729→            className="flex shrink-0 -space-x-2"
+   730→            role="img"
+   731→            aria-label={`${memberCount} community member${memberCount === 1 ? '' : 's'}`}
+   732→          >
+   733→            {stack.map((m) => (
+   734→              <UserAvatar
+   735→                key={m.id}
+   736→                name={m.name}
+   737→                color={m.color}
+   738→                size={26}
+   739→                className="rounded-full ring-2 ring-white dark:ring-zinc-900"
+   740→              />
+   741→            ))}
+   742→            {extra > 0 ? (
+   743→              <div className="flex size-[26px] items-center justify-center rounded-full bg-zinc-200 text-[9px] font-bold text-zinc-600 ring-2 ring-white dark:bg-zinc-700 dark:text-zinc-300 dark:ring-zinc-900">
+   744→                +{extra}
+   745→              </div>
+   746→            ) : null}
+   747→          </div>
+   748→        </div>
+   749→
+   750→        {joined ? (
+   751→          <>
+   752→            <Button
+   753→              className="mt-3 h-11 w-full text-sm font-bold"
+   754→              onClick={() => {
+   755→                onClose()
+   756→                onOpenConversation?.(conversation.id)
+   757→              }}
+   758→              disabled={!onOpenConversation}
+   759→              aria-label={`Open ${conversation.name ?? fallbackName} in chats`}
+   760→            >
+   761→              <MessagesSquare className="mr-1.5 size-4" aria-hidden /> Open chat
+   762→            </Button>
+   763→            <p className="mt-2 text-center text-[11px] font-medium text-zinc-500">
+   764→              Opens {conversation.name ?? fallbackName} in your Chats.
+   765→            </p>
+   766→          </>
+   767→        ) : (
+   768→          <>
+   769→            <Button
+   770→              className="mt-3 h-11 w-full text-sm font-bold"
+   771→              onClick={() => join.mutate()}
+   772→              disabled={join.isPending}
+   773→              aria-label={`Join ${conversation.name ?? fallbackName}`}
+   774→            >
+   775→              {join.isPending ? (
+   776→                <>
+   777→                  <Loader2 className="mr-1.5 size-4 animate-spin" aria-hidden /> Joining…
+   778→                </>
+   779→              ) : (
+   780→                <>
+   781→                  <UserPlus className="mr-1.5 size-4" aria-hidden /> Join community
+   782→                </>
+   783→              )}
+   784→            </Button>
+   785→            <p className="mt-2 text-center text-[11px] font-medium text-zinc-500">
+   786→              {memberCount === 1 ? '1 member is' : `${memberCount} members are`} already inside.
+   787→            </p>
+   788→          </>
+   789→        )}
+   790→      </div>
+   791→
+   792→      {/* member roster (real participants, ≤8 rows) */}
+   793→      <motion.div
+   794→        variants={staggerParent}
+   795→        initial="hidden"
+   796→        animate="show"
+   797→        className="overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60"
+   798→      >
+   799→        <div className="flex items-center justify-between border-b border-zinc-200/80 px-4 py-2.5 dark:border-white/10">
+   800→          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">Members</p>
+   801→          <span className="text-[12px] font-black tabular-nums text-emerald-600 dark:text-emerald-400">
+   802→            {conversation.members.length}
+   803→          </span>
+   804→        </div>
+   805→        <motion.div className="divide-y divide-zinc-200/70 dark:divide-white/5">
+   806→          {list.map((m) => (
+   807→            <motion.div
+   808→              key={m.id}
+   809→              variants={staggerChild}
+   810→              className="flex items-center gap-3 px-4 py-2.5"
+   811→            >
+   812→              <UserAvatar name={m.name} color={m.color} size={34} />
+   813→              <div className="min-w-0 flex-1">
+   814→                <p className="truncate text-[13px] font-semibold">
+   815→                  {m.name}
+   816→                  {m.id === me.id ? <span className="font-normal text-zinc-400"> (you)</span> : null}
+   817→                </p>
+   818→                <p className="truncate text-[11px] font-medium text-zinc-500">
+   819→                  {m.username ? `@${m.username}` : m.about || 'Pulse member'}
+   820→                </p>
+   821→              </div>
+   822→              {m.role === 'admin' ? (
+   823→                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+   824→                  <Crown className="size-3" aria-hidden /> Admin
+   825→                </span>
+   826→              ) : null}
+   827→            </motion.div>
+   828→          ))}
+   829→          {listExtra > 0 ? (
+   830→            <div className="px-4 py-2.5 text-center text-[11px] font-medium text-zinc-500">
+   831→              +{listExtra} more member{listExtra === 1 ? '' : 's'}
+   832→            </div>
+   833→          ) : null}
+   834→        </motion.div>
+   835→      </motion.div>
+   836→    </>
+   837→  )
+   838→}
+   839→
+   840→// ── Connectors tab ───────────────────────────────────────────
+   841→
+   842→function ConnectorsSkeleton() {
+   843→  return (
+   844→    <div
+   845→      role="status"
+   846→      aria-label="Loading connectors"
+   847→      className="overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60"
+   848→    >
+   849→      {[0, 1, 2].map((i) => (
+   850→        <div key={i} className="flex items-center gap-3 px-4 py-3">
+   851→          <div className="size-[34px] shrink-0 animate-pulse rounded-full bg-zinc-200 dark:bg-white/10" />
+   852→          <div className="flex-1 space-y-1.5">
+   853→            <div className="h-3 w-1/3 animate-pulse rounded bg-zinc-200 dark:bg-white/10" />
+   854→            <div className="h-2.5 w-1/5 animate-pulse rounded bg-zinc-200 dark:bg-white/10" />
+   855→          </div>
+   856→        </div>
+   857→      ))}
+   858→    </div>
+   859→  )
+   860→}
+   861→
+   862→function ConnectorsPanel({ app, me, statusQ, toggle }: TabPanelBaseProps) {
+   863→  const status = statusQ.data
+   864→  const installed = Boolean(status?.installed)
+   865→  const installers = status?.installers ?? []
+   866→  const extra = Math.max(0, (status?.installs ?? 0) - installers.length)
+   867→
+   868→  return (
+   869→    <>
+   870→      {/* viewer's own connect state card */}
+   871→      <div
+   872→        className={cn(
+   873→          'rounded-2xl border p-4',
+   874→          installed
+   875→            ? 'border-emerald-300/60 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-950/30'
+   876→            : 'border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60',
+   877→        )}
+   878→      >
+   879→        <div className="flex items-center gap-3">
+   880→          <div
+   881→            aria-hidden
+   882→            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[13px] font-black text-white shadow-sm"
+   883→          >
+   884→            {initialsOf(app.name)}
+   885→          </div>
+   886→          <div className="min-w-0 flex-1">
+   887→            <p className="text-sm font-bold">Your connection</p>
+   888→            <p className="mt-0.5 truncate text-[11px] font-medium text-zinc-500">
+   889→              {statusQ.isLoading
+   890→                ? 'Checking…'
+   891→                : installed && status?.installedAt
+   892→                  ? `Connected on ${formatDay(status.installedAt)}`
+   893→                  : 'Not connected yet'}
+   894→            </p>
+   895→          </div>
+   896→          <Button
+   897→            size="sm"
+   898→            className={cn(
+   899→              'h-11 min-w-[108px] text-[12.5px] font-bold',
+   900→              installed &&
+   901→                'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300',
+   902→            )}
+   903→            variant={installed ? 'outline' : 'default'}
+   904→            disabled={toggle.isPending || statusQ.isLoading}
+   905→            onClick={() => toggle.mutate(!installed)}
+   906→            aria-pressed={installed}
+   907→            aria-label={installed ? `Disconnect from ${app.name}` : `Connect to ${app.name}`}
+   908→          >
+   909→            {toggle.isPending ? (
+   910→              <Loader2 className="size-4 animate-spin" aria-hidden />
+   911→            ) : installed ? (
+   912→              <>
+   913→                <Check className="mr-1 size-4" aria-hidden /> Connected
+   914→              </>
+   915→            ) : (
+   916→              <>
+   917→                <Plus className="mr-1 size-4" aria-hidden /> Connect
+   918→              </>
+   919→            )}
+   920→          </Button>
+   921→        </div>
+   922→      </div>
+   923→
+   924→      {/* live installer roster */}
+   925→      {statusQ.isLoading ? (
+   926→        <ConnectorsSkeleton />
+   927→      ) : statusQ.isError || !status ? (
+   928→        <LoadErrorCard
+   929→          onRetry={() => void statusQ.refetch()}
+   930→          message="Could not load connectors."
+   931→        />
+   932→      ) : installers.length === 0 ? (
+   933→        <div className="rounded-2xl border border-dashed border-zinc-300 p-5 text-center dark:border-white/15">
+   934→          <Cable className="mx-auto size-5 text-zinc-400" aria-hidden />
+   935→          <p className="mt-2 text-[13px] font-bold">No connectors yet</p>
+   936→          <p className="mt-1 text-[11px] font-medium text-zinc-500">
+   937→            Be the first to connect {app.name}.
+   938→          </p>
+   939→        </div>
+   940→      ) : (
+   941→        <motion.div
+   942→          variants={staggerParent}
+   943→          initial="hidden"
+   944→          animate="show"
+   945→          className="overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60"
+   946→        >
+   947→          <div className="flex items-center justify-between border-b border-zinc-200/80 px-4 py-2.5 dark:border-white/10">
+   948→            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+   949→              Connected members
+   950→            </p>
+   951→            <CountUp
+   952→              value={status.installs}
+   953→              className="text-[12px] font-black tabular-nums text-emerald-600 dark:text-emerald-400"
+   954→            />
+   955→          </div>
+   956→          <motion.div className="divide-y divide-zinc-200/70 dark:divide-white/5">
+   957→            {installers.map((u) => {
+   958→              const isViewer = u.id === me.id
+   959→              return (
+   960→                <motion.div
+   961→                  key={u.id}
+   962→                  variants={staggerChild}
+   963→                  className="flex items-center gap-3 px-4 py-2.5"
+   964→                >
+   965→                  <UserAvatar name={u.name} color={u.color} size={34} />
+   966→                  <div className="min-w-0 flex-1">
+   967→                    <p className="truncate text-[13px] font-semibold">
+   968→                      {u.name}
+   969→                      {isViewer ? <span className="font-normal text-zinc-400"> (you)</span> : null}
+   970→                    </p>
+   971→                    <p className="truncate text-[11px] font-medium text-zinc-500">
+   972→                      {u.username ? `@${u.username}` : 'Pulse member'}
+   973→                    </p>
+   974→                  </div>
+   975→                  <div className="shrink-0 text-right">
+   976→                    <p className="text-[10.5px] font-medium text-zinc-500">connected</p>
+   977→                    {/* installedAt is per-viewer truth — others get no invented date */}
+   978→                    {isViewer && installed && status.installedAt ? (
+   979→                      <p className="text-[10px] font-medium text-zinc-400">
+   980→                        {formatRelative(status.installedAt)}
+   981→                      </p>
+   982→                    ) : null}
+   983→                  </div>
+   984→                </motion.div>
+   985→              )
+   986→            })}
+   987→          </motion.div>
+   988→          {extra > 0 ? (
+   989→            <div className="border-t border-zinc-200/70 px-4 py-2.5 text-center text-[11px] font-medium text-zinc-500 dark:border-white/5">
+   990→              +{extra} more connected
+   991→            </div>
+   992→          ) : null}
+   993→        </motion.div>
+   994→      )}
+   995→    </>
+   996→  )
+   997→}
+   998→
+   999→// ── The detail subpage ───────────────────────────────────────
+  1000→
+  1001→export function AppDetailSheet({
+  1002→  app,
+  1003→  me,
+  1004→  onClose,
+  1005→  onOpenConversation,
+  1006→}: {
+  1007→  app: MatrixApp
+  1008→  me: AppUser
+  1009→  onClose: () => void
+  1010→  /** open the app community conversation in the main chat surface (optional) */
+  1011→  onOpenConversation?: (conversationId: string) => void
+  1012→}) {
+  1013→  const appId = String(app.n)
+  1014→  const statusQ = useAppInstallStatus(appId, me.id)
+  1015→  const toggle = useInstallToggle(app, me.id)
+  1016→  const communityQ = useAppCommunity(appId, me.id)
+  1017→  const join = useJoinCommunity(app, me.id, {
+  1018→    onJoined: (conversationId) => onOpenConversation?.(conversationId),
+  1019→  })
+  1020→  const [tab, setTab] = useState<DetailTab>('overview')
+  1021→
+  1022→  const status = statusQ.data
+  1023→  const installed = Boolean(status?.installed)
+  1024→  const memberCount = communityQ.data?.memberCount ?? 0
+  1025→  const installs = status?.installs ?? 0
+  1026→
+  1027→  const tabs: DetailTabDef[] = [
+  1028→    { id: 'overview', label: 'Overview' },
+  1029→    { id: 'community', label: 'Community', badge: memberCount > 0 ? memberCount : undefined },
+  1030→    { id: 'connectors', label: 'Connectors', badge: installs > 0 ? installs : undefined },
+  1031→  ]
+  1032→
+  1033→  return (
+  1034→    <div className="flex h-full flex-col bg-background" aria-label={`${app.name} app details`}>
+  1035→      <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200/80 px-3 py-2.5 dark:border-white/10">
+  1036→        <Button variant="ghost" size="sm" className="h-10 px-3" onClick={onClose}>
+  1037→          ‹ Back
+  1038→        </Button>
+  1039→        <p className="truncate text-sm font-bold">
+  1040→          #{String(app.n).padStart(3, '0')} · {app.name}
+  1041→        </p>
+  1042→        {installed ? (
+  1043→          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+  1044→            <span className="size-1.5 rounded-full bg-emerald-500" /> Connected
+  1045→          </span>
+  1046→        ) : null}
+  1047→      </div>
+  1048→
+  1049→      <DetailTabBar active={tab} onChange={setTab} tabs={tabs} appName={app.name} />
+  1050→
+  1051→      <AnimatePresence mode="wait" initial={false}>
+  1052→        <motion.div
+  1053→          key={tab}
+  1054→          role="tabpanel"
+  1055→          id={`app-detail-panel-${tab}`}
+  1056→          aria-labelledby={`app-detail-tab-${tab}`}
+  1057→          initial={{ opacity: 0, x: 14 }}
+  1058→          animate={{ opacity: 1, x: 0 }}
+  1059→          exit={{ opacity: 0, x: -10 }}
+  1060→          transition={{ duration: 0.16, ease: 'easeOut' }}
+  1061→          className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4"
+  1062→        >
+  1063→          {tab === 'overview' ? (
+  1064→            <OverviewPanel app={app} me={me} statusQ={statusQ} toggle={toggle} />
+  1065→          ) : tab === 'community' ? (
+  1066→            <CommunityPanel
+  1067→              app={app}
+  1068→              me={me}
+  1069→              query={communityQ}
+  1070→              join={join}
+  1071→              onOpenConversation={onOpenConversation}
+  1072→              onClose={onClose}
+  1073→            />
+  1074→          ) : (
+  1075→            <ConnectorsPanel app={app} me={me} statusQ={statusQ} toggle={toggle} />
+  1076→          )}
+  1077→        </motion.div>
+  1078→      </AnimatePresence>
+  1079→    </div>
+  1080→  )
+  1081→}
+  1082→

@@ -70,6 +70,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { UserAvatar } from '@/components/chat/user-avatar'
+import { AvatarPhotoEditor } from '@/components/profile/avatar-editor'
 import { ChevronRow, CountUp, ProfileSection, StatTile } from '@/components/profile/profile-primitives'
 import { STATUS_GLYPH_CHOICES, StatusGlyph } from '@/components/profile/status-glyph'
 import { HandleEditorDialog } from '@/components/profile/handle-editor'
@@ -342,7 +343,7 @@ function ProfileEditor({
               )}
             >
               <div className="rounded-full bg-white p-[3px] dark:bg-zinc-900">
-                <UserAvatar name={me.name} color={me.color} size={92} showPresence online={iAmOnline} />
+                <UserAvatar name={me.name} color={me.color} avatar={me.avatar} size={92} showPresence online={iAmOnline} />
               </div>
             </motion.div>
 
@@ -595,7 +596,10 @@ function ProfileEditor({
 
                   {/* form body */}
                   <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-4">
-                    <ProfileSection title="Identity" className="mt-0">
+                    {/* R27-d — profile photo editor above the identity fields */}
+                    <AvatarPhotoEditor me={me} />
+
+                    <ProfileSection title="Identity" className="mt-6">
                       <div className="space-y-3 p-1.5">
                         <div className="space-y-1.5">
                           <Label htmlFor="profile-name" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">

@@ -240,6 +240,7 @@ export function UserProfileSheet({
                   <UserAvatar
                     name={user.name}
                     color={user.color}
+                    avatar={user.avatar}
                     size={68}
                     showPresence
                     online={online}

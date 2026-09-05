@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../prisma/generated-client" // project-relative output — Turbopack re-reads project files (node_modules/.prisma cache went stale after the avatar push)
 }
 
 datasource db {
@@ -17,6 +18,7 @@ model User {
   username      String?  @unique // @handle (3-20 chars) — replaces raw IDs everywhere in the UI
   about          String                    @default("Hey there! I'm using Pulse.")
   color          String                    @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
+  avatar         String? // profile photo path (/uploads/<uuid>.<ext>) — null = palette avatar fallback
   statusEmoji    String? // Discord-style custom status glyph (null = none)
   statusText     String? // Discord-style custom status line (null = none)
   preferences    String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)

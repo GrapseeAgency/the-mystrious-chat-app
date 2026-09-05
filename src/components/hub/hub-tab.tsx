@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -33,17 +33,26 @@ import {
 import type { AppUser, HubTaskItem, LedgerEntry, LogEntry, MarketListingItem, SwapInfo, WalletState } from '@/lib/types'
 import { apiJson, buzz } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
+import { navigateHash, useHashRoute } from '@/lib/hash-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { MATRIX, CATEGORY_CHIPS, type MatrixApp, type MatrixCategory } from '@/lib/hub-catalog'
 import {
-  AppDetailSheet,
+  MATRIX,
+  CATEGORY_CHIPS,
+  slugForCategory,
+  type MatrixApp,
+  type MatrixCategory,
+} from '@/lib/hub-catalog'
+import {
   LoadErrorCard,
   SkeletonDots,
   hydrateInstalledSet,
   useInstallToggle,
   useInstalledSet,
-} from '@/components/hub/app-detail-sheet'
+  useWalletMini,
+} from '@/components/hub/hub-data'
+import { HubCategoryPage, MINE_SLUG } from '@/components/hub/hub-category-page'
+import { AppDetailPage } from '@/components/hub/app-detail-sheet'
 
 type HubPanel = 'wallet' | 'tasks' | 'market' | 'logs' | 'swap' | 'apps'
 
@@ -143,7 +152,7 @@ function WalletPanel({ me }: { me: AppUser }) {
       </div>
 
       {/* transfer */}
-      <section aria-label="Transfer coins" className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60">
+      <section aria-label="Transfer coins" className="glass-deep glass-sheen rounded-2xl p-4">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
           <Send className="size-4 text-emerald-600" /> Send coins by @handle
         </h3>
@@ -174,11 +183,11 @@ function WalletPanel({ me }: { me: AppUser }) {
       </section>
 
       {/* ledger */}
-      <section aria-label="Ledger" className="rounded-2xl border border-zinc-200/80 dark:border-white/10 dark:bg-zinc-900/60">
+      <section aria-label="Ledger" className="glass-deep glass-sheen rounded-2xl">
         <h3 className="border-b border-zinc-200 px-4 py-2.5 text-sm font-semibold dark:border-white/10">Ledger · last {walletQ.data?.ledger.length ?? 0}</h3>
-        <ul className="max-h-72 divide-y divide-zinc-100 overflow-y-auto dark:divide-white/5">
+        <ul className="pulse-scroll max-h-72 divide-y divide-zinc-100 overflow-y-auto dark:divide-white/5">
           {(walletQ.data?.ledger ?? []).map((row) => (
-            <li key={row.id} className="flex items-center gap-3 px-4 py-2.5">
+            <li key={row.id} className="glass-row-hover flex items-center gap-3 px-4 py-2.5">
               {row.amount >= 0 ? (
                 <ArrowDownToLine className="size-4 shrink-0 text-emerald-600" />
               ) : (
@@ -391,7 +400,7 @@ function MarketPanel({ me }: { me: AppUser }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <section aria-label="Create listing" className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60">
+      <section aria-label="Create listing" className="glass-deep glass-sheen rounded-2xl p-4">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
           <CircleDollarSign className="size-4 text-emerald-600" /> Sell something
           {walletQ.data ? <span className="ml-auto text-xs font-medium text-zinc-500">you: {walletQ.data.coins} PC</span> : null}
@@ -426,7 +435,7 @@ function MarketPanel({ me }: { me: AppUser }) {
               'rounded-xl border p-3',
               l.status === 'sold'
                 ? 'border-zinc-200/80 bg-zinc-50/60 opacity-60 dark:border-white/10 dark:bg-transparent'
-                : 'border-zinc-200/80 bg-white dark:border-white/10 dark:bg-zinc-900/60',
+                : 'glass-deep glass-sheen border-transparent',
             )}
           >
             <div className="flex items-start justify-between gap-2">
@@ -516,11 +525,11 @@ function SwapPanel({ me }: { me: AppUser }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-2xl border border-zinc-200/80 p-3 dark:border-white/10 dark:bg-zinc-900/60">
+        <div className="glass-deep glass-sheen rounded-2xl p-3">
           <p className="text-[11px] font-medium uppercase text-zinc-500">Buy rate</p>
           <p className="mt-1 text-lg font-bold">{rate ? `${rate.pcPerGemBuy} PC → 1 GEM` : '—'}</p>
         </div>
-        <div className="rounded-2xl border border-zinc-200/80 p-3 dark:border-white/10 dark:bg-zinc-900/60">
+        <div className="glass-deep glass-sheen rounded-2xl p-3">
           <p className="text-[11px] font-medium uppercase text-zinc-500">Sell rate</p>
           <p className="mt-1 text-lg font-bold">{rate ? `1 GEM → ${rate.pcPerGemSell} PC` : '—'}</p>
         </div>
@@ -542,7 +551,7 @@ function SwapPanel({ me }: { me: AppUser }) {
         </div>
       ) : null}
 
-      <section aria-label="Exchange" className="rounded-2xl border border-zinc-200/80 p-4 dark:border-white/10 dark:bg-zinc-900/60">
+      <section aria-label="Exchange" className="glass-deep glass-sheen rounded-2xl p-4">
         <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-zinc-100 p-1 dark:bg-white/5">
           {(
             [
@@ -646,8 +655,6 @@ const EXTRA_CHIP_LABELS: Partial<Record<MatrixCategory, string>> = {
   'E-Commerce / Global FinTech': 'Global FinTech',
   'E-Commerce / Hyper-Apps': 'Hyper-Apps',
 }
-
-type CatView = MatrixCategory | 'mine'
 
 function ConnectedChip({ appName, pending, onToggle }: { appName: string; pending: boolean; onToggle: () => void }) {
   return (
@@ -757,93 +764,26 @@ function AppTile({
   )
 }
 
-/** Category / My-apps subpage — same full-surface pattern as the detail sheet. */
-function CategoryView({
-  view,
-  me,
-  onOpenApp,
-  onClose,
-}: {
-  view: CatView
-  me: AppUser
-  onOpenApp: (app: MatrixApp) => void
-  onClose: () => void
-}) {
-  const qc = useQueryClient()
-  const setQ = useInstalledSet(me.id)
-  const label = view === 'mine' ? 'My apps' : (CATEGORY_CHIPS.find((c) => c.id === view)?.label ?? view)
-
-  const apps = useMemo(() => {
-    if (view === 'mine') {
-      const known = setQ.data ?? []
-      return MATRIX.filter((a) => known.includes(String(a.n)))
-    }
-    return MATRIX.filter((a) => a.category === view)
-  }, [view, setQ.data])
-
-  const hydrating = view === 'mine' && setQ.isFetching && setQ.data === undefined
-  const failed = view === 'mine' && setQ.isError && setQ.data === undefined
-
-  return (
-    <div className="flex h-full flex-col bg-background" aria-label={`${label} view`}>
-      <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200/80 px-3 py-2.5 dark:border-white/10">
-        <Button variant="ghost" size="sm" className="h-10 px-3" onClick={onClose}>
-          ‹ Back
-        </Button>
-        <p className="truncate text-sm font-bold">{label}</p>
-        <span className="ml-auto shrink-0 rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-bold text-zinc-500 dark:bg-white/10 dark:text-zinc-300">
-          {hydrating ? '…' : apps.length}
-        </span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4">
-        {hydrating ? (
-          <div className="flex flex-col items-center gap-2 py-10">
-            <SkeletonDots label="Checking your connected apps" />
-            <p className="text-[12px] font-medium text-zinc-500">Checking your connections…</p>
-          </div>
-        ) : failed ? (
-          <LoadErrorCard
-            message="Could not verify your connected apps."
-            onRetry={() => void hydrateInstalledSet(qc, me.id)}
-          />
-        ) : apps.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center dark:border-white/15">
-            <p className="text-[13px] font-medium text-zinc-500">
-              {view === 'mine'
-                ? 'You haven\u2019t connected any apps yet.'
-                : 'Nothing lives in this category yet.'}
-            </p>
-            <Button size="sm" variant="outline" className="h-9" onClick={onClose}>
-              Browse the matrix
-            </Button>
-          </div>
-        ) : (
-          <ul className="grid grid-cols-2 gap-2">
-            {apps.map((app) => (
-              <AppTile key={app.n} app={app} me={me} installed={(setQ.data ?? []).includes(String(app.n))} onOpen={onOpenApp} />
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function AppsPanel({
-  me,
-  onOpenConversation,
-}: {
-  me: AppUser
-  onOpenConversation?: (conversationId: string) => void
-}) {
+/**
+ * Apps panel — the hub root catalog surface (R27-b). Search filters the
+ * live matrix; chips + tiles navigate REAL hash sub-pages (#/hub/c/:slug,
+ * #/hub/app/:id). Install truth comes from the shared installed-set cache.
+ */
+function AppsPanel({ me }: { me: AppUser }) {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
-  const [catView, setCatView] = useState<CatView | null>(null)
-  const [openApp, setOpenApp] = useState<MatrixApp | null>(null)
+  const hydrateStarted = useRef(false)
 
   const setQ = useInstalledSet(me.id)
   const knownIds = useMemo(() => new Set(setQ.data ?? []), [setQ.data])
+
+  // hydrate the real install set once per mount so the "My apps" count chip
+  // shows server truth immediately (Promise.all over the catalog, cached 60s)
+  useEffect(() => {
+    if (hydrateStarted.current) return
+    hydrateStarted.current = true
+    void hydrateInstalledSet(qc, me.id).catch(() => {})
+  }, [qc, me.id])
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {}
@@ -873,114 +813,73 @@ function AppsPanel({
     )
   }, [search])
 
-  const openMyApps = () => {
-    buzz(12)
-    setCatView('mine')
-    // Promise.all hydration over all 100 apps — deduped + cached 60s by fetchQuery
-    void hydrateInstalledSet(qc, me.id).catch(() => {})
-  }
-
   return (
     <div className="flex flex-col gap-3">
-      <AnimatePresence initial={false}>
-        {openApp ? (
-          <motion.div
-            key="app-detail"
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="absolute inset-0 z-[70]"
-          >
-            <AppDetailSheet app={openApp} me={me} onClose={() => setOpenApp(null)} onOpenConversation={onOpenConversation} />
-          </motion.div>
-        ) : catView ? (
-          <motion.div
-            key={`cat-${catView}`}
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="absolute inset-0 z-[70]"
-          >
-            <CategoryView
-              view={catView}
-              me={me}
-              onOpenApp={setOpenApp}
-              onClose={() => setCatView(null)}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="apps-grid"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
-          >
-            <div className="flex flex-col gap-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search 100 platforms…"
-                  className="h-9 pl-9"
-                />
-              </div>
+      {/* real catalog search — glass pill field */}
+      <div className="glass-deep glass-sheen relative rounded-full">
+        <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search 100 platforms…"
+          aria-label="Search the app catalog"
+          className="h-11 rounded-full border-transparent bg-transparent pl-10 shadow-none focus-visible:ring-1 focus-visible:ring-emerald-500/50 dark:bg-transparent"
+        />
+      </div>
 
-              <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <button
-                  type="button"
-                  onClick={openMyApps}
-                  aria-label="Show my connected apps"
-                  className={cn(
-                    'shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-500/20 active:scale-[0.97] dark:text-emerald-400',
-                  )}
-                >
-                  My apps{setQ.data !== undefined ? ` · ${setQ.data.length}` : ''}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCatView(null)}
-                  aria-label="Show all apps"
-                  className="shrink-0 rounded-full border border-emerald-600 bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white transition-colors active:scale-[0.97]"
-                >
-                  All · {MATRIX.length}
-                </button>
-                {chips.map((chip) => (
-                  <button
-                    key={chip.id}
-                    type="button"
-                    onClick={() => setCatView(chip.id)}
-                    aria-label={`Open ${chip.label} category`}
-                    className="shrink-0 rounded-full border border-zinc-200 px-3 py-1 text-[11px] font-semibold text-zinc-600 transition-colors hover:border-emerald-400 active:scale-[0.97] dark:border-white/15 dark:bg-white/5 dark:text-zinc-300 dark:hover:border-emerald-500/50"
-                  >
-                    {chip.label} · {counts[chip.id] ?? 0}
-                  </button>
-                ))}
-              </div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <button
+          type="button"
+          onClick={() => {
+            buzz(12)
+            navigateHash(`/hub/c/${MINE_SLUG}`)
+          }}
+          aria-label="Open my connected apps"
+          className={cn(
+            'relative shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-500/20 active:scale-[0.97] dark:text-emerald-400',
+            'after:absolute after:-inset-1 after:content-[""]', // extends the touch target past 44px
+          )}
+        >
+          My apps{setQ.data !== undefined ? ` · ${setQ.data.length}` : ''}
+        </button>
+        {chips.map((chip) => (
+          <button
+            key={chip.id}
+            type="button"
+            onClick={() => {
+              buzz(10)
+              navigateHash(`/hub/c/${slugForCategory(chip.id)}`)
+            }}
+            aria-label={`Open the ${chip.label} category`}
+            className={cn(
+              'relative shrink-0 rounded-full border border-zinc-200 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 transition-colors hover:border-emerald-400 active:scale-[0.97] dark:border-white/15 dark:bg-white/5 dark:text-zinc-300 dark:hover:border-emerald-500/50',
+              'after:absolute after:-inset-1 after:content-[""]', // extends the touch target past 44px
+            )}
+          >
+            {chip.label} · {counts[chip.id] ?? 0}
+          </button>
+        ))}
+      </div>
 
-              <ul className="grid grid-cols-2 gap-2">
-                {filtered.map((app) => (
-                  <AppTile
-                    key={app.n}
-                    app={app}
-                    me={me}
-                    installed={knownIds.has(String(app.n))}
-                    onOpen={setOpenApp}
-                  />
-                ))}
-              </ul>
-              {filtered.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-[13px] text-zinc-500 dark:border-white/15">
-                  Nothing matches “{search}”.
-                </p>
-              ) : null}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ul className="grid grid-cols-2 gap-2">
+        {filtered.map((app) => (
+          <AppTile
+            key={app.n}
+            app={app}
+            me={me}
+            installed={knownIds.has(String(app.n))}
+            onOpen={(a) => {
+              buzz(10)
+              navigateHash(`/hub/app/${a.n}`)
+            }}
+          />
+        ))}
+      </ul>
+      {filtered.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-[13px] text-zinc-500 dark:border-white/15">
+          Nothing matches “{search}”.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -996,26 +895,74 @@ export function HubTab({
   onOpenConversation?: (conversationId: string) => void
 }) {
   const [panel, setPanel] = useState<HubPanel>('wallet')
+  const { path } = useHashRoute()
+  const walletQ = useWalletMini(me.id)
+
+  // ── #/hub/* sub-page routing — handled inside the Hub tab ──
+  // #/hub/c/<slug>  → category page (or "mine" = My apps)
+  // #/hub/app/<id>  → app page (replaces the old detail sheet)
+  const subPath = path.startsWith('/hub/') ? path.slice('/hub/'.length) : null
+  const catSlug = subPath?.startsWith('c/') ? subPath.slice('c/'.length) : null
+  const appId = subPath?.startsWith('app/') ? decodeURIComponent(subPath.slice('app/'.length)) : null
+
+  // depth-aware slide direction: root(0) → category(1) → app(2)
+  const depth = catSlug !== null ? 1 : appId !== null ? 2 : 0
+  const [nav, setNav] = useState<{ depth: number; dir: 'forward' | 'back' }>({ depth: 0, dir: 'forward' })
+  if (nav.depth !== depth) {
+    // documented React pattern: adjust state during render when a route changes
+    setNav({ depth, dir: depth > nav.depth ? 'forward' : 'back' })
+  }
+  const direction = nav.dir
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-zinc-200/80 px-4 pb-2 pt-3 dark:border-white/10">
-        <h1 className="flex items-center gap-2 text-lg font-bold">
-          <Flame className="size-5 text-emerald-600" /> Hub
-        </h1>
-        <p className="text-xs text-zinc-500">Your Pulse command deck — economy, tasks, market &amp; the 100-app matrix.</p>
+    <div className="relative flex h-full flex-col overflow-hidden">
+      <header className="glass-deep glass-sheen z-10 shrink-0 px-4 pb-3 pt-3">
+        <div className="flex items-center gap-2.5">
+          <div
+            aria-hidden
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md"
+          >
+            <Flame className="size-[18px]" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[16.5px] font-bold leading-tight">Hub</h1>
+            <p className="truncate text-[11px] text-zinc-500">Economy · tasks · market · the 100-app matrix</p>
+          </div>
+          {/* real wallet chip — same cache key as the Wallet panel */}
+          {walletQ.data ? (
+            <button
+              type="button"
+              onClick={() => setPanel('wallet')}
+              aria-label={`Wallet balance ${walletQ.data.coins} Pulse Coins — open wallet panel`}
+              className="glass-pill flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] font-bold text-emerald-700 outline-none transition-transform active:scale-95 dark:text-emerald-400"
+            >
+              <Coins className="size-3.5" aria-hidden />
+              {walletQ.data.coins.toLocaleString()} PC
+              <span className="ml-0.5 inline-flex items-center gap-0.5 text-sky-500 dark:text-sky-400">
+                <Gem className="size-3" aria-hidden />
+                {walletQ.data.gems}
+              </span>
+            </button>
+          ) : (
+            <SkeletonDots className="shrink-0 px-2 py-2" label="Loading wallet" />
+          )}
+        </div>
       </header>
 
       <nav aria-label="Hub panels" className="shrink-0 px-3 py-2">
-        <div className="flex gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="glass-pill flex gap-1 overflow-x-auto p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {PANELS.map(({ id, label, Icon }) => (
             <button
               key={id}
               type="button"
-              onClick={() => setPanel(id)}
+              onClick={() => {
+                buzz(6)
+                setPanel(id)
+              }}
               aria-current={panel === id ? 'true' : undefined}
               className={cn(
-                'relative flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition-colors',
+                'relative flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition-colors',
+                'after:absolute after:-inset-1 after:content-[""]', // extends the touch target past 44px
                 panel === id ? 'text-white' : 'text-zinc-600 hover:text-emerald-600 dark:text-zinc-300',
               )}
             >
@@ -1029,16 +976,25 @@ export function HubTab({
         </div>
       </nav>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+      <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <motion.div key={panel} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16 }}>
           {panel === 'wallet' ? <WalletPanel me={me} /> : null}
           {panel === 'tasks' ? <TasksPanel me={me} /> : null}
           {panel === 'market' ? <MarketPanel me={me} /> : null}
           {panel === 'swap' ? <SwapPanel me={me} /> : null}
           {panel === 'logs' ? <LogsPanel /> : null}
-          {panel === 'apps' ? <AppsPanel me={me} onOpenConversation={onOpenConversation} /> : null}
+          {panel === 'apps' ? <AppsPanel me={me} /> : null}
         </motion.div>
       </div>
+
+      {/* hash-routed hub sub-pages — slide over the rails, browser back works */}
+      <AnimatePresence initial={false}>
+        {catSlug !== null ? (
+          <HubCategoryPage key={`c-${catSlug}`} slug={catSlug} me={me} direction={direction} />
+        ) : appId !== null ? (
+          <AppDetailPage key={`a-${appId}`} appId={appId} me={me} onOpenConversation={onOpenConversation} direction={direction} />
+        ) : null}
+      </AnimatePresence>
     </div>
   )
 }

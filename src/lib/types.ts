@@ -9,6 +9,7 @@ export interface AppUser {
   username: string | null // unique @handle — shown instead of raw IDs everywhere
   about: string
   color: string // emerald|rose|amber|violet|teal|orange|pink|cyan
+  avatar: string | null // profile photo path (/uploads/<uuid>.<ext>) — null = palette avatar fallback
   statusEmoji: string | null // Discord-style custom status glyph
   statusText: string | null // Discord-style custom status line
   createdAt: string // ISO
@@ -21,6 +22,7 @@ export interface MessageAuthor {
   name: string
   username: string | null
   color: string
+  avatar: string | null // profile photo path (/api/uploads/<file>) — null = palette fallback
 }
 
 export type MessageStatus = 'sent' | 'deleted'
