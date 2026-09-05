@@ -1,0 +1,652 @@
+ark:text-zinc-400">
+   877→          {navMeta?.label ?? 'Floating Capsule'}
+   878→        </span>{' '}
+   879→        — switching applies instantly to the shell navigation.
+   880→      </p>
+   881→    </Section>
+   882→  )
+   883→}
+   884→
+   885→// ── Notifications — real alert gates + quiet hours ───────────
+   886→
+   887→function NotificationsSection({ prefs, save }: { prefs: PulsePrefs; save: (patch: Partial<PulsePrefs>) => void }) {
+   888→  const q = useSearchQuery()
+   889→
+   890→  const soundOn = pulseSettingsStore((s) => s.soundOn)
+   891→  const hapticsOn = pulseSettingsStore((s) => s.hapticsOn)
+   892→  const quietHoursOn = pulseSettingsStore((s) => s.quietHoursOn)
+   893→  const quietStart = pulseSettingsStore((s) => s.quietStart)
+   894→  const quietEnd = pulseSettingsStore((s) => s.quietEnd)
+   895→  const setSoundOn = pulseSettingsStore((s) => s.setSoundOn)
+   896→  const setHapticsOn = pulseSettingsStore((s) => s.setHapticsOn)
+   897→  const setQuietHoursOn = pulseSettingsStore((s) => s.setQuietHoursOn)
+   898→  const setQuietStart = pulseSettingsStore((s) => s.setQuietStart)
+   899→  const setQuietEnd = pulseSettingsStore((s) => s.setQuietEnd)
+   900→
+   901→  const alertsVisible = hit(q, 'notifications', 'sound', 'haptics', 'vibration', 'quiet hours', 'do not disturb', 'ding', 'alert', 'test')
+   902→  const inappVisible = hit(q, 'notifications', 'previews', 'message previews', 'pop', 'vibrate', 'banner')
+   903→  if (!alertsVisible && !inappVisible) return null
+   904→
+   905→  const timeInputClass =
+   906→    'h-11 w-full rounded-xl border border-zinc-200/80 bg-white/60 px-3 text-[13.5px] font-semibold text-zinc-800 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 [color-scheme:light] dark:border-zinc-700/60 dark:bg-zinc-800/60 dark:text-zinc-100 dark:[color-scheme:dark]'
+   907→
+   908→  return (
+   909→    <Section label="Notifications" show>
+   910→      {alertsVisible ? (
+   911→        <div className={cn(PANEL, DIVIDE)}>
+   912→          <ToggleRow
+   913→            Icon={Volume2}
+   914→            title="Incoming sound"
+   915→            description="Master ding for new messages on this device."
+   916→            checked={soundOn}
+   917→            onCheckedChange={setSoundOn}
+   918→            search="sound ding alert audio ping"
+   919→          />
+   920→          <ToggleRow
+   921→            Icon={Vibrate}
+   922→            title="Haptics"
+   923→            description="Vibration feedback on taps and incoming messages."
+   924→            checked={hapticsOn}
+   925→            onCheckedChange={setHapticsOn}
+   926→            search="haptics vibration buzz"
+   927→          />
+   928→          <ToggleRow
+   929→            Icon={MoonStar}
+   930→            title="Quiet hours"
+   931→            description="Silence sounds and vibration inside the window."
+   932→            checked={quietHoursOn}
+   933→            onCheckedChange={setQuietHoursOn}
+   934→            search="quiet hours do not disturb dnd silence schedule overnight"
+   935→          />
+   936→          {quietHoursOn ? (
+   937→            <motion.div
+   938→              initial={{ opacity: 0 }}
+   939→              animate={{ opacity: 1 }}
+   940→              transition={prefs.reducedMotion ? { duration: 0 } : undefined}
+   941→              className="flex flex-wrap items-end gap-3 px-4 pb-4 pt-1"
+   942→            >
+   943→              <label className="flex min-h-[44px] flex-1 flex-col justify-center gap-1" style={{ minWidth: 120 }}>
+   944→                <span className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">
+   945→                  From
+   946→                </span>
+   947→                <input
+   948→                  type="time"
+   949→                  value={quietStart}
+   950→                  onChange={(e) => setQuietStart(e.target.value)}
+   951→                  aria-label="Quiet hours start time"
+   952→                  className={timeInputClass}
+   953→                />
+   954→              </label>
+   955→              <label className="flex min-h-[44px] flex-1 flex-col justify-center gap-1" style={{ minWidth: 120 }}>
+   956→                <span className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">
+   957→                  Until
+   958→                </span>
+   959→                <input
+   960→                  type="time"
+   961→                  value={quietEnd}
+   962→                  onChange={(e) => setQuietEnd(e.target.value)}
+   963→                  aria-label="Quiet hours end time"
+   964→                  className={timeInputClass}
+   965→                />
+   966→              </label>
+   967→            </motion.div>
+   968→          ) : null}
+   969→          <div className="px-4 pb-4 pt-0.5">
+   970→            <Button
+   971→              type="button"
+   972→              variant="outline"
+   973→              onClick={() => {
+   974→                haptic(30)
+   975→                playIncomingPing()
+   976→              }}
+   977→              className="h-11 w-full gap-2 rounded-xl border-zinc-200/80 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700/60 dark:text-zinc-200 dark:hover:bg-zinc-800/60"
+   978→            >
+   979→              <Play className="size-4" aria-hidden />
+   980→              Preview alert
+   981→            </Button>
+   982→            <p className="pt-1.5 text-[11.5px] leading-snug text-zinc-400 dark:text-zinc-500">
+   983→              Plays the real two-note ding and fires a haptic buzz. Overnight windows (22:00 → 07:00) are supported.
+   984→            </p>
+   985→          </div>
+   986→        </div>
+   987→      ) : null}
+   988→
+   989→      {inappVisible ? (
+   990→        <div className={cn(PANEL, DIVIDE)}>
+   991→          <ToggleRow
+   992→            Icon={Eye}
+   993→            title="Message previews"
+   994→            description="Show message text in notification banners."
+   995→            checked={prefs.notifPreviews}
+   996→            onCheckedChange={(v) => save({ notifPreviews: v })}
+   997→            search="previews banner text privacy lock screen"
+   998→          />
+   999→          <ToggleRow
+  1000→            Icon={Bell}
+  1001→            title="Message pop"
+  1002→            description="Per-account pop sound for incoming messages."
+  1003→            checked={prefs.notifSound}
+  1004→            onCheckedChange={(v) => save({ notifSound: v })}
+  1005→            search="pop sound per account"
+  1006→          />
+  1007→          <ToggleRow
+  1008→            Icon={Smartphone}
+  1009→            title="Vibration"
+  1010→            description="Buzz on incoming messages, where the device supports it."
+  1011→            checked={prefs.notifVibrate}
+  1012→            onCheckedChange={(v) => save({ notifVibrate: v })}
+  1013→            search="vibrate buzz device"
+  1014→          />
+  1015→        </div>
+  1016→      ) : null}
+  1017→    </Section>
+  1018→  )
+  1019→}
+  1020→
+  1021→// ── Chats — list filter + per-account chat prefs ─────────────
+  1022→
+  1023→function ChatsSection({ prefs, save }: { prefs: PulsePrefs; save: (patch: Partial<PulsePrefs>) => void }) {
+  1024→  const q = useSearchQuery()
+  1025→
+  1026→  const listFilter = pulseSettingsStore((s) => s.listFilter)
+  1027→  const setListFilter = pulseSettingsStore((s) => s.setListFilter)
+  1028→
+  1029→  const filterVisible = hit(q, 'chats', 'list filter', 'unread', 'groups', 'folders', 'default filter')
+  1030→  const lookVisible = hit(q, 'chats', 'wallpaper', 'bubble corners', 'density', 'compact', 'cozy', 'radius', 'background')
+  1031→  if (!filterVisible && !lookVisible) return null
+  1032→
+  1033→  const wallpaperLabel = WALLPAPERS.find((w) => w.id === prefs.wallpaper)?.label ?? 'None'
+  1034→
+  1035→  return (
+  1036→    <Section label="Chats" show>
+  1037→      {filterVisible ? (
+  1038→        <div className={cn(PANEL, 'p-3')}>
+  1039→          <StaticRow
+  1040→            Icon={MessagesSquare}
+  1041→            title="Default list filter"
+  1042→            caption="Applied to the chats list when you open the Chats tab."
+  1043→            search="filter unread groups all folders"
+  1044→            trailing={
+  1045→              <span className="text-[11px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+  1046→                {listFilter}
+  1047→              </span>
+  1048→            }
+  1049→          />
+  1050→          <div className="p-3 pt-2">
+  1051→            <Segmented
+  1052→              ariaLabel="Default chats list filter"
+  1053→              value={listFilter}
+  1054→              onChange={(v) => {
+  1055→                haptic(8)
+  1056→                setListFilter(v as ChatsListFilter)
+  1057→              }}
+  1058→              options={[
+  1059→                { value: 'all', label: 'All' },
+  1060→                { value: 'unread', label: 'Unread' },
+  1061→                { value: 'groups', label: 'Groups' },
+  1062→              ]}
+  1063→            />
+  1064→          </div>
+  1065→        </div>
+  1066→      ) : null}
+  1067→
+  1068→      {lookVisible ? (
+  1069→        <div className={cn(PANEL, 'p-3')}>
+  1070→          <StaticRow
+  1071→            Icon={ImageIcon}
+  1072→            title="Chat wallpaper"
+  1073→            caption={`Background behind every chat room — currently ${wallpaperLabel}.`}
+  1074→            search="wallpaper background aurora dusk forest mono"
+  1075→          />
+  1076→          <div className="grid grid-cols-5 gap-2 p-3 pt-1" role="radiogroup" aria-label="Chat wallpaper">
+  1077→            {WALLPAPERS.map((w) => {
+  1078→              const selected = prefs.wallpaper === w.id
+  1079→              return (
+  1080→                <button
+  1081→                  key={w.id}
+  1082→                  type="button"
+  1083→                  role="radio"
+  1084→                  aria-checked={selected}
+  1085→                  aria-label={`${w.label} wallpaper`}
+  1086→                  onClick={() => {
+  1087→                    haptic(8)
+  1088→                    save({ wallpaper: w.id })
+  1089→                  }}
+  1090→                  className="flex min-h-[44px] flex-col items-center gap-1.5 rounded-xl p-1 outline-none transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+  1091→                >
+  1092→                  <span
+  1093→                    className={cn(
+  1094→                      'relative block aspect-square w-full rounded-lg border shadow-sm',
+  1095→                      w.preview,
+  1096→                      selected
+  1097→                        ? 'border-emerald-500 ring-2 ring-emerald-500/60'
+  1098→                        : 'border-zinc-200/80 dark:border-zinc-700/60',
+  1099→                    )}
+  1100→                  >
+  1101→                    {selected ? (
+  1102→                      <span className="absolute inset-0 flex items-center justify-center">
+  1103→                        <Check className="size-4 text-emerald-600 drop-shadow dark:text-emerald-300" aria-hidden />
+  1104→                      </span>
+  1105→                    ) : null}
+  1106→                  </span>
+  1107→                  <span
+  1108→                    className={cn(
+  1109→                      'text-[10px] font-semibold',
+  1110→                      selected ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+  1111→                    )}
+  1112→                  >
+  1113→                    {w.label}
+  1114→                  </span>
+  1115→                </button>
+  1116→              )
+  1117→            })}
+  1118→          </div>
+  1119→
+  1120→          <div className="px-3 pb-1">
+  1121→            <StaticRow
+  1122→              Icon={MessagesSquare}
+  1123→              title="Bubble corners"
+  1124→              caption="Corner radius of your outgoing message bubbles."
+  1125→              search="bubble radius corners pill round"
+  1126→            />
+  1127→            <div className="pb-3 pt-2">
+  1128→              <Segmented
+  1129→                ariaLabel="Bubble corner radius"
+  1130→                value={prefs.bubbleRadius}
+  1131→                onChange={(v) => save({ bubbleRadius: v })}
+  1132→                options={[
+  1133→                  { value: 'md', label: 'Medium' },
+  1134→                  { value: 'lg', label: 'Large' },
+  1135→                  { value: 'pill', label: 'Pill' },
+  1136→                ]}
+  1137→              />
+  1138→            </div>
+  1139→
+  1140→            <StaticRow
+  1141→              Icon={Columns3}
+  1142→              title="Message density"
+  1143→              caption="Row spacing in the message list."
+  1144→              search="density compact cozy spacing"
+  1145→            />
+  1146→            <div className="pt-2">
+  1147→              <Segmented
+  1148→                ariaLabel="Message density"
+  1149→                value={prefs.density}
+  1150→                onChange={(v) => save({ density: v })}
+  1151→                options={[
+  1152→                  { value: 'cozy', label: 'Cozy' },
+  1153→                  { value: 'compact', label: 'Compact' },
+  1154→                ]}
+  1155→              />
+  1156→            </div>
+  1157→          </div>
+  1158→        </div>
+  1159→      ) : null}
+  1160→    </Section>
+  1161→  )
+  1162→}
+  1163→
+  1164→// ── Privacy & Security — the real synced controls ────────────
+  1165→
+  1166→function PrivacySection({ prefs, save }: { prefs: PulsePrefs; save: (patch: Partial<PulsePrefs>) => void }) {
+  1167→  const q = useSearchQuery()
+  1168→  const visible = hit(q, 'privacy', 'security', 'last seen', 'online', 'read receipts', 'visibility', 'presence')
+  1169→  if (!visible) return null
+  1170→  return (
+  1171→    <Section label="Privacy & Security" show>
+  1172→      <div className={cn(PANEL, DIVIDE)}>
+  1173→        <ToggleRow
+  1174→          Icon={Eye}
+  1175→          title="Last seen & online"
+  1176→          description="Let people see when you were last active on Pulse."
+  1177→          checked={prefs.lastSeenVisible}
+  1178→          onCheckedChange={(v) => save({ lastSeenVisible: v })}
+  1179→          search="last seen online presence visibility"
+  1180→        />
+  1181→        <ToggleRow
+  1182→          Icon={CheckCheck}
+  1183→          title="Read receipts"
+  1184→          description="Show others when you've read their messages."
+  1185→          checked={prefs.readReceipts}
+  1186→          onCheckedChange={(v) => save({ readReceipts: v })}
+  1187→          search="read receipts seen ticks double check"
+  1188→        />
+  1189→      </div>
+  1190→      <p className="px-1 text-[11.5px] leading-snug text-zinc-400 dark:text-zinc-500">
+  1191→        These are the privacy controls Pulse syncs to your account today. End-to-end encryption and
+  1192→        per-chat locks are on the roadmap — nothing else is configurable yet.
+  1193→      </p>
+  1194→    </Section>
+  1195→  )
+  1196→}
+  1197→
+  1198→// ── Data & Storage — real counts, outbox, install ────────────
+  1199→
+  1200→function StatTile({ Icon, value, label }: { Icon: LucideIcon; value: number | string; label: string }) {
+  1201→  return (
+  1202→    <div className="flex flex-col gap-1 rounded-2xl border border-zinc-200/70 bg-white/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+  1203→      <Icon className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+  1204→      <p className="text-xl font-bold leading-none tracking-tight text-zinc-900 dark:text-zinc-50">{value}</p>
+  1205→      <p className="text-[10.5px] font-medium leading-tight text-zinc-500 dark:text-zinc-400">{label}</p>
+  1206→    </div>
+  1207→  )
+  1208→}
+  1209→
+  1210→function DataStorageSection({
+  1211→  user,
+  1212→  stats,
+  1213→  mounted,
+  1214→  reduced,
+  1215→  onOpenHub,
+  1216→}: {
+  1217→  user: AppUser | null
+  1218→  stats: ReturnType<typeof useQuery<UserStats>>
+  1219→  mounted: boolean
+  1220→  reduced: boolean
+  1221→  onOpenHub?: () => void
+  1222→}) {
+  1223→  const q = useSearchQuery()
+  1224→  const installEvent = usePulsePwa((s) => s.installEvent)
+  1225→  const queuedCount = useStore(pulseOutboxStore, (s) => s.queue.length)
+  1226→
+  1227→  const statsVisible = hit(q, 'data', 'storage', 'stats', 'footprint', 'messages', 'photos', 'voice notes', 'chats', 'groups', 'days', 'activity')
+  1228→  const offlineVisible = hit(q, 'offline', 'queue', 'outbox', 'waiting', 'connection')
+  1229→  const installVisible = hit(q, 'install', 'pwa', 'home screen', 'app')
+  1230→  const hubVisible = hit(q, 'hub', 'wallet', 'market', 'economy')
+  1231→  if (!statsVisible && !offlineVisible && !installVisible && !hubVisible) return null
+  1232→
+  1233→  const handleInstall = async () => {
+  1234→    haptic(12)
+  1235→    const outcome = await promptPwaInstall()
+  1236→    if (outcome === 'accepted') {
+  1237→      toast.success('Installing Pulse…', { description: 'Find it on your home screen.' })
+  1238→    } else if (outcome === 'unavailable') {
+  1239→      toast.error('Install is not available right now')
+  1240→    }
+  1241→  }
+  1242→
+  1243→  return (
+  1244→    <Section label="Data & Storage" show>
+  1245→      {statsVisible ? (
+  1246→        <div className={cn(PANEL, 'p-3')}>
+  1247→          <StaticRow
+  1248→            Icon={Database}
+  1249→            title="Your footprint"
+  1250→            caption="Live counts straight from the Pulse database."
+  1251→            search="stats footprint messages photos activity"
+  1252→            trailing={
+  1253→              <Button
+  1254→                variant="ghost"
+  1255→                size="icon"
+  1256→                aria-label="Refresh stats"
+  1257→                onClick={() => void stats.refetch()}
+  1258→                className="size-9 rounded-full text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+  1259→              >
+  1260→                <RefreshCw className={cn('size-4', stats.isFetching && 'animate-spin')} aria-hidden />
+  1261→              </Button>
+  1262→            }
+  1263→          />
+  1264→          {!user ? (
+  1265→            <div className="flex items-center gap-3 px-4 pb-4">
+  1266→              <TriangleAlert className="size-5 shrink-0 text-amber-500" aria-hidden />
+  1267→              <p className="text-[13px] font-medium text-zinc-600 dark:text-zinc-300">Sign in to see your stats.</p>
+  1268→            </div>
+  1269→          ) : stats.isPending ? (
+  1270→            <div className="grid grid-cols-3 gap-2 p-3 pt-1" role="status" aria-label="Loading stats">
+  1271→              {Array.from({ length: 6 }).map((_, i) => (
+  1272→                <Skeleton key={i} className="h-[92px] rounded-2xl" />
+  1273→              ))}
+  1274→            </div>
+  1275→          ) : stats.isError || !stats.data ? (
+  1276→            <div className="flex flex-col items-start gap-2 px-4 pb-4">
+  1277→              <p className="flex items-center gap-2 text-[13px] font-medium text-zinc-600 dark:text-zinc-300">
+  1278→                <TriangleAlert className="size-4 text-amber-500" aria-hidden />
+  1279→                Couldn&apos;t load your stats.
+  1280→              </p>
+  1281→              <Button size="sm" variant="outline" onClick={() => void stats.refetch()} className="gap-1.5 rounded-xl">
+  1282→                <RefreshCw className="size-3.5" aria-hidden />
+  1283→                Try again
+  1284→              </Button>
+  1285→            </div>
+  1286→          ) : (
+  1287→            <div className="grid grid-cols-3 gap-2 p-3 pt-1">
+  1288→              <StatTile Icon={MessagesSquare} value={stats.data.messages} label="Messages sent" />
+  1289→              <StatTile Icon={ImageIcon} value={stats.data.photos} label="Photos" />
+  1290→              <StatTile Icon={Mic} value={stats.data.voiceNotes} label="Voice notes" />
+  1291→              <StatTile Icon={UserRound} value={stats.data.chats} label="Chats" />
+  1292→              <StatTile Icon={UsersRound} value={stats.data.groups} label="Groups" />
+  1293→              <StatTile Icon={CalendarDays} value={stats.data.days} label="Days active" />
+  1294→            </div>
+  1295→          )}
+  1296→        </div>
+  1297→      ) : null}
+  1298→
+  1299→      {offlineVisible ? (
+  1300→        <div className={cn(PANEL)}>
+  1301→          <StaticRow
+  1302→            Icon={CloudOff}
+  1303→            title="Offline queue"
+  1304→            caption={
+  1305→              mounted && queuedCount > 0
+  1306→                ? `${queuedCount} ${queuedCount === 1 ? 'message' : 'messages'} waiting to send when you're back online.`
+  1307→                : 'Empty — every composed message has been delivered.'
+  1308→            }
+  1309→            search="offline queue outbox waiting messages sync"
+  1310→            trailing={
+  1311→              mounted && queuedCount > 0 ? (
+  1312→                <span className="shrink-0 rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+  1313→                  {queuedCount}
+  1314→                </span>
+  1315→              ) : (
+  1316→                <Check className="size-4 shrink-0 text-emerald-500" aria-hidden />
+  1317→              )
+  1318→            }
+  1319→          />
+  1320→        </div>
+  1321→      ) : null}
+  1322→
+  1323→      {installVisible ? (
+  1324→        <div className={cn(PANEL)}>
+  1325→          {mounted && installEvent ? (
+  1326→            <motion.button
+  1327→              type="button"
+  1328→              onClick={() => void handleInstall()}
+  1329→              whileTap={reduced ? undefined : pressTap}
+  1330→              className="flex min-h-[56px] w-full items-center gap-3 px-4 py-2.5 text-left outline-none transition-colors hover:bg-zinc-50/80 active:bg-zinc-100 dark:hover:bg-zinc-800/40 dark:active:bg-zinc-800/70"
+  1331→            >
+  1332→              <IconTile Icon={Download} />
+  1333→              <span className="min-w-0 flex-1">
+  1334→                <span className="block text-[14.5px] font-semibold text-zinc-900 dark:text-zinc-100">
+  1335→                  Install Pulse
+  1336→                </span>
+  1337→                <span className="block text-[12px] leading-snug text-zinc-500 dark:text-zinc-400">
+  1338→                  Add to your home screen — opens instantly, works offline.
+  1339→                </span>
+  1340→              </span>
+  1341→              <span className="shrink-0 rounded-full bg-emerald-600 px-3.5 py-1.5 text-[12px] font-bold text-white shadow-sm shadow-emerald-600/25">
+  1342→                Install
+  1343→              </span>
+  1344→            </motion.button>
+  1345→          ) : (
+  1346→            <StaticRow
+  1347→              Icon={Smartphone}
+  1348→              title="Install Pulse"
+  1349→              caption="Your browser hasn't offered the install prompt yet — check its menu (Share → Add to Home Screen)."
+  1350→              search="install pwa home screen add"
+  1351→            />
+  1352→          )}
+  1353→        </div>
+  1354→      ) : null}
+  1355→
+  1356→      {hubVisible && onOpenHub ? (
+  1357→        <div className={cn(PANEL)}>
+  1358→          <NavHintRow
+  1359→            Icon={Compass}
+  1360→            title="The Hub"
+  1361→            caption="Wallet · Tasks · Market · Swap · Apps · Logs"
+  1362→            onClick={onOpenHub}
+  1363→            search="hub wallet economy market tasks"
+  1364→          />
+  1365→        </div>
+  1366→      ) : null}
+  1367→    </Section>
+  1368→  )
+  1369→}
+  1370→
+  1371→/** Tappable hint row (used sparingly — most rows are static or toggles). */
+  1372→function NavHintRow({
+  1373→  Icon,
+  1374→  title,
+  1375→  caption,
+  1376→  onClick,
+  1377→  search,
+  1378→}: {
+  1379→  Icon: LucideIcon
+  1380→  title: string
+  1381→  caption?: string
+  1382→  onClick: () => void
+  1383→  search?: string
+  1384→}) {
+  1385→  const q = useSearchQuery()
+  1386→  const reduced = useReducedMotion()
+  1387→  if (!hit(q, title, caption, search)) return null
+  1388→  return (
+  1389→    <motion.button
+  1390→      type="button"
+  1391→      onClick={() => {
+  1392→        haptic(10)
+  1393→        onClick()
+  1394→      }}
+  1395→      whileTap={reduced ? undefined : pressTap}
+  1396→      className="flex min-h-[56px] w-full items-center gap-3 px-4 py-2.5 text-left outline-none transition-colors hover:bg-zinc-50/80 active:bg-zinc-100 dark:hover:bg-zinc-800/40 dark:active:bg-zinc-800/70"
+  1397→    >
+  1398→      <IconTile Icon={Icon} />
+  1399→      <span className="min-w-0 flex-1">
+  1400→        <span className="block text-[14.5px] font-semibold text-zinc-900 dark:text-zinc-100">{title}</span>
+  1401→        {caption ? (
+  1402→          <span className="block truncate text-[12px] text-zinc-500 dark:text-zinc-400">{caption}</span>
+  1403→        ) : null}
+  1404→      </span>
+  1405→      <ChevronRight className="size-4 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden />
+  1406→    </motion.button>
+  1407→  )
+  1408→}
+  1409→
+  1410→// ── System ───────────────────────────────────────────────────
+  1411→
+  1412→function SystemSection({ prefs, save }: { prefs: PulsePrefs; save: (patch: Partial<PulsePrefs>) => void }) {
+  1413→  const q = useSearchQuery()
+  1414→  const [online, setOnline] = useState(() =>
+  1415→    typeof navigator === 'undefined' ? true : navigator.onLine,
+  1416→  )
+  1417→
+  1418→  useEffect(() => {
+  1419→    const up = () => setOnline(true)
+  1420→    const down = () => setOnline(false)
+  1421→    window.addEventListener('online', up)
+  1422→    window.addEventListener('offline', down)
+  1423→    return () => {
+  1424→      window.removeEventListener('online', up)
+  1425→      window.removeEventListener('offline', down)
+  1426→    }
+  1427→  }, [])
+  1428→
+  1429→  const motionVisible = hit(q, 'system', 'reduced motion', 'accessibility', 'animation', 'calm')
+  1430→  const connectionVisible = hit(q, 'system', 'connection', 'online', 'offline', 'network', 'realtime')
+  1431→  const versionVisible = hit(q, 'system', 'version', 'build', 'update')
+  1432→  if (!motionVisible && !connectionVisible && !versionVisible) return null
+  1433→
+  1434→  return (
+  1435→    <Section label="System" show>
+  1436→      {motionVisible ? (
+  1437→        <div className={cn(PANEL)}>
+  1438→          <ToggleRow
+  1439→            Icon={Accessibility}
+  1440→            title="Reduced motion"
+  1441→            description="Calm the interface down — instant transitions, no bounces."
+  1442→            checked={prefs.reducedMotion}
+  1443→            onCheckedChange={(v) => save({ reducedMotion: v })}
+  1444→            search="reduced motion accessibility calm animations parallax"
+  1445→          />
+  1446→        </div>
+  1447→      ) : null}
+  1448→      {connectionVisible ? (
+  1449→        <div className={cn(PANEL)}>
+  1450→          <StaticRow
+  1451→            Icon={online ? ShieldCheck : TriangleAlert}
+  1452→            title={online ? 'Connected' : 'Offline'}
+  1453→            caption={
+  1454→              online
+  1455→                ? 'Realtime socket and API reachable — messages send instantly.'
+  1456→                : 'You are offline — outgoing messages queue in the offline outbox.'
+  1457→            }
+  1458→            search="connection online offline network socket realtime status"
+  1459→            trailing={
+  1460→              <span
+  1461→                className={cn(
+  1462→                  'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold',
+  1463→                  online
+  1464→                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+  1465→                    : 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  1466→                )}
+  1467→              >
+  1468→                {online ? 'Online' : 'Offline'}
+  1469→              </span>
+  1470→            }
+  1471→          />
+  1472→        </div>
+  1473→      ) : null}
+  1474→      {versionVisible ? (
+  1475→        <div className={cn(PANEL)}>
+  1476→          <StaticRow
+  1477→            Icon={Info}
+  1478→            title="Version"
+  1479→            caption={`Pulse ${PULSE_VERSION} — see About below for build details.`}
+  1480→            search="version build release"
+  1481→          />
+  1482→        </div>
+  1483→      ) : null}
+  1484→    </Section>
+  1485→  )
+  1486→}
+  1487→
+  1488→// ── About ────────────────────────────────────────────────────
+  1489→
+  1490→function AboutSection() {
+  1491→  const q = useSearchQuery()
+  1492→  const visible = hit(
+  1493→    q,
+  1494→    'about',
+  1495→    'version',
+  1496→    'credits',
+  1497→    'framework',
+  1498→    'next.js',
+  1499→    'prisma',
+  1500→    'socket.io',
+  1501→    'made',
+  1502→    'pulse',
+  1503→    'build',
+  1504→  )
+  1505→  if (!visible) return null
+  1506→  return (
+  1507→    <Section label="About" show>
+  1508→      <div className={cn(PANEL, 'p-4')}>
+  1509→        <div className="flex items-center gap-3">
+  1510→          <span className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md shadow-emerald-500/25">
+  1511→            <Sparkles className="size-5" aria-hidden />
+  1512→          </span>
+  1513→          <div className="min-w-0 flex-1">
+  1514→            <p className="text-[15px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Pulse</p>
+  1515→            <p className="text-[12px] text-zinc-500 dark:text-zinc-400">Real-time chat with a built-in economy</p>
+  1516→          </div>
+  1517→        </div>
+  1518→        <p className="pt-3 text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+  1519→          Chats, wallet, market, games, topics, stages and more — every feature runs on the real
+  1520→          Pulse API with zero mock data. Pick a UI language and a navigation style above; the whole
+  1521→          app follows your choice instantly.
+  1522→        </p>
+  1523→      </div>
+  1524→
+  1525→      <div className={cn(PANEL, DIVIDE)}>
+  1526→        <StaticRow Icon={Info} title="Version" caption={PULSE_VERSION} search="version release build number" />
+  1527→        
