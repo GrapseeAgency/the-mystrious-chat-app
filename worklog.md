@@ -1015,3 +1015,19 @@ Stage Summary:
 - Honest gaps: nav style/theme set via raw localStorage+event does NOT update the zustand store (must call setters — pickers do); sticker-picker/folder-topic glyph DATA remain emoji values by design (user-picked content, rendered as content not chrome); "gesture" nav quick-switcher opens on tap (drag-up gesture pending); radial host-claim pattern unchanged; old pulse.navStyle v1 keys ignored (fresh v2 store)
 - Evidence: download/qa-r25-01..30-*.png (defaults, settings, kinetic/dynamic reskins, island, radial, command-bar, pill/gesture/contextual, profile hero, hub, contacts, chat room, overlay issue text)
 - NEXT queue: gesture nav drag-up; per-conversation themes (iMessage); BAND attendance/check-ins; broadcast channels; topic-scoped threads polish; daily XP caps; proximity voice in Space; remaining sheet emoji sweep (content glyph pickers UI refresh)
+
+---
+Task ID: R25-push
+Agent: lead
+Task: Push full project history to GitHub org repo GrapseeAgency/the-mystrious-chat-app
+
+Work Log:
+- User provided repo URL (private, new/empty) + PAT after auth probe showed 404/no-credentials
+- Added origin remote (clean HTTPS URL, no token in config)
+- Seeded ~/.git-credentials with x-access-token (outside repo, never committed) + credential.helper store
+- Pushed main: 33 commits, 25MB, verified LOCAL HEAD 58b0f9b == REMOTE HEAD
+- Per-wave git push now fully operational for all future waves
+
+Stage Summary:
+- Full Pulse history (R23 red packets/games/kanban/events, R24 stage/spatial/economy/tournaments/folders/anonymous/topics, R25 UI-language + 13-style nav) is now on GitHub
+- Branch main tracks origin/main; pushes are non-interactive from here on
