@@ -48,7 +48,7 @@ export const DEFAULT_PREFERENCES: PulsePrefs = {
 const RADIUS = ['md', 'lg', 'pill']
 const DENSITY = ['cozy', 'compact']
 const WALLPAPER = ['none', 'aurora', 'dusk', 'forest', 'mono']
-const WEBGL_MODES_OK = ['off', 'aurora', 'caustics', 'mesh', 'stars']
+const WEBGL_MODES_OK = ['off', 'aurora', 'caustics', 'mesh', 'stars', 'liquid']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

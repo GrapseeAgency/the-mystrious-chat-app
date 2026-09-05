@@ -118,7 +118,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     recipientIds: recipients,
   })
 
-  return NextResponse.json({ conversation: buildConversationDetail(updated, userId) })
+  return NextResponse.json({ conversation: await buildConversationDetail(updated, userId) })
 }
 
 /**

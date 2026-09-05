@@ -95,7 +95,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!updated) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
-  return NextResponse.json({ conversation: buildConversationDetail(updated, requesterId), added: toAdd })
+  return NextResponse.json({ conversation: await buildConversationDetail(updated, requesterId), added: toAdd })
 }
 
 /**
@@ -245,7 +245,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!updated) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
-  const detail = buildConversationDetail(updated, requesterId)
+  const detail = await buildConversationDetail(updated, requesterId)
   const memberIds = await memberIdsOf(id)
   await notifySocket('conversation:updated', memberIds, {
     type: 'conversation:updated',

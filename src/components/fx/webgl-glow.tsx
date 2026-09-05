@@ -1,13 +1,14 @@
 // ─────────────────────────────────────────────────────────────
 // Pulse premium FX (R26-e) — multi-mode WebGL ambient system.
 // Raw WebGL1 (no three.js): one fullscreen quad + a per-mode
-// fragment shader. Five modes ship today:
+// fragment shader. Six modes ship today:
 //
 //   off      · renders nothing (background ownership released)
 //   aurora   · drifting soft color curtains (emerald/teal/violet)
 //   caustics · glassy refraction ripples (aqua interference)
 //   mesh     · slowly morphing gradient blobs (the R22 hero glow)
 //   stars    · three-depth parallax starfield with twinkle
+//   liquid   · merging metaball fluid (emerald/teal/rose, R31-b)
 //
 // Contract (R26-a lead): the active mode is read from the prefs
 // store key 'fx.webglMode' (string, one of WEBGL_MODES; default
@@ -48,7 +49,7 @@ import { prefersReducedMotion } from '@/lib/motion'
 
 // ── Mode registry + prefs contract ──────────────────────────
 
-export const WEBGL_MODES = ['off', 'aurora', 'caustics', 'mesh', 'stars'] as const
+export const WEBGL_MODES = ['off', 'aurora', 'caustics', 'mesh', 'stars', 'liquid'] as const
 export type WebGLMode = (typeof WEBGL_MODES)[number]
 
 /** Prefs store key that links Settings (R26-c) to this ambient system. */
@@ -291,11 +292,88 @@ void main() {
 }
 `
 
+// liquid — slow metaball fluid: five drifting centers fused with a
+// polynomial smooth-min, threshold-banded emerald/teal/rose mixing,
+// a fresnel-ish specular rim and dithering grain (R31-b).
+// The Lissajous centers are time-only data, so they are computed on
+// the CPU once per frame and uploaded as u_balls — the fragment
+// shader stays free of per-pixel trig (software-GL friendly).
+const LIQUID_FRAG = `
+precision mediump float;
+varying vec2 v_uv;
+uniform vec2 u_res;
+uniform float u_time;
+uniform float u_intensity;
+uniform float u_dark;
+uniform vec3 u_balls[5]; // xy center (aspect space), z radius
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+// polynomial smooth-min (IQ) — nearby blobs merge into one fluid body
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+void main() {
+  float aspect = u_res.x / max(u_res.y, 1.0);
+  vec2 p = vec2(v_uv.x * aspect, v_uv.y);
+
+  // radius-aware metaball field: f > 0 inside the fluid, 0 at surface
+  float f = smin(u_balls[0].z - distance(p, u_balls[0].xy),
+                 u_balls[1].z - distance(p, u_balls[1].xy), 0.20);
+  f = smin(f, u_balls[2].z - distance(p, u_balls[2].xy), 0.22);
+  f = smin(f, u_balls[3].z - distance(p, u_balls[3].xy), 0.22);
+  f = smin(f, u_balls[4].z - distance(p, u_balls[4].xy), 0.22);
+
+  // soft body with threshold-banded field values (1 inside -> 0 outside)
+  float body  = 1.0 - smoothstep(-0.03, 0.07, f);
+  float core  = smoothstep(0.60, 0.92, body);
+  float mid   = smoothstep(0.34, 0.58, body) - core;
+  float outer = smoothstep(0.12, 0.32, body) - smoothstep(0.34, 0.58, body);
+  // fresnel-ish specular rim: bright band just inside the blob edge
+  float rim   = smoothstep(0.42, 0.62, body) * (1.0 - smoothstep(0.66, 0.88, body));
+  float halo  = 0.5 / (1.0 + max(-f, 0.0) * 12.0);
+
+  vec3 emerald = vec3(0.063, 0.725, 0.506);
+  vec3 teal    = vec3(0.078, 0.722, 0.651);
+  vec3 rose    = vec3(0.957, 0.247, 0.369);
+
+  vec3 darkCol = vec3(0.010, 0.042, 0.036);
+  darkCol += emerald * core * 0.85;
+  darkCol += teal    * mid  * 0.55;
+  darkCol += rose    * outer * 0.16;
+  darkCol += vec3(0.86, 0.97, 0.93) * rim * 0.10;
+  darkCol += emerald * halo * 0.28;
+  darkCol = 1.0 - exp(-darkCol * u_intensity * 1.7);
+
+  vec3 lightCol = vec3(0.968, 0.976, 0.972);
+  lightCol -= emerald * core * 0.20 * u_intensity;
+  lightCol -= teal    * mid  * 0.14 * u_intensity;
+  lightCol -= rose    * outer * 0.05 * u_intensity;
+  lightCol += vec3(1.0) * rim * 0.16;
+
+  vec3 col = mix(lightCol, darkCol, u_dark);
+
+  // subtle static grain dithers the wide gradients so they never band
+  col += (hash21(v_uv * u_res) - 0.5) * 0.012;
+
+  vec2 q = v_uv - 0.5;
+  col *= mix(1.0, 1.0 - 0.5 * dot(q, q), u_dark);
+  gl_FragColor = vec4(col, 1.0);
+}
+`
+
 const FRAG_BY_MODE: Record<Exclude<WebGLMode, 'off'>, string> = {
   aurora: AURORA_FRAG,
   caustics: CAUSTICS_FRAG,
   mesh: MESH_FRAG,
   stars: STARS_FRAG,
+  liquid: LIQUID_FRAG,
 }
 
 /** Backing-store scale per mode (multiplied by the capped DPR). */
@@ -304,6 +382,7 @@ const MODE_RENDER_SCALE: Record<Exclude<WebGLMode, 'off'>, number> = {
   caustics: 0.5,
   mesh: 0.5,
   stars: 0.8,
+  liquid: 0.5,
 }
 
 /** CSS fallback with the same emerald palette (WebglGlow's R22 behavior). */
@@ -446,12 +525,37 @@ export function WebGLAmbient({
       const uTime = gl.getUniformLocation(program, 'u_time')
       const uIntensity = gl.getUniformLocation(program, 'u_intensity')
       const uDark = gl.getUniformLocation(program, 'u_dark')
+      // liquid-only uniform (null for every other program's locations)
+      const uBalls =
+        gl.getUniformLocation(program, 'u_balls') ?? gl.getUniformLocation(program, 'u_balls[0]')
+
+      // liquid metaball centers: five slow Lissajous drifts (~0.02-0.05 Hz),
+      // packed as vec3(x, y, radius) in aspect space. Time-only data, so it
+      // costs 10 Math.sin/cos per FRAME instead of per PIXEL.
+      const ballBuf = new Float32Array(15)
+      const drawBalls = (t: number) => {
+        const aspect = canvas.width / Math.max(canvas.height, 1)
+        const sin = (f: number, p = 0) => Math.sin(t * f + p)
+        const cos = (f: number, p = 0) => Math.cos(t * f + p)
+        const put = (i: number, x: number, y: number, r: number) => {
+          ballBuf[i * 3] = x * aspect
+          ballBuf[i * 3 + 1] = y
+          ballBuf[i * 3 + 2] = r
+        }
+        put(0, 0.50 + 0.15 * sin(0.21), 0.56 + 0.13 * cos(0.16), 0.185)
+        put(1, 0.28 + 0.13 * cos(0.14, 1.3), 0.30 + 0.12 * sin(0.24, 0.8), 0.170)
+        put(2, 0.72 + 0.14 * sin(0.18, 2.9), 0.42 + 0.14 * cos(0.13, 2.1), 0.180)
+        put(3, 0.40 + 0.16 * cos(0.28, 4.2), 0.70 + 0.11 * sin(0.15, 3.4), 0.165)
+        put(4, 0.64 + 0.12 * sin(0.34, 5.1), 0.24 + 0.12 * cos(0.17, 1.7), 0.175)
+        gl.uniform3fv(uBalls, ballBuf)
+      }
 
       const draw = (t: number) => {
         gl.uniform2f(uRes, canvas.width, canvas.height)
         gl.uniform1f(uTime, t)
         gl.uniform1f(uIntensity, intensityRef.current)
         gl.uniform1f(uDark, darkRef.current ? 1 : 0)
+        if (uBalls) drawBalls(t)
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
       }
 

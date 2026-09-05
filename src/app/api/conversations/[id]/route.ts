@@ -40,7 +40,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
 
-  return NextResponse.json({ conversation: buildConversationDetail(conv, userId) })
+  return NextResponse.json({ conversation: await buildConversationDetail(conv, userId) })
 }
 
 /**
@@ -118,5 +118,5 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     recipientIds: recipients,
   })
 
-  return NextResponse.json({ conversation: buildConversationDetail(updated, requesterId) })
+  return NextResponse.json({ conversation: await buildConversationDetail(updated, requesterId) })
 }

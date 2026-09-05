@@ -26,6 +26,13 @@ export type User = $Result.DefaultSelection<Prisma.$UserPayload>
  */
 export type Reminder = $Result.DefaultSelection<Prisma.$ReminderPayload>
 /**
+ * Model ConversationStreak
+ * *
+ *  * Snapchat-style per-user-per-conversation daily streak — bumped on the
+ *  * FIRST message a user sends in a conversation each UTC day.
+ */
+export type ConversationStreak = $Result.DefaultSelection<Prisma.$ConversationStreakPayload>
+/**
  * Model UserWallet
  * *
  *  * Hub economy wallet — real balances moved by check-ins, transfers, swaps,
@@ -363,6 +370,16 @@ export class PrismaClient<
     * ```
     */
   get reminder(): Prisma.ReminderDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.conversationStreak`: Exposes CRUD operations for the **ConversationStreak** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ConversationStreaks
+    * const conversationStreaks = await prisma.conversationStreak.findMany()
+    * ```
+    */
+  get conversationStreak(): Prisma.ConversationStreakDelegate<ExtArgs, ClientOptions>;
 
   /**
    * `prisma.userWallet`: Exposes CRUD operations for the **UserWallet** model.
@@ -1136,6 +1153,7 @@ export namespace Prisma {
   export const ModelName: {
     User: 'User',
     Reminder: 'Reminder',
+    ConversationStreak: 'ConversationStreak',
     UserWallet: 'UserWallet',
     WalletLedger: 'WalletLedger',
     HubTask: 'HubTask',
@@ -1187,7 +1205,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "reminder" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp"
+      modelProps: "user" | "reminder" | "conversationStreak" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -1336,6 +1354,80 @@ export namespace Prisma {
           count: {
             args: Prisma.ReminderCountArgs<ExtArgs>
             result: $Utils.Optional<ReminderCountAggregateOutputType> | number
+          }
+        }
+      }
+      ConversationStreak: {
+        payload: Prisma.$ConversationStreakPayload<ExtArgs>
+        fields: Prisma.ConversationStreakFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ConversationStreakFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ConversationStreakFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload>
+          }
+          findFirst: {
+            args: Prisma.ConversationStreakFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ConversationStreakFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload>
+          }
+          findMany: {
+            args: Prisma.ConversationStreakFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload>[]
+          }
+          create: {
+            args: Prisma.ConversationStreakCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload>
+          }
+          createMany: {
+            args: Prisma.ConversationStreakCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ConversationStreakCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload>[]
+          }
+          delete: {
+            args: Prisma.ConversationStreakDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload>
+          }
+          update: {
+            args: Prisma.ConversationStreakUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload>
+          }
+          deleteMany: {
+            args: Prisma.ConversationStreakDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ConversationStreakUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ConversationStreakUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload>[]
+          }
+          upsert: {
+            args: Prisma.ConversationStreakUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationStreakPayload>
+          }
+          aggregate: {
+            args: Prisma.ConversationStreakAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateConversationStreak>
+          }
+          groupBy: {
+            args: Prisma.ConversationStreakGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ConversationStreakGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ConversationStreakCountArgs<ExtArgs>
+            result: $Utils.Optional<ConversationStreakCountAggregateOutputType> | number
           }
         }
       }
@@ -3879,6 +3971,7 @@ export namespace Prisma {
   export type GlobalOmitConfig = {
     user?: UserOmit
     reminder?: ReminderOmit
+    conversationStreak?: ConversationStreakOmit
     userWallet?: UserWalletOmit
     walletLedger?: WalletLedgerOmit
     hubTask?: HubTaskOmit
@@ -4006,6 +4099,7 @@ export namespace Prisma {
     folders: number
     tournamentEntries: number
     reminders: number
+    streaks: number
   }
 
   export type UserCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -4023,6 +4117,7 @@ export namespace Prisma {
     folders?: boolean | UserCountOutputTypeCountFoldersArgs
     tournamentEntries?: boolean | UserCountOutputTypeCountTournamentEntriesArgs
     reminders?: boolean | UserCountOutputTypeCountRemindersArgs
+    streaks?: boolean | UserCountOutputTypeCountStreaksArgs
   }
 
   // Custom InputTypes
@@ -4132,6 +4227,13 @@ export namespace Prisma {
    */
   export type UserCountOutputTypeCountRemindersArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: ReminderWhereInput
+  }
+
+  /**
+   * UserCountOutputType without action
+   */
+  export type UserCountOutputTypeCountStreaksArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ConversationStreakWhereInput
   }
 
 
@@ -4611,10 +4713,12 @@ export namespace Prisma {
 
   export type UserAvgAggregateOutputType = {
     xp: number | null
+    xpToday: number | null
   }
 
   export type UserSumAggregateOutputType = {
     xp: number | null
+    xpToday: number | null
   }
 
   export type UserMinAggregateOutputType = {
@@ -4630,6 +4734,8 @@ export namespace Prisma {
     createdAt: Date | null
     lastSeenAt: Date | null
     xp: number | null
+    xpToday: number | null
+    xpDay: string | null
   }
 
   export type UserMaxAggregateOutputType = {
@@ -4645,6 +4751,8 @@ export namespace Prisma {
     createdAt: Date | null
     lastSeenAt: Date | null
     xp: number | null
+    xpToday: number | null
+    xpDay: string | null
   }
 
   export type UserCountAggregateOutputType = {
@@ -4660,16 +4768,20 @@ export namespace Prisma {
     createdAt: number
     lastSeenAt: number
     xp: number
+    xpToday: number
+    xpDay: number
     _all: number
   }
 
 
   export type UserAvgAggregateInputType = {
     xp?: true
+    xpToday?: true
   }
 
   export type UserSumAggregateInputType = {
     xp?: true
+    xpToday?: true
   }
 
   export type UserMinAggregateInputType = {
@@ -4685,6 +4797,8 @@ export namespace Prisma {
     createdAt?: true
     lastSeenAt?: true
     xp?: true
+    xpToday?: true
+    xpDay?: true
   }
 
   export type UserMaxAggregateInputType = {
@@ -4700,6 +4814,8 @@ export namespace Prisma {
     createdAt?: true
     lastSeenAt?: true
     xp?: true
+    xpToday?: true
+    xpDay?: true
   }
 
   export type UserCountAggregateInputType = {
@@ -4715,6 +4831,8 @@ export namespace Prisma {
     createdAt?: true
     lastSeenAt?: true
     xp?: true
+    xpToday?: true
+    xpDay?: true
     _all?: true
   }
 
@@ -4817,6 +4935,8 @@ export namespace Prisma {
     createdAt: Date
     lastSeenAt: Date
     xp: number
+    xpToday: number
+    xpDay: string
     _count: UserCountAggregateOutputType | null
     _avg: UserAvgAggregateOutputType | null
     _sum: UserSumAggregateOutputType | null
@@ -4851,6 +4971,8 @@ export namespace Prisma {
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
+    xpToday?: boolean
+    xpDay?: boolean
     appInstalls?: boolean | User$appInstallsArgs<ExtArgs>
     wallet?: boolean | User$walletArgs<ExtArgs>
     ledger?: boolean | User$ledgerArgs<ExtArgs>
@@ -4866,6 +4988,7 @@ export namespace Prisma {
     folders?: boolean | User$foldersArgs<ExtArgs>
     tournamentEntries?: boolean | User$tournamentEntriesArgs<ExtArgs>
     reminders?: boolean | User$remindersArgs<ExtArgs>
+    streaks?: boolean | User$streaksArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["user"]>
 
@@ -4882,6 +5005,8 @@ export namespace Prisma {
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
+    xpToday?: boolean
+    xpDay?: boolean
   }, ExtArgs["result"]["user"]>
 
   export type UserSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
@@ -4897,6 +5022,8 @@ export namespace Prisma {
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
+    xpToday?: boolean
+    xpDay?: boolean
   }, ExtArgs["result"]["user"]>
 
   export type UserSelectScalar = {
@@ -4912,9 +5039,11 @@ export namespace Prisma {
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
+    xpToday?: boolean
+    xpDay?: boolean
   }
 
-  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "statusEmoji" | "statusText" | "preferences" | "createdAt" | "lastSeenAt" | "xp", ExtArgs["result"]["user"]>
+  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "statusEmoji" | "statusText" | "preferences" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
   export type UserInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     appInstalls?: boolean | User$appInstallsArgs<ExtArgs>
     wallet?: boolean | User$walletArgs<ExtArgs>
@@ -4931,6 +5060,7 @@ export namespace Prisma {
     folders?: boolean | User$foldersArgs<ExtArgs>
     tournamentEntries?: boolean | User$tournamentEntriesArgs<ExtArgs>
     reminders?: boolean | User$remindersArgs<ExtArgs>
+    streaks?: boolean | User$streaksArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type UserIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
@@ -4954,6 +5084,7 @@ export namespace Prisma {
       folders: Prisma.$FolderPayload<ExtArgs>[]
       tournamentEntries: Prisma.$TournamentPlayerPayload<ExtArgs>[]
       reminders: Prisma.$ReminderPayload<ExtArgs>[]
+      streaks: Prisma.$ConversationStreakPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -4968,6 +5099,8 @@ export namespace Prisma {
       createdAt: Date
       lastSeenAt: Date
       xp: number
+      xpToday: number
+      xpDay: string
     }, ExtArgs["result"]["user"]>
     composites: {}
   }
@@ -5377,6 +5510,7 @@ export namespace Prisma {
     folders<T extends User$foldersArgs<ExtArgs> = {}>(args?: Subset<T, User$foldersArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$FolderPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     tournamentEntries<T extends User$tournamentEntriesArgs<ExtArgs> = {}>(args?: Subset<T, User$tournamentEntriesArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$TournamentPlayerPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     reminders<T extends User$remindersArgs<ExtArgs> = {}>(args?: Subset<T, User$remindersArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    streaks<T extends User$streaksArgs<ExtArgs> = {}>(args?: Subset<T, User$streaksArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -5418,6 +5552,8 @@ export namespace Prisma {
     readonly createdAt: FieldRef<"User", 'DateTime'>
     readonly lastSeenAt: FieldRef<"User", 'DateTime'>
     readonly xp: FieldRef<"User", 'Int'>
+    readonly xpToday: FieldRef<"User", 'Int'>
+    readonly xpDay: FieldRef<"User", 'String'>
   }
     
 
@@ -6156,6 +6292,30 @@ export namespace Prisma {
     take?: number
     skip?: number
     distinct?: ReminderScalarFieldEnum | ReminderScalarFieldEnum[]
+  }
+
+  /**
+   * User.streaks
+   */
+  export type User$streaksArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    where?: ConversationStreakWhereInput
+    orderBy?: ConversationStreakOrderByWithRelationInput | ConversationStreakOrderByWithRelationInput[]
+    cursor?: ConversationStreakWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: ConversationStreakScalarFieldEnum | ConversationStreakScalarFieldEnum[]
   }
 
   /**
@@ -7269,6 +7429,1113 @@ export namespace Prisma {
      * Choose, which related nodes to fetch as well
      */
     include?: ReminderInclude<ExtArgs> | null
+  }
+
+
+  /**
+   * Model ConversationStreak
+   */
+
+  export type AggregateConversationStreak = {
+    _count: ConversationStreakCountAggregateOutputType | null
+    _avg: ConversationStreakAvgAggregateOutputType | null
+    _sum: ConversationStreakSumAggregateOutputType | null
+    _min: ConversationStreakMinAggregateOutputType | null
+    _max: ConversationStreakMaxAggregateOutputType | null
+  }
+
+  export type ConversationStreakAvgAggregateOutputType = {
+    count: number | null
+    best: number | null
+  }
+
+  export type ConversationStreakSumAggregateOutputType = {
+    count: number | null
+    best: number | null
+  }
+
+  export type ConversationStreakMinAggregateOutputType = {
+    id: string | null
+    conversationId: string | null
+    userId: string | null
+    lastDay: string | null
+    count: number | null
+    best: number | null
+  }
+
+  export type ConversationStreakMaxAggregateOutputType = {
+    id: string | null
+    conversationId: string | null
+    userId: string | null
+    lastDay: string | null
+    count: number | null
+    best: number | null
+  }
+
+  export type ConversationStreakCountAggregateOutputType = {
+    id: number
+    conversationId: number
+    userId: number
+    lastDay: number
+    count: number
+    best: number
+    _all: number
+  }
+
+
+  export type ConversationStreakAvgAggregateInputType = {
+    count?: true
+    best?: true
+  }
+
+  export type ConversationStreakSumAggregateInputType = {
+    count?: true
+    best?: true
+  }
+
+  export type ConversationStreakMinAggregateInputType = {
+    id?: true
+    conversationId?: true
+    userId?: true
+    lastDay?: true
+    count?: true
+    best?: true
+  }
+
+  export type ConversationStreakMaxAggregateInputType = {
+    id?: true
+    conversationId?: true
+    userId?: true
+    lastDay?: true
+    count?: true
+    best?: true
+  }
+
+  export type ConversationStreakCountAggregateInputType = {
+    id?: true
+    conversationId?: true
+    userId?: true
+    lastDay?: true
+    count?: true
+    best?: true
+    _all?: true
+  }
+
+  export type ConversationStreakAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ConversationStreak to aggregate.
+     */
+    where?: ConversationStreakWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ConversationStreaks to fetch.
+     */
+    orderBy?: ConversationStreakOrderByWithRelationInput | ConversationStreakOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: ConversationStreakWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ConversationStreaks from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ConversationStreaks.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned ConversationStreaks
+    **/
+    _count?: true | ConversationStreakCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: ConversationStreakAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: ConversationStreakSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: ConversationStreakMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: ConversationStreakMaxAggregateInputType
+  }
+
+  export type GetConversationStreakAggregateType<T extends ConversationStreakAggregateArgs> = {
+        [P in keyof T & keyof AggregateConversationStreak]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateConversationStreak[P]>
+      : GetScalarType<T[P], AggregateConversationStreak[P]>
+  }
+
+
+
+
+  export type ConversationStreakGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ConversationStreakWhereInput
+    orderBy?: ConversationStreakOrderByWithAggregationInput | ConversationStreakOrderByWithAggregationInput[]
+    by: ConversationStreakScalarFieldEnum[] | ConversationStreakScalarFieldEnum
+    having?: ConversationStreakScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ConversationStreakCountAggregateInputType | true
+    _avg?: ConversationStreakAvgAggregateInputType
+    _sum?: ConversationStreakSumAggregateInputType
+    _min?: ConversationStreakMinAggregateInputType
+    _max?: ConversationStreakMaxAggregateInputType
+  }
+
+  export type ConversationStreakGroupByOutputType = {
+    id: string
+    conversationId: string
+    userId: string
+    lastDay: string
+    count: number
+    best: number
+    _count: ConversationStreakCountAggregateOutputType | null
+    _avg: ConversationStreakAvgAggregateOutputType | null
+    _sum: ConversationStreakSumAggregateOutputType | null
+    _min: ConversationStreakMinAggregateOutputType | null
+    _max: ConversationStreakMaxAggregateOutputType | null
+  }
+
+  type GetConversationStreakGroupByPayload<T extends ConversationStreakGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ConversationStreakGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ConversationStreakGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ConversationStreakGroupByOutputType[P]>
+            : GetScalarType<T[P], ConversationStreakGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ConversationStreakSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    conversationId?: boolean
+    userId?: boolean
+    lastDay?: boolean
+    count?: boolean
+    best?: boolean
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["conversationStreak"]>
+
+  export type ConversationStreakSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    conversationId?: boolean
+    userId?: boolean
+    lastDay?: boolean
+    count?: boolean
+    best?: boolean
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["conversationStreak"]>
+
+  export type ConversationStreakSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    conversationId?: boolean
+    userId?: boolean
+    lastDay?: boolean
+    count?: boolean
+    best?: boolean
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["conversationStreak"]>
+
+  export type ConversationStreakSelectScalar = {
+    id?: boolean
+    conversationId?: boolean
+    userId?: boolean
+    lastDay?: boolean
+    count?: boolean
+    best?: boolean
+  }
+
+  export type ConversationStreakOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "userId" | "lastDay" | "count" | "best", ExtArgs["result"]["conversationStreak"]>
+  export type ConversationStreakInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type ConversationStreakIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type ConversationStreakIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }
+
+  export type $ConversationStreakPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ConversationStreak"
+    objects: {
+      user: Prisma.$UserPayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      conversationId: string
+      userId: string
+      lastDay: string
+      count: number
+      best: number
+    }, ExtArgs["result"]["conversationStreak"]>
+    composites: {}
+  }
+
+  type ConversationStreakGetPayload<S extends boolean | null | undefined | ConversationStreakDefaultArgs> = $Result.GetResult<Prisma.$ConversationStreakPayload, S>
+
+  type ConversationStreakCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ConversationStreakFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ConversationStreakCountAggregateInputType | true
+    }
+
+  export interface ConversationStreakDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ConversationStreak'], meta: { name: 'ConversationStreak' } }
+    /**
+     * Find zero or one ConversationStreak that matches the filter.
+     * @param {ConversationStreakFindUniqueArgs} args - Arguments to find a ConversationStreak
+     * @example
+     * // Get one ConversationStreak
+     * const conversationStreak = await prisma.conversationStreak.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ConversationStreakFindUniqueArgs>(args: SelectSubset<T, ConversationStreakFindUniqueArgs<ExtArgs>>): Prisma__ConversationStreakClient<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ConversationStreak that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ConversationStreakFindUniqueOrThrowArgs} args - Arguments to find a ConversationStreak
+     * @example
+     * // Get one ConversationStreak
+     * const conversationStreak = await prisma.conversationStreak.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ConversationStreakFindUniqueOrThrowArgs>(args: SelectSubset<T, ConversationStreakFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ConversationStreakClient<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ConversationStreak that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationStreakFindFirstArgs} args - Arguments to find a ConversationStreak
+     * @example
+     * // Get one ConversationStreak
+     * const conversationStreak = await prisma.conversationStreak.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ConversationStreakFindFirstArgs>(args?: SelectSubset<T, ConversationStreakFindFirstArgs<ExtArgs>>): Prisma__ConversationStreakClient<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ConversationStreak that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationStreakFindFirstOrThrowArgs} args - Arguments to find a ConversationStreak
+     * @example
+     * // Get one ConversationStreak
+     * const conversationStreak = await prisma.conversationStreak.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ConversationStreakFindFirstOrThrowArgs>(args?: SelectSubset<T, ConversationStreakFindFirstOrThrowArgs<ExtArgs>>): Prisma__ConversationStreakClient<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ConversationStreaks that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationStreakFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ConversationStreaks
+     * const conversationStreaks = await prisma.conversationStreak.findMany()
+     * 
+     * // Get first 10 ConversationStreaks
+     * const conversationStreaks = await prisma.conversationStreak.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const conversationStreakWithIdOnly = await prisma.conversationStreak.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends ConversationStreakFindManyArgs>(args?: SelectSubset<T, ConversationStreakFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ConversationStreak.
+     * @param {ConversationStreakCreateArgs} args - Arguments to create a ConversationStreak.
+     * @example
+     * // Create one ConversationStreak
+     * const ConversationStreak = await prisma.conversationStreak.create({
+     *   data: {
+     *     // ... data to create a ConversationStreak
+     *   }
+     * })
+     * 
+     */
+    create<T extends ConversationStreakCreateArgs>(args: SelectSubset<T, ConversationStreakCreateArgs<ExtArgs>>): Prisma__ConversationStreakClient<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ConversationStreaks.
+     * @param {ConversationStreakCreateManyArgs} args - Arguments to create many ConversationStreaks.
+     * @example
+     * // Create many ConversationStreaks
+     * const conversationStreak = await prisma.conversationStreak.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends ConversationStreakCreateManyArgs>(args?: SelectSubset<T, ConversationStreakCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ConversationStreaks and returns the data saved in the database.
+     * @param {ConversationStreakCreateManyAndReturnArgs} args - Arguments to create many ConversationStreaks.
+     * @example
+     * // Create many ConversationStreaks
+     * const conversationStreak = await prisma.conversationStreak.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many ConversationStreaks and only return the `id`
+     * const conversationStreakWithIdOnly = await prisma.conversationStreak.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends ConversationStreakCreateManyAndReturnArgs>(args?: SelectSubset<T, ConversationStreakCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ConversationStreak.
+     * @param {ConversationStreakDeleteArgs} args - Arguments to delete one ConversationStreak.
+     * @example
+     * // Delete one ConversationStreak
+     * const ConversationStreak = await prisma.conversationStreak.delete({
+     *   where: {
+     *     // ... filter to delete one ConversationStreak
+     *   }
+     * })
+     * 
+     */
+    delete<T extends ConversationStreakDeleteArgs>(args: SelectSubset<T, ConversationStreakDeleteArgs<ExtArgs>>): Prisma__ConversationStreakClient<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ConversationStreak.
+     * @param {ConversationStreakUpdateArgs} args - Arguments to update one ConversationStreak.
+     * @example
+     * // Update one ConversationStreak
+     * const conversationStreak = await prisma.conversationStreak.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends ConversationStreakUpdateArgs>(args: SelectSubset<T, ConversationStreakUpdateArgs<ExtArgs>>): Prisma__ConversationStreakClient<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ConversationStreaks.
+     * @param {ConversationStreakDeleteManyArgs} args - Arguments to filter ConversationStreaks to delete.
+     * @example
+     * // Delete a few ConversationStreaks
+     * const { count } = await prisma.conversationStreak.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends ConversationStreakDeleteManyArgs>(args?: SelectSubset<T, ConversationStreakDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ConversationStreaks.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationStreakUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ConversationStreaks
+     * const conversationStreak = await prisma.conversationStreak.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends ConversationStreakUpdateManyArgs>(args: SelectSubset<T, ConversationStreakUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ConversationStreaks and returns the data updated in the database.
+     * @param {ConversationStreakUpdateManyAndReturnArgs} args - Arguments to update many ConversationStreaks.
+     * @example
+     * // Update many ConversationStreaks
+     * const conversationStreak = await prisma.conversationStreak.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more ConversationStreaks and only return the `id`
+     * const conversationStreakWithIdOnly = await prisma.conversationStreak.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends ConversationStreakUpdateManyAndReturnArgs>(args: SelectSubset<T, ConversationStreakUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ConversationStreak.
+     * @param {ConversationStreakUpsertArgs} args - Arguments to update or create a ConversationStreak.
+     * @example
+     * // Update or create a ConversationStreak
+     * const conversationStreak = await prisma.conversationStreak.upsert({
+     *   create: {
+     *     // ... data to create a ConversationStreak
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ConversationStreak we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ConversationStreakUpsertArgs>(args: SelectSubset<T, ConversationStreakUpsertArgs<ExtArgs>>): Prisma__ConversationStreakClient<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ConversationStreaks.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationStreakCountArgs} args - Arguments to filter ConversationStreaks to count.
+     * @example
+     * // Count the number of ConversationStreaks
+     * const count = await prisma.conversationStreak.count({
+     *   where: {
+     *     // ... the filter for the ConversationStreaks we want to count
+     *   }
+     * })
+    **/
+    count<T extends ConversationStreakCountArgs>(
+      args?: Subset<T, ConversationStreakCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ConversationStreakCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ConversationStreak.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationStreakAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ConversationStreakAggregateArgs>(args: Subset<T, ConversationStreakAggregateArgs>): Prisma.PrismaPromise<GetConversationStreakAggregateType<T>>
+
+    /**
+     * Group by ConversationStreak.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationStreakGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends ConversationStreakGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ConversationStreakGroupByArgs['orderBy'] }
+        : { orderBy?: ConversationStreakGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ConversationStreakGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetConversationStreakGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ConversationStreak model
+   */
+  readonly fields: ConversationStreakFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ConversationStreak.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ConversationStreakClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    user<T extends UserDefaultArgs<ExtArgs> = {}>(args?: Subset<T, UserDefaultArgs<ExtArgs>>): Prisma__UserClient<$Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ConversationStreak model
+   */
+  interface ConversationStreakFieldRefs {
+    readonly id: FieldRef<"ConversationStreak", 'String'>
+    readonly conversationId: FieldRef<"ConversationStreak", 'String'>
+    readonly userId: FieldRef<"ConversationStreak", 'String'>
+    readonly lastDay: FieldRef<"ConversationStreak", 'String'>
+    readonly count: FieldRef<"ConversationStreak", 'Int'>
+    readonly best: FieldRef<"ConversationStreak", 'Int'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * ConversationStreak findUnique
+   */
+  export type ConversationStreakFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    /**
+     * Filter, which ConversationStreak to fetch.
+     */
+    where: ConversationStreakWhereUniqueInput
+  }
+
+  /**
+   * ConversationStreak findUniqueOrThrow
+   */
+  export type ConversationStreakFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    /**
+     * Filter, which ConversationStreak to fetch.
+     */
+    where: ConversationStreakWhereUniqueInput
+  }
+
+  /**
+   * ConversationStreak findFirst
+   */
+  export type ConversationStreakFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    /**
+     * Filter, which ConversationStreak to fetch.
+     */
+    where?: ConversationStreakWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ConversationStreaks to fetch.
+     */
+    orderBy?: ConversationStreakOrderByWithRelationInput | ConversationStreakOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for ConversationStreaks.
+     */
+    cursor?: ConversationStreakWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ConversationStreaks from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ConversationStreaks.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of ConversationStreaks.
+     */
+    distinct?: ConversationStreakScalarFieldEnum | ConversationStreakScalarFieldEnum[]
+  }
+
+  /**
+   * ConversationStreak findFirstOrThrow
+   */
+  export type ConversationStreakFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    /**
+     * Filter, which ConversationStreak to fetch.
+     */
+    where?: ConversationStreakWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ConversationStreaks to fetch.
+     */
+    orderBy?: ConversationStreakOrderByWithRelationInput | ConversationStreakOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for ConversationStreaks.
+     */
+    cursor?: ConversationStreakWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ConversationStreaks from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ConversationStreaks.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of ConversationStreaks.
+     */
+    distinct?: ConversationStreakScalarFieldEnum | ConversationStreakScalarFieldEnum[]
+  }
+
+  /**
+   * ConversationStreak findMany
+   */
+  export type ConversationStreakFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    /**
+     * Filter, which ConversationStreaks to fetch.
+     */
+    where?: ConversationStreakWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ConversationStreaks to fetch.
+     */
+    orderBy?: ConversationStreakOrderByWithRelationInput | ConversationStreakOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing ConversationStreaks.
+     */
+    cursor?: ConversationStreakWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ConversationStreaks from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ConversationStreaks.
+     */
+    skip?: number
+    distinct?: ConversationStreakScalarFieldEnum | ConversationStreakScalarFieldEnum[]
+  }
+
+  /**
+   * ConversationStreak create
+   */
+  export type ConversationStreakCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    /**
+     * The data needed to create a ConversationStreak.
+     */
+    data: XOR<ConversationStreakCreateInput, ConversationStreakUncheckedCreateInput>
+  }
+
+  /**
+   * ConversationStreak createMany
+   */
+  export type ConversationStreakCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ConversationStreaks.
+     */
+    data: ConversationStreakCreateManyInput | ConversationStreakCreateManyInput[]
+  }
+
+  /**
+   * ConversationStreak createManyAndReturn
+   */
+  export type ConversationStreakCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * The data used to create many ConversationStreaks.
+     */
+    data: ConversationStreakCreateManyInput | ConversationStreakCreateManyInput[]
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * ConversationStreak update
+   */
+  export type ConversationStreakUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    /**
+     * The data needed to update a ConversationStreak.
+     */
+    data: XOR<ConversationStreakUpdateInput, ConversationStreakUncheckedUpdateInput>
+    /**
+     * Choose, which ConversationStreak to update.
+     */
+    where: ConversationStreakWhereUniqueInput
+  }
+
+  /**
+   * ConversationStreak updateMany
+   */
+  export type ConversationStreakUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ConversationStreaks.
+     */
+    data: XOR<ConversationStreakUpdateManyMutationInput, ConversationStreakUncheckedUpdateManyInput>
+    /**
+     * Filter which ConversationStreaks to update
+     */
+    where?: ConversationStreakWhereInput
+    /**
+     * Limit how many ConversationStreaks to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ConversationStreak updateManyAndReturn
+   */
+  export type ConversationStreakUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * The data used to update ConversationStreaks.
+     */
+    data: XOR<ConversationStreakUpdateManyMutationInput, ConversationStreakUncheckedUpdateManyInput>
+    /**
+     * Filter which ConversationStreaks to update
+     */
+    where?: ConversationStreakWhereInput
+    /**
+     * Limit how many ConversationStreaks to update.
+     */
+    limit?: number
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakIncludeUpdateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * ConversationStreak upsert
+   */
+  export type ConversationStreakUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    /**
+     * The filter to search for the ConversationStreak to update in case it exists.
+     */
+    where: ConversationStreakWhereUniqueInput
+    /**
+     * In case the ConversationStreak found by the `where` argument doesn't exist, create a new ConversationStreak with this data.
+     */
+    create: XOR<ConversationStreakCreateInput, ConversationStreakUncheckedCreateInput>
+    /**
+     * In case the ConversationStreak was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ConversationStreakUpdateInput, ConversationStreakUncheckedUpdateInput>
+  }
+
+  /**
+   * ConversationStreak delete
+   */
+  export type ConversationStreakDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
+    /**
+     * Filter which ConversationStreak to delete.
+     */
+    where: ConversationStreakWhereUniqueInput
+  }
+
+  /**
+   * ConversationStreak deleteMany
+   */
+  export type ConversationStreakDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ConversationStreaks to delete
+     */
+    where?: ConversationStreakWhereInput
+    /**
+     * Limit how many ConversationStreaks to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ConversationStreak without action
+   */
+  export type ConversationStreakDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationStreak
+     */
+    select?: ConversationStreakSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationStreak
+     */
+    omit?: ConversationStreakOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ConversationStreakInclude<ExtArgs> | null
   }
 
 
@@ -44491,7 +45758,9 @@ export namespace Prisma {
     preferences: 'preferences',
     createdAt: 'createdAt',
     lastSeenAt: 'lastSeenAt',
-    xp: 'xp'
+    xp: 'xp',
+    xpToday: 'xpToday',
+    xpDay: 'xpDay'
   };
 
   export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
@@ -44509,6 +45778,18 @@ export namespace Prisma {
   };
 
   export type ReminderScalarFieldEnum = (typeof ReminderScalarFieldEnum)[keyof typeof ReminderScalarFieldEnum]
+
+
+  export const ConversationStreakScalarFieldEnum: {
+    id: 'id',
+    conversationId: 'conversationId',
+    userId: 'userId',
+    lastDay: 'lastDay',
+    count: 'count',
+    best: 'best'
+  };
+
+  export type ConversationStreakScalarFieldEnum = (typeof ConversationStreakScalarFieldEnum)[keyof typeof ConversationStreakScalarFieldEnum]
 
 
   export const UserWalletScalarFieldEnum: {
@@ -45024,6 +46305,8 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"User"> | Date | string
     lastSeenAt?: DateTimeFilter<"User"> | Date | string
     xp?: IntFilter<"User"> | number
+    xpToday?: IntFilter<"User"> | number
+    xpDay?: StringFilter<"User"> | string
     appInstalls?: AppInstallListRelationFilter
     wallet?: XOR<UserWalletNullableScalarRelationFilter, UserWalletWhereInput> | null
     ledger?: WalletLedgerListRelationFilter
@@ -45039,6 +46322,7 @@ export namespace Prisma {
     folders?: FolderListRelationFilter
     tournamentEntries?: TournamentPlayerListRelationFilter
     reminders?: ReminderListRelationFilter
+    streaks?: ConversationStreakListRelationFilter
   }
 
   export type UserOrderByWithRelationInput = {
@@ -45054,6 +46338,8 @@ export namespace Prisma {
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
+    xpToday?: SortOrder
+    xpDay?: SortOrder
     appInstalls?: AppInstallOrderByRelationAggregateInput
     wallet?: UserWalletOrderByWithRelationInput
     ledger?: WalletLedgerOrderByRelationAggregateInput
@@ -45069,6 +46355,7 @@ export namespace Prisma {
     folders?: FolderOrderByRelationAggregateInput
     tournamentEntries?: TournamentPlayerOrderByRelationAggregateInput
     reminders?: ReminderOrderByRelationAggregateInput
+    streaks?: ConversationStreakOrderByRelationAggregateInput
   }
 
   export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -45087,6 +46374,8 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"User"> | Date | string
     lastSeenAt?: DateTimeFilter<"User"> | Date | string
     xp?: IntFilter<"User"> | number
+    xpToday?: IntFilter<"User"> | number
+    xpDay?: StringFilter<"User"> | string
     appInstalls?: AppInstallListRelationFilter
     wallet?: XOR<UserWalletNullableScalarRelationFilter, UserWalletWhereInput> | null
     ledger?: WalletLedgerListRelationFilter
@@ -45102,6 +46391,7 @@ export namespace Prisma {
     folders?: FolderListRelationFilter
     tournamentEntries?: TournamentPlayerListRelationFilter
     reminders?: ReminderListRelationFilter
+    streaks?: ConversationStreakListRelationFilter
   }, "id" | "username">
 
   export type UserOrderByWithAggregationInput = {
@@ -45117,6 +46407,8 @@ export namespace Prisma {
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
+    xpToday?: SortOrder
+    xpDay?: SortOrder
     _count?: UserCountOrderByAggregateInput
     _avg?: UserAvgOrderByAggregateInput
     _max?: UserMaxOrderByAggregateInput
@@ -45140,6 +46432,8 @@ export namespace Prisma {
     createdAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     lastSeenAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     xp?: IntWithAggregatesFilter<"User"> | number
+    xpToday?: IntWithAggregatesFilter<"User"> | number
+    xpDay?: StringWithAggregatesFilter<"User"> | string
   }
 
   export type ReminderWhereInput = {
@@ -45210,6 +46504,69 @@ export namespace Prisma {
     remindAt?: DateTimeWithAggregatesFilter<"Reminder"> | Date | string
     firedAt?: DateTimeNullableWithAggregatesFilter<"Reminder"> | Date | string | null
     createdAt?: DateTimeWithAggregatesFilter<"Reminder"> | Date | string
+  }
+
+  export type ConversationStreakWhereInput = {
+    AND?: ConversationStreakWhereInput | ConversationStreakWhereInput[]
+    OR?: ConversationStreakWhereInput[]
+    NOT?: ConversationStreakWhereInput | ConversationStreakWhereInput[]
+    id?: StringFilter<"ConversationStreak"> | string
+    conversationId?: StringFilter<"ConversationStreak"> | string
+    userId?: StringFilter<"ConversationStreak"> | string
+    lastDay?: StringFilter<"ConversationStreak"> | string
+    count?: IntFilter<"ConversationStreak"> | number
+    best?: IntFilter<"ConversationStreak"> | number
+    user?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }
+
+  export type ConversationStreakOrderByWithRelationInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    userId?: SortOrder
+    lastDay?: SortOrder
+    count?: SortOrder
+    best?: SortOrder
+    user?: UserOrderByWithRelationInput
+  }
+
+  export type ConversationStreakWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    conversationId_userId?: ConversationStreakConversationIdUserIdCompoundUniqueInput
+    AND?: ConversationStreakWhereInput | ConversationStreakWhereInput[]
+    OR?: ConversationStreakWhereInput[]
+    NOT?: ConversationStreakWhereInput | ConversationStreakWhereInput[]
+    conversationId?: StringFilter<"ConversationStreak"> | string
+    userId?: StringFilter<"ConversationStreak"> | string
+    lastDay?: StringFilter<"ConversationStreak"> | string
+    count?: IntFilter<"ConversationStreak"> | number
+    best?: IntFilter<"ConversationStreak"> | number
+    user?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }, "id" | "conversationId_userId">
+
+  export type ConversationStreakOrderByWithAggregationInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    userId?: SortOrder
+    lastDay?: SortOrder
+    count?: SortOrder
+    best?: SortOrder
+    _count?: ConversationStreakCountOrderByAggregateInput
+    _avg?: ConversationStreakAvgOrderByAggregateInput
+    _max?: ConversationStreakMaxOrderByAggregateInput
+    _min?: ConversationStreakMinOrderByAggregateInput
+    _sum?: ConversationStreakSumOrderByAggregateInput
+  }
+
+  export type ConversationStreakScalarWhereWithAggregatesInput = {
+    AND?: ConversationStreakScalarWhereWithAggregatesInput | ConversationStreakScalarWhereWithAggregatesInput[]
+    OR?: ConversationStreakScalarWhereWithAggregatesInput[]
+    NOT?: ConversationStreakScalarWhereWithAggregatesInput | ConversationStreakScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"ConversationStreak"> | string
+    conversationId?: StringWithAggregatesFilter<"ConversationStreak"> | string
+    userId?: StringWithAggregatesFilter<"ConversationStreak"> | string
+    lastDay?: StringWithAggregatesFilter<"ConversationStreak"> | string
+    count?: IntWithAggregatesFilter<"ConversationStreak"> | number
+    best?: IntWithAggregatesFilter<"ConversationStreak"> | number
   }
 
   export type UserWalletWhereInput = {
@@ -47556,6 +48913,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -47571,6 +48930,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateInput = {
@@ -47586,6 +48946,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -47601,6 +48963,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserUpdateInput = {
@@ -47616,6 +48979,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -47631,6 +48996,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateInput = {
@@ -47646,6 +49012,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -47661,6 +49029,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateManyInput = {
@@ -47676,6 +49045,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
   }
 
   export type UserUpdateManyMutationInput = {
@@ -47691,6 +49062,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
   }
 
   export type UserUncheckedUpdateManyInput = {
@@ -47706,6 +49079,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
   }
 
   export type ReminderCreateInput = {
@@ -47782,6 +49157,68 @@ export namespace Prisma {
     remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
     firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ConversationStreakCreateInput = {
+    id?: string
+    conversationId: string
+    lastDay: string
+    count?: number
+    best?: number
+    user: UserCreateNestedOneWithoutStreaksInput
+  }
+
+  export type ConversationStreakUncheckedCreateInput = {
+    id?: string
+    conversationId: string
+    userId: string
+    lastDay: string
+    count?: number
+    best?: number
+  }
+
+  export type ConversationStreakUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    lastDay?: StringFieldUpdateOperationsInput | string
+    count?: IntFieldUpdateOperationsInput | number
+    best?: IntFieldUpdateOperationsInput | number
+    user?: UserUpdateOneRequiredWithoutStreaksNestedInput
+  }
+
+  export type ConversationStreakUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    lastDay?: StringFieldUpdateOperationsInput | string
+    count?: IntFieldUpdateOperationsInput | number
+    best?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type ConversationStreakCreateManyInput = {
+    id?: string
+    conversationId: string
+    userId: string
+    lastDay: string
+    count?: number
+    best?: number
+  }
+
+  export type ConversationStreakUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    lastDay?: StringFieldUpdateOperationsInput | string
+    count?: IntFieldUpdateOperationsInput | number
+    best?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type ConversationStreakUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    lastDay?: StringFieldUpdateOperationsInput | string
+    count?: IntFieldUpdateOperationsInput | number
+    best?: IntFieldUpdateOperationsInput | number
   }
 
   export type UserWalletCreateInput = {
@@ -50354,6 +51791,12 @@ export namespace Prisma {
     none?: ReminderWhereInput
   }
 
+  export type ConversationStreakListRelationFilter = {
+    every?: ConversationStreakWhereInput
+    some?: ConversationStreakWhereInput
+    none?: ConversationStreakWhereInput
+  }
+
   export type SortOrderInput = {
     sort: SortOrder
     nulls?: NullsOrder
@@ -50411,6 +51854,10 @@ export namespace Prisma {
     _count?: SortOrder
   }
 
+  export type ConversationStreakOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
   export type UserCountOrderByAggregateInput = {
     id?: SortOrder
     name?: SortOrder
@@ -50424,10 +51871,13 @@ export namespace Prisma {
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
+    xpToday?: SortOrder
+    xpDay?: SortOrder
   }
 
   export type UserAvgOrderByAggregateInput = {
     xp?: SortOrder
+    xpToday?: SortOrder
   }
 
   export type UserMaxOrderByAggregateInput = {
@@ -50443,6 +51893,8 @@ export namespace Prisma {
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
+    xpToday?: SortOrder
+    xpDay?: SortOrder
   }
 
   export type UserMinOrderByAggregateInput = {
@@ -50458,10 +51910,13 @@ export namespace Prisma {
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
+    xpToday?: SortOrder
+    xpDay?: SortOrder
   }
 
   export type UserSumOrderByAggregateInput = {
     xp?: SortOrder
+    xpToday?: SortOrder
   }
 
   export type StringWithAggregatesFilter<$PrismaModel = never> = {
@@ -50589,6 +52044,48 @@ export namespace Prisma {
     _count?: NestedIntNullableFilter<$PrismaModel>
     _min?: NestedDateTimeNullableFilter<$PrismaModel>
     _max?: NestedDateTimeNullableFilter<$PrismaModel>
+  }
+
+  export type ConversationStreakConversationIdUserIdCompoundUniqueInput = {
+    conversationId: string
+    userId: string
+  }
+
+  export type ConversationStreakCountOrderByAggregateInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    userId?: SortOrder
+    lastDay?: SortOrder
+    count?: SortOrder
+    best?: SortOrder
+  }
+
+  export type ConversationStreakAvgOrderByAggregateInput = {
+    count?: SortOrder
+    best?: SortOrder
+  }
+
+  export type ConversationStreakMaxOrderByAggregateInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    userId?: SortOrder
+    lastDay?: SortOrder
+    count?: SortOrder
+    best?: SortOrder
+  }
+
+  export type ConversationStreakMinOrderByAggregateInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    userId?: SortOrder
+    lastDay?: SortOrder
+    count?: SortOrder
+    best?: SortOrder
+  }
+
+  export type ConversationStreakSumOrderByAggregateInput = {
+    count?: SortOrder
+    best?: SortOrder
   }
 
   export type UserWalletCountOrderByAggregateInput = {
@@ -52199,6 +53696,13 @@ export namespace Prisma {
     connect?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
   }
 
+  export type ConversationStreakCreateNestedManyWithoutUserInput = {
+    create?: XOR<ConversationStreakCreateWithoutUserInput, ConversationStreakUncheckedCreateWithoutUserInput> | ConversationStreakCreateWithoutUserInput[] | ConversationStreakUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ConversationStreakCreateOrConnectWithoutUserInput | ConversationStreakCreateOrConnectWithoutUserInput[]
+    createMany?: ConversationStreakCreateManyUserInputEnvelope
+    connect?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+  }
+
   export type AppInstallUncheckedCreateNestedManyWithoutUserInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -52301,6 +53805,13 @@ export namespace Prisma {
     connectOrCreate?: ReminderCreateOrConnectWithoutUserInput | ReminderCreateOrConnectWithoutUserInput[]
     createMany?: ReminderCreateManyUserInputEnvelope
     connect?: ReminderWhereUniqueInput | ReminderWhereUniqueInput[]
+  }
+
+  export type ConversationStreakUncheckedCreateNestedManyWithoutUserInput = {
+    create?: XOR<ConversationStreakCreateWithoutUserInput, ConversationStreakUncheckedCreateWithoutUserInput> | ConversationStreakCreateWithoutUserInput[] | ConversationStreakUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ConversationStreakCreateOrConnectWithoutUserInput | ConversationStreakCreateOrConnectWithoutUserInput[]
+    createMany?: ConversationStreakCreateManyUserInputEnvelope
+    connect?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
   }
 
   export type StringFieldUpdateOperationsInput = {
@@ -52529,6 +54040,20 @@ export namespace Prisma {
     deleteMany?: ReminderScalarWhereInput | ReminderScalarWhereInput[]
   }
 
+  export type ConversationStreakUpdateManyWithoutUserNestedInput = {
+    create?: XOR<ConversationStreakCreateWithoutUserInput, ConversationStreakUncheckedCreateWithoutUserInput> | ConversationStreakCreateWithoutUserInput[] | ConversationStreakUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ConversationStreakCreateOrConnectWithoutUserInput | ConversationStreakCreateOrConnectWithoutUserInput[]
+    upsert?: ConversationStreakUpsertWithWhereUniqueWithoutUserInput | ConversationStreakUpsertWithWhereUniqueWithoutUserInput[]
+    createMany?: ConversationStreakCreateManyUserInputEnvelope
+    set?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+    disconnect?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+    delete?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+    connect?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+    update?: ConversationStreakUpdateWithWhereUniqueWithoutUserInput | ConversationStreakUpdateWithWhereUniqueWithoutUserInput[]
+    updateMany?: ConversationStreakUpdateManyWithWhereWithoutUserInput | ConversationStreakUpdateManyWithWhereWithoutUserInput[]
+    deleteMany?: ConversationStreakScalarWhereInput | ConversationStreakScalarWhereInput[]
+  }
+
   export type AppInstallUncheckedUpdateManyWithoutUserNestedInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -52735,6 +54260,20 @@ export namespace Prisma {
     deleteMany?: ReminderScalarWhereInput | ReminderScalarWhereInput[]
   }
 
+  export type ConversationStreakUncheckedUpdateManyWithoutUserNestedInput = {
+    create?: XOR<ConversationStreakCreateWithoutUserInput, ConversationStreakUncheckedCreateWithoutUserInput> | ConversationStreakCreateWithoutUserInput[] | ConversationStreakUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ConversationStreakCreateOrConnectWithoutUserInput | ConversationStreakCreateOrConnectWithoutUserInput[]
+    upsert?: ConversationStreakUpsertWithWhereUniqueWithoutUserInput | ConversationStreakUpsertWithWhereUniqueWithoutUserInput[]
+    createMany?: ConversationStreakCreateManyUserInputEnvelope
+    set?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+    disconnect?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+    delete?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+    connect?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+    update?: ConversationStreakUpdateWithWhereUniqueWithoutUserInput | ConversationStreakUpdateWithWhereUniqueWithoutUserInput[]
+    updateMany?: ConversationStreakUpdateManyWithWhereWithoutUserInput | ConversationStreakUpdateManyWithWhereWithoutUserInput[]
+    deleteMany?: ConversationStreakScalarWhereInput | ConversationStreakScalarWhereInput[]
+  }
+
   export type UserCreateNestedOneWithoutRemindersInput = {
     create?: XOR<UserCreateWithoutRemindersInput, UserUncheckedCreateWithoutRemindersInput>
     connectOrCreate?: UserCreateOrConnectWithoutRemindersInput
@@ -52751,6 +54290,20 @@ export namespace Prisma {
     upsert?: UserUpsertWithoutRemindersInput
     connect?: UserWhereUniqueInput
     update?: XOR<XOR<UserUpdateToOneWithWhereWithoutRemindersInput, UserUpdateWithoutRemindersInput>, UserUncheckedUpdateWithoutRemindersInput>
+  }
+
+  export type UserCreateNestedOneWithoutStreaksInput = {
+    create?: XOR<UserCreateWithoutStreaksInput, UserUncheckedCreateWithoutStreaksInput>
+    connectOrCreate?: UserCreateOrConnectWithoutStreaksInput
+    connect?: UserWhereUniqueInput
+  }
+
+  export type UserUpdateOneRequiredWithoutStreaksNestedInput = {
+    create?: XOR<UserCreateWithoutStreaksInput, UserUncheckedCreateWithoutStreaksInput>
+    connectOrCreate?: UserCreateOrConnectWithoutStreaksInput
+    upsert?: UserUpsertWithoutStreaksInput
+    connect?: UserWhereUniqueInput
+    update?: XOR<XOR<UserUpdateToOneWithWhereWithoutStreaksInput, UserUpdateWithoutStreaksInput>, UserUncheckedUpdateWithoutStreaksInput>
   }
 
   export type UserCreateNestedOneWithoutWalletInput = {
@@ -55083,6 +56636,31 @@ export namespace Prisma {
     data: ReminderCreateManyUserInput | ReminderCreateManyUserInput[]
   }
 
+  export type ConversationStreakCreateWithoutUserInput = {
+    id?: string
+    conversationId: string
+    lastDay: string
+    count?: number
+    best?: number
+  }
+
+  export type ConversationStreakUncheckedCreateWithoutUserInput = {
+    id?: string
+    conversationId: string
+    lastDay: string
+    count?: number
+    best?: number
+  }
+
+  export type ConversationStreakCreateOrConnectWithoutUserInput = {
+    where: ConversationStreakWhereUniqueInput
+    create: XOR<ConversationStreakCreateWithoutUserInput, ConversationStreakUncheckedCreateWithoutUserInput>
+  }
+
+  export type ConversationStreakCreateManyUserInputEnvelope = {
+    data: ConversationStreakCreateManyUserInput | ConversationStreakCreateManyUserInput[]
+  }
+
   export type AppInstallUpsertWithWhereUniqueWithoutUserInput = {
     where: AppInstallWhereUniqueInput
     update: XOR<AppInstallUpdateWithoutUserInput, AppInstallUncheckedUpdateWithoutUserInput>
@@ -55516,6 +57094,34 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"Reminder"> | Date | string
   }
 
+  export type ConversationStreakUpsertWithWhereUniqueWithoutUserInput = {
+    where: ConversationStreakWhereUniqueInput
+    update: XOR<ConversationStreakUpdateWithoutUserInput, ConversationStreakUncheckedUpdateWithoutUserInput>
+    create: XOR<ConversationStreakCreateWithoutUserInput, ConversationStreakUncheckedCreateWithoutUserInput>
+  }
+
+  export type ConversationStreakUpdateWithWhereUniqueWithoutUserInput = {
+    where: ConversationStreakWhereUniqueInput
+    data: XOR<ConversationStreakUpdateWithoutUserInput, ConversationStreakUncheckedUpdateWithoutUserInput>
+  }
+
+  export type ConversationStreakUpdateManyWithWhereWithoutUserInput = {
+    where: ConversationStreakScalarWhereInput
+    data: XOR<ConversationStreakUpdateManyMutationInput, ConversationStreakUncheckedUpdateManyWithoutUserInput>
+  }
+
+  export type ConversationStreakScalarWhereInput = {
+    AND?: ConversationStreakScalarWhereInput | ConversationStreakScalarWhereInput[]
+    OR?: ConversationStreakScalarWhereInput[]
+    NOT?: ConversationStreakScalarWhereInput | ConversationStreakScalarWhereInput[]
+    id?: StringFilter<"ConversationStreak"> | string
+    conversationId?: StringFilter<"ConversationStreak"> | string
+    userId?: StringFilter<"ConversationStreak"> | string
+    lastDay?: StringFilter<"ConversationStreak"> | string
+    count?: IntFilter<"ConversationStreak"> | number
+    best?: IntFilter<"ConversationStreak"> | number
+  }
+
   export type UserCreateWithoutRemindersInput = {
     id?: string
     name: string
@@ -55529,6 +57135,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -55543,6 +57151,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutRemindersInput = {
@@ -55558,6 +57167,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -55572,6 +57183,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutRemindersInput = {
@@ -55603,6 +57215,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -55617,6 +57231,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutRemindersInput = {
@@ -55632,6 +57247,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -55646,9 +57263,10 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
-  export type UserCreateWithoutWalletInput = {
+  export type UserCreateWithoutStreaksInput = {
     id?: string
     name: string
     username?: string | null
@@ -55661,7 +57279,10 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
+    wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
     hubTasks?: HubTaskCreateNestedManyWithoutOwnerInput
     logEvents?: LogEventCreateNestedManyWithoutUserInput
@@ -55677,6 +57298,150 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
   }
 
+  export type UserUncheckedCreateWithoutStreaksInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
+    wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskUncheckedCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventUncheckedCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingUncheckedCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingUncheckedCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantUncheckedCreateNestedManyWithoutUserInput
+    messages?: MessageUncheckedCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageUncheckedCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseUncheckedCreateNestedManyWithoutUserInput
+    stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
+    folders?: FolderUncheckedCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+  }
+
+  export type UserCreateOrConnectWithoutStreaksInput = {
+    where: UserWhereUniqueInput
+    create: XOR<UserCreateWithoutStreaksInput, UserUncheckedCreateWithoutStreaksInput>
+  }
+
+  export type UserUpsertWithoutStreaksInput = {
+    update: XOR<UserUpdateWithoutStreaksInput, UserUncheckedUpdateWithoutStreaksInput>
+    create: XOR<UserCreateWithoutStreaksInput, UserUncheckedCreateWithoutStreaksInput>
+    where?: UserWhereInput
+  }
+
+  export type UserUpdateToOneWithWhereWithoutStreaksInput = {
+    where?: UserWhereInput
+    data: XOR<UserUpdateWithoutStreaksInput, UserUncheckedUpdateWithoutStreaksInput>
+  }
+
+  export type UserUpdateWithoutStreaksInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUpdateManyWithoutUserNestedInput
+    messages?: MessageUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUpdateManyWithoutUserNestedInput
+    folders?: FolderUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
+  }
+
+  export type UserUncheckedUpdateWithoutStreaksInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUncheckedUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUncheckedUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUncheckedUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUncheckedUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUncheckedUpdateManyWithoutUserNestedInput
+    messages?: MessageUncheckedUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUncheckedUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUncheckedUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
+    folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+  }
+
+  export type UserCreateWithoutWalletInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallCreateNestedManyWithoutUserInput
+    ledger?: WalletLedgerCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantCreateNestedManyWithoutUserInput
+    messages?: MessageCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseCreateNestedManyWithoutUserInput
+    stories?: StatusStoryCreateNestedManyWithoutUserInput
+    folders?: FolderCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+  }
+
   export type UserUncheckedCreateWithoutWalletInput = {
     id?: string
     name: string
@@ -55690,6 +57455,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
     hubTasks?: HubTaskUncheckedCreateNestedManyWithoutOwnerInput
@@ -55704,6 +57471,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutWalletInput = {
@@ -55735,6 +57503,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
     hubTasks?: HubTaskUpdateManyWithoutOwnerNestedInput
@@ -55749,6 +57519,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutWalletInput = {
@@ -55764,6 +57535,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
     hubTasks?: HubTaskUncheckedUpdateManyWithoutOwnerNestedInput
@@ -55778,6 +57551,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutLedgerInput = {
@@ -55793,6 +57567,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     hubTasks?: HubTaskCreateNestedManyWithoutOwnerInput
@@ -55807,6 +57583,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutLedgerInput = {
@@ -55822,6 +57599,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     hubTasks?: HubTaskUncheckedCreateNestedManyWithoutOwnerInput
@@ -55836,6 +57615,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutLedgerInput = {
@@ -55867,6 +57647,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     hubTasks?: HubTaskUpdateManyWithoutOwnerNestedInput
@@ -55881,6 +57663,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLedgerInput = {
@@ -55896,6 +57679,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     hubTasks?: HubTaskUncheckedUpdateManyWithoutOwnerNestedInput
@@ -55910,6 +57695,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutHubTasksInput = {
@@ -55925,6 +57711,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -55939,6 +57727,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutHubTasksInput = {
@@ -55954,6 +57743,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -55968,6 +57759,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutHubTasksInput = {
@@ -55999,6 +57791,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -56013,6 +57807,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutHubTasksInput = {
@@ -56028,6 +57823,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -56042,6 +57839,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutAppInstallsInput = {
@@ -56057,6 +57855,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
     hubTasks?: HubTaskCreateNestedManyWithoutOwnerInput
@@ -56071,6 +57871,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutAppInstallsInput = {
@@ -56086,6 +57887,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
     hubTasks?: HubTaskUncheckedCreateNestedManyWithoutOwnerInput
@@ -56100,6 +57903,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutAppInstallsInput = {
@@ -56131,6 +57935,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
     hubTasks?: HubTaskUpdateManyWithoutOwnerNestedInput
@@ -56145,6 +57951,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutAppInstallsInput = {
@@ -56160,6 +57967,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
     hubTasks?: HubTaskUncheckedUpdateManyWithoutOwnerNestedInput
@@ -56174,6 +57983,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutMarketListingsInput = {
@@ -56189,6 +57999,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -56203,6 +58015,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutMarketListingsInput = {
@@ -56218,6 +58031,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -56232,6 +58047,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutMarketListingsInput = {
@@ -56252,6 +58068,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -56266,6 +58084,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutMarketPurchasesInput = {
@@ -56281,6 +58100,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -56295,6 +58116,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutMarketPurchasesInput = {
@@ -56326,6 +58148,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -56340,6 +58164,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketListingsInput = {
@@ -56355,6 +58180,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -56369,6 +58196,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserUpsertWithoutMarketPurchasesInput = {
@@ -56395,6 +58223,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -56409,6 +58239,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketPurchasesInput = {
@@ -56424,6 +58255,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -56438,6 +58271,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutLogEventsInput = {
@@ -56453,6 +58287,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -56467,6 +58303,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutLogEventsInput = {
@@ -56482,6 +58319,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -56496,6 +58335,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutLogEventsInput = {
@@ -56527,6 +58367,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -56541,6 +58383,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLogEventsInput = {
@@ -56556,6 +58399,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -56570,6 +58415,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutQuickPhrasesInput = {
@@ -56585,6 +58431,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -56599,6 +58447,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutQuickPhrasesInput = {
@@ -56614,6 +58463,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -56628,6 +58479,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutQuickPhrasesInput = {
@@ -56659,6 +58511,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -56673,6 +58527,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutQuickPhrasesInput = {
@@ -56688,6 +58543,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -56702,6 +58559,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type ConversationParticipantCreateWithoutConversationInput = {
@@ -57443,6 +59301,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -57457,6 +59317,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutStoriesInput = {
@@ -57472,6 +59333,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -57486,6 +59349,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutStoriesInput = {
@@ -57538,6 +59402,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -57552,6 +59418,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutStoriesInput = {
@@ -57567,6 +59434,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -57581,6 +59450,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type StoryViewUpsertWithWhereUniqueWithoutStoryInput = {
@@ -57678,6 +59548,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -57692,6 +59564,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutParticipationsInput = {
@@ -57707,6 +59580,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -57721,6 +59596,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutParticipationsInput = {
@@ -57803,6 +59679,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -57817,6 +59695,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutParticipationsInput = {
@@ -57832,6 +59711,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -57846,6 +59727,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type ConversationUpsertWithoutParticipantsInput = {
@@ -57918,6 +59800,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -57932,6 +59816,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutMessagesInput = {
@@ -57947,6 +59832,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -57961,6 +59848,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutMessagesInput = {
@@ -58502,6 +60390,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -58516,6 +60406,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMessagesInput = {
@@ -58531,6 +60422,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -58545,6 +60438,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type ConversationUpsertWithoutMessagesInput = {
@@ -59336,6 +61230,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -59350,6 +61246,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutSavedMessagesInput = {
@@ -59365,6 +61262,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -59379,6 +61278,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutSavedMessagesInput = {
@@ -59481,6 +61381,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -59495,6 +61397,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutSavedMessagesInput = {
@@ -59510,6 +61413,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -59524,6 +61429,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type MessageUpsertWithoutSavedByInput = {
@@ -60310,6 +62216,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -60324,6 +62232,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutFoldersInput = {
@@ -60339,6 +62248,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -60353,6 +62264,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutFoldersInput = {
@@ -60405,6 +62317,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -60419,6 +62333,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutFoldersInput = {
@@ -60434,6 +62349,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -60448,6 +62365,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type FolderConversationUpsertWithWhereUniqueWithoutFolderInput = {
@@ -60819,6 +62737,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallCreateNestedManyWithoutUserInput
     wallet?: UserWalletCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerCreateNestedManyWithoutUserInput
@@ -60833,6 +62753,7 @@ export namespace Prisma {
     stories?: StatusStoryCreateNestedManyWithoutUserInput
     folders?: FolderCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutTournamentEntriesInput = {
@@ -60848,6 +62769,8 @@ export namespace Prisma {
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
+    xpToday?: number
+    xpDay?: string
     appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
     wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
     ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
@@ -60862,6 +62785,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutTournamentEntriesInput = {
@@ -60926,6 +62850,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
@@ -60940,6 +62866,7 @@ export namespace Prisma {
     stories?: StatusStoryUpdateManyWithoutUserNestedInput
     folders?: FolderUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutTournamentEntriesInput = {
@@ -60955,6 +62882,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
     appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
     wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
     ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
@@ -60969,6 +62898,7 @@ export namespace Prisma {
     stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type MessageCreateWithoutRedPacketInput = {
@@ -61817,6 +63747,14 @@ export namespace Prisma {
     createdAt?: Date | string
   }
 
+  export type ConversationStreakCreateManyUserInput = {
+    id?: string
+    conversationId: string
+    lastDay: string
+    count?: number
+    best?: number
+  }
+
   export type AppInstallUpdateWithoutUserInput = {
     id?: StringFieldUpdateOperationsInput | string
     appId?: StringFieldUpdateOperationsInput | string
@@ -62262,6 +64200,30 @@ export namespace Prisma {
     remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
     firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ConversationStreakUpdateWithoutUserInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    lastDay?: StringFieldUpdateOperationsInput | string
+    count?: IntFieldUpdateOperationsInput | number
+    best?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type ConversationStreakUncheckedUpdateWithoutUserInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    lastDay?: StringFieldUpdateOperationsInput | string
+    count?: IntFieldUpdateOperationsInput | number
+    best?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type ConversationStreakUncheckedUpdateManyWithoutUserInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    lastDay?: StringFieldUpdateOperationsInput | string
+    count?: IntFieldUpdateOperationsInput | number
+    best?: IntFieldUpdateOperationsInput | number
   }
 
   export type ConversationParticipantCreateManyConversationInput = {

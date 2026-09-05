@@ -48,6 +48,7 @@ import {
   Copy,
   Database,
   Download,
+  Droplet,
   ExternalLink,
   Eye,
   Feather,
@@ -922,15 +923,16 @@ function AppearanceSection({ ctx }: { ctx: SectionCtx }) {
           <WebglModePicker value={prefs['fx.webglMode']} onChange={(m) => save({ 'fx.webglMode': m })} />
         </PickerBlock>
         <FooterNote>
-          Five realtime shader modes — off keeps the DOM particle layer instead. Each mode is a
-          different ambient world: aurora bands, glass caustics, gradient mesh, star drift.
+          Six realtime shader modes — off keeps the DOM particle layer instead. Each mode is a
+          different ambient world: aurora bands, glass caustics, gradient mesh, star drift, liquid
+          metaballs.
         </FooterNote>
       </Group>
     </>
   )
 }
 
-/** Segmented picker for the WebGL ambient field (off + 4 shader modes). */
+/** Segmented picker for the WebGL ambient field (off + 5 shader modes). */
 function WebglModePicker({
   value,
   onChange,
@@ -945,6 +947,7 @@ function WebglModePicker({
     caustics: Waves,
     mesh: Blend,
     stars: Star,
+    liquid: Droplet,
   }
   return (
     <PillPicker

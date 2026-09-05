@@ -7,7 +7,7 @@
 
 import { memo, useCallback, useRef, useState } from 'react'
 import { motion, useReducedMotion, type PanInfo } from 'framer-motion'
-import { Archive, ArchiveRestore, BellOff, MoreVertical, PencilLine, Pin, PinOff } from 'lucide-react'
+import { Archive, ArchiveRestore, BellOff, Flame, MoreVertical, PencilLine, Pin, PinOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ease, pressSpring, pressTap, spring, stagger } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
@@ -34,6 +34,8 @@ export interface ConversationRowProps {
   muted: boolean
   /** someone is typing in this conversation right now */
   typing: boolean
+  /** R31-a: viewer's LIVE chat-streak count for this row (0/undefined = no chip) */
+  streakCount?: number
   /** row lives in the archived sub-page (swipe chip flips to Unarchive) */
   archived: boolean
   /** stagger slot for the initial-mount entrance (null = animate nothing) */
@@ -92,6 +94,7 @@ export const ConversationRow = memo(function ConversationRow({
   pinned,
   muted,
   typing,
+  streakCount = 0,
   archived,
   entranceIndex,
   onPress,
@@ -270,20 +273,32 @@ export const ConversationRow = memo(function ConversationRow({
                     {name}
                   </span>
                 </span>
-                <motion.span
-                  key={time}
-                  initial={reducedMotion ? false : { opacity: 0, scale: 0.7 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={spring.bouncy}
-                  className={cn(
-                    'shrink-0 text-[11px]',
-                    hasUnread
-                      ? 'font-semibold text-emerald-600 dark:text-emerald-400'
-                      : 'text-zinc-400 dark:text-zinc-500',
-                  )}
-                >
-                  {time}
-                </motion.span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {/* R31-a: subtle live-streak chip (muted amber, glass) */}
+                  {streakCount > 0 ? (
+                    <span
+                      aria-label={`${streakCount}-day streak`}
+                      className="flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400"
+                    >
+                      <Flame className="size-3" aria-hidden />
+                      {streakCount}
+                    </span>
+                  ) : null}
+                  <motion.span
+                    key={time}
+                    initial={reducedMotion ? false : { opacity: 0, scale: 0.7 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={spring.bouncy}
+                    className={cn(
+                      'shrink-0 text-[11px]',
+                      hasUnread
+                        ? 'font-semibold text-emerald-600 dark:text-emerald-400'
+                        : 'text-zinc-400 dark:text-zinc-500',
+                    )}
+                  >
+                    {time}
+                  </motion.span>
+                </span>
               </div>
               <div className="mt-0.5 flex items-center justify-between gap-2">
                 {typing ? (

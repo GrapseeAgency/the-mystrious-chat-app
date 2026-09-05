@@ -37,6 +37,7 @@ import {
   Dices,
   EllipsisVertical,
   EyeOff,
+  Flame,
   Forward,
   Gift,
   Globe,
@@ -226,6 +227,10 @@ interface MessagesResponse {
 }
 interface SendResponse {
   message: ChatMessage
+  /** R31-a: present ONLY when this send changed the streak (grown or restarted) */
+  streak?: { count: number; best: number; continued: boolean } | null
+  /** R31-a: XP actually granted by this send (0 once the daily cap is hit) */
+  xpAwarded?: number
 }
 interface DeleteResponse {
   message: ChatMessage
@@ -1602,6 +1607,16 @@ export function ChatRoom({
     },
     onSuccess: ({ res, clientId }, vars) => {
       const real = res.message
+      // R31-a: Snapchat-style streak nudge — fires only when THIS send GREW
+      // the streak (second-or-later consecutive day). Same-day re-sends and
+      // restarts stay silent; one send = one bump per UTC day.
+      const grewStreak = res.streak
+      if (grewStreak && grewStreak.continued && grewStreak.count >= 2) {
+        toast.success(
+          grewStreak.count === 2 ? '2-day streak — keep it alive' : `${grewStreak.count}-day streak`,
+          { icon: <Flame className="size-4 text-amber-500" aria-hidden /> },
+        )
+      }
       setReplyTo(null)
       // R24-b: incognito is one-shot — disarm after a successful send
       if (anonNextRef.current) {

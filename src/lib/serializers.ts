@@ -42,6 +42,16 @@ export function dayKey(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * R31-a — a chat streak is LIVE while its lastDay is today or yesterday
+ * (UTC). Anything older is a dead streak: serializers report `myStreak: null`
+ * so the UI never shows a flame for a broken chain.
+ */
+export function isLiveStreakDay(lastDay: string): boolean {
+  if (lastDay === dayKey(new Date())) return true
+  return lastDay === dayKey(new Date(Date.now() - 86_400_000))
+}
+
 /** Suggest the nearest free variant of a taken handle (append 2..99). */
 export async function suggestUsername(base: string): Promise<string> {
   for (let n = 2; n < 100; n += 1) {
@@ -295,14 +305,20 @@ export async function buildConversationSummary(
 ): Promise<ConversationSummary> {
   const myReadAt =
     conv.participants.find((p) => p.userId === viewerId)?.lastReadAt ?? new Date(0)
-  const unreadCount = await db.message.count({
-    where: {
-      conversationId: conv.id,
-      senderId: { not: viewerId },
-      deletedAt: null,
-      createdAt: { gt: myReadAt },
-    },
-  })
+  const [unreadCount, streakRow] = await Promise.all([
+    db.message.count({
+      where: {
+        conversationId: conv.id,
+        senderId: { not: viewerId },
+        deletedAt: null,
+        createdAt: { gt: myReadAt },
+      },
+    }),
+    db.conversationStreak.findUnique({
+      where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
+      select: { lastDay: true, count: true },
+    }),
+  ])
   const lastRow = conv.messages[0] ?? null
   const mine = conv.participants.find((p) => p.userId === viewerId)
   return {
@@ -314,6 +330,8 @@ export async function buildConversationSummary(
     members: conv.participants.map(mapMember).sort(byName),
     lastMessage: lastRow ? mapMessage(lastRow, viewerId) : null,
     unreadCount,
+    myStreak:
+      streakRow && isLiveStreakDay(streakRow.lastDay) ? { count: streakRow.count } : null,
     pinnedAt: mine?.pinnedAt ? mine.pinnedAt.toISOString() : null,
     mutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
     archivedAt: mine?.archivedAt ? mine.archivedAt.toISOString() : null,
@@ -323,12 +341,21 @@ export async function buildConversationSummary(
   }
 }
 
-/** Meta + members-with-watermark for a chat room header. */
-export function buildConversationDetail(
+/**
+ * Meta + members-with-watermark for a chat room header. Also carries the
+ * viewer's LIVE chat streak for this conversation (null = none / broken).
+ */
+export async function buildConversationDetail(
   conv: ConversationRowWithRelations,
   viewerId?: string,
-): ConversationDetail {
+): Promise<ConversationDetail> {
   const mine = viewerId ? conv.participants.find((p) => p.userId === viewerId) : undefined
+  const streakRow = viewerId
+    ? await db.conversationStreak.findUnique({
+        where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
+        select: { lastDay: true, count: true, best: true },
+      })
+    : null
   return {
     id: conv.id,
     isGroup: conv.isGroup,
@@ -337,6 +364,10 @@ export function buildConversationDetail(
     updatedAt: conv.updatedAt.toISOString(),
     members: conv.participants.map(mapMember).sort(byName),
     myMutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
+    myStreak:
+      streakRow && isLiveStreakDay(streakRow.lastDay)
+        ? { count: streakRow.count, best: streakRow.best }
+        : null,
     inviteCode: conv.isGroup ? (conv.inviteCode ?? null) : null,
     ttlSeconds: conv.ttlSeconds,
     broadcastMode: conv.broadcastMode,

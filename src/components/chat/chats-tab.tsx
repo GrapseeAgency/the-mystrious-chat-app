@@ -336,6 +336,7 @@ export function ChatsTab({
           pinned: conv.pinnedAt !== null,
           muted: conv.mutedUntil !== null && Date.parse(conv.mutedUntil) > Date.now(),
           typing: typersIn(conv.id, me.id).length > 0,
+          streakCount: conv.myStreak?.count ?? 0, // R31-a: live-streak chip
           archived: conv.archivedAt !== null,
         },
       }

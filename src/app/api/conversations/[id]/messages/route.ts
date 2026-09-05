@@ -6,6 +6,7 @@ import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { db } from '@/lib/db'
 import {
+  dayKey,
   mapMessage,
   memberIdsOf,
   notifySocket,
@@ -19,6 +20,7 @@ import {
   safeJson,
   strField,
 } from '@/lib/serializers'
+import { XP_DAILY_CAP, XP_PER_MESSAGE } from '@/lib/xp'
 import { maybeAiReply } from '@/lib/ai-bot'
 import { botWillRespond, maybeBotReply } from '@/lib/bot-engine'
 
@@ -473,11 +475,67 @@ export async function POST(req: Request, { params }: RouteCtx) {
   // Pulse bot engine: real command replies (/roll, /math, /wallet, /poll …).
   await maybeBotReply(id, { id: message.id, senderId, content })
 
-  // R24-b: Twitch-style channel points — every real send earns +2 XP.
-  // Fire-and-forget so send latency stays low (no daily cap yet — honest gap).
-  void db.user
-    .update({ where: { id: senderId }, data: { xp: { increment: 2 } } })
-    .catch(() => undefined)
+  // R31-a: gaming-grade daily XP cap — every real send earns XP_PER_MESSAGE
+  // up to XP_DAILY_CAP per UTC day (message-XP only; other XP sources keep
+  // their own rules). Read-modify-write on the sender row: the race window is
+  // one in-flight send per user and the bucket self-corrects at midnight UTC.
+  const todayUTC = dayKey(now)
+  const yesterdayUTC = dayKey(new Date(now.getTime() - 86_400_000))
 
-  return NextResponse.json({ message: mapped }, { status: 201 })
+  let xpAwarded = 0
+  try {
+    const sender = await db.user.findUnique({
+      where: { id: senderId },
+      select: { xpToday: true, xpDay: true },
+    })
+    if (sender) {
+      const effectiveToday = sender.xpDay === todayUTC ? sender.xpToday : 0
+      if (effectiveToday < XP_DAILY_CAP) {
+        const delta = Math.min(XP_PER_MESSAGE, XP_DAILY_CAP - effectiveToday)
+        await db.user.update({
+          where: { id: senderId },
+          data: {
+            xp: { increment: delta },
+            xpToday: effectiveToday + delta,
+            xpDay: todayUTC,
+          },
+        })
+        xpAwarded = delta
+      }
+    }
+  } catch {
+    // XP accounting must never fail a send.
+  }
+
+  // R31-a: Snapchat-style chat streak — the FIRST message a user sends in a
+  // conversation each UTC day keeps it alive: lastDay === yesterday grows the
+  // count, anything older restarts at 1, same-day re-sends change nothing.
+  let streak: { count: number; best: number; continued: boolean } | null = null
+  try {
+    const existing = await db.conversationStreak.findUnique({
+      where: { conversationId_userId: { conversationId: id, userId: senderId } },
+    })
+    if (!existing || existing.lastDay !== todayUTC) {
+      const continued = Boolean(existing && existing.lastDay === yesterdayUTC)
+      const count = continued && existing ? existing.count + 1 : 1
+      const best = Math.max(existing?.best ?? 0, count)
+      const row = existing
+        ? await db.conversationStreak.update({
+            where: { id: existing.id },
+            data: { lastDay: todayUTC, count, best },
+          })
+        : await db.conversationStreak.create({
+            data: { conversationId: id, userId: senderId, lastDay: todayUTC, count, best },
+          })
+      streak = { count: row.count, best: row.best, continued }
+    }
+  } catch {
+    // Streak accounting must never fail a send either.
+  }
+
+  // Additive response fields — existing clients keep reading `message`.
+  return NextResponse.json(
+    { message: mapped, ...(streak ? { streak } : {}), xpAwarded },
+    { status: 201 },
+  )
 }

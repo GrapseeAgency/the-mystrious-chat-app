@@ -130,7 +130,9 @@ exports.Prisma.UserScalarFieldEnum = {
   preferences: 'preferences',
   createdAt: 'createdAt',
   lastSeenAt: 'lastSeenAt',
-  xp: 'xp'
+  xp: 'xp',
+  xpToday: 'xpToday',
+  xpDay: 'xpDay'
 };
 
 exports.Prisma.ReminderScalarFieldEnum = {
@@ -142,6 +144,15 @@ exports.Prisma.ReminderScalarFieldEnum = {
   remindAt: 'remindAt',
   firedAt: 'firedAt',
   createdAt: 'createdAt'
+};
+
+exports.Prisma.ConversationStreakScalarFieldEnum = {
+  id: 'id',
+  conversationId: 'conversationId',
+  userId: 'userId',
+  lastDay: 'lastDay',
+  count: 'count',
+  best: 'best'
 };
 
 exports.Prisma.UserWalletScalarFieldEnum = {
@@ -497,6 +508,7 @@ exports.Prisma.NullsOrder = {
 exports.Prisma.ModelName = {
   User: 'User',
   Reminder: 'Reminder',
+  ConversationStreak: 'ConversationStreak',
   UserWallet: 'UserWallet',
   WalletLedger: 'WalletLedger',
   HubTask: 'HubTask',

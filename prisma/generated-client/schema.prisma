@@ -38,8 +38,11 @@ model User {
   stories           StatusStory[]
   folders           Folder[]
   xp                Int                       @default(0) // Twitch-style channel points earned by real activity
+  xpToday           Int                       @default(0) // XP earned today (daily-cap accounting)
+  xpDay             String                    @default("") // UTC 'YYYY-MM-DD' bucket xpToday belongs to
   tournamentEntries TournamentPlayer[]
   reminders         Reminder[]
+  streaks           ConversationStreak[]
 
   @@index([name])
 }
@@ -60,6 +63,23 @@ model Reminder {
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, remindAt])
+}
+
+/**
+ * Snapchat-style per-user-per-conversation daily streak — bumped on the
+ * FIRST message a user sends in a conversation each UTC day.
+ */
+model ConversationStreak {
+  id             String @id @default(cuid())
+  conversationId String
+  userId         String
+  lastDay        String // UTC 'YYYY-MM-DD' of the last streaked day
+  count          Int    @default(0)
+  best           Int    @default(0) // all-time high
+  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId, lastDay])
 }
 
 /**

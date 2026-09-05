@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Copy,
   Crown,
+  Flame,
   Image as ImageIcon,
   Link2,
   LoaderCircle,
@@ -495,6 +496,29 @@ export function RoomInfoPage({
             >
               {detail === undefined ? '…' : ttlLabel(detail.ttlSeconds)}
             </span>
+          </div>
+
+          {/* R31-a: viewer's live chat streak in THIS conversation */}
+          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+            <Flame
+              className={cn(
+                'size-4 shrink-0',
+                detail?.myStreak ? 'text-amber-500' : 'text-zinc-400',
+              )}
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                Chat streak
+              </p>
+              <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                {detail === undefined
+                  ? '…'
+                  : detail.myStreak
+                    ? `${detail.myStreak.count}-day streak · best ${detail.myStreak.best}`
+                    : 'No active streak yet'}
+              </p>
+            </div>
           </div>
 
           {/* R29-a: chat theme — per-conversation wallpaper/tint override.

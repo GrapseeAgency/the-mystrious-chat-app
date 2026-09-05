@@ -121,6 +121,7 @@ export interface ConversationSummary {
   members: AppUser[] // every participant EXCEPT is never filtered; UI filters out self where needed
   lastMessage: ChatMessage | null
   unreadCount: number // count of non-deleted messages from others newer than my lastReadAt
+  myStreak: { count: number } | null // R31-a viewer's LIVE chat streak (null = none / broken)
   pinnedAt: string | null // viewer's pin watermark (null = not pinned)
   mutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
   archivedAt: string | null // viewer's archive watermark (null = active chat)
@@ -153,6 +154,7 @@ export interface ConversationDetail {
   // per-member read watermark (→ double ticks) + group role (groups only)
   members: Array<AppUser & { lastReadAt: string; role: GroupRole }>
   myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
+  myStreak: { count: number; best: number } | null // R31-a viewer's LIVE chat streak (null = none / broken)
   inviteCode: string | null // shareable join code (groups only; null = no active link)
   ttlSeconds: number // disappearing-message TTL (0 = off)
   broadcastMode: boolean // admin-only posting

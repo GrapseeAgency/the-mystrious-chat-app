@@ -1249,3 +1249,37 @@ Stage Summary:
 - Contract: GET /api/channels[?mine=1] → { channels: [{ id, name, description, createdAt, memberCount, isSubscribed, unread, preview }] }; POST /api/channels { userId, name, description? }; POST/DELETE /api/channels/[id]/subscribe { userId }
 - Honest gaps: no channel image/avatar yet (palette icon), no channel transfer, discover = all channels (no pagination — fine at current scale)
 - Evidence: download/qa-r30c-01…11-*.png
+
+---
+Task ID: R31-a
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: Snapchat-style chat streaks + gaming-grade XP daily cap
+
+Work Log:
+- Schema (pre-pushed by lead): User.xpToday/xpDay + ConversationStreak {conversationId, userId, lastDay, count, best, @@unique([conversationId,userId])}
+- NEW src/lib/xp.ts — client-safe constants XP_DAILY_CAP=250, XP_PER_MESSAGE=2 (single source for routes + UI copy)
+- messages route: day-bucketed cap (read xpToday/xpDay → effectiveToday, delta=min(2, 250-effective), xp accounting can never fail a send) + streak upsert on send (lastDay==today no-op; yesterday → count+1 continued; older → restart 1; best tracked) — response gains backward-compatible streak {count, best, continued}
+- Wire: chat-room toast on grew-streak (count>=2, Flame, no emoji); chats-row muted-amber glass Flame chip when myStreak live; room-info 'Chat streak' row with count + best; serializers report LIVE streaks (lastDay today/yesterday UTC) else myStreak null
+- Lead-verified live: a11y tree shows 'Bob 1-day streak' chip on the DM row; crew over-cap proof (xpToday pinned 250 → +0 sends) then fixture reset to 12 by lead; streak QA script tmp-r31a removed
+- tsc src: 0 · lint clean
+
+Stage Summary:
+- SHIPPED: daily XP cap (250/UTC day, message-XP only) + per-conversation daily streaks (bump/continue/restart, best tracked) end-to-end
+- Contract: message POST response streak {count,best,continued}|null; conversations list/detail carry myStreak {count,best}|null (LIVE only)
+- Honest gaps: streak death (missed a day) has no 'streak lost' nudge yet; UTC day boundary (not local)
+- Evidence: download/qa-r31a-01-chats-flame-chip.png (+ lead probe qa-r31-lead-01)
+
+---
+Task ID: R31-b
+Agent: general-purpose (code + E2E verified by lead after crew's report channel died)
+Task: 5th WebGL type — 'liquid' metaball fluid mode
+
+Work Log:
+- webgl-glow.tsx: 'liquid' mode — five Lissajous-drifting metaball centers fused with a smooth-min field, banded emerald/teal/rose mix (no blue/indigo), fresnel rim glow + grain anti-banding, mirrors the file's mode-variant architecture + perf strategy
+- WEBGL_MODES now ['off','aurora','caustics','mesh','stars','liquid']; prefs whitelist updated; settings Appearance picker gained Liquid (Droplet icon)
+- Lead-verified live: PATCH /api/settings (body {preferences}) → fx.webglMode=liquid persisted, full reload keeps it, canvas count = 1 (veil, ParticleLayer self-suppressed), dev.log clean of GL errors; crew screenshots prove picker + veil + reload persistence
+- Liquid left ACTIVE on Alice's profile so the mode is visible on next boot (user can switch in Settings → Appearance)
+
+Stage Summary:
+- SHIPPED: 5 distinct WebGL ambient types (aurora/caustics/mesh/stars/liquid) + off, persisted server-side
+- Evidence: download/qa-r31b-01…03-*.png + lead qa-r31-lead-02…04

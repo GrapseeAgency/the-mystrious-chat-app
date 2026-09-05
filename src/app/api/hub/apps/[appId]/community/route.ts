@@ -37,7 +37,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   if (!existing) {
     return NextResponse.json({ conversation: null, memberCount: 0, joined: false })
   }
-  const detail = buildConversationDetail(existing, userId || undefined)
+  const detail = await buildConversationDetail(existing, userId || undefined)
   return NextResponse.json({
     conversation: detail,
     memberCount: detail.members.length,
@@ -96,7 +96,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Conversation vanished.' }, { status: 500 })
   }
   return NextResponse.json({
-    conversation: buildConversationDetail(fresh, userId),
+    conversation: await buildConversationDetail(fresh, userId),
     joined: true,
   })
 }
