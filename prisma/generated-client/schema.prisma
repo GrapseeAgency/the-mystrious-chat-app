@@ -709,3 +709,15 @@ model EventRsvp {
 
   @@unique([eventId, userId])
 }
+
+// ── R41: durable attachment store ─────────────────────────────
+// The sandbox wipes files from disk while DB rows persist (proven twice:
+// R37 avatars, R41 demo PDFs). Upload bytes now live in SQLite (BLOB) as
+// the durable source of truth; the disk copy stays as the fast path.
+model UploadedFile {
+  name      String   @id // stored "<uuid>.<ext>" filename
+  mime      String
+  bytes     Bytes
+  size      Int
+  createdAt DateTime @default(now())
+}

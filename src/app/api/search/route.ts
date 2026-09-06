@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────
 // /api/search — global message search across ALL of a user's
 // conversations. Case-insensitive substring on non-deleted text
-// content (SQLite has no ICU collation → match happens in Node).
+// content AND document fileName (R41 — a kind 'file' message also
+// matches when its original filename contains the query; SQLite has
+// no ICU collation → match happens in Node).
 // GET /api/search?userId=<id>&q=<text>
 //   → { messages: SearchResultMessage[], total: number }
 // ─────────────────────────────────────────────────────────────
@@ -77,7 +79,13 @@ export async function GET(req: Request) {
   })
 
   const hits = rows
-    .filter((row) => row.content.length > 0 && row.content.toLowerCase().includes(needle))
+    .filter(
+      (row) =>
+        (row.content.length > 0 && row.content.toLowerCase().includes(needle)) ||
+        // R41 — document fileName is a first-class match field (same
+        // case-insensitive substring rule as content).
+        (row.fileName !== null && row.fileName.length > 0 && row.fileName.toLowerCase().includes(needle)),
+    )
     .slice(0, RESULT_CAP)
 
   const messages: SearchResultMessage[] = hits.map((row) => ({

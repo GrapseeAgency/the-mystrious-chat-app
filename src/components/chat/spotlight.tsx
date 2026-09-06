@@ -647,7 +647,19 @@ function SpotlightItemRow({
           </span>
           <span className="block truncate text-[12px] text-zinc-500 dark:text-zinc-400">
             <span className="text-zinc-400 dark:text-zinc-500">{row.hit.sender.name}: </span>
-            <Highlight text={row.hit.content} query={query} />
+            <Highlight
+              text={
+                row.hit.filePath !== null &&
+                row.hit.fileName !== null &&
+                !(
+                  row.hit.content.length > 0 &&
+                  row.hit.content.toLowerCase().includes(query.toLowerCase())
+                )
+                  ? `Document — ${row.hit.fileName}`
+                  : row.hit.content
+              }
+              query={query}
+            />
           </span>
         </span>
       </>

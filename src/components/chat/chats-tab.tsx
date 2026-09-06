@@ -117,6 +117,12 @@ const SearchMessageRow = memo(function SearchMessageRow({
   onPress: (hit: SearchResultMessage) => void
 }) {
   const deleted = hit.deletedAt !== null
+  // R41 — document hits: when the caption is empty or is not itself the match,
+  // show "Document — <fileName>" so the row explains why it matched.
+  const isFileHit = hit.filePath !== null
+  const captionMatches = hit.content.length > 0 && hit.content.toLowerCase().includes(query.toLowerCase())
+  const fileSnippet =
+    hit.fileName !== null ? `Document — ${hit.fileName}` : hit.content.length > 0 ? hit.content : 'Document'
   return (
     <motion.button
       type="button"
@@ -148,6 +154,8 @@ const SearchMessageRow = memo(function SearchMessageRow({
           <p className="truncate text-[13px] italic text-zinc-400 dark:text-zinc-500">Deleted message</p>
         ) : hit.imagePath && hit.content.length === 0 ? (
           <p className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">📷 Photo</p>
+        ) : isFileHit && !captionMatches ? (
+          <SearchSnippet content={fileSnippet} query={query} />
         ) : (
           <SearchSnippet content={hit.content} query={query} />
         )}

@@ -4,6 +4,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 import { UPLOADS_DIR, UPLOAD_MIME } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -38,6 +39,23 @@ export async function GET(_req: Request, { params }: RouteCtx) {
       },
     })
   } catch {
+    // R41 — durable fallback: the sandbox wipes disk files while DB rows
+    // persist. Bytes uploaded since the UploadedFile store landed live in
+    // SQLite and are served from there when the disk copy is gone.
+    try {
+      const row = await db.uploadedFile.findUnique({ where: { name: file } })
+      if (row) {
+        return new NextResponse(new Uint8Array(row.bytes), {
+          headers: {
+            'Content-Type': row.mime || mime,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+            'Content-Length': String(row.size),
+          },
+        })
+      }
+    } catch (storeError) {
+      console.error('[uploads] durable store read failed:', storeError)
+    }
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   }
 }

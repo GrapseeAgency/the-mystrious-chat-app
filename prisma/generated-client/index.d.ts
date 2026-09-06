@@ -258,6 +258,11 @@ export type GroupEvent = $Result.DefaultSelection<Prisma.$GroupEventPayload>
  * 
  */
 export type EventRsvp = $Result.DefaultSelection<Prisma.$EventRsvpPayload>
+/**
+ * Model UploadedFile
+ * 
+ */
+export type UploadedFile = $Result.DefaultSelection<Prisma.$UploadedFilePayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -766,6 +771,16 @@ export class PrismaClient<
     * ```
     */
   get eventRsvp(): Prisma.EventRsvpDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.uploadedFile`: Exposes CRUD operations for the **UploadedFile** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more UploadedFiles
+    * const uploadedFiles = await prisma.uploadedFile.findMany()
+    * ```
+    */
+  get uploadedFile(): Prisma.UploadedFileDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1245,7 +1260,8 @@ export namespace Prisma {
     GameMatch: 'GameMatch',
     KanbanCard: 'KanbanCard',
     GroupEvent: 'GroupEvent',
-    EventRsvp: 'EventRsvp'
+    EventRsvp: 'EventRsvp',
+    UploadedFile: 'UploadedFile'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1264,7 +1280,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp"
+      modelProps: "user" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -4154,6 +4170,80 @@ export namespace Prisma {
           }
         }
       }
+      UploadedFile: {
+        payload: Prisma.$UploadedFilePayload<ExtArgs>
+        fields: Prisma.UploadedFileFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.UploadedFileFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.UploadedFileFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload>
+          }
+          findFirst: {
+            args: Prisma.UploadedFileFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.UploadedFileFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload>
+          }
+          findMany: {
+            args: Prisma.UploadedFileFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload>[]
+          }
+          create: {
+            args: Prisma.UploadedFileCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload>
+          }
+          createMany: {
+            args: Prisma.UploadedFileCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.UploadedFileCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload>[]
+          }
+          delete: {
+            args: Prisma.UploadedFileDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload>
+          }
+          update: {
+            args: Prisma.UploadedFileUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload>
+          }
+          deleteMany: {
+            args: Prisma.UploadedFileDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.UploadedFileUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.UploadedFileUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload>[]
+          }
+          upsert: {
+            args: Prisma.UploadedFileUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UploadedFilePayload>
+          }
+          aggregate: {
+            args: Prisma.UploadedFileAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateUploadedFile>
+          }
+          groupBy: {
+            args: Prisma.UploadedFileGroupByArgs<ExtArgs>
+            result: $Utils.Optional<UploadedFileGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.UploadedFileCountArgs<ExtArgs>
+            result: $Utils.Optional<UploadedFileCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -4289,6 +4379,7 @@ export namespace Prisma {
     kanbanCard?: KanbanCardOmit
     groupEvent?: GroupEventOmit
     eventRsvp?: EventRsvpOmit
+    uploadedFile?: UploadedFileOmit
   }
 
   /* Types for Logging */
@@ -49472,6 +49563,1033 @@ export namespace Prisma {
 
 
   /**
+   * Model UploadedFile
+   */
+
+  export type AggregateUploadedFile = {
+    _count: UploadedFileCountAggregateOutputType | null
+    _avg: UploadedFileAvgAggregateOutputType | null
+    _sum: UploadedFileSumAggregateOutputType | null
+    _min: UploadedFileMinAggregateOutputType | null
+    _max: UploadedFileMaxAggregateOutputType | null
+  }
+
+  export type UploadedFileAvgAggregateOutputType = {
+    size: number | null
+  }
+
+  export type UploadedFileSumAggregateOutputType = {
+    size: number | null
+  }
+
+  export type UploadedFileMinAggregateOutputType = {
+    name: string | null
+    mime: string | null
+    bytes: Bytes | null
+    size: number | null
+    createdAt: Date | null
+  }
+
+  export type UploadedFileMaxAggregateOutputType = {
+    name: string | null
+    mime: string | null
+    bytes: Bytes | null
+    size: number | null
+    createdAt: Date | null
+  }
+
+  export type UploadedFileCountAggregateOutputType = {
+    name: number
+    mime: number
+    bytes: number
+    size: number
+    createdAt: number
+    _all: number
+  }
+
+
+  export type UploadedFileAvgAggregateInputType = {
+    size?: true
+  }
+
+  export type UploadedFileSumAggregateInputType = {
+    size?: true
+  }
+
+  export type UploadedFileMinAggregateInputType = {
+    name?: true
+    mime?: true
+    bytes?: true
+    size?: true
+    createdAt?: true
+  }
+
+  export type UploadedFileMaxAggregateInputType = {
+    name?: true
+    mime?: true
+    bytes?: true
+    size?: true
+    createdAt?: true
+  }
+
+  export type UploadedFileCountAggregateInputType = {
+    name?: true
+    mime?: true
+    bytes?: true
+    size?: true
+    createdAt?: true
+    _all?: true
+  }
+
+  export type UploadedFileAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which UploadedFile to aggregate.
+     */
+    where?: UploadedFileWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of UploadedFiles to fetch.
+     */
+    orderBy?: UploadedFileOrderByWithRelationInput | UploadedFileOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: UploadedFileWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` UploadedFiles from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` UploadedFiles.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned UploadedFiles
+    **/
+    _count?: true | UploadedFileCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: UploadedFileAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: UploadedFileSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: UploadedFileMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: UploadedFileMaxAggregateInputType
+  }
+
+  export type GetUploadedFileAggregateType<T extends UploadedFileAggregateArgs> = {
+        [P in keyof T & keyof AggregateUploadedFile]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateUploadedFile[P]>
+      : GetScalarType<T[P], AggregateUploadedFile[P]>
+  }
+
+
+
+
+  export type UploadedFileGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: UploadedFileWhereInput
+    orderBy?: UploadedFileOrderByWithAggregationInput | UploadedFileOrderByWithAggregationInput[]
+    by: UploadedFileScalarFieldEnum[] | UploadedFileScalarFieldEnum
+    having?: UploadedFileScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: UploadedFileCountAggregateInputType | true
+    _avg?: UploadedFileAvgAggregateInputType
+    _sum?: UploadedFileSumAggregateInputType
+    _min?: UploadedFileMinAggregateInputType
+    _max?: UploadedFileMaxAggregateInputType
+  }
+
+  export type UploadedFileGroupByOutputType = {
+    name: string
+    mime: string
+    bytes: Bytes
+    size: number
+    createdAt: Date
+    _count: UploadedFileCountAggregateOutputType | null
+    _avg: UploadedFileAvgAggregateOutputType | null
+    _sum: UploadedFileSumAggregateOutputType | null
+    _min: UploadedFileMinAggregateOutputType | null
+    _max: UploadedFileMaxAggregateOutputType | null
+  }
+
+  type GetUploadedFileGroupByPayload<T extends UploadedFileGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<UploadedFileGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof UploadedFileGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], UploadedFileGroupByOutputType[P]>
+            : GetScalarType<T[P], UploadedFileGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type UploadedFileSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    name?: boolean
+    mime?: boolean
+    bytes?: boolean
+    size?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["uploadedFile"]>
+
+  export type UploadedFileSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    name?: boolean
+    mime?: boolean
+    bytes?: boolean
+    size?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["uploadedFile"]>
+
+  export type UploadedFileSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    name?: boolean
+    mime?: boolean
+    bytes?: boolean
+    size?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["uploadedFile"]>
+
+  export type UploadedFileSelectScalar = {
+    name?: boolean
+    mime?: boolean
+    bytes?: boolean
+    size?: boolean
+    createdAt?: boolean
+  }
+
+  export type UploadedFileOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"name" | "mime" | "bytes" | "size" | "createdAt", ExtArgs["result"]["uploadedFile"]>
+
+  export type $UploadedFilePayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "UploadedFile"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      name: string
+      mime: string
+      bytes: Prisma.Bytes
+      size: number
+      createdAt: Date
+    }, ExtArgs["result"]["uploadedFile"]>
+    composites: {}
+  }
+
+  type UploadedFileGetPayload<S extends boolean | null | undefined | UploadedFileDefaultArgs> = $Result.GetResult<Prisma.$UploadedFilePayload, S>
+
+  type UploadedFileCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<UploadedFileFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: UploadedFileCountAggregateInputType | true
+    }
+
+  export interface UploadedFileDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['UploadedFile'], meta: { name: 'UploadedFile' } }
+    /**
+     * Find zero or one UploadedFile that matches the filter.
+     * @param {UploadedFileFindUniqueArgs} args - Arguments to find a UploadedFile
+     * @example
+     * // Get one UploadedFile
+     * const uploadedFile = await prisma.uploadedFile.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends UploadedFileFindUniqueArgs>(args: SelectSubset<T, UploadedFileFindUniqueArgs<ExtArgs>>): Prisma__UploadedFileClient<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one UploadedFile that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {UploadedFileFindUniqueOrThrowArgs} args - Arguments to find a UploadedFile
+     * @example
+     * // Get one UploadedFile
+     * const uploadedFile = await prisma.uploadedFile.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends UploadedFileFindUniqueOrThrowArgs>(args: SelectSubset<T, UploadedFileFindUniqueOrThrowArgs<ExtArgs>>): Prisma__UploadedFileClient<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first UploadedFile that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UploadedFileFindFirstArgs} args - Arguments to find a UploadedFile
+     * @example
+     * // Get one UploadedFile
+     * const uploadedFile = await prisma.uploadedFile.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends UploadedFileFindFirstArgs>(args?: SelectSubset<T, UploadedFileFindFirstArgs<ExtArgs>>): Prisma__UploadedFileClient<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first UploadedFile that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UploadedFileFindFirstOrThrowArgs} args - Arguments to find a UploadedFile
+     * @example
+     * // Get one UploadedFile
+     * const uploadedFile = await prisma.uploadedFile.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends UploadedFileFindFirstOrThrowArgs>(args?: SelectSubset<T, UploadedFileFindFirstOrThrowArgs<ExtArgs>>): Prisma__UploadedFileClient<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more UploadedFiles that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UploadedFileFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all UploadedFiles
+     * const uploadedFiles = await prisma.uploadedFile.findMany()
+     * 
+     * // Get first 10 UploadedFiles
+     * const uploadedFiles = await prisma.uploadedFile.findMany({ take: 10 })
+     * 
+     * // Only select the `name`
+     * const uploadedFileWithNameOnly = await prisma.uploadedFile.findMany({ select: { name: true } })
+     * 
+     */
+    findMany<T extends UploadedFileFindManyArgs>(args?: SelectSubset<T, UploadedFileFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a UploadedFile.
+     * @param {UploadedFileCreateArgs} args - Arguments to create a UploadedFile.
+     * @example
+     * // Create one UploadedFile
+     * const UploadedFile = await prisma.uploadedFile.create({
+     *   data: {
+     *     // ... data to create a UploadedFile
+     *   }
+     * })
+     * 
+     */
+    create<T extends UploadedFileCreateArgs>(args: SelectSubset<T, UploadedFileCreateArgs<ExtArgs>>): Prisma__UploadedFileClient<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many UploadedFiles.
+     * @param {UploadedFileCreateManyArgs} args - Arguments to create many UploadedFiles.
+     * @example
+     * // Create many UploadedFiles
+     * const uploadedFile = await prisma.uploadedFile.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends UploadedFileCreateManyArgs>(args?: SelectSubset<T, UploadedFileCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many UploadedFiles and returns the data saved in the database.
+     * @param {UploadedFileCreateManyAndReturnArgs} args - Arguments to create many UploadedFiles.
+     * @example
+     * // Create many UploadedFiles
+     * const uploadedFile = await prisma.uploadedFile.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many UploadedFiles and only return the `name`
+     * const uploadedFileWithNameOnly = await prisma.uploadedFile.createManyAndReturn({
+     *   select: { name: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends UploadedFileCreateManyAndReturnArgs>(args?: SelectSubset<T, UploadedFileCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a UploadedFile.
+     * @param {UploadedFileDeleteArgs} args - Arguments to delete one UploadedFile.
+     * @example
+     * // Delete one UploadedFile
+     * const UploadedFile = await prisma.uploadedFile.delete({
+     *   where: {
+     *     // ... filter to delete one UploadedFile
+     *   }
+     * })
+     * 
+     */
+    delete<T extends UploadedFileDeleteArgs>(args: SelectSubset<T, UploadedFileDeleteArgs<ExtArgs>>): Prisma__UploadedFileClient<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one UploadedFile.
+     * @param {UploadedFileUpdateArgs} args - Arguments to update one UploadedFile.
+     * @example
+     * // Update one UploadedFile
+     * const uploadedFile = await prisma.uploadedFile.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends UploadedFileUpdateArgs>(args: SelectSubset<T, UploadedFileUpdateArgs<ExtArgs>>): Prisma__UploadedFileClient<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more UploadedFiles.
+     * @param {UploadedFileDeleteManyArgs} args - Arguments to filter UploadedFiles to delete.
+     * @example
+     * // Delete a few UploadedFiles
+     * const { count } = await prisma.uploadedFile.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends UploadedFileDeleteManyArgs>(args?: SelectSubset<T, UploadedFileDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more UploadedFiles.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UploadedFileUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many UploadedFiles
+     * const uploadedFile = await prisma.uploadedFile.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends UploadedFileUpdateManyArgs>(args: SelectSubset<T, UploadedFileUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more UploadedFiles and returns the data updated in the database.
+     * @param {UploadedFileUpdateManyAndReturnArgs} args - Arguments to update many UploadedFiles.
+     * @example
+     * // Update many UploadedFiles
+     * const uploadedFile = await prisma.uploadedFile.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more UploadedFiles and only return the `name`
+     * const uploadedFileWithNameOnly = await prisma.uploadedFile.updateManyAndReturn({
+     *   select: { name: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends UploadedFileUpdateManyAndReturnArgs>(args: SelectSubset<T, UploadedFileUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one UploadedFile.
+     * @param {UploadedFileUpsertArgs} args - Arguments to update or create a UploadedFile.
+     * @example
+     * // Update or create a UploadedFile
+     * const uploadedFile = await prisma.uploadedFile.upsert({
+     *   create: {
+     *     // ... data to create a UploadedFile
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the UploadedFile we want to update
+     *   }
+     * })
+     */
+    upsert<T extends UploadedFileUpsertArgs>(args: SelectSubset<T, UploadedFileUpsertArgs<ExtArgs>>): Prisma__UploadedFileClient<$Result.GetResult<Prisma.$UploadedFilePayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of UploadedFiles.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UploadedFileCountArgs} args - Arguments to filter UploadedFiles to count.
+     * @example
+     * // Count the number of UploadedFiles
+     * const count = await prisma.uploadedFile.count({
+     *   where: {
+     *     // ... the filter for the UploadedFiles we want to count
+     *   }
+     * })
+    **/
+    count<T extends UploadedFileCountArgs>(
+      args?: Subset<T, UploadedFileCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], UploadedFileCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a UploadedFile.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UploadedFileAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends UploadedFileAggregateArgs>(args: Subset<T, UploadedFileAggregateArgs>): Prisma.PrismaPromise<GetUploadedFileAggregateType<T>>
+
+    /**
+     * Group by UploadedFile.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UploadedFileGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends UploadedFileGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: UploadedFileGroupByArgs['orderBy'] }
+        : { orderBy?: UploadedFileGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, UploadedFileGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetUploadedFileGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the UploadedFile model
+   */
+  readonly fields: UploadedFileFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for UploadedFile.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__UploadedFileClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the UploadedFile model
+   */
+  interface UploadedFileFieldRefs {
+    readonly name: FieldRef<"UploadedFile", 'String'>
+    readonly mime: FieldRef<"UploadedFile", 'String'>
+    readonly bytes: FieldRef<"UploadedFile", 'Bytes'>
+    readonly size: FieldRef<"UploadedFile", 'Int'>
+    readonly createdAt: FieldRef<"UploadedFile", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * UploadedFile findUnique
+   */
+  export type UploadedFileFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * Filter, which UploadedFile to fetch.
+     */
+    where: UploadedFileWhereUniqueInput
+  }
+
+  /**
+   * UploadedFile findUniqueOrThrow
+   */
+  export type UploadedFileFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * Filter, which UploadedFile to fetch.
+     */
+    where: UploadedFileWhereUniqueInput
+  }
+
+  /**
+   * UploadedFile findFirst
+   */
+  export type UploadedFileFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * Filter, which UploadedFile to fetch.
+     */
+    where?: UploadedFileWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of UploadedFiles to fetch.
+     */
+    orderBy?: UploadedFileOrderByWithRelationInput | UploadedFileOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for UploadedFiles.
+     */
+    cursor?: UploadedFileWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` UploadedFiles from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` UploadedFiles.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of UploadedFiles.
+     */
+    distinct?: UploadedFileScalarFieldEnum | UploadedFileScalarFieldEnum[]
+  }
+
+  /**
+   * UploadedFile findFirstOrThrow
+   */
+  export type UploadedFileFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * Filter, which UploadedFile to fetch.
+     */
+    where?: UploadedFileWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of UploadedFiles to fetch.
+     */
+    orderBy?: UploadedFileOrderByWithRelationInput | UploadedFileOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for UploadedFiles.
+     */
+    cursor?: UploadedFileWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` UploadedFiles from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` UploadedFiles.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of UploadedFiles.
+     */
+    distinct?: UploadedFileScalarFieldEnum | UploadedFileScalarFieldEnum[]
+  }
+
+  /**
+   * UploadedFile findMany
+   */
+  export type UploadedFileFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * Filter, which UploadedFiles to fetch.
+     */
+    where?: UploadedFileWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of UploadedFiles to fetch.
+     */
+    orderBy?: UploadedFileOrderByWithRelationInput | UploadedFileOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing UploadedFiles.
+     */
+    cursor?: UploadedFileWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` UploadedFiles from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` UploadedFiles.
+     */
+    skip?: number
+    distinct?: UploadedFileScalarFieldEnum | UploadedFileScalarFieldEnum[]
+  }
+
+  /**
+   * UploadedFile create
+   */
+  export type UploadedFileCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * The data needed to create a UploadedFile.
+     */
+    data: XOR<UploadedFileCreateInput, UploadedFileUncheckedCreateInput>
+  }
+
+  /**
+   * UploadedFile createMany
+   */
+  export type UploadedFileCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many UploadedFiles.
+     */
+    data: UploadedFileCreateManyInput | UploadedFileCreateManyInput[]
+  }
+
+  /**
+   * UploadedFile createManyAndReturn
+   */
+  export type UploadedFileCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * The data used to create many UploadedFiles.
+     */
+    data: UploadedFileCreateManyInput | UploadedFileCreateManyInput[]
+  }
+
+  /**
+   * UploadedFile update
+   */
+  export type UploadedFileUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * The data needed to update a UploadedFile.
+     */
+    data: XOR<UploadedFileUpdateInput, UploadedFileUncheckedUpdateInput>
+    /**
+     * Choose, which UploadedFile to update.
+     */
+    where: UploadedFileWhereUniqueInput
+  }
+
+  /**
+   * UploadedFile updateMany
+   */
+  export type UploadedFileUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update UploadedFiles.
+     */
+    data: XOR<UploadedFileUpdateManyMutationInput, UploadedFileUncheckedUpdateManyInput>
+    /**
+     * Filter which UploadedFiles to update
+     */
+    where?: UploadedFileWhereInput
+    /**
+     * Limit how many UploadedFiles to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * UploadedFile updateManyAndReturn
+   */
+  export type UploadedFileUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * The data used to update UploadedFiles.
+     */
+    data: XOR<UploadedFileUpdateManyMutationInput, UploadedFileUncheckedUpdateManyInput>
+    /**
+     * Filter which UploadedFiles to update
+     */
+    where?: UploadedFileWhereInput
+    /**
+     * Limit how many UploadedFiles to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * UploadedFile upsert
+   */
+  export type UploadedFileUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * The filter to search for the UploadedFile to update in case it exists.
+     */
+    where: UploadedFileWhereUniqueInput
+    /**
+     * In case the UploadedFile found by the `where` argument doesn't exist, create a new UploadedFile with this data.
+     */
+    create: XOR<UploadedFileCreateInput, UploadedFileUncheckedCreateInput>
+    /**
+     * In case the UploadedFile was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<UploadedFileUpdateInput, UploadedFileUncheckedUpdateInput>
+  }
+
+  /**
+   * UploadedFile delete
+   */
+  export type UploadedFileDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+    /**
+     * Filter which UploadedFile to delete.
+     */
+    where: UploadedFileWhereUniqueInput
+  }
+
+  /**
+   * UploadedFile deleteMany
+   */
+  export type UploadedFileDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which UploadedFiles to delete
+     */
+    where?: UploadedFileWhereInput
+    /**
+     * Limit how many UploadedFiles to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * UploadedFile without action
+   */
+  export type UploadedFileDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UploadedFile
+     */
+    select?: UploadedFileSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UploadedFile
+     */
+    omit?: UploadedFileOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -50011,6 +51129,17 @@ export namespace Prisma {
   export type EventRsvpScalarFieldEnum = (typeof EventRsvpScalarFieldEnum)[keyof typeof EventRsvpScalarFieldEnum]
 
 
+  export const UploadedFileScalarFieldEnum: {
+    name: 'name',
+    mime: 'mime',
+    bytes: 'bytes',
+    size: 'size',
+    createdAt: 'createdAt'
+  };
+
+  export type UploadedFileScalarFieldEnum = (typeof UploadedFileScalarFieldEnum)[keyof typeof UploadedFileScalarFieldEnum]
+
+
   export const SortOrder: {
     asc: 'asc',
     desc: 'desc'
@@ -50064,6 +51193,13 @@ export namespace Prisma {
    * Reference to a field of type 'Float'
    */
   export type FloatFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Float'>
+    
+
+
+  /**
+   * Reference to a field of type 'Bytes'
+   */
+  export type BytesFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Bytes'>
     
   /**
    * Deep Input Types
@@ -52918,6 +54054,60 @@ export namespace Prisma {
     status?: StringWithAggregatesFilter<"EventRsvp"> | string
     checkedInAt?: DateTimeNullableWithAggregatesFilter<"EventRsvp"> | Date | string | null
     createdAt?: DateTimeWithAggregatesFilter<"EventRsvp"> | Date | string
+  }
+
+  export type UploadedFileWhereInput = {
+    AND?: UploadedFileWhereInput | UploadedFileWhereInput[]
+    OR?: UploadedFileWhereInput[]
+    NOT?: UploadedFileWhereInput | UploadedFileWhereInput[]
+    name?: StringFilter<"UploadedFile"> | string
+    mime?: StringFilter<"UploadedFile"> | string
+    bytes?: BytesFilter<"UploadedFile"> | Bytes
+    size?: IntFilter<"UploadedFile"> | number
+    createdAt?: DateTimeFilter<"UploadedFile"> | Date | string
+  }
+
+  export type UploadedFileOrderByWithRelationInput = {
+    name?: SortOrder
+    mime?: SortOrder
+    bytes?: SortOrder
+    size?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type UploadedFileWhereUniqueInput = Prisma.AtLeast<{
+    name?: string
+    AND?: UploadedFileWhereInput | UploadedFileWhereInput[]
+    OR?: UploadedFileWhereInput[]
+    NOT?: UploadedFileWhereInput | UploadedFileWhereInput[]
+    mime?: StringFilter<"UploadedFile"> | string
+    bytes?: BytesFilter<"UploadedFile"> | Bytes
+    size?: IntFilter<"UploadedFile"> | number
+    createdAt?: DateTimeFilter<"UploadedFile"> | Date | string
+  }, "name">
+
+  export type UploadedFileOrderByWithAggregationInput = {
+    name?: SortOrder
+    mime?: SortOrder
+    bytes?: SortOrder
+    size?: SortOrder
+    createdAt?: SortOrder
+    _count?: UploadedFileCountOrderByAggregateInput
+    _avg?: UploadedFileAvgOrderByAggregateInput
+    _max?: UploadedFileMaxOrderByAggregateInput
+    _min?: UploadedFileMinOrderByAggregateInput
+    _sum?: UploadedFileSumOrderByAggregateInput
+  }
+
+  export type UploadedFileScalarWhereWithAggregatesInput = {
+    AND?: UploadedFileScalarWhereWithAggregatesInput | UploadedFileScalarWhereWithAggregatesInput[]
+    OR?: UploadedFileScalarWhereWithAggregatesInput[]
+    NOT?: UploadedFileScalarWhereWithAggregatesInput | UploadedFileScalarWhereWithAggregatesInput[]
+    name?: StringWithAggregatesFilter<"UploadedFile"> | string
+    mime?: StringWithAggregatesFilter<"UploadedFile"> | string
+    bytes?: BytesWithAggregatesFilter<"UploadedFile"> | Bytes
+    size?: IntWithAggregatesFilter<"UploadedFile"> | number
+    createdAt?: DateTimeWithAggregatesFilter<"UploadedFile"> | Date | string
   }
 
   export type UserCreateInput = {
@@ -55939,6 +57129,62 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
+  export type UploadedFileCreateInput = {
+    name: string
+    mime: string
+    bytes: Bytes
+    size: number
+    createdAt?: Date | string
+  }
+
+  export type UploadedFileUncheckedCreateInput = {
+    name: string
+    mime: string
+    bytes: Bytes
+    size: number
+    createdAt?: Date | string
+  }
+
+  export type UploadedFileUpdateInput = {
+    name?: StringFieldUpdateOperationsInput | string
+    mime?: StringFieldUpdateOperationsInput | string
+    bytes?: BytesFieldUpdateOperationsInput | Bytes
+    size?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type UploadedFileUncheckedUpdateInput = {
+    name?: StringFieldUpdateOperationsInput | string
+    mime?: StringFieldUpdateOperationsInput | string
+    bytes?: BytesFieldUpdateOperationsInput | Bytes
+    size?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type UploadedFileCreateManyInput = {
+    name: string
+    mime: string
+    bytes: Bytes
+    size: number
+    createdAt?: Date | string
+  }
+
+  export type UploadedFileUpdateManyMutationInput = {
+    name?: StringFieldUpdateOperationsInput | string
+    mime?: StringFieldUpdateOperationsInput | string
+    bytes?: BytesFieldUpdateOperationsInput | Bytes
+    size?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type UploadedFileUncheckedUpdateManyInput = {
+    name?: StringFieldUpdateOperationsInput | string
+    mime?: StringFieldUpdateOperationsInput | string
+    bytes?: BytesFieldUpdateOperationsInput | Bytes
+    size?: IntFieldUpdateOperationsInput | number
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -58022,6 +59268,55 @@ export namespace Prisma {
     status?: SortOrder
     checkedInAt?: SortOrder
     createdAt?: SortOrder
+  }
+
+  export type BytesFilter<$PrismaModel = never> = {
+    equals?: Bytes | BytesFieldRefInput<$PrismaModel>
+    in?: Bytes[]
+    notIn?: Bytes[]
+    not?: NestedBytesFilter<$PrismaModel> | Bytes
+  }
+
+  export type UploadedFileCountOrderByAggregateInput = {
+    name?: SortOrder
+    mime?: SortOrder
+    bytes?: SortOrder
+    size?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type UploadedFileAvgOrderByAggregateInput = {
+    size?: SortOrder
+  }
+
+  export type UploadedFileMaxOrderByAggregateInput = {
+    name?: SortOrder
+    mime?: SortOrder
+    bytes?: SortOrder
+    size?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type UploadedFileMinOrderByAggregateInput = {
+    name?: SortOrder
+    mime?: SortOrder
+    bytes?: SortOrder
+    size?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type UploadedFileSumOrderByAggregateInput = {
+    size?: SortOrder
+  }
+
+  export type BytesWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: Bytes | BytesFieldRefInput<$PrismaModel>
+    in?: Bytes[]
+    notIn?: Bytes[]
+    not?: NestedBytesWithAggregatesFilter<$PrismaModel> | Bytes
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedBytesFilter<$PrismaModel>
+    _max?: NestedBytesFilter<$PrismaModel>
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {
@@ -60570,6 +61865,10 @@ export namespace Prisma {
     update?: XOR<XOR<GroupEventUpdateToOneWithWhereWithoutRsvpsInput, GroupEventUpdateWithoutRsvpsInput>, GroupEventUncheckedUpdateWithoutRsvpsInput>
   }
 
+  export type BytesFieldUpdateOperationsInput = {
+    set?: Bytes
+  }
+
   export type NestedStringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -60785,6 +62084,23 @@ export namespace Prisma {
     gt?: number | FloatFieldRefInput<$PrismaModel>
     gte?: number | FloatFieldRefInput<$PrismaModel>
     not?: NestedFloatNullableFilter<$PrismaModel> | number | null
+  }
+
+  export type NestedBytesFilter<$PrismaModel = never> = {
+    equals?: Bytes | BytesFieldRefInput<$PrismaModel>
+    in?: Bytes[]
+    notIn?: Bytes[]
+    not?: NestedBytesFilter<$PrismaModel> | Bytes
+  }
+
+  export type NestedBytesWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: Bytes | BytesFieldRefInput<$PrismaModel>
+    in?: Bytes[]
+    notIn?: Bytes[]
+    not?: NestedBytesWithAggregatesFilter<$PrismaModel> | Bytes
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedBytesFilter<$PrismaModel>
+    _max?: NestedBytesFilter<$PrismaModel>
   }
 
   export type AppInstallCreateWithoutUserInput = {

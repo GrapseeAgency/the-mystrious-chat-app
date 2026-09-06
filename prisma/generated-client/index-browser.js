@@ -530,6 +530,14 @@ exports.Prisma.EventRsvpScalarFieldEnum = {
   createdAt: 'createdAt'
 };
 
+exports.Prisma.UploadedFileScalarFieldEnum = {
+  name: 'name',
+  mime: 'mime',
+  bytes: 'bytes',
+  size: 'size',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -580,7 +588,8 @@ exports.Prisma.ModelName = {
   GameMatch: 'GameMatch',
   KanbanCard: 'KanbanCard',
   GroupEvent: 'GroupEvent',
-  EventRsvp: 'EventRsvp'
+  EventRsvp: 'EventRsvp',
+  UploadedFile: 'UploadedFile'
 };
 
 /**

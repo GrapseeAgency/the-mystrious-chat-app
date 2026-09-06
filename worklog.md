@@ -1568,3 +1568,21 @@ Work Log:
 Stage Summary:
 - Two consumer-messenger gaps from the research table closed: bot automations (ManyChat/Landbot family, honest in-paradigm adaptation) and document attachments (WhatsApp/Slack media cell)
 - Next queue (honest gaps from these waves): automation PATCH trigger rename (currently reply/enabled only), ForwardSheet carrying file attachments (forwards captions only), message search matching fileName (captions only today), per-viewer screenPrivacy (deferred, per-conversation ships); ongoing glass/UX polish via review cron 364018
+---
+Task ID: R41 (crew landed items 1-3; report channel died — lead verified, then shipped the durable-store fix)
+Agent: general-purpose (items 1-3) + orchestrator lead (verification, durable store, this entry)
+Task: Close the R39/R40 honest gaps — forward file attachments, search fileName matches, automation trigger rename — plus the durable upload store the wave uncovered
+
+Work Log:
+- CREW (verified by lead): ForwardSheet gains filePath/fileName/fileSize — documents forward as REAL kind 'file' messages with truncated-name preview strip (qa-r41-01); room search (src/app/api/search/route.ts + room-search-page.tsx + spotlight.tsx + chats-tab wiring) matches fileName case-insensitively alongside captions; automations PATCH accepts trigger (create-grade validation, per-conversation case-insensitive dedupe EXCLUDING self → 409, admin-only) + room-info/automations-sheet edit affordance
+- LEAD curl proofs: rename pricing→pricing2 200; conflicting rename→409 (temp rule); Bob rename 403; restored 'pricing' + deleted temp. Search 'pulse-r40' returns the demo doc row. Forward demo doc → DM: 201 kind file, destination GET 200 application/pdf 612B, probe copy tombstoned after
+- ROOT CAUSE found mid-verify: the demo PDFs vanished from disk AGAIN (like the R37 avatars) — no unlink code exists anywhere in the app; the sandbox itself wipes files while DB rows persist. R40's filePath validation (disk stat) and the GET route's disk-only read made DB rows point at dead files
+- DURABLE FIX (lead, schema push + client regen + db.ts v7): NEW UploadedFile { name, mime, bytes Bytes, size } — upload POST now DUAL-WRITES (disk fast path + SQLite source of truth, store failure never fails the upload); GET [file] serves disk first, falls back to the store on ENOENT; messages POST filePath validation accepts disk OR store; backfilled all 10 existing disk files into the store; regenerated the R40 demo PDF through the real API and repointed the demo message
+- PROOF: disk file deleted on purpose → GET 200 application/pdf 612B with md5 IDENTICAL to the stored BLOB; upload→wipe→GET lifecycle retested end-to-end; tsc src 0 errors (fixed Prisma Bytes/Buffer typing); lint clean
+- tsc/lint clean; mode-only touches on 6 files restored
+
+Stage Summary:
+- SHIPPED: all three R39/R40 honest gaps closed + the durable attachment store that permanently kills the sandbox file-wipe failure class
+- Contract: UploadedFile rows are written by POST /api/uploads (dual-write) and read by GET /api/uploads/[file] (disk → store fallback); forward payloads carry kind 'file' fields; automations PATCH gains trigger; search matches fileName
+- Honest gaps: files uploaded BEFORE this store whose disk copies were already lost (2 old demo PDFs) had their bytes regenerated, not recovered — historical media outside the backfill (old avatars, already nulled) remains unrecoverable by design honesty; forward-sheet UI verified via crew screenshot + API shape (lead's forward was API-level)
+- Evidence: download/qa-r41-01-forward-sheet-doc.png (+ crew debug shots); lead proofs were curl/node-level, reproducible from this log

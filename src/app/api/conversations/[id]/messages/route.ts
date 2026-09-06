@@ -64,9 +64,9 @@ function anonAliasFor(userId: string, conversationId: string): string {
  * `before=<ISO>` pages further back (messages strictly older than the ISO
  * timestamp — use the oldest message's createdAt as the cursor).
  * `q=<text>` switches into SEARCH mode: newest-first scan of the whole
- * conversation, case-insensitive substring match on text content,
- * soft-deleted rows excluded, capped at `limit` (max 100) returned
- * ascending with the FULL match count as `total`.
+ * conversation, case-insensitive substring match on text content AND
+ * document fileName (R41), soft-deleted rows excluded, capped at `limit`
+ * (max 100) returned ascending with the FULL match count as `total`.
  * Soft-deleted rows are included (client renders tombstones) outside of search.
  */
 export async function GET(req: Request, { params }: RouteCtx) {
@@ -123,7 +123,9 @@ export async function GET(req: Request, { params }: RouteCtx) {
     : null
 
   // Search mode — case-insensitive substring scan (SQLite has no ICU collation,
-  // so matching happens in Node over the conversation's rows).
+  // so matching happens in Node over the conversation's rows). R41: a kind
+  // 'file' message also matches when its document fileName contains the query
+  // (same rule as the global /api/search route).
   const q = (url.searchParams.get('q') ?? '').trim()
   if (q.length > 0) {
     const searchLimit = Math.min(limit, 100)
@@ -133,7 +135,11 @@ export async function GET(req: Request, { params }: RouteCtx) {
       orderBy: { createdAt: 'desc' },
       include: MESSAGE_FULL_INCLUDE,
     })
-    const matched = rows.filter((row) => row.content.toLowerCase().includes(needle))
+    const matched = rows.filter(
+      (row) =>
+        row.content.toLowerCase().includes(needle) ||
+        (row.fileName !== null && row.fileName.length > 0 && row.fileName.toLowerCase().includes(needle)),
+    )
     const total = matched.length
     const window = matched.slice(0, searchLimit)
     window.reverse()
@@ -357,9 +363,17 @@ export async function POST(req: Request, { params }: RouteCtx) {
     if (!DOC_EXT_REGEX.test(rawFilePath)) {
       return NextResponse.json({ error: 'filePath is invalid — documents must be pdf, txt, csv or zip.' }, { status: 400 })
     }
+    // R41 — the uploaded bytes may live on disk (fast path) OR in the
+    // durable UploadedFile store (the sandbox wipes disk files while DB
+    // rows persist). Accept either; reject only when NEITHER holds the file.
+    let exists = false
     try {
       await stat(path.join(UPLOADS_DIR, rawFilePath))
+      exists = true
     } catch {
+      exists = (await db.uploadedFile.findUnique({ where: { name: rawFilePath }, select: { name: true } })) !== null
+    }
+    if (!exists) {
       return NextResponse.json(
         { error: 'filePath does not reference an uploaded file. POST /api/uploads first.' },
         { status: 400 },

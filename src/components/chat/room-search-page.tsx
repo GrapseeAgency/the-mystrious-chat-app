@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, Mic, Search, SearchX, X, Image as ImageIcon } from 'lucide-react'
+import { ChevronLeft, Mic, Search, SearchX, X, FileText, Image as ImageIcon } from 'lucide-react'
 import type { AppUser, ChatMessage } from '@/lib/types'
 import { apiJson, formatListStamp, formatTime } from '@/lib/pulse-utils'
 import { ease, spring } from '@/lib/motion'
@@ -36,6 +36,23 @@ export interface RoomSearchPageProps {
 /** Escape a string for safe RegExp use (local copy — keeps parity with the room). */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Snippet text for one result row (R41): document hits surface their fileName
+ * — as "Document — <fileName>" — whenever the caption is empty or does not
+ * itself match the query, so the row always shows WHY it matched. Other kinds
+ * keep the existing Photo/Voice message fallbacks.
+ */
+function searchHitSnippet(m: ChatMessage, query: string): string {
+  const text = m.content.replace(/\s+/g, ' ').trim()
+  if (m.filePath) {
+    const captionMatches = text.length > 0 && text.toLowerCase().includes(query.toLowerCase())
+    if (captionMatches) return text
+    if (m.fileName) return `Document — ${m.fileName}`
+    return text.length > 0 ? text : 'Document'
+  }
+  return text || (m.imagePath ? 'Photo' : m.audioPath ? 'Voice message' : 'Message')
 }
 
 /** Renders text with the first case-insensitive occurrence of `query` highlighted. */
@@ -104,12 +121,15 @@ export function RoomSearchPage({
     [],
   )
 
-  /** LIVE client filter over the real loaded window. */
+  /** LIVE client filter over the real loaded window (R41: fileName matches too). */
   const clientHits = useMemo(() => {
     const q = query.toLowerCase()
     if (q.length === 0) return []
     return loadedMessages.filter(
-      (m) => m.deletedAt === null && m.content.toLowerCase().includes(q),
+      (m) =>
+        m.deletedAt === null &&
+        (m.content.toLowerCase().includes(q) ||
+          (m.fileName !== null && m.fileName.toLowerCase().includes(q))),
     )
   }, [loadedMessages, query])
 
@@ -227,7 +247,8 @@ export function RoomSearchPage({
                 Search this conversation
               </p>
               <p className="mt-2 max-w-[230px] text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
-                Find any message by its text — results group by sender and jump straight back to the thread.
+                Find any message by its text or by a document's file name — results group by sender
+                and jump straight back to the thread.
               </p>
             </div>
           </div>
@@ -294,6 +315,8 @@ export function RoomSearchPage({
                           <ImageIcon className="size-3.5" aria-hidden />
                         ) : m.audioPath ? (
                           <Mic className="size-3.5" aria-hidden />
+                        ) : m.filePath ? (
+                          <FileText className="size-3.5" aria-hidden />
                         ) : (
                           <Search className="size-3.5" aria-hidden />
                         )}
@@ -308,13 +331,7 @@ export function RoomSearchPage({
                           </span>
                         </span>
                         <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug break-words text-zinc-700 dark:text-zinc-200">
-                          <MatchedText
-                            content={
-                              m.content.replace(/\s+/g, ' ').trim() ||
-                              (m.imagePath ? 'Photo' : 'Voice message')
-                            }
-                            query={query}
-                          />
+                          <MatchedText content={searchHitSnippet(m, query)} query={query} />
                         </span>
                       </span>
                     </motion.button>

@@ -10,14 +10,16 @@ import { PrismaClient } from '../../prisma/generated-client'
 // push + client regen (the long-running dev server held a pre-Automation client).
 // v6 — R40: same protocol after the Message.filePath/fileName/fileSize columns
 // push + client regen (the long-running dev server held a pre-filePath client).
+// v7 — R41: same protocol after the UploadedFile model push + client regen
+// (durable attachment store — upload bytes live in SQLite, disk is the fast path).
 const globalForPrisma = globalThis as unknown as {
-  prismaV6: PrismaClient | undefined
+  prismaV7: PrismaClient | undefined
 }
 
 export const db =
-  globalForPrisma.prismaV6 ??
+  globalForPrisma.prismaV7 ??
   new PrismaClient({
     log: ['query'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV6 = db
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV7 = db

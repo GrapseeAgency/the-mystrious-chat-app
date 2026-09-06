@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 import { DOC_MAX_BYTES, UPLOADS_DIR, UPLOAD_MIME, safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -98,6 +99,21 @@ export async function POST(req: Request) {
   await mkdir(UPLOADS_DIR, { recursive: true })
   const filePath = `${randomUUID()}.${ext}`
   await writeFile(path.join(UPLOADS_DIR, filePath), buffer)
+
+  // R41 — durable store: the sandbox has twice wiped files from disk while
+  // DB rows persisted (avatars in R37, demo PDFs in R41). Bytes now live in
+  // SQLite as the source of truth; the disk copy is a fast-path cache. A
+  // store failure must never fail the upload itself.
+  try {
+    const storedBytes = new Uint8Array(buffer)
+    await db.uploadedFile.upsert({
+      where: { name: filePath },
+      create: { name: filePath, mime, bytes: storedBytes, size: buffer.length },
+      update: { mime, bytes: storedBytes, size: buffer.length },
+    })
+  } catch (storeError) {
+    console.error('[uploads] durable store write failed:', storeError)
+  }
 
   return NextResponse.json({ filePath, imagePath: filePath }, { status: 201 })
 }

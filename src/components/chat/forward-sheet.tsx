@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────
 // Pulse Chat — "Forward message" bottom sheet.
 // Multi-select destination chats → re-posts the original payload
-// (text / image / voice note) into each picked conversation via
-// the standard message API. No schema changes — attachments
-// reuse the already-uploaded file paths.
+// (text / image / voice note / document) into each picked
+// conversation via the standard message API. No schema changes —
+// attachments reuse the already-uploaded file paths.
 // ─────────────────────────────────────────────────────────────
 'use client'
 
@@ -25,17 +25,30 @@ export interface ForwardPayload {
   imagePath: string | null
   audioPath: string | null
   durationMs: number | null
+  /** R41 additive — document attachment (kind 'file'): forwarded copies are
+   *  REAL downloadable documents at the destination, not caption text. */
+  filePath: string | null
+  fileName: string | null
+  fileSize: number | null
 }
 
 interface SendResponse {
   message: unknown
 }
 
+/** fileName shown truncated on the preview strip (mirrors Photo/Voice labels). */
+const FILE_PREVIEW_MAX = 28
+
 /** One-line human summary of what is being forwarded. */
 export function forwardPreviewLabel(payload: ForwardPayload): string {
   const text = payload.content.replace(/\s+/g, ' ').trim()
   if (payload.imagePath !== null) return text.length > 0 ? text : 'Photo'
   if (payload.audioPath !== null) return 'Voice message'
+  if (payload.filePath !== null) {
+    const name = (payload.fileName ?? '').replace(/\s+/g, ' ').trim()
+    if (name.length === 0) return 'Document'
+    return name.length > FILE_PREVIEW_MAX ? `${name.slice(0, FILE_PREVIEW_MAX)}…` : name
+  }
   return text.length > 0 ? text : 'Message'
 }
 
@@ -100,6 +113,16 @@ export function ForwardSheet({
                 ? {
                     audioPath: payload.audioPath,
                     ...(payload.durationMs ? { durationMs: payload.durationMs } : {}),
+                  }
+                : {}),
+              // R41 — documents forward as REAL kind 'file' messages (the API
+              // requires kind 'file' + filePath + fileName; fileSize optional).
+              ...(payload.filePath
+                ? {
+                    kind: 'file',
+                    filePath: payload.filePath,
+                    fileName: payload.fileName ?? '',
+                    ...(payload.fileSize !== null ? { fileSize: payload.fileSize } : {}),
                   }
                 : {}),
             }),

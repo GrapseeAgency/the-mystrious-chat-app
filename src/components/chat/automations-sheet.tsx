@@ -8,6 +8,8 @@
 //     enable/disable + honest delete + create affordance).
 //   • AutomationsCreateSheet — the small glass bottom sheet with the
 //     trigger/reply form (live validation, pending-disabled submit).
+//   • AutomationsEditSheet — R41: rename a rule's trigger after create
+//     (PATCH gains `trigger`; optimistic update + rollback + toast).
 // Data rides GET/POST /api/conversations/[id]/automations and
 // PATCH/DELETE /api/automations/[id] — real rows only, no mocks.
 // ─────────────────────────────────────────────────────────────
@@ -16,7 +18,8 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bot, LoaderCircle, Plus, Trash2, Zap } from 'lucide-react'
+import type { UseMutationResult } from '@tanstack/react-query'
+import { Bot, Check, LoaderCircle, Pencil, Plus, Trash2, Zap } from 'lucide-react'
 import type { AppUser, AutomationSummary } from '@/lib/types'
 import { apiJson, formatListStamp } from '@/lib/pulse-utils'
 import { ease, spring, stagger } from '@/lib/motion'
@@ -56,6 +59,19 @@ export function AutomationsSection({
 }: AutomationsSectionProps) {
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
+  /** R41 — rule whose trigger is being renamed (drives AutomationsEditSheet). */
+  const [editTarget, setEditTarget] = useState<AutomationSummary | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+
+  const openTriggerEdit = (row: AutomationSummary) => {
+    setEditTarget(row)
+    setEditOpen(true)
+  }
+  /** close now, unmount the sheet after its exit animation */
+  const handleEditClose = (next: boolean) => {
+    setEditOpen(next)
+    if (!next) setTimeout(() => setEditTarget(null), 300)
+  }
 
   const automationsQuery = useQuery({
     queryKey: automationsKey(conversationId),
@@ -148,6 +164,54 @@ export function AutomationsSection({
       void queryClient.invalidateQueries({ queryKey: automationsKey(conversationId) }),
   })
 
+  // R41 — optimistic trigger rename: flips the cached row instantly, PATCHes,
+  // rolls back + the server's honest error (409 duplicate / 400 length) on refusal.
+  const renameMutation = useMutation({
+    mutationFn: ({ id, trigger }: { id: string; trigger: string }) =>
+      apiJson<{ automation: AutomationSummary }>(`/api/automations/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ userId: me.id, trigger }),
+      }),
+    onMutate: async ({ id, trigger }) => {
+      await queryClient.cancelQueries({ queryKey: automationsKey(conversationId) })
+      const previous = queryClient.getQueryData<{ automations: AutomationSummary[] }>(
+        automationsKey(conversationId),
+      )
+      queryClient.setQueryData<{ automations: AutomationSummary[] }>(
+        automationsKey(conversationId),
+        (old) =>
+          old
+            ? {
+                automations: old.automations.map((r) =>
+                  r.id === id ? { ...r, trigger } : r,
+                ),
+              }
+            : old,
+      )
+      return { previous }
+    },
+    onSuccess: (data) => {
+      // Server truth (also re-syncs hits/lastFiredAt if they moved).
+      queryClient.setQueryData<{ automations: AutomationSummary[] }>(
+        automationsKey(conversationId),
+        (old) =>
+          old
+            ? {
+                automations: old.automations.map((r) =>
+                  r.id === data.automation.id ? data.automation : r,
+                ),
+              }
+            : old,
+      )
+      toast.success('Trigger updated')
+      haptic(12)
+    },
+    onError: (error, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(automationsKey(conversationId), ctx.previous)
+      toast.error(error instanceof Error ? error.message : 'Could not rename the trigger')
+    },
+  })
+
   const anim = {
     initial: reducedMotion ? false : { opacity: 0, y: 10 },
     animate: { opacity: 1, y: 0 },
@@ -225,9 +289,25 @@ export function AutomationsSection({
                   <Zap className="size-3.5" aria-hidden />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-bold text-zinc-900 dark:text-zinc-50">
-                    {row.trigger}
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <p className="truncate text-[13px] font-bold text-zinc-900 dark:text-zinc-50">
+                      {row.trigger}
+                    </p>
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        aria-label={`Edit trigger "${row.trigger}"`}
+                        disabled={renameMutation.isPending}
+                        onClick={() => {
+                          haptic(8)
+                          openTriggerEdit(row)
+                        }}
+                        className="flex size-6 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-90 disabled:opacity-40 dark:hover:text-emerald-400"
+                      >
+                        <Pencil className="size-3" aria-hidden />
+                      </button>
+                    ) : null}
+                  </div>
                   <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
                     {row.reply}
                   </p>
@@ -308,6 +388,18 @@ export function AutomationsSection({
         open={createOpen}
         onOpenChange={setCreateOpen}
       />
+
+      {/* R41 — trigger rename sheet (unmounts after the exit animation) */}
+      {editTarget ? (
+        <AutomationsEditSheet
+          key={editTarget.id}
+          automation={editTarget}
+          renameMutation={renameMutation}
+          reducedMotion={reducedMotion}
+          open={editOpen}
+          onOpenChange={handleEditClose}
+        />
+      ) : null}
     </>
   )
 }
@@ -492,6 +584,152 @@ function AutomationsCreateSheet({
                 <Zap className="size-4" aria-hidden />
               )}
               Create automation
+            </button>
+          </motion.div>
+        </>
+      ) : null}
+    </AnimatePresence>
+  )
+}
+
+interface AutomationsEditSheetProps {
+  automation: AutomationSummary
+  renameMutation: UseMutationResult<
+    { automation: AutomationSummary },
+    Error,
+    { id: string; trigger: string },
+    { previous: { automations: AutomationSummary[] } | undefined }
+  >
+  reducedMotion: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+/**
+ * R41 — small glass bottom sheet for renaming a rule's trigger in place.
+ * Same glass recipe as the create sheet; the reply stays untouched. Save is
+ * disabled while the draft is invalid or unchanged; the optimistic mutation
+ * (owned by the section) rolls the row back + toasts the server's honest
+ * error on refusal (409 duplicate / 400 length).
+ */
+function AutomationsEditSheet({
+  automation,
+  renameMutation,
+  reducedMotion,
+  open,
+  onOpenChange,
+}: AutomationsEditSheetProps) {
+  const [trigger, setTrigger] = useState(automation.trigger)
+
+  const trimmedTrigger = trigger.trim()
+  const triggerInvalid = trimmedTrigger.length < TRIGGER_MIN || trimmedTrigger.length > TRIGGER_MAX
+  const unchanged = trimmedTrigger === automation.trigger
+  const valid = !triggerInvalid && !unchanged
+
+  return (
+    <AnimatePresence>
+      {open ? (
+        <>
+          {/* backdrop — tap anywhere outside to dismiss */}
+          <motion.button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            onClick={() => onOpenChange(false)}
+            className="absolute inset-0 z-[60] cursor-default bg-zinc-950/25 outline-none backdrop-blur-[2px] dark:bg-black/45"
+          />
+          <motion.div
+            role="dialog"
+            aria-label="Edit trigger"
+            initial={reducedMotion ? false : { y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={spring.soft}
+            className="glass-deep glass-sheen absolute inset-x-0 bottom-0 z-[61] mx-auto flex w-full flex-col overflow-hidden rounded-t-3xl px-4 pt-2.5 pb-[max(1rem,env(safe-area-inset-bottom))]"
+          >
+            <div
+              aria-hidden
+              className="mx-auto mb-2.5 h-1 w-10 shrink-0 rounded-full bg-zinc-900/15 dark:bg-white/20"
+            />
+
+            <div className="flex items-center gap-2.5 px-1">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <Pencil className="size-4" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-50">Edit trigger</p>
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                  Only the keyword moves — the reply stays unchanged
+                </p>
+              </div>
+            </div>
+
+            {/* current rule context (read-only) */}
+            <div className="mt-3 rounded-2xl border border-zinc-900/[0.06] bg-white/40 px-3 py-2 dark:border-white/[0.08] dark:bg-white/[0.04]">
+              <p className="text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase dark:text-zinc-500">
+                Reply
+              </p>
+              <p className="mt-0.5 truncate text-[12px] text-zinc-600 dark:text-zinc-300">
+                {automation.reply}
+              </p>
+            </div>
+
+            <label className="mt-2.5 block">
+              <span className="mb-1 flex items-baseline justify-between px-1">
+                <span className="text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase dark:text-zinc-500">
+                  Trigger keyword
+                </span>
+                <span className="text-[10px] font-medium tabular-nums text-zinc-400 dark:text-zinc-500">
+                  {trimmedTrigger.length}/{TRIGGER_MAX}
+                </span>
+              </span>
+              <input
+                value={trigger}
+                onChange={(e) => setTrigger(e.target.value.slice(0, TRIGGER_MAX + 8))}
+                placeholder="e.g. pricing"
+                aria-label="Trigger keyword"
+                aria-invalid={trigger.length > 0 && triggerInvalid}
+                autoComplete="off"
+                className={cn(
+                  'h-10 w-full rounded-2xl border border-zinc-900/[0.07] bg-white/50 px-3 text-[13px] font-medium text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors focus:border-emerald-500/50 dark:border-white/[0.09] dark:bg-white/[0.06] dark:text-zinc-100',
+                  trigger.length > 0 && triggerInvalid && 'border-rose-400/60',
+                )}
+              />
+              <span
+                className={cn(
+                  'mt-1 block px-1 text-[10px] leading-relaxed',
+                  trigger.length > 0 && triggerInvalid
+                    ? 'font-semibold text-rose-500'
+                    : 'text-zinc-400 dark:text-zinc-500',
+                )}
+              >
+                {trigger.length > 0 && triggerInvalid
+                  ? `Use ${TRIGGER_MIN}-${TRIGGER_MAX} characters.`
+                  : 'Matched as a standalone word — must stay unique in this chat.'}
+              </span>
+            </label>
+
+            <button
+              type="button"
+              disabled={!valid || renameMutation.isPending}
+              onClick={() =>
+                renameMutation.mutate(
+                  { id: automation.id, trigger: trimmedTrigger },
+                  { onSuccess: () => onOpenChange(false) },
+                )
+              }
+              className="mt-3 flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-full bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-50"
+            >
+              {renameMutation.isPending ? (
+                <LoaderCircle className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Check className="size-4" aria-hidden />
+              )}
+              Save trigger
             </button>
           </motion.div>
         </>

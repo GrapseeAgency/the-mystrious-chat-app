@@ -5859,6 +5859,9 @@ export function ChatRoom({
             imagePath: forwardTarget.imagePath,
             audioPath: forwardTarget.audioPath,
             durationMs: forwardTarget.durationMs,
+            filePath: forwardTarget.filePath,
+            fileName: forwardTarget.fileName,
+            fileSize: forwardTarget.fileSize,
           }}
         />
       ) : null}
