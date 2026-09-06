@@ -178,6 +178,9 @@ export interface ConversationDetail {
   inviteCode: string | null // shareable join code (groups only; null = no active link)
   ttlSeconds: number // disappearing-message TTL (0 = off)
   broadcastMode: boolean // admin-only posting
+  /** R38 additive: Signal screen security — frost the message area whenever
+   *  the Pulse window loses focus (blur / hidden tab). false = plain room. */
+  screenPrivacy: boolean
   isSelf: boolean // Signal-style Note to Self conversation
   description: string // channel/group purpose line (R30-c)
 }

@@ -47,11 +47,17 @@ export async function GET(req: Request, { params }: RouteCtx) {
 }
 
 /**
- * PATCH /api/conversations/[id]  body { requesterId, name?, broadcast?, photo? }
- * Group-only meta changes. ADMINS ONLY. `name` renames; `broadcast`
- * toggles announcement mode (Discord stage / Telegram channel: only
- * admins may post while on); `photo` (R33-b) sets the channel/group photo
- * to a validated "/api/uploads/<file>" path — '' clears it.
+ * PATCH /api/conversations/[id]  body { requesterId, name?, broadcast?, photo?, screenPrivacy? }
+ * Group-only meta changes: `name` renames; `broadcast` toggles announcement
+ * mode (Discord stage / Telegram channel: only admins may post while on);
+ * `photo` (R33-b) sets the channel/group photo to a validated
+ * "/api/uploads/<file>" path — '' clears it. ADMINS ONLY.
+ * R38 — `screenPrivacy` (Signal screen security: frost the message area while
+ * the Pulse window is unfocused) is gated like the disappearing TTL
+ * (/api/conversations/[id]/disappearing): ANY participant of ANY conversation
+ * type (groups and DMs) may toggle it. Honest deviation note: on Signal this
+ * is a per-viewer local comfort setting; here it is per-conversation state
+ * following the TTL precedent, so it is deliberately NOT admin-gated.
  * → { conversation: ConversationDetail } · relays conversation:updated.
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
@@ -92,9 +98,12 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
       )
     }
   }
-  if (!hasName && !hasBroadcast && !hasPhoto) {
+  // R38 — screenPrivacy mirrors broadcast's boolean validation; the TTL-style
+  // participant-level gating (no admin check) happens below.
+  const hasScreenPrivacy = typeof body.screenPrivacy === 'boolean'
+  if (!hasName && !hasBroadcast && !hasPhoto && !hasScreenPrivacy) {
     return NextResponse.json(
-      { error: 'Nothing to update — provide name, broadcast and/or photo.' },
+      { error: 'Nothing to update — provide name, broadcast, photo and/or screenPrivacy.' },
       { status: 400 },
     )
   }
@@ -103,7 +112,9 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!conv) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
-  if (!conv.isGroup) {
+  // Group-only rules apply to name/broadcast/photo only — a DM may toggle
+  // screenPrivacy (Signal screen security is a DM-relevant setting too).
+  if (!conv.isGroup && (hasName || hasBroadcast || hasPhoto)) {
     return NextResponse.json(
       {
         error: hasName
@@ -122,7 +133,8 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!participant) {
     return NextResponse.json({ error: 'You are not a participant of this conversation.' }, { status: 403 })
   }
-  if (participant.role !== 'admin') {
+  const wantsAdminAction = hasName || hasBroadcast || hasPhoto
+  if (wantsAdminAction && participant.role !== 'admin') {
     return NextResponse.json(
       {
         error: hasName
@@ -141,6 +153,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
       ...(hasName ? { name } : {}),
       ...(hasBroadcast ? { broadcastMode: body.broadcast as boolean } : {}),
       ...(hasPhoto ? { photo } : {}),
+      ...(hasScreenPrivacy ? { screenPrivacy: body.screenPrivacy as boolean } : {}),
     },
     include: CONVERSATION_FULL_INCLUDE,
   })

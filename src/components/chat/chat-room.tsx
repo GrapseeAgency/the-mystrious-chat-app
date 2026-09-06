@@ -819,6 +819,32 @@ export function ChatRoom({
     refetchInterval: 6_000,
   })
 
+  // ── R38: Signal "Screen security" — frost the message area while unfocused ──
+  // Registered ONLY while the conversation's screenPrivacy flag is on (zero
+  // listener overhead when off); cleaned up on toggle/unmount/route change.
+  const screenPrivacyOn = detail.data?.screenPrivacy === true
+  const [privacyHidden, setPrivacyHidden] = useState(false)
+  useEffect(() => {
+    if (!screenPrivacyOn) {
+      setPrivacyHidden(false)
+      return
+    }
+    // honest initial state: opening the room while already unfocused/hidden
+    // applies the veil immediately (no focused flash)
+    setPrivacyHidden(document.hidden || !document.hasFocus())
+    const onBlur = () => setPrivacyHidden(true)
+    const onFocus = () => setPrivacyHidden(false)
+    const onVisibility = () => setPrivacyHidden(document.hidden)
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [screenPrivacyOn])
+
   // R24-b: General view = whole room (existing key — unchanged behavior);
   // an active topic gets its own key so caches never bleed between views.
   const messagesKey =
@@ -4070,227 +4096,266 @@ export function ChatRoom({
         />
       ) : null}
 
-      {/* messages */}
-      <div
-        ref={viewportRef}
-        onScroll={handleScroll}
-        className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white/25 px-3 pt-3 pb-2 dark:bg-black/20"
-        style={{
-          backgroundImage: `radial-gradient(ellipse 90% 34% at 50% -8%, ${glowTop}, transparent 62%), radial-gradient(ellipse 110% 40% at 50% 110%, ${glowBottom}, transparent 62%), radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
-          backgroundSize: '100% 100%, 100% 100%, 16px 16px',
-          backgroundAttachment: 'local, local, scroll',
-        }}
-      >
-        {messages.isPending && !historyLoaded ? (
-          <div role="status" aria-label="Loading messages" className="space-y-3 pt-4">
-            <Skeleton className="mx-auto h-5 w-24 rounded-full" />
-            <Skeleton className="h-9 w-2/5 rounded-2xl" />
-            <Skeleton className="ml-auto h-12 w-1/2 rounded-2xl" />
-            <Skeleton className="h-9 w-1/3 rounded-2xl" />
-            <Skeleton className="ml-auto h-9 w-2/5 rounded-2xl" />
-          </div>
-        ) : items.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-            {/* R32 empty state — the reference glass: deep layered panel with a
-                soft emerald glow blooming behind the glyph. */}
-            <div className="glass-deep glass-sheen relative flex w-full max-w-[280px] flex-col items-center gap-3 rounded-[28px] px-6 py-8">
-              <span
-                aria-hidden
-                className="pointer-events-none absolute -top-8 left-1/2 size-32 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.3),transparent_65%)] blur-md"
-              />
-              <div
-                aria-hidden
-                className="relative flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/20 to-emerald-600/10 text-emerald-500 ring-1 ring-inset ring-white/40 dark:from-emerald-400/15 dark:to-emerald-600/5 dark:ring-white/10"
-              >
-                <SendHorizontal className="size-7 -rotate-45" />
-              </div>
-              <div className="relative">
-                <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
-                <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                  Say hello — your words travel in real time.
-                </p>
+      {/* messages — wrapped (R38) so the screen-security veil can cover ONLY
+          the message area; header + composer stay visible/interactive */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={viewportRef}
+          onScroll={handleScroll}
+          className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white/25 px-3 pt-3 pb-2 dark:bg-black/20"
+          style={{
+            backgroundImage: `radial-gradient(ellipse 90% 34% at 50% -8%, ${glowTop}, transparent 62%), radial-gradient(ellipse 110% 40% at 50% 110%, ${glowBottom}, transparent 62%), radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
+            backgroundSize: '100% 100%, 100% 100%, 16px 16px',
+            backgroundAttachment: 'local, local, scroll',
+            // R38: CSS-blur the list itself while shielded (belt-and-braces on
+            // top of the veil's backdrop-blur so text selection cannot leak).
+            filter: screenPrivacyOn ? (privacyHidden ? 'blur(18px)' : 'blur(0px)') : undefined,
+            transition:
+              screenPrivacyOn && !prefs.reducedMotion ? 'filter 200ms ease' : undefined,
+          }}
+        >
+          {messages.isPending && !historyLoaded ? (
+            <div role="status" aria-label="Loading messages" className="space-y-3 pt-4">
+              <Skeleton className="mx-auto h-5 w-24 rounded-full" />
+              <Skeleton className="h-9 w-2/5 rounded-2xl" />
+              <Skeleton className="ml-auto h-12 w-1/2 rounded-2xl" />
+              <Skeleton className="h-9 w-1/3 rounded-2xl" />
+              <Skeleton className="ml-auto h-9 w-2/5 rounded-2xl" />
+            </div>
+          ) : items.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+              {/* R32 empty state — the reference glass: deep layered panel with a
+                  soft emerald glow blooming behind the glyph. */}
+              <div className="glass-deep glass-sheen relative flex w-full max-w-[280px] flex-col items-center gap-3 rounded-[28px] px-6 py-8">
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute -top-8 left-1/2 size-32 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.3),transparent_65%)] blur-md"
+                />
+                <div
+                  aria-hidden
+                  className="relative flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/20 to-emerald-600/10 text-emerald-500 ring-1 ring-inset ring-white/40 dark:from-emerald-400/15 dark:to-emerald-600/5 dark:ring-white/10"
+                >
+                  <SendHorizontal className="size-7 -rotate-45" />
+                </div>
+                <div className="relative">
+                  <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
+                  <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                    Say hello — your words travel in real time.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="flex flex-col">
-            {hasMoreHistory ? (
-              <div className="flex justify-center pb-3">
-                <button
-                  type="button"
-                  disabled={loadingOlder}
-                  onClick={() => void loadOlder()}
-                  className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-zinc-500 shadow-sm outline-none backdrop-blur transition-colors hover:border-emerald-300 hover:text-emerald-600 active:scale-95 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-400 dark:hover:border-emerald-500/50 dark:hover:text-emerald-400"
-                >
-                  {loadingOlder ? (
-                    <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <ChevronUp className="size-3.5" aria-hidden />
-                  )}
-                  {loadingOlder ? 'Loading…' : 'Load older messages'}
-                </button>
-              </div>
-            ) : null}
-            {items.map((item) =>
-              item.kind === 'day' ? (
-                <div key={item.key} className="sticky top-1 z-20 my-3 flex justify-center">
-                  <motion.span
-                    initial={prefs.reducedMotion ? false : { opacity: 0, y: -6, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ duration: 0.28, ease: ease.out }}
-                    className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-zinc-800/85 dark:text-zinc-300 dark:ring-white/10"
+          ) : (
+            <div className="flex flex-col">
+              {hasMoreHistory ? (
+                <div className="flex justify-center pb-3">
+                  <button
+                    type="button"
+                    disabled={loadingOlder}
+                    onClick={() => void loadOlder()}
+                    className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-zinc-500 shadow-sm outline-none backdrop-blur transition-colors hover:border-emerald-300 hover:text-emerald-600 active:scale-95 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-400 dark:hover:border-emerald-500/50 dark:hover:text-emerald-400"
                   >
-                    {item.label}
-                  </motion.span>
+                    {loadingOlder ? (
+                      <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+                    ) : (
+                      <ChevronUp className="size-3.5" aria-hidden />
+                    )}
+                    {loadingOlder ? 'Loading…' : 'Load older messages'}
+                  </button>
                 </div>
-              ) : item.kind === 'unread' ? (
-                <motion.div
-                  key={item.key}
-                  initial={prefs.reducedMotion ? false : { opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.28, ease: ease.out }}
-                  className="my-3 flex items-center gap-2 px-1"
-                  role="separator"
-                  aria-label="Unread messages"
-                >
-                  <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
-                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-emerald-600 backdrop-blur-sm dark:text-emerald-400">
-                    UNREAD
-                  </span>
-                  <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
-                </motion.div>
-              ) : (
-                <MessageRow
-                  key={item.key}
-                  message={item.message}
-                  head={item.head}
-                  mine={item.message.senderId === me.id}
-                  isGroup={isGroup}
-                  readMs={othersMaxReadMs}
-                  myId={me.id}
-                  myName={me.name}
-                  memberNames={memberNames}
-                  readBy={
-                    isGroup && lastOwnMessage !== null && item.message.id === lastOwnMessage.id
-                      ? readByLast
-                      : null
-                  }
-                  onPress={openMessageMenu}
-                  onStartLongPress={startLongPress}
-                  onEndLongPress={clearLongPress}
-                  onToggleReaction={handleToggleReaction}
-                  onReply={(m) => {
-                    setReplyTo(m)
-                    requestAnimationFrame(() => textareaRef.current?.focus())
-                  }}
-                  onReactionInfo={(m, emoji) => setReactionInfo({ message: m, emoji })}
-                  onOpenImageGated={openImageGated}
-                  onJumpToReply={jumpToReply}
-                  onOpenSeenBy={openSeenBy}
-                  onImageLoad={handleImageLoaded}
-                  threadCount={threadCounts.get(item.message.id) ?? 0}
-                  onOpenThread={openThread}
-                  onVote={handleVote}
-                  onClosePoll={(pollId) => closePoll.mutate(pollId)}
-                  bubbleRadius={prefs.bubbleRadius}
-                  density={prefs.density}
-                  onOpenProfile={openProfileForAuthor}
-                  highlighted={highlight !== null && highlight.id === item.message.id}
-                  reducedMotion={prefs.reducedMotion}
-                  justArrived={
-                    item.message.id.startsWith('temp-') ||
-                    (mountMsRef.current > 0 &&
-                      !landedIdsRef.current.has(item.message.id) &&
-                      Date.parse(item.message.createdAt) > mountMsRef.current)
-                  }
-                />
-              ),
-            )}
-
-            <AnimatePresence>
-              {typers.length > 0 ? (
-                <motion.div
-                  key="typing-bubble"
-                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 4, scale: 0.98 }}
-                  transition={spring.snappy}
-                  className="mt-1.5 flex items-end gap-1.5"
-                >
-                  {isGroup ? (
-                    (() => {
-                      const typer =
-                        typers.find((t) => detailData?.members.some((m) => m.id === t.userId)) ??
-                        typers[0]
-                      return (
-                        <UserAvatar
-                          name={typer.userName}
-                          color={
-                            detailData?.members.find((m) => m.id === typer.userId)?.color ?? 'emerald'
-                          }
-                          avatar={detailData?.members.find((m) => m.id === typer.userId)?.avatar ?? null}
-                          size={28}
-                        />
-                      )
-                    })()
-                  ) : other ? (
-                    <UserAvatar name={other.name} color={other.color} avatar={other.avatar} size={28} />
-                  ) : null}
-                  {/* Telegram-style morphing pill: borderRadius breathes with the dots */}
+              ) : null}
+              {items.map((item) =>
+                item.kind === 'day' ? (
+                  <div key={item.key} className="sticky top-1 z-20 my-3 flex justify-center">
+                    <motion.span
+                      initial={prefs.reducedMotion ? false : { opacity: 0, y: -6, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.28, ease: ease.out }}
+                      className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-zinc-800/85 dark:text-zinc-300 dark:ring-white/10"
+                    >
+                      {item.label}
+                    </motion.span>
+                  </div>
+                ) : item.kind === 'unread' ? (
                   <motion.div
-                    animate={prefs.reducedMotion ? undefined : { borderRadius: ['1.25rem', '0.875rem', '1.25rem'] }}
-                    transition={{ repeat: Infinity, duration: 0.72, ease: 'easeInOut' }}
-                    className="rounded-2xl rounded-bl-md border border-zinc-100 bg-white px-3 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800"
-                    style={{ willChange: 'border-radius' }}
+                    key={item.key}
+                    initial={prefs.reducedMotion ? false : { opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.28, ease: ease.out }}
+                    className="my-3 flex items-center gap-2 px-1"
+                    role="separator"
+                    aria-label="Unread messages"
                   >
-                    <TypingDots reducedMotion={prefs.reducedMotion} />
+                    <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-emerald-600 backdrop-blur-sm dark:text-emerald-400">
+                      UNREAD
+                    </span>
+                    <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
                   </motion.div>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-          </div>
-        )}
+                ) : (
+                  <MessageRow
+                    key={item.key}
+                    message={item.message}
+                    head={item.head}
+                    mine={item.message.senderId === me.id}
+                    isGroup={isGroup}
+                    readMs={othersMaxReadMs}
+                    myId={me.id}
+                    myName={me.name}
+                    memberNames={memberNames}
+                    readBy={
+                      isGroup && lastOwnMessage !== null && item.message.id === lastOwnMessage.id
+                        ? readByLast
+                        : null
+                    }
+                    onPress={openMessageMenu}
+                    onStartLongPress={startLongPress}
+                    onEndLongPress={clearLongPress}
+                    onToggleReaction={handleToggleReaction}
+                    onReply={(m) => {
+                      setReplyTo(m)
+                      requestAnimationFrame(() => textareaRef.current?.focus())
+                    }}
+                    onReactionInfo={(m, emoji) => setReactionInfo({ message: m, emoji })}
+                    onOpenImageGated={openImageGated}
+                    onJumpToReply={jumpToReply}
+                    onOpenSeenBy={openSeenBy}
+                    onImageLoad={handleImageLoaded}
+                    threadCount={threadCounts.get(item.message.id) ?? 0}
+                    onOpenThread={openThread}
+                    onVote={handleVote}
+                    onClosePoll={(pollId) => closePoll.mutate(pollId)}
+                    bubbleRadius={prefs.bubbleRadius}
+                    density={prefs.density}
+                    onOpenProfile={openProfileForAuthor}
+                    highlighted={highlight !== null && highlight.id === item.message.id}
+                    reducedMotion={prefs.reducedMotion}
+                    justArrived={
+                      item.message.id.startsWith('temp-') ||
+                      (mountMsRef.current > 0 &&
+                        !landedIdsRef.current.has(item.message.id) &&
+                        Date.parse(item.message.createdAt) > mountMsRef.current)
+                    }
+                  />
+                ),
+              )}
+  
+              <AnimatePresence>
+                {typers.length > 0 ? (
+                  <motion.div
+                    key="typing-bubble"
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                    transition={spring.snappy}
+                    className="mt-1.5 flex items-end gap-1.5"
+                  >
+                    {isGroup ? (
+                      (() => {
+                        const typer =
+                          typers.find((t) => detailData?.members.some((m) => m.id === t.userId)) ??
+                          typers[0]
+                        return (
+                          <UserAvatar
+                            name={typer.userName}
+                            color={
+                              detailData?.members.find((m) => m.id === typer.userId)?.color ?? 'emerald'
+                            }
+                            avatar={detailData?.members.find((m) => m.id === typer.userId)?.avatar ?? null}
+                            size={28}
+                          />
+                        )
+                      })()
+                    ) : other ? (
+                      <UserAvatar name={other.name} color={other.color} avatar={other.avatar} size={28} />
+                    ) : null}
+                    {/* Telegram-style morphing pill: borderRadius breathes with the dots */}
+                    <motion.div
+                      animate={prefs.reducedMotion ? undefined : { borderRadius: ['1.25rem', '0.875rem', '1.25rem'] }}
+                      transition={{ repeat: Infinity, duration: 0.72, ease: 'easeInOut' }}
+                      className="rounded-2xl rounded-bl-md border border-zinc-100 bg-white px-3 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800"
+                      style={{ willChange: 'border-radius' }}
+                    >
+                      <TypingDots reducedMotion={prefs.reducedMotion} />
+                    </motion.div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          )}
+  
+          <AnimatePresence>
+            {showJump ? (
+              <motion.button
+                type="button"
+                aria-label={
+                  missedCount > 0
+                    ? `Jump to newest messages — ${missedCount} new`
+                    : 'Jump to newest messages'
+                }
+                initial={{ opacity: 0, y: 10, scale: 0.85 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.9 }}
+                transition={{ type: 'spring', stiffness: 480, damping: 20 }}
+                whileTap={{ scale: 0.94 }}
+                onClick={() => {
+                  setShowJump(false)
+                  missedCountRef.current = 0
+                  setMissedCount(0)
+                  haptic(8)
+                  scrollToBottom(true)
+                }}
+                style={{ willChange: 'transform' }}
+                className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-emerald-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 outline-none"
+              >
+                New messages
+                <ArrowDown className="size-3.5" aria-hidden />
+                {missedCount > 0 ? (
+                  <motion.span
+                    key={missedCount}
+                    initial={prefs.reducedMotion ? false : { scale: 0.4, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={spring.bouncy}
+                    className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-emerald-600"
+                  >
+                    {missedCount > 99 ? '99+' : missedCount}
+                  </motion.span>
+                ) : null}
+              </motion.button>
+            ) : null}
+          </AnimatePresence>
+        </div>
 
-        <AnimatePresence>
-          {showJump ? (
-            <motion.button
-              type="button"
-              aria-label={
-                missedCount > 0
-                  ? `Jump to newest messages — ${missedCount} new`
-                  : 'Jump to newest messages'
-              }
-              initial={{ opacity: 0, y: 10, scale: 0.85 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.9 }}
-              transition={{ type: 'spring', stiffness: 480, damping: 20 }}
-              whileTap={{ scale: 0.94 }}
-              onClick={() => {
-                setShowJump(false)
-                missedCountRef.current = 0
-                setMissedCount(0)
-                haptic(8)
-                scrollToBottom(true)
-              }}
-              style={{ willChange: 'transform' }}
-              className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-emerald-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 outline-none"
-            >
-              New messages
-              <ArrowDown className="size-3.5" aria-hidden />
-              {missedCount > 0 ? (
-                <motion.span
-                  key={missedCount}
-                  initial={prefs.reducedMotion ? false : { scale: 0.4, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={spring.bouncy}
-                  className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-emerald-600"
-                >
-                  {missedCount > 99 ? '99+' : missedCount}
-                </motion.span>
-              ) : null}
-            </motion.button>
-          ) : null}
-        </AnimatePresence>
+        {/* R38 — Signal "Screen security" veil: frosts the message area while
+            the Pulse window is unfocused. Covers ONLY the messages (header +
+            composer stay untouched), never takes focus, pointer-events-none
+            while focused, instant under prefers-reduced-motion. */}
+        {screenPrivacyOn ? (
+          <div
+            data-testid="screen-privacy-veil"
+            role="status"
+            aria-hidden={!privacyHidden}
+            className={cn(
+              'absolute inset-0 z-30 flex items-center justify-center px-6',
+              privacyHidden
+                ? 'bg-zinc-100/60 backdrop-blur-xl dark:bg-zinc-950/60'
+                : 'pointer-events-none opacity-0',
+            )}
+            style={{ transition: prefs.reducedMotion ? undefined : 'opacity 180ms ease' }}
+          >
+            <div className="glass-deep glass-sheen relative flex w-full max-w-[260px] flex-col items-center gap-2.5 rounded-3xl px-6 py-7 text-center">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-emerald-500/10">
+                <EyeOff className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              </span>
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                Screen security is on
+              </p>
+              <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                Messages are hidden while Pulse is not focused
+              </p>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* composer — floating glass capsule (R22); rides the keyboard via visualViewport */}

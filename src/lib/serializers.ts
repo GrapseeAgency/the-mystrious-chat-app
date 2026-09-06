@@ -412,6 +412,9 @@ export async function buildConversationDetail(
     inviteCode: conv.isGroup ? (conv.inviteCode ?? null) : null,
     ttlSeconds: conv.ttlSeconds,
     broadcastMode: conv.broadcastMode,
+    // R38 additive — Signal screen security: frost the message area while the
+    // Pulse window is unfocused. Detail-level only (the room reads it here).
+    screenPrivacy: conv.screenPrivacy,
     isSelf: conv.isSelf,
     description: conv.description,
   }

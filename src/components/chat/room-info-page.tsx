@@ -39,6 +39,7 @@ import {
   UserRoundPlus,
   Users,
   VolumeX,
+  EyeOff,
 } from 'lucide-react'
 import type { AppUser, ChatMessage, ConversationDetail, GroupRole } from '@/lib/types'
 import { navigateHash } from '@/lib/hash-router'
@@ -54,6 +55,7 @@ import { convThemeSummary } from '@/lib/conv-theme'
 import { usePrefsValues } from '@/lib/prefs'
 import { uploadConversationPhoto } from '@/lib/upload-photo'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
 export interface RoomInfoPageProps {
@@ -564,6 +566,39 @@ export function RoomInfoPage({
       toast.error(error instanceof Error ? error.message : 'Could not update disappearing messages'),
   })
 
+  // R38 — Signal "Screen security": frosts the room's message area whenever
+  // the Pulse window loses focus (blur / hidden tab). Gated like the
+  // disappearing TTL above — any participant may toggle it (the main PATCH
+  // route keeps name/photo/broadcast admin-only; screenPrivacy is a comfort
+  // setting, so it is deliberately NOT admin-gated). Optimistic flip with
+  // honest rollback + toast on failure.
+  const privacyMutation = useMutation({
+    mutationFn: async (next: boolean) =>
+      apiJson<{ conversation: ConversationDetail }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}`,
+        { method: 'PATCH', body: JSON.stringify({ requesterId: me.id, screenPrivacy: next }) },
+      ),
+    onMutate: async (next) => {
+      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+      const previous = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+        old ? { ...old, screenPrivacy: next } : old,
+      )
+      return { previous }
+    },
+    onSuccess: (data, next) => {
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], data.conversation)
+      toast.success(next ? 'Screen security on' : 'Screen security off')
+      haptic(12)
+    },
+    onError: (error, _next, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], context.previous)
+      }
+      toast.error(error instanceof Error ? error.message : 'Could not update screen security')
+    },
+  })
+
   // R35-a — Signal-style safety number (DMs ONLY): the shared GET feeds the
   // Encryption row's trailing state; the sheet reads the same cache key.
   // Groups render nothing extra — honest per-room-type UI.
@@ -861,6 +896,31 @@ export function RoomInfoPage({
                 </motion.div>
               ) : null}
             </AnimatePresence>
+          </div>
+
+          {/* R38 — Signal "Screen security" switch. Row mirrors the mute/TTL
+              rows; the accessible switch flips per-conversation state via the
+              main conversation PATCH (TTL-style participant gating). */}
+          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+            {detail?.screenPrivacy ? (
+              <ShieldCheck className="size-4 shrink-0 text-emerald-500" aria-hidden />
+            ) : (
+              <EyeOff className="size-4 shrink-0 text-zinc-400" aria-hidden />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                Screen security
+              </p>
+              <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                Blur messages when Pulse loses focus
+              </p>
+            </div>
+            <Switch
+              checked={detail?.screenPrivacy ?? false}
+              disabled={detail === undefined || privacyMutation.isPending}
+              onCheckedChange={(checked) => privacyMutation.mutate(checked)}
+              aria-label="Screen security"
+            />
           </div>
 
           {/* R31-a: viewer's chat streak in THIS conversation — R33-b adds the
