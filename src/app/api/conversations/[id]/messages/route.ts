@@ -17,6 +17,8 @@ import {
   MESSAGE_MAX,
   UPLOADS_DIR,
   AUDIO_EXT_REGEX,
+  DOC_EXT_REGEX,
+  DOC_MAX_BYTES,
   safeJson,
   strField,
 } from '@/lib/serializers'
@@ -199,9 +201,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  // Rich message kinds — sticker packs, live location cards and full-screen
-  // effects all ride the kind+payload pair (kind defaults to "text").
-  const MESSAGE_KINDS = ['text', 'image', 'audio', 'sticker', 'location'] as const
+  // Rich message kinds — sticker packs, live location cards, documents and
+  // full-screen effects all ride the kind+payload pair (kind defaults to "text").
+  const MESSAGE_KINDS = ['text', 'image', 'audio', 'sticker', 'location', 'file'] as const
   const EFFECTS = ['confetti', 'lasers', 'echo', 'sparkles'] as const
   const kind = strField(body.kind) || 'text'
   if (!(MESSAGE_KINDS as readonly string[]).includes(kind)) {
@@ -306,7 +308,69 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (durationMs !== null && !audioPath) {
     return NextResponse.json({ error: 'durationMs is only valid together with audioPath.' }, { status: 400 })
   }
-  const needsBody = kind !== 'sticker' && kind !== 'location'
+
+  // ── R40: document attachment (kind 'file') ────────────────
+  // filePath references a previously-uploaded document (pdf/txt/csv/zip);
+  // fileName is the ORIGINAL filename for display (1–120 chars, sanitized);
+  // fileSize is optional metadata (0..10 MB). Non-file kinds must NOT carry
+  // a filePath — a document can only travel inside a kind:'file' message.
+  const rawFilePath = strField(body.filePath)
+  if (rawFilePath && kind !== 'file') {
+    return NextResponse.json(
+      { error: "filePath is only valid on messages with kind 'file'." },
+      { status: 400 },
+    )
+  }
+  const rawFileName = typeof body.fileName === 'string' ? body.fileName : ''
+  if ((rawFileName.trim().length > 0 || body.fileName !== undefined) && kind !== 'file') {
+    return NextResponse.json(
+      { error: "fileName is only valid on messages with kind 'file'." },
+      { status: 400 },
+    )
+  }
+  if (body.fileSize !== undefined && body.fileSize !== null && kind !== 'file') {
+    return NextResponse.json(
+      { error: "fileSize is only valid on messages with kind 'file'." },
+      { status: 400 },
+    )
+  }
+  // Sanitize the display name: strip control characters, collapse whitespace.
+  const fileName = rawFileName.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (kind === 'file' && fileName.length === 0) {
+    return NextResponse.json({ error: 'fileName (1-120 characters) is required for file messages.' }, { status: 400 })
+  }
+  if (kind === 'file' && fileName.length > 120) {
+    return NextResponse.json({ error: 'fileName must be 120 characters or fewer.' }, { status: 400 })
+  }
+  let fileSize: number | null = null
+  if (body.fileSize !== undefined && body.fileSize !== null) {
+    if (typeof body.fileSize !== 'number' || !Number.isInteger(body.fileSize) || body.fileSize < 0 || body.fileSize > DOC_MAX_BYTES) {
+      return NextResponse.json(
+        { error: `fileSize must be an integer between 0 and ${DOC_MAX_BYTES} (10 MB).` },
+        { status: 400 },
+      )
+    }
+    fileSize = body.fileSize
+  }
+  let filePath: string | null = null
+  if (rawFilePath) {
+    if (!DOC_EXT_REGEX.test(rawFilePath)) {
+      return NextResponse.json({ error: 'filePath is invalid — documents must be pdf, txt, csv or zip.' }, { status: 400 })
+    }
+    try {
+      await stat(path.join(UPLOADS_DIR, rawFilePath))
+    } catch {
+      return NextResponse.json(
+        { error: 'filePath does not reference an uploaded file. POST /api/uploads first.' },
+        { status: 400 },
+      )
+    }
+    filePath = rawFilePath
+  }
+  if (kind === 'file' && !filePath) {
+    return NextResponse.json({ error: 'File messages need a filePath from POST /api/uploads.' }, { status: 400 })
+  }
+  const needsBody = kind !== 'sticker' && kind !== 'location' && kind !== 'file'
   if (needsBody && !content && !imagePath && !audioPath) {
     return NextResponse.json(
       { error: 'Message needs text content, an image, or a voice note.' },
@@ -424,6 +488,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
         ...(expiresAt ? { expiresAt } : {}),
         ...(imagePath ? { imagePath } : {}),
         ...(audioPath ? { audioPath, ...(durationMs !== null ? { durationMs } : {}) } : {}),
+        ...(filePath ? { filePath, fileName, ...(fileSize !== null ? { fileSize } : {}) } : {}),
       },
       include: MESSAGE_FULL_INCLUDE,
     })

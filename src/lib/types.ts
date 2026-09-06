@@ -82,7 +82,7 @@ export interface ChatMessage {
   conversationId: string
   senderId: string
   content: string
-  kind: string // text|image|audio|sticker|location
+  kind: string // text|image|audio|sticker|location|file
   payload: string | null // JSON blob for kind extras (sticker emoji, location coords, effect name)
   deletedAt: string | null // ISO or null
   createdAt: string // ISO
@@ -92,6 +92,11 @@ export interface ChatMessage {
   imagePath: string | null // served via GET /api/uploads/[imagePath]
   audioPath: string | null // voice-note file served via GET /api/uploads/[audioPath]
   durationMs: number | null // voice-note length in milliseconds
+  /** R40 additive — document attachment (kind 'file'): stored filename served
+   *  via GET /api/uploads/[filePath], original filename for display, byte size. */
+  filePath: string | null
+  fileName: string | null
+  fileSize: number | null
   editedAt: string | null // ISO or null — set when the sender edited the text
   pinnedAt: string | null // ISO or null — pinned within the conversation
   pinnedBy: string | null // userId of whoever pinned (null when unpinned)

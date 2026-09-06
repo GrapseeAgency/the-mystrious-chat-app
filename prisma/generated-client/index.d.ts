@@ -26783,10 +26783,12 @@ export namespace Prisma {
 
   export type MessageAvgAggregateOutputType = {
     durationMs: number | null
+    fileSize: number | null
   }
 
   export type MessageSumAggregateOutputType = {
     durationMs: number | null
+    fileSize: number | null
   }
 
   export type MessageMinAggregateOutputType = {
@@ -26799,6 +26801,9 @@ export namespace Prisma {
     imagePath: string | null
     audioPath: string | null
     durationMs: number | null
+    filePath: string | null
+    fileName: string | null
+    fileSize: number | null
     editedAt: Date | null
     pinnedAt: Date | null
     pinnedBy: string | null
@@ -26827,6 +26832,9 @@ export namespace Prisma {
     imagePath: string | null
     audioPath: string | null
     durationMs: number | null
+    filePath: string | null
+    fileName: string | null
+    fileSize: number | null
     editedAt: Date | null
     pinnedAt: Date | null
     pinnedBy: string | null
@@ -26855,6 +26863,9 @@ export namespace Prisma {
     imagePath: number
     audioPath: number
     durationMs: number
+    filePath: number
+    fileName: number
+    fileSize: number
     editedAt: number
     pinnedAt: number
     pinnedBy: number
@@ -26877,10 +26888,12 @@ export namespace Prisma {
 
   export type MessageAvgAggregateInputType = {
     durationMs?: true
+    fileSize?: true
   }
 
   export type MessageSumAggregateInputType = {
     durationMs?: true
+    fileSize?: true
   }
 
   export type MessageMinAggregateInputType = {
@@ -26893,6 +26906,9 @@ export namespace Prisma {
     imagePath?: true
     audioPath?: true
     durationMs?: true
+    filePath?: true
+    fileName?: true
+    fileSize?: true
     editedAt?: true
     pinnedAt?: true
     pinnedBy?: true
@@ -26921,6 +26937,9 @@ export namespace Prisma {
     imagePath?: true
     audioPath?: true
     durationMs?: true
+    filePath?: true
+    fileName?: true
+    fileSize?: true
     editedAt?: true
     pinnedAt?: true
     pinnedBy?: true
@@ -26949,6 +26968,9 @@ export namespace Prisma {
     imagePath?: true
     audioPath?: true
     durationMs?: true
+    filePath?: true
+    fileName?: true
+    fileSize?: true
     editedAt?: true
     pinnedAt?: true
     pinnedBy?: true
@@ -27064,6 +27086,9 @@ export namespace Prisma {
     imagePath: string | null
     audioPath: string | null
     durationMs: number | null
+    filePath: string | null
+    fileName: string | null
+    fileSize: number | null
     editedAt: Date | null
     pinnedAt: Date | null
     pinnedBy: string | null
@@ -27111,6 +27136,9 @@ export namespace Prisma {
     imagePath?: boolean
     audioPath?: boolean
     durationMs?: boolean
+    filePath?: boolean
+    fileName?: boolean
+    fileSize?: boolean
     editedAt?: boolean
     pinnedAt?: boolean
     pinnedBy?: boolean
@@ -27153,6 +27181,9 @@ export namespace Prisma {
     imagePath?: boolean
     audioPath?: boolean
     durationMs?: boolean
+    filePath?: boolean
+    fileName?: boolean
+    fileSize?: boolean
     editedAt?: boolean
     pinnedAt?: boolean
     pinnedBy?: boolean
@@ -27187,6 +27218,9 @@ export namespace Prisma {
     imagePath?: boolean
     audioPath?: boolean
     durationMs?: boolean
+    filePath?: boolean
+    fileName?: boolean
+    fileSize?: boolean
     editedAt?: boolean
     pinnedAt?: boolean
     pinnedBy?: boolean
@@ -27221,6 +27255,9 @@ export namespace Prisma {
     imagePath?: boolean
     audioPath?: boolean
     durationMs?: boolean
+    filePath?: boolean
+    fileName?: boolean
+    fileSize?: boolean
     editedAt?: boolean
     pinnedAt?: boolean
     pinnedBy?: boolean
@@ -27239,7 +27276,7 @@ export namespace Prisma {
     createdAt?: boolean
   }
 
-  export type MessageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "senderId" | "content" | "deletedAt" | "replyToId" | "imagePath" | "audioPath" | "durationMs" | "editedAt" | "pinnedAt" | "pinnedBy" | "parentId" | "topicId" | "anon" | "viaAutomation" | "anonAlias" | "viewOnce" | "viewedAt" | "viewedBy" | "expiresAt" | "linkUrl" | "kind" | "payload" | "createdAt", ExtArgs["result"]["message"]>
+  export type MessageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "senderId" | "content" | "deletedAt" | "replyToId" | "imagePath" | "audioPath" | "durationMs" | "filePath" | "fileName" | "fileSize" | "editedAt" | "pinnedAt" | "pinnedBy" | "parentId" | "topicId" | "anon" | "viaAutomation" | "anonAlias" | "viewOnce" | "viewedAt" | "viewedBy" | "expiresAt" | "linkUrl" | "kind" | "payload" | "createdAt", ExtArgs["result"]["message"]>
   export type MessageInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     sender?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -27300,6 +27337,9 @@ export namespace Prisma {
       imagePath: string | null
       audioPath: string | null
       durationMs: number | null
+      filePath: string | null
+      fileName: string | null
+      fileSize: number | null
       editedAt: Date | null
       pinnedAt: Date | null
       pinnedBy: string | null
@@ -27761,6 +27801,9 @@ export namespace Prisma {
     readonly imagePath: FieldRef<"Message", 'String'>
     readonly audioPath: FieldRef<"Message", 'String'>
     readonly durationMs: FieldRef<"Message", 'Int'>
+    readonly filePath: FieldRef<"Message", 'String'>
+    readonly fileName: FieldRef<"Message", 'String'>
+    readonly fileSize: FieldRef<"Message", 'Int'>
     readonly editedAt: FieldRef<"Message", 'DateTime'>
     readonly pinnedAt: FieldRef<"Message", 'DateTime'>
     readonly pinnedBy: FieldRef<"Message", 'String'>
@@ -49704,6 +49747,9 @@ export namespace Prisma {
     imagePath: 'imagePath',
     audioPath: 'audioPath',
     durationMs: 'durationMs',
+    filePath: 'filePath',
+    fileName: 'fileName',
+    fileSize: 'fileSize',
     editedAt: 'editedAt',
     pinnedAt: 'pinnedAt',
     pinnedBy: 'pinnedBy',
@@ -51424,6 +51470,9 @@ export namespace Prisma {
     imagePath?: StringNullableFilter<"Message"> | string | null
     audioPath?: StringNullableFilter<"Message"> | string | null
     durationMs?: IntNullableFilter<"Message"> | number | null
+    filePath?: StringNullableFilter<"Message"> | string | null
+    fileName?: StringNullableFilter<"Message"> | string | null
+    fileSize?: IntNullableFilter<"Message"> | number | null
     editedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
     pinnedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
     pinnedBy?: StringNullableFilter<"Message"> | string | null
@@ -51465,6 +51514,9 @@ export namespace Prisma {
     imagePath?: SortOrderInput | SortOrder
     audioPath?: SortOrderInput | SortOrder
     durationMs?: SortOrderInput | SortOrder
+    filePath?: SortOrderInput | SortOrder
+    fileName?: SortOrderInput | SortOrder
+    fileSize?: SortOrderInput | SortOrder
     editedAt?: SortOrderInput | SortOrder
     pinnedAt?: SortOrderInput | SortOrder
     pinnedBy?: SortOrderInput | SortOrder
@@ -51509,6 +51561,9 @@ export namespace Prisma {
     imagePath?: StringNullableFilter<"Message"> | string | null
     audioPath?: StringNullableFilter<"Message"> | string | null
     durationMs?: IntNullableFilter<"Message"> | number | null
+    filePath?: StringNullableFilter<"Message"> | string | null
+    fileName?: StringNullableFilter<"Message"> | string | null
+    fileSize?: IntNullableFilter<"Message"> | number | null
     editedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
     pinnedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
     pinnedBy?: StringNullableFilter<"Message"> | string | null
@@ -51550,6 +51605,9 @@ export namespace Prisma {
     imagePath?: SortOrderInput | SortOrder
     audioPath?: SortOrderInput | SortOrder
     durationMs?: SortOrderInput | SortOrder
+    filePath?: SortOrderInput | SortOrder
+    fileName?: SortOrderInput | SortOrder
+    fileSize?: SortOrderInput | SortOrder
     editedAt?: SortOrderInput | SortOrder
     pinnedAt?: SortOrderInput | SortOrder
     pinnedBy?: SortOrderInput | SortOrder
@@ -51586,6 +51644,9 @@ export namespace Prisma {
     imagePath?: StringNullableWithAggregatesFilter<"Message"> | string | null
     audioPath?: StringNullableWithAggregatesFilter<"Message"> | string | null
     durationMs?: IntNullableWithAggregatesFilter<"Message"> | number | null
+    filePath?: StringNullableWithAggregatesFilter<"Message"> | string | null
+    fileName?: StringNullableWithAggregatesFilter<"Message"> | string | null
+    fileSize?: IntNullableWithAggregatesFilter<"Message"> | number | null
     editedAt?: DateTimeNullableWithAggregatesFilter<"Message"> | Date | string | null
     pinnedAt?: DateTimeNullableWithAggregatesFilter<"Message"> | Date | string | null
     pinnedBy?: StringNullableWithAggregatesFilter<"Message"> | string | null
@@ -54354,6 +54415,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -54392,6 +54456,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -54424,6 +54491,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -54462,6 +54532,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -54497,6 +54570,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -54522,6 +54598,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -54547,6 +54626,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -57089,6 +57171,9 @@ export namespace Prisma {
     imagePath?: SortOrder
     audioPath?: SortOrder
     durationMs?: SortOrder
+    filePath?: SortOrder
+    fileName?: SortOrder
+    fileSize?: SortOrder
     editedAt?: SortOrder
     pinnedAt?: SortOrder
     pinnedBy?: SortOrder
@@ -57109,6 +57194,7 @@ export namespace Prisma {
 
   export type MessageAvgOrderByAggregateInput = {
     durationMs?: SortOrder
+    fileSize?: SortOrder
   }
 
   export type MessageMaxOrderByAggregateInput = {
@@ -57121,6 +57207,9 @@ export namespace Prisma {
     imagePath?: SortOrder
     audioPath?: SortOrder
     durationMs?: SortOrder
+    filePath?: SortOrder
+    fileName?: SortOrder
+    fileSize?: SortOrder
     editedAt?: SortOrder
     pinnedAt?: SortOrder
     pinnedBy?: SortOrder
@@ -57149,6 +57238,9 @@ export namespace Prisma {
     imagePath?: SortOrder
     audioPath?: SortOrder
     durationMs?: SortOrder
+    filePath?: SortOrder
+    fileName?: SortOrder
+    fileSize?: SortOrder
     editedAt?: SortOrder
     pinnedAt?: SortOrder
     pinnedBy?: SortOrder
@@ -57169,6 +57261,7 @@ export namespace Prisma {
 
   export type MessageSumOrderByAggregateInput = {
     durationMs?: SortOrder
+    fileSize?: SortOrder
   }
 
   export type IntNullableWithAggregatesFilter<$PrismaModel = never> = {
@@ -60917,6 +61010,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -60953,6 +61049,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -61468,6 +61567,9 @@ export namespace Prisma {
     imagePath?: StringNullableFilter<"Message"> | string | null
     audioPath?: StringNullableFilter<"Message"> | string | null
     durationMs?: IntNullableFilter<"Message"> | number | null
+    filePath?: StringNullableFilter<"Message"> | string | null
+    fileName?: StringNullableFilter<"Message"> | string | null
+    fileSize?: IntNullableFilter<"Message"> | number | null
     editedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
     pinnedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
     pinnedBy?: StringNullableFilter<"Message"> | string | null
@@ -63453,6 +63555,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -63489,6 +63594,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -65136,6 +65244,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -65173,6 +65284,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -65209,6 +65323,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -65245,6 +65362,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -65286,6 +65406,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -65323,6 +65446,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -65359,6 +65485,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -65396,6 +65525,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -65756,6 +65888,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -65793,6 +65928,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -65851,6 +65989,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -65888,6 +66029,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -66129,6 +66273,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -66166,6 +66313,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -66236,6 +66386,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -66273,6 +66426,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -66545,6 +66701,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -66582,6 +66741,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -66708,6 +66870,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -66745,6 +66910,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -66896,6 +67064,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -66933,6 +67104,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -66980,6 +67154,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -67017,6 +67194,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -67048,6 +67228,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -67085,6 +67268,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -67141,6 +67327,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -67178,6 +67367,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -67225,6 +67417,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -67262,6 +67457,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -67350,6 +67548,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -67387,6 +67588,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -68244,6 +68448,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -68281,6 +68488,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -68351,6 +68561,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68388,6 +68601,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69056,6 +69272,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -69357,6 +69576,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69393,6 +69615,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69427,6 +69652,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69695,6 +69923,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -69847,6 +70078,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69883,6 +70117,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69917,6 +70154,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70247,6 +70487,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -70275,6 +70518,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -70319,6 +70565,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70355,6 +70604,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70389,6 +70641,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70414,6 +70669,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70451,6 +70709,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70485,6 +70746,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70626,6 +70890,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -70650,6 +70917,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70687,6 +70957,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70721,6 +70994,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70748,6 +71024,9 @@ export namespace Prisma {
     imagePath?: string | null
     audioPath?: string | null
     durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
     editedAt?: Date | string | null
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
@@ -70772,6 +71051,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70809,6 +71091,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70843,6 +71128,9 @@ export namespace Prisma {
     imagePath?: NullableStringFieldUpdateOperationsInput | string | null
     audioPath?: NullableStringFieldUpdateOperationsInput | string | null
     durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
     editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null

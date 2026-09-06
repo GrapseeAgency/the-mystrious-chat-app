@@ -141,6 +141,10 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
   const imagePath = typeof msg.imagePath === 'string' ? msg.imagePath : null
   const audioPath = typeof msg.audioPath === 'string' ? msg.audioPath : null
   const durationMs = typeof msg.durationMs === 'number' && Number.isFinite(msg.durationMs) ? msg.durationMs : null
+  // R40 — document attachment fields ride the realtime payload too (guarded).
+  const filePath = typeof msg.filePath === 'string' ? msg.filePath : null
+  const fileName = typeof msg.fileName === 'string' ? msg.fileName : null
+  const fileSize = typeof msg.fileSize === 'number' && Number.isFinite(msg.fileSize) ? msg.fileSize : null
   const editedAt = typeof msg.editedAt === 'string' ? msg.editedAt : null
   const pinnedAt = typeof msg.pinnedAt === 'string' ? msg.pinnedAt : null
   const pinnedBy = typeof msg.pinnedBy === 'string' ? msg.pinnedBy : null
@@ -187,6 +191,9 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
       imagePath,
       audioPath,
       durationMs,
+      filePath,
+      fileName,
+      fileSize,
       editedAt,
       pinnedAt,
       pinnedBy,

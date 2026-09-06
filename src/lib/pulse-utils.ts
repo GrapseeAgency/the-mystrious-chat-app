@@ -318,8 +318,18 @@ export function conversationPreview(
   const collapsed = last.content.replace(/\s+/g, ' ').trim()
   const isImage = last.imagePath !== null && collapsed.length === 0
   const isAudio = !isImage && last.audioPath !== null && collapsed.length === 0
+  // R40 — kind 'file' always reads "Document — <fileName>": the fileName is the
+  // identity of a document message (the caption, if any, lives in the room).
+  // Same kind-based label substitution mechanism as the image/audio branches.
+  const isFile = !isImage && !isAudio && last.kind === 'file' && last.filePath !== null
   return {
-    text: isImage ? '📷 Photo' : isAudio ? '🎤 Voice message' : collapsed,
+    text: isImage
+      ? '📷 Photo'
+      : isAudio
+        ? '🎤 Voice message'
+        : isFile
+          ? `Document — ${last.fileName ?? 'file'}`
+          : collapsed,
     deleted: false,
     mine,
     senderName: last.sender.name,

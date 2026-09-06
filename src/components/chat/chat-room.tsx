@@ -36,8 +36,10 @@ import {
   CornerDownRight,
   Crown,
   Dices,
+  Download,
   EllipsisVertical,
   EyeOff,
+  FileText,
   Flame,
   Forward,
   Gamepad2,
@@ -716,6 +718,9 @@ export function ChatRoom({
   /** message whose info the sheet shows — null = the latest own message (read-by stack tap) */
   const [infoMessage, setInfoMessage] = useState<ChatMessage | null>(null)
   const [sendingImage, setSendingImage] = useState(false)
+  /** R40 — document picker: hidden input ref + in-flight upload flag */
+  const docInputRef = useRef<HTMLInputElement>(null)
+  const [sendingDoc, setSendingDoc] = useState(false)
   /** uploaded image awaiting an optional caption → caption sheet */
   const [pendingImage, setPendingImage] = useState<{ imagePath: string; preview: string } | null>(null)
   const [captionDraft, setCaptionDraft] = useState('')
@@ -1581,6 +1586,9 @@ export function ChatRoom({
       viewOnce,
       kind,
       payload,
+      filePath,
+      fileName,
+      fileSize,
     }: {
       clientId: string
       content: string
@@ -1590,10 +1598,14 @@ export function ChatRoom({
       durationMs?: number
       parentId?: string
       viewOnce?: boolean
-      /** rich kinds: 'text' | 'sticker' | 'location' (effects ride kind:'text' + payload) */
+      /** rich kinds: 'text' | 'sticker' | 'location' | 'file' (effects ride kind:'text' + payload) */
       kind?: string
       /** structured extras — sticker {emoji,pack} · location {lat,lng,label} · {effect} */
       payload?: Record<string, unknown>
+      /** R40 — document attachment (kind 'file') */
+      filePath?: string
+      fileName?: string
+      fileSize?: number
     }) => {
       const res = await apiJson<SendResponse>(
         `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
@@ -1606,6 +1618,7 @@ export function ChatRoom({
             ...(replyToId ? { replyToId } : {}),
             ...(imagePath ? { imagePath } : {}),
             ...(audioPath ? { audioPath, ...(durationMs ? { durationMs } : {}) } : {}),
+            ...(filePath ? { filePath, fileName, ...(fileSize !== undefined ? { fileSize } : {}) } : {}),
             ...(parentId ? { parentId } : {}),
             ...(viewOnce ? { viewOnce: true } : {}),
             ...(kind ? { kind } : {}),
@@ -1619,7 +1632,7 @@ export function ChatRoom({
       )
       return { res, clientId }
     },
-    onMutate: async ({ clientId, content, replyToId, imagePath, audioPath, durationMs, parentId, viewOnce, kind, payload }) => {
+    onMutate: async ({ clientId, content, replyToId, imagePath, audioPath, durationMs, parentId, viewOnce, kind, payload, filePath, fileName, fileSize }) => {
       const parentSnapshot = replyToId && replyTo && replyTo.id === replyToId
         ? {
             id: replyTo.id,
@@ -1646,6 +1659,10 @@ export function ChatRoom({
         imagePath: imagePath ?? null,
         audioPath: audioPath ?? null,
         durationMs: durationMs ?? null,
+        // R40 — document attachment rides the optimistic row too
+        filePath: filePath ?? null,
+        fileName: fileName ?? null,
+        fileSize: fileSize ?? null,
         editedAt: null,
         pinnedAt: null,
         pinnedBy: null,
@@ -2433,6 +2450,18 @@ export function ChatRoom({
         title: 'Create',
         tiles: [
           {
+            // R40 — document attachments (WhatsApp/Slack paradigm)
+            label: 'Document',
+            help: 'Share a PDF, TXT, CSV or ZIP',
+            icon: FileText,
+            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            disabled: broadcastLocked || sendingDoc,
+            run: () => {
+              setTray(false)
+              docInputRef.current?.click()
+            },
+          },
+          {
             label: 'Poll',
             help: 'Live votes in this chat',
             icon: Vote,
@@ -2955,6 +2984,9 @@ export function ChatRoom({
         imagePath: null,
         audioPath: null,
         durationMs: null,
+        filePath: null,
+        fileName: null,
+        fileSize: null,
         editedAt: null,
         pinnedAt: null,
         pinnedBy: null,
@@ -3218,6 +3250,71 @@ export function ChatRoom({
       ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
     })
   }, [pendingImage, captionDraft, sendMessage, stopTyping, replyTo])
+
+  // ── R40: document attachments (WhatsApp/Slack paradigm) ───
+
+  /** ext → mime for the doc data-URL prefix (derived from the extension —
+   *  deterministic, matches the server whitelist even when File.type is ''). */
+  const DOC_FILE_MIME: Record<string, string> = {
+    pdf: 'application/pdf',
+    txt: 'text/plain',
+    csv: 'text/csv',
+    zip: 'application/zip',
+  }
+  const DOC_FILE_EXT_REGEX = /\.(pdf|txt|csv|zip)$/i
+  /** 10 MB — mirrors the server's DOC_MAX_BYTES hard cap. */
+  const DOC_CLIENT_MAX_BYTES = 10_485_760
+
+  /** Pick → upload → send as kind 'file' with the composer text as caption. */
+  const handleDocumentPicked = async (file: File | undefined) => {
+    if (!file || sendingDoc) return
+    const ext = (file.name.match(DOC_FILE_EXT_REGEX)?.[1] ?? '').toLowerCase()
+    if (!ext) {
+      toast.error('Documents must be PDF, TXT, CSV or ZIP files')
+      return
+    }
+    if (file.size > DOC_CLIENT_MAX_BYTES) {
+      toast.error('Document is too large — the limit is 10 MB')
+      return
+    }
+    setSendingDoc(true)
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(new Error('Could not read the document'))
+        reader.readAsDataURL(file)
+      })
+      const up = await apiJson<{ filePath: string }>('/api/uploads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataUrl: `data:${DOC_FILE_MIME[ext]};base64,${dataUrl.split(',')[1] ?? ''}`,
+        }),
+      })
+      haptic(12)
+      const caption = input.trim().slice(0, 2000)
+      stopTyping()
+      setInput('')
+      setSlashDismissed(false)
+      pulseDraftsStore.getState().clearDraft(conversationId)
+      requestAnimationFrame(autosize)
+      sendMessage.mutate({
+        clientId: uid(),
+        content: caption,
+        kind: 'file',
+        filePath: up.filePath,
+        fileName: file.name,
+        fileSize: file.size,
+        ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not send the document')
+    } finally {
+      setSendingDoc(false)
+      if (docInputRef.current) docInputRef.current.value = ''
+    }
+  }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && editing) {
@@ -4836,6 +4933,16 @@ export function ChatRoom({
             tabIndex={-1}
             onChange={(e) => void handleImagePicked(e.target.files?.[0])}
           />
+          {/* R40 — hidden document picker (pdf/txt/csv/zip), mirrors the image input */}
+          <input
+            ref={docInputRef}
+            type="file"
+            accept=".pdf,.txt,.csv,.zip"
+            className="hidden"
+            aria-hidden
+            tabIndex={-1}
+            onChange={(e) => void handleDocumentPicked(e.target.files?.[0])}
+          />
           {recording ? (
             <>
               <motion.button
@@ -5501,7 +5608,9 @@ export function ChatRoom({
                   ? 'Photo'
                   : infoTarget.audioPath
                     ? 'Voice message'
-                    : infoTarget.content}
+                    : infoTarget.filePath
+                      ? infoTarget.fileName ?? 'Document'
+                      : infoTarget.content}
               </p>
               <p className="mb-1 text-center text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
                 Sent {formatTime(infoTarget.createdAt)}
@@ -5969,7 +6078,7 @@ function MessageActionMenu({
           {mine ? (
             <GlassMenuItem icon={Info} label="Message info" disabled={deleted} onClick={onInfo} />
           ) : null}
-          {mine && !deleted && message.audioPath === null ? (
+          {mine && !deleted && message.audioPath === null && message.filePath === null ? (
             <GlassMenuItem icon={Pencil} label="Edit message" onClick={onEdit} />
           ) : null}
           <GlassMenuSeparator />
@@ -6036,6 +6145,84 @@ function voiceBars(seed: string, count = 26): number[] {
 }
 
 /** Voice-note bubble: play/pause + pseudo waveform + duration + progress. */
+// ── R40: document attachment card (kind 'file') ──────────────
+
+/** Human byte size — "820 B" / "24 KB" / "1.2 MB". Null/invalid → "File". */
+function formatDocSize(bytes: number | null): string {
+  if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return 'File'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * Document bubble: FileText icon tile + fileName (2-line clamp) + human
+ * fileSize, wrapped in a NATIVE <a download> so the document saves under its
+ * original name with zero JS. data-card-interactive keeps taps local (no
+ * message-options sheet) and sender-side colors mirror the image bubbles.
+ */
+function FileBubble({
+  filePath,
+  fileName,
+  fileSize,
+  mine,
+  pending,
+}: {
+  filePath: string
+  fileName: string | null
+  fileSize: number | null
+  mine: boolean
+  pending: boolean
+}) {
+  const name = fileName ?? 'Document'
+  return (
+    <a
+      href={`/api/uploads/${encodeURIComponent(filePath)}`}
+      download={name}
+      data-card-interactive
+      aria-label={`Download ${name}`}
+      onClick={(e) => e.stopPropagation()}
+      className={cn(
+        'flex w-[232px] max-w-full items-center gap-2.5 rounded-xl p-2 outline-none transition-transform focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:scale-[0.985]',
+        pending && 'opacity-80',
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'flex size-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset',
+          mine
+            ? 'bg-white/20 text-white ring-white/30'
+            : 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-400',
+        )}
+      >
+        <FileText className="size-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            'line-clamp-2 break-all text-[13px] font-semibold leading-snug',
+            mine ? 'text-white' : 'text-zinc-800 dark:text-zinc-100',
+          )}
+        >
+          {name}
+        </span>
+        <span
+          className={cn(
+            'mt-0.5 flex items-center gap-1 text-[10.5px] font-medium',
+            mine ? 'text-white/80' : 'text-zinc-400 dark:text-zinc-500',
+          )}
+        >
+          {formatDocSize(fileSize)}
+          <span aria-hidden>·</span>
+          Download
+          <Download className="size-3" aria-hidden />
+        </span>
+      </span>
+    </a>
+  )
+}
+
 function VoiceBubble({
   src,
   durationMs,
@@ -6600,10 +6787,12 @@ const MessageRow = memo(function MessageRow({
   const createdMs = Date.parse(message.createdAt)
   const isRead = !Number.isNaN(createdMs) && createdMs <= readMs
   const interactive = !deleted && !pending
-  const jumbo = !deleted && !message.imagePath && !message.audioPath && !message.poll && isJumboEmoji(message.content)
+  const jumbo = !deleted && !message.imagePath && !message.audioPath && !message.filePath && !message.poll && isJumboEmoji(message.content)
   const hasReactions = message.reactions.length > 0
   const isImage = !deleted && message.imagePath !== null
   const isVoice = !deleted && !isImage && message.audioPath !== null
+  // R40 — document message (kind 'file'): renders the glass document card.
+  const isFile = !deleted && !isImage && !isVoice && message.filePath !== null
   const isPoll = !deleted && message.poll !== null
   const isSticker = !deleted && !isImage && !isVoice && message.kind === 'sticker'
   const sticker = isSticker ? parseSticker(message.payload) : null
@@ -6767,7 +6956,7 @@ const MessageRow = memo(function MessageRow({
             // R23: clicks inside self-contained cards (red packet, game board)
             // belong to the card — never open the message-options sheet
             if (e.target instanceof Element && e.target.closest('[data-card-interactive]')) return
-            if (interactive && !isImage) onPress(message, { x: e.clientX, y: e.clientY })
+            if (interactive && !isImage && !isFile) onPress(message, { x: e.clientX, y: e.clientY })
           }}
           onPointerDown={(e) => {
             if (interactive) onStartLongPress(message, { x: e.clientX, y: e.clientY })
@@ -6780,17 +6969,17 @@ const MessageRow = memo(function MessageRow({
               onToggleReaction(message.id, '❤️')
             }
           }}
-          role={interactive && !isImage ? 'button' : undefined}
-          tabIndex={interactive && !isImage ? 0 : undefined}
+          role={interactive && !isImage && !isFile ? 'button' : undefined}
+          tabIndex={interactive && !isImage && !isFile ? 0 : undefined}
           onKeyDown={(event) => {
-            if (!(event.target instanceof Element && event.target.closest('[data-card-interactive]')) && interactive && !isImage && event.key === 'Enter') onPress(message)
+            if (!(event.target instanceof Element && event.target.closest('[data-card-interactive]')) && interactive && !isImage && !isFile && event.key === 'Enter') onPress(message)
           }}
           className={cn(
             'relative select-none',
             highlighted && !deleted && 'animate-[pulse-message-flash_1.5s_ease-out_1]',
             plainChrome
               ? 'px-1 py-0.5'
-              : isPoll || (isImage && !viewBurned)
+              : isPoll || (isImage && !viewBurned) || isFile
                 ? `${BUBBLE_RADIUS[bubbleRadius]} p-1 shadow-sm`
                 : isVoice
                   ? `${BUBBLE_RADIUS[bubbleRadius]} px-2.5 py-2 shadow-sm`
@@ -6927,6 +7116,21 @@ const MessageRow = memo(function MessageRow({
                       ) : null}
                     </button>
                   )}
+                  {message.content.trim().length > 0 ? (
+                    <div className="px-0.5 pb-0.5">
+                      <BubbleText content={message.content} mine={mine} memberNames={memberNames} />
+                    </div>
+                  ) : null}
+                </>
+              ) : isFile && message.filePath ? (
+                <>
+                  <FileBubble
+                    filePath={message.filePath}
+                    fileName={message.fileName}
+                    fileSize={message.fileSize}
+                    mine={mine}
+                    pending={pending}
+                  />
                   {message.content.trim().length > 0 ? (
                     <div className="px-0.5 pb-0.5">
                       <BubbleText content={message.content} mine={mine} memberNames={memberNames} />
@@ -8181,7 +8385,7 @@ function ThreadSheet({
                 <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatListStamp(root.createdAt)}</span>
               </div>
               <p className="mt-1 line-clamp-4 whitespace-pre-wrap break-words text-[13px] leading-snug text-zinc-700 dark:text-zinc-200">
-                {root.content.replace(/\s+/g, ' ').trim() || (root.imagePath ? 'Photo' : root.audioPath ? 'Voice note' : '')}
+                {root.content.replace(/\s+/g, ' ').trim() || (root.imagePath ? 'Photo' : root.audioPath ? 'Voice note' : root.filePath ? 'Document' : '')}
               </p>
             </div>
           ) : null}

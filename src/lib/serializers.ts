@@ -270,6 +270,10 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
     imagePath: message.imagePath ?? null,
     audioPath: message.audioPath ?? null,
     durationMs: message.durationMs ?? null,
+    // R40 additive — document attachments (guarded nulls, mirrors imagePath).
+    filePath: message.filePath ?? null,
+    fileName: message.fileName ?? null,
+    fileSize: message.fileSize ?? null,
     editedAt: message.editedAt ? message.editedAt.toISOString() : null,
     pinnedAt: message.pinnedAt ? message.pinnedAt.toISOString() : null,
     pinnedBy: message.pinnedBy ?? null,
@@ -482,10 +486,25 @@ export const UPLOAD_MIME: Record<string, string> = {
   wav: 'audio/wav',
   m4a: 'audio/mp4',
   aac: 'audio/aac',
+  // R40 — document attachments.
+  pdf: 'application/pdf',
+  txt: 'text/plain',
+  csv: 'text/csv',
+  zip: 'application/zip',
 }
 
 /** Extensions accepted for voice notes. */
 export const AUDIO_EXT_REGEX = /^[A-Za-z0-9-]+\.(webm|mp3|ogg|wav|m4a|aac)$/
+
+/**
+ * R40 — document attachments (WhatsApp/Slack paradigm). Allowed doc extensions
+ * and the mime map used both for upload validation and for serving bytes.
+ * Mirrors AUDIO_EXT_REGEX exactly (safe stored filename: uuid + ext).
+ */
+export const DOC_EXT_REGEX = /^[A-Za-z0-9-]+\.(pdf|txt|csv|zip)$/
+
+/** Hard byte cap for document uploads (10 MB — images/audio keep their own caps). */
+export const DOC_MAX_BYTES = 10_485_760
 
 // ── Invite codes ────────────────────────────────────────
 
