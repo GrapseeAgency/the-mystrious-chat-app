@@ -9,6 +9,7 @@ import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
 import type {
   AppUser,
+  AutomationSummary,
   ChatMessage,
   ConversationDetail,
   ConversationSummary,
@@ -293,12 +294,46 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
         : null,
     poll,
     translations: message.translations.map((t) => ({ lang: t.lang, text: t.text })),
+    // R39 additive — honest machine-sent marker on automation-authored bubbles.
+    viaAutomation: message.viaAutomation ?? false,
   }
 }
 
 /** Group role of a participant row — normalizes unexpected values to "member". */
 export function mapRole(role: string): 'admin' | 'member' {
   return role === 'admin' ? 'admin' : 'member'
+}
+
+/** R39 — Automation row (+creator) → AutomationSummary wire shape. */
+export function mapAutomation(automation: {
+  id: string
+  conversationId: string
+  trigger: string
+  reply: string
+  enabled: boolean
+  hits: number
+  lastFiredAt: Date | null
+  createdAt: Date
+  createdBy?: { id: string; name: string; color: string; avatar: string | null } | null
+}): AutomationSummary {
+  return {
+    id: automation.id,
+    conversationId: automation.conversationId,
+    trigger: automation.trigger,
+    reply: automation.reply,
+    enabled: automation.enabled,
+    hits: automation.hits,
+    lastFiredAt: automation.lastFiredAt ? automation.lastFiredAt.toISOString() : null,
+    createdAt: automation.createdAt.toISOString(),
+    createdBy: automation.createdBy
+      ? {
+          id: automation.createdBy.id,
+          name: automation.createdBy.name,
+          color: automation.createdBy.color,
+          avatar: automation.createdBy.avatar ?? null,
+        }
+      : null,
+  }
 }
 
 /** Participant row (+user) → AppUser with read watermark + group role. */

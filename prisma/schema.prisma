@@ -44,6 +44,7 @@ model User {
   reminders          Reminder[]
   streaks            ConversationStreak[]
   verificationsGiven UserVerification[]        @relation("verificationOwner")
+  automationsCreated Automation[]              @relation("AutomationCreator")
 
   @@index([name])
 }
@@ -251,8 +252,32 @@ model Conversation {
   topics            Topic[]
   tournaments       Tournament[]
   folderEntries     FolderConversation[]
+  automations       Automation[]
 
   @@index([updatedAt])
+}
+
+/**
+ * R39 — keyword-triggered auto-reply (the honest ManyChat/Landbot
+ * "bot flow" adaptation): an admin of the conversation stores a trigger
+ * phrase + reply; the send path matches human messages word-boundary
+ * case-insensitively and lands the reply authored by the admin creator
+ * with viaAutomation=true. First matching automation only, never chained.
+ */
+model Automation {
+  id             String       @id @default(cuid())
+  conversationId String
+  trigger        String // 2-40 chars, matched as a standalone phrase (case-insensitive)
+  reply          String // 1-500 chars — the message landed on a match
+  createdById    String // admin who authored the rule (also the reply's sender)
+  enabled        Boolean      @default(true)
+  hits           Int          @default(0) // lifetime fire count
+  lastFiredAt    DateTime?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy      User         @relation("AutomationCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, enabled])
 }
 
 /**
@@ -348,6 +373,7 @@ model Message {
   parentId       String? // Slack/Zulip thread root this reply belongs to (null = top-level)
   topicId        String? // Zulip-style topic this message is filed under (null = General)
   anon           Boolean              @default(false) // Session/SimpleX-style anonymous send
+  viaAutomation  Boolean              @default(false) // R39: authored by a keyword automation (never re-triggers the engine)
   anonAlias      String? // deterministic per-(user,conversation) incognito alias (sender-side display)
   viewOnce       Boolean              @default(false) // Snapchat/WhatsApp view-once media gate
   viewedAt       DateTime? // when the non-sender consumed a view-once attachment

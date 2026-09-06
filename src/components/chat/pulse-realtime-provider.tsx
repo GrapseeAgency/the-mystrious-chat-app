@@ -252,6 +252,10 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
             return [{ lang: tr.lang, text: tr.text }]
           })
         : [],
+      // R39 additive: keep the machine-sent marker through the socket event so
+      // live-arrived automation replies render the honest "Automation" chip
+      // (GET-loaded rows already carry it via mapMessage).
+      viaAutomation: msg.viaAutomation === true,
     },
     recipientIds: [],
     conversationId: msg.conversationId,

@@ -254,6 +254,18 @@ exports.Prisma.ConversationScalarFieldEnum = {
   updatedAt: 'updatedAt'
 };
 
+exports.Prisma.AutomationScalarFieldEnum = {
+  id: 'id',
+  conversationId: 'conversationId',
+  trigger: 'trigger',
+  reply: 'reply',
+  createdById: 'createdById',
+  enabled: 'enabled',
+  hits: 'hits',
+  lastFiredAt: 'lastFiredAt',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.WebhookScalarFieldEnum = {
   id: 'id',
   conversationId: 'conversationId',
@@ -320,6 +332,7 @@ exports.Prisma.MessageScalarFieldEnum = {
   parentId: 'parentId',
   topicId: 'topicId',
   anon: 'anon',
+  viaAutomation: 'viaAutomation',
   anonAlias: 'anonAlias',
   viewOnce: 'viewOnce',
   viewedAt: 'viewedAt',
@@ -539,6 +552,7 @@ exports.Prisma.ModelName = {
   LogEvent: 'LogEvent',
   QuickPhrase: 'QuickPhrase',
   Conversation: 'Conversation',
+  Automation: 'Automation',
   Webhook: 'Webhook',
   WhiteboardStroke: 'WhiteboardStroke',
   StatusStory: 'StatusStory',

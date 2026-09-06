@@ -6,14 +6,16 @@ import { PrismaClient } from '../../prisma/generated-client'
 // (the long-running dev server held a pre-UserVerification client in memory).
 // v4 — R38: same protocol after the Conversation.screenPrivacy column push +
 // client regen (the long-running dev server held a pre-screenPrivacy client).
+// v5 — R39: same protocol after the Automation model + Message.viaAutomation
+// push + client regen (the long-running dev server held a pre-Automation client).
 const globalForPrisma = globalThis as unknown as {
-  prismaV4: PrismaClient | undefined
+  prismaV5: PrismaClient | undefined
 }
 
 export const db =
-  globalForPrisma.prismaV4 ??
+  globalForPrisma.prismaV5 ??
   new PrismaClient({
     log: ['query'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV4 = db
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV5 = db

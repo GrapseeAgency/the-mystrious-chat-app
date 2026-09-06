@@ -23,6 +23,7 @@ import {
   ArrowDown,
   Bell,
   BellOff,
+  Bot,
   CalendarClock,
   CalendarDays,
   Check,
@@ -6993,6 +6994,15 @@ const MessageRow = memo(function MessageRow({
             )}
           >
             <span className={jumbo ? 'opacity-70' : undefined}>{formatTime(message.createdAt)}</span>
+            {message.viaAutomation ? (
+              <span
+                className="flex items-center gap-0.5 opacity-80"
+                aria-label="sent by an automation"
+              >
+                <Bot className="size-3" aria-hidden />
+                Automation
+              </span>
+            ) : null}
             {message.expiresAt && !deleted ? (
               <Timer
                 className="size-3 animate-pulse opacity-80"

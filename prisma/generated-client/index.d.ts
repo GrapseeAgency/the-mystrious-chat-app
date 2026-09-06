@@ -98,6 +98,16 @@ export type QuickPhrase = $Result.DefaultSelection<Prisma.$QuickPhrasePayload>
  */
 export type Conversation = $Result.DefaultSelection<Prisma.$ConversationPayload>
 /**
+ * Model Automation
+ * *
+ *  * R39 — keyword-triggered auto-reply (the honest ManyChat/Landbot
+ *  * "bot flow" adaptation): an admin of the conversation stores a trigger
+ *  * phrase + reply; the send path matches human messages word-boundary
+ *  * case-insensitively and lands the reply authored by the admin creator
+ *  * with viaAutomation=true. First matching automation only, never chained.
+ */
+export type Automation = $Result.DefaultSelection<Prisma.$AutomationPayload>
+/**
  * Model Webhook
  * *
  *  * Discord-style incoming webhook — external services POST to
@@ -496,6 +506,16 @@ export class PrismaClient<
     * ```
     */
   get conversation(): Prisma.ConversationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.automation`: Exposes CRUD operations for the **Automation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more Automations
+    * const automations = await prisma.automation.findMany()
+    * ```
+    */
+  get automation(): Prisma.AutomationDelegate<ExtArgs, ClientOptions>;
 
   /**
    * `prisma.webhook`: Exposes CRUD operations for the **Webhook** model.
@@ -1200,6 +1220,7 @@ export namespace Prisma {
     LogEvent: 'LogEvent',
     QuickPhrase: 'QuickPhrase',
     Conversation: 'Conversation',
+    Automation: 'Automation',
     Webhook: 'Webhook',
     WhiteboardStroke: 'WhiteboardStroke',
     StatusStory: 'StatusStory',
@@ -1243,7 +1264,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp"
+      modelProps: "user" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -2206,6 +2227,80 @@ export namespace Prisma {
           count: {
             args: Prisma.ConversationCountArgs<ExtArgs>
             result: $Utils.Optional<ConversationCountAggregateOutputType> | number
+          }
+        }
+      }
+      Automation: {
+        payload: Prisma.$AutomationPayload<ExtArgs>
+        fields: Prisma.AutomationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.AutomationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.AutomationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload>
+          }
+          findFirst: {
+            args: Prisma.AutomationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.AutomationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload>
+          }
+          findMany: {
+            args: Prisma.AutomationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload>[]
+          }
+          create: {
+            args: Prisma.AutomationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload>
+          }
+          createMany: {
+            args: Prisma.AutomationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.AutomationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload>[]
+          }
+          delete: {
+            args: Prisma.AutomationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload>
+          }
+          update: {
+            args: Prisma.AutomationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload>
+          }
+          deleteMany: {
+            args: Prisma.AutomationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.AutomationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.AutomationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload>[]
+          }
+          upsert: {
+            args: Prisma.AutomationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AutomationPayload>
+          }
+          aggregate: {
+            args: Prisma.AutomationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateAutomation>
+          }
+          groupBy: {
+            args: Prisma.AutomationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<AutomationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.AutomationCountArgs<ExtArgs>
+            result: $Utils.Optional<AutomationCountAggregateOutputType> | number
           }
         }
       }
@@ -4168,6 +4263,7 @@ export namespace Prisma {
     logEvent?: LogEventOmit
     quickPhrase?: QuickPhraseOmit
     conversation?: ConversationOmit
+    automation?: AutomationOmit
     webhook?: WebhookOmit
     whiteboardStroke?: WhiteboardStrokeOmit
     statusStory?: StatusStoryOmit
@@ -4289,6 +4385,7 @@ export namespace Prisma {
     reminders: number
     streaks: number
     verificationsGiven: number
+    automationsCreated: number
   }
 
   export type UserCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -4308,6 +4405,7 @@ export namespace Prisma {
     reminders?: boolean | UserCountOutputTypeCountRemindersArgs
     streaks?: boolean | UserCountOutputTypeCountStreaksArgs
     verificationsGiven?: boolean | UserCountOutputTypeCountVerificationsGivenArgs
+    automationsCreated?: boolean | UserCountOutputTypeCountAutomationsCreatedArgs
   }
 
   // Custom InputTypes
@@ -4433,6 +4531,13 @@ export namespace Prisma {
     where?: UserVerificationWhereInput
   }
 
+  /**
+   * UserCountOutputType without action
+   */
+  export type UserCountOutputTypeCountAutomationsCreatedArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: AutomationWhereInput
+  }
+
 
   /**
    * Count Type ConversationCountOutputType
@@ -4449,6 +4554,7 @@ export namespace Prisma {
     topics: number
     tournaments: number
     folderEntries: number
+    automations: number
   }
 
   export type ConversationCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -4462,6 +4568,7 @@ export namespace Prisma {
     topics?: boolean | ConversationCountOutputTypeCountTopicsArgs
     tournaments?: boolean | ConversationCountOutputTypeCountTournamentsArgs
     folderEntries?: boolean | ConversationCountOutputTypeCountFolderEntriesArgs
+    automations?: boolean | ConversationCountOutputTypeCountAutomationsArgs
   }
 
   // Custom InputTypes
@@ -4543,6 +4650,13 @@ export namespace Prisma {
    */
   export type ConversationCountOutputTypeCountFolderEntriesArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: FolderConversationWhereInput
+  }
+
+  /**
+   * ConversationCountOutputType without action
+   */
+  export type ConversationCountOutputTypeCountAutomationsArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: AutomationWhereInput
   }
 
 
@@ -5187,6 +5301,7 @@ export namespace Prisma {
     reminders?: boolean | User$remindersArgs<ExtArgs>
     streaks?: boolean | User$streaksArgs<ExtArgs>
     verificationsGiven?: boolean | User$verificationsGivenArgs<ExtArgs>
+    automationsCreated?: boolean | User$automationsCreatedArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["user"]>
 
@@ -5260,6 +5375,7 @@ export namespace Prisma {
     reminders?: boolean | User$remindersArgs<ExtArgs>
     streaks?: boolean | User$streaksArgs<ExtArgs>
     verificationsGiven?: boolean | User$verificationsGivenArgs<ExtArgs>
+    automationsCreated?: boolean | User$automationsCreatedArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type UserIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
@@ -5285,6 +5401,7 @@ export namespace Prisma {
       reminders: Prisma.$ReminderPayload<ExtArgs>[]
       streaks: Prisma.$ConversationStreakPayload<ExtArgs>[]
       verificationsGiven: Prisma.$UserVerificationPayload<ExtArgs>[]
+      automationsCreated: Prisma.$AutomationPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -5712,6 +5829,7 @@ export namespace Prisma {
     reminders<T extends User$remindersArgs<ExtArgs> = {}>(args?: Subset<T, User$remindersArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     streaks<T extends User$streaksArgs<ExtArgs> = {}>(args?: Subset<T, User$streaksArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     verificationsGiven<T extends User$verificationsGivenArgs<ExtArgs> = {}>(args?: Subset<T, User$verificationsGivenArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    automationsCreated<T extends User$automationsCreatedArgs<ExtArgs> = {}>(args?: Subset<T, User$automationsCreatedArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -6541,6 +6659,30 @@ export namespace Prisma {
     take?: number
     skip?: number
     distinct?: UserVerificationScalarFieldEnum | UserVerificationScalarFieldEnum[]
+  }
+
+  /**
+   * User.automationsCreated
+   */
+  export type User$automationsCreatedArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    where?: AutomationWhereInput
+    orderBy?: AutomationOrderByWithRelationInput | AutomationOrderByWithRelationInput[]
+    cursor?: AutomationWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: AutomationScalarFieldEnum | AutomationScalarFieldEnum[]
   }
 
   /**
@@ -18844,6 +18986,7 @@ export namespace Prisma {
     topics?: boolean | Conversation$topicsArgs<ExtArgs>
     tournaments?: boolean | Conversation$tournamentsArgs<ExtArgs>
     folderEntries?: boolean | Conversation$folderEntriesArgs<ExtArgs>
+    automations?: boolean | Conversation$automationsArgs<ExtArgs>
     _count?: boolean | ConversationCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["conversation"]>
 
@@ -18907,6 +19050,7 @@ export namespace Prisma {
     topics?: boolean | Conversation$topicsArgs<ExtArgs>
     tournaments?: boolean | Conversation$tournamentsArgs<ExtArgs>
     folderEntries?: boolean | Conversation$folderEntriesArgs<ExtArgs>
+    automations?: boolean | Conversation$automationsArgs<ExtArgs>
     _count?: boolean | ConversationCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type ConversationIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
@@ -18925,6 +19069,7 @@ export namespace Prisma {
       topics: Prisma.$TopicPayload<ExtArgs>[]
       tournaments: Prisma.$TournamentPayload<ExtArgs>[]
       folderEntries: Prisma.$FolderConversationPayload<ExtArgs>[]
+      automations: Prisma.$AutomationPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -19344,6 +19489,7 @@ export namespace Prisma {
     topics<T extends Conversation$topicsArgs<ExtArgs> = {}>(args?: Subset<T, Conversation$topicsArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$TopicPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     tournaments<T extends Conversation$tournamentsArgs<ExtArgs> = {}>(args?: Subset<T, Conversation$tournamentsArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$TournamentPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     folderEntries<T extends Conversation$folderEntriesArgs<ExtArgs> = {}>(args?: Subset<T, Conversation$folderEntriesArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$FolderConversationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    automations<T extends Conversation$automationsArgs<ExtArgs> = {}>(args?: Subset<T, Conversation$automationsArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -20012,6 +20158,30 @@ export namespace Prisma {
   }
 
   /**
+   * Conversation.automations
+   */
+  export type Conversation$automationsArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    where?: AutomationWhereInput
+    orderBy?: AutomationOrderByWithRelationInput | AutomationOrderByWithRelationInput[]
+    cursor?: AutomationWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: AutomationScalarFieldEnum | AutomationScalarFieldEnum[]
+  }
+
+  /**
    * Conversation without action
    */
   export type ConversationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -20027,6 +20197,1156 @@ export namespace Prisma {
      * Choose, which related nodes to fetch as well
      */
     include?: ConversationInclude<ExtArgs> | null
+  }
+
+
+  /**
+   * Model Automation
+   */
+
+  export type AggregateAutomation = {
+    _count: AutomationCountAggregateOutputType | null
+    _avg: AutomationAvgAggregateOutputType | null
+    _sum: AutomationSumAggregateOutputType | null
+    _min: AutomationMinAggregateOutputType | null
+    _max: AutomationMaxAggregateOutputType | null
+  }
+
+  export type AutomationAvgAggregateOutputType = {
+    hits: number | null
+  }
+
+  export type AutomationSumAggregateOutputType = {
+    hits: number | null
+  }
+
+  export type AutomationMinAggregateOutputType = {
+    id: string | null
+    conversationId: string | null
+    trigger: string | null
+    reply: string | null
+    createdById: string | null
+    enabled: boolean | null
+    hits: number | null
+    lastFiredAt: Date | null
+    createdAt: Date | null
+  }
+
+  export type AutomationMaxAggregateOutputType = {
+    id: string | null
+    conversationId: string | null
+    trigger: string | null
+    reply: string | null
+    createdById: string | null
+    enabled: boolean | null
+    hits: number | null
+    lastFiredAt: Date | null
+    createdAt: Date | null
+  }
+
+  export type AutomationCountAggregateOutputType = {
+    id: number
+    conversationId: number
+    trigger: number
+    reply: number
+    createdById: number
+    enabled: number
+    hits: number
+    lastFiredAt: number
+    createdAt: number
+    _all: number
+  }
+
+
+  export type AutomationAvgAggregateInputType = {
+    hits?: true
+  }
+
+  export type AutomationSumAggregateInputType = {
+    hits?: true
+  }
+
+  export type AutomationMinAggregateInputType = {
+    id?: true
+    conversationId?: true
+    trigger?: true
+    reply?: true
+    createdById?: true
+    enabled?: true
+    hits?: true
+    lastFiredAt?: true
+    createdAt?: true
+  }
+
+  export type AutomationMaxAggregateInputType = {
+    id?: true
+    conversationId?: true
+    trigger?: true
+    reply?: true
+    createdById?: true
+    enabled?: true
+    hits?: true
+    lastFiredAt?: true
+    createdAt?: true
+  }
+
+  export type AutomationCountAggregateInputType = {
+    id?: true
+    conversationId?: true
+    trigger?: true
+    reply?: true
+    createdById?: true
+    enabled?: true
+    hits?: true
+    lastFiredAt?: true
+    createdAt?: true
+    _all?: true
+  }
+
+  export type AutomationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which Automation to aggregate.
+     */
+    where?: AutomationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Automations to fetch.
+     */
+    orderBy?: AutomationOrderByWithRelationInput | AutomationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: AutomationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Automations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Automations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned Automations
+    **/
+    _count?: true | AutomationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: AutomationAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: AutomationSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: AutomationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: AutomationMaxAggregateInputType
+  }
+
+  export type GetAutomationAggregateType<T extends AutomationAggregateArgs> = {
+        [P in keyof T & keyof AggregateAutomation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateAutomation[P]>
+      : GetScalarType<T[P], AggregateAutomation[P]>
+  }
+
+
+
+
+  export type AutomationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: AutomationWhereInput
+    orderBy?: AutomationOrderByWithAggregationInput | AutomationOrderByWithAggregationInput[]
+    by: AutomationScalarFieldEnum[] | AutomationScalarFieldEnum
+    having?: AutomationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: AutomationCountAggregateInputType | true
+    _avg?: AutomationAvgAggregateInputType
+    _sum?: AutomationSumAggregateInputType
+    _min?: AutomationMinAggregateInputType
+    _max?: AutomationMaxAggregateInputType
+  }
+
+  export type AutomationGroupByOutputType = {
+    id: string
+    conversationId: string
+    trigger: string
+    reply: string
+    createdById: string
+    enabled: boolean
+    hits: number
+    lastFiredAt: Date | null
+    createdAt: Date
+    _count: AutomationCountAggregateOutputType | null
+    _avg: AutomationAvgAggregateOutputType | null
+    _sum: AutomationSumAggregateOutputType | null
+    _min: AutomationMinAggregateOutputType | null
+    _max: AutomationMaxAggregateOutputType | null
+  }
+
+  type GetAutomationGroupByPayload<T extends AutomationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<AutomationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof AutomationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], AutomationGroupByOutputType[P]>
+            : GetScalarType<T[P], AutomationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type AutomationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    conversationId?: boolean
+    trigger?: boolean
+    reply?: boolean
+    createdById?: boolean
+    enabled?: boolean
+    hits?: boolean
+    lastFiredAt?: boolean
+    createdAt?: boolean
+    conversation?: boolean | ConversationDefaultArgs<ExtArgs>
+    createdBy?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["automation"]>
+
+  export type AutomationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    conversationId?: boolean
+    trigger?: boolean
+    reply?: boolean
+    createdById?: boolean
+    enabled?: boolean
+    hits?: boolean
+    lastFiredAt?: boolean
+    createdAt?: boolean
+    conversation?: boolean | ConversationDefaultArgs<ExtArgs>
+    createdBy?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["automation"]>
+
+  export type AutomationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    conversationId?: boolean
+    trigger?: boolean
+    reply?: boolean
+    createdById?: boolean
+    enabled?: boolean
+    hits?: boolean
+    lastFiredAt?: boolean
+    createdAt?: boolean
+    conversation?: boolean | ConversationDefaultArgs<ExtArgs>
+    createdBy?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["automation"]>
+
+  export type AutomationSelectScalar = {
+    id?: boolean
+    conversationId?: boolean
+    trigger?: boolean
+    reply?: boolean
+    createdById?: boolean
+    enabled?: boolean
+    hits?: boolean
+    lastFiredAt?: boolean
+    createdAt?: boolean
+  }
+
+  export type AutomationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "trigger" | "reply" | "createdById" | "enabled" | "hits" | "lastFiredAt" | "createdAt", ExtArgs["result"]["automation"]>
+  export type AutomationInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    conversation?: boolean | ConversationDefaultArgs<ExtArgs>
+    createdBy?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type AutomationIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    conversation?: boolean | ConversationDefaultArgs<ExtArgs>
+    createdBy?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type AutomationIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    conversation?: boolean | ConversationDefaultArgs<ExtArgs>
+    createdBy?: boolean | UserDefaultArgs<ExtArgs>
+  }
+
+  export type $AutomationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "Automation"
+    objects: {
+      conversation: Prisma.$ConversationPayload<ExtArgs>
+      createdBy: Prisma.$UserPayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      conversationId: string
+      trigger: string
+      reply: string
+      createdById: string
+      enabled: boolean
+      hits: number
+      lastFiredAt: Date | null
+      createdAt: Date
+    }, ExtArgs["result"]["automation"]>
+    composites: {}
+  }
+
+  type AutomationGetPayload<S extends boolean | null | undefined | AutomationDefaultArgs> = $Result.GetResult<Prisma.$AutomationPayload, S>
+
+  type AutomationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<AutomationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: AutomationCountAggregateInputType | true
+    }
+
+  export interface AutomationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['Automation'], meta: { name: 'Automation' } }
+    /**
+     * Find zero or one Automation that matches the filter.
+     * @param {AutomationFindUniqueArgs} args - Arguments to find a Automation
+     * @example
+     * // Get one Automation
+     * const automation = await prisma.automation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends AutomationFindUniqueArgs>(args: SelectSubset<T, AutomationFindUniqueArgs<ExtArgs>>): Prisma__AutomationClient<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one Automation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {AutomationFindUniqueOrThrowArgs} args - Arguments to find a Automation
+     * @example
+     * // Get one Automation
+     * const automation = await prisma.automation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends AutomationFindUniqueOrThrowArgs>(args: SelectSubset<T, AutomationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__AutomationClient<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first Automation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AutomationFindFirstArgs} args - Arguments to find a Automation
+     * @example
+     * // Get one Automation
+     * const automation = await prisma.automation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends AutomationFindFirstArgs>(args?: SelectSubset<T, AutomationFindFirstArgs<ExtArgs>>): Prisma__AutomationClient<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first Automation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AutomationFindFirstOrThrowArgs} args - Arguments to find a Automation
+     * @example
+     * // Get one Automation
+     * const automation = await prisma.automation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends AutomationFindFirstOrThrowArgs>(args?: SelectSubset<T, AutomationFindFirstOrThrowArgs<ExtArgs>>): Prisma__AutomationClient<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more Automations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AutomationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all Automations
+     * const automations = await prisma.automation.findMany()
+     * 
+     * // Get first 10 Automations
+     * const automations = await prisma.automation.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const automationWithIdOnly = await prisma.automation.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends AutomationFindManyArgs>(args?: SelectSubset<T, AutomationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a Automation.
+     * @param {AutomationCreateArgs} args - Arguments to create a Automation.
+     * @example
+     * // Create one Automation
+     * const Automation = await prisma.automation.create({
+     *   data: {
+     *     // ... data to create a Automation
+     *   }
+     * })
+     * 
+     */
+    create<T extends AutomationCreateArgs>(args: SelectSubset<T, AutomationCreateArgs<ExtArgs>>): Prisma__AutomationClient<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many Automations.
+     * @param {AutomationCreateManyArgs} args - Arguments to create many Automations.
+     * @example
+     * // Create many Automations
+     * const automation = await prisma.automation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends AutomationCreateManyArgs>(args?: SelectSubset<T, AutomationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many Automations and returns the data saved in the database.
+     * @param {AutomationCreateManyAndReturnArgs} args - Arguments to create many Automations.
+     * @example
+     * // Create many Automations
+     * const automation = await prisma.automation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many Automations and only return the `id`
+     * const automationWithIdOnly = await prisma.automation.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends AutomationCreateManyAndReturnArgs>(args?: SelectSubset<T, AutomationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a Automation.
+     * @param {AutomationDeleteArgs} args - Arguments to delete one Automation.
+     * @example
+     * // Delete one Automation
+     * const Automation = await prisma.automation.delete({
+     *   where: {
+     *     // ... filter to delete one Automation
+     *   }
+     * })
+     * 
+     */
+    delete<T extends AutomationDeleteArgs>(args: SelectSubset<T, AutomationDeleteArgs<ExtArgs>>): Prisma__AutomationClient<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one Automation.
+     * @param {AutomationUpdateArgs} args - Arguments to update one Automation.
+     * @example
+     * // Update one Automation
+     * const automation = await prisma.automation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends AutomationUpdateArgs>(args: SelectSubset<T, AutomationUpdateArgs<ExtArgs>>): Prisma__AutomationClient<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more Automations.
+     * @param {AutomationDeleteManyArgs} args - Arguments to filter Automations to delete.
+     * @example
+     * // Delete a few Automations
+     * const { count } = await prisma.automation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends AutomationDeleteManyArgs>(args?: SelectSubset<T, AutomationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more Automations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AutomationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many Automations
+     * const automation = await prisma.automation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends AutomationUpdateManyArgs>(args: SelectSubset<T, AutomationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more Automations and returns the data updated in the database.
+     * @param {AutomationUpdateManyAndReturnArgs} args - Arguments to update many Automations.
+     * @example
+     * // Update many Automations
+     * const automation = await prisma.automation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more Automations and only return the `id`
+     * const automationWithIdOnly = await prisma.automation.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends AutomationUpdateManyAndReturnArgs>(args: SelectSubset<T, AutomationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one Automation.
+     * @param {AutomationUpsertArgs} args - Arguments to update or create a Automation.
+     * @example
+     * // Update or create a Automation
+     * const automation = await prisma.automation.upsert({
+     *   create: {
+     *     // ... data to create a Automation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the Automation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends AutomationUpsertArgs>(args: SelectSubset<T, AutomationUpsertArgs<ExtArgs>>): Prisma__AutomationClient<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of Automations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AutomationCountArgs} args - Arguments to filter Automations to count.
+     * @example
+     * // Count the number of Automations
+     * const count = await prisma.automation.count({
+     *   where: {
+     *     // ... the filter for the Automations we want to count
+     *   }
+     * })
+    **/
+    count<T extends AutomationCountArgs>(
+      args?: Subset<T, AutomationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], AutomationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a Automation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AutomationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends AutomationAggregateArgs>(args: Subset<T, AutomationAggregateArgs>): Prisma.PrismaPromise<GetAutomationAggregateType<T>>
+
+    /**
+     * Group by Automation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AutomationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends AutomationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: AutomationGroupByArgs['orderBy'] }
+        : { orderBy?: AutomationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, AutomationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetAutomationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the Automation model
+   */
+  readonly fields: AutomationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for Automation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__AutomationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    conversation<T extends ConversationDefaultArgs<ExtArgs> = {}>(args?: Subset<T, ConversationDefaultArgs<ExtArgs>>): Prisma__ConversationClient<$Result.GetResult<Prisma.$ConversationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    createdBy<T extends UserDefaultArgs<ExtArgs> = {}>(args?: Subset<T, UserDefaultArgs<ExtArgs>>): Prisma__UserClient<$Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the Automation model
+   */
+  interface AutomationFieldRefs {
+    readonly id: FieldRef<"Automation", 'String'>
+    readonly conversationId: FieldRef<"Automation", 'String'>
+    readonly trigger: FieldRef<"Automation", 'String'>
+    readonly reply: FieldRef<"Automation", 'String'>
+    readonly createdById: FieldRef<"Automation", 'String'>
+    readonly enabled: FieldRef<"Automation", 'Boolean'>
+    readonly hits: FieldRef<"Automation", 'Int'>
+    readonly lastFiredAt: FieldRef<"Automation", 'DateTime'>
+    readonly createdAt: FieldRef<"Automation", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * Automation findUnique
+   */
+  export type AutomationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    /**
+     * Filter, which Automation to fetch.
+     */
+    where: AutomationWhereUniqueInput
+  }
+
+  /**
+   * Automation findUniqueOrThrow
+   */
+  export type AutomationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    /**
+     * Filter, which Automation to fetch.
+     */
+    where: AutomationWhereUniqueInput
+  }
+
+  /**
+   * Automation findFirst
+   */
+  export type AutomationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    /**
+     * Filter, which Automation to fetch.
+     */
+    where?: AutomationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Automations to fetch.
+     */
+    orderBy?: AutomationOrderByWithRelationInput | AutomationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for Automations.
+     */
+    cursor?: AutomationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Automations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Automations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of Automations.
+     */
+    distinct?: AutomationScalarFieldEnum | AutomationScalarFieldEnum[]
+  }
+
+  /**
+   * Automation findFirstOrThrow
+   */
+  export type AutomationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    /**
+     * Filter, which Automation to fetch.
+     */
+    where?: AutomationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Automations to fetch.
+     */
+    orderBy?: AutomationOrderByWithRelationInput | AutomationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for Automations.
+     */
+    cursor?: AutomationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Automations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Automations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of Automations.
+     */
+    distinct?: AutomationScalarFieldEnum | AutomationScalarFieldEnum[]
+  }
+
+  /**
+   * Automation findMany
+   */
+  export type AutomationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    /**
+     * Filter, which Automations to fetch.
+     */
+    where?: AutomationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Automations to fetch.
+     */
+    orderBy?: AutomationOrderByWithRelationInput | AutomationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing Automations.
+     */
+    cursor?: AutomationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Automations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Automations.
+     */
+    skip?: number
+    distinct?: AutomationScalarFieldEnum | AutomationScalarFieldEnum[]
+  }
+
+  /**
+   * Automation create
+   */
+  export type AutomationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    /**
+     * The data needed to create a Automation.
+     */
+    data: XOR<AutomationCreateInput, AutomationUncheckedCreateInput>
+  }
+
+  /**
+   * Automation createMany
+   */
+  export type AutomationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many Automations.
+     */
+    data: AutomationCreateManyInput | AutomationCreateManyInput[]
+  }
+
+  /**
+   * Automation createManyAndReturn
+   */
+  export type AutomationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * The data used to create many Automations.
+     */
+    data: AutomationCreateManyInput | AutomationCreateManyInput[]
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * Automation update
+   */
+  export type AutomationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    /**
+     * The data needed to update a Automation.
+     */
+    data: XOR<AutomationUpdateInput, AutomationUncheckedUpdateInput>
+    /**
+     * Choose, which Automation to update.
+     */
+    where: AutomationWhereUniqueInput
+  }
+
+  /**
+   * Automation updateMany
+   */
+  export type AutomationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update Automations.
+     */
+    data: XOR<AutomationUpdateManyMutationInput, AutomationUncheckedUpdateManyInput>
+    /**
+     * Filter which Automations to update
+     */
+    where?: AutomationWhereInput
+    /**
+     * Limit how many Automations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * Automation updateManyAndReturn
+   */
+  export type AutomationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * The data used to update Automations.
+     */
+    data: XOR<AutomationUpdateManyMutationInput, AutomationUncheckedUpdateManyInput>
+    /**
+     * Filter which Automations to update
+     */
+    where?: AutomationWhereInput
+    /**
+     * Limit how many Automations to update.
+     */
+    limit?: number
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationIncludeUpdateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * Automation upsert
+   */
+  export type AutomationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    /**
+     * The filter to search for the Automation to update in case it exists.
+     */
+    where: AutomationWhereUniqueInput
+    /**
+     * In case the Automation found by the `where` argument doesn't exist, create a new Automation with this data.
+     */
+    create: XOR<AutomationCreateInput, AutomationUncheckedCreateInput>
+    /**
+     * In case the Automation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<AutomationUpdateInput, AutomationUncheckedUpdateInput>
+  }
+
+  /**
+   * Automation delete
+   */
+  export type AutomationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
+    /**
+     * Filter which Automation to delete.
+     */
+    where: AutomationWhereUniqueInput
+  }
+
+  /**
+   * Automation deleteMany
+   */
+  export type AutomationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which Automations to delete
+     */
+    where?: AutomationWhereInput
+    /**
+     * Limit how many Automations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * Automation without action
+   */
+  export type AutomationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Automation
+     */
+    select?: AutomationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Automation
+     */
+    omit?: AutomationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AutomationInclude<ExtArgs> | null
   }
 
 
@@ -25485,6 +26805,7 @@ export namespace Prisma {
     parentId: string | null
     topicId: string | null
     anon: boolean | null
+    viaAutomation: boolean | null
     anonAlias: string | null
     viewOnce: boolean | null
     viewedAt: Date | null
@@ -25512,6 +26833,7 @@ export namespace Prisma {
     parentId: string | null
     topicId: string | null
     anon: boolean | null
+    viaAutomation: boolean | null
     anonAlias: string | null
     viewOnce: boolean | null
     viewedAt: Date | null
@@ -25539,6 +26861,7 @@ export namespace Prisma {
     parentId: number
     topicId: number
     anon: number
+    viaAutomation: number
     anonAlias: number
     viewOnce: number
     viewedAt: number
@@ -25576,6 +26899,7 @@ export namespace Prisma {
     parentId?: true
     topicId?: true
     anon?: true
+    viaAutomation?: true
     anonAlias?: true
     viewOnce?: true
     viewedAt?: true
@@ -25603,6 +26927,7 @@ export namespace Prisma {
     parentId?: true
     topicId?: true
     anon?: true
+    viaAutomation?: true
     anonAlias?: true
     viewOnce?: true
     viewedAt?: true
@@ -25630,6 +26955,7 @@ export namespace Prisma {
     parentId?: true
     topicId?: true
     anon?: true
+    viaAutomation?: true
     anonAlias?: true
     viewOnce?: true
     viewedAt?: true
@@ -25744,6 +27070,7 @@ export namespace Prisma {
     parentId: string | null
     topicId: string | null
     anon: boolean
+    viaAutomation: boolean
     anonAlias: string | null
     viewOnce: boolean
     viewedAt: Date | null
@@ -25790,6 +27117,7 @@ export namespace Prisma {
     parentId?: boolean
     topicId?: boolean
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: boolean
     viewOnce?: boolean
     viewedAt?: boolean
@@ -25831,6 +27159,7 @@ export namespace Prisma {
     parentId?: boolean
     topicId?: boolean
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: boolean
     viewOnce?: boolean
     viewedAt?: boolean
@@ -25864,6 +27193,7 @@ export namespace Prisma {
     parentId?: boolean
     topicId?: boolean
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: boolean
     viewOnce?: boolean
     viewedAt?: boolean
@@ -25897,6 +27227,7 @@ export namespace Prisma {
     parentId?: boolean
     topicId?: boolean
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: boolean
     viewOnce?: boolean
     viewedAt?: boolean
@@ -25908,7 +27239,7 @@ export namespace Prisma {
     createdAt?: boolean
   }
 
-  export type MessageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "senderId" | "content" | "deletedAt" | "replyToId" | "imagePath" | "audioPath" | "durationMs" | "editedAt" | "pinnedAt" | "pinnedBy" | "parentId" | "topicId" | "anon" | "anonAlias" | "viewOnce" | "viewedAt" | "viewedBy" | "expiresAt" | "linkUrl" | "kind" | "payload" | "createdAt", ExtArgs["result"]["message"]>
+  export type MessageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "senderId" | "content" | "deletedAt" | "replyToId" | "imagePath" | "audioPath" | "durationMs" | "editedAt" | "pinnedAt" | "pinnedBy" | "parentId" | "topicId" | "anon" | "viaAutomation" | "anonAlias" | "viewOnce" | "viewedAt" | "viewedBy" | "expiresAt" | "linkUrl" | "kind" | "payload" | "createdAt", ExtArgs["result"]["message"]>
   export type MessageInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     sender?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -25975,6 +27306,7 @@ export namespace Prisma {
       parentId: string | null
       topicId: string | null
       anon: boolean
+      viaAutomation: boolean
       anonAlias: string | null
       viewOnce: boolean
       viewedAt: Date | null
@@ -26435,6 +27767,7 @@ export namespace Prisma {
     readonly parentId: FieldRef<"Message", 'String'>
     readonly topicId: FieldRef<"Message", 'String'>
     readonly anon: FieldRef<"Message", 'Boolean'>
+    readonly viaAutomation: FieldRef<"Message", 'Boolean'>
     readonly anonAlias: FieldRef<"Message", 'String'>
     readonly viewOnce: FieldRef<"Message", 'Boolean'>
     readonly viewedAt: FieldRef<"Message", 'DateTime'>
@@ -48281,6 +49614,21 @@ export namespace Prisma {
   export type ConversationScalarFieldEnum = (typeof ConversationScalarFieldEnum)[keyof typeof ConversationScalarFieldEnum]
 
 
+  export const AutomationScalarFieldEnum: {
+    id: 'id',
+    conversationId: 'conversationId',
+    trigger: 'trigger',
+    reply: 'reply',
+    createdById: 'createdById',
+    enabled: 'enabled',
+    hits: 'hits',
+    lastFiredAt: 'lastFiredAt',
+    createdAt: 'createdAt'
+  };
+
+  export type AutomationScalarFieldEnum = (typeof AutomationScalarFieldEnum)[keyof typeof AutomationScalarFieldEnum]
+
+
   export const WebhookScalarFieldEnum: {
     id: 'id',
     conversationId: 'conversationId',
@@ -48362,6 +49710,7 @@ export namespace Prisma {
     parentId: 'parentId',
     topicId: 'topicId',
     anon: 'anon',
+    viaAutomation: 'viaAutomation',
     anonAlias: 'anonAlias',
     viewOnce: 'viewOnce',
     viewedAt: 'viewedAt',
@@ -48710,6 +50059,7 @@ export namespace Prisma {
     reminders?: ReminderListRelationFilter
     streaks?: ConversationStreakListRelationFilter
     verificationsGiven?: UserVerificationListRelationFilter
+    automationsCreated?: AutomationListRelationFilter
   }
 
   export type UserOrderByWithRelationInput = {
@@ -48744,6 +50094,7 @@ export namespace Prisma {
     reminders?: ReminderOrderByRelationAggregateInput
     streaks?: ConversationStreakOrderByRelationAggregateInput
     verificationsGiven?: UserVerificationOrderByRelationAggregateInput
+    automationsCreated?: AutomationOrderByRelationAggregateInput
   }
 
   export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -48781,6 +50132,7 @@ export namespace Prisma {
     reminders?: ReminderListRelationFilter
     streaks?: ConversationStreakListRelationFilter
     verificationsGiven?: UserVerificationListRelationFilter
+    automationsCreated?: AutomationListRelationFilter
   }, "id" | "username">
 
   export type UserOrderByWithAggregationInput = {
@@ -49547,6 +50899,7 @@ export namespace Prisma {
     topics?: TopicListRelationFilter
     tournaments?: TournamentListRelationFilter
     folderEntries?: FolderConversationListRelationFilter
+    automations?: AutomationListRelationFilter
   }
 
   export type ConversationOrderByWithRelationInput = {
@@ -49573,6 +50926,7 @@ export namespace Prisma {
     topics?: TopicOrderByRelationAggregateInput
     tournaments?: TournamentOrderByRelationAggregateInput
     folderEntries?: FolderConversationOrderByRelationAggregateInput
+    automations?: AutomationOrderByRelationAggregateInput
   }
 
   export type ConversationWhereUniqueInput = Prisma.AtLeast<{
@@ -49602,6 +50956,7 @@ export namespace Prisma {
     topics?: TopicListRelationFilter
     tournaments?: TournamentListRelationFilter
     folderEntries?: FolderConversationListRelationFilter
+    automations?: AutomationListRelationFilter
   }, "id" | "inviteCode" | "appKey">
 
   export type ConversationOrderByWithAggregationInput = {
@@ -49642,6 +50997,86 @@ export namespace Prisma {
     appKey?: StringNullableWithAggregatesFilter<"Conversation"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"Conversation"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"Conversation"> | Date | string
+  }
+
+  export type AutomationWhereInput = {
+    AND?: AutomationWhereInput | AutomationWhereInput[]
+    OR?: AutomationWhereInput[]
+    NOT?: AutomationWhereInput | AutomationWhereInput[]
+    id?: StringFilter<"Automation"> | string
+    conversationId?: StringFilter<"Automation"> | string
+    trigger?: StringFilter<"Automation"> | string
+    reply?: StringFilter<"Automation"> | string
+    createdById?: StringFilter<"Automation"> | string
+    enabled?: BoolFilter<"Automation"> | boolean
+    hits?: IntFilter<"Automation"> | number
+    lastFiredAt?: DateTimeNullableFilter<"Automation"> | Date | string | null
+    createdAt?: DateTimeFilter<"Automation"> | Date | string
+    conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
+    createdBy?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }
+
+  export type AutomationOrderByWithRelationInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    trigger?: SortOrder
+    reply?: SortOrder
+    createdById?: SortOrder
+    enabled?: SortOrder
+    hits?: SortOrder
+    lastFiredAt?: SortOrderInput | SortOrder
+    createdAt?: SortOrder
+    conversation?: ConversationOrderByWithRelationInput
+    createdBy?: UserOrderByWithRelationInput
+  }
+
+  export type AutomationWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    AND?: AutomationWhereInput | AutomationWhereInput[]
+    OR?: AutomationWhereInput[]
+    NOT?: AutomationWhereInput | AutomationWhereInput[]
+    conversationId?: StringFilter<"Automation"> | string
+    trigger?: StringFilter<"Automation"> | string
+    reply?: StringFilter<"Automation"> | string
+    createdById?: StringFilter<"Automation"> | string
+    enabled?: BoolFilter<"Automation"> | boolean
+    hits?: IntFilter<"Automation"> | number
+    lastFiredAt?: DateTimeNullableFilter<"Automation"> | Date | string | null
+    createdAt?: DateTimeFilter<"Automation"> | Date | string
+    conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
+    createdBy?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }, "id">
+
+  export type AutomationOrderByWithAggregationInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    trigger?: SortOrder
+    reply?: SortOrder
+    createdById?: SortOrder
+    enabled?: SortOrder
+    hits?: SortOrder
+    lastFiredAt?: SortOrderInput | SortOrder
+    createdAt?: SortOrder
+    _count?: AutomationCountOrderByAggregateInput
+    _avg?: AutomationAvgOrderByAggregateInput
+    _max?: AutomationMaxOrderByAggregateInput
+    _min?: AutomationMinOrderByAggregateInput
+    _sum?: AutomationSumOrderByAggregateInput
+  }
+
+  export type AutomationScalarWhereWithAggregatesInput = {
+    AND?: AutomationScalarWhereWithAggregatesInput | AutomationScalarWhereWithAggregatesInput[]
+    OR?: AutomationScalarWhereWithAggregatesInput[]
+    NOT?: AutomationScalarWhereWithAggregatesInput | AutomationScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"Automation"> | string
+    conversationId?: StringWithAggregatesFilter<"Automation"> | string
+    trigger?: StringWithAggregatesFilter<"Automation"> | string
+    reply?: StringWithAggregatesFilter<"Automation"> | string
+    createdById?: StringWithAggregatesFilter<"Automation"> | string
+    enabled?: BoolWithAggregatesFilter<"Automation"> | boolean
+    hits?: IntWithAggregatesFilter<"Automation"> | number
+    lastFiredAt?: DateTimeNullableWithAggregatesFilter<"Automation"> | Date | string | null
+    createdAt?: DateTimeWithAggregatesFilter<"Automation"> | Date | string
   }
 
   export type WebhookWhereInput = {
@@ -49995,6 +51430,7 @@ export namespace Prisma {
     parentId?: StringNullableFilter<"Message"> | string | null
     topicId?: StringNullableFilter<"Message"> | string | null
     anon?: BoolFilter<"Message"> | boolean
+    viaAutomation?: BoolFilter<"Message"> | boolean
     anonAlias?: StringNullableFilter<"Message"> | string | null
     viewOnce?: BoolFilter<"Message"> | boolean
     viewedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
@@ -50035,6 +51471,7 @@ export namespace Prisma {
     parentId?: SortOrderInput | SortOrder
     topicId?: SortOrderInput | SortOrder
     anon?: SortOrder
+    viaAutomation?: SortOrder
     anonAlias?: SortOrderInput | SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrderInput | SortOrder
@@ -50078,6 +51515,7 @@ export namespace Prisma {
     parentId?: StringNullableFilter<"Message"> | string | null
     topicId?: StringNullableFilter<"Message"> | string | null
     anon?: BoolFilter<"Message"> | boolean
+    viaAutomation?: BoolFilter<"Message"> | boolean
     anonAlias?: StringNullableFilter<"Message"> | string | null
     viewOnce?: BoolFilter<"Message"> | boolean
     viewedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
@@ -50118,6 +51556,7 @@ export namespace Prisma {
     parentId?: SortOrderInput | SortOrder
     topicId?: SortOrderInput | SortOrder
     anon?: SortOrder
+    viaAutomation?: SortOrder
     anonAlias?: SortOrderInput | SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrderInput | SortOrder
@@ -50153,6 +51592,7 @@ export namespace Prisma {
     parentId?: StringNullableWithAggregatesFilter<"Message"> | string | null
     topicId?: StringNullableWithAggregatesFilter<"Message"> | string | null
     anon?: BoolWithAggregatesFilter<"Message"> | boolean
+    viaAutomation?: BoolWithAggregatesFilter<"Message"> | boolean
     anonAlias?: StringNullableWithAggregatesFilter<"Message"> | string | null
     viewOnce?: BoolWithAggregatesFilter<"Message"> | boolean
     viewedAt?: DateTimeNullableWithAggregatesFilter<"Message"> | Date | string | null
@@ -51451,6 +52891,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateInput = {
@@ -51485,6 +52926,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUpdateInput = {
@@ -51519,6 +52961,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateInput = {
@@ -51553,6 +52996,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateManyInput = {
@@ -52340,6 +53784,7 @@ export namespace Prisma {
     topics?: TopicCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateInput = {
@@ -52366,6 +53811,7 @@ export namespace Prisma {
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUpdateInput = {
@@ -52392,6 +53838,7 @@ export namespace Prisma {
     topics?: TopicUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateInput = {
@@ -52418,6 +53865,7 @@ export namespace Prisma {
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationCreateManyInput = {
@@ -52466,6 +53914,88 @@ export namespace Prisma {
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AutomationCreateInput = {
+    id?: string
+    trigger: string
+    reply: string
+    enabled?: boolean
+    hits?: number
+    lastFiredAt?: Date | string | null
+    createdAt?: Date | string
+    conversation: ConversationCreateNestedOneWithoutAutomationsInput
+    createdBy: UserCreateNestedOneWithoutAutomationsCreatedInput
+  }
+
+  export type AutomationUncheckedCreateInput = {
+    id?: string
+    conversationId: string
+    trigger: string
+    reply: string
+    createdById: string
+    enabled?: boolean
+    hits?: number
+    lastFiredAt?: Date | string | null
+    createdAt?: Date | string
+  }
+
+  export type AutomationUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    conversation?: ConversationUpdateOneRequiredWithoutAutomationsNestedInput
+    createdBy?: UserUpdateOneRequiredWithoutAutomationsCreatedNestedInput
+  }
+
+  export type AutomationUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    createdById?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AutomationCreateManyInput = {
+    id?: string
+    conversationId: string
+    trigger: string
+    reply: string
+    createdById: string
+    enabled?: boolean
+    hits?: number
+    lastFiredAt?: Date | string | null
+    createdAt?: Date | string
+  }
+
+  export type AutomationUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AutomationUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    createdById?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
   export type WebhookCreateInput = {
@@ -52828,6 +54358,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -52867,6 +54398,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -52896,6 +54428,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -52935,6 +54468,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -52969,6 +54503,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -52991,6 +54526,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -53017,6 +54553,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -54465,6 +56002,12 @@ export namespace Prisma {
     none?: UserVerificationWhereInput
   }
 
+  export type AutomationListRelationFilter = {
+    every?: AutomationWhereInput
+    some?: AutomationWhereInput
+    none?: AutomationWhereInput
+  }
+
   export type SortOrderInput = {
     sort: SortOrder
     nulls?: NullsOrder
@@ -54527,6 +56070,10 @@ export namespace Prisma {
   }
 
   export type UserVerificationOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
+  export type AutomationOrderByRelationAggregateInput = {
     _count?: SortOrder
   }
 
@@ -55222,6 +56769,50 @@ export namespace Prisma {
     isNot?: ConversationWhereInput
   }
 
+  export type AutomationCountOrderByAggregateInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    trigger?: SortOrder
+    reply?: SortOrder
+    createdById?: SortOrder
+    enabled?: SortOrder
+    hits?: SortOrder
+    lastFiredAt?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type AutomationAvgOrderByAggregateInput = {
+    hits?: SortOrder
+  }
+
+  export type AutomationMaxOrderByAggregateInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    trigger?: SortOrder
+    reply?: SortOrder
+    createdById?: SortOrder
+    enabled?: SortOrder
+    hits?: SortOrder
+    lastFiredAt?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type AutomationMinOrderByAggregateInput = {
+    id?: SortOrder
+    conversationId?: SortOrder
+    trigger?: SortOrder
+    reply?: SortOrder
+    createdById?: SortOrder
+    enabled?: SortOrder
+    hits?: SortOrder
+    lastFiredAt?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type AutomationSumOrderByAggregateInput = {
+    hits?: SortOrder
+  }
+
   export type WebhookCountOrderByAggregateInput = {
     id?: SortOrder
     conversationId?: SortOrder
@@ -55504,6 +57095,7 @@ export namespace Prisma {
     parentId?: SortOrder
     topicId?: SortOrder
     anon?: SortOrder
+    viaAutomation?: SortOrder
     anonAlias?: SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrder
@@ -55535,6 +57127,7 @@ export namespace Prisma {
     parentId?: SortOrder
     topicId?: SortOrder
     anon?: SortOrder
+    viaAutomation?: SortOrder
     anonAlias?: SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrder
@@ -55562,6 +57155,7 @@ export namespace Prisma {
     parentId?: SortOrder
     topicId?: SortOrder
     anon?: SortOrder
+    viaAutomation?: SortOrder
     anonAlias?: SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrder
@@ -56455,6 +58049,13 @@ export namespace Prisma {
     connect?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
   }
 
+  export type AutomationCreateNestedManyWithoutCreatedByInput = {
+    create?: XOR<AutomationCreateWithoutCreatedByInput, AutomationUncheckedCreateWithoutCreatedByInput> | AutomationCreateWithoutCreatedByInput[] | AutomationUncheckedCreateWithoutCreatedByInput[]
+    connectOrCreate?: AutomationCreateOrConnectWithoutCreatedByInput | AutomationCreateOrConnectWithoutCreatedByInput[]
+    createMany?: AutomationCreateManyCreatedByInputEnvelope
+    connect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+  }
+
   export type AppInstallUncheckedCreateNestedManyWithoutUserInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -56571,6 +58172,13 @@ export namespace Prisma {
     connectOrCreate?: UserVerificationCreateOrConnectWithoutOwnerInput | UserVerificationCreateOrConnectWithoutOwnerInput[]
     createMany?: UserVerificationCreateManyOwnerInputEnvelope
     connect?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+  }
+
+  export type AutomationUncheckedCreateNestedManyWithoutCreatedByInput = {
+    create?: XOR<AutomationCreateWithoutCreatedByInput, AutomationUncheckedCreateWithoutCreatedByInput> | AutomationCreateWithoutCreatedByInput[] | AutomationUncheckedCreateWithoutCreatedByInput[]
+    connectOrCreate?: AutomationCreateOrConnectWithoutCreatedByInput | AutomationCreateOrConnectWithoutCreatedByInput[]
+    createMany?: AutomationCreateManyCreatedByInputEnvelope
+    connect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
   }
 
   export type StringFieldUpdateOperationsInput = {
@@ -56827,6 +58435,20 @@ export namespace Prisma {
     deleteMany?: UserVerificationScalarWhereInput | UserVerificationScalarWhereInput[]
   }
 
+  export type AutomationUpdateManyWithoutCreatedByNestedInput = {
+    create?: XOR<AutomationCreateWithoutCreatedByInput, AutomationUncheckedCreateWithoutCreatedByInput> | AutomationCreateWithoutCreatedByInput[] | AutomationUncheckedCreateWithoutCreatedByInput[]
+    connectOrCreate?: AutomationCreateOrConnectWithoutCreatedByInput | AutomationCreateOrConnectWithoutCreatedByInput[]
+    upsert?: AutomationUpsertWithWhereUniqueWithoutCreatedByInput | AutomationUpsertWithWhereUniqueWithoutCreatedByInput[]
+    createMany?: AutomationCreateManyCreatedByInputEnvelope
+    set?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    disconnect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    delete?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    connect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    update?: AutomationUpdateWithWhereUniqueWithoutCreatedByInput | AutomationUpdateWithWhereUniqueWithoutCreatedByInput[]
+    updateMany?: AutomationUpdateManyWithWhereWithoutCreatedByInput | AutomationUpdateManyWithWhereWithoutCreatedByInput[]
+    deleteMany?: AutomationScalarWhereInput | AutomationScalarWhereInput[]
+  }
+
   export type AppInstallUncheckedUpdateManyWithoutUserNestedInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -57061,6 +58683,20 @@ export namespace Prisma {
     deleteMany?: UserVerificationScalarWhereInput | UserVerificationScalarWhereInput[]
   }
 
+  export type AutomationUncheckedUpdateManyWithoutCreatedByNestedInput = {
+    create?: XOR<AutomationCreateWithoutCreatedByInput, AutomationUncheckedCreateWithoutCreatedByInput> | AutomationCreateWithoutCreatedByInput[] | AutomationUncheckedCreateWithoutCreatedByInput[]
+    connectOrCreate?: AutomationCreateOrConnectWithoutCreatedByInput | AutomationCreateOrConnectWithoutCreatedByInput[]
+    upsert?: AutomationUpsertWithWhereUniqueWithoutCreatedByInput | AutomationUpsertWithWhereUniqueWithoutCreatedByInput[]
+    createMany?: AutomationCreateManyCreatedByInputEnvelope
+    set?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    disconnect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    delete?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    connect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    update?: AutomationUpdateWithWhereUniqueWithoutCreatedByInput | AutomationUpdateWithWhereUniqueWithoutCreatedByInput[]
+    updateMany?: AutomationUpdateManyWithWhereWithoutCreatedByInput | AutomationUpdateManyWithWhereWithoutCreatedByInput[]
+    deleteMany?: AutomationScalarWhereInput | AutomationScalarWhereInput[]
+  }
+
   export type UserCreateNestedOneWithoutRemindersInput = {
     create?: XOR<UserCreateWithoutRemindersInput, UserUncheckedCreateWithoutRemindersInput>
     connectOrCreate?: UserCreateOrConnectWithoutRemindersInput
@@ -57293,6 +58929,13 @@ export namespace Prisma {
     connect?: FolderConversationWhereUniqueInput | FolderConversationWhereUniqueInput[]
   }
 
+  export type AutomationCreateNestedManyWithoutConversationInput = {
+    create?: XOR<AutomationCreateWithoutConversationInput, AutomationUncheckedCreateWithoutConversationInput> | AutomationCreateWithoutConversationInput[] | AutomationUncheckedCreateWithoutConversationInput[]
+    connectOrCreate?: AutomationCreateOrConnectWithoutConversationInput | AutomationCreateOrConnectWithoutConversationInput[]
+    createMany?: AutomationCreateManyConversationInputEnvelope
+    connect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+  }
+
   export type ConversationParticipantUncheckedCreateNestedManyWithoutConversationInput = {
     create?: XOR<ConversationParticipantCreateWithoutConversationInput, ConversationParticipantUncheckedCreateWithoutConversationInput> | ConversationParticipantCreateWithoutConversationInput[] | ConversationParticipantUncheckedCreateWithoutConversationInput[]
     connectOrCreate?: ConversationParticipantCreateOrConnectWithoutConversationInput | ConversationParticipantCreateOrConnectWithoutConversationInput[]
@@ -57361,6 +59004,13 @@ export namespace Prisma {
     connectOrCreate?: FolderConversationCreateOrConnectWithoutConversationInput | FolderConversationCreateOrConnectWithoutConversationInput[]
     createMany?: FolderConversationCreateManyConversationInputEnvelope
     connect?: FolderConversationWhereUniqueInput | FolderConversationWhereUniqueInput[]
+  }
+
+  export type AutomationUncheckedCreateNestedManyWithoutConversationInput = {
+    create?: XOR<AutomationCreateWithoutConversationInput, AutomationUncheckedCreateWithoutConversationInput> | AutomationCreateWithoutConversationInput[] | AutomationUncheckedCreateWithoutConversationInput[]
+    connectOrCreate?: AutomationCreateOrConnectWithoutConversationInput | AutomationCreateOrConnectWithoutConversationInput[]
+    createMany?: AutomationCreateManyConversationInputEnvelope
+    connect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
   }
 
   export type BoolFieldUpdateOperationsInput = {
@@ -57507,6 +59157,20 @@ export namespace Prisma {
     deleteMany?: FolderConversationScalarWhereInput | FolderConversationScalarWhereInput[]
   }
 
+  export type AutomationUpdateManyWithoutConversationNestedInput = {
+    create?: XOR<AutomationCreateWithoutConversationInput, AutomationUncheckedCreateWithoutConversationInput> | AutomationCreateWithoutConversationInput[] | AutomationUncheckedCreateWithoutConversationInput[]
+    connectOrCreate?: AutomationCreateOrConnectWithoutConversationInput | AutomationCreateOrConnectWithoutConversationInput[]
+    upsert?: AutomationUpsertWithWhereUniqueWithoutConversationInput | AutomationUpsertWithWhereUniqueWithoutConversationInput[]
+    createMany?: AutomationCreateManyConversationInputEnvelope
+    set?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    disconnect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    delete?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    connect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    update?: AutomationUpdateWithWhereUniqueWithoutConversationInput | AutomationUpdateWithWhereUniqueWithoutConversationInput[]
+    updateMany?: AutomationUpdateManyWithWhereWithoutConversationInput | AutomationUpdateManyWithWhereWithoutConversationInput[]
+    deleteMany?: AutomationScalarWhereInput | AutomationScalarWhereInput[]
+  }
+
   export type ConversationParticipantUncheckedUpdateManyWithoutConversationNestedInput = {
     create?: XOR<ConversationParticipantCreateWithoutConversationInput, ConversationParticipantUncheckedCreateWithoutConversationInput> | ConversationParticipantCreateWithoutConversationInput[] | ConversationParticipantUncheckedCreateWithoutConversationInput[]
     connectOrCreate?: ConversationParticipantCreateOrConnectWithoutConversationInput | ConversationParticipantCreateOrConnectWithoutConversationInput[]
@@ -57645,6 +59309,48 @@ export namespace Prisma {
     update?: FolderConversationUpdateWithWhereUniqueWithoutConversationInput | FolderConversationUpdateWithWhereUniqueWithoutConversationInput[]
     updateMany?: FolderConversationUpdateManyWithWhereWithoutConversationInput | FolderConversationUpdateManyWithWhereWithoutConversationInput[]
     deleteMany?: FolderConversationScalarWhereInput | FolderConversationScalarWhereInput[]
+  }
+
+  export type AutomationUncheckedUpdateManyWithoutConversationNestedInput = {
+    create?: XOR<AutomationCreateWithoutConversationInput, AutomationUncheckedCreateWithoutConversationInput> | AutomationCreateWithoutConversationInput[] | AutomationUncheckedCreateWithoutConversationInput[]
+    connectOrCreate?: AutomationCreateOrConnectWithoutConversationInput | AutomationCreateOrConnectWithoutConversationInput[]
+    upsert?: AutomationUpsertWithWhereUniqueWithoutConversationInput | AutomationUpsertWithWhereUniqueWithoutConversationInput[]
+    createMany?: AutomationCreateManyConversationInputEnvelope
+    set?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    disconnect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    delete?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    connect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
+    update?: AutomationUpdateWithWhereUniqueWithoutConversationInput | AutomationUpdateWithWhereUniqueWithoutConversationInput[]
+    updateMany?: AutomationUpdateManyWithWhereWithoutConversationInput | AutomationUpdateManyWithWhereWithoutConversationInput[]
+    deleteMany?: AutomationScalarWhereInput | AutomationScalarWhereInput[]
+  }
+
+  export type ConversationCreateNestedOneWithoutAutomationsInput = {
+    create?: XOR<ConversationCreateWithoutAutomationsInput, ConversationUncheckedCreateWithoutAutomationsInput>
+    connectOrCreate?: ConversationCreateOrConnectWithoutAutomationsInput
+    connect?: ConversationWhereUniqueInput
+  }
+
+  export type UserCreateNestedOneWithoutAutomationsCreatedInput = {
+    create?: XOR<UserCreateWithoutAutomationsCreatedInput, UserUncheckedCreateWithoutAutomationsCreatedInput>
+    connectOrCreate?: UserCreateOrConnectWithoutAutomationsCreatedInput
+    connect?: UserWhereUniqueInput
+  }
+
+  export type ConversationUpdateOneRequiredWithoutAutomationsNestedInput = {
+    create?: XOR<ConversationCreateWithoutAutomationsInput, ConversationUncheckedCreateWithoutAutomationsInput>
+    connectOrCreate?: ConversationCreateOrConnectWithoutAutomationsInput
+    upsert?: ConversationUpsertWithoutAutomationsInput
+    connect?: ConversationWhereUniqueInput
+    update?: XOR<XOR<ConversationUpdateToOneWithWhereWithoutAutomationsInput, ConversationUpdateWithoutAutomationsInput>, ConversationUncheckedUpdateWithoutAutomationsInput>
+  }
+
+  export type UserUpdateOneRequiredWithoutAutomationsCreatedNestedInput = {
+    create?: XOR<UserCreateWithoutAutomationsCreatedInput, UserUncheckedCreateWithoutAutomationsCreatedInput>
+    connectOrCreate?: UserCreateOrConnectWithoutAutomationsCreatedInput
+    upsert?: UserUpsertWithoutAutomationsCreatedInput
+    connect?: UserWhereUniqueInput
+    update?: XOR<XOR<UserUpdateToOneWithWhereWithoutAutomationsCreatedInput, UserUpdateWithoutAutomationsCreatedInput>, UserUncheckedUpdateWithoutAutomationsCreatedInput>
   }
 
   export type ConversationCreateNestedOneWithoutWebhooksInput = {
@@ -59215,6 +60921,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -59252,6 +60959,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -59481,6 +61189,37 @@ export namespace Prisma {
 
   export type UserVerificationCreateManyOwnerInputEnvelope = {
     data: UserVerificationCreateManyOwnerInput | UserVerificationCreateManyOwnerInput[]
+  }
+
+  export type AutomationCreateWithoutCreatedByInput = {
+    id?: string
+    trigger: string
+    reply: string
+    enabled?: boolean
+    hits?: number
+    lastFiredAt?: Date | string | null
+    createdAt?: Date | string
+    conversation: ConversationCreateNestedOneWithoutAutomationsInput
+  }
+
+  export type AutomationUncheckedCreateWithoutCreatedByInput = {
+    id?: string
+    conversationId: string
+    trigger: string
+    reply: string
+    enabled?: boolean
+    hits?: number
+    lastFiredAt?: Date | string | null
+    createdAt?: Date | string
+  }
+
+  export type AutomationCreateOrConnectWithoutCreatedByInput = {
+    where: AutomationWhereUniqueInput
+    create: XOR<AutomationCreateWithoutCreatedByInput, AutomationUncheckedCreateWithoutCreatedByInput>
+  }
+
+  export type AutomationCreateManyCreatedByInputEnvelope = {
+    data: AutomationCreateManyCreatedByInput | AutomationCreateManyCreatedByInput[]
   }
 
   export type AppInstallUpsertWithWhereUniqueWithoutUserInput = {
@@ -59735,6 +61474,7 @@ export namespace Prisma {
     parentId?: StringNullableFilter<"Message"> | string | null
     topicId?: StringNullableFilter<"Message"> | string | null
     anon?: BoolFilter<"Message"> | boolean
+    viaAutomation?: BoolFilter<"Message"> | boolean
     anonAlias?: StringNullableFilter<"Message"> | string | null
     viewOnce?: BoolFilter<"Message"> | boolean
     viewedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
@@ -59970,6 +61710,37 @@ export namespace Prisma {
     verifiedAt?: DateTimeFilter<"UserVerification"> | Date | string
   }
 
+  export type AutomationUpsertWithWhereUniqueWithoutCreatedByInput = {
+    where: AutomationWhereUniqueInput
+    update: XOR<AutomationUpdateWithoutCreatedByInput, AutomationUncheckedUpdateWithoutCreatedByInput>
+    create: XOR<AutomationCreateWithoutCreatedByInput, AutomationUncheckedCreateWithoutCreatedByInput>
+  }
+
+  export type AutomationUpdateWithWhereUniqueWithoutCreatedByInput = {
+    where: AutomationWhereUniqueInput
+    data: XOR<AutomationUpdateWithoutCreatedByInput, AutomationUncheckedUpdateWithoutCreatedByInput>
+  }
+
+  export type AutomationUpdateManyWithWhereWithoutCreatedByInput = {
+    where: AutomationScalarWhereInput
+    data: XOR<AutomationUpdateManyMutationInput, AutomationUncheckedUpdateManyWithoutCreatedByInput>
+  }
+
+  export type AutomationScalarWhereInput = {
+    AND?: AutomationScalarWhereInput | AutomationScalarWhereInput[]
+    OR?: AutomationScalarWhereInput[]
+    NOT?: AutomationScalarWhereInput | AutomationScalarWhereInput[]
+    id?: StringFilter<"Automation"> | string
+    conversationId?: StringFilter<"Automation"> | string
+    trigger?: StringFilter<"Automation"> | string
+    reply?: StringFilter<"Automation"> | string
+    createdById?: StringFilter<"Automation"> | string
+    enabled?: BoolFilter<"Automation"> | boolean
+    hits?: IntFilter<"Automation"> | number
+    lastFiredAt?: DateTimeNullableFilter<"Automation"> | Date | string | null
+    createdAt?: DateTimeFilter<"Automation"> | Date | string
+  }
+
   export type UserCreateWithoutRemindersInput = {
     id?: string
     name: string
@@ -60001,6 +61772,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutRemindersInput = {
@@ -60034,6 +61806,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutRemindersInput = {
@@ -60083,6 +61856,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutRemindersInput = {
@@ -60116,6 +61890,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateWithoutStreaksInput = {
@@ -60149,6 +61924,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutStreaksInput = {
@@ -60182,6 +61958,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutStreaksInput = {
@@ -60231,6 +62008,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutStreaksInput = {
@@ -60264,6 +62042,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateWithoutVerificationsGivenInput = {
@@ -60297,6 +62076,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutVerificationsGivenInput = {
@@ -60330,6 +62110,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutVerificationsGivenInput = {
@@ -60379,6 +62160,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutVerificationsGivenInput = {
@@ -60412,6 +62194,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateWithoutWalletInput = {
@@ -60445,6 +62228,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutWalletInput = {
@@ -60478,6 +62262,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutWalletInput = {
@@ -60527,6 +62312,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutWalletInput = {
@@ -60560,6 +62346,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateWithoutLedgerInput = {
@@ -60593,6 +62380,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutLedgerInput = {
@@ -60626,6 +62414,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutLedgerInput = {
@@ -60675,6 +62464,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLedgerInput = {
@@ -60708,6 +62498,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateWithoutHubTasksInput = {
@@ -60741,6 +62532,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutHubTasksInput = {
@@ -60774,6 +62566,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutHubTasksInput = {
@@ -60823,6 +62616,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutHubTasksInput = {
@@ -60856,6 +62650,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateWithoutAppInstallsInput = {
@@ -60889,6 +62684,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutAppInstallsInput = {
@@ -60922,6 +62718,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutAppInstallsInput = {
@@ -60971,6 +62768,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutAppInstallsInput = {
@@ -61004,6 +62802,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateWithoutMarketListingsInput = {
@@ -61037,6 +62836,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutMarketListingsInput = {
@@ -61070,6 +62870,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutMarketListingsInput = {
@@ -61108,6 +62909,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutMarketPurchasesInput = {
@@ -61141,6 +62943,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutMarketPurchasesInput = {
@@ -61190,6 +62993,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketListingsInput = {
@@ -61223,6 +63027,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUpsertWithoutMarketPurchasesInput = {
@@ -61267,6 +63072,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketPurchasesInput = {
@@ -61300,6 +63106,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateWithoutLogEventsInput = {
@@ -61333,6 +63140,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutLogEventsInput = {
@@ -61366,6 +63174,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutLogEventsInput = {
@@ -61415,6 +63224,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLogEventsInput = {
@@ -61448,6 +63258,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserCreateWithoutQuickPhrasesInput = {
@@ -61481,6 +63292,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutQuickPhrasesInput = {
@@ -61514,6 +63326,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutQuickPhrasesInput = {
@@ -61563,6 +63376,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutQuickPhrasesInput = {
@@ -61596,6 +63410,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type ConversationParticipantCreateWithoutConversationInput = {
@@ -61642,6 +63457,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -61679,6 +63495,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -61942,6 +63759,37 @@ export namespace Prisma {
 
   export type FolderConversationCreateManyConversationInputEnvelope = {
     data: FolderConversationCreateManyConversationInput | FolderConversationCreateManyConversationInput[]
+  }
+
+  export type AutomationCreateWithoutConversationInput = {
+    id?: string
+    trigger: string
+    reply: string
+    enabled?: boolean
+    hits?: number
+    lastFiredAt?: Date | string | null
+    createdAt?: Date | string
+    createdBy: UserCreateNestedOneWithoutAutomationsCreatedInput
+  }
+
+  export type AutomationUncheckedCreateWithoutConversationInput = {
+    id?: string
+    trigger: string
+    reply: string
+    createdById: string
+    enabled?: boolean
+    hits?: number
+    lastFiredAt?: Date | string | null
+    createdAt?: Date | string
+  }
+
+  export type AutomationCreateOrConnectWithoutConversationInput = {
+    where: AutomationWhereUniqueInput
+    create: XOR<AutomationCreateWithoutConversationInput, AutomationUncheckedCreateWithoutConversationInput>
+  }
+
+  export type AutomationCreateManyConversationInputEnvelope = {
+    data: AutomationCreateManyConversationInput | AutomationCreateManyConversationInput[]
   }
 
   export type ConversationParticipantUpsertWithWhereUniqueWithoutConversationInput = {
@@ -62216,6 +64064,294 @@ export namespace Prisma {
     position?: IntFilter<"FolderConversation"> | number
   }
 
+  export type AutomationUpsertWithWhereUniqueWithoutConversationInput = {
+    where: AutomationWhereUniqueInput
+    update: XOR<AutomationUpdateWithoutConversationInput, AutomationUncheckedUpdateWithoutConversationInput>
+    create: XOR<AutomationCreateWithoutConversationInput, AutomationUncheckedCreateWithoutConversationInput>
+  }
+
+  export type AutomationUpdateWithWhereUniqueWithoutConversationInput = {
+    where: AutomationWhereUniqueInput
+    data: XOR<AutomationUpdateWithoutConversationInput, AutomationUncheckedUpdateWithoutConversationInput>
+  }
+
+  export type AutomationUpdateManyWithWhereWithoutConversationInput = {
+    where: AutomationScalarWhereInput
+    data: XOR<AutomationUpdateManyMutationInput, AutomationUncheckedUpdateManyWithoutConversationInput>
+  }
+
+  export type ConversationCreateWithoutAutomationsInput = {
+    id?: string
+    isGroup?: boolean
+    name?: string | null
+    description?: string
+    photo?: string | null
+    inviteCode?: string | null
+    ttlSeconds?: number
+    broadcastMode?: boolean
+    screenPrivacy?: boolean
+    isSelf?: boolean
+    appKey?: string | null
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    participants?: ConversationParticipantCreateNestedManyWithoutConversationInput
+    messages?: MessageCreateNestedManyWithoutConversationInput
+    scheduledMessages?: ScheduledMessageCreateNestedManyWithoutConversationInput
+    webhooks?: WebhookCreateNestedManyWithoutConversationInput
+    kanbanCards?: KanbanCardCreateNestedManyWithoutConversationInput
+    events?: GroupEventCreateNestedManyWithoutConversationInput
+    gameMatches?: GameMatchCreateNestedManyWithoutConversationInput
+    topics?: TopicCreateNestedManyWithoutConversationInput
+    tournaments?: TournamentCreateNestedManyWithoutConversationInput
+    folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+  }
+
+  export type ConversationUncheckedCreateWithoutAutomationsInput = {
+    id?: string
+    isGroup?: boolean
+    name?: string | null
+    description?: string
+    photo?: string | null
+    inviteCode?: string | null
+    ttlSeconds?: number
+    broadcastMode?: boolean
+    screenPrivacy?: boolean
+    isSelf?: boolean
+    appKey?: string | null
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    participants?: ConversationParticipantUncheckedCreateNestedManyWithoutConversationInput
+    messages?: MessageUncheckedCreateNestedManyWithoutConversationInput
+    scheduledMessages?: ScheduledMessageUncheckedCreateNestedManyWithoutConversationInput
+    webhooks?: WebhookUncheckedCreateNestedManyWithoutConversationInput
+    kanbanCards?: KanbanCardUncheckedCreateNestedManyWithoutConversationInput
+    events?: GroupEventUncheckedCreateNestedManyWithoutConversationInput
+    gameMatches?: GameMatchUncheckedCreateNestedManyWithoutConversationInput
+    topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
+    tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
+    folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+  }
+
+  export type ConversationCreateOrConnectWithoutAutomationsInput = {
+    where: ConversationWhereUniqueInput
+    create: XOR<ConversationCreateWithoutAutomationsInput, ConversationUncheckedCreateWithoutAutomationsInput>
+  }
+
+  export type UserCreateWithoutAutomationsCreatedInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallCreateNestedManyWithoutUserInput
+    wallet?: UserWalletCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantCreateNestedManyWithoutUserInput
+    messages?: MessageCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseCreateNestedManyWithoutUserInput
+    stories?: StatusStoryCreateNestedManyWithoutUserInput
+    folders?: FolderCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+  }
+
+  export type UserUncheckedCreateWithoutAutomationsCreatedInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
+    wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskUncheckedCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventUncheckedCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingUncheckedCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingUncheckedCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantUncheckedCreateNestedManyWithoutUserInput
+    messages?: MessageUncheckedCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageUncheckedCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseUncheckedCreateNestedManyWithoutUserInput
+    stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
+    folders?: FolderUncheckedCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+  }
+
+  export type UserCreateOrConnectWithoutAutomationsCreatedInput = {
+    where: UserWhereUniqueInput
+    create: XOR<UserCreateWithoutAutomationsCreatedInput, UserUncheckedCreateWithoutAutomationsCreatedInput>
+  }
+
+  export type ConversationUpsertWithoutAutomationsInput = {
+    update: XOR<ConversationUpdateWithoutAutomationsInput, ConversationUncheckedUpdateWithoutAutomationsInput>
+    create: XOR<ConversationCreateWithoutAutomationsInput, ConversationUncheckedCreateWithoutAutomationsInput>
+    where?: ConversationWhereInput
+  }
+
+  export type ConversationUpdateToOneWithWhereWithoutAutomationsInput = {
+    where?: ConversationWhereInput
+    data: XOR<ConversationUpdateWithoutAutomationsInput, ConversationUncheckedUpdateWithoutAutomationsInput>
+  }
+
+  export type ConversationUpdateWithoutAutomationsInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    isGroup?: BoolFieldUpdateOperationsInput | boolean
+    name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
+    photo?: NullableStringFieldUpdateOperationsInput | string | null
+    inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
+    ttlSeconds?: IntFieldUpdateOperationsInput | number
+    broadcastMode?: BoolFieldUpdateOperationsInput | boolean
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    isSelf?: BoolFieldUpdateOperationsInput | boolean
+    appKey?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    participants?: ConversationParticipantUpdateManyWithoutConversationNestedInput
+    messages?: MessageUpdateManyWithoutConversationNestedInput
+    scheduledMessages?: ScheduledMessageUpdateManyWithoutConversationNestedInput
+    webhooks?: WebhookUpdateManyWithoutConversationNestedInput
+    kanbanCards?: KanbanCardUpdateManyWithoutConversationNestedInput
+    events?: GroupEventUpdateManyWithoutConversationNestedInput
+    gameMatches?: GameMatchUpdateManyWithoutConversationNestedInput
+    topics?: TopicUpdateManyWithoutConversationNestedInput
+    tournaments?: TournamentUpdateManyWithoutConversationNestedInput
+    folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+  }
+
+  export type ConversationUncheckedUpdateWithoutAutomationsInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    isGroup?: BoolFieldUpdateOperationsInput | boolean
+    name?: NullableStringFieldUpdateOperationsInput | string | null
+    description?: StringFieldUpdateOperationsInput | string
+    photo?: NullableStringFieldUpdateOperationsInput | string | null
+    inviteCode?: NullableStringFieldUpdateOperationsInput | string | null
+    ttlSeconds?: IntFieldUpdateOperationsInput | number
+    broadcastMode?: BoolFieldUpdateOperationsInput | boolean
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    isSelf?: BoolFieldUpdateOperationsInput | boolean
+    appKey?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    participants?: ConversationParticipantUncheckedUpdateManyWithoutConversationNestedInput
+    messages?: MessageUncheckedUpdateManyWithoutConversationNestedInput
+    scheduledMessages?: ScheduledMessageUncheckedUpdateManyWithoutConversationNestedInput
+    webhooks?: WebhookUncheckedUpdateManyWithoutConversationNestedInput
+    kanbanCards?: KanbanCardUncheckedUpdateManyWithoutConversationNestedInput
+    events?: GroupEventUncheckedUpdateManyWithoutConversationNestedInput
+    gameMatches?: GameMatchUncheckedUpdateManyWithoutConversationNestedInput
+    topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
+    tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
+    folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+  }
+
+  export type UserUpsertWithoutAutomationsCreatedInput = {
+    update: XOR<UserUpdateWithoutAutomationsCreatedInput, UserUncheckedUpdateWithoutAutomationsCreatedInput>
+    create: XOR<UserCreateWithoutAutomationsCreatedInput, UserUncheckedCreateWithoutAutomationsCreatedInput>
+    where?: UserWhereInput
+  }
+
+  export type UserUpdateToOneWithWhereWithoutAutomationsCreatedInput = {
+    where?: UserWhereInput
+    data: XOR<UserUpdateWithoutAutomationsCreatedInput, UserUncheckedUpdateWithoutAutomationsCreatedInput>
+  }
+
+  export type UserUpdateWithoutAutomationsCreatedInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUpdateManyWithoutUserNestedInput
+    messages?: MessageUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUpdateManyWithoutUserNestedInput
+    folders?: FolderUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+  }
+
+  export type UserUncheckedUpdateWithoutAutomationsCreatedInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUncheckedUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUncheckedUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUncheckedUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUncheckedUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUncheckedUpdateManyWithoutUserNestedInput
+    messages?: MessageUncheckedUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUncheckedUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUncheckedUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
+    folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+  }
+
   export type ConversationCreateWithoutWebhooksInput = {
     id?: string
     isGroup?: boolean
@@ -62239,6 +64375,7 @@ export namespace Prisma {
     topics?: TopicCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutWebhooksInput = {
@@ -62264,6 +64401,7 @@ export namespace Prisma {
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutWebhooksInput = {
@@ -62305,6 +64443,7 @@ export namespace Prisma {
     topics?: TopicUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutWebhooksInput = {
@@ -62330,6 +64469,7 @@ export namespace Prisma {
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type UserCreateWithoutStoriesInput = {
@@ -62363,6 +64503,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutStoriesInput = {
@@ -62396,6 +64537,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutStoriesInput = {
@@ -62466,6 +64608,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutStoriesInput = {
@@ -62499,6 +64642,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type StoryViewUpsertWithWhereUniqueWithoutStoryInput = {
@@ -62614,6 +64758,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutParticipationsInput = {
@@ -62647,6 +64792,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutParticipationsInput = {
@@ -62677,6 +64823,7 @@ export namespace Prisma {
     topics?: TopicCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutParticipantsInput = {
@@ -62702,6 +64849,7 @@ export namespace Prisma {
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutParticipantsInput = {
@@ -62751,6 +64899,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutParticipationsInput = {
@@ -62784,6 +64933,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type ConversationUpsertWithoutParticipantsInput = {
@@ -62820,6 +64970,7 @@ export namespace Prisma {
     topics?: TopicUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutParticipantsInput = {
@@ -62845,6 +64996,7 @@ export namespace Prisma {
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type UserCreateWithoutMessagesInput = {
@@ -62878,6 +65030,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutMessagesInput = {
@@ -62911,6 +65064,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutMessagesInput = {
@@ -62941,6 +65095,7 @@ export namespace Prisma {
     topics?: TopicCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutMessagesInput = {
@@ -62966,6 +65121,7 @@ export namespace Prisma {
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutMessagesInput = {
@@ -62984,6 +65140,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -63022,6 +65179,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -63055,6 +65213,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -63092,6 +65251,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -63130,6 +65290,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -63168,6 +65329,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -63201,6 +65363,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -63238,6 +65401,7 @@ export namespace Prisma {
     pinnedBy?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -63474,6 +65638,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMessagesInput = {
@@ -63507,6 +65672,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type ConversationUpsertWithoutMessagesInput = {
@@ -63543,6 +65709,7 @@ export namespace Prisma {
     topics?: TopicUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutMessagesInput = {
@@ -63568,6 +65735,7 @@ export namespace Prisma {
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type MessageUpsertWithoutRepliesInput = {
@@ -63592,6 +65760,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -63630,6 +65799,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -63685,6 +65855,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -63723,6 +65894,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -63961,6 +66133,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -63999,6 +66172,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -64066,6 +66240,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -64104,6 +66279,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -64320,6 +66496,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutSavedMessagesInput = {
@@ -64353,6 +66530,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutSavedMessagesInput = {
@@ -64371,6 +66549,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -64409,6 +66588,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -64473,6 +66653,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutSavedMessagesInput = {
@@ -64506,6 +66687,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type MessageUpsertWithoutSavedByInput = {
@@ -64530,6 +66712,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -64568,6 +66751,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -64608,6 +66792,7 @@ export namespace Prisma {
     topics?: TopicCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutScheduledMessagesInput = {
@@ -64633,6 +66818,7 @@ export namespace Prisma {
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutScheduledMessagesInput = {
@@ -64674,6 +66860,7 @@ export namespace Prisma {
     topics?: TopicUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutScheduledMessagesInput = {
@@ -64699,6 +66886,7 @@ export namespace Prisma {
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type MessageCreateWithoutTranslationsInput = {
@@ -64712,6 +66900,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -64750,6 +66939,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -64794,6 +66984,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -64832,6 +67023,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -64860,6 +67052,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -64898,6 +67091,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -64951,6 +67145,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -64989,6 +67184,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -65033,6 +67229,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -65071,6 +67268,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -65111,6 +67309,7 @@ export namespace Prisma {
     gameMatches?: GameMatchCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutTopicsInput = {
@@ -65136,6 +67335,7 @@ export namespace Prisma {
     gameMatches?: GameMatchUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutTopicsInput = {
@@ -65154,6 +67354,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -65191,6 +67392,7 @@ export namespace Prisma {
     pinnedBy?: string | null
     parentId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -65252,6 +67454,7 @@ export namespace Prisma {
     gameMatches?: GameMatchUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutTopicsInput = {
@@ -65277,6 +67480,7 @@ export namespace Prisma {
     gameMatches?: GameMatchUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type MessageUpsertWithWhereUniqueWithoutTopicInput = {
@@ -65326,6 +67530,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutFoldersInput = {
@@ -65359,6 +67564,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutFoldersInput = {
@@ -65429,6 +67635,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutFoldersInput = {
@@ -65462,6 +67669,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type FolderConversationUpsertWithWhereUniqueWithoutFolderInput = {
@@ -65526,6 +67734,7 @@ export namespace Prisma {
     gameMatches?: GameMatchCreateNestedManyWithoutConversationInput
     topics?: TopicCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutFolderEntriesInput = {
@@ -65551,6 +67760,7 @@ export namespace Prisma {
     gameMatches?: GameMatchUncheckedCreateNestedManyWithoutConversationInput
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutFolderEntriesInput = {
@@ -65621,6 +67831,7 @@ export namespace Prisma {
     gameMatches?: GameMatchUpdateManyWithoutConversationNestedInput
     topics?: TopicUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutFolderEntriesInput = {
@@ -65646,6 +67857,7 @@ export namespace Prisma {
     gameMatches?: GameMatchUncheckedUpdateManyWithoutConversationNestedInput
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationCreateWithoutTournamentsInput = {
@@ -65671,6 +67883,7 @@ export namespace Prisma {
     gameMatches?: GameMatchCreateNestedManyWithoutConversationInput
     topics?: TopicCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutTournamentsInput = {
@@ -65696,6 +67909,7 @@ export namespace Prisma {
     gameMatches?: GameMatchUncheckedCreateNestedManyWithoutConversationInput
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutTournamentsInput = {
@@ -65766,6 +67980,7 @@ export namespace Prisma {
     gameMatches?: GameMatchUpdateManyWithoutConversationNestedInput
     topics?: TopicUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutTournamentsInput = {
@@ -65791,6 +68006,7 @@ export namespace Prisma {
     gameMatches?: GameMatchUncheckedUpdateManyWithoutConversationNestedInput
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type TournamentPlayerUpsertWithWhereUniqueWithoutTournamentInput = {
@@ -65867,6 +68083,7 @@ export namespace Prisma {
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserUncheckedCreateWithoutTournamentEntriesInput = {
@@ -65900,6 +68117,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
   }
 
   export type UserCreateOrConnectWithoutTournamentEntriesInput = {
@@ -65982,6 +68200,7 @@ export namespace Prisma {
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
   }
 
   export type UserUncheckedUpdateWithoutTournamentEntriesInput = {
@@ -66015,6 +68234,7 @@ export namespace Prisma {
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
   }
 
   export type MessageCreateWithoutRedPacketInput = {
@@ -66028,6 +68248,7 @@ export namespace Prisma {
     pinnedAt?: Date | string | null
     pinnedBy?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66066,6 +68287,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66133,6 +68355,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -66171,6 +68394,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -66306,6 +68530,7 @@ export namespace Prisma {
     topics?: TopicCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutGameMatchesInput = {
@@ -66331,6 +68556,7 @@ export namespace Prisma {
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutGameMatchesInput = {
@@ -66372,6 +68598,7 @@ export namespace Prisma {
     topics?: TopicUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutGameMatchesInput = {
@@ -66397,6 +68624,7 @@ export namespace Prisma {
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationCreateWithoutKanbanCardsInput = {
@@ -66422,6 +68650,7 @@ export namespace Prisma {
     topics?: TopicCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutKanbanCardsInput = {
@@ -66447,6 +68676,7 @@ export namespace Prisma {
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutKanbanCardsInput = {
@@ -66488,6 +68718,7 @@ export namespace Prisma {
     topics?: TopicUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutKanbanCardsInput = {
@@ -66513,6 +68744,7 @@ export namespace Prisma {
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationCreateWithoutEventsInput = {
@@ -66538,6 +68770,7 @@ export namespace Prisma {
     topics?: TopicCreateNestedManyWithoutConversationInput
     tournaments?: TournamentCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationCreateNestedManyWithoutConversationInput
+    automations?: AutomationCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationUncheckedCreateWithoutEventsInput = {
@@ -66563,6 +68796,7 @@ export namespace Prisma {
     topics?: TopicUncheckedCreateNestedManyWithoutConversationInput
     tournaments?: TournamentUncheckedCreateNestedManyWithoutConversationInput
     folderEntries?: FolderConversationUncheckedCreateNestedManyWithoutConversationInput
+    automations?: AutomationUncheckedCreateNestedManyWithoutConversationInput
   }
 
   export type ConversationCreateOrConnectWithoutEventsInput = {
@@ -66629,6 +68863,7 @@ export namespace Prisma {
     topics?: TopicUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUpdateManyWithoutConversationNestedInput
   }
 
   export type ConversationUncheckedUpdateWithoutEventsInput = {
@@ -66654,6 +68889,7 @@ export namespace Prisma {
     topics?: TopicUncheckedUpdateManyWithoutConversationNestedInput
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
+    automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
   }
 
   export type EventRsvpUpsertWithWhereUniqueWithoutEventInput = {
@@ -66826,6 +69062,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66899,6 +69136,17 @@ export namespace Prisma {
     id?: string
     peerId: string
     verifiedAt?: Date | string
+  }
+
+  export type AutomationCreateManyCreatedByInput = {
+    id?: string
+    conversationId: string
+    trigger: string
+    reply: string
+    enabled?: boolean
+    hits?: number
+    lastFiredAt?: Date | string | null
+    createdAt?: Date | string
   }
 
   export type AppInstallUpdateWithoutUserInput = {
@@ -67113,6 +69361,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67150,6 +69399,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67183,6 +69433,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67390,6 +69641,39 @@ export namespace Prisma {
     verifiedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
+  export type AutomationUpdateWithoutCreatedByInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    conversation?: ConversationUpdateOneRequiredWithoutAutomationsNestedInput
+  }
+
+  export type AutomationUncheckedUpdateWithoutCreatedByInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AutomationUncheckedUpdateManyWithoutCreatedByInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
   export type ConversationParticipantCreateManyConversationInput = {
     id?: string
     userId: string
@@ -67417,6 +69701,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -67508,6 +69793,17 @@ export namespace Prisma {
     position?: number
   }
 
+  export type AutomationCreateManyConversationInput = {
+    id?: string
+    trigger: string
+    reply: string
+    createdById: string
+    enabled?: boolean
+    hits?: number
+    lastFiredAt?: Date | string | null
+    createdAt?: Date | string
+  }
+
   export type ConversationParticipantUpdateWithoutConversationInput = {
     id?: StringFieldUpdateOperationsInput | string
     role?: StringFieldUpdateOperationsInput | string
@@ -67555,6 +69851,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67592,6 +69889,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67625,6 +69923,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67882,6 +70181,39 @@ export namespace Prisma {
     position?: IntFieldUpdateOperationsInput | number
   }
 
+  export type AutomationUpdateWithoutConversationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    createdBy?: UserUpdateOneRequiredWithoutAutomationsCreatedNestedInput
+  }
+
+  export type AutomationUncheckedUpdateWithoutConversationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    createdById?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AutomationUncheckedUpdateManyWithoutConversationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    trigger?: StringFieldUpdateOperationsInput | string
+    reply?: StringFieldUpdateOperationsInput | string
+    createdById?: StringFieldUpdateOperationsInput | string
+    enabled?: BoolFieldUpdateOperationsInput | boolean
+    hits?: IntFieldUpdateOperationsInput | number
+    lastFiredAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
   export type StoryViewCreateManyStoryInput = {
     id?: string
     userId: string
@@ -67921,6 +70253,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -67947,6 +70280,7 @@ export namespace Prisma {
     pinnedBy?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -67989,6 +70323,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68026,6 +70361,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68059,6 +70395,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68081,6 +70418,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68118,6 +70456,7 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68151,6 +70490,7 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68292,6 +70632,7 @@ export namespace Prisma {
     parentId?: string | null
     topicId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68313,6 +70654,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68351,6 +70693,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68384,6 +70727,7 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68409,6 +70753,7 @@ export namespace Prisma {
     pinnedBy?: string | null
     parentId?: string | null
     anon?: boolean
+    viaAutomation?: boolean
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68431,6 +70776,7 @@ export namespace Prisma {
     pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68468,6 +70814,7 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68501,6 +70848,7 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null

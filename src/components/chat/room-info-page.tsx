@@ -50,6 +50,7 @@ import { toast } from 'sonner'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 import { RoomMemberAddPage } from '@/components/chat/room-member-add'
 import { SafetySheet, safetyKey, type SafetyState } from '@/components/chat/safety-sheet'
+import { AutomationsSection } from '@/components/chat/automations-sheet'
 import { ConvThemePicker } from '@/components/chat/conv-theme-picker'
 import { convThemeSummary } from '@/lib/conv-theme'
 import { usePrefsValues } from '@/lib/prefs'
@@ -1130,6 +1131,17 @@ export function RoomInfoPage({
             </button>
           ) : null}
         </motion.div>
+
+        {/* R39 — Automations: keyword-triggered auto-replies. One glass section
+            (rows + optimistic switch + honest delete + create sheet live in
+            automations-sheet.tsx to keep this file's diff surgical). Admins
+            manage; members read rows or the honest manage caption. */}
+        <AutomationsSection
+          me={me}
+          conversationId={conversationId}
+          isAdmin={isAdmin}
+          reducedMotion={reducedMotion}
+        />
 
         {/* R35-a — Encryption section (DMs only): Signal-paradigm safety-number
             verification. One row; tap opens the compare-and-verify sheet. */}

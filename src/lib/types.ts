@@ -107,6 +107,11 @@ export interface ChatMessage {
   linkPreview: LinkPreviewData | null
   poll: PollData | null
   translations: MessageTranslationEntry[] // persisted LLM translations by lang
+  /** R39 additive: true when the message was landed by a keyword automation
+   *  (machine-sent — bubbles surface an honest "Automation" chip). Always
+   *  present on server-serialized messages; omitted (undefined = false) on
+   *  client-side optimistic/queued constructions. */
+  viaAutomation?: boolean
   /** client-only marker: message is held in the offline outbox (never sent by server) */
   _queued?: boolean
 }
@@ -286,6 +291,20 @@ export interface TournamentSummary {
     losses: number
     draws: number
   }>
+}
+
+/** R39 — one keyword auto-reply rule (GET/POST /api/conversations/[id]/automations). */
+export interface AutomationSummary {
+  id: string
+  conversationId: string
+  trigger: string // 2-40 chars, matched as a standalone phrase
+  reply: string // 1-500 chars
+  enabled: boolean
+  hits: number // lifetime fire count
+  lastFiredAt: string | null // ISO or null
+  createdAt: string // ISO
+  /** admin who authored the rule — also the author of fired replies */
+  createdBy: { id: string; name: string; color: string; avatar: string | null } | null
 }
 
 // ── Socket event payloads (port 3003 mini service) ────────────

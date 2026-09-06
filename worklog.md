@@ -1509,3 +1509,21 @@ Work Log:
 Stage Summary:
 - State: main == origin/main at 37e955b; app :200 healthy; both research files fully mined — every implementable pattern shipped; remaining research-file items (agent inboxes, flow-canvas bot builders, 3D spatial worlds, federated homeservers, shared-inbox email paradigms) are different product categories, documented here as honest exclusions rather than faked
 - Next queue for the review cron: glass-polish sweeps on any laggard surface, depth passes on stage/voice-rooms and bot auto-reply flows (existing Bot & Webhook QA infra), per-viewer screenPrivacy if ever needed
+---
+Task ID: R39 (lead-written; crew landed code + E2E but its report channel died at the context deadline)
+Agent: general-purpose (code) + orchestrator lead (verification, trim, this entry)
+Task: Automations — keyword-triggered auto-replies (the honest ManyChat/Landbot adaptation), real DB rules firing real labeled messages
+
+Work Log:
+- Schema (crew): Automation { conversationId, trigger, reply, createdById, enabled, hits, lastFiredAt, @@index([conversationId, enabled]) } + Message.viaAutomation Boolean default false; db:push + client regen; db.ts singleton protocol bumped v4→v5 (long-running server picked it up live)
+- API (crew): NEW /api/conversations/[id]/automations — GET (participant-only, createdAt desc, creator {id,name,color,avatar}) + POST create (ADMIN-only 403, trigger 2-40 / reply 1-500, case-insensitive per-conversation trigger dedupe 409); NEW /api/automations/[id] — PATCH { enabled?, reply? } / DELETE, admin-only (creator counts only while admin), 400/403/404 guards
+- Firing engine (crew, messages route): after the human message is stored — first enabled automation whose trigger matches as a STANDALONE phrase (escaped trigger + (?<![A-Za-z0-9])/(?!...) boundaries so "price" never fires inside "pricing"/"prices"); reply = real Message row (sender = rule creator, viaAutomation=true, TTL-aware expiresAt) created in a transaction with conversation bump + archive unpin, notifySocket to ALL members (author included — machine-sent, nobody gets it via self-response), atomic hits+1/lastFiredAt; never chains (viaAutomation messages never re-enter the engine); every failure swallowed + logged (XP-accounting principle)
+- UI (crew): room-info "AUTOMATIONS" glass section — rows (Zap tile, bold trigger, reply preview, enabled Switch optimistic+rollback, "N hits · last <time> · by <creator>", delete) + "New automation" create sheet (automations-sheet.tsx; live validation); chat-room bubble meta gains a "Automation" Bot-icon chip on viaAutomation messages; serializers/types additive
+- LEAD VERIFICATION: tsc src 0 errors, lint clean, scope exact (mode-only touches on 5 files + old screenshots restored); curl-proofs: duplicate create 409, Bob create 403, "pricinggg deal" NO fire (hits 7), "what is the pricing here" FIRE (hits 7→8), PATCH disable → matching send NO fire (hits stayed 8) → re-enabled for living demo; VLM-checked qa-r39-01 (section in glass recipe) and qa-r39-03 (live bubbles with Automation chip)
+- Lead trim: soft-deleted 6 old automation replies + old probe noise so the demo room keeps exactly 2 visible replies; QA probes from Bob left in-room (consistent with prior waves)
+
+Stage Summary:
+- SHIPPED: Automations end-to-end — admin-managed keyword rules firing real, honestly-labeled auto-replies in realtime; hits/lastFiredAt stats; per-conversation scope (groups/DMs where an admin creates them)
+- Contract: GET/POST /api/conversations/[id]/automations; PATCH/DELETE /api/automations/[id] { userId, ... }; firing = first enabled match, standalone-phrase boundary regex; Message gains viaAutomation
+- Honest gaps: no per-rule edit of TRIGGER after create (PATCH supports reply/enabled only — delete+recreate for trigger changes); firing is sequential in the send request (fine at current scale); no automation audit log beyond hits/lastFiredAt
+- Evidence: download/qa-r39-01-automations-section.png, -02-create-sheet.png, -02b-duplicate-toast.png, -03-live-bubble-chip.png, -04-disabled-state.png
