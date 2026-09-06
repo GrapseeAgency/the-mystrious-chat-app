@@ -71,7 +71,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { AvatarPhotoEditor } from '@/components/profile/avatar-editor'
-import { ChevronRow, CountUp, ProfileSection, StatTile } from '@/components/profile/profile-primitives'
+import { ChevronRow, CountUp, ProfileSection, StatTile, PROFILE_CARD } from '@/components/profile/profile-primitives'
 import { STATUS_GLYPH_CHOICES, StatusGlyph } from '@/components/profile/status-glyph'
 import { HandleEditorDialog } from '@/components/profile/handle-editor'
 
@@ -765,10 +765,20 @@ function ProfileEditor({
                 ? 'Loading'
                 : `${(savedQuery.data ?? []).length} saved ${(savedQuery.data ?? []).length === 1 ? 'message' : 'messages'}`}
             </p>
-            {(savedQuery.data ?? []).length === 0 && !savedQuery.isPending ? (
-              <p className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                Long-press a message in any chat and choose Save message.
-              </p>
+            {savedQuery.isPending ? (
+              <div role="status" aria-label="Loading saved messages" className="space-y-2 py-1">
+                <Skeleton className="h-16 rounded-3xl" />
+                <Skeleton className="h-16 rounded-3xl" />
+              </div>
+            ) : (savedQuery.data ?? []).length === 0 ? (
+              <div className="flex flex-col items-center gap-2.5 px-6 py-7 text-center">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-500/12">
+                  <Star className="size-6 text-amber-500" aria-hidden />
+                </div>
+                <p className="max-w-[250px] text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  Long-press a message in any chat and choose Save message.
+                </p>
+              </div>
             ) : (
               <ul className="pulse-scroll max-h-[52dvh] space-y-2 overflow-y-auto py-1">
                 {(savedQuery.data ?? []).map((item) => (
@@ -780,7 +790,7 @@ function ProfileEditor({
                         setSavedOpen(false)
                         onOpenSavedMessage?.(item.message.conversationId, item.message.id)
                       }}
-                      className="glass-row-hover w-full rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 text-left outline-none active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-800/60"
+                      className={cn(PROFILE_CARD, 'glass-row-hover w-full p-2.5 text-left outline-none active:scale-[0.99]')}
                     >
                       <div className="flex items-center gap-2">
                         <UserAvatar name={item.message.sender.name} color={item.message.sender.color} size={22} />

@@ -1416,3 +1416,25 @@ Stage Summary:
 - Contract: GET /api/mentions?userId=X&limit=N → { items:[{messageId,conversationId,conversationName,isGroup,author{...},snippet,createdAt}] }; mention rule = @ + FULL display name + boundary
 - Honest gaps: mention matching is name-based (no id-tagging markup stored on messages); entries older than the 14-day window / beyond 200 '@'-rows per room are not scanned; incoming ring while inside ANOTHER room renders over it (verified in code paths, not screenshotted)
 - Evidence: download/qa-r35b-01-entry.png, qa-r35b-02-mentions.png, qa-r35b-03-markread.png, qa-r35b-03b-markread-done.png, qa-r35b-04-shell-ring.png
+
+---
+Task ID: R36
+Agent: general-purpose
+Task: Decoration pass — contacts/profile sub-pages + hub category pages
+
+Work Log:
+- Read worklog (Architecture & Contracts, R32 gaps, R34-b/R35-a/R35-b) + the locked glass recipe at token level (globals.css .glass-deep/.glass-sheen/.glass-pill/.glass-row-hover, glass-card.tsx glassSurface, lib/motion.ts pressTap/spring/stagger) before touching anything
+- hub-category-page.tsx (the biggest R32 gap): accent identity band rebuilt as the ref recipe — category wash gradient now sits BEHIND a glass-deep+glass-sheen rounded-3xl card (ambient wash refracting through glass); its micro-label moved to the section-label rhythm (10px bold uppercase tracking-wide zinc-400); app list card rounded-2xl→rounded-3xl; rows converted to motion.button with whileTap pressTap + pressSpring (reduced-motion safe); unknown-slug and empty-category states rebuilt as glass-deep rounded-3xl cards with emerald icon tiles + title/description hierarchy + entrance motion; hydrating state wrapped in the same glass card; page slide transition now uses spring.soft token
+- profile-tab.tsx (decoration only): saved-messages drawer rows upgraded from flat zinc bordered cards to the profile family PROFILE_CARD material (imported, not reinvented); drawer empty state gained an amber star icon tile + structured helper text; added skeleton loading rows for the drawer list (max-h 52dvh + pulse-scroll kept)
+- contacts-add-page.tsx: results section label normalized to the recipe rhythm (10px bold uppercase tracking-wide zinc-400) — page was otherwise already on-recipe from R27-a/R32 tokens
+- user-route-page.tsx: 'Shared groups' card label normalized to the same rhythm; rest of the page verified already on-recipe (glass-deep cards, stagger variants, pressTap)
+- contacts-tab.tsx: new-group header button switched from a raw ring/backdrop-blur pill to glass-pill so the header button pair (new group / Add contact) shares one material
+- settings-screen.tsx: audited only — already thoroughly on-recipe (glass-deep cards, 10.5px bold uppercase labels, glass-row-hover rows); deliberately untouched per the conservative mandate
+- LEAD-STYLE LIVE PROOF via gateway :81 as Alice (sessionStorage session intact): #/contacts/add renders search + rows; #/user/<bobId> renders cover, SHARED GROUPS label, Continue-direct-chat; Profile tab all sections + saved drawer (0 saved → icon-tile empty state); Hub → E-Commerce and Web3 category pages with glass identity card + list; dark-mode category shot after next-themes toggle (html.dark confirmed); 7 screenshots in download/qa-r36-*
+- One transient client-side exception occurred mid-session after many Fast Refresh rebuilds in a long-lived tab (same stale-HMR artifact documented in R35-b); hard reload cleared it — every screen re-verified healthy after reload; no recurrence
+- tsc src: 0 errors (mini-services/skills errors pre-date this task, outside src) · lint: clean · dev.log tail: no new errors · theme restored to light afterwards
+
+Stage Summary:
+- SHIPPED: the R32 honest gap closed — hub category pages + contacts/profile deep sub-pages now carry the locked glass recipe (identity-band wash-behind-glass, recipe empty/loading states, pressTap rows, section-label rhythm, rounded-3xl glass cards)
+- Evidence: download/qa-r36-01-contacts-add.png, qa-r36-02-user-page.png, qa-r36-03-profile.png, qa-r36-03b-profile-saved-drawer.png, qa-r36-04-hub-category.png, qa-r36-04b-hub-web3.png, qa-r36-05-hub-dark.png
+- Honest gaps: settings-screen untouched by design (audit-only); hub catalog per-category brand accents (existing data, some blue/purple) left as-is — they are third-party brand identity, not app chrome; app-detail-sheet rounded-2xl family radius not touched (out of scope file); profile-primitives.tsx PROFILE_CARD/labels left as the established family language

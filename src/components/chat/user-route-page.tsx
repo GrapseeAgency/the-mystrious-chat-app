@@ -446,7 +446,7 @@ function UserPageBody({
             variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { ...spring.soft, delay: 0.15 } } }}
             className="glass-deep glass-sheen mt-3 overflow-hidden rounded-3xl p-1.5"
           >
-            <p className="px-2.5 pb-1 pt-2 text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
+            <p className="px-2.5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
               Shared groups
             </p>
             {sharedGroups.length === 0 ? (

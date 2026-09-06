@@ -220,7 +220,7 @@ export function ContactsTab({
                   whileTap={reducedMotion ? undefined : { scale: 0.94 }}
                   transition={pressSpring}
                   aria-label="Create a new group"
-                  className="flex size-10 items-center justify-center rounded-full text-zinc-500 outline-none ring-1 ring-zinc-200/70 backdrop-blur-xl transition-colors hover:bg-zinc-100/70 hover:text-zinc-700 active:scale-95 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-200"
+                  className="glass-pill flex size-10 items-center justify-center text-zinc-500 outline-none transition-colors hover:text-zinc-700 active:scale-95 dark:text-zinc-400 dark:hover:text-zinc-200"
                 >
                   <UsersRound className="size-[18px]" aria-hidden />
                 </motion.button>
