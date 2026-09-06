@@ -1555,3 +1555,16 @@ Stage Summary:
 - DB final state: QA group (cmtn1844z0000nhhcxv5i1f8p) keeps exactly ONE live file message — cmtq5xxhz0009ozzk6e2ehvih (Alice, kind file, filePath 6fd81c9d-bbf6-40eb-a410-1b77aef17972.pdf, fileName pulse-r40-qa.pdf, fileSize 596, caption "R40 QA — shared the Pulse wave spec") + one SOFT-DELETED file probe cmtq63ce6000pozzkr8rxcn7p (tombstone, bytes kept for row integrity); uploads/ holds exactly those two real PDFs; no other rows touched (Alice QA streak naturally advanced to count 2 as a send side effect)
 - Evidence: download/qa-r40-00-chats-preview.png (Document — pulse-r40-qa.pdf row preview), qa-r40-01-composer-tile.png (Create tray with Document tile), qa-r40-02-document-card.png (glass doc card + caption in live room), qa-r40-03-oversize-toast.png ("Document is too large — the limit is 10 MB"), qa-r40-03b-badtype-toast.png ("Documents must be PDF, TXT, CSV or ZIP files"), qa-r40-04-card-and-tombstone.png (demo card + deleted-probe tombstone, fresh mount)
 - Do NOT run git commit or git push (lead commits after verification).
+---
+Task ID: R39+R40-ship (lead)
+Agent: orchestrator (Z.ai Code)
+Task: Lead verification + shipping of waves R39 (Automations) and R40 (document attachments)
+
+Work Log:
+- R39: crew landed code + E2E but died at the report deadline; lead verified scope/tsc/lint, curl-proved guards (409 dup, 403 member), boundary engine ('pricinggg' no-fire vs 'what is the pricing here' fire, hits 7→8), disable→no-fire→re-enable; VLM-checked section + live chip bubbles; wrote the missing worklog entry; soft-trimmed demo noise to 2 visible replies; committed 21315c7 (credentials re-seeded after environment wipe, push restored)
+- R40: crew reported complete; lead re-verified tsc/lint/scope, live-downloaded the demo PDF (200, application/pdf, 596 B, real %PDF-1.4 header), VLM-checked the document card bubble; committed baf4ac8 and pushed
+- State: main == origin/main at baf4ac8
+
+Stage Summary:
+- Two consumer-messenger gaps from the research table closed: bot automations (ManyChat/Landbot family, honest in-paradigm adaptation) and document attachments (WhatsApp/Slack media cell)
+- Next queue (honest gaps from these waves): automation PATCH trigger rename (currently reply/enabled only), ForwardSheet carrying file attachments (forwards captions only), message search matching fileName (captions only today), per-viewer screenPrivacy (deferred, per-conversation ships); ongoing glass/UX polish via review cron 364018
