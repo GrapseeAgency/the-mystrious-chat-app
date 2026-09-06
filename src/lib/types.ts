@@ -126,6 +126,10 @@ export interface ConversationSummary {
    *  still live (myStreak stays populated) but dies at tonight's UTC midnight
    *  unless the viewer messages today. null/absent = nothing at risk. */
   deadStreak?: { count: number; lastDay: string } | null
+  /** R37 additive: honest end-state — a 2+ day chain whose lastDay is OLDER
+   *  than yesterday (UTC); the day passed and the streak died. null/absent =
+   *  none. Never populated beside a live myStreak or deadStreak. */
+  lostStreak?: { count: number; best: number; lastDay: string } | null
   /** R33-b additive: channel/group photo path ("/api/uploads/<file>") — null = palette avatar fallback */
   photo: string | null
   pinnedAt: string | null // viewer's pin watermark (null = not pinned)
@@ -166,6 +170,9 @@ export interface ConversationDetail {
   /** R33-b additive — same semantics as ConversationSummary.deadStreak:
    *  live-but-dies-tonight streak (lastDay = yesterday UTC, count >= 2). */
   deadStreak?: { count: number; lastDay: string } | null
+  /** R37 additive — same semantics as ConversationSummary.lostStreak:
+   *  dead chain (lastDay older than yesterday UTC, count >= 2). */
+  lostStreak?: { count: number; best: number; lastDay: string } | null
   /** R33-b additive: channel/group photo path ("/api/uploads/<file>") — null = palette avatar fallback */
   photo: string | null
   inviteCode: string | null // shareable join code (groups only; null = no active link)

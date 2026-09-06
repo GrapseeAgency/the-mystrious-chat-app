@@ -73,6 +73,7 @@ import {
   RotateCcw,
   Search,
   SendHorizontal,
+  ShieldCheck,
   Smile,
   Sparkles,
   SquareKanban,
@@ -209,6 +210,10 @@ import { useHashRoute, navigateHash, replaceHash, backHash } from '@/lib/hash-ro
 import { RoomInfoPage } from '@/components/chat/room-info-page'
 import { RoomSearchPage } from '@/components/chat/room-search-page'
 import { RoomPinsSheet } from '@/components/chat/room-pins-sheet'
+// ── R37: DM header ShieldCheck badge — the shared safety-number sheet lives
+// in its own file (also mounted by the room info Encryption row); this room
+// only renders the badge and opens the sheet on tap.
+import { SafetySheet, safetyKey, type SafetyState } from '@/components/chat/safety-sheet'
 // ── R30-b: per-message reminders — glass sheet + due-loop + jump event ──
 import {
   RemindersSheet,
@@ -1134,6 +1139,23 @@ export function ChatRoom({
   )
   const isGroup = detailData?.isGroup ?? false
   const displayName = detailData ? conversationDisplayName(detailData, me.id) : ''
+
+  // ── R37: Signal paradigm — DM header ShieldCheck verification badge.
+  // DMs ONLY (never groups/channels/self-chat — otherMemberOf falls back to
+  // myself there, so isSelf is checked explicitly). Shares the
+  // ['safety', peerId, meId] cache key with the room info page, so a verify
+  // made in either surface flips both instantly.
+  const dmPeer = !isGroup && other !== null && detailData?.isSelf !== true ? other : null
+  const [safetyOpen, setSafetyOpen] = useState(false)
+  const safety = useQuery({
+    queryKey: dmPeer ? safetyKey(dmPeer.id, me.id) : ['safety', '-', me.id],
+    queryFn: ({ queryKey }) =>
+      apiJson<SafetyState>(
+        `/api/users/${encodeURIComponent(queryKey[1])}/safety?userId=${encodeURIComponent(me.id)}`,
+      ),
+    enabled: dmPeer !== null,
+    staleTime: 10_000,
+  })
 
   // ── R33-a → R35-b: 1:1 voice/video calls — the WebRTC + signaling state
   // machine and the <CallOverlay> now live at SHELL level (main-shell), so
@@ -3661,6 +3683,36 @@ export function ChatRoom({
           </AnimatePresence>
         </button>
 
+        {/* R37 — Signal paradigm: DM-only contact verification badge beside
+            the call buttons. Verified peer → emerald ShieldCheck with a subtle
+            emerald tint ring; otherwise a zinc outline icon with a tiny amber
+            dot. Tap opens the shared safety-number sheet. */}
+        {!isGroup && dmPeer ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={safety.data?.verified ? 'Verified' : 'Not verified'}
+            onClick={() => {
+              haptic(8)
+              setSafetyOpen(true)
+            }}
+            className={cn(
+              'relative size-10 shrink-0 rounded-full active:scale-95',
+              safety.data?.verified
+                ? 'bg-emerald-500/[0.07] text-emerald-500 ring-1 ring-inset ring-emerald-500/40 hover:bg-emerald-500/[0.12] hover:text-emerald-500'
+                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300',
+            )}
+          >
+            <ShieldCheck className="size-5" aria-hidden />
+            {!safety.data?.verified ? (
+              <span
+                aria-hidden
+                className="absolute top-2 right-2 size-1.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-zinc-950"
+              />
+            ) : null}
+          </Button>
+        ) : null}
+
         {/* R33-a → R35-b: DM-only call buttons — voice always, video beside it.
             They dial through the SHELL's single call session (onStartCall);
             hosts without the shell wiring honestly show no dead buttons. */}
@@ -5487,6 +5539,17 @@ export function ChatRoom({
         submitting={createPoll.isPending}
         onSubmit={(question, options) => createPoll.mutate({ question, options })}
       />
+
+      {/* R37 — DM-only safety-number sheet, opened by the header ShieldCheck
+          badge (shared component; also mounted by the room info page). */}
+      {!isGroup && dmPeer ? (
+        <SafetySheet
+          peer={dmPeer}
+          meId={me.id}
+          open={safetyOpen}
+          onOpenChange={setSafetyOpen}
+        />
+      ) : null}
 
       {/* schedule sheet */}
       <ScheduleSheet

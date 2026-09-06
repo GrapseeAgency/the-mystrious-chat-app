@@ -63,6 +63,24 @@ export function atRiskStreak(lastDay: string, count: number): { count: number; l
   return lastDay === dayKey(new Date(Date.now() - 86_400_000)) ? { count, lastDay } : null
 }
 
+/**
+ * R37 — honest end-state: a chain of 2+ days whose lastDay is OLDER than
+ * yesterday (UTC) — the day passed without a message, so the streak died.
+ * Mirrors atRiskStreak exactly: same UTC day-bucketing (dayKey), same 2+ day
+ * threshold, derived from the SAME streak row (no extra query). Anything
+ * still live (today/yesterday) is NOT lost — myStreak/deadStreak cover it.
+ * Returns the wire shape for the additive `lostStreak` field (null = none).
+ */
+export function lostStreak(
+  lastDay: string,
+  count: number,
+  best: number,
+): { count: number; best: number; lastDay: string } | null {
+  if (count < 2) return null
+  if (isLiveStreakDay(lastDay)) return null
+  return { count, best, lastDay }
+}
+
 /** Suggest the nearest free variant of a taken handle (append 2..99). */
 export async function suggestUsername(base: string): Promise<string> {
   for (let n = 2; n < 100; n += 1) {
@@ -327,7 +345,7 @@ export async function buildConversationSummary(
     }),
     db.conversationStreak.findUnique({
       where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
-      select: { lastDay: true, count: true },
+      select: { lastDay: true, count: true, best: true },
     }),
   ])
   const lastRow = conv.messages[0] ?? null
@@ -346,6 +364,9 @@ export async function buildConversationSummary(
     // R33-b additive — derived from the SAME streak row (no extra query):
     // live-but-dies-tonight chains surface the 'ends tonight' nudge.
     deadStreak: streakRow ? atRiskStreak(streakRow.lastDay, streakRow.count) : null,
+    // R37 additive — same row again: chains whose lastDay already passed are
+    // honestly reported as lost (2+ day chains only, never beside live/at-risk).
+    lostStreak: streakRow ? lostStreak(streakRow.lastDay, streakRow.count, streakRow.best) : null,
     photo: conv.photo ?? null,
     pinnedAt: mine?.pinnedAt ? mine.pinnedAt.toISOString() : null,
     mutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
@@ -385,6 +406,8 @@ export async function buildConversationDetail(
         : null,
     // R33-b additive — at-risk nudge + channel/group photo, same row/record.
     deadStreak: streakRow ? atRiskStreak(streakRow.lastDay, streakRow.count) : null,
+    // R37 additive — honest end-state for dead chains (same streak row).
+    lostStreak: streakRow ? lostStreak(streakRow.lastDay, streakRow.count, streakRow.best) : null,
     photo: conv.photo ?? null,
     inviteCode: conv.isGroup ? (conv.inviteCode ?? null) : null,
     ttlSeconds: conv.ttlSeconds,

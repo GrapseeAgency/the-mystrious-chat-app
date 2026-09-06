@@ -26,7 +26,7 @@ import type {
   SocketMessageEvent,
   TypingEvent,
 } from '@/lib/types'
-import { usePulseSession } from '@/lib/pulse-store'
+import { usePulseSession, getPulseUser } from '@/lib/pulse-store'
 import { haptic, isQuietHoursNow, playIncomingPing, primeSound, pulseSettingsStore } from '@/lib/pulse-settings'
 import { flushPulseOutbox, pulseOutboxStore } from '@/lib/pulse-outbox'
 import { toast } from 'sonner'
@@ -550,6 +550,26 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
       const evt = asMessageEvent(raw)
       if (!evt) return
       mergeIncomingMessage(evt.message)
+      // R37 — live mention badges (Discord mobile pattern): when a NEW message
+      // from someone else mentions my FULL display name, refresh the ['mentions']
+      // cache so the Chats-tab AtSign badge rises within ~1s — no page reload,
+      // no extra server push (reuses the existing message:new fan-out).
+      // Matching rule mirrors /api/mentions EXACTLY (keep in sync — also
+      // mirrored client-side in mentions-page.tsx): case-insensitive '@' +
+      // full display name, followed by whitespace / end / non-alphanumeric.
+      const sessionUser = getPulseUser()
+      if (
+        sessionUser &&
+        sessionUser.name.length > 0 &&
+        evt.message.senderId !== sessionUser.id &&
+        evt.message.deletedAt === null &&
+        evt.message.content.includes('@')
+      ) {
+        const escaped = sessionUser.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        if (new RegExp(`@${escaped}(?=\\s|$|[^A-Za-z0-9])`, 'i').test(evt.message.content)) {
+          void queryClient.invalidateQueries({ queryKey: ['mentions', sessionUser.id] })
+        }
+      }
       const viewing =
         activeConvRef.current === evt.message.conversationId &&
         typeof document !== 'undefined' &&

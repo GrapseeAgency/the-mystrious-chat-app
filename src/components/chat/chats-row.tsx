@@ -46,6 +46,9 @@ export interface ConversationRowProps {
   /** R33-b: live-but-dies-tonight streak (lastDay = yesterday UTC, count >= 2)
    *  — replaces the plain flame chip with the amber "ends tonight" nudge */
   streakAtRisk?: { count: number; lastDay: string } | null
+  /** R37: honestly lost streak (lastDay older than yesterday UTC, count >= 2)
+   *  — muted rose chip; only shown when NO live streak and NO at-risk chip */
+  streakLost?: { count: number; best: number; lastDay: string } | null
   /** R33-b: channel/group photo path — circular image above the palette tile */
   photo?: string | null
   /** row lives in the archived sub-page (swipe chip flips to Unarchive) */
@@ -126,6 +129,7 @@ export const ConversationRow = memo(function ConversationRow({
   typing,
   streakCount = 0,
   streakAtRisk = null,
+  streakLost = null,
   photo = null,
   archived,
   selectMode = false,
@@ -358,7 +362,10 @@ export const ConversationRow = memo(function ConversationRow({
                 <span className="flex shrink-0 items-center gap-1.5">
                   {/* R33-b: streak-at-risk nudge — a 2+ day chain whose lastDay is
                       yesterday dies at tonight's UTC midnight; amber glass chip
-                      replaces the plain flame count until a message revives it. */}
+                      replaces the plain flame count until a message revives it.
+                      R37: a chain whose lastDay already passed is honestly LOST —
+                      muted rose chip, strictly last in priority (myStreak >
+                      deadStreak > lostStreak), never shown beside the others. */}
                   {streakAtRisk ? (
                     <span
                       aria-label={`${streakAtRisk.count}-day streak ends tonight — send a message to keep it`}
@@ -374,6 +381,14 @@ export const ConversationRow = memo(function ConversationRow({
                     >
                       <Flame className="size-3" aria-hidden />
                       {streakCount}
+                    </span>
+                  ) : streakLost ? (
+                    <span
+                      aria-label={`${streakLost.count}-day streak lost`}
+                      className="flex items-center gap-1 rounded-full bg-rose-500/[0.07] px-2 py-0.5 text-[10px] font-bold text-rose-400 ring-1 ring-rose-500/20 dark:text-rose-400/80"
+                    >
+                      <Flame className="size-3" aria-hidden />
+                      streak lost
                     </span>
                   ) : null}
                   <motion.span

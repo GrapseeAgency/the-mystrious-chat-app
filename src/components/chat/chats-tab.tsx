@@ -369,6 +369,8 @@ export function ChatsTab({
           streakCount: conv.myStreak?.count ?? 0, // R31-a: live-streak chip
           // R33-b: at-risk nudge + channel/group photo straight from the summary
           streakAtRisk: conv.deadStreak ?? null,
+          // R37: honest end-state chip (never beside a live/at-risk streak)
+          streakLost: conv.lostStreak ?? null,
           photo: conv.photo ?? null,
           archived: conv.archivedAt !== null,
         },
