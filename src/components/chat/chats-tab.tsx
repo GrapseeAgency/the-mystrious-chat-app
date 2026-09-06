@@ -14,7 +14,7 @@ import Image from 'next/image'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArrowRight, BellOff, CheckCheck, ChevronRight, FolderPlus, LoaderCircle, NotebookPen, Phone, Plus, Radio, Search, SquarePen, Users, X } from 'lucide-react'
+import { Archive, ArrowRight, AtSign, BellOff, CheckCheck, ChevronRight, FolderPlus, LoaderCircle, NotebookPen, Phone, Plus, Radio, Search, SquarePen, Users, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -54,6 +54,11 @@ import {
 import { ChatsArchivedPage } from '@/components/chat/chats-archived-page'
 import { ChannelsPage } from '@/components/chat/channels-page'
 import { CallsPage } from '@/components/chat/calls-page'
+import {
+  MentionsPage,
+  fetchMentions,
+  type MentionsResponse,
+} from '@/components/chat/mentions-page'
 
 interface ConversationsResponse {
   conversations: ConversationSummary[]
@@ -280,6 +285,22 @@ export function ChatsTab({
     haptic(6)
     navigate('/calls')
   }, [navigate])
+  // R35-b — #/mentions: Discord mobile 'Mentions' tab, same hash sub-page anatomy
+  const mentionsPageOpen = path === '/mentions'
+  const openMentionsPage = useCallback(() => {
+    haptic(6)
+    navigate('/mentions')
+  }, [navigate])
+
+  // Real mention count for the entry pill — same query key the sub-page uses,
+  // so the cache is warm the moment the page opens.
+  const mentions = useQuery({
+    queryKey: ['mentions', me.id],
+    queryFn: () => fetchMentions(me.id),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  })
+  const mentionCount = mentions.data?.items.length ?? 0
 
   const [searching, setSearching] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
@@ -777,22 +798,30 @@ export function ChatsTab({
   /**
    * Mark every selected chat read — POST /read (the same endpoint the room
    * uses on open); optimistically zeroes unreadCount so the pills drop live.
+   * Per-chat failures are counted honestly: full success toasts + clears the
+   * selection, a partial failure toasts the misses and keeps the mode so the
+   * remaining rows can be retried.
    */
   const batchMarkRead = useMutation({
     mutationFn: async (convs: ConversationSummary[]) => {
       let read = 0
+      let failed = 0
       for (const conv of convs) {
-        await apiJson<{ ok: boolean }>(
-          `/api/conversations/${encodeURIComponent(conv.id)}/read`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: me.id }),
-          },
-        )
-        read += 1
+        try {
+          await apiJson<{ ok: boolean }>(
+            `/api/conversations/${encodeURIComponent(conv.id)}/read`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: me.id }),
+            },
+          )
+          read += 1
+        } catch {
+          failed += 1 // keep going — mark as many as the server allows
+        }
       }
-      return { read }
+      return { read, failed }
     },
     onMutate: async (convs) => {
       await queryClient.cancelQueries({ queryKey: ['conversations', me.id] })
@@ -806,9 +835,16 @@ export function ChatsTab({
       }
       return { previous }
     },
-    onSuccess: ({ read }) => {
+    onSuccess: ({ read, failed }) => {
       haptic(10)
-      toast.success(`Marked ${read} ${read === 1 ? 'chat' : 'chats'} read`)
+      if (read > 0) toast.success(`${read} ${read === 1 ? 'chat' : 'chats'} marked as read`)
+      if (failed > 0) {
+        toast.error(
+          `${failed} ${failed === 1 ? 'chat' : 'chats'} could not be marked read — try again`,
+        )
+      } else {
+        exitSelect()
+      }
     },
     onError: (_error, _vars, context) => {
       if (context?.previous) {
@@ -1335,6 +1371,27 @@ export function ChatsTab({
                 </span>
               )}
             </motion.button>
+            {/* R35-b — Mentions entry: real @mention feed → #/mentions */}
+            <motion.button
+              type="button"
+              whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+              transition={pressSpring}
+              onClick={openMentionsPage}
+              aria-label={`Open mentions — ${mentionCount}`}
+              className="glass-pill mx-2 my-1 flex h-11 w-[calc(100%-16px)] items-center gap-2.5 px-3.5 text-left outline-none"
+            >
+              <AtSign className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <span className="text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">Mentions</span>
+              {mentionCount > 0 ? (
+                <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+                  {mentionCount > 99 ? '99+' : mentionCount}
+                </span>
+              ) : null}
+              <span className="ml-auto flex items-center gap-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                {mentionCount === 1 ? '1 mention' : `${mentionCount} mentions`}
+                <ChevronRight className="size-3.5" aria-hidden />
+              </span>
+            </motion.button>
             {/* R30-c — Channels entry: subscribed count → #/chats/channels */}
             <motion.button
               type="button"
@@ -1578,6 +1635,14 @@ export function ChatsTab({
       {/* #/calls — R34-a WhatsApp 'Calls' history sub-page */}
       <CallsPage
         open={callsPageOpen}
+        me={me}
+        onBack={() => back('/')}
+        onOpenConversation={(conversationId) => onOpenConversation(conversationId, null)}
+      />
+
+      {/* #/mentions — R35-b Discord-style @mention feed sub-page */}
+      <MentionsPage
+        open={mentionsPageOpen}
         me={me}
         onBack={() => back('/')}
         onOpenConversation={(conversationId) => onOpenConversation(conversationId, null)}

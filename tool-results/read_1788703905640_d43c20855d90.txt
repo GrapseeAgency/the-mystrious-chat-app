@@ -1,0 +1,1031 @@
+     1→     1→// ─────────────────────────────────────────────────────────────
+     2→     2→// Pulse — 1:1 voice + video calls (R33-a, WhatsApp/Signal-style).
+     3→     3→//
+     4→     4→// Two exports wire the whole feature into chat-room:
+     5→     5→//   1. useCallSession({...}) — the call state machine: WebRTC
+     6→     6→//      (getUserMedia + RTCPeerConnection, Google STUN), signaling over the
+     7→     7→//      shared socket channel (call:offer/answer/ice/reject/cancel/hangup),
+     8→     8→//      ring timeout handling and the SINGLE-WRITER call log rule
+     9→     9→//      (the CALLER's client POSTs every terminal row to /api/calls).
+    10→    10→//   2. <CallOverlay session={...} /> — the full-screen glass call
+    11→    11→//      experience: outgoing ring, incoming ring, active call (remote video
+    12→    12→//      full-bleed or big avatar, live duration, mic/camera toggles) and a
+    13→    13→//      brief ended summary card. Honest permission-error card when the mic
+    14→    14→//      is denied; graceful voice fallback when no camera exists.
+    15→    15→//
+    16→    16→// Mounted once per DM room — incoming calls surface while that room is open
+    17→    17→// (this wave: overlay lives at chat-room level, not app level).
+    18→    18→// ─────────────────────────────────────────────────────────────
+    19→    19→'use client'
+    20→    20→
+    21→    21→import { useCallback, useEffect, useRef, useState } from 'react'
+    22→    22→import { AnimatePresence, motion } from 'framer-motion'
+    23→    23→import { Mic, MicOff, Phone, PhoneMissed, PhoneOff, Video, VideoOff, PhoneCall } from 'lucide-react'
+    24→    24→import { toast } from 'sonner'
+    25→    25→import type { CallCancelReason, CallKind } from '@/lib/call-types'
+    26→    26→import { apiJson } from '@/lib/pulse-utils'
+    27→    27→import { haptic } from '@/lib/pulse-settings'
+    28→    28→import { spring, prefersReducedMotion } from '@/lib/motion'
+    29→    29→import { usePulseCallChannel } from '@/components/chat/pulse-realtime-provider'
+    30→    30→import { UserAvatar } from '@/components/chat/user-avatar'
+    31→    31→import { cn } from '@/lib/utils'
+    32→    32→
+    33→    33→// ── contracts ────────────────────────────────────────────────
+    34→    34→
+    35→    35→export type CallUiState = 'idle' | 'calling' | 'incoming' | 'active' | 'ended'
+    36→    36→
+    37→    37→export interface CallPeer {
+    38→    38→  id: string
+    39→    39→  name: string
+    40→    40→  color: string
+    41→    41→  avatar: string | null
+    42→    42→}
+    43→    43→
+    44→    44→export interface CallSessionControls {
+    45→    45→  state: CallUiState
+    46→    46→  kind: CallKind
+    47→    47→  direction: 'outgoing' | 'incoming' | null
+    48→    48→  /** Who the overlay renders (DM peer for outgoing, caller for incoming). */
+    49→    49→  peer: CallPeer | null
+    50→    50→  /** Non-null = honest glass error card replaces the call UI. */
+    51→    51→  error: string | null
+    52→    52→  /** Ended-card text ('No answer', 'Declined', 'Call ended · 0:42', …). */
+    53→    53→  summary: string | null
+    54→    54→  durationSec: number
+    55→    55→  micEnabled: boolean
+    56→    56→  cameraEnabled: boolean
+    57→    57→  remoteStream: MediaStream | null
+    58→    58→  localStream: MediaStream | null
+    59→    59→  startCall: (kind: CallKind) => void
+    60→    60→  acceptCall: () => void
+    61→    61→  declineCall: () => void
+    62→    62→  endCall: () => void
+    63→    63→  /** Close the permission/error card — logs the attempt as 'missed'. */
+    64→    64→  dismissError: () => void
+    65→    65→  toggleMic: () => void
+    66→    66→  toggleCamera: () => void
+    67→    67→}
+    68→    68→
+    69→    69→export interface CallSessionOptions {
+    70→    70→  meId: string
+    71→    71→  meName: string
+    72→    72→  meColor?: string
+    73→    73→  meAvatar?: string | null
+    74→    74→  conversationId: string
+    75→    75→  /** DM peer (null = group/no peer → outgoing calls are a no-op). */
+    76→    76→  peer: CallPeer | null
+    77→    77→}
+    78→    78→
+    79→    79→interface IncomingOfferMeta {
+    80→    80→  callId: string
+    81→    81→  conversationId: string
+    82→    82→  from: string
+    83→    83→  kind: CallKind
+    84→    84→  sdp: string
+    85→    85→  peer: CallPeer
+    86→    86→}
+    87→    87→
+    88→    88→// ── helpers ──────────────────────────────────────────────────
+    89→    89→
+    90→    90→const STUN_SERVERS: RTCConfiguration = {
+    91→    91→  iceServers: [
+    92→    92→    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    93→    93→  ],
+    94→    94→}
+    95→    95→
+    96→    96→/** 65 → "1:05", 3675 → "1:01:15". */
+    97→    97→export function formatCallDuration(totalSec: number): string {
+    98→    98→  const sec = Math.max(0, Math.floor(totalSec))
+    99→    99→  const h = Math.floor(sec / 3600)
+   100→   100→  const m = Math.floor((sec % 3600) / 60)
+   101→   101→  const s = sec % 60
+   102→   102→  const pad = (v: number) => v.toString().padStart(2, '0')
+   103→   103→  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
+   104→   104→}
+   105→   105→
+   106→   106→const CANCEL_SUMMARY: Record<CallCancelReason, string> = {
+   107→   107→  timeout: 'No answer',
+   108→   108→  cancel: 'Call canceled',
+   109→   109→  busy: 'Peer is busy',
+   110→   110→  offline: 'Peer is offline',
+   111→   111→}
+   112→   112→
+   113→   113→// ── the hook ─────────────────────────────────────────────────
+   114→   114→
+   115→   115→export function useCallSession(options: CallSessionOptions): CallSessionControls {
+   116→   116→  const { meId, meName, meColor = 'emerald', meAvatar = null, conversationId, peer } = options
+   117→   117→  const { subscribeCallEvents, emitCallEvent, callChannelConnected } = usePulseCallChannel()
+   118→   118→
+   119→   119→  const [state, setState] = useState<CallUiState>('idle')
+   120→   120→  const [kind, setKind] = useState<CallKind>('voice')
+   121→   121→  const [direction, setDirection] = useState<'outgoing' | 'incoming' | null>(null)
+   122→   122→  const [activePeer, setActivePeer] = useState<CallPeer | null>(null)
+   123→   123→  const [error, setError] = useState<string | null>(null)
+   124→   124→  const [summary, setSummary] = useState<string | null>(null)
+   125→   125→  const [durationSec, setDurationSec] = useState(0)
+   126→   126→  const [micEnabled, setMicEnabled] = useState(true)
+   127→   127→  const [cameraEnabled, setCameraEnabled] = useState(true)
+   128→   128→  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
+   129→   129→  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+   130→   130→
+   131→   131→  // Mutable mirrors so the (stable) socket listener always sees fresh values.
+   132→   132→  // (Written inside callbacks/effects only — never during render.)
+   133→   133→  const stateRef = useRef<CallUiState>('idle')
+   134→   134→  const callIdRef = useRef<string | null>(null)
+   135→   135→  const kindRef = useRef<CallKind>('voice')
+   136→   136→  const directionRef = useRef<'outgoing' | 'incoming' | null>(null)
+   137→   137→  const answeredRef = useRef(false)
+   138→   138→  const connectedAtRef = useRef(0)
+   139→   139→  const pcRef = useRef<RTCPeerConnection | null>(null)
+   140→   140→  const localStreamRef = useRef<MediaStream | null>(null)
+   141→   141→  const pendingIceRef = useRef<RTCIceCandidateInit[]>([])
+   142→   142→  const offerRef = useRef<IncomingOfferMeta | null>(null)
+   143→   143→  const peerRef = useRef<CallPeer | null>(peer)
+   144→   144→  const optionsRef = useRef({ meId, meName, meColor, meAvatar, conversationId })
+   145→   145→
+   146→   146→  // Keep option/peer mirrors in sync after each commit.
+   147→   147→  useEffect(() => {
+   148→   148→    peerRef.current = peer
+   149→   149→  }, [peer])
+   150→   150→  useEffect(() => {
+   151→   151→    optionsRef.current = { meId, meName, meColor, meAvatar, conversationId }
+   152→   152→  }, [meId, meName, meColor, meAvatar, conversationId])
+   153→   153→  useEffect(() => {
+   154→   154→    stateRef.current = state
+   155→   155→  }, [state])
+   156→   156→
+   157→   157→  /** Fire-and-forget CallLog row — the CALLER is the single writer. */
+   158→   158→  const writeLog = useCallback(async (status: 'completed' | 'missed' | 'declined', duration = 0, callKind?: CallKind) => {
+   159→   159→    const opts = optionsRef.current
+   160→   160→    const target = peerRef.current
+   161→   161→    if (!target || target.id === opts.meId) return
+   162→   162→    try {
+   163→   163→      await apiJson('/api/calls', {
+   164→   164→        method: 'POST',
+   165→   165→        body: JSON.stringify({
+   166→   166→          userId: opts.meId,
+   167→   167→          conversationId: opts.conversationId,
+   168→   168→          peerId: target.id,
+   169→   169→          kind: callKind ?? kindRef.current,
+   170→   170→          status,
+   171→   171→          durationSec: Math.max(0, Math.round(duration)),
+   172→   172→        }),
+   173→   173→      })
+   174→   174→    } catch {
+   175→   175→      toast.error('Could not save this call to history')
+   176→   176→    }
+   177→   177→  }, [])
+   178→   178→
+   179→   179→  /** Stop every track, close the peer connection, clear queued ICE. */
+   180→   180→  const teardownMedia = useCallback(() => {
+   181→   181→    if (pcRef.current) {
+   182→   182→      pcRef.current.onicecandidate = null
+   183→   183→      pcRef.current.ontrack = null
+   184→   184→      pcRef.current.onconnectionstatechange = null
+   185→   185→      try {
+   186→   186→        pcRef.current.close()
+   187→   187→      } catch {
+   188→   188→        // already closed
+   189→   189→      }
+   190→   190→      pcRef.current = null
+   191→   191→    }
+   192→   192→    for (const track of localStreamRef.current?.getTracks() ?? []) track.stop()
+   193→   193→    localStreamRef.current = null
+   194→   194→    pendingIceRef.current = []
+   195→   195→    offerRef.current = null
+   196→   196→    answeredRef.current = false
+   197→   197→    connectedAtRef.current = 0
+   198→   198→    setLocalStream(null)
+   199→   199→    setRemoteStream(null)
+   200→   200→    setDurationSec(0)
+   201→   201→    setMicEnabled(true)
+   202→   202→    setCameraEnabled(true)
+   203→   203→  }, [])
+   204→   204→
+   205→   205→  const showEnded = useCallback((text: string) => {
+   206→   206→    setSummary(text)
+   207→   207→    setState('ended')
+   208→   208→    stateRef.current = 'ended'
+   209→   209→  }, [])
+   210→   210→
+   211→   211→  const resetIdle = useCallback(() => {
+   212→   212→    teardownMedia()
+   213→   213→    callIdRef.current = null
+   214→   214→    directionRef.current = null
+   215→   215→    setState('idle')
+   216→   216→    stateRef.current = 'idle'
+   217→   217→    setSummary(null)
+   218→   218→    setError(null)
+   219→   219→    setActivePeer(null)
+   220→   220→    setDirection(null)
+   221→   221→  }, [teardownMedia])
+   222→   222→
+   223→   223→  const createPeerConnection = useCallback((): RTCPeerConnection => {
+   224→   224→    const pc = new RTCPeerConnection(STUN_SERVERS)
+   225→   225→    pc.onicecandidate = (event) => {
+   226→   226→      if (!event.candidate || !callIdRef.current) return
+   227→   227→      const me = optionsRef.current.meId
+   228→   228→      const target = directionRef.current === 'outgoing' ? peerRef.current?.id : offerRef.current?.from
+   229→   229→      if (!target) return
+   230→   230→      emitCallEvent('call:ice', {
+   231→   231→        callId: callIdRef.current,
+   232→   232→        conversationId: optionsRef.current.conversationId,
+   233→   233→        from: me,
+   234→   234→        to: target,
+   235→   235→        kind: kindRef.current,
+   236→   236→        candidate: event.candidate.candidate,
+   237→   237→        sdpMid: event.candidate.sdpMid,
+   238→   238→        sdpMLineIndex: event.candidate.sdpMLineIndex,
+   239→   239→      })
+   240→   240→    }
+   241→   241→    pc.ontrack = (event) => {
+   242→   242→      const [stream] = event.streams
+   243→   243→      if (stream) setRemoteStream(stream)
+   244→   244→    }
+   245→   245→    pc.onconnectionstatechange = () => {
+   246→   246→      // Quality hint chip derives from connectionState in the overlay.
+   247→   247→    }
+   248→   248→    // Keep the mic/camera toggles honest after renegotiations.
+   249→   249→    const stream = localStreamRef.current
+   250→   250→    if (stream) for (const track of stream.getTracks()) pc.addTrack(track, stream)
+   251→   251→    pcRef.current = pc
+   252→   252→    return pc
+   253→   253→  }, [emitCallEvent])
+   254→   254→
+   255→   255→  /**
+   256→   256→   * getUserMedia with honest fallbacks: no camera (or camera constraint
+   257→   257→   * rejected) → retry as a voice call with a toast; mic denied → throw so the
+   258→   258→   * caller can show the glass error card.
+   259→   259→   */
+   260→   260→  const acquireMedia = useCallback(async (wanted: CallKind): Promise<CallKind> => {
+   261→   261→    try {
+   262→   262→      const stream = await navigator.mediaDevices.getUserMedia({
+   263→   263→        audio: true,
+   264→   264→        video: wanted === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+   265→   265→      })
+   266→   266→      localStreamRef.current = stream
+   267→   267→      setLocalStream(stream)
+   268→   268→      setCameraEnabled(wanted === 'video')
+   269→   269→      return wanted
+   270→   270→    } catch (err) {
+   271→   271→      const name = err instanceof DOMException ? err.name : ''
+   272→   272→      if (wanted === 'video' && (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'NotReadableError')) {
+   273→   273→        // No usable camera → fall back to voice, never fake it.
+   274→   274→        toast('Camera unavailable — starting a voice call')
+   275→   275→        setKind('voice')
+   276→   276→        kindRef.current = 'voice'
+   277→   277→        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+   278→   278→        localStreamRef.current = stream
+   279→   279→        setLocalStream(stream)
+   280→   280→        setCameraEnabled(false)
+   281→   281→        return 'voice'
+   282→   282→      }
+   283→   283→      throw err
+   284→   284→    }
+   285→   285→  }, [])
+   286→   286→
+   287→   287→  const startCall = useCallback(
+   288→   288→    (wanted: CallKind) => {
+   289→   289→      if (stateRef.current !== 'idle') return
+   290→   290→      const target = peerRef.current
+   291→   291→      if (!target || target.id === optionsRef.current.meId) return
+   292→   292→      if (!callChannelConnected) {
+   293→   293→        toast.error('You are offline — calls need a connection')
+   294→   294→        return
+   295→   295→      }
+   296→   296→
+   297→   297→      const callId = `call-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+   298→   298→      callIdRef.current = callId
+   299→   299→      directionRef.current = 'outgoing'
+   300→   300→      kindRef.current = wanted
+   301→   301→      setKind(wanted)
+   302→   302→      setDirection('outgoing')
+   303→   303→      setActivePeer(target)
+   304→   304→      setSummary(null)
+   305→   305→      setError(null)
+   306→   306→      setState('calling')
+   307→   307→      stateRef.current = 'calling'
+   308→   308→
+   309→   309→      void (async () => {
+   310→   310→        try {
+   311→   311→          const actualKind = await acquireMedia(wanted)
+   312→   312→          if (callIdRef.current !== callId) return // canceled while prompting
+   313→   313→          const pc = createPeerConnection()
+   314→   314→          const offer = await pc.createOffer({
+   315→   315→            offerToReceiveAudio: true,
+   316→   316→            offerToReceiveVideo: actualKind === 'video',
+   317→   317→          })
+   318→   318→          await pc.setLocalDescription(offer)
+   319→   319→          emitCallEvent('call:offer', {
+   320→   320→            callId,
+   321→   321→            conversationId: optionsRef.current.conversationId,
+   322→   322→            from: optionsRef.current.meId,
+   323→   323→            to: target.id,
+   324→   324→            kind: actualKind,
+   325→   325→            sdp: offer.sdp ?? '',
+   326→   326→            callerName: optionsRef.current.meName,
+   327→   327→            callerColor: optionsRef.current.meColor,
+   328→   328→            callerAvatar: optionsRef.current.meAvatar,
+   329→   329→          })
+   330→   330→        } catch (err) {
+   331→   331→          // Mic denied (or unavailable) — honest error card, no fake UI.
+   332→   332→          console.error('[call] getUserMedia failed:', err instanceof Error ? err.message : err)
+   333→   333→          setError('Microphone access is needed for calls. Check the browser permissions and try again.')
+   334→   334→        }
+   335→   335→      })()
+   336→   336→    },
+   337→   337→    [acquireMedia, callChannelConnected, createPeerConnection, emitCallEvent],
+   338→   338→  )
+   339→   339→
+   340→   340→  const acceptCall = useCallback(() => {
+   341→   341→    const offer = offerRef.current
+   342→   342→    if (!offer || stateRef.current !== 'incoming') return
+   343→   343→    haptic(16)
+   344→   344→
+   345→   345→    void (async () => {
+   346→   346→      try {
+   347→   347→        const actualKind = await acquireMedia(offer.kind)
+   348→   348→        const pc = createPeerConnection()
+   349→   349→        await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
+   350→   350→        const answer = await pc.createAnswer()
+   351→   351→        await pc.setLocalDescription(answer)
+   352→   352→        emitCallEvent('call:answer', {
+   353→   353→          callId: offer.callId,
+   354→   354→          conversationId: offer.conversationId,
+   355→   355→          from: optionsRef.current.meId,
+   356→   356→          to: offer.from,
+   357→   357→          kind: actualKind,
+   358→   358→          sdp: answer.sdp ?? '',
+   359→   359→        })
+   360→   360→        // Flush candidates that arrived while we were ringing.
+   361→   361→        for (const candidate of pendingIceRef.current.splice(0)) {
+   362→   362→          try {
+   363→   363→            await pc.addIceCandidate(candidate)
+   364→   364→          } catch {
+   365→   365→            // stale candidate — ICE will recover
+   366→   366→          }
+   367→   367→        }
+   368→   368→        answeredRef.current = true
+   369→   369→        connectedAtRef.current = Date.now()
+   370→   370→        setDurationSec(0)
+   371→   371→        setState('active')
+   372→   372→        stateRef.current = 'active'
+   373→   373→        haptic(10)
+   374→   374→      } catch (err) {
+   375→   375→        console.error('[call] accept failed:', err instanceof Error ? err.message : err)
+   376→   376→        // Callee could not join → reject politely; the caller logs the row.
+   377→   377→        emitCallEvent('call:reject', {
+   378→   378→          callId: offer.callId,
+   379→   379→          conversationId: offer.conversationId,
+   380→   380→          from: optionsRef.current.meId,
+   381→   381→          to: offer.from,
+   382→   382→          kind: offer.kind,
+   383→   383→        })
+   384→   384→        setError('Microphone access is needed for calls. Check the browser permissions and try again.')
+   385→   385→        offerRef.current = offer
+   386→   386→        callIdRef.current = offer.callId
+   387→   387→        directionRef.current = 'incoming'
+   388→   388→      }
+   389→   389→    })()
+   390→   390→  }, [acquireMedia, createPeerConnection, emitCallEvent])
+   391→   391→
+   392→   392→  const declineCall = useCallback(() => {
+   393→   393→    const offer = offerRef.current
+   394→   394→    if (!offer || stateRef.current !== 'incoming') return
+   395→   395→    haptic(12)
+   396→   396→    // Callee NEVER writes the row — the caller (who got call:reject) logs 'declined'.
+   397→   397→    emitCallEvent('call:reject', {
+   398→   398→      callId: offer.callId,
+   399→   399→      conversationId: offer.conversationId,
+   400→   400→      from: optionsRef.current.meId,
+   401→   401→      to: offer.from,
+   402→   402→      kind: offer.kind,
+   403→   403→    })
+   404→   404→    teardownMedia()
+   405→   405→    callIdRef.current = null
+   406→   406→    showEnded('Declined')
+   407→   407→  }, [emitCallEvent, showEnded, teardownMedia])
+   408→   408→
+   409→   409→  const endCall = useCallback(() => {
+   410→   410→    const callId = callIdRef.current
+   411→   411→    const current = stateRef.current
+   412→   412→    if (current === 'idle') return
+   413→   413→    haptic(14)
+   414→   414→
+   415→   415→    if (current === 'incoming') {
+   416→   416→      declineCall()
+   417→   417→      return
+   418→   418→    }
+   419→   419→
+   420→   420→    if (current === 'calling' && directionRef.current === 'outgoing') {
+   421→   421→      if (callId) {
+   422→   422→        emitCallEvent('call:cancel', {
+   423→   423→          callId,
+   424→   424→          conversationId: optionsRef.current.conversationId,
+   425→   425→          from: optionsRef.current.meId,
+   426→   426→          to: peerRef.current?.id ?? '',
+   427→   427→          kind: kindRef.current,
+   428→   428→        })
+   429→   429→      }
+   430→   430→      // Caller cancels an unanswered ring → 'missed' (single-writer rule).
+   431→   431→      void writeLog('missed', 0)
+   432→   432→      showEnded('Call canceled')
+   433→   433→      return
+   434→   434→    }
+   435→   435→
+   436→   436→    if (current === 'active') {
+   437→   437→      const elapsed = connectedAtRef.current > 0 ? (Date.now() - connectedAtRef.current) / 1000 : 0
+   438→   438→      if (callId) {
+   439→   439→        emitCallEvent('call:hangup', {
+   440→   440→          callId,
+   441→   441→          conversationId: optionsRef.current.conversationId,
+   442→   442→          from: optionsRef.current.meId,
+   443→   443→          to:
+   444→   444→            directionRef.current === 'outgoing'
+   445→   445→              ? peerRef.current?.id ?? ''
+   446→   446→              : offerRef.current?.from ?? '',
+   447→   447→          kind: kindRef.current,
+   448→   448→          durationSec: Math.round(elapsed),
+   449→   449→        })
+   450→   450→      }
+   451→   451→      if (directionRef.current === 'outgoing') {
+   452→   452→        void writeLog('completed', elapsed)
+   453→   453→      }
+   454→   454→      showEnded(elapsed >= 1 ? `Call ended · ${formatCallDuration(elapsed)}` : 'Call ended')
+   455→   455→      return
+   456→   456→    }
+   457→   457→  }, [declineCall, emitCallEvent, showEnded, writeLog])
+   458→   458→
+   459→   459→  const dismissError = useCallback(() => {
+   460→   460→    // A failed attempt (e.g. mic denied) still counts as an unanswered call.
+   461→   461→    if (directionRef.current === 'outgoing') void writeLog('missed', 0)
+   462→   462→    resetIdle()
+   463→   463→  }, [resetIdle, writeLog])
+   464→   464→
+   465→   465→  const toggleMic = useCallback(() => {
+   466→   466→    const stream = localStreamRef.current
+   467→   467→    if (!stream) return
+   468→   468→    const next = !stream.getAudioTracks().every((t) => t.enabled)
+   469→   469→    for (const track of stream.getAudioTracks()) track.enabled = next
+   470→   470→    setMicEnabled(next)
+   471→   471→    haptic(6)
+   472→   472→  }, [])
+   473→   473→
+   474→   474→  const toggleCamera = useCallback(() => {
+   475→   475→    const stream = localStreamRef.current
+   476→   476→    if (!stream || kindRef.current !== 'video') return
+   477→   477→    const videoTracks = stream.getVideoTracks()
+   478→   478→    if (videoTracks.length === 0) return
+   479→   479→    const next = !videoTracks.every((t) => t.enabled)
+   480→   480→    for (const track of videoTracks) track.enabled = next
+   481→   481→    setCameraEnabled(next)
+   482→   482→    haptic(6)
+   483→   483→  }, [])
+   484→   484→
+   485→   485→  // ── signaling listener (stable; everything via refs) ────────
+   486→   486→  const handleCallEvent = useCallback(
+   487→   487→    (event: string, raw: unknown) => {
+   488→   488→      if (raw === null || typeof raw !== 'object') return
+   489→   489→      const payload = raw as Record<string, unknown>
+   490→   490→      const callId = typeof payload.callId === 'string' ? payload.callId : ''
+   491→   491→      const me = optionsRef.current.meId
+   492→   492→
+   493→   493→      if (event === 'call:offer') {
+   494→   494→        const from = typeof payload.from === 'string' ? payload.from : ''
+   495→   495→        if (!callId || from === me) return
+   496→   496→        // Already busy → reject immediately (the caller logs 'declined').
+   497→   497→        if (stateRef.current !== 'idle') {
+   498→   498→          emitCallEvent('call:reject', {
+   499→   499→            callId,
+   500→   500→            conversationId: optionsRef.current.conversationId,
+   501→   501→            from: me,
+   502→   502→            to: from,
+   503→   503→            kind: payload.kind === 'video' ? 'video' : 'voice',
+   504→   504→          })
+   505→   505→          return
+   506→   506→        }
+   507→   507→        const kind = payload.kind === 'video' ? 'video' : 'voice'
+   508→   508→        offerRef.current = {
+   509→   509→          callId,
+   510→   510→          conversationId: typeof payload.conversationId === 'string' ? payload.conversationId : '',
+   511→   511→          from,
+   512→   512→          kind,
+   513→   513→          sdp: typeof payload.sdp === 'string' ? payload.sdp : '',
+   514→   514→          peer: {
+   515→   515→            id: from,
+   516→   516→            name: typeof payload.callerName === 'string' && payload.callerName ? payload.callerName : 'Someone',
+   517→   517→            color: typeof payload.callerColor === 'string' && payload.callerColor ? payload.callerColor : 'emerald',
+   518→   518→            avatar: typeof payload.callerAvatar === 'string' ? payload.callerAvatar : null,
+   519→   519→          },
+   520→   520→        }
+   521→   521→        callIdRef.current = callId
+   522→   522→        directionRef.current = 'incoming'
+   523→   523→        kindRef.current = kind
+   524→   524→        setActivePeer(offerRef.current.peer)
+   525→   525→        setKind(kind)
+   526→   526→        setDirection('incoming')
+   527→   527→        setSummary(null)
+   528→   528→        setError(null)
+   529→   529→        setState('incoming')
+   530→   530→        stateRef.current = 'incoming'
+   531→   531→        haptic(30)
+   532→   532→        return
+   533→   533→      }
+   534→   534→
+   535→   535→      // Everything below targets the call we are part of.
+   536→   536→      if (!callId || callId !== callIdRef.current) return
+   537→   537→
+   538→   538→      if (event === 'call:answer' && directionRef.current === 'outgoing') {
+   539→   539→        const sdp = typeof payload.sdp === 'string' ? payload.sdp : ''
+   540→   540→        if (!sdp || !pcRef.current) return
+   541→   541→        void (async () => {
+   542→   542→          try {
+   543→   543→            await pcRef.current?.setRemoteDescription({ type: 'answer', sdp })
+   544→   544→            for (const candidate of pendingIceRef.current.splice(0)) {
+   545→   545→              try {
+   546→   546→                await pcRef.current?.addIceCandidate(candidate)
+   547→   547→              } catch {
+   548→   548→                // stale candidate — ICE recovers on its own
+   549→   549→              }
+   550→   550→            }
+   551→   551→            answeredRef.current = true
+   552→   552→            connectedAtRef.current = Date.now()
+   553→   553→            setDurationSec(0)
+   554→   554→            setState('active')
+   555→   555→            stateRef.current = 'active'
+   556→   556→            haptic(10)
+   557→   557→          } catch (err) {
+   558→   558→            console.error('[call] answer apply failed:', err instanceof Error ? err.message : err)
+   559→   559→            showEnded('Call failed')
+   560→   560→          }
+   561→   561→        })()
+   562→   562→        return
+   563→   563→      }
+   564→   564→
+   565→   565→      if (event === 'call:ice') {
+   566→   566→        const candidateString = typeof payload.candidate === 'string' ? payload.candidate : ''
+   567→   567→        if (!candidateString) return
+   568→   568→        const candidate: RTCIceCandidateInit = {
+   569→   569→          candidate: candidateString,
+   570→   570→          sdpMid: typeof payload.sdpMid === 'string' ? payload.sdpMid : null,
+   571→   571→          sdpMLineIndex:
+   572→   572→            typeof payload.sdpMLineIndex === 'number' && Number.isFinite(payload.sdpMLineIndex)
+   573→   573→              ? Math.floor(payload.sdpMLineIndex)
+   574→   574→              : null,
+   575→   575→        }
+   576→   576→        if (pcRef.current && pcRef.current.remoteDescription) {
+   577→   577→          void pcRef.current.addIceCandidate(candidate).catch(() => {
+   578→   578→            // stale candidate — ignore
+   579→   579→          })
+   580→   580→        } else {
+   581→   581→          pendingIceRef.current.push(candidate)
+   582→   582→        }
+   583→   583→        return
+   584→   584→      }
+   585→   585→
+   586→   586→      if (event === 'call:reject' && directionRef.current === 'outgoing') {
+   587→   587→        // Caller got declined → logs 'declined' (single-writer rule).
+   588→   588→        teardownMedia()
+   589→   589→        callIdRef.current = null
+   590→   590→        void writeLog('declined', 0)
+   591→   591→        showEnded('Declined')
+   592→   592→        return
+   593→   593→      }
+   594→   594→
+   595→   595→      if (event === 'call:cancel') {
+   596→   596→        const reason: CallCancelReason =
+   597→   597→          payload.reason === 'timeout' || payload.reason === 'busy' || payload.reason === 'offline'
+   598→   598→            ? payload.reason
+   599→   599→            : 'cancel'
+   600→   600→        const wasOutgoing = directionRef.current === 'outgoing'
+   601→   601→        const wasAnswered = answeredRef.current
+   602→   602→        teardownMedia()
+   603→   603→        callIdRef.current = null
+   604→   604→        if (wasOutgoing && !wasAnswered) {
+   605→   605→          // Caller's ring died (timeout / self-cancel) → 'missed'.
+   606→   606→          void writeLog('missed', 0)
+   607→   607→          showEnded(CANCEL_SUMMARY[reason])
+   608→   608→        } else if (!wasOutgoing && !wasAnswered) {
+   609→   609→          showEnded('Missed call')
+   610→   610→        } else if (wasAnswered) {
+   611→   611→          showEnded('Call ended')
+   612→   612→        } else {
+   613→   613→          showEnded(CANCEL_SUMMARY[reason])
+   614→   614→        }
+   615→   615→        return
+   616→   616→      }
+   617→   617→
+   618→   618→      if (event === 'call:hangup') {
+   619→   619→        const elapsed = connectedAtRef.current > 0 ? (Date.now() - connectedAtRef.current) / 1000 : 0
+   620→   620→        const wasOutgoing = directionRef.current === 'outgoing'
+   621→   621→        teardownMedia()
+   622→   622→        callIdRef.current = null
+   623→   623→        if (wasOutgoing) void writeLog('completed', elapsed)
+   624→   624→        showEnded(elapsed >= 1 ? `Call ended · ${formatCallDuration(elapsed)}` : 'Call ended')
+   625→   625→        return
+   626→   626→      }
+   627→   627→    },
+   628→   628→    [emitCallEvent, showEnded, teardownMedia, writeLog],
+   629→   629→  )
+   630→   630→
+   631→   631→  useEffect(() => subscribeCallEvents(handleCallEvent), [subscribeCallEvents, handleCallEvent])
+   632→   632→
+   633→   633→  // Live duration ticker while connected.
+   634→   634→  useEffect(() => {
+   635→   635→    if (state !== 'active') return undefined
+   636→   636→    const interval = setInterval(() => {
+   637→   637→      if (connectedAtRef.current > 0) {
+   638→   638→        setDurationSec(Math.floor((Date.now() - connectedAtRef.current) / 1000))
+   639→   639→      }
+   640→   640→    }, 1000)
+   641→   641→    return () => clearInterval(interval)
+   642→   642→  }, [state])
+   643→   643→
+   644→   644→  // Ended card auto-dismisses after ~2.5s.
+   645→   645→  useEffect(() => {
+   646→   646→    if (state !== 'ended') return undefined
+   647→   647→    const timer = setTimeout(() => resetIdle(), 2500)
+   648→   648→    return () => clearTimeout(timer)
+   649→   649→  }, [state, resetIdle])
+   650→   650→
+   651→   651→  return {
+   652→   652→    state,
+   653→   653→    kind,
+   654→   654→    direction,
+   655→   655→    peer: activePeer,
+   656→   656→    error,
+   657→   657→    summary,
+   658→   658→    durationSec,
+   659→   659→    micEnabled,
+   660→   660→    cameraEnabled,
+   661→   661→    remoteStream,
+   662→   662→    localStream,
+   663→   663→    startCall,
+   664→   664→    acceptCall,
+   665→   665→    declineCall,
+   666→   666→    endCall,
+   667→   667→    dismissError,
+   668→   668→    toggleMic,
+   669→   669→    toggleCamera,
+   670→   670→  }
+   671→   671→}
+   672→   672→
+   673→   673→// ── the overlay ──────────────────────────────────────────────
+   674→   674→
+   675→   675→export interface CallOverlayProps {
+   676→   676→  session: CallSessionControls
+   677→   677→}
+   678→   678→
+   679→   679→/** Pulsing halo rings around the avatar (disabled under reduced motion). */
+   680→   680→function AvatarHalo({ reduced, children }: { reduced: boolean; children: React.ReactNode }) {
+   681→   681→  return (
+   682→   682→    <span className="relative inline-flex size-32 items-center justify-center">
+   683→   683→      {reduced ? null : (
+   684→   684→        <>
+   685→   685→          <motion.span
+   686→   686→            aria-hidden
+   687→   687→            className="absolute inset-0 rounded-full border border-emerald-300/40"
+   688→   688→            animate={{ scale: [1, 1.35], opacity: [0.7, 0] }}
+   689→   689→            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
+   690→   690→          />
+   691→   691→          <motion.span
+   692→   692→            aria-hidden
+   693→   693→            className="absolute inset-0 rounded-full border border-emerald-300/30"
+   694→   694→            animate={{ scale: [1, 1.55], opacity: [0.5, 0] }}
+   695→   695→            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut', delay: 0.6 }}
+   696→   696→          />
+   697→   697→        </>
+   698→   698→      )}
+   699→   699→      {children}
+   700→   700→    </span>
+   701→   701→  )
+   702→   702→}
+   703→   703→
+   704→   704→/** Round glass action button used across all call states. */
+   705→   705→function CallButton({
+   706→   706→  label,
+   707→   707→  onClick,
+   708→   708→  tone,
+   709→   709→  size = 'md',
+   710→   710→  children,
+   711→   711→}: {
+   712→   712→  label: string
+   713→   713→  onClick: () => void
+   714→   714→  tone: 'neutral' | 'danger' | 'accept'
+   715→   715→  size?: 'md' | 'lg'
+   716→   716→  children: React.ReactNode
+   717→   717→}) {
+   718→   718→  return (
+   719→   719→    <motion.button
+   720→   720→      type="button"
+   721→   721→      aria-label={label}
+   722→   722→      onClick={onClick}
+   723→   723→      whileTap={{ scale: 0.9 }}
+   724→   724→      transition={spring.snappy}
+   725→   725→      className={cn(
+   726→   726→        'flex items-center justify-center rounded-full border outline-none',
+   727→   727→        size === 'lg' ? 'size-[4.5rem]' : 'size-14',
+   728→   728→        tone === 'danger' &&
+   729→   729→          'border-rose-300/30 bg-rose-500/90 text-white shadow-[0_10px_30px_-10px_rgba(244,63,94,0.8)] hover:bg-rose-500',
+   730→   730→        tone === 'accept' &&
+   731→   731→          'border-emerald-300/30 bg-emerald-500/90 text-white shadow-[0_10px_30px_-10px_rgba(16,185,129,0.8)] hover:bg-emerald-500',
+   732→   732→        tone === 'neutral' &&
+   733→   733→          'glass-pill text-zinc-100 hover:bg-white/10',
+   734→   734→      )}
+   735→   735→    >
+   736→   736→      {children}
+   737→   737→    </motion.button>
+   738→   738→  )
+   739→   739→}
+   740→   740→
+   741→   741→export function CallOverlay({ session }: CallOverlayProps) {
+   742→   742→  const {
+   743→   743→    state,
+   744→   744→    kind,
+   745→   745→    direction,
+   746→   746→    peer,
+   747→   747→    error,
+   748→   748→    summary,
+   749→   749→    durationSec,
+   750→   750→    micEnabled,
+   751→   751→    cameraEnabled,
+   752→   752→    remoteStream,
+   753→   753→    localStream,
+   754→   754→    acceptCall,
+   755→   755→    declineCall,
+   756→   756→    endCall,
+   757→   757→    dismissError,
+   758→   758→    toggleMic,
+   759→   759→    toggleCamera,
+   760→   760→  } = session
+   761→   761→
+   762→   762→  const [reducedMotion] = useState(() => prefersReducedMotion())
+   763→   763→  const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
+   764→   764→  const localVideoRef = useRef<HTMLVideoElement | null>(null)
+   765→   765→  const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
+   766→   766→
+   767→   767→  // Attach streams as they arrive (elements mount when state changes).
+   768→   768→  useEffect(() => {
+   769→   769→    if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream
+   770→   770→    if (remoteAudioRef.current && remoteStream) remoteAudioRef.current.srcObject = remoteStream
+   771→   771→  }, [remoteStream, state, kind])
+   772→   772→  useEffect(() => {
+   773→   773→    if (localVideoRef.current && localStream) localVideoRef.current.srcObject = localStream
+   774→   774→  }, [localStream, state, kind])
+   775→   775→
+   776→   776→  const visible = state !== 'idle' && peer !== null
+   777→   777→  const isVideo = kind === 'video'
+   778→   778→  const controlsDisabled = error !== null
+   779→   779→
+   780→   780→  return (
+   781→   781→    <AnimatePresence>
+   782→   782→      {visible ? (
+   783→   783→        <motion.div
+   784→   784→          key="call-overlay"
+   785→   785→          initial={{ opacity: 0, y: 24 }}
+   786→   786→          animate={{ opacity: 1, y: 0 }}
+   787→   787→          exit={{ opacity: 0, y: 24 }}
+   788→   788→          transition={spring.soft}
+   789→   789→          className="fixed inset-0 z-[80] flex flex-col overflow-hidden bg-zinc-950/95 text-white backdrop-blur-2xl"
+   790→   790→          role="dialog"
+   791→   791→          aria-label={
+   792→   792→            state === 'incoming'
+   793→   793→              ? `Incoming ${kind} call from ${peer.name}`
+   794→   794→              : state === 'active'
+   795→   795→                ? `Active ${kind} call with ${peer.name}`
+   796→   796→                : `${kind} call with ${peer.name}`
+   797→   797→          }
+   798→   798→        >
+   799→   799→          {/* ambient emerald wash — matches the app's aurora language */}
+   800→   800→          <div
+   801→   801→            aria-hidden
+   802→   802→            className="pointer-events-none absolute inset-0"
+   803→   803→            style={{
+   804→   804→              background:
+   805→   805→                'radial-gradient(120% 70% at 50% -10%, rgba(16,185,129,0.22) 0%, rgba(16,185,129,0.06) 38%, rgba(0,0,0,0) 65%), radial-gradient(90% 55% at 50% 110%, rgba(20,184,166,0.16) 0%, rgba(0,0,0,0) 60%)',
+   806→   806→            }}
+   807→   807→          />
+   808→   808→
+   809→   809→          {/* remote media (active video calls: full-bleed) */}
+   810→   810→          {state === 'active' && isVideo ? (
+   811→   811→            <video
+   812→   812→              ref={remoteVideoRef}
+   813→   813→              autoPlay
+   814→   814→              playsInline
+   815→   815→              className="absolute inset-0 size-full object-cover"
+   816→   816→            />
+   817→   817→          ) : null}
+   818→   818→          {/* remote audio for voice calls (hidden element, autoplay) */}
+   819→   819→          <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+   820→   820→
+   821→   821→          {/* local camera PiP (active video calls) */}
+   822→   822→          {state === 'active' && isVideo && localStream ? (
+   823→   823→            <motion.video
+   824→   824→              ref={localVideoRef}
+   825→   825→              autoPlay
+   826→   826→              playsInline
+   827→   827→              muted
+   828→   828→              initial={{ opacity: 0, scale: 0.9 }}
+   829→   829→              animate={{ opacity: 1, scale: 1 }}
+   830→   830→              transition={spring.soft}
+   831→   831→              className="absolute bottom-28 right-4 z-10 h-36 w-24 rounded-2xl border border-white/15 object-cover shadow-2xl"
+   832→   832→              style={{ transform: 'scaleX(-1)' }}
+   833→   833→            />
+   834→   834→          ) : null}
+   835→   835→
+   836→   836→          {/* ── INCOMING / CALLING / ACTIVE content ── */}
+   837→   837→          <div className="relative z-20 flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-40 pt-[max(2rem,env(safe-area-inset-top))]">
+   838→   838→            {state === 'active' && isVideo ? (
+   839→   839→              <div className="absolute left-0 right-0 top-[max(1rem,env(safe-area-inset-top))] flex flex-col items-center gap-0.5 px-4 text-center">
+   840→   840→                <p className="text-base font-semibold tracking-tight text-white drop-shadow">{peer.name}</p>
+   841→   841→                <p className="text-xs font-medium tabular-nums text-emerald-300">
+   842→   842→                  {formatCallDuration(durationSec)}
+   843→   843→                </p>
+   844→   844→              </div>
+   845→   845→            ) : (
+   846→   846→              <>
+   847→   847→                <AvatarHalo reduced={reducedMotion}>
+   848→   848→                  <UserAvatar
+   849→   849→                    name={peer.name}
+   850→   850→                    color={peer.color}
+   851→   851→                    avatar={peer.avatar}
+   852→   852→                    size={112}
+   853→   853→                  />
+   854→   854→                </AvatarHalo>
+   855→   855→                <motion.p
+   856→   856→                  initial={{ opacity: 0, y: 8 }}
+   857→   857→                  animate={{ opacity: 1, y: 0 }}
+   858→   858→                  transition={spring.soft}
+   859→   859→                  className="mt-6 text-2xl font-bold tracking-tight text-white"
+   860→   860→                >
+   861→   861→                  {peer.name}
+   862→   862→                </motion.p>
+   863→   863→                <motion.p
+   864→   864→                  initial={{ opacity: 0 }}
+   865→   865→                  animate={{ opacity: 1 }}
+   866→   866→                  transition={{ ...spring.soft, delay: 0.05 }}
+   867→   867→                  className={cn(
+   868→   868→                    'mt-1.5 text-sm font-medium',
+   869→   869→                    state === 'incoming' ? 'text-emerald-300' : 'text-zinc-300',
+   870→   870→                  )}
+   871→   871→                >
+   872→   872→                  {state === 'incoming'
+   873→   873→                    ? `Incoming ${kind} call`
+   874→   874→                    : state === 'calling'
+   875→   875→                      ? isVideo
+   876→   876→                        ? 'Video call…'
+   877→   877→                        : 'Calling…'
+   878→   878→                      : formatCallDuration(durationSec)}
+   879→   879→                </motion.p>
+   880→   880→              </>
+   881→   881→            )}
+   882→   882→
+   883→   883→            {/* honest permission/error card */}
+   884→   884→            {error ? (
+   885→   885→              <motion.div
+   886→   886→                initial={{ opacity: 0, scale: 0.96 }}
+   887→   887→                animate={{ opacity: 1, scale: 1 }}
+   888→   888→                transition={spring.soft}
+   889→   889→                className="glass-deep glass-sheen mt-8 w-full max-w-xs rounded-3xl p-5 text-center"
+   890→   890→                role="alert"
+   891→   891→              >
+   892→   892→                <span className="mx-auto flex size-10 items-center justify-center rounded-full bg-rose-500/15">
+   893→   893→                  <MicOff className="size-5 text-rose-400" aria-hidden />
+   894→   894→                </span>
+   895→   895→                <p className="mt-3 text-sm font-semibold leading-snug text-zinc-800 dark:text-zinc-100">
+   896→   896→                  {error}
+   897→   897→                </p>
+   898→   898→                <button
+   899→   899→                  type="button"
+   900→   900→                  onClick={dismissError}
+   901→   901→                  className="mt-4 h-10 w-full rounded-full bg-emerald-500 text-sm font-bold text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-[0.98]"
+   902→   902→                >
+   903→   903→                  Close
+   904→   904→                </button>
+   905→   905→              </motion.div>
+   906→   906→            ) : null}
+   907→   907→
+   908→   908→            {/* ended summary card */}
+   909→   909→            {state === 'ended' && summary ? (
+   910→   910→              <motion.div
+   911→   911→                initial={{ opacity: 0, scale: 0.94, y: 10 }}
+   912→   912→                animate={{ opacity: 1, scale: 1, y: 0 }}
+   913→   913→                exit={{ opacity: 0, scale: 0.96 }}
+   914→   914→                transition={spring.soft}
+   915→   915→                className="glass-deep glass-sheen mt-8 flex items-center gap-3 rounded-2xl px-5 py-3.5"
+   916→   916→                role="status"
+   917→   917→              >
+   918→   918→                <span
+   919→   919→                  className={cn(
+   920→   920→                    'flex size-8 shrink-0 items-center justify-center rounded-full',
+   921→   921→                    summary.startsWith('Call ended') ? 'bg-emerald-500/15' : 'bg-rose-500/15',
+   922→   922→                  )}
+   923→   923→                >
+   924→   924→                  {summary.startsWith('Call ended') ? (
+   925→   925→                    <PhoneCall className="size-4 text-emerald-500 dark:text-emerald-400" aria-hidden />
+   926→   926→                  ) : (
+   927→   927→                    <PhoneMissed className="size-4 text-rose-500 dark:text-rose-400" aria-hidden />
+   928→   928→                  )}
+   929→   929→                </span>
+   930→   930→                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{summary}</p>
+   931→   931→              </motion.div>
+   932→   932→            ) : null}
+   933→   933→          </div>
+   934→   934→
+   935→   935→          {/* ── controls ── */}
+   936→   936→          <div className="relative z-20 px-6 pb-[max(1.75rem,env(safe-area-inset-bottom))]">
+   937→   937→            {state === 'incoming' && !controlsDisabled ? (
+   938→   938→              <div className="mx-auto flex w-full max-w-xs items-center justify-around">
+   939→   939→                <div className="flex flex-col items-center gap-2">
+   940→   940→                  <CallButton label="Decline call" onClick={declineCall} tone="danger" size="lg">
+   941→   941→                    <PhoneOff className="size-7" aria-hidden />
+   942→   942→                  </CallButton>
+   943→   943→                  <span className="text-xs font-medium text-zinc-400">Decline</span>
+   944→   944→                </div>
+   945→   945→                <div className="flex flex-col items-center gap-2">
+   946→   946→                  <CallButton
+   947→   947→                    label={`Accept ${kind} call`}
+   948→   948→                    onClick={acceptCall}
+   949→   949→                    tone="accept"
+   950→   950→                    size="lg"
+   951→   951→                  >
+   952→   952→                    {isVideo ? (
+   953→   953→                      <Video className="size-7" aria-hidden />
+   954→   954→                    ) : (
+   955→   955→                      <Phone className="size-7" aria-hidden />
+   956→   956→                    )}
+   957→   957→                  </CallButton>
+   958→   958→                  <span className="text-xs font-medium text-zinc-400">Accept</span>
+   959→   959→                </div>
+   960→   960→              </div>
+   961→   961→            ) : null}
+   962→   962→
+   963→   963→            {state === 'calling' && !controlsDisabled ? (
+   964→   964→              <div className="mx-auto flex w-full max-w-xs items-center justify-around">
+   965→   965→                <div className="flex flex-col items-center gap-2">
+   966→   966→                  <CallButton label="Cancel call" onClick={endCall} tone="danger" size="lg">
+   967→   967→                    <PhoneOff className="size-7" aria-hidden />
+   968→   968→                  </CallButton>
+   969→   969→                  <span className="text-xs font-medium text-zinc-400">Cancel</span>
+   970→   970→                </div>
+   971→   971→              </div>
+   972→   972→            ) : null}
+   973→   973→
+   974→   974→            {state === 'active' && !controlsDisabled ? (
+   975→   975→              <div className="mx-auto flex w-full max-w-sm items-center justify-around">
+   976→   976→                <div className="flex flex-col items-center gap-2">
+   977→   977→                  <CallButton
+   978→   978→                    label={micEnabled ? 'Mute microphone' : 'Unmute microphone'}
+   979→   979→                    onClick={toggleMic}
+   980→   980→                    tone="neutral"
+   981→   981→                  >
+   982→   982→                    {micEnabled ? (
+   983→   983→                      <Mic className="size-6" aria-hidden />
+   984→   984→                    ) : (
+   985→   985→                      <MicOff className="size-6" aria-hidden />
+   986→   986→                    )}
+   987→   987→                  </CallButton>
+   988→   988→                  <span className="text-xs font-medium text-zinc-400">{micEnabled ? 'Mute' : 'Muted'}</span>
+   989→   989→                </div>
+   990→   990→                {isVideo ? (
+   991→   991→                  <div className="flex flex-col items-center gap-2">
+   992→   992→                    <CallButton
+   993→   993→                      label={cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
+   994→   994→                      onClick={toggleCamera}
+   995→   995→                      tone="neutral"
+   996→   996→                    >
+   997→   997→                      {cameraEnabled ? (
+   998→   998→                        <Video className="size-6" aria-hidden />
+   999→   999→                      ) : (
+  1000→  1000→                        <VideoOff className="size-6" aria-hidden />
+  1001→  1001→                      )}
+  1002→  1002→                    </CallButton>
+  1003→  1003→                    <span className="text-xs font-medium text-zinc-400">
+  1004→  1004→                      {cameraEnabled ? 'Camera' : 'Camera off'}
+  1005→  1005→                    </span>
+  1006→  1006→                  </div>
+  1007→  1007→                ) : null}
+  1008→  1008→                <div className="flex flex-col items-center gap-2">
+  1009→  1009→                  <CallButton label="End call" onClick={endCall} tone="danger" size="lg">
+  1010→  1010→                    <PhoneOff className="size-7" aria-hidden />
+  1011→  1011→                  </CallButton>
+  1012→  1012→                  <span className="text-xs font-medium text-zinc-400">End</span>
+  1013→  1013→                </div>
+  1014→  1014→              </div>
+  1015→  1015→            ) : null}
+  1016→  1016→          </div>
+  1017→  1017→
+  1018→  1018→          {/* sr-only live region for the timer */}
+  1019→  1019→          <span className="sr-only" role="timer" aria-live="off">
+  1020→  1020→            {state === 'active' ? formatCallDuration(durationSec) : ''}
+  1021→  1021→          </span>
+  1022→  1022→          {/* keep direction/kind referenced for a11y labeling completeness */}
+  1023→  1023→          <span hidden aria-hidden>{direction ?? ''}</span>
+  1024→  1024→        </motion.div>
+  1025→  1025→      ) : null}
+  1026→  1026→    </AnimatePresence>
+  1027→  1027→  )
+  1028→  1028→}
+  1029→  1029→
+  1030→  1030→// ── overlay end ──
+  1031→  1031→

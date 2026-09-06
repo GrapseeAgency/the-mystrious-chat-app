@@ -1,0 +1,1275 @@
+     1→// ─────────────────────────────────────────────────────────────
+     2→// Pulse — room info sub-page (#/room/<id>/info) — R27-c · R28-b.
+     3→// Full-screen glass sheet above the chat room: hero by room type,
+     4→// member list with roles (Lucide Crown) + live socket presence,
+     5→// tap-to-profile (routes to the global #/user/:id page), REAL
+     6→// admin actions (add members sub-view · remove member · promote/
+     7→// demote via the members API · invite link per /invite API),
+     8→// mute toggle (real mute API), disappearing-TTL display and
+     9→// honest quick-stats computed from the room's loaded messages.
+    10→// ─────────────────────────────────────────────────────────────
+    11→'use client'
+    12→
+    13→import { useRef, useMemo, useState } from 'react'
+    14→import { AnimatePresence, motion } from 'framer-motion'
+    15→import { useMutation, useQueryClient } from '@tanstack/react-query'
+    16→import {
+    17→  BellOff,
+    18→  Camera,
+    19→  ChevronDown,
+    20→  ChevronLeft,
+    21→  ChevronRight,
+    22→  Copy,
+    23→  Crown,
+    24→  Flame,
+    25→  Image as ImageIcon,
+    26→  Hourglass,
+    27→  Link2,
+    28→  LoaderCircle,
+    29→  LogOut,
+    30→  Megaphone,
+    31→  Palette,
+    32→  Pin,
+    33→  Search,
+    34→  SearchX,
+    35→  Timer,
+    36→  UserRoundMinus,
+    37→  UserRoundPlus,
+    38→  Users,
+    39→  VolumeX,
+    40→} from 'lucide-react'
+    41→import type { AppUser, ChatMessage, ConversationDetail, GroupRole } from '@/lib/types'
+    42→import { navigateHash } from '@/lib/hash-router'
+    43→import { apiJson, gradientFor, groupGradientFor, jsonBody, formatListStamp } from '@/lib/pulse-utils'
+    44→import { ease, spring, stagger } from '@/lib/motion'
+    45→import { haptic } from '@/lib/pulse-settings'
+    46→import { toast } from 'sonner'
+    47→import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
+    48→import { RoomMemberAddPage } from '@/components/chat/room-member-add'
+    49→import { ConvThemePicker } from '@/components/chat/conv-theme-picker'
+    50→import { convThemeSummary } from '@/lib/conv-theme'
+    51→import { usePrefsValues } from '@/lib/prefs'
+    52→import { uploadConversationPhoto } from '@/lib/upload-photo'
+    53→import { Skeleton } from '@/components/ui/skeleton'
+    54→import { cn } from '@/lib/utils'
+    55→
+    56→export interface RoomInfoPageProps {
+    57→  me: AppUser
+    58→  conversationId: string
+    59→  /** cache-shared with the room's ['conversation', id] query */
+    60→  detail?: ConversationDetail
+    61→  /** live presence from the socket context */
+    62→  onlineIds: ReadonlySet<string>
+    63→  /** the room's real loaded message window — quick-stats source */
+    64→  loadedMessages: ChatMessage[]
+    65→  /** authoritative pinned count (GET /pinned cache) */
+    66→  pinnedCount: number
+    67→  /** true when older history exists beyond the loaded window */
+    68→  historyPartial: boolean
+    69→  reducedMotion?: boolean
+    70→  /** backHash() — returns to the room */
+    71→  onClose: () => void
+    72→  /** open the classic full group-manager sheet (kept reachable) */
+    73→  onOpenManager: () => void
+    74→}
+    75→
+    76→/** Disappearing-message TTL → short label (mirrors the room header menu). */
+    77→function ttlLabel(ttlSeconds: number): string {
+    78→  if (ttlSeconds <= 0) return 'Off'
+    79→  if (ttlSeconds === 86_400) return '24h'
+    80→  if (ttlSeconds === 604_800) return '7d'
+    81→  if (ttlSeconds === 2_592_000) return '30d'
+    82→  return `${Math.max(1, Math.round(ttlSeconds / 86_400))}d`
+    83→}
+    84→
+    85→/** TTL → spoken length for toasts/subtitles (mirrors the room header menu). */
+    86→function ttlLong(ttlSeconds: number): string {
+    87→  if (ttlSeconds === 86_400) return '24 hours'
+    88→  if (ttlSeconds === 604_800) return '7 days'
+    89→  if (ttlSeconds === 2_592_000) return '30 days'
+    90→  return `${Math.max(1, Math.round(ttlSeconds / 86_400))} days`
+    91→}
+    92→
+    93→// ── R34-b: Signal-style disappearing timer ──────────────────
+    94→/** The EXACT TTL presets the disappearing API accepts (seconds). 0 = off. */
+    95→const TTL_STOPS = [0, 86_400, 604_800, 2_592_000] as const // off · 24h · 7d · 30d
+    96→const TTL_STOP_LABELS = ['Off', '24h', '7d', '30d'] as const
+    97→
+    98→/**
+    99→ * Horizontal drag-to-set timer track. Draggable springy thumb over the
+   100→ * supported TTL stops, a live label riding under the thumb, and the old
+   101→ * preset pills kept as tap-to-commit tick labels below. Pointer events
+   102→ * only (touch + mouse), `touch-none` so the page never scrolls mid-drag.
+   103→ */
+   104→function DisappearingSlider({
+   105→  ttlSeconds,
+   106→  disabled,
+   107→  reducedMotion,
+   108→  onCommit,
+   109→}: {
+   110→  ttlSeconds: number
+   111→  disabled: boolean
+   112→  reducedMotion: boolean
+   113→  onCommit: (ttlSeconds: number) => void
+   114→}) {
+   115→  const trackRef = useRef<HTMLDivElement | null>(null)
+   116→  const [draftIdx, setDraftIdx] = useState(() =>
+   117→    Math.max(0, TTL_STOPS.indexOf(ttlSeconds as (typeof TTL_STOPS)[number])),
+   118→  )
+   119→  const [dragging, setDragging] = useState(false)
+   120→
+   121→  // follow the committed server truth whenever a drag is not in flight
+   122→  const committedIdx = Math.max(
+   123→    0,
+   124→    TTL_STOPS.indexOf(ttlSeconds as (typeof TTL_STOPS)[number]),
+   125→  )
+   126→  const shownIdx = dragging ? draftIdx : committedIdx
+   127→
+   128→  const idxFromClientX = (clientX: number): number => {
+   129→    const el = trackRef.current
+   130→    if (!el) return committedIdx
+   131→    const rect = el.getBoundingClientRect()
+   132→    if (rect.width <= 0) return committedIdx
+   133→    const ratio = (clientX - rect.left) / rect.width
+   134→    return Math.min(TTL_STOPS.length - 1, Math.max(0, Math.round(ratio * (TTL_STOPS.length - 1))))
+   135→  }
+   136→
+   137→  const stopPct = (shownIdx / (TTL_STOPS.length - 1)) * 100
+   138→  // keep the riding label inside the card at the extreme stops
+   139→  const labelPct = Math.min(86, Math.max(14, stopPct))
+   140→  const slideTransition = reducedMotion ? { duration: 0.12 } : spring.snappy
+   141→
+   142→  return (
+   143→    <div className="mt-3 px-0.5 pb-0.5">
+   144→      {/* live label riding under the thumb */}
+   145→      <div className="relative mb-0.5 h-4" aria-hidden>
+   146→        <motion.span
+   147→          animate={{ left: `${labelPct}%` }}
+   148→          transition={slideTransition}
+   149→          style={{ x: '-50%' }}
+   150→          className="absolute top-0 whitespace-nowrap rounded-full bg-emerald-500/15 px-1.5 py-px text-[9.5px] font-bold text-emerald-600 ring-1 ring-inset ring-emerald-500/25 dark:text-emerald-400"
+   151→        >
+   152→          {TTL_STOP_LABELS[shownIdx]}
+   153→        </motion.span>
+   154→      </div>
+   155→
+   156→      <div
+   157→        ref={trackRef}
+   158→        role="slider"
+   159→        aria-label="Disappearing message timer"
+   160→        aria-valuemin={0}
+   161→        aria-valuemax={TTL_STOPS.length - 1}
+   162→        aria-valuenow={shownIdx}
+   163→        aria-valuetext={TTL_STOP_LABELS[shownIdx]}
+   164→        aria-disabled={disabled}
+   165→        onPointerDown={(event) => {
+   166→          if (disabled) return
+   167→          event.currentTarget.setPointerCapture(event.pointerId)
+   168→          setDragging(true)
+   169→          setDraftIdx(idxFromClientX(event.clientX))
+   170→          haptic(6)
+   171→        }}
+   172→        onPointerMove={(event) => {
+   173→          if (!dragging || disabled) return
+   174→          const idx = idxFromClientX(event.clientX)
+   175→          if (idx !== draftIdx) {
+   176→            setDraftIdx(idx)
+   177→            haptic(4)
+   178→          }
+   179→        }}
+   180→        onPointerUp={(event) => {
+   181→          if (!dragging) return
+   182→          setDragging(false)
+   183→          const idx = idxFromClientX(event.clientX)
+   184→          setDraftIdx(idx)
+   185→          haptic(10)
+   186→          const next = TTL_STOPS[idx]
+   187→          if (next !== ttlSeconds) onCommit(next)
+   188→        }}
+   189→        onPointerCancel={() => setDragging(false)}
+   190→        className={cn('relative h-7 touch-none select-none', disabled && 'pointer-events-none opacity-50')}
+   191→      >
+   192→        {/* resting track + emerald fill up to the thumb */}
+   193→        <div className="absolute top-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-zinc-900/[0.07] dark:bg-white/10" />
+   194→        <div
+   195→          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-emerald-500/60 to-emerald-500 transition-[width] duration-150"
+   196→          style={{ width: `${stopPct}%` }}
+   197→        />
+   198→        {/* tick stops */}
+   199→        {TTL_STOPS.map((_, idx) => (
+   200→          <span
+   201→            key={idx}
+   202→            className={cn(
+   203→              'absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white dark:ring-zinc-900',
+   204→              idx <= shownIdx ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600',
+   205→            )}
+   206→            style={{ left: `${(idx / (TTL_STOPS.length - 1)) * 100}%` }}
+   207→          />
+   208→        ))}
+   209→        {/* springy thumb — scales on grab for the haptic feel */}
+   210→        <motion.span
+   211→          aria-hidden
+   212→          animate={{ left: `${stopPct}%`, scale: dragging ? 1.18 : 1 }}
+   213→          transition={slideTransition}
+   214→          style={{ x: '-50%', y: '-50%' }}
+   215→          className="absolute top-1/2 z-10 flex size-5 items-center justify-center rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.28)] ring-1 ring-black/10 dark:bg-zinc-100"
+   216→        >
+   217→          <span className="block size-2 rounded-full bg-emerald-500" />
+   218→        </motion.span>
+   219→      </div>
+   220→
+   221→      {/* the old preset pills — kept as tap-to-commit tick labels */}
+   222→      <div className="mt-1.5 grid grid-cols-4 gap-1" role="group" aria-label="Timer presets">
+   223→        {TTL_STOPS.map((t, idx) => (
+   224→          <button
+   225→            key={t}
+   226→            type="button"
+   227→            disabled={disabled}
+   228→            onClick={() => onCommit(t)}
+   229→            className={cn(
+   230→              'h-7 rounded-full text-[11px] font-bold outline-none transition-colors active:scale-95 disabled:opacity-50',
+   231→              idx === shownIdx
+   232→                ? 'bg-emerald-500/15 text-emerald-700 ring-1 ring-emerald-400 dark:text-emerald-300'
+   233→                : 'bg-zinc-900/[0.05] text-zinc-600 hover:bg-emerald-500/15 hover:text-emerald-700 dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:text-emerald-400',
+   234→            )}
+   235→          >
+   236→            {TTL_STOP_LABELS[idx]}
+   237→          </button>
+   238→        ))}
+   239→      </div>
+   240→    </div>
+   241→  )
+   242→}
+   243→
+   244→export function RoomInfoPage({
+   245→  me,
+   246→  conversationId,
+   247→  detail,
+   248→  onlineIds,
+   249→  loadedMessages,
+   250→  pinnedCount,
+   251→  historyPartial,
+   252→  reducedMotion = false,
+   253→  onClose,
+   254→  onOpenManager,
+   255→}: RoomInfoPageProps) {
+   256→  const queryClient = useQueryClient()
+   257→
+   258→  const isGroup = detail?.isGroup ?? false
+   259→  const other = !isGroup ? detail?.members.find((m) => m.id !== me.id) : undefined
+   260→  const title = isGroup ? detail?.name || 'Group' : other?.name ?? 'Chat'
+   261→  const myRole = detail?.members.find((m) => m.id === me.id)?.role
+   262→  const isAdmin = myRole === 'admin'
+   263→  /** R30-c — broadcast channel (WhatsApp-Channels style): subscribers language */
+   264→  const isChannel = isGroup && (detail?.broadcastMode ?? false)
+   265→
+   266→  const isMuted =
+   267→    detail?.myMutedUntil != null && Date.parse(detail.myMutedUntil) > Date.now()
+   268→
+   269→  /** honest quick-stats — counts over the real loaded messages only */
+   270→  const stats = useMemo(() => {
+   271→    let media = 0
+   272→    let links = 0
+   273→    for (const m of loadedMessages) {
+   274→      if (m.deletedAt !== null) continue
+   275→      if (m.imagePath !== null) media += 1
+   276→      if (m.linkUrl !== null || /https?:\/\//i.test(m.content)) links += 1
+   277→    }
+   278→    return { media, links }
+   279→  }, [loadedMessages])
+   280→
+   281→  const onlineCount = useMemo(
+   282→    () => (detail?.members ?? []).filter((m) => onlineIds.has(m.id)).length,
+   283→    [detail, onlineIds],
+   284→  )
+   285→
+   286→  /** admins first, then name — stable view order */
+   287→  const members = useMemo(() => {
+   288→    const list = [...(detail?.members ?? [])]
+   289→    list.sort((a, b) => {
+   290→      const adminDelta = (a.role === 'admin' ? 0 : 1) - (b.role === 'admin' ? 0 : 1)
+   291→      if (adminDelta !== 0) return adminDelta
+   292→      return a.name.localeCompare(b.name)
+   293→    })
+   294→    return list
+   295→  }, [detail])
+   296→
+   297→  const adminCount = useMemo(
+   298→    () => members.filter((m) => m.role === 'admin').length,
+   299→    [members],
+   300→  )
+   301→
+   302→  /** directory ids already in the group — the add-members view subtracts them */
+   303→  const existingIds = useMemo(
+   304→    () => new Set((detail?.members ?? []).map((m) => m.id)),
+   305→    [detail],
+   306→  )
+   307→
+   308→  // ── member-list search (only surfaced past 8 members) ─────
+   309→
+   310→  const [memberFilter, setMemberFilter] = useState('')
+   311→  const memberQuery = memberFilter.trim().toLowerCase()
+   312→  const visibleMembers = useMemo(() => {
+   313→    if (members.length <= 8 || memberQuery.length === 0) return members
+   314→    return members.filter(
+   315→      (m) =>
+   316→        m.name.toLowerCase().includes(memberQuery) ||
+   317→        (m.username ?? '').toLowerCase().includes(memberQuery),
+   318→    )
+   319→  }, [members, memberQuery])
+   320→
+   321→  // ── real actions ─────────────────────────────────────────
+   322→
+   323→  const muteMutation = useMutation({
+   324→    mutationFn: async (until: '8h' | '1w' | 'always' | null) => {
+   325→      return apiJson<{ ok: boolean; mutedUntil: string | null }>(
+   326→        `/api/conversations/${encodeURIComponent(conversationId)}/mute`,
+   327→        jsonBody({ userId: me.id, until }),
+   328→      )
+   329→    },
+   330→    onSuccess: (data) => {
+   331→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   332→        old ? { ...old, myMutedUntil: data.mutedUntil } : old,
+   333→      )
+   334→      toast.success(data.mutedUntil === null ? 'Notifications unmuted' : 'Notifications muted')
+   335→      haptic(12)
+   336→    },
+   337→    onError: () => toast.error('Could not update the mute'),
+   338→  })
+   339→
+   340→  const inviteMutation = useMutation({
+   341→    mutationFn: async () => {
+   342→      return apiJson<{ inviteCode: string }>(
+   343→        `/api/conversations/${encodeURIComponent(conversationId)}/invite`,
+   344→        jsonBody({ requesterId: me.id, regenerate: false }),
+   345→      )
+   346→    },
+   347→    onSuccess: (res) => {
+   348→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   349→        old ? { ...old, inviteCode: res.inviteCode } : old,
+   350→      )
+   351→      void copyInvite(res.inviteCode)
+   352→    },
+   353→    onError: (error) =>
+   354→      toast.error(error instanceof Error ? error.message : 'Could not create the invite link'),
+   355→  })
+   356→
+   357→  // POST /members/{userId} is DELETE-only (PATCH = role change) — the R27
+   358→  // draft sent method:POST via jsonBody and got a silent 405. Fixed here.
+   359→  const removeMutation = useMutation({
+   360→    mutationFn: async (userId: string) => {
+   361→      return apiJson<{ ok: boolean }>(
+   362→        `/api/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
+   363→        { method: 'DELETE', body: JSON.stringify({ requesterId: me.id }) },
+   364→      )
+   365→    },
+   366→    onMutate: async (userId: string) => {
+   367→      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+   368→      const prev = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+   369→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   370→        old ? { ...old, members: old.members.filter((m) => m.id !== userId) } : old,
+   371→      )
+   372→      return { prev }
+   373→    },
+   374→    onSuccess: () => {
+   375→      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+   376→      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   377→      toast.success('Removed from the group')
+   378→      haptic(14)
+   379→    },
+   380→    onError: (error, _userId, ctx) => {
+   381→      if (ctx?.prev) queryClient.setQueryData(['conversation', conversationId], ctx.prev)
+   382→      toast.error(error instanceof Error ? error.message : 'Could not remove the member')
+   383→    },
+   384→  })
+   385→
+   386→  // PATCH /members/{userId} { requesterId, action: 'promote' | 'demote' }
+   387→  // Admin-only server-side; demote 400s when the target is the last admin.
+   388→  const roleMutation = useMutation({
+   389→    mutationFn: async ({ userId, action }: { userId: string; action: 'promote' | 'demote' }) => {
+   390→      return apiJson<{ conversation: ConversationDetail }>(
+   391→        `/api/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`,
+   392→        { method: 'PATCH', body: JSON.stringify({ requesterId: me.id, action }) },
+   393→      )
+   394→    },
+   395→    onSuccess: (_data, vars) => {
+   396→      // Surgical role patch — the response detail is built for the TARGET
+   397→      // viewer (its myMutedUntil is not ours), so never cache it wholesale.
+   398→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   399→        old
+   400→          ? {
+   401→              ...old,
+   402→              members: old.members.map((m) =>
+   403→                m.id === vars.userId
+   404→                  ? { ...m, role: (vars.action === 'promote' ? 'admin' : 'member') as GroupRole }
+   405→                  : m,
+   406→              ),
+   407→            }
+   408→          : old,
+   409→      )
+   410→      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+   411→      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   412→      toast.success(vars.action === 'promote' ? 'Promoted to admin' : 'Role set to member')
+   413→      haptic(12)
+   414→    },
+   415→    onError: (error) =>
+   416→      toast.error(error instanceof Error ? error.message : 'Could not update the role'),
+   417→  })
+   418→
+   419→  const copyInvite = async (code: string) => {
+   420→    const link = `${window.location.origin}/?join=${code}`
+   421→    try {
+   422→      await navigator.clipboard.writeText(link)
+   423→      toast.success('Invite link copied to clipboard')
+   424→    } catch {
+   425→      toast.error('Could not copy the link')
+   426→    }
+   427→  }
+   428→
+   429→  // two-tap confirm for destructive row actions (remove / dismiss-admin / leave)
+   430→  type ArmedConfirm = { id: string; kind: 'remove' | 'demote' | 'leave' }
+   431→  const [confirm, setConfirm] = useState<ArmedConfirm | null>(null)
+   432→  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   433→  const armConfirm = (kind: ArmedConfirm['kind'], userId: string) => {
+   434→    if (confirmTimerRef.current !== null) clearTimeout(confirmTimerRef.current)
+   435→    setConfirm({ id: userId, kind })
+   436→    haptic(8)
+   437→    confirmTimerRef.current = setTimeout(() => {
+   438→      confirmTimerRef.current = null
+   439→      setConfirm(null)
+   440→    }, 2600)
+   441→  }
+   442→  const tapConfirm = (kind: ArmedConfirm['kind'], userId: string, run: () => void) => {
+   443→    if (confirm?.id === userId && confirm.kind === kind) {
+   444→      if (confirmTimerRef.current !== null) {
+   445→        clearTimeout(confirmTimerRef.current)
+   446→        confirmTimerRef.current = null
+   447→      }
+   448→      setConfirm(null)
+   449→      run()
+   450→    } else {
+   451→      armConfirm(kind, userId)
+   452→    }
+   453→  }
+   454→  // remove keeps the R27 two-tap shape — armRemove / tapRemove
+   455→  const armRemove = (userId: string) => armConfirm('remove', userId)
+   456→  const tapRemove = (userId: string) =>
+   457→    tapConfirm('remove', userId, () => removeMutation.mutate(userId))
+   458→  const tapDemote = (userId: string) =>
+   459→    tapConfirm('demote', userId, () => roleMutation.mutate({ userId, action: 'demote' }))
+   460→
+   461→  // R28-b: full-screen add-members sub-view INSIDE the info page
+   462→  const [addOpen, setAddOpen] = useState(false)
+   463→
+   464→  // R33-b — channel/group photo: admins get an "Edit photo" overlay on the
+   465→  // hero avatar (real upload chain: file → /api/uploads → PATCH photo).
+   466→  const photoInputRef = useRef<HTMLInputElement | null>(null)
+   467→  const [photoBusy, setPhotoBusy] = useState(false)
+   468→  const setPhotoMutation = useMutation({
+   469→    mutationFn: async (photo: string) => {
+   470→      return apiJson<{ conversation: ConversationDetail }>(
+   471→        `/api/conversations/${encodeURIComponent(conversationId)}`,
+   472→        { method: 'PATCH', body: JSON.stringify({ requesterId: me.id, photo }) },
+   473→      )
+   474→    },
+   475→    onMutate: async (photo: string) => {
+   476→      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+   477→      const prev = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+   478→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+   479→        old ? { ...old, photo } : old,
+   480→      )
+   481→      return { prev }
+   482→    },
+   483→    onSuccess: () => {
+   484→      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+   485→      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   486→      void queryClient.invalidateQueries({ queryKey: ['channels', me.id] })
+   487→      toast.success('Photo updated')
+   488→      haptic(12)
+   489→    },
+   490→    onError: (error, _photo, ctx) => {
+   491→      if (ctx?.prev) queryClient.setQueryData(['conversation', conversationId], ctx.prev)
+   492→      toast.error(error instanceof Error ? error.message : 'Could not update the photo')
+   493→    },
+   494→  })
+   495→
+   496→  const handlePhotoPicked = async (file: File) => {
+   497→    if (photoBusy) return
+   498→    haptic(10)
+   499→    setPhotoBusy(true)
+   500→    try {
+   501→      const path = await uploadConversationPhoto(file)
+   502→      setPhotoMutation.mutate(path)
+   503→    } catch (error) {
+   504→      toast.error(error instanceof Error ? error.message : 'Could not upload that photo')
+   505→    } finally {
+   506→      setPhotoBusy(false)
+   507→    }
+   508→  }
+   509→
+   510→  // R33-b — honest channel succession: leaving a broadcast channel. An admin
+   511→  // may leave while another admin remains; the LAST admin is blocked (the
+   512→  // server 403s — the UI says so before it ever fires).
+   513→  const leaveMutation = useMutation({
+   514→    mutationFn: async () => {
+   515→      return apiJson<{ ok: boolean }>(
+   516→        `/api/channels/${encodeURIComponent(conversationId)}/subscribe`,
+   517→        { method: 'DELETE', body: JSON.stringify({ userId: me.id }) },
+   518→      )
+   519→    },
+   520→    onSuccess: () => {
+   521→      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   522→      void queryClient.invalidateQueries({ queryKey: ['channels', me.id] })
+   523→      void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+   524→      toast.success(`You left ${title}`)
+   525→      haptic(14)
+   526→      onClose()
+   527→    },
+   528→    onError: (error) =>
+   529→      toast.error(error instanceof Error ? error.message : 'Could not leave the channel'),
+   530→  })
+   531→  const leaveArmed = confirm?.id === me.id && confirm.kind === 'leave'
+   532→
+   533→  // R29-a: per-conversation chat theme (wallpaper/tint) — inline picker
+   534→  const prefs = usePrefsValues()
+   535→  const themeSummary = convThemeSummary(prefs, conversationId)
+   536→  const [themeOpen, setThemeOpen] = useState(false)
+   537→
+   538→  // R34-b: Signal-style disappearing-timer slider — any participant may
+   539→  // change it (the disappearing API allows every participant; mirrors the
+   540→  // room header menu's TTL submenu, which stays reachable).
+   541→  const [ttlOpen, setTtlOpen] = useState(false)
+   542→  const ttlMutation = useMutation({
+   543→    mutationFn: async (ttlSeconds: number) =>
+   544→      apiJson<{ conversation: ConversationDetail }>(
+   545→        `/api/conversations/${encodeURIComponent(conversationId)}/disappearing`,
+   546→        { method: 'PATCH', body: JSON.stringify({ userId: me.id, ttlSeconds }) },
+   547→      ),
+   548→    onSuccess: (data) => {
+   549→      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], data.conversation)
+   550→      void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
+   551→      const t = data.conversation.ttlSeconds
+   552→      toast.success(t === 0 ? 'Disappearing messages off' : `New messages vanish after ${ttlLong(t)}`)
+   553→      haptic(12)
+   554→    },
+   555→    onError: (error) =>
+   556→      toast.error(error instanceof Error ? error.message : 'Could not update disappearing messages'),
+   557→  })
+   558→
+   559→  const anim = {
+   560→    initial: reducedMotion ? false : { opacity: 0, y: 10 },
+   561→    animate: { opacity: 1, y: 0 },
+   562→  }
+   563→
+   564→  return (
+   565→    <motion.div
+   566→      initial={reducedMotion ? false : { y: '100%' }}
+   567→      animate={{ y: 0 }}
+   568→      exit={{ y: '100%' }}
+   569→      transition={spring.soft}
+   570→      role="dialog"
+   571→      aria-label={isGroup ? `About ${title}` : `About ${title}`}
+   572→      className="absolute inset-0 z-[55] flex flex-col bg-zinc-100/85 backdrop-blur-2xl dark:bg-black/70"
+   573→    >
+   574→      {/* header */}
+   575→      <div className="flex min-h-14 shrink-0 items-center gap-1.5 px-2 pt-[env(safe-area-inset-top)]">
+   576→        <button
+   577→          type="button"
+   578→          aria-label="Back to conversation"
+   579→          onClick={() => {
+   580→            haptic(6)
+   581→            onClose()
+   582→          }}
+   583→          className="glass-pill flex size-10 shrink-0 items-center justify-center text-zinc-600 outline-none transition-transform active:scale-90 dark:text-zinc-300"
+   584→        >
+   585→          <ChevronLeft className="size-6" aria-hidden />
+   586→        </button>
+   587→        <p className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+   588→          {isGroup ? 'Group info' : 'Chat info'}
+   589→        </p>
+   590→      </div>
+   591→
+   592→      <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-1 pb-8">
+   593→        {/* hero */}
+   594→        <motion.div
+   595→          {...anim}
+   596→          transition={spring.soft}
+   597→          className="glass-deep glass-sheen relative overflow-hidden rounded-3xl p-5"
+   598→        >
+   599→          <div
+   600→            aria-hidden
+   601→            className="pointer-events-none absolute -top-16 -right-14 size-44 rounded-full opacity-25 blur-2xl"
+   602→            style={{
+   603→              backgroundImage: isGroup
+   604→                ? groupGradientFor(conversationId)
+   605→                : gradientFor(other?.color ?? 'emerald'),
+   606→            }}
+   607→          />
+   608→          <div className="flex items-center gap-4">
+   609→            {isGroup ? (
+   610→              <span className="relative shrink-0">
+   611→                <GroupAvatar title={title} id={conversationId} size={68} photo={detail?.photo ?? null} />
+   612→                {/* R33-b — "Edit photo" overlay for admins: opens the real
+   613→                    upload chain (file → /api/uploads → PATCH conversation). */}
+   614→                {isAdmin && detail !== undefined ? (
+   615→                  <button
+   616→                    type="button"
+   617→                    aria-label={detail.photo ? 'Edit channel photo' : 'Add channel photo'}
+   618→                    disabled={photoBusy || setPhotoMutation.isPending}
+   619→                    onClick={() => {
+   620→                      haptic(8)
+   621→                      photoInputRef.current?.click()
+   622→                    }}
+   623→                    className="glass-pill absolute -right-1 -bottom-1 z-10 flex size-8 items-center justify-center rounded-full text-emerald-600 shadow-md outline-none transition-transform active:scale-90 disabled:opacity-60 dark:text-emerald-400"
+   624→                  >
+   625→                    {photoBusy || setPhotoMutation.isPending ? (
+   626→                      <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+   627→                    ) : (
+   628→                      <Camera className="size-3.5" aria-hidden />
+   629→                    )}
+   630→                  </button>
+   631→                ) : null}
+   632→              </span>
+   633→            ) : (
+   634→              <UserAvatar
+   635→                name={other?.name ?? title}
+   636→                color={other?.color}
+   637→                avatar={other?.avatar}
+   638→                size={68}
+   639→                showPresence
+   640→                online={other ? onlineIds.has(other.id) : false}
+   641→              />
+   642→            )}
+   643→            <div className="min-w-0 flex-1">
+   644→              <div className="truncate text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+   645→                {detail === undefined ? <Skeleton className="h-6 w-36 rounded-lg" /> : title}
+   646→              </div>
+   647→              {detail === undefined ? (
+   648→                <Skeleton className="mt-1.5 h-4 w-24 rounded-md" />
+   649→              ) : isGroup ? (
+   650→                <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+   651→                  {members.length} {members.length === 1 ? (isChannel ? 'subscriber' : 'member') : isChannel ? 'subscribers' : 'members'} · {onlineCount} online
+   652→                </p>
+   653→              ) : (
+   654→                <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+   655→                  {other ? (onlineIds.has(other.id) ? 'Online now' : 'Offline') : 'Direct chat'}
+   656→                </p>
+   657→              )}
+   658→              {/* R30-c — channel purpose line (display-only: the info page has no
+   659→                  inline-edit pattern; renames live in the classic group manager) */}
+   660→              {detail !== undefined && detail.description ? (
+   661→                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+   662→                  {detail.description}
+   663→                </p>
+   664→              ) : null}
+   665→              <div className="mt-2 flex flex-wrap gap-1.5">
+   666→                {isGroup && (detail?.broadcastMode ?? false) ? (
+   667→                  <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+   668→                    <Megaphone className="size-3" aria-hidden />
+   669→                    Announcements only
+   670→                  </span>
+   671→                ) : null}
+   672→                {detail && detail.ttlSeconds > 0 ? (
+   673→                  <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+   674→                    <Timer className="size-3" aria-hidden />
+   675→                    Disappearing · {ttlLabel(detail.ttlSeconds)}
+   676→                  </span>
+   677→                ) : null}
+   678→              </div>
+   679→            </div>
+   680→          </div>
+   681→        </motion.div>
+   682→
+   683→        {/* quick stats — real counts over the loaded window */}
+   684→        <motion.div {...anim} transition={{ ...spring.soft, delay: stagger(1) }} className="mt-3 grid grid-cols-3 gap-2">
+   685→          {[
+   686→            { icon: ImageIcon, label: 'Photos', value: stats.media },
+   687→            { icon: Link2, label: 'Links', value: stats.links },
+   688→            { icon: Pin, label: 'Pinned', value: pinnedCount },
+   689→          ].map((tile) => (
+   690→            <div
+   691→              key={tile.label}
+   692→              className="glass-deep glass-sheen flex flex-col items-center gap-0.5 rounded-2xl px-2 py-3"
+   693→            >
+   694→              <tile.icon className="size-4 text-emerald-500" aria-hidden />
+   695→              <span className="text-base font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
+   696→                {tile.value}
+   697→              </span>
+   698→              <span className="text-[10px] font-semibold tracking-wide text-zinc-400 uppercase dark:text-zinc-500">
+   699→                {tile.label}
+   700→              </span>
+   701→            </div>
+   702→          ))}
+   703→        </motion.div>
+   704→        {historyPartial ? (
+   705→          <p className="mt-1.5 px-1 text-center text-[10px] text-zinc-400 dark:text-zinc-500">
+   706→            Counted from loaded history — older messages exist.
+   707→          </p>
+   708→        ) : null}
+   709→
+   710→        {/* actions */}
+   711→        <motion.div
+   712→          {...anim}
+   713→          transition={{ ...spring.soft, delay: stagger(2) }}
+   714→          className="glass-deep glass-sheen mt-3 overflow-hidden rounded-3xl p-1.5"
+   715→        >
+   716→          {/* mute — real per-user watermark API */}
+   717→          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+   718→            {isMuted ? (
+   719→              <VolumeX className="size-4 shrink-0 text-emerald-500" aria-hidden />
+   720→            ) : (
+   721→              <BellOff className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   722→            )}
+   723→            <div className="min-w-0 flex-1">
+   724→              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   725→                {isMuted ? 'Notifications muted' : 'Mute notifications'}
+   726→              </p>
+   727→              {isMuted && detail?.myMutedUntil ? (
+   728→                <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+   729→                  until {formatListStamp(detail.myMutedUntil)}
+   730→                </p>
+   731→              ) : null}
+   732→            </div>
+   733→            {isMuted ? (
+   734→              <button
+   735→                type="button"
+   736→                disabled={muteMutation.isPending}
+   737→                onClick={() => muteMutation.mutate(null)}
+   738→                className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 disabled:opacity-50 dark:text-emerald-400"
+   739→              >
+   740→                Unmute
+   741→              </button>
+   742→            ) : (
+   743→              <div className="flex shrink-0 gap-1" role="group" aria-label="Mute duration">
+   744→                {(['8h', '1w', 'always'] as const).map((preset) => (
+   745→                  <button
+   746→                    key={preset}
+   747→                    type="button"
+   748→                    disabled={muteMutation.isPending}
+   749→                    onClick={() => muteMutation.mutate(preset)}
+   750→                    className="h-8 rounded-full bg-zinc-900/[0.05] px-2.5 text-[11px] font-bold text-zinc-600 outline-none transition-transform hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:text-emerald-400"
+   751→                  >
+   752→                    {preset === 'always' ? 'Always' : preset}
+   753→                  </button>
+   754→                ))}
+   755→              </div>
+   756→            )}
+   757→          </div>
+   758→
+   759→          {/* disappearing TTL — Signal-style inline slider (R34-b). The
+   760→              collapsed row shows the current state; expanding reveals a
+   761→              draggable track over the EXACT stops the disappearing API
+   762→              accepts (off / 24h / 7d / 30d), with the old preset pills kept
+   763→              as tap-to-commit tick labels. Persists via the existing PATCH
+   764→              /disappearing call. */}
+   765→          <div className="glass-row-hover rounded-2xl px-3 py-2.5">
+   766→            <div className="flex items-center gap-3">
+   767→              <Timer
+   768→                className={cn(
+   769→                  'size-4 shrink-0',
+   770→                  (detail?.ttlSeconds ?? 0) > 0 ? 'text-emerald-500' : 'text-zinc-400',
+   771→                )}
+   772→                aria-hidden
+   773→              />
+   774→              <div className="min-w-0 flex-1">
+   775→                <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   776→                  Disappearing messages
+   777→                </p>
+   778→                <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   779→                  {detail === undefined
+   780→                    ? '…'
+   781→                    : detail.ttlSeconds > 0
+   782→                      ? `New messages vanish after ${ttlLong(detail.ttlSeconds)}`
+   783→                      : 'Messages stay in the chat'}
+   784→                </p>
+   785→              </div>
+   786→              <span
+   787→                className={cn(
+   788→                  'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold',
+   789→                  (detail?.ttlSeconds ?? 0) > 0
+   790→                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+   791→                    : 'bg-zinc-900/[0.05] text-zinc-500 dark:bg-white/[0.07] dark:text-zinc-400',
+   792→                )}
+   793→              >
+   794→                {detail === undefined ? '…' : ttlLabel(detail.ttlSeconds)}
+   795→              </span>
+   796→              <button
+   797→                type="button"
+   798→                aria-expanded={ttlOpen}
+   799→                aria-label={ttlOpen ? 'Hide timer options' : 'Adjust the disappearing timer'}
+   800→                disabled={detail === undefined}
+   801→                onClick={() => {
+   802→                  haptic(8)
+   803→                  setTtlOpen((v) => !v)
+   804→                }}
+   805→                className="glass-pill flex size-8 shrink-0 items-center justify-center text-zinc-500 outline-none transition-transform active:scale-90 disabled:opacity-50 dark:text-zinc-300"
+   806→              >
+   807→                <motion.span animate={{ rotate: ttlOpen ? 180 : 0 }} transition={spring.snappy} className="flex">
+   808→                  <ChevronDown className="size-4" aria-hidden />
+   809→                </motion.span>
+   810→              </button>
+   811→            </div>
+   812→            <AnimatePresence initial={false}>
+   813→              {ttlOpen && detail !== undefined ? (
+   814→                <motion.div
+   815→                  key="ttl-slider"
+   816→                  initial={reducedMotion ? false : { opacity: 0, height: 0 }}
+   817→                  animate={{ opacity: 1, height: 'auto' }}
+   818→                  exit={reducedMotion ? undefined : { opacity: 0, height: 0 }}
+   819→                  transition={spring.soft}
+   820→                  className="overflow-hidden"
+   821→                >
+   822→                  <DisappearingSlider
+   823→                    ttlSeconds={detail.ttlSeconds}
+   824→                    disabled={ttlMutation.isPending}
+   825→                    reducedMotion={reducedMotion}
+   826→                    onCommit={(ttl) => ttlMutation.mutate(ttl)}
+   827→                  />
+   828→                </motion.div>
+   829→              ) : null}
+   830→            </AnimatePresence>
+   831→          </div>
+   832→
+   833→          {/* R31-a: viewer's chat streak in THIS conversation — R33-b adds the
+   834→              honest at-risk tone: a live chain whose lastDay is yesterday dies
+   835→              at tonight's UTC midnight unless the viewer sends a message. */}
+   836→          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+   837→            {detail?.deadStreak ? (
+   838→              <Hourglass className="size-4 shrink-0 text-amber-500" aria-hidden />
+   839→            ) : (
+   840→              <Flame
+   841→                className={cn(
+   842→                  'size-4 shrink-0',
+   843→                  detail?.myStreak ? 'text-amber-500' : 'text-zinc-400',
+   844→                )}
+   845→                aria-hidden
+   846→              />
+   847→            )}
+   848→            <div className="min-w-0 flex-1">
+   849→              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   850→                Chat streak
+   851→              </p>
+   852→              <p
+   853→                className={cn(
+   854→                  'truncate text-[11px]',
+   855→                  detail?.deadStreak
+   856→                    ? 'font-semibold text-amber-600 dark:text-amber-400'
+   857→                    : 'text-zinc-400 dark:text-zinc-500',
+   858→                )}
+   859→              >
+   860→                {detail === undefined
+   861→                  ? '…'
+   862→                  : detail.deadStreak
+   863→                    ? `${detail.deadStreak.count}-day streak ends tonight — say something`
+   864→                    : detail.myStreak
+   865→                      ? `${detail.myStreak.count}-day streak · best ${detail.myStreak.best}`
+   866→                      : 'No active streak yet'}
+   867→              </p>
+   868→            </div>
+   869→          </div>
+   870→
+   871→          {/* R29-a: chat theme — per-conversation wallpaper/tint override.
+   872→              Row shows the effective theme; Customize expands the picker
+   873→              inline (slide inside the page, not a route/overlay). */}
+   874→          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+   875→            <Palette className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   876→            <div className="min-w-0 flex-1">
+   877→              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   878→                Chat theme
+   879→              </p>
+   880→              <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   881→                {themeSummary.text}
+   882→              </p>
+   883→            </div>
+   884→            <button
+   885→              type="button"
+   886→              aria-expanded={themeOpen}
+   887→              onClick={() => {
+   888→                haptic(8)
+   889→                setThemeOpen((v) => !v)
+   890→              }}
+   891→              className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 dark:text-emerald-400"
+   892→            >
+   893→              {themeOpen ? 'Close' : 'Customize'}
+   894→            </button>
+   895→          </div>
+   896→          <AnimatePresence initial={false}>
+   897→            {themeOpen ? (
+   898→              <motion.div
+   899→                key="conv-theme-picker"
+   900→                initial={reducedMotion ? false : { opacity: 0, height: 0 }}
+   901→                animate={{ opacity: 1, height: 'auto' }}
+   902→                exit={reducedMotion ? undefined : { opacity: 0, height: 0 }}
+   903→                transition={spring.soft}
+   904→                className="overflow-hidden"
+   905→              >
+   906→                <ConvThemePicker conversationId={conversationId} reducedMotion={reducedMotion} />
+   907→              </motion.div>
+   908→            ) : null}
+   909→          </AnimatePresence>
+   910→
+   911→          {/* invite link — real /invite API, groups + admin only (hidden honestly) */}
+   912→          {isGroup && isAdmin ? (
+   913→            <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+   914→              <Users className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   915→              <div className="min-w-0 flex-1">
+   916→                <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   917→                  Invite link
+   918→                </p>
+   919→                <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   920→                  {detail?.inviteCode ? `Code ${detail.inviteCode}` : 'No active link yet'}
+   921→                </p>
+   922→              </div>
+   923→              <button
+   924→                type="button"
+   925→                disabled={inviteMutation.isPending}
+   926→                onClick={() => {
+   927→                  haptic(8)
+   928→                  if (detail?.inviteCode) void copyInvite(detail.inviteCode)
+   929→                  else inviteMutation.mutate()
+   930→                }}
+   931→                className="glass-pill flex h-8 shrink-0 items-center gap-1 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 disabled:opacity-50 dark:text-emerald-400"
+   932→              >
+   933→                {inviteMutation.isPending ? (
+   934→                  <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+   935→                ) : (
+   936→                  <Copy className="size-3.5" aria-hidden />
+   937→                )}
+   938→                {detail?.inviteCode ? 'Copy' : 'Create'}
+   939→              </button>
+   940→            </div>
+   941→          ) : null}
+   942→
+   943→          {/* add members — POST /members is admins-only server-side (403 otherwise),
+   944→              so the row renders for admins only — no dead UI for members */}
+   945→          {isGroup && isAdmin && detail ? (
+   946→            <button
+   947→              type="button"
+   948→              onClick={() => {
+   949→                haptic(8)
+   950→                setAddOpen(true)
+   951→              }}
+   952→              className="glass-row-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none"
+   953→            >
+   954→              <UserRoundPlus className="size-4 shrink-0 text-emerald-500" aria-hidden />
+   955→              <div className="min-w-0 flex-1">
+   956→                <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   957→                  Add members
+   958→                </p>
+   959→                <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+   960→                  From the Pulse directory
+   961→                </p>
+   962→              </div>
+   963→              <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   964→            </button>
+   965→          ) : null}
+   966→
+   967→          {/* classic group manager — kept reachable from its natural home */}
+   968→          {isGroup ? (
+   969→            <button
+   970→              type="button"
+   971→              onClick={() => {
+   972→                haptic(8)
+   973→                onClose()
+   974→                onOpenManager()
+   975→              }}
+   976→              className="glass-row-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none"
+   977→            >
+   978→              <Users className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   979→              <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+   980→                Manage group — roles, webhooks, more
+   981→              </p>
+   982→              <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden />
+   983→            </button>
+   984→          ) : null}
+   985→
+   986→          {/* R33-b — leave channel (broadcast rooms only; group leave lives in
+   987→              the classic manager). Honest succession: the LAST admin cannot
+   988→              leave until they promote a successor via "Make admin" above —
+   989→              the row says so, and the server 403s as the backstop. */}
+   990→          {isChannel ? (
+   991→            <button
+   992→              type="button"
+   993→              aria-label={leaveArmed ? 'Confirm leaving the channel' : 'Leave this channel'}
+   994→              disabled={leaveMutation.isPending}
+   995→              onClick={() => {
+   996→                haptic(8)
+   997→                if (isAdmin && adminCount <= 1) {
+   998→                  toast.error(
+   999→                    'You are the last admin — promote another admin ("Make admin") before leaving.',
+  1000→                  )
+  1001→                  return
+  1002→                }
+  1003→                tapConfirm('leave', me.id, () => leaveMutation.mutate())
+  1004→              }}
+  1005→              className={cn(
+  1006→                'glass-row-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors',
+  1007→                leaveArmed && 'bg-rose-500/10',
+  1008→              )}
+  1009→            >
+  1010→              <LogOut className="size-4 shrink-0 text-rose-500" aria-hidden />
+  1011→              <span className="min-w-0 flex-1">
+  1012→                <span
+  1013→                  className={cn(
+  1014→                    'block truncate text-sm font-medium',
+  1015→                    leaveArmed ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-800 dark:text-zinc-100',
+  1016→                  )}
+  1017→                >
+  1018→                  {leaveArmed ? 'Tap again to leave' : 'Leave channel'}
+  1019→                </span>
+  1020→                <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+  1021→                  {isAdmin && adminCount <= 1
+  1022→                    ? 'You stay until another admin exists'
+  1023→                    : isAdmin
+  1024→                      ? 'Another admin will keep the channel running'
+  1025→                      : 'You will stop receiving this channel'}
+  1026→                </span>
+  1027→              </span>
+  1028→              {leaveMutation.isPending ? (
+  1029→                <LoaderCircle className="size-4 shrink-0 animate-spin text-rose-500" aria-hidden />
+  1030→              ) : null}
+  1031→            </button>
+  1032→          ) : null}
+  1033→        </motion.div>
+  1034→
+  1035→        {/* members */}
+  1036→        <motion.p
+  1037→          {...anim}
+  1038→          transition={{ ...spring.soft, delay: stagger(3) }}
+  1039→          className="px-2 pt-4 pb-1.5 text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase dark:text-zinc-500"
+  1040→        >
+  1041→          {isChannel ? 'Subscribers' : 'Members'}{detail ? ` · ${members.length}` : ''}
+  1042→        </motion.p>
+  1043→        <motion.div
+  1044→          {...anim}
+  1045→          transition={{ ...spring.soft, delay: stagger(3) }}
+  1046→          className="glass-deep glass-sheen overflow-hidden rounded-3xl p-1.5"
+  1047→        >
+  1048→          {detail === undefined ? (
+  1049→            <div className="space-y-2 p-1" role="status" aria-label="Loading members">
+  1050→              <Skeleton className="h-11 w-full rounded-2xl" />
+  1051→              <Skeleton className="h-11 w-full rounded-2xl" />
+  1052→              <Skeleton className="h-11 w-4/5 rounded-2xl" />
+  1053→            </div>
+  1054→          ) : (
+  1055→            <>
+  1056→              {/* R28-b: glass filter — only surfaced past 8 members */}
+  1057→              {members.length > 8 ? (
+  1058→                <motion.div
+  1059→                  initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+  1060→                  animate={{ opacity: 1, y: 0 }}
+  1061→                  transition={{ duration: 0.2, ease: ease.out }}
+  1062→                  className="glass-pill relative m-0.5 mb-1"
+  1063→                >
+  1064→                  <Search
+  1065→                    className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-zinc-400"
+  1066→                    aria-hidden
+  1067→                  />
+  1068→                  <input
+  1069→                    value={memberFilter}
+  1070→                    onChange={(e) => setMemberFilter(e.target.value.slice(0, 40))}
+  1071→                    placeholder="Search members"
+  1072→                    aria-label="Search members"
+  1073→                    autoComplete="off"
+  1074→                    className="h-9 w-full rounded-full bg-transparent pr-8 pl-9 text-[13px] text-zinc-900 placeholder:text-zinc-400 outline-none dark:text-zinc-100"
+  1075→                  />
+  1076→                  {memberFilter.length > 0 ? (
+  1077→                    <button
+  1078→                      type="button"
+  1079→                      aria-label="Clear member search"
+  1080→                      onClick={() => setMemberFilter('')}
+  1081→                      className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded-full p-1.5 text-zinc-400 outline-none transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+  1082→                    >
+  1083→                      <SearchX className="size-3.5" aria-hidden />
+  1084→                    </button>
+  1085→                  ) : null}
+  1086→                </motion.div>
+  1087→              ) : null}
+  1088→              <ul>
+  1089→                {visibleMembers.map((member, i) => {
+  1090→                  const isMe = member.id === me.id
+  1091→                  const online = onlineIds.has(member.id)
+  1092→                  // mirror of the API's real guards: DELETE /members/[userId] is
+  1093→                  // admin-only, 400s on self, 403s on admin targets — no dead UI
+  1094→                  const canRemove =
+  1095→                    isAdmin && !isMe && member.role !== 'admin' && !removeMutation.isPending
+  1096→                  const rolePendingHere =
+  1097→                    roleMutation.isPending && roleMutation.variables?.userId === member.id
+  1098→                  const roleBusy = roleMutation.isPending && !rolePendingHere
+  1099→                  const demoteArmed = confirm?.id === member.id && confirm.kind === 'demote'
+  1100→                  const removeArmed = confirm?.id === member.id && confirm.kind === 'remove'
+  1101→                  return (
+  1102→                    <motion.li
+  1103→                      key={member.id}
+  1104→                      initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+  1105→                      animate={{ opacity: 1, y: 0 }}
+  1106→                      transition={{
+  1107→                        duration: 0.2,
+  1108→                        delay: Math.min(i * 0.03, 0.24),
+  1109→                        ease: ease.out,
+  1110→                      }}
+  1111→                      className="glass-row-hover flex items-center gap-3 rounded-2xl px-2 py-2"
+  1112→                    >
+  1113→                      <button
+  1114→                        type="button"
+  1115→                        aria-label={isMe ? 'Your profile' : `View ${member.name}'s profile`}
+  1116→                        onClick={() => {
+  1117→                          haptic(8)
+  1118→                          // push straight through: info unmounts, browser back
+  1119→                          // returns to #/room/<id>/info — no async back-race
+  1120→                          navigateHash(`#/user/${encodeURIComponent(member.id)}`)
+  1121→                        }}
+  1122→                        className="shrink-0 rounded-full outline-none transition-transform active:scale-90"
+  1123→                      >
+  1124→                        <UserAvatar
+  1125→                          name={member.name}
+  1126→                          color={member.color}
+  1127→                          avatar={member.avatar}
+  1128→                          size={38}
+  1129→                          showPresence
+  1130→                          online={online}
+  1131→                        />
+  1132→                      </button>
+  1133→                      <button
+  1134→                        type="button"
+  1135→                        onClick={() => {
+  1136→                          haptic(8)
+  1137→                          // push straight through: info unmounts, browser back
+  1138→                          // returns to #/room/<id>/info — no async back-race
+  1139→                          navigateHash(`#/user/${encodeURIComponent(member.id)}`)
+  1140→                        }}
+  1141→                        className="min-w-0 flex-1 text-left outline-none"
+  1142→                      >
+  1143→                        <span className="flex min-w-0 items-center gap-1.5">
+  1144→                          <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+  1145→                            {member.name}
+  1146→                          </span>
+  1147→                          {member.role === 'admin' ? (
+  1148→                            <Crown className="size-3.5 shrink-0 text-amber-500" aria-label="Admin" />
+  1149→                          ) : null}
+  1150→                          {isMe ? (
+  1151→                            <span className="shrink-0 text-[11px] font-medium text-zinc-400">(you)</span>
+  1152→                          ) : null}
+  1153→                        </span>
+  1154→                        <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+  1155→                          {member.role === 'admin' ? 'Admin · ' : ''}
+  1156→                          {member.username ? `@${member.username}` : member.about || 'Member'}
+  1157→                        </span>
+  1158→                      </button>
+  1159→                      {/* R28-b: role actions — PATCH /members/[userId] is admin-only;
+  1160→                          the last admin is never dismissable (server 400s, we hide) */}
+  1161→                      {isAdmin && !isMe ? (
+  1162→                        member.role === 'member' ? (
+  1163→                          <button
+  1164→                            type="button"
+  1165→                            disabled={roleBusy}
+  1166→                            aria-label={`Make ${member.name} an admin`}
+  1167→                            onClick={() => {
+  1168→                              haptic(8)
+  1169→                              roleMutation.mutate({ userId: member.id, action: 'promote' })
+  1170→                            }}
+  1171→                            className="flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold text-zinc-400 outline-none transition-all hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-95 disabled:opacity-40 dark:text-zinc-500 dark:hover:text-emerald-400"
+  1172→                          >
+  1173→                            {rolePendingHere ? (
+  1174→                              <LoaderCircle className="size-3 animate-spin" aria-hidden />
+  1175→                            ) : (
+  1176→                              <Crown className="size-3" aria-hidden />
+  1177→                            )}
+  1178→                            Make admin
+  1179→                          </button>
+  1180→                        ) : adminCount > 1 ? (
+  1181→                          <button
+  1182→                            type="button"
+  1183→                            disabled={roleBusy}
+  1184→                            aria-label={demoteArmed ? `Confirm demoting ${member.name}` : `Demote ${member.name}`}
+  1185→                            onClick={() => tapDemote(member.id)}
+  1186→                            className={cn(
+  1187→                              'flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold outline-none transition-all active:scale-95 disabled:opacity-40',
+  1188→                              demoteArmed
+  1189→                                ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+  1190→                                : 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400',
+  1191→                            )}
+  1192→                          >
+  1193→                            {rolePendingHere ? (
+  1194→                              <LoaderCircle className="size-3 animate-spin" aria-hidden />
+  1195→                            ) : (
+  1196→                              <Crown className="size-3" aria-hidden />
+  1197→                            )}
+  1198→                            {demoteArmed ? 'Dismiss?' : 'Admin'}
+  1199→                          </button>
+  1200→                        ) : (
+  1201→                          <span
+  1202→                            aria-label="Last admin of this group"
+  1203→                            className="flex h-8 shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-2.5 text-[11px] font-bold text-amber-600 dark:text-amber-400"
+  1204→                          >
+  1205→                            <Crown className="size-3" aria-hidden />
+  1206→                            Admin
+  1207→                          </span>
+  1208→                        )
+  1209→                      ) : null}
+  1210→                      {canRemove ? (
+  1211→                        removeArmed ? (
+  1212→                          <button
+  1213→                            type="button"
+  1214→                            onClick={() => tapRemove(member.id)}
+  1215→                            className="shrink-0 rounded-full bg-rose-500/15 px-2.5 py-1 text-[11px] font-bold text-rose-600 outline-none transition-transform active:scale-95 dark:text-rose-400"
+  1216→                          >
+  1217→                            Remove?
+  1218→                          </button>
+  1219→                        ) : (
+  1220→                          <button
+  1221→                            type="button"
+  1222→                            aria-label={`Remove ${member.name}`}
+  1223→                            onClick={() => tapRemove(member.id)}
+  1224→                            className="flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 active:scale-90"
+  1225→                          >
+  1226→                            <UserRoundMinus className="size-4" aria-hidden />
+  1227→                          </button>
+  1228→                        )
+  1229→                      ) : null}
+  1230→                    </motion.li>
+  1231→                  )
+  1232→                })}
+  1233→              </ul>
+  1234→              {visibleMembers.length === 0 && members.length > 0 ? (
+  1235→                <p className="flex items-center gap-2 px-3 py-4 text-xs text-zinc-400 dark:text-zinc-500">
+  1236→                  <SearchX className="size-3.5 shrink-0" aria-hidden />
+  1237→                  No members match “{memberFilter.trim()}”
+  1238→                </p>
+  1239→              ) : null}
+  1240→            </>
+  1241→          )}
+  1242→        </motion.div>
+  1243→      </div>
+  1244→
+  1245→      {/* R28-b: add-members glass sub-view — slides INSIDE the info page (not a route) */}
+  1246→      <AnimatePresence>
+  1247→        {addOpen ? (
+  1248→          <RoomMemberAddPage
+  1249→            key="room-member-add"
+  1250→            me={me}
+  1251→            conversationId={conversationId}
+  1252→            existingIds={existingIds}
+  1253→            reducedMotion={reducedMotion}
+  1254→            onClose={() => setAddOpen(false)}
+  1255→          />
+  1256→        ) : null}
+  1257→      </AnimatePresence>
+  1258→
+  1259→      {/* R33-b: hidden photo picker — the real upload chain handles the rest */}
+  1260→      <input
+  1261→        ref={photoInputRef}
+  1262→        type="file"
+  1263→        accept="image/*"
+  1264→        disabled={photoBusy}
+  1265→        className="sr-only"
+  1266→        onChange={(e) => {
+  1267→          const file = e.target.files?.[0]
+  1268→          e.target.value = '' // allow re-picking the same file
+  1269→          if (file) void handlePhotoPicked(file)
+  1270→        }}
+  1271→      />
+  1272→    </motion.div>
+  1273→  )
+  1274→}
+  1275→

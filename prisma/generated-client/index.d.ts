@@ -40,6 +40,15 @@ export type ConversationStreak = $Result.DefaultSelection<Prisma.$ConversationSt
  */
 export type CallLog = $Result.DefaultSelection<Prisma.$CallLogPayload>
 /**
+ * Model UserVerification
+ * *
+ *  * Signal-style safety-number verification — one row per (viewer, peer) pair
+ *  * after the viewer confirms the peer's safety number in person. The number
+ *  * itself is derived deterministically from both stable user ids (see
+ *  * src/lib/safety.ts) so both sides always see the same digits.
+ */
+export type UserVerification = $Result.DefaultSelection<Prisma.$UserVerificationPayload>
+/**
  * Model UserWallet
  * *
  *  * Hub economy wallet — real balances moved by check-ins, transfers, swaps,
@@ -397,6 +406,16 @@ export class PrismaClient<
     * ```
     */
   get callLog(): Prisma.CallLogDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.userVerification`: Exposes CRUD operations for the **UserVerification** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more UserVerifications
+    * const userVerifications = await prisma.userVerification.findMany()
+    * ```
+    */
+  get userVerification(): Prisma.UserVerificationDelegate<ExtArgs, ClientOptions>;
 
   /**
    * `prisma.userWallet`: Exposes CRUD operations for the **UserWallet** model.
@@ -1172,6 +1191,7 @@ export namespace Prisma {
     Reminder: 'Reminder',
     ConversationStreak: 'ConversationStreak',
     CallLog: 'CallLog',
+    UserVerification: 'UserVerification',
     UserWallet: 'UserWallet',
     WalletLedger: 'WalletLedger',
     HubTask: 'HubTask',
@@ -1223,7 +1243,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "reminder" | "conversationStreak" | "callLog" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp"
+      modelProps: "user" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -1520,6 +1540,80 @@ export namespace Prisma {
           count: {
             args: Prisma.CallLogCountArgs<ExtArgs>
             result: $Utils.Optional<CallLogCountAggregateOutputType> | number
+          }
+        }
+      }
+      UserVerification: {
+        payload: Prisma.$UserVerificationPayload<ExtArgs>
+        fields: Prisma.UserVerificationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.UserVerificationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.UserVerificationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload>
+          }
+          findFirst: {
+            args: Prisma.UserVerificationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.UserVerificationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload>
+          }
+          findMany: {
+            args: Prisma.UserVerificationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload>[]
+          }
+          create: {
+            args: Prisma.UserVerificationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload>
+          }
+          createMany: {
+            args: Prisma.UserVerificationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.UserVerificationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload>[]
+          }
+          delete: {
+            args: Prisma.UserVerificationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload>
+          }
+          update: {
+            args: Prisma.UserVerificationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload>
+          }
+          deleteMany: {
+            args: Prisma.UserVerificationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.UserVerificationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.UserVerificationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload>[]
+          }
+          upsert: {
+            args: Prisma.UserVerificationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$UserVerificationPayload>
+          }
+          aggregate: {
+            args: Prisma.UserVerificationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateUserVerification>
+          }
+          groupBy: {
+            args: Prisma.UserVerificationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<UserVerificationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.UserVerificationCountArgs<ExtArgs>
+            result: $Utils.Optional<UserVerificationCountAggregateOutputType> | number
           }
         }
       }
@@ -4065,6 +4159,7 @@ export namespace Prisma {
     reminder?: ReminderOmit
     conversationStreak?: ConversationStreakOmit
     callLog?: CallLogOmit
+    userVerification?: UserVerificationOmit
     userWallet?: UserWalletOmit
     walletLedger?: WalletLedgerOmit
     hubTask?: HubTaskOmit
@@ -4193,6 +4288,7 @@ export namespace Prisma {
     tournamentEntries: number
     reminders: number
     streaks: number
+    verificationsGiven: number
   }
 
   export type UserCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -4211,6 +4307,7 @@ export namespace Prisma {
     tournamentEntries?: boolean | UserCountOutputTypeCountTournamentEntriesArgs
     reminders?: boolean | UserCountOutputTypeCountRemindersArgs
     streaks?: boolean | UserCountOutputTypeCountStreaksArgs
+    verificationsGiven?: boolean | UserCountOutputTypeCountVerificationsGivenArgs
   }
 
   // Custom InputTypes
@@ -4327,6 +4424,13 @@ export namespace Prisma {
    */
   export type UserCountOutputTypeCountStreaksArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: ConversationStreakWhereInput
+  }
+
+  /**
+   * UserCountOutputType without action
+   */
+  export type UserCountOutputTypeCountVerificationsGivenArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: UserVerificationWhereInput
   }
 
 
@@ -5082,6 +5186,7 @@ export namespace Prisma {
     tournamentEntries?: boolean | User$tournamentEntriesArgs<ExtArgs>
     reminders?: boolean | User$remindersArgs<ExtArgs>
     streaks?: boolean | User$streaksArgs<ExtArgs>
+    verificationsGiven?: boolean | User$verificationsGivenArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["user"]>
 
@@ -5154,6 +5259,7 @@ export namespace Prisma {
     tournamentEntries?: boolean | User$tournamentEntriesArgs<ExtArgs>
     reminders?: boolean | User$remindersArgs<ExtArgs>
     streaks?: boolean | User$streaksArgs<ExtArgs>
+    verificationsGiven?: boolean | User$verificationsGivenArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type UserIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
@@ -5178,6 +5284,7 @@ export namespace Prisma {
       tournamentEntries: Prisma.$TournamentPlayerPayload<ExtArgs>[]
       reminders: Prisma.$ReminderPayload<ExtArgs>[]
       streaks: Prisma.$ConversationStreakPayload<ExtArgs>[]
+      verificationsGiven: Prisma.$UserVerificationPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -5604,6 +5711,7 @@ export namespace Prisma {
     tournamentEntries<T extends User$tournamentEntriesArgs<ExtArgs> = {}>(args?: Subset<T, User$tournamentEntriesArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$TournamentPlayerPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     reminders<T extends User$remindersArgs<ExtArgs> = {}>(args?: Subset<T, User$remindersArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     streaks<T extends User$streaksArgs<ExtArgs> = {}>(args?: Subset<T, User$streaksArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ConversationStreakPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    verificationsGiven<T extends User$verificationsGivenArgs<ExtArgs> = {}>(args?: Subset<T, User$verificationsGivenArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -6409,6 +6517,30 @@ export namespace Prisma {
     take?: number
     skip?: number
     distinct?: ConversationStreakScalarFieldEnum | ConversationStreakScalarFieldEnum[]
+  }
+
+  /**
+   * User.verificationsGiven
+   */
+  export type User$verificationsGivenArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    where?: UserVerificationWhereInput
+    orderBy?: UserVerificationOrderByWithRelationInput | UserVerificationOrderByWithRelationInput[]
+    cursor?: UserVerificationWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: UserVerificationScalarFieldEnum | UserVerificationScalarFieldEnum[]
   }
 
   /**
@@ -9695,6 +9827,1049 @@ export namespace Prisma {
      * Omit specific fields from the CallLog
      */
     omit?: CallLogOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model UserVerification
+   */
+
+  export type AggregateUserVerification = {
+    _count: UserVerificationCountAggregateOutputType | null
+    _min: UserVerificationMinAggregateOutputType | null
+    _max: UserVerificationMaxAggregateOutputType | null
+  }
+
+  export type UserVerificationMinAggregateOutputType = {
+    id: string | null
+    ownerId: string | null
+    peerId: string | null
+    verifiedAt: Date | null
+  }
+
+  export type UserVerificationMaxAggregateOutputType = {
+    id: string | null
+    ownerId: string | null
+    peerId: string | null
+    verifiedAt: Date | null
+  }
+
+  export type UserVerificationCountAggregateOutputType = {
+    id: number
+    ownerId: number
+    peerId: number
+    verifiedAt: number
+    _all: number
+  }
+
+
+  export type UserVerificationMinAggregateInputType = {
+    id?: true
+    ownerId?: true
+    peerId?: true
+    verifiedAt?: true
+  }
+
+  export type UserVerificationMaxAggregateInputType = {
+    id?: true
+    ownerId?: true
+    peerId?: true
+    verifiedAt?: true
+  }
+
+  export type UserVerificationCountAggregateInputType = {
+    id?: true
+    ownerId?: true
+    peerId?: true
+    verifiedAt?: true
+    _all?: true
+  }
+
+  export type UserVerificationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which UserVerification to aggregate.
+     */
+    where?: UserVerificationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of UserVerifications to fetch.
+     */
+    orderBy?: UserVerificationOrderByWithRelationInput | UserVerificationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: UserVerificationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` UserVerifications from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` UserVerifications.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned UserVerifications
+    **/
+    _count?: true | UserVerificationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: UserVerificationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: UserVerificationMaxAggregateInputType
+  }
+
+  export type GetUserVerificationAggregateType<T extends UserVerificationAggregateArgs> = {
+        [P in keyof T & keyof AggregateUserVerification]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateUserVerification[P]>
+      : GetScalarType<T[P], AggregateUserVerification[P]>
+  }
+
+
+
+
+  export type UserVerificationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: UserVerificationWhereInput
+    orderBy?: UserVerificationOrderByWithAggregationInput | UserVerificationOrderByWithAggregationInput[]
+    by: UserVerificationScalarFieldEnum[] | UserVerificationScalarFieldEnum
+    having?: UserVerificationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: UserVerificationCountAggregateInputType | true
+    _min?: UserVerificationMinAggregateInputType
+    _max?: UserVerificationMaxAggregateInputType
+  }
+
+  export type UserVerificationGroupByOutputType = {
+    id: string
+    ownerId: string
+    peerId: string
+    verifiedAt: Date
+    _count: UserVerificationCountAggregateOutputType | null
+    _min: UserVerificationMinAggregateOutputType | null
+    _max: UserVerificationMaxAggregateOutputType | null
+  }
+
+  type GetUserVerificationGroupByPayload<T extends UserVerificationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<UserVerificationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof UserVerificationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], UserVerificationGroupByOutputType[P]>
+            : GetScalarType<T[P], UserVerificationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type UserVerificationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    ownerId?: boolean
+    peerId?: boolean
+    verifiedAt?: boolean
+    owner?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["userVerification"]>
+
+  export type UserVerificationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    ownerId?: boolean
+    peerId?: boolean
+    verifiedAt?: boolean
+    owner?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["userVerification"]>
+
+  export type UserVerificationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    ownerId?: boolean
+    peerId?: boolean
+    verifiedAt?: boolean
+    owner?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["userVerification"]>
+
+  export type UserVerificationSelectScalar = {
+    id?: boolean
+    ownerId?: boolean
+    peerId?: boolean
+    verifiedAt?: boolean
+  }
+
+  export type UserVerificationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "ownerId" | "peerId" | "verifiedAt", ExtArgs["result"]["userVerification"]>
+  export type UserVerificationInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    owner?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type UserVerificationIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    owner?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type UserVerificationIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    owner?: boolean | UserDefaultArgs<ExtArgs>
+  }
+
+  export type $UserVerificationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "UserVerification"
+    objects: {
+      owner: Prisma.$UserPayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      ownerId: string
+      peerId: string
+      verifiedAt: Date
+    }, ExtArgs["result"]["userVerification"]>
+    composites: {}
+  }
+
+  type UserVerificationGetPayload<S extends boolean | null | undefined | UserVerificationDefaultArgs> = $Result.GetResult<Prisma.$UserVerificationPayload, S>
+
+  type UserVerificationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<UserVerificationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: UserVerificationCountAggregateInputType | true
+    }
+
+  export interface UserVerificationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['UserVerification'], meta: { name: 'UserVerification' } }
+    /**
+     * Find zero or one UserVerification that matches the filter.
+     * @param {UserVerificationFindUniqueArgs} args - Arguments to find a UserVerification
+     * @example
+     * // Get one UserVerification
+     * const userVerification = await prisma.userVerification.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends UserVerificationFindUniqueArgs>(args: SelectSubset<T, UserVerificationFindUniqueArgs<ExtArgs>>): Prisma__UserVerificationClient<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one UserVerification that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {UserVerificationFindUniqueOrThrowArgs} args - Arguments to find a UserVerification
+     * @example
+     * // Get one UserVerification
+     * const userVerification = await prisma.userVerification.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends UserVerificationFindUniqueOrThrowArgs>(args: SelectSubset<T, UserVerificationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__UserVerificationClient<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first UserVerification that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UserVerificationFindFirstArgs} args - Arguments to find a UserVerification
+     * @example
+     * // Get one UserVerification
+     * const userVerification = await prisma.userVerification.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends UserVerificationFindFirstArgs>(args?: SelectSubset<T, UserVerificationFindFirstArgs<ExtArgs>>): Prisma__UserVerificationClient<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first UserVerification that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UserVerificationFindFirstOrThrowArgs} args - Arguments to find a UserVerification
+     * @example
+     * // Get one UserVerification
+     * const userVerification = await prisma.userVerification.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends UserVerificationFindFirstOrThrowArgs>(args?: SelectSubset<T, UserVerificationFindFirstOrThrowArgs<ExtArgs>>): Prisma__UserVerificationClient<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more UserVerifications that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UserVerificationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all UserVerifications
+     * const userVerifications = await prisma.userVerification.findMany()
+     * 
+     * // Get first 10 UserVerifications
+     * const userVerifications = await prisma.userVerification.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const userVerificationWithIdOnly = await prisma.userVerification.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends UserVerificationFindManyArgs>(args?: SelectSubset<T, UserVerificationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a UserVerification.
+     * @param {UserVerificationCreateArgs} args - Arguments to create a UserVerification.
+     * @example
+     * // Create one UserVerification
+     * const UserVerification = await prisma.userVerification.create({
+     *   data: {
+     *     // ... data to create a UserVerification
+     *   }
+     * })
+     * 
+     */
+    create<T extends UserVerificationCreateArgs>(args: SelectSubset<T, UserVerificationCreateArgs<ExtArgs>>): Prisma__UserVerificationClient<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many UserVerifications.
+     * @param {UserVerificationCreateManyArgs} args - Arguments to create many UserVerifications.
+     * @example
+     * // Create many UserVerifications
+     * const userVerification = await prisma.userVerification.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends UserVerificationCreateManyArgs>(args?: SelectSubset<T, UserVerificationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many UserVerifications and returns the data saved in the database.
+     * @param {UserVerificationCreateManyAndReturnArgs} args - Arguments to create many UserVerifications.
+     * @example
+     * // Create many UserVerifications
+     * const userVerification = await prisma.userVerification.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many UserVerifications and only return the `id`
+     * const userVerificationWithIdOnly = await prisma.userVerification.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends UserVerificationCreateManyAndReturnArgs>(args?: SelectSubset<T, UserVerificationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a UserVerification.
+     * @param {UserVerificationDeleteArgs} args - Arguments to delete one UserVerification.
+     * @example
+     * // Delete one UserVerification
+     * const UserVerification = await prisma.userVerification.delete({
+     *   where: {
+     *     // ... filter to delete one UserVerification
+     *   }
+     * })
+     * 
+     */
+    delete<T extends UserVerificationDeleteArgs>(args: SelectSubset<T, UserVerificationDeleteArgs<ExtArgs>>): Prisma__UserVerificationClient<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one UserVerification.
+     * @param {UserVerificationUpdateArgs} args - Arguments to update one UserVerification.
+     * @example
+     * // Update one UserVerification
+     * const userVerification = await prisma.userVerification.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends UserVerificationUpdateArgs>(args: SelectSubset<T, UserVerificationUpdateArgs<ExtArgs>>): Prisma__UserVerificationClient<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more UserVerifications.
+     * @param {UserVerificationDeleteManyArgs} args - Arguments to filter UserVerifications to delete.
+     * @example
+     * // Delete a few UserVerifications
+     * const { count } = await prisma.userVerification.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends UserVerificationDeleteManyArgs>(args?: SelectSubset<T, UserVerificationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more UserVerifications.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UserVerificationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many UserVerifications
+     * const userVerification = await prisma.userVerification.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends UserVerificationUpdateManyArgs>(args: SelectSubset<T, UserVerificationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more UserVerifications and returns the data updated in the database.
+     * @param {UserVerificationUpdateManyAndReturnArgs} args - Arguments to update many UserVerifications.
+     * @example
+     * // Update many UserVerifications
+     * const userVerification = await prisma.userVerification.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more UserVerifications and only return the `id`
+     * const userVerificationWithIdOnly = await prisma.userVerification.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends UserVerificationUpdateManyAndReturnArgs>(args: SelectSubset<T, UserVerificationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one UserVerification.
+     * @param {UserVerificationUpsertArgs} args - Arguments to update or create a UserVerification.
+     * @example
+     * // Update or create a UserVerification
+     * const userVerification = await prisma.userVerification.upsert({
+     *   create: {
+     *     // ... data to create a UserVerification
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the UserVerification we want to update
+     *   }
+     * })
+     */
+    upsert<T extends UserVerificationUpsertArgs>(args: SelectSubset<T, UserVerificationUpsertArgs<ExtArgs>>): Prisma__UserVerificationClient<$Result.GetResult<Prisma.$UserVerificationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of UserVerifications.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UserVerificationCountArgs} args - Arguments to filter UserVerifications to count.
+     * @example
+     * // Count the number of UserVerifications
+     * const count = await prisma.userVerification.count({
+     *   where: {
+     *     // ... the filter for the UserVerifications we want to count
+     *   }
+     * })
+    **/
+    count<T extends UserVerificationCountArgs>(
+      args?: Subset<T, UserVerificationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], UserVerificationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a UserVerification.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UserVerificationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends UserVerificationAggregateArgs>(args: Subset<T, UserVerificationAggregateArgs>): Prisma.PrismaPromise<GetUserVerificationAggregateType<T>>
+
+    /**
+     * Group by UserVerification.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {UserVerificationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends UserVerificationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: UserVerificationGroupByArgs['orderBy'] }
+        : { orderBy?: UserVerificationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, UserVerificationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetUserVerificationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the UserVerification model
+   */
+  readonly fields: UserVerificationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for UserVerification.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__UserVerificationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    owner<T extends UserDefaultArgs<ExtArgs> = {}>(args?: Subset<T, UserDefaultArgs<ExtArgs>>): Prisma__UserClient<$Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the UserVerification model
+   */
+  interface UserVerificationFieldRefs {
+    readonly id: FieldRef<"UserVerification", 'String'>
+    readonly ownerId: FieldRef<"UserVerification", 'String'>
+    readonly peerId: FieldRef<"UserVerification", 'String'>
+    readonly verifiedAt: FieldRef<"UserVerification", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * UserVerification findUnique
+   */
+  export type UserVerificationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    /**
+     * Filter, which UserVerification to fetch.
+     */
+    where: UserVerificationWhereUniqueInput
+  }
+
+  /**
+   * UserVerification findUniqueOrThrow
+   */
+  export type UserVerificationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    /**
+     * Filter, which UserVerification to fetch.
+     */
+    where: UserVerificationWhereUniqueInput
+  }
+
+  /**
+   * UserVerification findFirst
+   */
+  export type UserVerificationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    /**
+     * Filter, which UserVerification to fetch.
+     */
+    where?: UserVerificationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of UserVerifications to fetch.
+     */
+    orderBy?: UserVerificationOrderByWithRelationInput | UserVerificationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for UserVerifications.
+     */
+    cursor?: UserVerificationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` UserVerifications from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` UserVerifications.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of UserVerifications.
+     */
+    distinct?: UserVerificationScalarFieldEnum | UserVerificationScalarFieldEnum[]
+  }
+
+  /**
+   * UserVerification findFirstOrThrow
+   */
+  export type UserVerificationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    /**
+     * Filter, which UserVerification to fetch.
+     */
+    where?: UserVerificationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of UserVerifications to fetch.
+     */
+    orderBy?: UserVerificationOrderByWithRelationInput | UserVerificationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for UserVerifications.
+     */
+    cursor?: UserVerificationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` UserVerifications from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` UserVerifications.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of UserVerifications.
+     */
+    distinct?: UserVerificationScalarFieldEnum | UserVerificationScalarFieldEnum[]
+  }
+
+  /**
+   * UserVerification findMany
+   */
+  export type UserVerificationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    /**
+     * Filter, which UserVerifications to fetch.
+     */
+    where?: UserVerificationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of UserVerifications to fetch.
+     */
+    orderBy?: UserVerificationOrderByWithRelationInput | UserVerificationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing UserVerifications.
+     */
+    cursor?: UserVerificationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` UserVerifications from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` UserVerifications.
+     */
+    skip?: number
+    distinct?: UserVerificationScalarFieldEnum | UserVerificationScalarFieldEnum[]
+  }
+
+  /**
+   * UserVerification create
+   */
+  export type UserVerificationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    /**
+     * The data needed to create a UserVerification.
+     */
+    data: XOR<UserVerificationCreateInput, UserVerificationUncheckedCreateInput>
+  }
+
+  /**
+   * UserVerification createMany
+   */
+  export type UserVerificationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many UserVerifications.
+     */
+    data: UserVerificationCreateManyInput | UserVerificationCreateManyInput[]
+  }
+
+  /**
+   * UserVerification createManyAndReturn
+   */
+  export type UserVerificationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * The data used to create many UserVerifications.
+     */
+    data: UserVerificationCreateManyInput | UserVerificationCreateManyInput[]
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * UserVerification update
+   */
+  export type UserVerificationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    /**
+     * The data needed to update a UserVerification.
+     */
+    data: XOR<UserVerificationUpdateInput, UserVerificationUncheckedUpdateInput>
+    /**
+     * Choose, which UserVerification to update.
+     */
+    where: UserVerificationWhereUniqueInput
+  }
+
+  /**
+   * UserVerification updateMany
+   */
+  export type UserVerificationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update UserVerifications.
+     */
+    data: XOR<UserVerificationUpdateManyMutationInput, UserVerificationUncheckedUpdateManyInput>
+    /**
+     * Filter which UserVerifications to update
+     */
+    where?: UserVerificationWhereInput
+    /**
+     * Limit how many UserVerifications to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * UserVerification updateManyAndReturn
+   */
+  export type UserVerificationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * The data used to update UserVerifications.
+     */
+    data: XOR<UserVerificationUpdateManyMutationInput, UserVerificationUncheckedUpdateManyInput>
+    /**
+     * Filter which UserVerifications to update
+     */
+    where?: UserVerificationWhereInput
+    /**
+     * Limit how many UserVerifications to update.
+     */
+    limit?: number
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationIncludeUpdateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * UserVerification upsert
+   */
+  export type UserVerificationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    /**
+     * The filter to search for the UserVerification to update in case it exists.
+     */
+    where: UserVerificationWhereUniqueInput
+    /**
+     * In case the UserVerification found by the `where` argument doesn't exist, create a new UserVerification with this data.
+     */
+    create: XOR<UserVerificationCreateInput, UserVerificationUncheckedCreateInput>
+    /**
+     * In case the UserVerification was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<UserVerificationUpdateInput, UserVerificationUncheckedUpdateInput>
+  }
+
+  /**
+   * UserVerification delete
+   */
+  export type UserVerificationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
+    /**
+     * Filter which UserVerification to delete.
+     */
+    where: UserVerificationWhereUniqueInput
+  }
+
+  /**
+   * UserVerification deleteMany
+   */
+  export type UserVerificationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which UserVerifications to delete
+     */
+    where?: UserVerificationWhereInput
+    /**
+     * Limit how many UserVerifications to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * UserVerification without action
+   */
+  export type UserVerificationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the UserVerification
+     */
+    select?: UserVerificationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the UserVerification
+     */
+    omit?: UserVerificationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: UserVerificationInclude<ExtArgs> | null
   }
 
 
@@ -46978,6 +48153,16 @@ export namespace Prisma {
   export type CallLogScalarFieldEnum = (typeof CallLogScalarFieldEnum)[keyof typeof CallLogScalarFieldEnum]
 
 
+  export const UserVerificationScalarFieldEnum: {
+    id: 'id',
+    ownerId: 'ownerId',
+    peerId: 'peerId',
+    verifiedAt: 'verifiedAt'
+  };
+
+  export type UserVerificationScalarFieldEnum = (typeof UserVerificationScalarFieldEnum)[keyof typeof UserVerificationScalarFieldEnum]
+
+
   export const UserWalletScalarFieldEnum: {
     userId: 'userId',
     coins: 'coins',
@@ -47510,6 +48695,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerListRelationFilter
     reminders?: ReminderListRelationFilter
     streaks?: ConversationStreakListRelationFilter
+    verificationsGiven?: UserVerificationListRelationFilter
   }
 
   export type UserOrderByWithRelationInput = {
@@ -47543,6 +48729,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerOrderByRelationAggregateInput
     reminders?: ReminderOrderByRelationAggregateInput
     streaks?: ConversationStreakOrderByRelationAggregateInput
+    verificationsGiven?: UserVerificationOrderByRelationAggregateInput
   }
 
   export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -47579,6 +48766,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerListRelationFilter
     reminders?: ReminderListRelationFilter
     streaks?: ConversationStreakListRelationFilter
+    verificationsGiven?: UserVerificationListRelationFilter
   }, "id" | "username">
 
   export type UserOrderByWithAggregationInput = {
@@ -47823,6 +49011,57 @@ export namespace Prisma {
     status?: StringWithAggregatesFilter<"CallLog"> | string
     durationSec?: IntWithAggregatesFilter<"CallLog"> | number
     startedAt?: DateTimeWithAggregatesFilter<"CallLog"> | Date | string
+  }
+
+  export type UserVerificationWhereInput = {
+    AND?: UserVerificationWhereInput | UserVerificationWhereInput[]
+    OR?: UserVerificationWhereInput[]
+    NOT?: UserVerificationWhereInput | UserVerificationWhereInput[]
+    id?: StringFilter<"UserVerification"> | string
+    ownerId?: StringFilter<"UserVerification"> | string
+    peerId?: StringFilter<"UserVerification"> | string
+    verifiedAt?: DateTimeFilter<"UserVerification"> | Date | string
+    owner?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }
+
+  export type UserVerificationOrderByWithRelationInput = {
+    id?: SortOrder
+    ownerId?: SortOrder
+    peerId?: SortOrder
+    verifiedAt?: SortOrder
+    owner?: UserOrderByWithRelationInput
+  }
+
+  export type UserVerificationWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    ownerId_peerId?: UserVerificationOwnerIdPeerIdCompoundUniqueInput
+    AND?: UserVerificationWhereInput | UserVerificationWhereInput[]
+    OR?: UserVerificationWhereInput[]
+    NOT?: UserVerificationWhereInput | UserVerificationWhereInput[]
+    ownerId?: StringFilter<"UserVerification"> | string
+    peerId?: StringFilter<"UserVerification"> | string
+    verifiedAt?: DateTimeFilter<"UserVerification"> | Date | string
+    owner?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }, "id" | "ownerId_peerId">
+
+  export type UserVerificationOrderByWithAggregationInput = {
+    id?: SortOrder
+    ownerId?: SortOrder
+    peerId?: SortOrder
+    verifiedAt?: SortOrder
+    _count?: UserVerificationCountOrderByAggregateInput
+    _max?: UserVerificationMaxOrderByAggregateInput
+    _min?: UserVerificationMinOrderByAggregateInput
+  }
+
+  export type UserVerificationScalarWhereWithAggregatesInput = {
+    AND?: UserVerificationScalarWhereWithAggregatesInput | UserVerificationScalarWhereWithAggregatesInput[]
+    OR?: UserVerificationScalarWhereWithAggregatesInput[]
+    NOT?: UserVerificationScalarWhereWithAggregatesInput | UserVerificationScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"UserVerification"> | string
+    ownerId?: StringWithAggregatesFilter<"UserVerification"> | string
+    peerId?: StringWithAggregatesFilter<"UserVerification"> | string
+    verifiedAt?: DateTimeWithAggregatesFilter<"UserVerification"> | Date | string
   }
 
   export type UserWalletWhereInput = {
@@ -50192,6 +51431,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateInput = {
@@ -50225,6 +51465,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUpdateInput = {
@@ -50258,6 +51499,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateInput = {
@@ -50291,6 +51533,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserCreateManyInput = {
@@ -50557,6 +51800,54 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     durationSec?: IntFieldUpdateOperationsInput | number
     startedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type UserVerificationCreateInput = {
+    id?: string
+    peerId: string
+    verifiedAt?: Date | string
+    owner: UserCreateNestedOneWithoutVerificationsGivenInput
+  }
+
+  export type UserVerificationUncheckedCreateInput = {
+    id?: string
+    ownerId: string
+    peerId: string
+    verifiedAt?: Date | string
+  }
+
+  export type UserVerificationUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    peerId?: StringFieldUpdateOperationsInput | string
+    verifiedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    owner?: UserUpdateOneRequiredWithoutVerificationsGivenNestedInput
+  }
+
+  export type UserVerificationUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    ownerId?: StringFieldUpdateOperationsInput | string
+    peerId?: StringFieldUpdateOperationsInput | string
+    verifiedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type UserVerificationCreateManyInput = {
+    id?: string
+    ownerId: string
+    peerId: string
+    verifiedAt?: Date | string
+  }
+
+  export type UserVerificationUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    peerId?: StringFieldUpdateOperationsInput | string
+    verifiedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type UserVerificationUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    ownerId?: StringFieldUpdateOperationsInput | string
+    peerId?: StringFieldUpdateOperationsInput | string
+    verifiedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
   export type UserWalletCreateInput = {
@@ -53142,6 +54433,12 @@ export namespace Prisma {
     none?: ConversationStreakWhereInput
   }
 
+  export type UserVerificationListRelationFilter = {
+    every?: UserVerificationWhereInput
+    some?: UserVerificationWhereInput
+    none?: UserVerificationWhereInput
+  }
+
   export type SortOrderInput = {
     sort: SortOrder
     nulls?: NullsOrder
@@ -53200,6 +54497,10 @@ export namespace Prisma {
   }
 
   export type ConversationStreakOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
+  export type UserVerificationOrderByRelationAggregateInput = {
     _count?: SortOrder
   }
 
@@ -53472,6 +54773,32 @@ export namespace Prisma {
 
   export type CallLogSumOrderByAggregateInput = {
     durationSec?: SortOrder
+  }
+
+  export type UserVerificationOwnerIdPeerIdCompoundUniqueInput = {
+    ownerId: string
+    peerId: string
+  }
+
+  export type UserVerificationCountOrderByAggregateInput = {
+    id?: SortOrder
+    ownerId?: SortOrder
+    peerId?: SortOrder
+    verifiedAt?: SortOrder
+  }
+
+  export type UserVerificationMaxOrderByAggregateInput = {
+    id?: SortOrder
+    ownerId?: SortOrder
+    peerId?: SortOrder
+    verifiedAt?: SortOrder
+  }
+
+  export type UserVerificationMinOrderByAggregateInput = {
+    id?: SortOrder
+    ownerId?: SortOrder
+    peerId?: SortOrder
+    verifiedAt?: SortOrder
   }
 
   export type UserWalletCountOrderByAggregateInput = {
@@ -55092,6 +56419,13 @@ export namespace Prisma {
     connect?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
   }
 
+  export type UserVerificationCreateNestedManyWithoutOwnerInput = {
+    create?: XOR<UserVerificationCreateWithoutOwnerInput, UserVerificationUncheckedCreateWithoutOwnerInput> | UserVerificationCreateWithoutOwnerInput[] | UserVerificationUncheckedCreateWithoutOwnerInput[]
+    connectOrCreate?: UserVerificationCreateOrConnectWithoutOwnerInput | UserVerificationCreateOrConnectWithoutOwnerInput[]
+    createMany?: UserVerificationCreateManyOwnerInputEnvelope
+    connect?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+  }
+
   export type AppInstallUncheckedCreateNestedManyWithoutUserInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -55201,6 +56535,13 @@ export namespace Prisma {
     connectOrCreate?: ConversationStreakCreateOrConnectWithoutUserInput | ConversationStreakCreateOrConnectWithoutUserInput[]
     createMany?: ConversationStreakCreateManyUserInputEnvelope
     connect?: ConversationStreakWhereUniqueInput | ConversationStreakWhereUniqueInput[]
+  }
+
+  export type UserVerificationUncheckedCreateNestedManyWithoutOwnerInput = {
+    create?: XOR<UserVerificationCreateWithoutOwnerInput, UserVerificationUncheckedCreateWithoutOwnerInput> | UserVerificationCreateWithoutOwnerInput[] | UserVerificationUncheckedCreateWithoutOwnerInput[]
+    connectOrCreate?: UserVerificationCreateOrConnectWithoutOwnerInput | UserVerificationCreateOrConnectWithoutOwnerInput[]
+    createMany?: UserVerificationCreateManyOwnerInputEnvelope
+    connect?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
   }
 
   export type StringFieldUpdateOperationsInput = {
@@ -55443,6 +56784,20 @@ export namespace Prisma {
     deleteMany?: ConversationStreakScalarWhereInput | ConversationStreakScalarWhereInput[]
   }
 
+  export type UserVerificationUpdateManyWithoutOwnerNestedInput = {
+    create?: XOR<UserVerificationCreateWithoutOwnerInput, UserVerificationUncheckedCreateWithoutOwnerInput> | UserVerificationCreateWithoutOwnerInput[] | UserVerificationUncheckedCreateWithoutOwnerInput[]
+    connectOrCreate?: UserVerificationCreateOrConnectWithoutOwnerInput | UserVerificationCreateOrConnectWithoutOwnerInput[]
+    upsert?: UserVerificationUpsertWithWhereUniqueWithoutOwnerInput | UserVerificationUpsertWithWhereUniqueWithoutOwnerInput[]
+    createMany?: UserVerificationCreateManyOwnerInputEnvelope
+    set?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+    disconnect?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+    delete?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+    connect?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+    update?: UserVerificationUpdateWithWhereUniqueWithoutOwnerInput | UserVerificationUpdateWithWhereUniqueWithoutOwnerInput[]
+    updateMany?: UserVerificationUpdateManyWithWhereWithoutOwnerInput | UserVerificationUpdateManyWithWhereWithoutOwnerInput[]
+    deleteMany?: UserVerificationScalarWhereInput | UserVerificationScalarWhereInput[]
+  }
+
   export type AppInstallUncheckedUpdateManyWithoutUserNestedInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -55663,6 +57018,20 @@ export namespace Prisma {
     deleteMany?: ConversationStreakScalarWhereInput | ConversationStreakScalarWhereInput[]
   }
 
+  export type UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput = {
+    create?: XOR<UserVerificationCreateWithoutOwnerInput, UserVerificationUncheckedCreateWithoutOwnerInput> | UserVerificationCreateWithoutOwnerInput[] | UserVerificationUncheckedCreateWithoutOwnerInput[]
+    connectOrCreate?: UserVerificationCreateOrConnectWithoutOwnerInput | UserVerificationCreateOrConnectWithoutOwnerInput[]
+    upsert?: UserVerificationUpsertWithWhereUniqueWithoutOwnerInput | UserVerificationUpsertWithWhereUniqueWithoutOwnerInput[]
+    createMany?: UserVerificationCreateManyOwnerInputEnvelope
+    set?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+    disconnect?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+    delete?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+    connect?: UserVerificationWhereUniqueInput | UserVerificationWhereUniqueInput[]
+    update?: UserVerificationUpdateWithWhereUniqueWithoutOwnerInput | UserVerificationUpdateWithWhereUniqueWithoutOwnerInput[]
+    updateMany?: UserVerificationUpdateManyWithWhereWithoutOwnerInput | UserVerificationUpdateManyWithWhereWithoutOwnerInput[]
+    deleteMany?: UserVerificationScalarWhereInput | UserVerificationScalarWhereInput[]
+  }
+
   export type UserCreateNestedOneWithoutRemindersInput = {
     create?: XOR<UserCreateWithoutRemindersInput, UserUncheckedCreateWithoutRemindersInput>
     connectOrCreate?: UserCreateOrConnectWithoutRemindersInput
@@ -55693,6 +57062,20 @@ export namespace Prisma {
     upsert?: UserUpsertWithoutStreaksInput
     connect?: UserWhereUniqueInput
     update?: XOR<XOR<UserUpdateToOneWithWhereWithoutStreaksInput, UserUpdateWithoutStreaksInput>, UserUncheckedUpdateWithoutStreaksInput>
+  }
+
+  export type UserCreateNestedOneWithoutVerificationsGivenInput = {
+    create?: XOR<UserCreateWithoutVerificationsGivenInput, UserUncheckedCreateWithoutVerificationsGivenInput>
+    connectOrCreate?: UserCreateOrConnectWithoutVerificationsGivenInput
+    connect?: UserWhereUniqueInput
+  }
+
+  export type UserUpdateOneRequiredWithoutVerificationsGivenNestedInput = {
+    create?: XOR<UserCreateWithoutVerificationsGivenInput, UserUncheckedCreateWithoutVerificationsGivenInput>
+    connectOrCreate?: UserCreateOrConnectWithoutVerificationsGivenInput
+    upsert?: UserUpsertWithoutVerificationsGivenInput
+    connect?: UserWhereUniqueInput
+    update?: XOR<XOR<UserUpdateToOneWithWhereWithoutVerificationsGivenInput, UserUpdateWithoutVerificationsGivenInput>, UserUncheckedUpdateWithoutVerificationsGivenInput>
   }
 
   export type UserCreateNestedOneWithoutWalletInput = {
@@ -58050,6 +59433,27 @@ export namespace Prisma {
     data: ConversationStreakCreateManyUserInput | ConversationStreakCreateManyUserInput[]
   }
 
+  export type UserVerificationCreateWithoutOwnerInput = {
+    id?: string
+    peerId: string
+    verifiedAt?: Date | string
+  }
+
+  export type UserVerificationUncheckedCreateWithoutOwnerInput = {
+    id?: string
+    peerId: string
+    verifiedAt?: Date | string
+  }
+
+  export type UserVerificationCreateOrConnectWithoutOwnerInput = {
+    where: UserVerificationWhereUniqueInput
+    create: XOR<UserVerificationCreateWithoutOwnerInput, UserVerificationUncheckedCreateWithoutOwnerInput>
+  }
+
+  export type UserVerificationCreateManyOwnerInputEnvelope = {
+    data: UserVerificationCreateManyOwnerInput | UserVerificationCreateManyOwnerInput[]
+  }
+
   export type AppInstallUpsertWithWhereUniqueWithoutUserInput = {
     where: AppInstallWhereUniqueInput
     update: XOR<AppInstallUpdateWithoutUserInput, AppInstallUncheckedUpdateWithoutUserInput>
@@ -58511,6 +59915,32 @@ export namespace Prisma {
     best?: IntFilter<"ConversationStreak"> | number
   }
 
+  export type UserVerificationUpsertWithWhereUniqueWithoutOwnerInput = {
+    where: UserVerificationWhereUniqueInput
+    update: XOR<UserVerificationUpdateWithoutOwnerInput, UserVerificationUncheckedUpdateWithoutOwnerInput>
+    create: XOR<UserVerificationCreateWithoutOwnerInput, UserVerificationUncheckedCreateWithoutOwnerInput>
+  }
+
+  export type UserVerificationUpdateWithWhereUniqueWithoutOwnerInput = {
+    where: UserVerificationWhereUniqueInput
+    data: XOR<UserVerificationUpdateWithoutOwnerInput, UserVerificationUncheckedUpdateWithoutOwnerInput>
+  }
+
+  export type UserVerificationUpdateManyWithWhereWithoutOwnerInput = {
+    where: UserVerificationScalarWhereInput
+    data: XOR<UserVerificationUpdateManyMutationInput, UserVerificationUncheckedUpdateManyWithoutOwnerInput>
+  }
+
+  export type UserVerificationScalarWhereInput = {
+    AND?: UserVerificationScalarWhereInput | UserVerificationScalarWhereInput[]
+    OR?: UserVerificationScalarWhereInput[]
+    NOT?: UserVerificationScalarWhereInput | UserVerificationScalarWhereInput[]
+    id?: StringFilter<"UserVerification"> | string
+    ownerId?: StringFilter<"UserVerification"> | string
+    peerId?: StringFilter<"UserVerification"> | string
+    verifiedAt?: DateTimeFilter<"UserVerification"> | Date | string
+  }
+
   export type UserCreateWithoutRemindersInput = {
     id?: string
     name: string
@@ -58541,6 +59971,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutRemindersInput = {
@@ -58573,6 +60004,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutRemindersInput = {
@@ -58621,6 +60053,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutRemindersInput = {
@@ -58653,6 +60086,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserCreateWithoutStreaksInput = {
@@ -58685,6 +60119,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutStreaksInput = {
@@ -58717,6 +60152,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutStreaksInput = {
@@ -58765,6 +60201,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutStreaksInput = {
@@ -58797,6 +60234,155 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+  }
+
+  export type UserCreateWithoutVerificationsGivenInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallCreateNestedManyWithoutUserInput
+    wallet?: UserWalletCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantCreateNestedManyWithoutUserInput
+    messages?: MessageCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseCreateNestedManyWithoutUserInput
+    stories?: StatusStoryCreateNestedManyWithoutUserInput
+    folders?: FolderCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+  }
+
+  export type UserUncheckedCreateWithoutVerificationsGivenInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
+    wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskUncheckedCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventUncheckedCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingUncheckedCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingUncheckedCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantUncheckedCreateNestedManyWithoutUserInput
+    messages?: MessageUncheckedCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageUncheckedCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseUncheckedCreateNestedManyWithoutUserInput
+    stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
+    folders?: FolderUncheckedCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+  }
+
+  export type UserCreateOrConnectWithoutVerificationsGivenInput = {
+    where: UserWhereUniqueInput
+    create: XOR<UserCreateWithoutVerificationsGivenInput, UserUncheckedCreateWithoutVerificationsGivenInput>
+  }
+
+  export type UserUpsertWithoutVerificationsGivenInput = {
+    update: XOR<UserUpdateWithoutVerificationsGivenInput, UserUncheckedUpdateWithoutVerificationsGivenInput>
+    create: XOR<UserCreateWithoutVerificationsGivenInput, UserUncheckedCreateWithoutVerificationsGivenInput>
+    where?: UserWhereInput
+  }
+
+  export type UserUpdateToOneWithWhereWithoutVerificationsGivenInput = {
+    where?: UserWhereInput
+    data: XOR<UserUpdateWithoutVerificationsGivenInput, UserUncheckedUpdateWithoutVerificationsGivenInput>
+  }
+
+  export type UserUpdateWithoutVerificationsGivenInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUpdateManyWithoutUserNestedInput
+    messages?: MessageUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUpdateManyWithoutUserNestedInput
+    folders?: FolderUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+  }
+
+  export type UserUncheckedUpdateWithoutVerificationsGivenInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUncheckedUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUncheckedUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUncheckedUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUncheckedUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUncheckedUpdateManyWithoutUserNestedInput
+    messages?: MessageUncheckedUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUncheckedUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUncheckedUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
+    folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutWalletInput = {
@@ -58829,6 +60415,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutWalletInput = {
@@ -58861,6 +60448,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutWalletInput = {
@@ -58909,6 +60497,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutWalletInput = {
@@ -58941,6 +60530,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserCreateWithoutLedgerInput = {
@@ -58973,6 +60563,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutLedgerInput = {
@@ -59005,6 +60596,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutLedgerInput = {
@@ -59053,6 +60645,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLedgerInput = {
@@ -59085,6 +60678,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserCreateWithoutHubTasksInput = {
@@ -59117,6 +60711,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutHubTasksInput = {
@@ -59149,6 +60744,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutHubTasksInput = {
@@ -59197,6 +60793,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutHubTasksInput = {
@@ -59229,6 +60826,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserCreateWithoutAppInstallsInput = {
@@ -59261,6 +60859,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutAppInstallsInput = {
@@ -59293,6 +60892,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutAppInstallsInput = {
@@ -59341,6 +60941,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutAppInstallsInput = {
@@ -59373,6 +60974,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserCreateWithoutMarketListingsInput = {
@@ -59405,6 +61007,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutMarketListingsInput = {
@@ -59437,6 +61040,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutMarketListingsInput = {
@@ -59474,6 +61078,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutMarketPurchasesInput = {
@@ -59506,6 +61111,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutMarketPurchasesInput = {
@@ -59554,6 +61160,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketListingsInput = {
@@ -59586,6 +61193,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUpsertWithoutMarketPurchasesInput = {
@@ -59629,6 +61237,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketPurchasesInput = {
@@ -59661,6 +61270,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserCreateWithoutLogEventsInput = {
@@ -59693,6 +61303,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutLogEventsInput = {
@@ -59725,6 +61336,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutLogEventsInput = {
@@ -59773,6 +61385,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLogEventsInput = {
@@ -59805,6 +61418,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserCreateWithoutQuickPhrasesInput = {
@@ -59837,6 +61451,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutQuickPhrasesInput = {
@@ -59869,6 +61484,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutQuickPhrasesInput = {
@@ -59917,6 +61533,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutQuickPhrasesInput = {
@@ -59949,6 +61566,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type ConversationParticipantCreateWithoutConversationInput = {
@@ -60711,6 +62329,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutStoriesInput = {
@@ -60743,6 +62362,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutStoriesInput = {
@@ -60812,6 +62432,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutStoriesInput = {
@@ -60844,6 +62465,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type StoryViewUpsertWithWhereUniqueWithoutStoryInput = {
@@ -60958,6 +62580,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutParticipationsInput = {
@@ -60990,6 +62613,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutParticipationsInput = {
@@ -61091,6 +62715,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutParticipationsInput = {
@@ -61123,6 +62748,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type ConversationUpsertWithoutParticipantsInput = {
@@ -61214,6 +62840,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutMessagesInput = {
@@ -61246,6 +62873,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutMessagesInput = {
@@ -61806,6 +63434,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMessagesInput = {
@@ -61838,6 +63467,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type ConversationUpsertWithoutMessagesInput = {
@@ -62648,6 +64278,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutSavedMessagesInput = {
@@ -62680,6 +64311,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutSavedMessagesInput = {
@@ -62799,6 +64431,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutSavedMessagesInput = {
@@ -62831,6 +64464,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type MessageUpsertWithoutSavedByInput = {
@@ -63642,6 +65276,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutFoldersInput = {
@@ -63674,6 +65309,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutFoldersInput = {
@@ -63743,6 +65379,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutFoldersInput = {
@@ -63775,6 +65412,7 @@ export namespace Prisma {
     tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type FolderConversationUpsertWithWhereUniqueWithoutFolderInput = {
@@ -64171,6 +65809,7 @@ export namespace Prisma {
     folders?: FolderCreateNestedManyWithoutUserInput
     reminders?: ReminderCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
   }
 
   export type UserUncheckedCreateWithoutTournamentEntriesInput = {
@@ -64203,6 +65842,7 @@ export namespace Prisma {
     folders?: FolderUncheckedCreateNestedManyWithoutUserInput
     reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
     streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
   }
 
   export type UserCreateOrConnectWithoutTournamentEntriesInput = {
@@ -64284,6 +65924,7 @@ export namespace Prisma {
     folders?: FolderUpdateManyWithoutUserNestedInput
     reminders?: ReminderUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
   }
 
   export type UserUncheckedUpdateWithoutTournamentEntriesInput = {
@@ -64316,6 +65957,7 @@ export namespace Prisma {
     folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
     reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
     streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
   }
 
   export type MessageCreateWithoutRedPacketInput = {
@@ -65184,6 +66826,12 @@ export namespace Prisma {
     best?: number
   }
 
+  export type UserVerificationCreateManyOwnerInput = {
+    id?: string
+    peerId: string
+    verifiedAt?: Date | string
+  }
+
   export type AppInstallUpdateWithoutUserInput = {
     id?: StringFieldUpdateOperationsInput | string
     appId?: StringFieldUpdateOperationsInput | string
@@ -65653,6 +67301,24 @@ export namespace Prisma {
     lastDay?: StringFieldUpdateOperationsInput | string
     count?: IntFieldUpdateOperationsInput | number
     best?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type UserVerificationUpdateWithoutOwnerInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    peerId?: StringFieldUpdateOperationsInput | string
+    verifiedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type UserVerificationUncheckedUpdateWithoutOwnerInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    peerId?: StringFieldUpdateOperationsInput | string
+    verifiedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type UserVerificationUncheckedUpdateManyWithoutOwnerInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    peerId?: StringFieldUpdateOperationsInput | string
+    verifiedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
   export type ConversationParticipantCreateManyConversationInput = {

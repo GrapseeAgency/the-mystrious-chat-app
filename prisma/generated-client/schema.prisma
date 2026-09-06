@@ -13,36 +13,37 @@ datasource db {
 // ─────────────────────────────────────────────────────────────
 
 model User {
-  id                String                    @id @default(cuid())
-  name              String
-  username          String?                   @unique // @handle (3-20 chars) — replaces raw IDs everywhere in the UI
-  about             String                    @default("Hey there! I'm using Pulse.")
-  color             String                    @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
-  avatar            String? // profile photo path (/uploads/<uuid>.<ext>) — null = palette avatar fallback
-  statusEmoji       String? // Discord-style custom status glyph (null = none)
-  statusText        String? // Discord-style custom status line (null = none)
-  preferences       String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
-  createdAt         DateTime                  @default(now())
-  lastSeenAt        DateTime                  @default(now())
-  appInstalls       AppInstall[]
-  wallet            UserWallet?
-  ledger            WalletLedger[]
-  hubTasks          HubTask[]
-  logEvents         LogEvent[]
-  marketListings    MarketListing[]           @relation("MarketSeller")
-  marketPurchases   MarketListing[]           @relation("MarketBuyer")
-  participations    ConversationParticipant[]
-  messages          Message[]
-  savedMessages     SavedMessage[]
-  quickPhrases      QuickPhrase[]
-  stories           StatusStory[]
-  folders           Folder[]
-  xp                Int                       @default(0) // Twitch-style channel points earned by real activity
-  xpToday           Int                       @default(0) // XP earned today (daily-cap accounting)
-  xpDay             String                    @default("") // UTC 'YYYY-MM-DD' bucket xpToday belongs to
-  tournamentEntries TournamentPlayer[]
-  reminders         Reminder[]
-  streaks           ConversationStreak[]
+  id                 String                    @id @default(cuid())
+  name               String
+  username           String?                   @unique // @handle (3-20 chars) — replaces raw IDs everywhere in the UI
+  about              String                    @default("Hey there! I'm using Pulse.")
+  color              String                    @default("emerald") // avatar palette key: emerald|rose|amber|violet|teal|orange|pink|cyan
+  avatar             String? // profile photo path (/uploads/<uuid>.<ext>) — null = palette avatar fallback
+  statusEmoji        String? // Discord-style custom status glyph (null = none)
+  statusText         String? // Discord-style custom status line (null = none)
+  preferences        String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
+  createdAt          DateTime                  @default(now())
+  lastSeenAt         DateTime                  @default(now())
+  appInstalls        AppInstall[]
+  wallet             UserWallet?
+  ledger             WalletLedger[]
+  hubTasks           HubTask[]
+  logEvents          LogEvent[]
+  marketListings     MarketListing[]           @relation("MarketSeller")
+  marketPurchases    MarketListing[]           @relation("MarketBuyer")
+  participations     ConversationParticipant[]
+  messages           Message[]
+  savedMessages      SavedMessage[]
+  quickPhrases       QuickPhrase[]
+  stories            StatusStory[]
+  folders            Folder[]
+  xp                 Int                       @default(0) // Twitch-style channel points earned by real activity
+  xpToday            Int                       @default(0) // XP earned today (daily-cap accounting)
+  xpDay              String                    @default("") // UTC 'YYYY-MM-DD' bucket xpToday belongs to
+  tournamentEntries  TournamentPlayer[]
+  reminders          Reminder[]
+  streaks            ConversationStreak[]
+  verificationsGiven UserVerification[]        @relation("verificationOwner")
 
   @@index([name])
 }
@@ -98,6 +99,23 @@ model CallLog {
 
   @@index([calleeId, startedAt])
   @@index([callerId, startedAt])
+}
+
+/**
+ * Signal-style safety-number verification — one row per (viewer, peer) pair
+ * after the viewer confirms the peer's safety number in person. The number
+ * itself is derived deterministically from both stable user ids (see
+ * src/lib/safety.ts) so both sides always see the same digits.
+ */
+model UserVerification {
+  id         String   @id @default(cuid())
+  ownerId    String // the user who performed the verification
+  peerId     String // the peer whose safety number was verified
+  verifiedAt DateTime @default(now())
+  owner      User     @relation("verificationOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, peerId])
+  @@index([ownerId])
 }
 
 /**

@@ -31,6 +31,8 @@ import { ContactsTab } from '@/components/chat/contacts-tab'
 import { ProfileTab } from '@/components/chat/profile-tab'
 import { HubTab } from '@/components/hub/hub-tab'
 import { ChatRoom } from '@/components/chat/chat-room'
+import { CallOverlay, useCallSession, type CallPeer } from '@/components/chat/call-overlay'
+import type { CallKind } from '@/lib/call-types'
 import { PipChat } from '@/components/chat/pip-chat'
 import { NewChatSheet } from '@/components/chat/new-chat-sheet'
 import { JoinGroupSheet } from '@/components/chat/join-sheet'
@@ -49,12 +51,14 @@ const TAB_LABEL: Record<PulseTab, string> = {
 const TAB_ORDER: Array<PulseTab> = ['chats', 'hub', 'contacts', 'profile']
 
 /** Deep links that live INSIDE a tab → owning tab (R27 lead).
- *  R34-a: #/calls is a chats-tab sub-page like #/chats/archived. */
+ *  R34-a: #/calls is a chats-tab sub-page like #/chats/archived.
+ *  R35-b: #/mentions joins them (Discord mobile 'Mentions' pattern). */
 const TAB_BOOSTS: Array<[prefix: string, tab: PulseTab]> = [
   ['#/contacts', 'contacts'],
   ['#/hub', 'hub'],
   ['#/chats', 'chats'],
   ['#/calls', 'chats'],
+  ['#/mentions', 'chats'],
 ]
 
 /** Initial tab for a boot deep link (SSR-safe; overlays like #/settings stay on chats). */
@@ -178,6 +182,44 @@ export function MainShell({ me }: { me: AppUser }) {
   // mount and the per-room mounts in chat-room never double-poll or
   // double-toast — whichever mounts first owns the single 30s poll timer.
   useReminderDueLoop(me.id)
+
+  // ── R35-b: shell-level calls (closes the R33-a honest gap) ────
+  // ONE useCallSession + ONE <CallOverlay> live HERE, above every tab and
+  // overlay, so an incoming ring surfaces anywhere — Chats tab included —
+  // not only while the DM room is open. The open room asks the shell to
+  // dial through onStartCall: the request commits as `callTarget`, the
+  // hook's internal refs sync it (peer + conversation), and the effect
+  // below fires the outgoing ring exactly once per request. The target
+  // deliberately STAYS set while the call lives — the hook reads it for
+  // ICE relay for the call's whole duration — and it is invisible/harmless
+  // afterwards (the overlay only renders while state !== 'idle', and the
+  // next dial always overwrites it).
+  const [callTarget, setCallTarget] = useState<{
+    conversationId: string
+    peer: CallPeer
+    kind: CallKind
+  } | null>(null)
+  const dialedTargetRef = useRef<object | null>(null)
+  const callSession = useCallSession({
+    meId: me.id,
+    meName: me.name,
+    meColor: me.color,
+    meAvatar: me.avatar,
+    conversationId: callTarget?.conversationId ?? openConversationId ?? '',
+    peer: callTarget?.peer ?? null,
+  })
+  useEffect(() => {
+    if (callTarget === null) return
+    if (dialedTargetRef.current === callTarget) return // one dial per request
+    dialedTargetRef.current = callTarget
+    if (callSession.state === 'idle') {
+      callSession.startCall(callTarget.kind)
+    } else {
+      // Defensive: the full-screen overlay blocks taps while a call is live,
+      // so this branch is practically unreachable.
+      toast.error('Finish the current call first')
+    }
+  }, [callTarget, callSession.state, callSession.startCall])
 
   // ⌘K / Ctrl+K toggles Spotlight from anywhere in the shell
   useEffect(() => {
@@ -379,6 +421,7 @@ export function MainShell({ me }: { me: AppUser }) {
               conversationId={openConversationId}
               unreadAnchorMs={openConversationAnchorMs}
               initialJumpMessageId={jumpMessageId}
+              onStartCall={setCallTarget}
               onClose={() => setOpenConversationId(null)}
             />
           ) : null}
@@ -459,6 +502,12 @@ export function MainShell({ me }: { me: AppUser }) {
           />
         ) : null}
       </AnimatePresence>
+
+      {/* R35-b — the SINGLE app-wide call overlay (fixed inset-0 z-80):
+          rises over tabs, rooms, sheets and the dock; incoming rings
+          surface on any screen, outgoing dials come from the room's
+          header buttons through onStartCall above. */}
+      <CallOverlay session={callSession} />
 
       {/* Spotlight — global search palette (z-90, above everything incl. the dock) */}
       <AnimatePresence>

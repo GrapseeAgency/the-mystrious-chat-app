@@ -219,8 +219,11 @@ import {
   useReminderDueLoop,
   type ReminderJumpDetail,
 } from '@/components/chat/reminders-sheet'
-// ── R33-a: 1:1 voice/video calls — glass overlay + WebRTC call session ──
-import { CallOverlay, useCallSession } from '@/components/chat/call-overlay'
+// ── R33-a: 1:1 voice/video calls — since R35-b the call session + overlay
+// live at SHELL level (main-shell) so rings surface app-wide; the room only
+// hands its DM peer to the shell through the onStartCall callback.
+import type { CallPeer } from '@/components/chat/call-overlay'
+import type { CallKind } from '@/lib/call-types'
 
 interface DetailResponse {
   conversation: ConversationDetail
@@ -554,6 +557,7 @@ export function ChatRoom({
   conversationId: conversationIdProp,
   unreadAnchorMs: unreadAnchorMsProp = null,
   initialJumpMessageId: initialJumpMessageIdProp = null,
+  onStartCall,
   onClose,
 }: {
   me: AppUser
@@ -562,6 +566,9 @@ export function ChatRoom({
   unreadAnchorMs?: number | null
   /** global-search hit — jump + flash this message once history renders */
   initialJumpMessageId?: string | null
+  /** R35-b: dial through the shell's single call session + overlay
+      (omitted by hosts without the shell mount → call buttons hide) */
+  onStartCall?: (call: { conversationId: string; peer: CallPeer; kind: CallKind }) => void
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -1128,19 +1135,10 @@ export function ChatRoom({
   const isGroup = detailData?.isGroup ?? false
   const displayName = detailData ? conversationDisplayName(detailData, me.id) : ''
 
-  // ── R33-a: 1:1 voice/video calls — the hook owns the WebRTC + signaling
-  // state machine; <CallOverlay> renders it. DMs only (no peer in groups).
-  const callSession = useCallSession({
-    meId: me.id,
-    meName: me.name,
-    meColor: me.color,
-    meAvatar: me.avatar,
-    conversationId,
-    peer:
-      !isGroup && other
-        ? { id: other.id, name: other.name, color: other.color, avatar: other.avatar }
-        : null,
-  })
+  // ── R33-a → R35-b: 1:1 voice/video calls — the WebRTC + signaling state
+  // machine and the <CallOverlay> now live at SHELL level (main-shell), so
+  // incoming rings surface app-wide; this room only forwards dial requests
+  // ({ conversationId, peer, kind }) through the onStartCall prop.
 
   const recipients = useMemo(
     () => (detailData ? detailData.members.filter((m) => m.id !== me.id).map((m) => m.id) : []),
@@ -3663,8 +3661,10 @@ export function ChatRoom({
           </AnimatePresence>
         </button>
 
-        {/* R33-a: DM-only call buttons — voice always, video beside it */}
-        {!isGroup && other ? (
+        {/* R33-a → R35-b: DM-only call buttons — voice always, video beside it.
+            They dial through the SHELL's single call session (onStartCall);
+            hosts without the shell wiring honestly show no dead buttons. */}
+        {!isGroup && other && onStartCall ? (
           <>
             <Button
               variant="ghost"
@@ -3672,7 +3672,11 @@ export function ChatRoom({
               aria-label={`Start voice call with ${other.name}`}
               onClick={() => {
                 haptic(10)
-                callSession.startCall('voice')
+                onStartCall({
+                  conversationId,
+                  peer: { id: other.id, name: other.name, color: other.color, avatar: other.avatar },
+                  kind: 'voice',
+                })
               }}
               className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
             >
@@ -3684,7 +3688,11 @@ export function ChatRoom({
               aria-label={`Start video call with ${other.name}`}
               onClick={() => {
                 haptic(10)
-                callSession.startCall('video')
+                onStartCall({
+                  conversationId,
+                  peer: { id: other.id, name: other.name, color: other.color, avatar: other.avatar },
+                  kind: 'video',
+                })
               }}
               className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
             >
@@ -5275,9 +5283,8 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
-      {/* 1:1 voice/video calls (R33-a) — full-screen glass overlay; rises over
-          every sheet while the DM room is open */}
-      <CallOverlay session={callSession} />
+      {/* 1:1 voice/video calls — since R35-b the overlay mounts ONCE at shell
+          level (main-shell) so rings surface on every screen; nothing here. */}
 
       {/* who-reacted sheet */}
       <Drawer open={reactionInfo !== null} onOpenChange={(open) => !open && setReactionInfo(null)}>

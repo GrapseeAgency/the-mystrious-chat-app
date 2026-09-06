@@ -166,6 +166,13 @@ exports.Prisma.CallLogScalarFieldEnum = {
   startedAt: 'startedAt'
 };
 
+exports.Prisma.UserVerificationScalarFieldEnum = {
+  id: 'id',
+  ownerId: 'ownerId',
+  peerId: 'peerId',
+  verifiedAt: 'verifiedAt'
+};
+
 exports.Prisma.UserWalletScalarFieldEnum = {
   userId: 'userId',
   coins: 'coins',
@@ -522,6 +529,7 @@ exports.Prisma.ModelName = {
   Reminder: 'Reminder',
   ConversationStreak: 'ConversationStreak',
   CallLog: 'CallLog',
+  UserVerification: 'UserVerification',
   UserWallet: 'UserWallet',
   WalletLedger: 'WalletLedger',
   HubTask: 'HubTask',

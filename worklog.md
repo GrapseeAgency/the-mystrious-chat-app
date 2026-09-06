@@ -1377,3 +1377,42 @@ Stage Summary:
 - Contract: POST /api/ai/recap {userId, conversationId} → {recap, basedOn}; recap card is ephemeral UI (not persisted)
 - Honest gaps: recap covers the last 30 messages only; cache is per-instance (single dev server — fine)
 - Evidence: download/qa-r34b-01…13-*.png
+
+---
+Task ID: R35-a
+Agent: general-purpose (code landed; crew report channel died — lead verified end-to-end and wrote this entry)
+Task: Signal-style safety-number verification (schema + API + DM info Encryption section)
+
+Work Log:
+- Lead pre-push: UserVerification model (ownerId/peerId/verifiedAt, @@unique([ownerId,peerId])) + db push + client regen; src/lib/db.ts bumped to v3 singleton protocol so the long-running dev server picks up the new client
+- NEW src/lib/safety.ts — deriveSafetyNumber(a,b): sha256 over sorted pair ids + app pepper, exact BigInt modulo 10^60, zero-padded, formatted as Signal's canonical 12 groups of 5 digits; pure (node:crypto only), symmetric + deterministic across restarts
+- NEW /api/users/[id]/safety — GET ?userId= → { peerId, safetyNumber, verified, verifiedAt }; POST { userId } → upsert (re-verify refreshes timestamp); DELETE → idempotent deleteMany; policy: missing viewer id 400, unknown viewer OR peer 404
+- room-info-page.tsx (DMs only): ENCRYPTION section — ShieldCheck row "Safety number · Tap to compare with your contact" + Unverified (amber) / Verified (emerald BadgeCheck) pill; glass sheet renders the 12 five-digit groups as 3x4 tiles + honest compare caption + "Mark as verified" / "Verified · time" + "Reset verification"; TanStack Query ['safety',peerId,meId] + toasts
+- LEAD LIVE PROOF: curl determinism (Alice↔Bob both directions → identical 36603 29754 88033 ... 12x5), POST→verified:true+verifiedAt, DELETE→verified:false, guards 400/404/404; browser E2E as Alice: row renders Unverified → sheet digits EXACTLY match curl number → Mark as verified → toast + row flips Verified (+ timestamped chip + reset option in sheet); Bob left VERIFIED as living demo state
+- tsc src: 0 · lint clean
+
+Stage Summary:
+- SHIPPED: Signal-paradigm safety numbers — deterministic per-pair 60-digit fingerprints + per-viewer verification state, DM info page Encryption section
+- Contract: GET/POST/DELETE /api/users/{peerId}/safety as above; digits derive from ids only (no secret), verification lives in DB
+- Honest gaps: digits are id-derived (real Signal hashes identity KEYS — we have no key infrastructure); no header-badge in chat-room (crew B owned that file this wave); groups don't get safety numbers
+- Evidence: download/qa-r35a-01-info-row.png, qa-r35a-02-sheet.png, qa-r35a-03-verified.png, qa-r35a-04-info-verified.png
+
+---
+Task ID: R35-b
+Agent: general-purpose (code landed; crew report channel died — lead verified end-to-end and wrote this entry)
+Task: Shell-level incoming calls + multi-select Mark read + Discord-style Mentions view
+
+Work Log:
+- Shell calls: the ONE useCallSession + <CallOverlay> moved from chat-room.tsx to main-shell.tsx (z-80, above tabs/rooms/sheets/dock) — incoming rings surface on ANY screen; room header Phone/Video buttons dial via shell callTarget (dial-once ref guard); chat-room keeps buttons, drops its local mount
+- Multi-select Mark read (chats-tab.tsx): batchMarkRead mutation POSTs /read per selected conv, optimistic unreadCount→0 with rollback, honest partial-failure handling (success toast + clear selection, failures keep mode for retry)
+- Mentions: NEW GET /api/mentions?userId=&limit= (clamp 1..100) — per-conversation 200-row '@' superset within 14 days (SQLite has no insensitive mode), JS regex `@<fullName>(?=\s|$|[^A-Za-z0-9])` decides (multi-word display names, case-insensitive, boundary-safe so @AliceChen never matches Alice); 400/404 guards. NEW mentions-page.tsx (#/mentions sub-page, route registered main-shell): author avatar/name, emerald @token highlight chips, conversation sub-label, tap-to-jump, honest empty state; AtSign entry row in chats-tab beside Calls/Channels/Archived with live count badge
+- LEAD LIVE PROOF: crew's real mention rows render on #/mentions with count badge 2 + highlighted tokens; boundary rule proven in-room ("@Alice Chen" highlighted, "@AliceChen glued" NOT); guards curl-verified; Mark read E2E: long-press select Bob + Bot & Webhook QA → glass bar "2 selected" → Mark read → "2 chats marked as read" toast, unread pills cleared (server-verified 0; remaining amber "1" on BQ row is the streak chip, and the 2 leftover unreads belong to unselected rooms Glass QA Room + Siu DM — correct)
+- Shell ring E2E: Bob's real UI dial renders the shell overlay (Calling... + honest headless mic-denial card); socket.io-client probe (Bob→Alice call:offer through :81 gateway) rings Alice's incoming overlay WHILE SHE SITS ON THE CHATS TAB — full-screen glass ring (pulsing avatar, Incoming voice call, Decline/Accept) captured in download/qa-r35b-04-shell-ring.png; 30s timeout auto-dismisses cleanly (callSessions:0, no zombie)
+- Debug note: a stale HMR module graph in a long-lived tab silently dropped call events once — hard reload fixed; instrumentation added then removed
+- tsc src: 0 · lint clean
+
+Stage Summary:
+- SHIPPED: app-wide incoming-call ring (closes R33-a honest gap), batch Mark read (closes R34-a honest gap), Mentions inbox (Discord mobile pattern)
+- Contract: GET /api/mentions?userId=X&limit=N → { items:[{messageId,conversationId,conversationName,isGroup,author{...},snippet,createdAt}] }; mention rule = @ + FULL display name + boundary
+- Honest gaps: mention matching is name-based (no id-tagging markup stored on messages); entries older than the 14-day window / beyond 200 '@'-rows per room are not scanned; incoming ring while inside ANOTHER room renders over it (verified in code paths, not screenshotted)
+- Evidence: download/qa-r35b-01-entry.png, qa-r35b-02-mentions.png, qa-r35b-03-markread.png, qa-r35b-03b-markread-done.png, qa-r35b-04-shell-ring.png
