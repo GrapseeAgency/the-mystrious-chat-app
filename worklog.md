@@ -1438,3 +1438,16 @@ Stage Summary:
 - SHIPPED: the R32 honest gap closed — hub category pages + contacts/profile deep sub-pages now carry the locked glass recipe (identity-band wash-behind-glass, recipe empty/loading states, pressTap rows, section-label rhythm, rounded-3xl glass cards)
 - Evidence: download/qa-r36-01-contacts-add.png, qa-r36-02-user-page.png, qa-r36-03-profile.png, qa-r36-03b-profile-saved-drawer.png, qa-r36-04-hub-category.png, qa-r36-04b-hub-web3.png, qa-r36-05-hub-dark.png
 - Honest gaps: settings-screen untouched by design (audit-only); hub catalog per-category brand accents (existing data, some blue/purple) left as-is — they are third-party brand identity, not app chrome; app-detail-sheet rounded-2xl family radius not touched (out of scope file); profile-primitives.tsx PROFILE_CARD/labels left as the established family language
+
+---
+Task ID: R36-ship (lead)
+Agent: orchestrator (Z.ai Code)
+Task: R36 crew report verified, committed, pushed; review cron refreshed
+
+Work Log:
+- Verified R36 crew output: 5 files changed exactly in owned scope, tsc src 0, lint clean, worklog entry present, 7 screenshots VLM-checked by lead (hub light+dark, user page — recipe rhythm + dark wash hold)
+- Committed 55d8442 and pushed (35f985a..55d8442)
+- Old review cron 361307 was DISABLED ('exec limits exceeded') with a stale queue → recreated as job 363876 with current state + next priorities (DM header ShieldCheck badge, streak-lost state, group photo parity, live mention badges)
+
+Stage Summary:
+- State: main == origin/main at 55d8442; app :200, socket healthy; R32's honest decoration gaps closed; research-file UI sectors fully implemented through R36
