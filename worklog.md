@@ -1495,3 +1495,17 @@ Stage Summary:
 - Honest gaps: flag is per-conversation (shared across devices/viewers) not per-viewer like real Signal's local-only setting — follows the TTL precedent deliberately; summary-level field omitted (cheap to add later if the chats list ever needs it); veil also covers the area under the topic rail/pinned banner gap (messages viewport bounds, header/composer proven untouched); reduced-motion path verified in code (transitions gated on prefs.reducedMotion) but not screenshotted
 - Evidence: download/qa-r38-01-info-row-on.png, qa-r38-01b-info-row-on.png, qa-r38-02-toggle-off-toast.png, qa-r38-03-toggle-on-toast.png, qa-r38-08-toast-on.png (toast "Screen security on"), qa-r38-04-room-blurred.png (frosted veil, header/composer clear), qa-r38-05-room-refocused.png (messages readable), qa-r38-06-veil-scope-check.png, qa-r38-07-toggleoff-no-veil.png (no overlay after toggle-off)
 - Do NOT run git commit or git push (the lead commits after verification).
+---
+Task ID: R37+R38-ship (lead)
+Agent: orchestrator (Z.ai Code)
+Task: Lead verification of waves R37 and R38, commits, pushes, review cron refresh
+
+Work Log:
+- R37 lead-verified: scope exact (8 files + new safety-sheet.tsx), tsc src 0, lint clean; VLM-checked qa-r37-01 (rose 'streak lost' chip on QA row, Bob's amber 'ends tonight' untouched), -03 (DM header ShieldCheck + amber dot), -04 (safety sheet 12 digit tiles), -06 (Bob DM emerald Verified badge); live GET /api/mentions for Alice = 4 with case-insensitive match ('@alice chen' counted) and negative control proven; committed eee8f5f and pushed
+- Bug fix during R37 intake: /api/uploads 404s in dev.log traced to 3 user avatars (Alice, Bob, hossen) pointing at files wiped by an environment reset; nulled the 3 DB fields (palette fallback already safe via Radix Avatar); tool-results/ added to .gitignore; transient dev.log 500s identified as mid-edit Turbopack module-not-found artifact (current probes 200)
+- R38 lead-verified: scope exact, tsc src 0, lint clean; VLM-checked qa-r38-04 (frosted veil over messages only, header/composer sharp, glass card 'Screen security is on') and qa-r38-01 (info row switch ON in glass recipe); committed 37e955b and pushed
+- Review cron: both prior jobs (361307, 363876) found DISABLED ('exec limits exceeded'); deleted and recreated as job 364018 (fixed_rate 900s, webDevReview, brief updated to R38 state)
+
+Stage Summary:
+- State: main == origin/main at 37e955b; app :200 healthy; both research files fully mined — every implementable pattern shipped; remaining research-file items (agent inboxes, flow-canvas bot builders, 3D spatial worlds, federated homeservers, shared-inbox email paradigms) are different product categories, documented here as honest exclusions rather than faked
+- Next queue for the review cron: glass-polish sweeps on any laggard surface, depth passes on stage/voice-rooms and bot auto-reply flows (existing Bot & Webhook QA infra), per-viewer screenPrivacy if ever needed
