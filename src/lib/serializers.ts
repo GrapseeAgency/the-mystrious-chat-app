@@ -7,6 +7,7 @@
 import path from 'node:path'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
+import { DEFAULT_PREFERENCES, mergePrefs, type PulsePrefs } from '@/lib/prefs-defaults'
 import type {
   AppUser,
   AutomationSummary,
@@ -155,6 +156,8 @@ interface UserRow {
   statusText: string | null
   createdAt: Date
   lastSeenAt: Date
+  /** R46 — JSON prefs column (see prefs-defaults); drives privacy enforcement. */
+  preferences?: string | null
 }
 
 function mapAuthor(user: UserRow): MessageAuthor {
@@ -162,6 +165,10 @@ function mapAuthor(user: UserRow): MessageAuthor {
 }
 
 export function mapUser(user: UserRow): AppUser {
+  // R46 — privacy enforcement: a user with lastSeenVisible=false has their
+  // last-seen stamp scrubbed at the SERIALIZATION layer (the payload never
+  // leaves the server). Own profile is scrubbed too — the owner chose to hide.
+  const hideStamp = prefsOfUser(user).lastSeenVisible === false
   return {
     id: user.id,
     name: user.name,
@@ -172,7 +179,17 @@ export function mapUser(user: UserRow): AppUser {
     statusEmoji: user.statusEmoji ?? null,
     statusText: user.statusText ?? null,
     createdAt: user.createdAt.toISOString(),
-    lastSeenAt: user.lastSeenAt.toISOString(),
+    lastSeenAt: hideStamp ? null : user.lastSeenAt.toISOString(),
+  }
+}
+
+/** Server-stored prefs of a user row (defensive — malformed JSON → defaults). */
+function prefsOfUser(user: UserRow): PulsePrefs {
+  if (!user.preferences) return DEFAULT_PREFERENCES
+  try {
+    return mergePrefs(JSON.parse(user.preferences))
+  } catch {
+    return DEFAULT_PREFERENCES
   }
 }
 
@@ -350,6 +367,36 @@ export function mapMember(participant: { lastReadAt: Date; user: UserRow; role: 
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
 
+/** Sentinel watermark for members who hide read receipts (R46) — predates
+ *  every real message, so viewers' ticks always render "delivered", never
+ *  "read". The hidden member's OWN watermark (unread counts) is untouched. */
+const EPOCH_ISO = '1970-01-01T00:00:00.000Z'
+
+interface ParticipantRowForMap {
+  lastReadAt: Date
+  role: string
+  user: UserRow
+}
+
+/** Members for a viewer's payload (R46 — read-receipts privacy enforced):
+ *  a member whose stored prefs disable read receipts reports an epoch
+ *  watermark to everyone but themselves, so their reads stay private while
+ *  their own unread math keeps working. */
+export function membersForViewer(
+  participants: ParticipantRowForMap[],
+  viewerId?: string,
+) {
+  return participants
+    .map((p) => {
+      const m = mapMember(p)
+      if (viewerId && m.id !== viewerId && prefsOfUser(p.user).readReceipts === false) {
+        return { ...m, lastReadAt: EPOCH_ISO }
+      }
+      return m
+    })
+    .sort(byName)
+}
+
 /** Reusable deep include for "conversation + members + newest message". */
 export const CONVERSATION_FULL_INCLUDE = {
   participants: { include: { user: true } },
@@ -398,7 +445,7 @@ export async function buildConversationSummary(
     name: conv.name,
     createdAt: conv.createdAt.toISOString(),
     updatedAt: conv.updatedAt.toISOString(),
-    members: conv.participants.map(mapMember).sort(byName),
+    members: membersForViewer(conv.participants, viewerId),
     lastMessage: lastRow ? mapMessage(lastRow, viewerId) : null,
     unreadCount,
     myStreak:
@@ -446,7 +493,7 @@ export async function buildConversationDetail(
     name: conv.name,
     createdAt: conv.createdAt.toISOString(),
     updatedAt: conv.updatedAt.toISOString(),
-    members: conv.participants.map(mapMember).sort(byName),
+    members: membersForViewer(conv.participants, viewerId),
     myMutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
     myStreak:
       streakRow && isLiveStreakDay(streakRow.lastDay)

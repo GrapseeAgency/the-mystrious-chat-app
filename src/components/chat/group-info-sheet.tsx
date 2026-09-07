@@ -1152,7 +1152,11 @@ function MemberRow({
                 <span className="px-0.5 text-zinc-300 dark:text-zinc-600">·</span>
               </>
             ) : null}
-            <span className="shrink-0">active {formatListStamp(member.lastSeenAt)}</span>
+            {member.lastSeenAt ? (
+              <span className="shrink-0">active {formatListStamp(member.lastSeenAt)}</span>
+            ) : (
+              <span className="shrink-0">Last seen hidden</span>
+            )}
           </p>
         </div>
 
@@ -1281,7 +1285,7 @@ function DmInfoBody({
           <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">About</p>
           <p className="mt-1 text-sm leading-relaxed text-zinc-700 dark:text-zinc-200">{other.about}</p>
           <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500">
-            Last active {formatListStamp(other.lastSeenAt)}
+            {other.lastSeenAt ? `Last active ${formatListStamp(other.lastSeenAt)}` : 'Last seen hidden'}
           </p>
         </button>
       </div>

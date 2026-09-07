@@ -374,13 +374,20 @@ export function UserProfileSheet({
                 <span className="mx-1.5 text-zinc-300 dark:text-zinc-600" aria-hidden>
                   |
                 </span>
-                Last active {new Date(stats.lastSeenAt).toLocaleString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hourCycle: 'h23',
-                })}
+                {stats.lastSeenAt ? (
+                  <>
+                    {'Last active '}
+                    {new Date(stats.lastSeenAt).toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hourCycle: 'h23',
+                    })}
+                  </>
+                ) : (
+                  'Last seen hidden'
+                )}
               </>
             ) : null}
           </motion.p>

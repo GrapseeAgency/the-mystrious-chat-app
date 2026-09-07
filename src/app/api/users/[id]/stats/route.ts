@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { DEFAULT_PREFERENCES, mergePrefs } from '@/lib/prefs-defaults'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +19,7 @@ export async function GET(_req: Request, { params }: RouteCtx) {
 
   const user = await db.user.findUnique({
     where: { id },
-    select: { id: true, createdAt: true, lastSeenAt: true },
+    select: { id: true, createdAt: true, lastSeenAt: true, preferences: true },
   })
   if (!user) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
@@ -38,6 +39,15 @@ export async function GET(_req: Request, { params }: RouteCtx) {
     Math.floor((Date.now() - user.createdAt.getTime()) / 86_400_000),
   )
 
+  // R46 — honor the last-seen privacy choice here too (profile sheets of
+  // users who hide it get null; the UI hides the stamp accordingly).
+  let prefs = DEFAULT_PREFERENCES
+  try {
+    prefs = mergePrefs(user.preferences ? JSON.parse(user.preferences) : null)
+  } catch {
+    // malformed → defaults
+  }
+
   return NextResponse.json({
     stats: {
       messages,
@@ -48,7 +58,7 @@ export async function GET(_req: Request, { params }: RouteCtx) {
       groups,
       days,
       joinedAt: user.createdAt.toISOString(),
-      lastSeenAt: user.lastSeenAt.toISOString(),
+      lastSeenAt: prefs.lastSeenVisible === false ? null : user.lastSeenAt.toISOString(),
     },
   })
 }

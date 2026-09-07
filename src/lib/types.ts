@@ -13,7 +13,9 @@ export interface AppUser {
   statusEmoji: string | null // Discord-style custom status glyph
   statusText: string | null // Discord-style custom status line
   createdAt: string // ISO
-  lastSeenAt: string // ISO — updated when socket connects/disconnects is NOT possible (separate svc), so treat as "profile last active"; presence comes from socket events
+  /** ISO — "profile last active". R46: null when the user hides last seen
+   *  (server scrubs the stamp; realtime presence is a separate signal). */
+  lastSeenAt: string | null
 }
 
 /** Minimal sender embedded in messages */
@@ -448,5 +450,6 @@ export interface UserStats {
   groups: number
   days: number
   joinedAt: string
-  lastSeenAt: string
+  /** R46 — null when the profile owner hides last seen. */
+  lastSeenAt: string | null
 }

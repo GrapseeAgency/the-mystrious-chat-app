@@ -359,7 +359,7 @@ function UserPageBody({
                 )}
               />
               <span className="truncate text-[11px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                {online ? 'Online now' : activeAgoLabel(user.lastSeenAt, nowTick)}
+                {online ? 'Online now' : user.lastSeenAt ? activeAgoLabel(user.lastSeenAt, nowTick) : 'Last seen hidden'}
               </span>
             </div>
           </motion.div>
@@ -436,7 +436,7 @@ function UserPageBody({
               <Activity className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
               <span className="text-[13px] font-medium text-zinc-500 dark:text-zinc-400">Last seen</span>
               <span className="ml-auto text-[13px] font-bold tabular-nums text-zinc-800 dark:text-zinc-100">
-                {online ? 'Online now' : activeAgoLabel(user.lastSeenAt, nowTick)}
+                {online ? 'Online now' : user.lastSeenAt ? activeAgoLabel(user.lastSeenAt, nowTick) : 'Hidden'}
               </span>
             </div>
           </motion.div>
