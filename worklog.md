@@ -1744,3 +1744,16 @@ Stage Summary:
 - Contract: UserBlock unique(blockerId,blockedId); GET/POST/DELETE /api/users/[id]/block; GET /api/users/[id]/blocks (self-only); GET /api/internal/privacy?ids= [x-pulse-key] (fail-open, 30s TTL on the socket side); ConversationDetail.dmBlocked?; PulsePrefs.typingVisible; messages POST 403 + conversations POST 403 for blocked DM pairs
 - Honest gaps: blocked users can still SEE the blocker's profile and shared groups (matches WhatsApp/Telegram); typing/presence enforcement lives in the relay layer (client-asserted identity is the documented socket trust model — same as all existing relay events; the DB-backed Next APIs are the hard boundary); the socket privacy cache refreshes lazily (≤30s staleness after a pref flip); blocked-pair scheduled messages composed BEFORE a block will still dispatch (dispatcher replay documented — rare window, next-wave candidate); no "report account" flow (blocks are private, no notifications to the blocked party — by design)
 - Evidence: download/qa-r47-01..08 (+ curl matrix reproducible from this log), all through the :81 gateway
+---
+Task ID: R47-ship (lead addendum)
+Agent: orchestrator (Z.ai Code)
+Task: Shipping note — commit landed locally; GitHub push BLOCKED by environment credential wipe (again)
+
+Work Log:
+- Committed 42fa840 on main (R47: blocked accounts + typing hiding + presence hiding)
+- git push origin main FAILED: the GitHub PAT was wiped AGAIN by the environment reset (no copy survives in this sandbox — env, .env [only DATABASE_URL], git config, ~/.ssh all checked)
+- STOPGAP (same as R44): recreated the local bare mirror /home/z/pulse-mirror.git and pushed main there — mirror head == 42fa840, so the R47 commit is durably stored in TWO sandbox locations
+- NEXT WAVE MUST: obtain a fresh GitHub PAT (from the user), write https://<token>@github.com into ~/.git-credentials with credential.helper=store, then `git push origin main` — origin is https://github.com/GrapseeAgency/the-mystrious-chat-app.git; local main is 42fa840 (origin/main expected at 9847f00 / R46)
+
+Stage Summary:
+- Local state: main == 42fa840 (R47), mirror == 42fa840, origin == 9847f00 (R46) — PUSH PENDING CREDENTIALS
