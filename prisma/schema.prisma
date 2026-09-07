@@ -378,6 +378,9 @@ model Message {
   topicId        String? // Zulip-style topic this message is filed under (null = General)
   anon           Boolean              @default(false) // Session/SimpleX-style anonymous send
   viaAutomation  Boolean              @default(false) // R39: authored by a keyword automation (never re-triggers the engine)
+  transcript     String?              // R43: voice-note transcription (real ASR, cached — null = never transcribed)
+  transcribedAt  DateTime?            // when the transcript was produced
+  transcribedById String?             // participant who ran the transcription (any member may)
   anonAlias      String? // deterministic per-(user,conversation) incognito alias (sender-side display)
   viewOnce       Boolean              @default(false) // Snapchat/WhatsApp view-once media gate
   viewedAt       DateTime? // when the non-sender consumed a view-once attachment

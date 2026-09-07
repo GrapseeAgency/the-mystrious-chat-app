@@ -274,6 +274,9 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
     filePath: message.filePath ?? null,
     fileName: message.fileName ?? null,
     fileSize: message.fileSize ?? null,
+    // R43 additive — cached voice-note transcription (real ASR, guarded nulls).
+    transcript: message.transcript ?? null,
+    transcribedAt: message.transcribedAt ? message.transcribedAt.toISOString() : null,
     editedAt: message.editedAt ? message.editedAt.toISOString() : null,
     pinnedAt: message.pinnedAt ? message.pinnedAt.toISOString() : null,
     pinnedBy: message.pinnedBy ?? null,

@@ -145,6 +145,9 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
   const filePath = typeof msg.filePath === 'string' ? msg.filePath : null
   const fileName = typeof msg.fileName === 'string' ? msg.fileName : null
   const fileSize = typeof msg.fileSize === 'number' && Number.isFinite(msg.fileSize) ? msg.fileSize : null
+  // R43 — cached voice-note transcript rides realtime payloads too (guarded).
+  const transcript = typeof msg.transcript === 'string' ? msg.transcript : null
+  const transcribedAt = typeof msg.transcribedAt === 'string' ? msg.transcribedAt : null
   const editedAt = typeof msg.editedAt === 'string' ? msg.editedAt : null
   const pinnedAt = typeof msg.pinnedAt === 'string' ? msg.pinnedAt : null
   const pinnedBy = typeof msg.pinnedBy === 'string' ? msg.pinnedBy : null
@@ -194,6 +197,8 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
       filePath,
       fileName,
       fileSize,
+      transcript,
+      transcribedAt,
       editedAt,
       pinnedAt,
       pinnedBy,

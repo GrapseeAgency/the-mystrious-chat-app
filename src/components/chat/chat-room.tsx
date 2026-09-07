@@ -40,6 +40,7 @@ import {
   EllipsisVertical,
   EyeOff,
   FileText,
+  AudioLines,
   Flame,
   Forward,
   Gamepad2,
@@ -1671,6 +1672,8 @@ export function ChatRoom({
         pinnedBy: null,
         parentId: parentId ?? null,
         topicId: activeTopicId !== null && !parentId ? activeTopicId : null, // R24-b: active-topic filing
+        transcript: null,
+        transcribedAt: null,
         anon: tempAnon,
         anonAlias: tempAnon ? anonAliasPreview(me.id, conversationId) : null,
         viewOnce: viewOnce === true,
@@ -2990,6 +2993,8 @@ export function ChatRoom({
         filePath: null,
         fileName: null,
         fileSize: null,
+        transcript: null,
+        transcribedAt: null,
         editedAt: null,
         pinnedAt: null,
         pinnedBy: null,
@@ -6321,6 +6326,88 @@ function VoiceBubble({
   )
 }
 
+// ── R43: voice-note transcription strip ("voice notes you can read") ──
+// Any member can run a voice note through the REAL ASR service; the
+// transcript is cached on the message row and rendered under the bubble for
+// everyone. Pill button when absent, honest spinner while pending.
+function VoiceTranscriptStrip({
+  message,
+  mine,
+  myId,
+  pending,
+}: {
+  message: ChatMessage
+  mine: boolean
+  myId: string
+  pending: boolean
+}) {
+  const queryClient = useQueryClient()
+  const transcribe = useMutation({
+    mutationFn: async () =>
+      apiJson<{ transcript: string; cached: boolean }>(
+        `/api/messages/${encodeURIComponent(message.id)}/transcribe`,
+        { method: 'POST', body: JSON.stringify({ requesterId: myId }) },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['messages', message.conversationId] })
+      haptic(10)
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : 'Could not transcribe this voice note'),
+  })
+
+  if (message.transcript) {
+    return (
+      <div
+        className={cn(
+          'mx-0.5 mb-0.5 mt-1 flex items-start gap-1.5 border-t px-0.5 pt-1.5 pb-0.5',
+          mine ? 'border-white/25' : 'border-zinc-200/80 dark:border-white/10',
+        )}
+      >
+        <AudioLines
+          className={cn('mt-0.5 size-3.5 shrink-0', mine ? 'text-white/75' : 'text-emerald-600 dark:text-emerald-400/80')}
+          aria-hidden
+        />
+        <p
+          className={cn(
+            'min-w-0 flex-1 whitespace-pre-wrap break-words text-[12px] leading-snug',
+            mine ? 'text-white/90' : 'text-zinc-600 dark:text-zinc-300',
+          )}
+        >
+          {message.transcript}
+        </p>
+      </div>
+    )
+  }
+
+  if (pending) return null // optimistic rows have no server id yet
+  return (
+    <div className="mx-0.5 mb-0.5 mt-1 flex justify-start px-0.5">
+      <button
+        type="button"
+        disabled={transcribe.isPending}
+        onClick={(event) => {
+          event.stopPropagation()
+          transcribe.mutate()
+        }}
+        className={cn(
+          'flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium outline-none transition-colors disabled:opacity-70',
+          mine
+            ? 'bg-white/15 text-white hover:bg-white/25'
+            : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-white/10 dark:text-zinc-300 dark:hover:bg-white/15',
+        )}
+      >
+        {transcribe.isPending ? (
+          <LoaderCircle className="size-3 animate-spin" aria-hidden />
+        ) : (
+          <AudioLines className="size-3" aria-hidden />
+        )}
+        {transcribe.isPending ? 'Transcribing…' : 'Transcribe'}
+      </button>
+    </div>
+  )
+}
+
 interface MessageRowProps {
   message: ChatMessage
   head: boolean
@@ -7144,12 +7231,15 @@ const MessageRow = memo(function MessageRow({
                   ) : null}
                 </>
               ) : isVoice && message.audioPath ? (
-                <VoiceBubble
-                  src={`/api/uploads/${encodeURIComponent(message.audioPath)}`}
-                  durationMs={message.durationMs}
-                  mine={mine}
-                  seed={message.id}
-                />
+                <>
+                  <VoiceBubble
+                    src={`/api/uploads/${encodeURIComponent(message.audioPath)}`}
+                    durationMs={message.durationMs}
+                    mine={mine}
+                    seed={message.id}
+                  />
+                  <VoiceTranscriptStrip message={message} mine={mine} myId={myId} pending={pending} />
+                </>
               ) : isSticker && sticker ? (
                 <div
                   role="img"

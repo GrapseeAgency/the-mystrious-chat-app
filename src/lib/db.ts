@@ -18,14 +18,18 @@ import { PrismaClient } from '../../prisma/generated-client'
 // db.ts between the edit and the client regen), so the running server kept a
 // pre-screenPrivacy runtime. Key bumped again POST-regen to force a truly
 // fresh client construction — do not reuse a key across a client regen.
+// v10 — R43: same protocol, bumped AFTER the Message.transcript column push +
+// client regen (per the v9 lesson: the key change must FOLLOW the regen).
+// v11 — R43 fix: v10 was authored pre-regen again (same HMR gap) — bumped
+// POST-regen so the running server constructs a client that knows .transcript.
 const globalForPrisma = globalThis as unknown as {
-  prismaV9: PrismaClient | undefined
+  prismaV11: PrismaClient | undefined
 }
 
 export const db =
-  globalForPrisma.prismaV9 ??
+  globalForPrisma.prismaV11 ??
   new PrismaClient({
     log: ['query'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV9 = db
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV11 = db

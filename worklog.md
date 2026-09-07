@@ -1609,3 +1609,27 @@ Stage Summary:
 - Contract: PATCH /api/conversations/[id]/screen-privacy { userId, on } → { ok, screenPrivacy }; ConversationDetail.myScreenPrivacy additive; veil = detail.screenPrivacy || detail.myScreenPrivacy
 - db.ts singleton protocol v9 + rule: bump the key AFTER every client regen (a key bound pre-regen wraps a stale runtime)
 - HONEST-GAPS QUEUE IS NOW EMPTY. Next candidates (platform-inspired, consumer-messenger fit): scheduled messages (Telegram-style send-later via Reminder infra), chat folders polish, message translation hook, per-chat wallpaper; plus the documented cosmetic swipe-ghost nit and the ongoing review-cron polish loop
+---
+Task ID: R43 (lead-worked wave)
+Agent: orchestrator (Z.ai Code)
+Task: Voice-note transcription (real ASR, cached) + the swipe-ghost cosmetic fix; record-correction: scheduled messages and polls (multi-select/close) were found ALREADY SHIPPED (R19-B toolkit) — removed from the queue, no rework faked
+
+Work Log:
+- RECORD CORRECTION: the R42 ship note listed "scheduled messages" as a next candidate — WRONG. ScheduledMessage shipped in R19-B (schema + POST/GET /api/conversations/[id]/scheduled + DELETE /api/scheduled/[id] + /schedule slash command + pending-manager drawer + chip), and mini-services/pulse-socket runs a real dispatcher ticker (line 1361+) POSTing /api/maintenance/dispatch with the shared key. Polls already have close route + multi-select. Message translations already exist. Queue corrected
+- ASR pipeline proven BEFORE building: z-ai tts → real speech wav → z-ai asr → EXACT sentence back; then wav→webm/opus via ffmpeg → ASR on webm ALSO exact — Pulse voice notes (MediaRecorder audio/webm;codecs=opus) need NO conversion
+- Schema: Message.transcript String? + transcribedAt DateTime? + transcribedById String?; db:push + db:generate; db.ts v10 pre-regen (same HMR-gap risk) then v11 POST-regen per the v9 lesson — this time the bump order note is explicit in comments
+- NEW POST /api/messages/[id]/transcribe body { requesterId }: participant-only (403), voice-notes-only (400, proven live on a legacy row), deleted-guard, cached hit returns stored transcript (cached:true, same transcribedAt — never re-bills ASR), bytes via R41 durability (disk → UploadedFile store fallback), ZAI.audio.asr.create on base64, empty text → honest 422, service failure → 502 (maxDuration 60)
+- serializers mapMessage + types ChatMessage: additive transcript/transcribedAt; socket normalizer carries both (guarded); both optimistic ChatMessage literals in chat-room extended (tsc caught them)
+- UI: VoiceTranscriptStrip under voice bubbles — cached transcript renders as an AudioLines strip with divider (mine: white-on-emerald / theirs: emerald-on-glass); otherwise a "Transcribe" pill (LoaderCircle spin + "Transcribing…" disabled while pending); invalidateQueries(['messages', conversationId]) on success; stopPropagation so taps don't open the bubble menu
+- BROWSER-FIRST PROOF: uploaded a REAL TTS webm through /api/uploads → real kind 'audio' message in the Alice-Bob DM (kept as the living demo) → pill click → "Transcribing…" → transcript rendered inline under the waveform WITHOUT any curl pre-seeding; the pre-cached demo twin shows the same strip from the server payload. Screenshots qa-r43-01 (two transcribed strips), -02 (post-attempt state)
+- curl guard matrix: fresh ASR {cached:false} → exact sentence; second call {cached:true, identical transcribedAt}; non-participant 403; legacy oddity row 400 "Only voice notes can be transcribed."; DB row verified (transcript persisted). The 0:02 legacy headless-mic note contains silence — honest no-transcript (pill stays; 422 path exists for kind-audio empty text)
+- Testing lesson (logged for future waves): mid-session HMR left stale React closures — pill clicks silently hit detached trees twice before a hard reload made the fresh tree clickable; always hard-reload after landing new interactive components before browser-QA
+- Swipe-ghost FIX (R42 nit): chats-row action chips layer now visibility+opacity gated on swipeOpen (invisible opacity-0 at rest → visible opacity-100 when open, 150ms); pinned row renders clean at rest (qa-r43-03-no-swipe-ghost.png — was ghosting "Unpin Archive" through the glass) and simulated pointer-drag reveals the chips crisply (qa-r43-04-swipe-reveal-works.png — row slides, Unpin/Archive appear, no bleed)
+- tsc src 0 errors; lint clean; recent dev.log clean
+
+Stage Summary:
+- SHIPPED: voice-note transcription end-to-end (real ASR service, per-message cache, any member can transcribe, everyone sees the strip) + swipe-ghost fix
+- Contract: POST /api/messages/[id]/transcribe { requesterId } → { transcript, transcribedAt, cached } | 400/403/404/422/502 honest; ChatMessage.transcript/transcribedAt additive everywhere (REST + socket + optimistic literals)
+- Honest gaps: transcription of non-speech audio returns 422 with an explicit message (no fake text); transcripts are single-language (whatever ASR hears); the legacy 0:02 silence note keeps its pill forever (honest); voice-room LIVE transcription (streaming) not built — voice rooms relay mic audio without storing it, so there is nothing server-side to transcribe without changing the room architecture (documented, not faked)
+- Living demo: Alice-Bob DM holds two transcribed voice notes (07:49 curl-seeded, 07:57 browser-first) + one honest silence note with its pill
+- Evidence: download/qa-r43-01-transcribed-strips.png, -02-empty-audio-toast.png (post-attempt state), -03-no-swipe-ghost.png, -04-swipe-reveal-works.png

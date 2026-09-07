@@ -97,6 +97,10 @@ export interface ChatMessage {
   filePath: string | null
   fileName: string | null
   fileSize: number | null
+  /** R43 additive — cached voice-note transcription (real ASR service; null =
+   *  never transcribed). Rendered under the voice bubble once present. */
+  transcript: string | null
+  transcribedAt: string | null
   editedAt: string | null // ISO or null — set when the sender edited the text
   pinnedAt: string | null // ISO or null — pinned within the conversation
   pinnedBy: string | null // userId of whoever pinned (null when unpinned)

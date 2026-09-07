@@ -221,8 +221,15 @@ export const ConversationRow = memo(function ConversationRow({
       className="group relative overflow-hidden px-2"
     >
       <div className="relative">
-        {/* swipe-left glass action chips — the same pin/archive handlers the option menu uses */}
-        <div className="absolute inset-y-1 right-2 z-0 flex items-center gap-1.5 pr-1" inert={!swipeOpen || selectMode}>
+        {/* swipe-left glass action chips — the same pin/archive handlers the option menu uses.
+            R43: visibility+opacity gated on swipeOpen — the chips sat permanently painted
+            behind the translucent row, ghosting "Pin/Archive" through the glass (R42 nit). */}
+        <div
+          className={`absolute inset-y-1 right-2 z-0 flex items-center gap-1.5 pr-1 transition-opacity duration-150 ${
+            swipeOpen && !selectMode ? 'visible opacity-100' : 'invisible opacity-0'
+          }`}
+          inert={!swipeOpen || selectMode}
+        >
           <motion.button
             type="button"
             tabIndex={swipeOpen ? 0 : -1}

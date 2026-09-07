@@ -359,47 +359,50 @@ model ConversationParticipant {
 }
 
 model Message {
-  id             String               @id @default(cuid())
-  conversationId String
-  senderId       String
-  content        String
-  deletedAt      DateTime? // soft delete → "message deleted" tombstone
-  replyToId      String? // quoted message (reply feature)
-  imagePath      String? // stored image filename via /api/uploads (image message)
-  audioPath      String? // stored voice-note filename via /api/uploads (audio message)
-  durationMs     Int? // voice-note length in milliseconds
-  filePath       String? // R40: stored document filename via /api/uploads (file message)
-  fileName       String? // R40: original document filename shown on the bubble (1-120 chars)
-  fileSize       Int? // R40: document byte size (0..10_485_760)
-  editedAt       DateTime? // last edit timestamp (null = never edited → "edited" label)
-  pinnedAt       DateTime? // pinned within the conversation (null = not pinned)
-  pinnedBy       String? // userId who pinned (display attribution)
-  parentId       String? // Slack/Zulip thread root this reply belongs to (null = top-level)
-  topicId        String? // Zulip-style topic this message is filed under (null = General)
-  anon           Boolean              @default(false) // Session/SimpleX-style anonymous send
-  viaAutomation  Boolean              @default(false) // R39: authored by a keyword automation (never re-triggers the engine)
-  anonAlias      String? // deterministic per-(user,conversation) incognito alias (sender-side display)
-  viewOnce       Boolean              @default(false) // Snapchat/WhatsApp view-once media gate
-  viewedAt       DateTime? // when the non-sender consumed a view-once attachment
-  viewedBy       String? // who consumed it
-  expiresAt      DateTime? // disappearing-message deadline (hard-purged after)
-  linkUrl        String? // canonical preview link (og unfurl) attached to this message
-  kind           String               @default("text") // text|image|audio|sticker|location|code|task|redpacket
-  payload        String? // JSON payload for rich kinds (sticker pack/glyph, lat/lng, code lang/source, tx data)
-  createdAt      DateTime             @default(now())
-  sender         User                 @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  conversation   Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  replyTo        Message?             @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies        Message[]            @relation("MessageReplies")
-  parent         Message?             @relation("MessageThreads", fields: [parentId], references: [id], onDelete: Cascade)
-  threadReplies  Message[]            @relation("MessageThreads")
-  reactions      Reaction[]
-  poll           Poll?
-  topic          Topic?               @relation(fields: [topicId], references: [id], onDelete: SetNull)
-  redPacket      RedPacket?
-  translations   MessageTranslation[]
-  linkPreview    LinkPreview?         @relation(fields: [linkUrl], references: [url])
-  savedBy        SavedMessage[]
+  id              String               @id @default(cuid())
+  conversationId  String
+  senderId        String
+  content         String
+  deletedAt       DateTime? // soft delete → "message deleted" tombstone
+  replyToId       String? // quoted message (reply feature)
+  imagePath       String? // stored image filename via /api/uploads (image message)
+  audioPath       String? // stored voice-note filename via /api/uploads (audio message)
+  durationMs      Int? // voice-note length in milliseconds
+  filePath        String? // R40: stored document filename via /api/uploads (file message)
+  fileName        String? // R40: original document filename shown on the bubble (1-120 chars)
+  fileSize        Int? // R40: document byte size (0..10_485_760)
+  editedAt        DateTime? // last edit timestamp (null = never edited → "edited" label)
+  pinnedAt        DateTime? // pinned within the conversation (null = not pinned)
+  pinnedBy        String? // userId who pinned (display attribution)
+  parentId        String? // Slack/Zulip thread root this reply belongs to (null = top-level)
+  topicId         String? // Zulip-style topic this message is filed under (null = General)
+  anon            Boolean              @default(false) // Session/SimpleX-style anonymous send
+  viaAutomation   Boolean              @default(false) // R39: authored by a keyword automation (never re-triggers the engine)
+  transcript      String? // R43: voice-note transcription (real ASR, cached — null = never transcribed)
+  transcribedAt   DateTime? // when the transcript was produced
+  transcribedById String? // participant who ran the transcription (any member may)
+  anonAlias       String? // deterministic per-(user,conversation) incognito alias (sender-side display)
+  viewOnce        Boolean              @default(false) // Snapchat/WhatsApp view-once media gate
+  viewedAt        DateTime? // when the non-sender consumed a view-once attachment
+  viewedBy        String? // who consumed it
+  expiresAt       DateTime? // disappearing-message deadline (hard-purged after)
+  linkUrl         String? // canonical preview link (og unfurl) attached to this message
+  kind            String               @default("text") // text|image|audio|sticker|location|code|task|redpacket
+  payload         String? // JSON payload for rich kinds (sticker pack/glyph, lat/lng, code lang/source, tx data)
+  createdAt       DateTime             @default(now())
+  sender          User                 @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  conversation    Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo         Message?             @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies         Message[]            @relation("MessageReplies")
+  parent          Message?             @relation("MessageThreads", fields: [parentId], references: [id], onDelete: Cascade)
+  threadReplies   Message[]            @relation("MessageThreads")
+  reactions       Reaction[]
+  poll            Poll?
+  topic           Topic?               @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  redPacket       RedPacket?
+  translations    MessageTranslation[]
+  linkPreview     LinkPreview?         @relation(fields: [linkUrl], references: [url])
+  savedBy         SavedMessage[]
 
   @@index([conversationId, createdAt])
   @@index([replyToId])

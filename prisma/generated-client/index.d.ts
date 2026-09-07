@@ -26915,6 +26915,9 @@ export namespace Prisma {
     topicId: string | null
     anon: boolean | null
     viaAutomation: boolean | null
+    transcript: string | null
+    transcribedAt: Date | null
+    transcribedById: string | null
     anonAlias: string | null
     viewOnce: boolean | null
     viewedAt: Date | null
@@ -26946,6 +26949,9 @@ export namespace Prisma {
     topicId: string | null
     anon: boolean | null
     viaAutomation: boolean | null
+    transcript: string | null
+    transcribedAt: Date | null
+    transcribedById: string | null
     anonAlias: string | null
     viewOnce: boolean | null
     viewedAt: Date | null
@@ -26977,6 +26983,9 @@ export namespace Prisma {
     topicId: number
     anon: number
     viaAutomation: number
+    transcript: number
+    transcribedAt: number
+    transcribedById: number
     anonAlias: number
     viewOnce: number
     viewedAt: number
@@ -27020,6 +27029,9 @@ export namespace Prisma {
     topicId?: true
     anon?: true
     viaAutomation?: true
+    transcript?: true
+    transcribedAt?: true
+    transcribedById?: true
     anonAlias?: true
     viewOnce?: true
     viewedAt?: true
@@ -27051,6 +27063,9 @@ export namespace Prisma {
     topicId?: true
     anon?: true
     viaAutomation?: true
+    transcript?: true
+    transcribedAt?: true
+    transcribedById?: true
     anonAlias?: true
     viewOnce?: true
     viewedAt?: true
@@ -27082,6 +27097,9 @@ export namespace Prisma {
     topicId?: true
     anon?: true
     viaAutomation?: true
+    transcript?: true
+    transcribedAt?: true
+    transcribedById?: true
     anonAlias?: true
     viewOnce?: true
     viewedAt?: true
@@ -27200,6 +27218,9 @@ export namespace Prisma {
     topicId: string | null
     anon: boolean
     viaAutomation: boolean
+    transcript: string | null
+    transcribedAt: Date | null
+    transcribedById: string | null
     anonAlias: string | null
     viewOnce: boolean
     viewedAt: Date | null
@@ -27250,6 +27271,9 @@ export namespace Prisma {
     topicId?: boolean
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: boolean
+    transcribedAt?: boolean
+    transcribedById?: boolean
     anonAlias?: boolean
     viewOnce?: boolean
     viewedAt?: boolean
@@ -27295,6 +27319,9 @@ export namespace Prisma {
     topicId?: boolean
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: boolean
+    transcribedAt?: boolean
+    transcribedById?: boolean
     anonAlias?: boolean
     viewOnce?: boolean
     viewedAt?: boolean
@@ -27332,6 +27359,9 @@ export namespace Prisma {
     topicId?: boolean
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: boolean
+    transcribedAt?: boolean
+    transcribedById?: boolean
     anonAlias?: boolean
     viewOnce?: boolean
     viewedAt?: boolean
@@ -27369,6 +27399,9 @@ export namespace Prisma {
     topicId?: boolean
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: boolean
+    transcribedAt?: boolean
+    transcribedById?: boolean
     anonAlias?: boolean
     viewOnce?: boolean
     viewedAt?: boolean
@@ -27380,7 +27413,7 @@ export namespace Prisma {
     createdAt?: boolean
   }
 
-  export type MessageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "senderId" | "content" | "deletedAt" | "replyToId" | "imagePath" | "audioPath" | "durationMs" | "filePath" | "fileName" | "fileSize" | "editedAt" | "pinnedAt" | "pinnedBy" | "parentId" | "topicId" | "anon" | "viaAutomation" | "anonAlias" | "viewOnce" | "viewedAt" | "viewedBy" | "expiresAt" | "linkUrl" | "kind" | "payload" | "createdAt", ExtArgs["result"]["message"]>
+  export type MessageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "senderId" | "content" | "deletedAt" | "replyToId" | "imagePath" | "audioPath" | "durationMs" | "filePath" | "fileName" | "fileSize" | "editedAt" | "pinnedAt" | "pinnedBy" | "parentId" | "topicId" | "anon" | "viaAutomation" | "transcript" | "transcribedAt" | "transcribedById" | "anonAlias" | "viewOnce" | "viewedAt" | "viewedBy" | "expiresAt" | "linkUrl" | "kind" | "payload" | "createdAt", ExtArgs["result"]["message"]>
   export type MessageInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     sender?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -27451,6 +27484,9 @@ export namespace Prisma {
       topicId: string | null
       anon: boolean
       viaAutomation: boolean
+      transcript: string | null
+      transcribedAt: Date | null
+      transcribedById: string | null
       anonAlias: string | null
       viewOnce: boolean
       viewedAt: Date | null
@@ -27915,6 +27951,9 @@ export namespace Prisma {
     readonly topicId: FieldRef<"Message", 'String'>
     readonly anon: FieldRef<"Message", 'Boolean'>
     readonly viaAutomation: FieldRef<"Message", 'Boolean'>
+    readonly transcript: FieldRef<"Message", 'String'>
+    readonly transcribedAt: FieldRef<"Message", 'DateTime'>
+    readonly transcribedById: FieldRef<"Message", 'String'>
     readonly anonAlias: FieldRef<"Message", 'String'>
     readonly viewOnce: FieldRef<"Message", 'Boolean'>
     readonly viewedAt: FieldRef<"Message", 'DateTime'>
@@ -50889,6 +50928,9 @@ export namespace Prisma {
     topicId: 'topicId',
     anon: 'anon',
     viaAutomation: 'viaAutomation',
+    transcript: 'transcript',
+    transcribedAt: 'transcribedAt',
+    transcribedById: 'transcribedById',
     anonAlias: 'anonAlias',
     viewOnce: 'viewOnce',
     viewedAt: 'viewedAt',
@@ -52635,6 +52677,9 @@ export namespace Prisma {
     topicId?: StringNullableFilter<"Message"> | string | null
     anon?: BoolFilter<"Message"> | boolean
     viaAutomation?: BoolFilter<"Message"> | boolean
+    transcript?: StringNullableFilter<"Message"> | string | null
+    transcribedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
+    transcribedById?: StringNullableFilter<"Message"> | string | null
     anonAlias?: StringNullableFilter<"Message"> | string | null
     viewOnce?: BoolFilter<"Message"> | boolean
     viewedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
@@ -52679,6 +52724,9 @@ export namespace Prisma {
     topicId?: SortOrderInput | SortOrder
     anon?: SortOrder
     viaAutomation?: SortOrder
+    transcript?: SortOrderInput | SortOrder
+    transcribedAt?: SortOrderInput | SortOrder
+    transcribedById?: SortOrderInput | SortOrder
     anonAlias?: SortOrderInput | SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrderInput | SortOrder
@@ -52726,6 +52774,9 @@ export namespace Prisma {
     topicId?: StringNullableFilter<"Message"> | string | null
     anon?: BoolFilter<"Message"> | boolean
     viaAutomation?: BoolFilter<"Message"> | boolean
+    transcript?: StringNullableFilter<"Message"> | string | null
+    transcribedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
+    transcribedById?: StringNullableFilter<"Message"> | string | null
     anonAlias?: StringNullableFilter<"Message"> | string | null
     viewOnce?: BoolFilter<"Message"> | boolean
     viewedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
@@ -52770,6 +52821,9 @@ export namespace Prisma {
     topicId?: SortOrderInput | SortOrder
     anon?: SortOrder
     viaAutomation?: SortOrder
+    transcript?: SortOrderInput | SortOrder
+    transcribedAt?: SortOrderInput | SortOrder
+    transcribedById?: SortOrderInput | SortOrder
     anonAlias?: SortOrderInput | SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrderInput | SortOrder
@@ -52809,6 +52863,9 @@ export namespace Prisma {
     topicId?: StringNullableWithAggregatesFilter<"Message"> | string | null
     anon?: BoolWithAggregatesFilter<"Message"> | boolean
     viaAutomation?: BoolWithAggregatesFilter<"Message"> | boolean
+    transcript?: StringNullableWithAggregatesFilter<"Message"> | string | null
+    transcribedAt?: DateTimeNullableWithAggregatesFilter<"Message"> | Date | string | null
+    transcribedById?: StringNullableWithAggregatesFilter<"Message"> | string | null
     anonAlias?: StringNullableWithAggregatesFilter<"Message"> | string | null
     viewOnce?: BoolWithAggregatesFilter<"Message"> | boolean
     viewedAt?: DateTimeNullableWithAggregatesFilter<"Message"> | Date | string | null
@@ -55639,6 +55696,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -55682,6 +55742,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -55715,6 +55778,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -55758,6 +55824,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -55796,6 +55865,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -55822,6 +55894,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -55852,6 +55927,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -58456,6 +58534,9 @@ export namespace Prisma {
     topicId?: SortOrder
     anon?: SortOrder
     viaAutomation?: SortOrder
+    transcript?: SortOrder
+    transcribedAt?: SortOrder
+    transcribedById?: SortOrder
     anonAlias?: SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrder
@@ -58492,6 +58573,9 @@ export namespace Prisma {
     topicId?: SortOrder
     anon?: SortOrder
     viaAutomation?: SortOrder
+    transcript?: SortOrder
+    transcribedAt?: SortOrder
+    transcribedById?: SortOrder
     anonAlias?: SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrder
@@ -58523,6 +58607,9 @@ export namespace Prisma {
     topicId?: SortOrder
     anon?: SortOrder
     viaAutomation?: SortOrder
+    transcript?: SortOrder
+    transcribedAt?: SortOrder
+    transcribedById?: SortOrder
     anonAlias?: SortOrder
     viewOnce?: SortOrder
     viewedAt?: SortOrder
@@ -62365,6 +62452,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -62406,6 +62496,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -62925,6 +63018,9 @@ export namespace Prisma {
     topicId?: StringNullableFilter<"Message"> | string | null
     anon?: BoolFilter<"Message"> | boolean
     viaAutomation?: BoolFilter<"Message"> | boolean
+    transcript?: StringNullableFilter<"Message"> | string | null
+    transcribedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
+    transcribedById?: StringNullableFilter<"Message"> | string | null
     anonAlias?: StringNullableFilter<"Message"> | string | null
     viewOnce?: BoolFilter<"Message"> | boolean
     viewedAt?: DateTimeNullableFilter<"Message"> | Date | string | null
@@ -64913,6 +65009,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -64954,6 +65053,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66602,6 +66704,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66644,6 +66749,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66681,6 +66789,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66722,6 +66833,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66764,6 +66878,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66806,6 +66923,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66843,6 +66963,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -66884,6 +67007,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -67246,6 +67372,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67288,6 +67417,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67347,6 +67479,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67389,6 +67524,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67631,6 +67769,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -67673,6 +67814,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -67744,6 +67888,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -67786,6 +67933,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68059,6 +68209,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68101,6 +68254,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68228,6 +68384,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68270,6 +68429,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68422,6 +68584,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68464,6 +68629,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68512,6 +68680,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68554,6 +68725,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68586,6 +68760,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68628,6 +68805,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68685,6 +68865,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68727,6 +68910,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68775,6 +68961,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68817,6 +69006,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -68906,6 +69098,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -68947,6 +69142,9 @@ export namespace Prisma {
     parentId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -69806,6 +70004,9 @@ export namespace Prisma {
     pinnedBy?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -69848,6 +70049,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -69919,6 +70123,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -69961,6 +70168,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -70633,6 +70843,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -70938,6 +71151,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -70979,6 +71195,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -71016,6 +71235,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -71288,6 +71510,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -71444,6 +71669,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -71485,6 +71713,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -71522,6 +71753,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -71855,6 +72089,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -71885,6 +72122,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -71931,6 +72171,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -71972,6 +72215,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72009,6 +72255,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72035,6 +72284,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72076,6 +72328,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72113,6 +72368,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72258,6 +72516,9 @@ export namespace Prisma {
     topicId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -72283,6 +72544,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72325,6 +72589,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72362,6 +72629,9 @@ export namespace Prisma {
     topicId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72391,6 +72661,9 @@ export namespace Prisma {
     parentId?: string | null
     anon?: boolean
     viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
     anonAlias?: string | null
     viewOnce?: boolean
     viewedAt?: Date | string | null
@@ -72417,6 +72690,9 @@ export namespace Prisma {
     pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72458,6 +72734,9 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -72495,6 +72774,9 @@ export namespace Prisma {
     parentId?: NullableStringFieldUpdateOperationsInput | string | null
     anon?: BoolFieldUpdateOperationsInput | boolean
     viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
     anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
     viewOnce?: BoolFieldUpdateOperationsInput | boolean
     viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
