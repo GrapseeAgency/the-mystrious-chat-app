@@ -487,6 +487,24 @@ export async function buildConversationDetail(
         select: { lastDay: true, count: true, best: true },
       })
     : null
+  // R47 — DM-only dead-end flag: a UserBlock in EITHER direction between the
+  // viewer and the other participant. Drives the composer notice; the messages
+  // POST gate stays the server-authoritative enforcement either way.
+  let dmBlocked = false
+  if (!conv.isGroup && !conv.isSelf && viewerId) {
+    const otherId = conv.participants.find((p) => p.userId !== viewerId)?.userId
+    if (otherId) {
+      dmBlocked =
+        (await db.userBlock.count({
+          where: {
+            OR: [
+              { blockerId: viewerId, blockedId: otherId },
+              { blockerId: otherId, blockedId: viewerId },
+            ],
+          },
+        })) > 0
+    }
+  }
   return {
     id: conv.id,
     isGroup: conv.isGroup,
@@ -520,6 +538,8 @@ export async function buildConversationDetail(
     // R45 additive — the viewer's server-synced composer draft (restored in
     // the composer when no local draft exists for this device/tab).
     myDraft: mine?.draft ?? null,
+    // R47 additive — DM blocked-pair dead-end flag (either direction).
+    dmBlocked,
     isSelf: conv.isSelf,
     description: conv.description,
   }

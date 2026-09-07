@@ -19,6 +19,10 @@
  *                          offline guards. NO media flows through here — WebRTC
  *                          peer-to-peer carries audio/video; this is signal only.
  *  - HTTP relay API      : POST /notify (message:new|message:deleted|message:read), POST /typing
+ *  - Privacy gating (R47) : typing relay + presence snapshots are FILTERED by
+ *                           per-user privacy flags fetched from Next's
+ *                           /api/internal/privacy (shared key, 30s TTL cache,
+ *                           fail-open). Still NO database access here.
  *  - Health probe        : GET / (or anything unknown) → { ok:true, service:'pulse-socket' }
  *
  * Routing note (verified against engine.io@6.6.9 source): because our socket.io
@@ -70,6 +74,9 @@ const socketUser = new Map<string, string>()
 
 const roomOf = (userId: string) => `user:${userId}`
 
+// R47 — superseded by visibleOnlineIds() (presence-hiding); kept for the
+// health probe's raw online count if ever needed.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const presenceSnapshot = (): string[] => Array.from(onlineUsers.keys()).sort()
 
 function addPresence(userId: string, socketId: string): void {
@@ -97,6 +104,88 @@ function dropPresence(socketId: string): boolean {
     return true // last socket closed -> user fully offline
   }
   return false
+}
+
+// ---------------------------------------------------------------------------
+// R47 — privacy-flag cache (sourced from the Next.js API; NO db access here,
+// same pattern as the scheduled-send dispatcher: HTTP + shared key).
+//   presenceVisible ← User prefs lastSeenVisible (Telegram couples last seen
+//                     AND online under one toggle)
+//   typingVisible   ← User prefs typingVisible (R47)
+// Consumers FAIL OPEN: a missing/stale flag means "visible", so an API hiccup
+// never blinds the whole mesh. Flags refresh lazily with a 30s TTL.
+// ---------------------------------------------------------------------------
+const NEXT_API_BASE = process.env.PULSE_ORIGIN ?? 'http://localhost:3000'
+const PRIVACY_KEY = process.env.CRON_SECRET ?? 'pulse-dispatch-key'
+const PRIVACY_TTL_MS = 30_000
+
+type PrivacyFlags = { typingVisible: boolean; presenceVisible: boolean }
+const privacyCache = new Map<string, { flags: PrivacyFlags; fetchedAt: number }>()
+let privacyInflight: Promise<void> | null = null
+
+async function fetchPrivacyFlags(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const stale = (id: string): boolean => {
+    const hit = privacyCache.get(id)
+    return !hit || Date.now() - hit.fetchedAt > PRIVACY_TTL_MS
+  }
+  let need = ids.filter(stale)
+  if (need.length === 0) return
+  if (privacyInflight) {
+    await privacyInflight.catch(() => {})
+    need = ids.filter(stale)
+    if (need.length === 0) return
+  }
+  privacyInflight = (async () => {
+    try {
+      const res = await fetch(
+        `${NEXT_API_BASE}/api/internal/privacy?ids=${encodeURIComponent(need.slice(0, 500).join(','))}`,
+        { headers: { 'x-pulse-key': PRIVACY_KEY }, signal: AbortSignal.timeout(5000) },
+      )
+      const body = (await res.json().catch(() => null)) as {
+        flags?: Record<string, { typingVisible?: unknown; presenceVisible?: unknown }>
+      } | null
+      if (res.ok && body && body.flags) {
+        const now = Date.now()
+        for (const [id, raw] of Object.entries(body.flags)) {
+          if (
+            raw &&
+            typeof raw.typingVisible === 'boolean' &&
+            typeof raw.presenceVisible === 'boolean'
+          ) {
+            privacyCache.set(id, {
+              flags: { typingVisible: raw.typingVisible, presenceVisible: raw.presenceVisible },
+              fetchedAt: now,
+            })
+          }
+        }
+      }
+    } catch {
+      // app may be mid-restart — fail OPEN until the next poll
+    } finally {
+      privacyInflight = null
+    }
+  })()
+  await privacyInflight
+}
+
+function privacyOf(userId: string): PrivacyFlags {
+  const hit = privacyCache.get(userId)
+  return hit?.flags ?? { typingVisible: true, presenceVisible: true }
+}
+
+/** Presence snapshot filtered to users whose "Last seen & online" toggle allows it. */
+async function visibleOnlineIds(): Promise<string[]> {
+  await fetchPrivacyFlags(Array.from(onlineUsers.keys()))
+  return Array.from(onlineUsers.keys())
+    .filter((id) => privacyOf(id).presenceVisible)
+    .sort()
+}
+
+/** Typing relay gate — drop when the sender hides typing indicators (R47). */
+async function typingAllowed(userId: string): Promise<boolean> {
+  await fetchPrivacyFlags([userId])
+  return privacyOf(userId).typingVisible
 }
 
 // ---------------------------------------------------------------------------
@@ -581,6 +670,12 @@ async function handleTypingHttp(req: IncomingMessage, res: ServerResponse): Prom
     return
   }
 
+  // R47 — typing-indicator hiding (same gate as the ws relay path).
+  if (!(await typingAllowed(userId))) {
+    sendJson(res, 200, { ok: true, delivered: 0, hidden: true })
+    return
+  }
+
   const payload = {
     conversationId,
     userId,
@@ -702,7 +797,7 @@ io.on('connection', (socket: Socket) => {
   console.log(`[ws] connect sock=${socket.id} clients=${io.engine.clientsCount}`)
 
   /** join { userId } — register presence, enter personal room, ack + snapshot broadcast */
-  socket.on('join', (raw: unknown) => {
+  socket.on('join', async (raw: unknown) => {
     const userId = asTrimmedString((raw as { userId?: unknown })?.userId ?? null)
     if (!userId || userId.length > 64) {
       console.warn(`[ws] join rejected sock=${socket.id} (bad userId)`)
@@ -716,20 +811,27 @@ io.on('connection', (socket: Socket) => {
     addPresence(userId, socket.id)
     void socket.join(roomOf(userId))
 
-    socket.emit('joined', { onlineUserIds: presenceSnapshot() })
-    io.emit('presence:snapshot', { onlineUserIds: presenceSnapshot() })
-    console.log(`[ws] join user=${userId} sock=${socket.id} online=${onlineUsers.size}`)
+    // R47 — presence-hiding: the snapshot excludes users whose "Last seen &
+    // online" toggle is off (their own client sees a filtered list too).
+    const snapshot = await visibleOnlineIds()
+    socket.emit('joined', { onlineUserIds: snapshot })
+    io.emit('presence:snapshot', { onlineUserIds: snapshot })
+    console.log(`[ws] join user=${userId} sock=${socket.id} online=${onlineUsers.size} visible=${snapshot.length}`)
   })
 
   /**
    * typing { recipients, conversationId, userId, userName, isTyping }
    * Direct client→client relay; sender's own ids are excluded defensively.
    */
-  socket.on('typing', (raw: unknown) => {
+  socket.on('typing', async (raw: unknown) => {
     const data = (raw ?? {}) as TypingBody
     const conversationId = asTrimmedString(data.conversationId)
     const userId = asTrimmedString(data.userId)
     if (!conversationId || !userId) return
+
+    // R47 — typing-indicator hiding: the sender's own privacy toggle ends the
+    // relay here (server-side, not a client courtesy).
+    if (!(await typingAllowed(userId))) return
 
     const payload = {
       conversationId,
@@ -1349,7 +1451,9 @@ io.on('connection', (socket: Socket) => {
     }
     const wentOffline = dropPresence(socket.id)
     if (wentOffline) {
-      io.emit('presence:snapshot', { onlineUserIds: presenceSnapshot() })
+      void visibleOnlineIds().then((snapshot) => {
+        io.emit('presence:snapshot', { onlineUserIds: snapshot })
+      })
       console.log(`[ws] disconnect sock=${socket.id} reason=${reason} — user went OFFLINE, online=${onlineUsers.size}`)
     } else {
       console.log(`[ws] disconnect sock=${socket.id} reason=${reason} (other sessions remain, online=${onlineUsers.size})`)

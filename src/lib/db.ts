@@ -27,14 +27,15 @@ import { PrismaClient } from '../../prisma/generated-client'
 // v13 — R45: authored pre-regen (HMR gap risk) — see v9/v11 lesson.
 // v14 — R45: bumped AFTER the ConversationParticipant.draft push + client regen
 // (post-regen rule — key change must FOLLOW the regen).
+// v15 — R47: bumped AFTER the UserBlock model push + client regen (post-regen rule).
 const globalForPrisma = globalThis as unknown as {
-  prismaV14: PrismaClient | undefined
+  prismaV15: PrismaClient | undefined
 }
 
 export const db =
-  globalForPrisma.prismaV14 ??
+  globalForPrisma.prismaV15 ??
   new PrismaClient({
     log: ['query'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV14 = db
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV15 = db

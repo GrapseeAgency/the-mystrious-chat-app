@@ -25,18 +25,20 @@
 
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion'
-import { useQuery, type UseQueryResult } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
 import { useStore } from 'zustand'
 import { toast } from 'sonner'
 import {
   Accessibility,
   AppWindow,
+  Ban,
   Bell,
   Blend,
   CalendarDays,
   Check,
   CheckCheck,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleEllipsis,
@@ -67,6 +69,7 @@ import {
   PanelBottom,
   PanelLeft,
   PanelTop,
+  PenLine,
   Pill,
   Play,
   Radar,
@@ -1219,15 +1222,62 @@ function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
 
 // ── Privacy & Security — the real synced controls ────────────
 
+/** One row of the R47 blocked-accounts manager (self-service list). */
+type BlockedAccount = {
+  id: string
+  name: string
+  username: string | null
+  avatar: string | null
+  color: string
+  blockedAt: string
+}
+
 function PrivacySection({ ctx }: { ctx: SectionCtx }) {
-  const { prefs, save } = ctx
+  const { user, prefs, save } = ctx
+  const queryClient = useQueryClient()
+  const [showBlocked, setShowBlocked] = useState(false)
+
+  const blocksQ = useQuery({
+    queryKey: ['blocked-accounts', user?.id ?? '-'],
+    queryFn: async (): Promise<BlockedAccount[]> => {
+      const res = await apiJson<{ blocks: BlockedAccount[] }>(
+        `/api/users/${user?.id}/blocks?userId=${encodeURIComponent(user?.id ?? '')}`,
+      )
+      return res.blocks
+    },
+    enabled: !!user,
+    staleTime: 10_000,
+  })
+  const unblockMutation = useMutation({
+    mutationFn: async (targetId: string) => {
+      return apiJson<{ ok: boolean }>(
+        `/api/users/${targetId}/block?userId=${encodeURIComponent(user?.id ?? '')}`,
+        { method: 'DELETE' },
+      )
+    },
+    onSuccess: () => {
+      haptic(12)
+      if (user) {
+        void queryClient.invalidateQueries({ queryKey: ['blocked-accounts', user.id] })
+        // DM dead-end notices read detail.dmBlocked — refresh live rooms too
+        void queryClient.invalidateQueries({ queryKey: ['conversation'] })
+      }
+      toast.success('Account unblocked')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Could not unblock that account')
+    },
+  })
+
+  const blocks = blocksQ.data ?? []
+
   return (
     <>
       <Group label="Visibility">
         <ToggleRow
           Icon={Eye}
           title="Last seen & online"
-          description="Let people see when you were last active on Pulse."
+          description="Let people see when you were last active or online."
           checked={prefs.lastSeenVisible}
           onCheckedChange={(v) => save({ lastSeenVisible: v })}
         />
@@ -1238,10 +1288,98 @@ function PrivacySection({ ctx }: { ctx: SectionCtx }) {
           checked={prefs.readReceipts}
           onCheckedChange={(v) => save({ readReceipts: v })}
         />
+        <ToggleRow
+          Icon={PenLine}
+          title="Typing indicator"
+          description="Show others when you're typing."
+          checked={prefs.typingVisible}
+          onCheckedChange={(v) => save({ typingVisible: v })}
+        />
+      </Group>
+      <Group label="Safety">
+        <button
+          type="button"
+          onClick={() => {
+            haptic(10)
+            setShowBlocked((v) => !v)
+            void queryClient.invalidateQueries({ queryKey: ['blocked-accounts', user?.id ?? '-'] })
+          }}
+          aria-expanded={showBlocked}
+          className="glass-row-hover flex min-h-[56px] w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none"
+        >
+          <IconTile Icon={Ban} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-semibold text-zinc-900 dark:text-zinc-100">
+              Blocked accounts
+            </span>
+            <span className="block text-[12px] leading-snug text-zinc-500 dark:text-zinc-400">
+              {blocksQ.isPending
+                ? 'Loading…'
+                : blocks.length === 0
+                  ? 'No blocked accounts'
+                  : `${blocks.length} ${blocks.length === 1 ? 'account' : 'accounts'} blocked`}
+            </span>
+          </span>
+          <ChevronDown
+            className={cn(
+              'size-4 shrink-0 text-zinc-400 transition-transform dark:text-zinc-500',
+              showBlocked && 'rotate-180',
+            )}
+            aria-hidden
+          />
+        </button>
+        {showBlocked ? (
+          <div className="px-1 pb-1">
+            {blocksQ.isError ? (
+              <p className="rounded-xl border border-dashed border-zinc-300 px-3 py-3 text-center text-xs text-zinc-500 dark:border-zinc-700">
+                Could not load the list.
+              </p>
+            ) : blocks.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-zinc-300 px-3 py-3 text-center text-xs text-zinc-500 dark:border-zinc-700">
+                Nobody is blocked. Blocked accounts cannot message you in direct chats.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {blocks.map((account) => (
+                  <li
+                    key={account.id}
+                    className="glass-row-hover flex min-h-[52px] items-center gap-2.5 rounded-xl px-2 py-1.5"
+                  >
+                    <UserAvatar
+                      name={account.name}
+                      color={account.color}
+                      avatar={account.avatar}
+                      size={34}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">
+                        {account.name}
+                      </span>
+                      <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">
+                        Blocked {new Date(account.blockedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={unblockMutation.isPending}
+                      onClick={() => unblockMutation.mutate(account.id)}
+                      className="h-8 shrink-0 rounded-full px-3.5 text-[12px] font-semibold"
+                    >
+                      Unblock
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
       </Group>
       <FooterNote>
-        These sync to your Pulse account. Typing-indicator hiding and blocked accounts are not
-        configurable yet — no fake switches are shown for them.
+        These sync to your Pulse account and are enforced server-side — hidden
+        last-seen also hides your online status, hidden typing ends the relay
+        before it reaches anyone, and blocked accounts cannot DM you.
       </FooterNote>
     </>
   )

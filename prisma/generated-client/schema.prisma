@@ -45,8 +45,29 @@ model User {
   streaks            ConversationStreak[]
   verificationsGiven UserVerification[]        @relation("verificationOwner")
   automationsCreated Automation[]              @relation("AutomationCreator")
+  blocksIssued       UserBlock[]               @relation("BlocksIssued")
+  blocksReceived     UserBlock[]               @relation("BlocksReceived")
 
   @@index([name])
+}
+
+/**
+ * R47 — WhatsApp/Telegram-style account block. One row per direction:
+ * blocker never wants contact from blocked. Enforcement lives at the
+ * API boundary (DM creation + DM message send); group chats are NOT
+ * affected (shared groups still work — matches WhatsApp semantics).
+ */
+model UserBlock {
+  id        String   @id @default(cuid())
+  blockerId String // the user who issued the block
+  blockedId String // the user who is blocked
+  createdAt DateTime @default(now())
+  blocker   User     @relation("BlocksIssued", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
 }
 
 /**

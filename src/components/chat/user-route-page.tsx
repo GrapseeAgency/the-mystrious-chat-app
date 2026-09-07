@@ -30,6 +30,7 @@ import {
   ChevronRight,
   Copy,
   LoaderCircle,
+  Ban,
   MessageCircle,
   UserX,
 } from 'lucide-react'
@@ -212,6 +213,46 @@ function UserPageBody({
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Could not start the chat')
+    },
+  })
+
+  // R47 — block pair-state + toggle (mirrors the profile sheet's row).
+  const blockQ = useQuery({
+    queryKey: ['block-pair', me?.id ?? '-', userId],
+    queryFn: async (): Promise<boolean> => {
+      const res = await apiJson<{ blocked: boolean }>(
+        `/api/users/${userId}/block?userId=${encodeURIComponent(me?.id ?? '')}`,
+      )
+      return res.blocked
+    },
+    enabled: !!me,
+    staleTime: 10_000,
+  })
+  const blockMutation = useMutation({
+    mutationFn: async (next: boolean) => {
+      if (next) {
+        return apiJson<{ ok: boolean }>(`/api/users/${userId}/block`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me?.id }),
+        })
+      }
+      return apiJson<{ ok: boolean }>(
+        `/api/users/${userId}/block?userId=${encodeURIComponent(me?.id ?? '')}`,
+        { method: 'DELETE' },
+      )
+    },
+    onSuccess: (_data, next) => {
+      haptic(14)
+      if (me) {
+        void queryClient.invalidateQueries({ queryKey: ['block-pair', me.id, userId] })
+        // DM dead-end notices read detail.dmBlocked — refresh live rooms too
+        void queryClient.invalidateQueries({ queryKey: ['conversation'] })
+      }
+      toast.success(next ? `Blocked ${user?.name ?? 'account'}` : `Unblocked ${user?.name ?? 'account'}`)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Could not update the block')
     },
   })
 
@@ -539,6 +580,27 @@ function UserPageBody({
               <Copy className="size-4" aria-hidden />
             </motion.button>
           </motion.div>
+
+          {/* ── R47 — block / unblock (danger quiet row; toggles in place) ── */}
+          {me && user.id !== me.id ? (
+            <motion.button
+              type="button"
+              onClick={() => blockMutation.mutate(!(blockQ.data ?? false))}
+              disabled={blockMutation.isPending || blockQ.isPending}
+              aria-pressed={blockQ.data ?? false}
+              aria-label={blockQ.data ? `Unblock ${user.name}` : `Block ${user.name}`}
+              whileTap={reducedMotion ? undefined : pressTap}
+              transition={pressSpring}
+              className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] px-3 py-2.5 text-[13px] font-bold text-rose-600 outline-none transition-colors hover:bg-rose-500/[0.12] disabled:opacity-50 dark:text-rose-400"
+            >
+              {blockMutation.isPending || blockQ.isPending ? (
+                <LoaderCircle className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Ban className="size-4" aria-hidden />
+              )}
+              {blockQ.data ? `Unblock ${firstName}` : `Block ${firstName}`}
+            </motion.button>
+          ) : null}
           {!me ? (
             <p className="mt-2 text-center text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
               Sign in to start a chat with {firstName}.

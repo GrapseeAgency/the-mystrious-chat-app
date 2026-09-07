@@ -433,6 +433,34 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
+  // R47 — blocked accounts: in a DM, a UserBlock in EITHER direction ends
+  // the conversation. Server-authoritative 403; the composer also renders
+  // a dead-end notice from detail.dmBlocked. Group chats are untouched
+  // (shared groups still work — WhatsApp semantics).
+  if (!conv.isGroup) {
+    const others = await db.conversationParticipant.findMany({
+      where: { conversationId: id, userId: { not: senderId } },
+      select: { userId: true },
+    })
+    if (others.length > 0) {
+      const blockRow = await db.userBlock.findFirst({
+        where: {
+          OR: others.flatMap((o) => [
+            { blockerId: senderId, blockedId: o.userId },
+            { blockerId: o.userId, blockedId: senderId },
+          ]),
+        },
+        select: { id: true },
+      })
+      if (blockRow) {
+        return NextResponse.json(
+          { error: 'You can no longer message this account.' },
+          { status: 403 },
+        )
+      }
+    }
+  }
+
   // R44 — Telegram-style slow mode: members must wait slowModeSeconds between
   // sends; admins are always exempt. The window counts the ACT of sending —
   // soft-deleted messages still consume it (delete-then-resend cannot bypass),

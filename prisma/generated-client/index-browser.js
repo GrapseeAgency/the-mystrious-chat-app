@@ -135,6 +135,13 @@ exports.Prisma.UserScalarFieldEnum = {
   xpDay: 'xpDay'
 };
 
+exports.Prisma.UserBlockScalarFieldEnum = {
+  id: 'id',
+  blockerId: 'blockerId',
+  blockedId: 'blockedId',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.ReminderScalarFieldEnum = {
   id: 'id',
   userId: 'userId',
@@ -558,6 +565,7 @@ exports.Prisma.NullsOrder = {
 
 exports.Prisma.ModelName = {
   User: 'User',
+  UserBlock: 'UserBlock',
   Reminder: 'Reminder',
   ConversationStreak: 'ConversationStreak',
   CallLog: 'CallLog',

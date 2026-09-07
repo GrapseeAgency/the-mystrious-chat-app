@@ -25,6 +25,8 @@ export type PulsePrefs = {
   lastSeenVisible: boolean
   /** Send read receipts (privacy). */
   readReceipts: boolean
+  /** Broadcast typing indicators (privacy, R47). */
+  typingVisible: boolean
   /** Reduce non-essential motion (effects/parallax) app-wide. */
   reducedMotion: boolean
   /** WebGL ambient field mode — see src/components/fx/webgl-glow.tsx (WEBGL_MODES). */
@@ -42,6 +44,7 @@ export const DEFAULT_PREFERENCES: PulsePrefs = {
   notifVibrate: false,
   lastSeenVisible: true,
   readReceipts: true,
+  typingVisible: true,
   reducedMotion: false,
 }
 
@@ -83,6 +86,7 @@ export function mergePrefs(raw: unknown): PulsePrefs {
     'notifVibrate',
     'lastSeenVisible',
     'readReceipts',
+    'typingVisible',
     'reducedMotion',
   ] as const) {
     if (typeof p[k] === 'boolean') out[k] = p[k] as boolean

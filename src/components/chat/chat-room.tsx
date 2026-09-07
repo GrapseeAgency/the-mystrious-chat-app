@@ -79,6 +79,7 @@ import {
   Search,
   SendHorizontal,
   ShieldCheck,
+  Ban,
   Smile,
   Sparkles,
   SquareKanban,
@@ -2273,6 +2274,9 @@ export function ChatRoom({
   /** viewer's group role → announcement-mode lockout */
   const myRole = detailData?.members.find((m) => m.id === me.id)?.role ?? 'member'
   const broadcastLocked = isGroup && (detailData?.broadcastMode ?? false) && myRole !== 'admin'
+  // R47 — blocked-pair DM dead-end: the composer is replaced by a notice;
+  // the messages POST 403 stays the server-authoritative enforcement.
+  const dmBlocked = !isGroup && (detailData?.dmBlocked ?? false)
 
   // ── R23: red packets + kanban + events — palette events open them ──
   const redPacket = useRedPacketSheet(conversationId, me.id)
@@ -4943,6 +4947,17 @@ export function ChatRoom({
           </div>
         ) : null}
 
+        {dmBlocked ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="glass-deep glass-sheen flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400"
+          >
+            <Ban className="size-4 shrink-0 text-rose-500" aria-hidden />
+            You can no longer message this account
+          </div>
+        ) : null}
+
         <div
           onFocusCapture={() => setComposerFocus(true)}
           onBlurCapture={(e) => {
@@ -4951,6 +4966,7 @@ export function ChatRoom({
           className={cn(
             'relative flex items-end gap-1 rounded-[26px] p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.18)] backdrop-blur-2xl bg-white/80 ring-1 ring-inset ring-black/[0.06] dark:bg-zinc-900/70 dark:ring-white/10 dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]',
             broadcastLocked && 'pointer-events-none select-none opacity-40',
+            dmBlocked && 'hidden',
           )}
         >
           {/* emerald focus hairline — springs in whenever the capsule holds focus */}

@@ -127,9 +127,29 @@ export async function POST(req: Request) {
           { status: 500 },
         )
       }
+      // R47 — an EXISTING DM stays openable even when blocked (WhatsApp
+      // parity: history visible, composer dead-ended by the send gate).
       return NextResponse.json({
         conversation: await buildConversationSummary(full, creatorId),
       }) // 200 — deduped
+    }
+
+    // R47 — NEW DM with a blocked pair (either direction) is refused at
+    // creation time; the messages POST gate enforces it per-send after.
+    const blockRow = await db.userBlock.findFirst({
+      where: {
+        OR: [
+          { blockerId: distinctIds[0], blockedId: distinctIds[1] },
+          { blockerId: distinctIds[1], blockedId: distinctIds[0] },
+        ],
+      },
+      select: { id: true },
+    })
+    if (blockRow) {
+      return NextResponse.json(
+        { error: "You can't message this account." },
+        { status: 403 },
+      )
     }
   } else {
     if (distinctIds.length < 3) {

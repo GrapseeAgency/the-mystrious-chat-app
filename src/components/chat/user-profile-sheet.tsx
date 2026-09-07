@@ -28,6 +28,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BadgeCheck,
+  Ban,
   Check,
   Copy,
   LoaderCircle,
@@ -144,6 +145,46 @@ export function UserProfileSheet({
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Could not open that chat')
+    },
+  })
+
+  // R47 — block pair-state (is THIS user blocked by me?) + the toggle.
+  const blockQ = useQuery({
+    queryKey: ['block-pair', me?.id ?? '-', user?.id ?? '-'],
+    queryFn: async (): Promise<boolean> => {
+      const res = await apiJson<{ blocked: boolean }>(
+        `/api/users/${user?.id}/block?userId=${encodeURIComponent(me?.id ?? '')}`,
+      )
+      return res.blocked
+    },
+    enabled: open && !!me && !!user && user.id !== me.id,
+    staleTime: 10_000,
+  })
+  const blockMutation = useMutation({
+    mutationFn: async (next: boolean) => {
+      if (next) {
+        return apiJson<{ ok: boolean }>(`/api/users/${user?.id}/block`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me?.id }),
+        })
+      }
+      return apiJson<{ ok: boolean }>(
+        `/api/users/${user?.id}/block?userId=${encodeURIComponent(me?.id ?? '')}`,
+        { method: 'DELETE' },
+      )
+    },
+    onSuccess: (_data, next) => {
+      haptic(14)
+      if (me && user) {
+        void queryClient.invalidateQueries({ queryKey: ['block-pair', me.id, user.id] })
+        // the DM composer reads detail.dmBlocked — refresh any live rooms
+        void queryClient.invalidateQueries({ queryKey: ['conversation'] })
+      }
+      toast.success(next ? `Blocked ${user?.name ?? 'account'}` : `Unblocked ${user?.name ?? 'account'}`)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Could not update the block')
     },
   })
 
@@ -437,6 +478,28 @@ export function UserProfileSheet({
               </motion.button>
             ) : null}
           </motion.div>
+
+          {/* ── R47 — block / unblock (danger quiet row; toggles in place) ── */}
+          {me && user.id !== me.id ? (
+            <motion.button
+              variants={itemVariants}
+              type="button"
+              onClick={() => blockMutation.mutate(!(blockQ.data ?? false))}
+              disabled={blockMutation.isPending || blockQ.isPending}
+              aria-pressed={blockQ.data ?? false}
+              aria-label={blockQ.data ? `Unblock ${user.name}` : `Block ${user.name}`}
+              whileTap={reducedMotion ? undefined : pressTap}
+              transition={pressSpring}
+              className="flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] px-3 py-2.5 text-[13px] font-bold text-rose-600 outline-none transition-colors hover:bg-rose-500/[0.12] disabled:opacity-50 dark:text-rose-400"
+            >
+              {blockMutation.isPending || blockQ.isPending ? (
+                <LoaderCircle className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Ban className="size-4" aria-hidden />
+              )}
+              {blockQ.data ? `Unblock ${firstName}` : `Block ${firstName}`}
+            </motion.button>
+          ) : null}
         </motion.div>
       </DrawerContent>
     </Drawer>

@@ -213,6 +213,9 @@ export interface ConversationDetail {
   /** R45 — the viewer's server-synced composer draft (restored in the composer
    * when this device has no local draft for the conversation). */
   myDraft: string | null
+  /** R47 additive — DM blocked-pair dead-end flag (a UserBlock exists in
+   *  EITHER direction). The composer renders a notice instead of the input. */
+  dmBlocked?: boolean
   isSelf: boolean // Signal-style Note to Self conversation
   description: string // channel/group purpose line (R30-c)
 }
