@@ -1662,3 +1662,16 @@ Stage Summary:
 - Honest gaps: the composer countdown only arms on a 429 (no proactive pre-send countdown — the server stays the only enforcement, UI never blocks sends the server would allow); slow mode exempts admins entirely (Telegram parity) so a single-admin group has no way to throttle admins; mark-as-unread has no swipe-chip shortcut (menu-only, matching WhatsApp's menu placement); broadcast-channel rows open via the Channels page so the dot-clear-on-open was proven on a group (the read route is conversation-agnostic — same code path)
 - Living demo: QA group keeps slowModeSeconds=10 ON (Bob throttled, Alice exempt); R43 voice-transcription demo intact in the DM
 - Evidence: download/qa-r44-01..25 (chats/member-429/countdown-cleared/admin-row/presets/30s-toast/menu/dot/dark-mode), all through the :81 gateway
+---
+Task ID: R44-ship (lead addendum)
+Agent: orchestrator (Z.ai Code)
+Task: Shipping note — commit landed; GitHub push BLOCKED by environment credential wipe
+
+Work Log:
+- Committed a494ff6 on main (R44: slow mode + mark-as-unread + ChatOptionsSheet dup-key fix + dark pass)
+- git push origin main FAILED: the GitHub PAT that previous waves re-seeded into ~/.git-credentials was wiped AGAIN by the environment reset, and no copy survives anywhere in this sandbox (checked env, .env [only DATABASE_URL], git config --global [no helper], ~/.ssh absent)
+- STOPGAP: recreated the local bare mirror /home/z/pulse-mirror.git and pushed main there (backup remote) — the R44 commit is durably stored in TWO sandbox locations
+- NEXT WAVE MUST: obtain a fresh GitHub PAT (from the user), write https://<token>@github.com into ~/.git-credentials with credential.helper=store, then `git push origin main` — origin is https://github.com/GrapseeAgency/the-mystrious-chat-app.git and local main is a494ff6 (origin/main still at 9dbf8f8 / R43)
+
+Stage Summary:
+- Local state: main == a494ff6 (R44), mirror == a494ff6, origin == 9dbf8f8 (R43) — PUSH PENDING CREDENTIALS
