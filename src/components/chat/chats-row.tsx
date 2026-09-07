@@ -31,6 +31,8 @@ export interface ConversationRowProps {
   /** unsent composer draft persisted for this conversation (null = none) */
   draft: string | null
   unreadCount: number
+  /** R44: viewer flagged this row mark-as-unread — dot even at 0 unread */
+  manualUnread?: boolean
   // avatar inputs
   dmName: string | null
   dmColor: string
@@ -120,6 +122,7 @@ export const ConversationRow = memo(function ConversationRow({
   previewDeleted,
   draft,
   unreadCount,
+  manualUnread = false,
   dmName,
   dmColor,
   groupTitle,
@@ -142,7 +145,9 @@ export const ConversationRow = memo(function ConversationRow({
   onPin,
   onArchive,
 }: ConversationRowProps) {
-  const hasUnread = unreadCount > 0
+  // R44: manualUnread keeps the row's unread semantics alive even when the
+  // server count is 0 (the mark-as-unread dot) — one flag for all styling.
+  const hasUnread = unreadCount > 0 || manualUnread
   const reducedMotion = useReducedMotion()
   /** R34-a: heat ring level for a live peer streak (null = no ring) */
   const streakHeat =
@@ -449,15 +454,28 @@ export const ConversationRow = memo(function ConversationRow({
                   </p>
                 )}
                 {hasUnread && !muted ? (
-                  <motion.span
-                    key={unreadCount}
-                    initial={reducedMotion ? false : { scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={spring.bouncy}
-                    className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
-                  >
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </motion.span>
+                  unreadCount > 0 ? (
+                    <motion.span
+                      key={unreadCount}
+                      initial={reducedMotion ? false : { scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={spring.bouncy}
+                      className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
+                    >
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="manual-unread-dot"
+                      initial={reducedMotion ? false : { scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={spring.bouncy}
+                      aria-label="Marked as unread"
+                      className="mx-[3px] flex size-3 shrink-0 items-center justify-center rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
+                    >
+                      <span className="sr-only">Marked as unread</span>
+                    </motion.span>
+                  )
                 ) : muted ? (
                   <motion.span
                     key={unreadCount}

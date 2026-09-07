@@ -18819,10 +18819,12 @@ export namespace Prisma {
 
   export type ConversationAvgAggregateOutputType = {
     ttlSeconds: number | null
+    slowModeSeconds: number | null
   }
 
   export type ConversationSumAggregateOutputType = {
     ttlSeconds: number | null
+    slowModeSeconds: number | null
   }
 
   export type ConversationMinAggregateOutputType = {
@@ -18835,6 +18837,7 @@ export namespace Prisma {
     ttlSeconds: number | null
     broadcastMode: boolean | null
     screenPrivacy: boolean | null
+    slowModeSeconds: number | null
     isSelf: boolean | null
     appKey: string | null
     createdAt: Date | null
@@ -18851,6 +18854,7 @@ export namespace Prisma {
     ttlSeconds: number | null
     broadcastMode: boolean | null
     screenPrivacy: boolean | null
+    slowModeSeconds: number | null
     isSelf: boolean | null
     appKey: string | null
     createdAt: Date | null
@@ -18867,6 +18871,7 @@ export namespace Prisma {
     ttlSeconds: number
     broadcastMode: number
     screenPrivacy: number
+    slowModeSeconds: number
     isSelf: number
     appKey: number
     createdAt: number
@@ -18877,10 +18882,12 @@ export namespace Prisma {
 
   export type ConversationAvgAggregateInputType = {
     ttlSeconds?: true
+    slowModeSeconds?: true
   }
 
   export type ConversationSumAggregateInputType = {
     ttlSeconds?: true
+    slowModeSeconds?: true
   }
 
   export type ConversationMinAggregateInputType = {
@@ -18893,6 +18900,7 @@ export namespace Prisma {
     ttlSeconds?: true
     broadcastMode?: true
     screenPrivacy?: true
+    slowModeSeconds?: true
     isSelf?: true
     appKey?: true
     createdAt?: true
@@ -18909,6 +18917,7 @@ export namespace Prisma {
     ttlSeconds?: true
     broadcastMode?: true
     screenPrivacy?: true
+    slowModeSeconds?: true
     isSelf?: true
     appKey?: true
     createdAt?: true
@@ -18925,6 +18934,7 @@ export namespace Prisma {
     ttlSeconds?: true
     broadcastMode?: true
     screenPrivacy?: true
+    slowModeSeconds?: true
     isSelf?: true
     appKey?: true
     createdAt?: true
@@ -19028,6 +19038,7 @@ export namespace Prisma {
     ttlSeconds: number
     broadcastMode: boolean
     screenPrivacy: boolean
+    slowModeSeconds: number
     isSelf: boolean
     appKey: string | null
     createdAt: Date
@@ -19063,6 +19074,7 @@ export namespace Prisma {
     ttlSeconds?: boolean
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: boolean
     isSelf?: boolean
     appKey?: boolean
     createdAt?: boolean
@@ -19091,6 +19103,7 @@ export namespace Prisma {
     ttlSeconds?: boolean
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: boolean
     isSelf?: boolean
     appKey?: boolean
     createdAt?: boolean
@@ -19107,6 +19120,7 @@ export namespace Prisma {
     ttlSeconds?: boolean
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: boolean
     isSelf?: boolean
     appKey?: boolean
     createdAt?: boolean
@@ -19123,13 +19137,14 @@ export namespace Prisma {
     ttlSeconds?: boolean
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: boolean
     isSelf?: boolean
     appKey?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }
 
-  export type ConversationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "isGroup" | "name" | "description" | "photo" | "inviteCode" | "ttlSeconds" | "broadcastMode" | "screenPrivacy" | "isSelf" | "appKey" | "createdAt" | "updatedAt", ExtArgs["result"]["conversation"]>
+  export type ConversationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "isGroup" | "name" | "description" | "photo" | "inviteCode" | "ttlSeconds" | "broadcastMode" | "screenPrivacy" | "slowModeSeconds" | "isSelf" | "appKey" | "createdAt" | "updatedAt", ExtArgs["result"]["conversation"]>
   export type ConversationInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     participants?: boolean | Conversation$participantsArgs<ExtArgs>
     messages?: boolean | Conversation$messagesArgs<ExtArgs>
@@ -19172,6 +19187,7 @@ export namespace Prisma {
       ttlSeconds: number
       broadcastMode: boolean
       screenPrivacy: boolean
+      slowModeSeconds: number
       isSelf: boolean
       appKey: string | null
       createdAt: Date
@@ -19619,6 +19635,7 @@ export namespace Prisma {
     readonly ttlSeconds: FieldRef<"Conversation", 'Int'>
     readonly broadcastMode: FieldRef<"Conversation", 'Boolean'>
     readonly screenPrivacy: FieldRef<"Conversation", 'Boolean'>
+    readonly slowModeSeconds: FieldRef<"Conversation", 'Int'>
     readonly isSelf: FieldRef<"Conversation", 'Boolean'>
     readonly appKey: FieldRef<"Conversation", 'String'>
     readonly createdAt: FieldRef<"Conversation", 'DateTime'>
@@ -25753,6 +25770,7 @@ export namespace Prisma {
     archivedAt: Date | null
     handRaisedAt: Date | null
     screenPrivacy: boolean | null
+    manualUnread: boolean | null
   }
 
   export type ConversationParticipantMaxAggregateOutputType = {
@@ -25767,6 +25785,7 @@ export namespace Prisma {
     archivedAt: Date | null
     handRaisedAt: Date | null
     screenPrivacy: boolean | null
+    manualUnread: boolean | null
   }
 
   export type ConversationParticipantCountAggregateOutputType = {
@@ -25781,6 +25800,7 @@ export namespace Prisma {
     archivedAt: number
     handRaisedAt: number
     screenPrivacy: number
+    manualUnread: number
     _all: number
   }
 
@@ -25797,6 +25817,7 @@ export namespace Prisma {
     archivedAt?: true
     handRaisedAt?: true
     screenPrivacy?: true
+    manualUnread?: true
   }
 
   export type ConversationParticipantMaxAggregateInputType = {
@@ -25811,6 +25832,7 @@ export namespace Prisma {
     archivedAt?: true
     handRaisedAt?: true
     screenPrivacy?: true
+    manualUnread?: true
   }
 
   export type ConversationParticipantCountAggregateInputType = {
@@ -25825,6 +25847,7 @@ export namespace Prisma {
     archivedAt?: true
     handRaisedAt?: true
     screenPrivacy?: true
+    manualUnread?: true
     _all?: true
   }
 
@@ -25912,6 +25935,7 @@ export namespace Prisma {
     archivedAt: Date | null
     handRaisedAt: Date | null
     screenPrivacy: boolean
+    manualUnread: boolean
     _count: ConversationParticipantCountAggregateOutputType | null
     _min: ConversationParticipantMinAggregateOutputType | null
     _max: ConversationParticipantMaxAggregateOutputType | null
@@ -25943,6 +25967,7 @@ export namespace Prisma {
     archivedAt?: boolean
     handRaisedAt?: boolean
     screenPrivacy?: boolean
+    manualUnread?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["conversationParticipant"]>
@@ -25959,6 +25984,7 @@ export namespace Prisma {
     archivedAt?: boolean
     handRaisedAt?: boolean
     screenPrivacy?: boolean
+    manualUnread?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["conversationParticipant"]>
@@ -25975,6 +26001,7 @@ export namespace Prisma {
     archivedAt?: boolean
     handRaisedAt?: boolean
     screenPrivacy?: boolean
+    manualUnread?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["conversationParticipant"]>
@@ -25991,9 +26018,10 @@ export namespace Prisma {
     archivedAt?: boolean
     handRaisedAt?: boolean
     screenPrivacy?: boolean
+    manualUnread?: boolean
   }
 
-  export type ConversationParticipantOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "conversationId" | "role" | "joinedAt" | "lastReadAt" | "pinnedAt" | "mutedUntil" | "archivedAt" | "handRaisedAt" | "screenPrivacy", ExtArgs["result"]["conversationParticipant"]>
+  export type ConversationParticipantOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "conversationId" | "role" | "joinedAt" | "lastReadAt" | "pinnedAt" | "mutedUntil" | "archivedAt" | "handRaisedAt" | "screenPrivacy" | "manualUnread", ExtArgs["result"]["conversationParticipant"]>
   export type ConversationParticipantInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -26025,6 +26053,7 @@ export namespace Prisma {
       archivedAt: Date | null
       handRaisedAt: Date | null
       screenPrivacy: boolean
+      manualUnread: boolean
     }, ExtArgs["result"]["conversationParticipant"]>
     composites: {}
   }
@@ -26461,6 +26490,7 @@ export namespace Prisma {
     readonly archivedAt: FieldRef<"ConversationParticipant", 'DateTime'>
     readonly handRaisedAt: FieldRef<"ConversationParticipant", 'DateTime'>
     readonly screenPrivacy: FieldRef<"ConversationParticipant", 'Boolean'>
+    readonly manualUnread: FieldRef<"ConversationParticipant", 'Boolean'>
   }
     
 
@@ -50818,6 +50848,7 @@ export namespace Prisma {
     ttlSeconds: 'ttlSeconds',
     broadcastMode: 'broadcastMode',
     screenPrivacy: 'screenPrivacy',
+    slowModeSeconds: 'slowModeSeconds',
     isSelf: 'isSelf',
     appKey: 'appKey',
     createdAt: 'createdAt',
@@ -50902,7 +50933,8 @@ export namespace Prisma {
     mutedUntil: 'mutedUntil',
     archivedAt: 'archivedAt',
     handRaisedAt: 'handRaisedAt',
-    screenPrivacy: 'screenPrivacy'
+    screenPrivacy: 'screenPrivacy',
+    manualUnread: 'manualUnread'
   };
 
   export type ConversationParticipantScalarFieldEnum = (typeof ConversationParticipantScalarFieldEnum)[keyof typeof ConversationParticipantScalarFieldEnum]
@@ -52123,6 +52155,7 @@ export namespace Prisma {
     ttlSeconds?: IntFilter<"Conversation"> | number
     broadcastMode?: BoolFilter<"Conversation"> | boolean
     screenPrivacy?: BoolFilter<"Conversation"> | boolean
+    slowModeSeconds?: IntFilter<"Conversation"> | number
     isSelf?: BoolFilter<"Conversation"> | boolean
     appKey?: StringNullableFilter<"Conversation"> | string | null
     createdAt?: DateTimeFilter<"Conversation"> | Date | string
@@ -52150,6 +52183,7 @@ export namespace Prisma {
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
     screenPrivacy?: SortOrder
+    slowModeSeconds?: SortOrder
     isSelf?: SortOrder
     appKey?: SortOrderInput | SortOrder
     createdAt?: SortOrder
@@ -52181,6 +52215,7 @@ export namespace Prisma {
     ttlSeconds?: IntFilter<"Conversation"> | number
     broadcastMode?: BoolFilter<"Conversation"> | boolean
     screenPrivacy?: BoolFilter<"Conversation"> | boolean
+    slowModeSeconds?: IntFilter<"Conversation"> | number
     isSelf?: BoolFilter<"Conversation"> | boolean
     createdAt?: DateTimeFilter<"Conversation"> | Date | string
     updatedAt?: DateTimeFilter<"Conversation"> | Date | string
@@ -52207,6 +52242,7 @@ export namespace Prisma {
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
     screenPrivacy?: SortOrder
+    slowModeSeconds?: SortOrder
     isSelf?: SortOrder
     appKey?: SortOrderInput | SortOrder
     createdAt?: SortOrder
@@ -52231,6 +52267,7 @@ export namespace Prisma {
     ttlSeconds?: IntWithAggregatesFilter<"Conversation"> | number
     broadcastMode?: BoolWithAggregatesFilter<"Conversation"> | boolean
     screenPrivacy?: BoolWithAggregatesFilter<"Conversation"> | boolean
+    slowModeSeconds?: IntWithAggregatesFilter<"Conversation"> | number
     isSelf?: BoolWithAggregatesFilter<"Conversation"> | boolean
     appKey?: StringNullableWithAggregatesFilter<"Conversation"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"Conversation"> | Date | string
@@ -52580,6 +52617,7 @@ export namespace Prisma {
     archivedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     handRaisedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     screenPrivacy?: BoolFilter<"ConversationParticipant"> | boolean
+    manualUnread?: BoolFilter<"ConversationParticipant"> | boolean
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
   }
@@ -52596,6 +52634,7 @@ export namespace Prisma {
     archivedAt?: SortOrderInput | SortOrder
     handRaisedAt?: SortOrderInput | SortOrder
     screenPrivacy?: SortOrder
+    manualUnread?: SortOrder
     user?: UserOrderByWithRelationInput
     conversation?: ConversationOrderByWithRelationInput
   }
@@ -52616,6 +52655,7 @@ export namespace Prisma {
     archivedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     handRaisedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     screenPrivacy?: BoolFilter<"ConversationParticipant"> | boolean
+    manualUnread?: BoolFilter<"ConversationParticipant"> | boolean
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
   }, "id" | "userId_conversationId">
@@ -52632,6 +52672,7 @@ export namespace Prisma {
     archivedAt?: SortOrderInput | SortOrder
     handRaisedAt?: SortOrderInput | SortOrder
     screenPrivacy?: SortOrder
+    manualUnread?: SortOrder
     _count?: ConversationParticipantCountOrderByAggregateInput
     _max?: ConversationParticipantMaxOrderByAggregateInput
     _min?: ConversationParticipantMinOrderByAggregateInput
@@ -52652,6 +52693,7 @@ export namespace Prisma {
     archivedAt?: DateTimeNullableWithAggregatesFilter<"ConversationParticipant"> | Date | string | null
     handRaisedAt?: DateTimeNullableWithAggregatesFilter<"ConversationParticipant"> | Date | string | null
     screenPrivacy?: BoolWithAggregatesFilter<"ConversationParticipant"> | boolean
+    manualUnread?: BoolWithAggregatesFilter<"ConversationParticipant"> | boolean
   }
 
   export type MessageWhereInput = {
@@ -55097,6 +55139,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -55124,6 +55167,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -55151,6 +55195,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -55178,6 +55223,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -55205,6 +55251,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -55221,6 +55268,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -55237,6 +55285,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -55595,6 +55644,7 @@ export namespace Prisma {
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
+    manualUnread?: boolean
     user: UserCreateNestedOneWithoutParticipationsInput
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
   }
@@ -55611,6 +55661,7 @@ export namespace Prisma {
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
+    manualUnread?: boolean
   }
 
   export type ConversationParticipantUpdateInput = {
@@ -55623,6 +55674,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
   }
@@ -55639,6 +55691,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type ConversationParticipantCreateManyInput = {
@@ -55653,6 +55706,7 @@ export namespace Prisma {
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
+    manualUnread?: boolean
   }
 
   export type ConversationParticipantUpdateManyMutationInput = {
@@ -55665,6 +55719,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type ConversationParticipantUncheckedUpdateManyInput = {
@@ -55679,6 +55734,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type MessageCreateInput = {
@@ -58142,6 +58198,7 @@ export namespace Prisma {
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
     screenPrivacy?: SortOrder
+    slowModeSeconds?: SortOrder
     isSelf?: SortOrder
     appKey?: SortOrder
     createdAt?: SortOrder
@@ -58150,6 +58207,7 @@ export namespace Prisma {
 
   export type ConversationAvgOrderByAggregateInput = {
     ttlSeconds?: SortOrder
+    slowModeSeconds?: SortOrder
   }
 
   export type ConversationMaxOrderByAggregateInput = {
@@ -58162,6 +58220,7 @@ export namespace Prisma {
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
     screenPrivacy?: SortOrder
+    slowModeSeconds?: SortOrder
     isSelf?: SortOrder
     appKey?: SortOrder
     createdAt?: SortOrder
@@ -58178,6 +58237,7 @@ export namespace Prisma {
     ttlSeconds?: SortOrder
     broadcastMode?: SortOrder
     screenPrivacy?: SortOrder
+    slowModeSeconds?: SortOrder
     isSelf?: SortOrder
     appKey?: SortOrder
     createdAt?: SortOrder
@@ -58186,6 +58246,7 @@ export namespace Prisma {
 
   export type ConversationSumOrderByAggregateInput = {
     ttlSeconds?: SortOrder
+    slowModeSeconds?: SortOrder
   }
 
   export type BoolWithAggregatesFilter<$PrismaModel = never> = {
@@ -58428,6 +58489,7 @@ export namespace Prisma {
     archivedAt?: SortOrder
     handRaisedAt?: SortOrder
     screenPrivacy?: SortOrder
+    manualUnread?: SortOrder
   }
 
   export type ConversationParticipantMaxOrderByAggregateInput = {
@@ -58442,6 +58504,7 @@ export namespace Prisma {
     archivedAt?: SortOrder
     handRaisedAt?: SortOrder
     screenPrivacy?: SortOrder
+    manualUnread?: SortOrder
   }
 
   export type ConversationParticipantMinOrderByAggregateInput = {
@@ -58456,6 +58519,7 @@ export namespace Prisma {
     archivedAt?: SortOrder
     handRaisedAt?: SortOrder
     screenPrivacy?: SortOrder
+    manualUnread?: SortOrder
   }
 
   export type IntNullableFilter<$PrismaModel = never> = {
@@ -62412,6 +62476,7 @@ export namespace Prisma {
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
+    manualUnread?: boolean
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
   }
 
@@ -62426,6 +62491,7 @@ export namespace Prisma {
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
+    manualUnread?: boolean
   }
 
   export type ConversationParticipantCreateOrConnectWithoutUserInput = {
@@ -62977,6 +63043,7 @@ export namespace Prisma {
     archivedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     handRaisedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     screenPrivacy?: BoolFilter<"ConversationParticipant"> | boolean
+    manualUnread?: BoolFilter<"ConversationParticipant"> | boolean
   }
 
   export type MessageUpsertWithWhereUniqueWithoutSenderInput = {
@@ -64969,6 +65036,7 @@ export namespace Prisma {
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
+    manualUnread?: boolean
     user: UserCreateNestedOneWithoutParticipationsInput
   }
 
@@ -64983,6 +65051,7 @@ export namespace Prisma {
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
+    manualUnread?: boolean
   }
 
   export type ConversationParticipantCreateOrConnectWithoutConversationInput = {
@@ -65650,6 +65719,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -65676,6 +65746,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -65791,6 +65862,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -65817,6 +65889,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -65922,6 +65995,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -65948,6 +66022,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -65990,6 +66065,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -66016,6 +66092,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -66370,6 +66447,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -66396,6 +66474,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -66517,6 +66596,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -66543,6 +66623,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -66642,6 +66723,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -66668,6 +66750,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -67304,6 +67387,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -67330,6 +67414,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -68459,6 +68544,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -68485,6 +68571,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -68527,6 +68614,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -68553,6 +68641,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -69036,6 +69125,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -69062,6 +69152,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -69193,6 +69284,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -69219,6 +69311,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -69473,6 +69566,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -69499,6 +69593,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -69570,6 +69665,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -69596,6 +69692,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -69622,6 +69719,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -69648,6 +69746,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -69719,6 +69818,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -69745,6 +69845,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -70293,6 +70394,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -70319,6 +70421,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -70361,6 +70464,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -70387,6 +70491,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -70413,6 +70518,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -70439,6 +70545,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -70481,6 +70588,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -70507,6 +70615,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -70533,6 +70642,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -70559,6 +70669,7 @@ export namespace Prisma {
     ttlSeconds?: number
     broadcastMode?: boolean
     screenPrivacy?: boolean
+    slowModeSeconds?: number
     isSelf?: boolean
     appKey?: string | null
     createdAt?: Date | string
@@ -70626,6 +70737,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -70652,6 +70764,7 @@ export namespace Prisma {
     ttlSeconds?: IntFieldUpdateOperationsInput | number
     broadcastMode?: BoolFieldUpdateOperationsInput | boolean
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    slowModeSeconds?: IntFieldUpdateOperationsInput | number
     isSelf?: BoolFieldUpdateOperationsInput | boolean
     appKey?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -70822,6 +70935,7 @@ export namespace Prisma {
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
+    manualUnread?: boolean
   }
 
   export type MessageCreateManySenderInput = {
@@ -71107,6 +71221,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
   }
 
@@ -71121,6 +71236,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type ConversationParticipantUncheckedUpdateManyWithoutUserInput = {
@@ -71134,6 +71250,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type MessageUpdateWithoutSenderInput = {
@@ -71489,6 +71606,7 @@ export namespace Prisma {
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
+    manualUnread?: boolean
   }
 
   export type MessageCreateManyConversationInput = {
@@ -71625,6 +71743,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
   }
 
@@ -71639,6 +71758,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type ConversationParticipantUncheckedUpdateManyWithoutConversationInput = {
@@ -71652,6 +71772,7 @@ export namespace Prisma {
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type MessageUpdateWithoutConversationInput = {

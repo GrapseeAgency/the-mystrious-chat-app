@@ -248,6 +248,7 @@ exports.Prisma.ConversationScalarFieldEnum = {
   ttlSeconds: 'ttlSeconds',
   broadcastMode: 'broadcastMode',
   screenPrivacy: 'screenPrivacy',
+  slowModeSeconds: 'slowModeSeconds',
   isSelf: 'isSelf',
   appKey: 'appKey',
   createdAt: 'createdAt',
@@ -314,7 +315,8 @@ exports.Prisma.ConversationParticipantScalarFieldEnum = {
   mutedUntil: 'mutedUntil',
   archivedAt: 'archivedAt',
   handRaisedAt: 'handRaisedAt',
-  screenPrivacy: 'screenPrivacy'
+  screenPrivacy: 'screenPrivacy',
+  manualUnread: 'manualUnread'
 };
 
 exports.Prisma.MessageScalarFieldEnum = {

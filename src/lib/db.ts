@@ -22,14 +22,16 @@ import { PrismaClient } from '../../prisma/generated-client'
 // client regen (per the v9 lesson: the key change must FOLLOW the regen).
 // v11 — R43 fix: v10 was authored pre-regen again (same HMR gap) — bumped
 // POST-regen so the running server constructs a client that knows .transcript.
+// v12 — R44: bumped AFTER the Conversation.slowModeSeconds +
+// ConversationParticipant.manualUnread push + client regen (post-regen rule).
 const globalForPrisma = globalThis as unknown as {
-  prismaV11: PrismaClient | undefined
+  prismaV12: PrismaClient | undefined
 }
 
 export const db =
-  globalForPrisma.prismaV11 ??
+  globalForPrisma.prismaV12 ??
   new PrismaClient({
     log: ['query'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV11 = db
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV12 = db

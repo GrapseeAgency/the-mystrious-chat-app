@@ -433,6 +433,33 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
+  // R44 — Telegram-style slow mode: members must wait slowModeSeconds between
+  // sends; admins are always exempt. The window counts the ACT of sending —
+  // soft-deleted messages still consume it (delete-then-resend cannot bypass),
+  // while automation replies (machine-sent on the creator's behalf, R39) do
+  // NOT start a new window for the member.
+  if (conv.slowModeSeconds > 0 && participant.role !== 'admin') {
+    const lastOwn = await db.message.findFirst({
+      where: { conversationId: id, senderId: senderId, viaAutomation: false },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    })
+    if (lastOwn) {
+      const elapsed = Date.now() - lastOwn.createdAt.getTime()
+      const windowMs = conv.slowModeSeconds * 1000
+      if (elapsed < windowMs) {
+        const retryAfter = Math.ceil((windowMs - elapsed) / 1000)
+        return NextResponse.json(
+          {
+            error: `Slow mode is on — wait ${retryAfter}s before sending again.`,
+            retryAfter,
+          },
+          { status: 429, headers: { 'Retry-After': String(retryAfter) } },
+        )
+      }
+    }
+  }
+
   // R24-b: optional Zulip-style topic filing — the topic must belong to THIS
   // conversation; message.topicId lands inside the create (General = null).
   const topicId = strField(body.topicId)

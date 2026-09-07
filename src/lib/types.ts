@@ -152,6 +152,9 @@ export interface ConversationSummary {
   ttlSeconds: number // disappearing-message TTL for THIS chat (0 = off)
   broadcastMode: boolean // admin-only posting (groups/stage channels)
   isSelf: boolean // Signal-style Note to Self conversation
+  /** R44 additive: viewer's mark-as-unread flag — the row shows the unread
+   *  dot even when unreadCount is 0; cleared when the room is opened. */
+  myManualUnread: boolean
 }
 
 export type GroupRole = 'admin' | 'member'
@@ -198,6 +201,11 @@ export interface ConversationDetail {
   /** R42 additive: the VIEWER's personal screen-security flag (per-participant
    *  veil). The room frosts when EITHER this or the room-wide flag is on. */
   myScreenPrivacy: boolean
+  /** R44 additive: Telegram-style slow mode (0 = off; members wait Ns between
+   *  sends, admins exempt — server enforces via 429 + retryAfter). */
+  slowModeSeconds: number
+  /** R44 additive: viewer's mark-as-unread flag (row badge until opened). */
+  myManualUnread: boolean
   isSelf: boolean // Signal-style Note to Self conversation
   description: string // channel/group purpose line (R30-c)
 }

@@ -75,11 +75,14 @@ export function initialsOf(name: string): string {
 
 export class ApiError extends Error {
   readonly status: number
+  /** R44 — seconds the server asks us to wait (slow-mode 429s); null = n/a. */
+  readonly retryAfter: number | null
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfter?: number | null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.retryAfter = typeof retryAfter === 'number' && Number.isFinite(retryAfter) ? retryAfter : null
   }
 }
 
@@ -105,7 +108,11 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
     body = null
   }
   if (!res.ok) {
-    throw new ApiError(res.status, errorMessageFromBody(body, `Request failed (${res.status})`))
+    const retryAfter =
+      body !== null && typeof body === 'object' && !Array.isArray(body) && typeof (body as Record<string, unknown>).retryAfter === 'number'
+        ? ((body as Record<string, unknown>).retryAfter as number)
+        : Number(res.headers.get('Retry-After') ?? '') || null
+    throw new ApiError(res.status, errorMessageFromBody(body, `Request failed (${res.status})`), retryAfter)
   }
   return body as T
 }

@@ -367,6 +367,7 @@ export function ChatsTab({
           previewDeleted: previewInfo.deleted,
           draft: allDrafts[conv.id] ?? null,
           unreadCount: conv.unreadCount,
+          manualUnread: conv.myManualUnread, // R44: mark-as-unread dot
           dmName: other?.name ?? null,
           dmColor: other?.color ?? 'emerald',
           groupTitle: groupName,
@@ -521,6 +522,42 @@ export function ChatsTab({
     },
     onError: () => {
       toast.error('Could not update the pin')
+    },
+  })
+
+  // R44 — mark as unread/read: flips the viewer's manualUnread flag
+  // (PATCH /mark-unread); the row shows the dot until the room is opened.
+  const toggleMarkUnread = useMutation({
+    mutationFn: async (conv: ConversationSummary) => {
+      const on = !conv.myManualUnread
+      return apiJson<{ ok: boolean; manualUnread: boolean }>(
+        `/api/conversations/${encodeURIComponent(conv.id)}/mark-unread`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: me.id, on }),
+        },
+      )
+    },
+    onMutate: async (conv) => {
+      await queryClient.cancelQueries({ queryKey: ['conversations', me.id] })
+      const previous = queryClient.getQueryData<Array<ConversationSummary>>(['conversations', me.id])
+      queryClient.setQueryData<Array<ConversationSummary>>(['conversations', me.id], (old) =>
+        old
+          ? old.map((c) => (c.id === conv.id ? { ...c, myManualUnread: !c.myManualUnread } : c))
+          : old,
+      )
+      return { previous }
+    },
+    onSuccess: (data) => {
+      toast.success(data.manualUnread ? 'Marked as unread' : 'Marked as read')
+      setSheetConv(null)
+    },
+    onError: (_error, _conv, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<Array<ConversationSummary>>(['conversations', me.id], context.previous)
+      }
+      toast.error('Could not update the unread flag')
     },
   })
 
@@ -1599,11 +1636,16 @@ export function ChatsTab({
         mutePending={toggleMute.isPending}
         clearPending={clearChat.isPending}
         exportPending={exportChat.isPending}
+        manualUnread={sheetConv?.myManualUnread ?? false}
+        markUnreadPending={toggleMarkUnread.isPending}
         onPin={() => {
           if (sheetConv) togglePin.mutate(sheetConv)
         }}
         onArchive={() => {
           if (sheetConv) toggleArchive.mutate({ conv: sheetConv, archived: sheetConv.archivedAt === null })
+        }}
+        onMarkUnread={() => {
+          if (sheetConv) toggleMarkUnread.mutate(sheetConv)
         }}
         onMute={(until) => {
           if (sheetConv) toggleMute.mutate({ conv: sheetConv, until })

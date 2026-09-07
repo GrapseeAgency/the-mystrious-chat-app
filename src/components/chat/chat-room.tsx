@@ -38,6 +38,7 @@ import {
   Dices,
   Download,
   EllipsisVertical,
+  Gauge,
   EyeOff,
   FileText,
   AudioLines,
@@ -110,6 +111,7 @@ import type {
 } from '@/lib/types'
 import {
   apiJson,
+  ApiError,
   compressImageToDataUrl,
   conversationDisplayName,
   formatDayChip,
@@ -695,6 +697,9 @@ export function ChatRoom({
   /** 0→N success pop tick for the send/mic slot after a message lands */
   const [sendPop, setSendPop] = useState(0)
   const wasSendingRef = useRef(false)
+  /** R44 — epoch ms until which slow mode blocks MY sends (0 = free). Set
+   *  from the server's 429 retryAfter; the send/mic slot counts down live. */
+  const [slowUntil, setSlowUntil] = useState(0)
   /** mount watermark — only messages newer than this animate their entrance */
   const mountMsRef = useRef(0)
   /** real ids that just replaced optimistic temps — skip their re-entrance */
@@ -1757,8 +1762,16 @@ export function ChatRoom({
         }).catch(() => undefined)
       }
     },
-    onError: (_error, { clientId }) => {
+    onError: (error, { clientId }) => {
       patchMessageViews((old) => old?.filter((m) => m.id !== `temp-${clientId}`) ?? old)
+      // R44 — slow-mode 429: start the live countdown instead of a generic
+      // failure toast (the server's honest message carries the wait window).
+      if (error instanceof ApiError && error.status === 429) {
+        const wait = error.retryAfter ?? 5
+        setSlowUntil(Date.now() + wait * 1000)
+        toast.error(error.message)
+        return
+      }
       toast.error('Message failed to send')
     },
   })
@@ -2355,6 +2368,20 @@ export function ChatRoom({
     if (items.length === 0) return null
     return { count: items.length, next: formatListStamp(items[0].scheduledAt) }
   }, [scheduledQuery.data])
+
+  // ── R44 slow-mode countdown (server is the source of truth; this only
+  // renders the honest wait window the 429 handed us) ─────────────
+  const [slowTick, setSlowTick] = useState(0)
+  useEffect(() => {
+    if (slowUntil <= Date.now()) return
+    const t = window.setInterval(() => setSlowTick((v) => v + 1), 500)
+    return () => window.clearInterval(t)
+  }, [slowUntil])
+  // slowTick keeps this honest between interval renders — read it so the
+  // value recomputes on every tick (the linter would call it unused; it is
+  // the render trigger).
+  void slowTick
+  const slowRemaining = slowUntil > Date.now() ? Math.ceil((slowUntil - Date.now()) / 1000) : 0
 
   // ── notification mute (per-user watermark) ─────────────
 
@@ -4611,6 +4638,30 @@ export function ChatRoom({
           ) : null}
         </AnimatePresence>
 
+        {/* R44 — slow-mode countdown: appears the moment the server answers
+            429, counts the honest wait down live, then collapses. */}
+        <AnimatePresence initial={false}>
+          {slowRemaining > 0 ? (
+            <motion.div
+              key="slow-mode-chip"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="overflow-hidden"
+            >
+              <div
+                role="status"
+                aria-live="polite"
+                className="mb-2 flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1.5 text-[11px] font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-white/[0.06] dark:text-zinc-300 dark:ring-white/10"
+              >
+                <Gauge className="size-3.5 shrink-0 text-emerald-500" aria-hidden />
+                Slow mode — you can send again in {slowRemaining}s
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
         <AnimatePresence initial={false}>
           {pendingEffect !== null ? (
             <motion.div
@@ -5122,7 +5173,8 @@ export function ChatRoom({
                   onClick={() => void startRecording()}
                   whileTap={pressTap}
                   transition={pressSpring}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 outline-none transition-colors hover:bg-emerald-500/10 hover:text-emerald-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-emerald-400"
+                  disabled={slowRemaining > 0}
+                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 outline-none transition-colors hover:bg-emerald-500/10 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-emerald-400"
                 >
                   <motion.span
                     key={sendPop}
@@ -5138,7 +5190,7 @@ export function ChatRoom({
                 <motion.button
                   type="button"
                   aria-label={editing ? 'Save edit' : 'Send message'}
-                  disabled={input.trim().length === 0 || sendMessage.isPending || editMessage.isPending}
+                  disabled={input.trim().length === 0 || sendMessage.isPending || editMessage.isPending || slowRemaining > 0}
                   onClick={submit}
                   whileTap={input.trim().length > 0 && !sendMessage.isPending ? { scale: 0.88 } : undefined}
                   transition={pressSpring}

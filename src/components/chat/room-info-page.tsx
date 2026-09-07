@@ -40,6 +40,7 @@ import {
   Users,
   VolumeX,
   EyeOff,
+  Gauge,
 } from 'lucide-react'
 import type { AppUser, ChatMessage, ConversationDetail, GroupRole } from '@/lib/types'
 import { navigateHash } from '@/lib/hash-router'
@@ -550,6 +551,16 @@ export function RoomInfoPage({
   // change it (the disappearing API allows every participant; mirrors the
   // room header menu's TTL submenu, which stays reachable).
   const [ttlOpen, setTtlOpen] = useState(false)
+  const [slowOpen, setSlowOpen] = useState(false) // R44 slow-mode preset tray
+  /** R44 — the EXACT preset ladder the slow-mode API accepts (seconds). */
+  const SLOW_PRESETS: Array<{ seconds: number; label: string; long: string }> = [
+    { seconds: 0, label: 'Off', long: 'Off' },
+    { seconds: 5, label: '5s', long: '5 seconds' },
+    { seconds: 10, label: '10s', long: '10 seconds' },
+    { seconds: 30, label: '30s', long: '30 seconds' },
+    { seconds: 60, label: '1m', long: '1 minute' },
+    { seconds: 300, label: '5m', long: '5 minutes' },
+  ]
   const ttlMutation = useMutation({
     mutationFn: async (ttlSeconds: number) =>
       apiJson<{ conversation: ConversationDetail }>(
@@ -626,6 +637,37 @@ export function RoomInfoPage({
         queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], context.previous)
       }
       toast.error(error instanceof Error ? error.message : 'Could not update screen security')
+    },
+  })
+
+  // R44 — Telegram-style slow mode: admin picks the wait window between
+  // member sends (admins are always exempt; the server enforces with 429 +
+  // retryAfter). Optimistic flip on the detail cache with honest rollback.
+  const slowModeMutation = useMutation({
+    mutationFn: async (seconds: number) =>
+      apiJson<{ ok: true; slowModeSeconds: number }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/slow-mode`,
+        { method: 'PATCH', body: JSON.stringify({ userId: me.id, seconds }) },
+      ),
+    onMutate: async (seconds) => {
+      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+      const previous = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+        old ? { ...old, slowModeSeconds: seconds } : old,
+      )
+      return { previous }
+    },
+    onSuccess: (_data, seconds) => {
+      toast.success(
+        seconds > 0 ? `Slow mode on — members wait ${seconds < 60 ? `${seconds}s` : `${seconds / 60}m`}` : 'Slow mode off',
+      )
+      haptic(12)
+    },
+    onError: (error, _seconds, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], context.previous)
+      }
+      toast.error(error instanceof Error ? error.message : 'Could not update slow mode')
     },
   })
 
@@ -977,6 +1019,108 @@ export function RoomInfoPage({
               aria-label="Screen security for everyone"
             />
           </div>
+
+          {/* R44 — Telegram-style slow mode (groups only). Admins pick the
+              wait window between member sends via preset chips; members see
+              an honest read-only state (the room shows a live countdown when
+              the server answers 429). Admin-gated — it throttles members. */}
+          {isGroup ? (
+            <div className="glass-row-hover rounded-2xl px-3 py-2.5">
+              <div className="flex items-center gap-3">
+                <Gauge
+                  className={cn(
+                    'size-4 shrink-0',
+                    (detail?.slowModeSeconds ?? 0) > 0 ? 'text-emerald-500' : 'text-zinc-400',
+                  )}
+                  aria-hidden
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                    Slow mode
+                  </p>
+                  <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                    {detail === undefined
+                      ? '…'
+                      : (detail.slowModeSeconds ?? 0) > 0
+                        ? isAdmin
+                          ? `Members can send once every ${SLOW_PRESETS.find((p) => p.seconds === detail.slowModeSeconds)?.long ?? `${detail.slowModeSeconds}s`}`
+                          : `You can send once every ${SLOW_PRESETS.find((p) => p.seconds === detail.slowModeSeconds)?.long ?? `${detail.slowModeSeconds}s`}`
+                        : isAdmin
+                          ? 'Limit how often members can send'
+                          : 'Everyone can send freely'}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold',
+                    (detail?.slowModeSeconds ?? 0) > 0
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-zinc-900/[0.05] text-zinc-500 dark:bg-white/[0.07] dark:text-zinc-400',
+                  )}
+                >
+                  {detail === undefined
+                    ? '…'
+                    : SLOW_PRESETS.find((p) => p.seconds === (detail.slowModeSeconds ?? 0))?.label ?? `${detail.slowModeSeconds}s`}
+                </span>
+                {isAdmin ? (
+                  <button
+                    type="button"
+                    aria-expanded={slowOpen}
+                    aria-label={slowOpen ? 'Hide slow mode options' : 'Adjust slow mode'}
+                    disabled={detail === undefined}
+                    onClick={() => {
+                      haptic(8)
+                      setSlowOpen((v) => !v)
+                    }}
+                    className="glass-pill flex size-8 shrink-0 items-center justify-center text-zinc-500 outline-none transition-transform active:scale-90 disabled:opacity-50 dark:text-zinc-300"
+                  >
+                    <motion.span animate={{ rotate: slowOpen ? 180 : 0 }} transition={spring.snappy} className="flex">
+                      <ChevronDown className="size-4" aria-hidden />
+                    </motion.span>
+                  </button>
+                ) : null}
+              </div>
+              <AnimatePresence initial={false}>
+                {slowOpen && detail !== undefined && isAdmin ? (
+                  <motion.div
+                    key="slow-presets"
+                    initial={reducedMotion ? false : { opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={reducedMotion ? undefined : { opacity: 0, height: 0 }}
+                    transition={spring.soft}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex flex-wrap gap-1.5 px-1 pb-1 pt-2.5" role="radiogroup" aria-label="Slow mode wait window">
+                      {SLOW_PRESETS.map((preset) => {
+                        const active = (detail.slowModeSeconds ?? 0) === preset.seconds
+                        return (
+                          <button
+                            key={preset.seconds}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            disabled={slowModeMutation.isPending}
+                            onClick={() => {
+                              haptic(10)
+                              slowModeMutation.mutate(preset.seconds)
+                            }}
+                            className={cn(
+                              'rounded-full px-3 py-1.5 text-xs font-semibold outline-none transition-all active:scale-95 disabled:opacity-50',
+                              active
+                                ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-600/30'
+                                : 'bg-zinc-900/[0.05] text-zinc-600 hover:bg-zinc-900/[0.08] dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:bg-white/[0.1]',
+                            )}
+                          >
+                            {preset.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          ) : null}
 
           {/* R31-a: viewer's chat streak in THIS conversation — R33-b adds the
               honest at-risk tone: a live chain whose lastDay is yesterday dies

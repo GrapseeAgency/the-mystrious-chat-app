@@ -238,6 +238,7 @@ model Conversation {
   ttlSeconds        Int                       @default(0) // disappearing-message TTL (0 = off; applied at send time)
   broadcastMode     Boolean                   @default(false) // Discord-stage/Telegram-channel style admin-only posting
   screenPrivacy     Boolean                   @default(false) // R38 Signal screen security: frost the message area while the Pulse window is unfocused
+  slowModeSeconds   Int                       @default(0) // R44 Telegram-style slow mode (0 = off; members wait Ns between sends, admins exempt)
   isSelf            Boolean                   @default(false) // Signal-style Note to Self (single participant = owner)
   appKey            String?                   @unique // hub Apps-matrix community chat (app number as string, e.g. "4")
   createdAt         DateTime                  @default(now())
@@ -350,6 +351,7 @@ model ConversationParticipant {
   archivedAt     DateTime? // per-user archive watermark (null = active; cleared when others send new msgs)
   handRaisedAt   DateTime? // Clubhouse-style raised hand (null = lowered)
   screenPrivacy  Boolean      @default(false) // R42: per-VIEWER screen security (personal veil, OR'd with the conversation-wide flag)
+  manualUnread   Boolean      @default(false) // R44: mark-as-unread — row badge dot until the room is opened again
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 

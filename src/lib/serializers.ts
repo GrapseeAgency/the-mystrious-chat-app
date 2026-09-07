@@ -416,6 +416,9 @@ export async function buildConversationSummary(
     ttlSeconds: conv.ttlSeconds,
     broadcastMode: conv.broadcastMode,
     isSelf: conv.isSelf,
+    // R44 additive — mark-as-unread: the viewer's row-badge flag (chats tab
+    // shows the dot even when unreadCount is 0; cleared by the read route).
+    myManualUnread: mine?.manualUnread ?? false,
   }
 }
 
@@ -460,6 +463,10 @@ export async function buildConversationDetail(
     // R42 additive — the viewer's personal screen-security flag (per-VIEWER
     // veil; chat-room frosts when EITHER flag is on).
     myScreenPrivacy: mine?.screenPrivacy ?? false,
+    // R44 additive — Telegram-style slow mode (0 = off; members wait Ns
+    // between sends) + the viewer's mark-as-unread flag.
+    slowModeSeconds: conv.slowModeSeconds,
+    myManualUnread: mine?.manualUnread ?? false,
     isSelf: conv.isSelf,
     description: conv.description,
   }

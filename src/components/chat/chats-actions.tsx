@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Archive,
@@ -23,6 +23,8 @@ import {
   Download,
   Eraser,
   LoaderCircle,
+  Mail,
+  MailOpen,
   Pin,
   PinOff,
   X,
@@ -177,12 +179,18 @@ export interface ChatOptionsSheetProps {
   mutePending: boolean
   clearPending: boolean
   exportPending: boolean
+  /** R44: the viewer's mark-as-unread flag on THIS conversation */
+  manualUnread: boolean
+  /** R44: pending state of the mark-unread PATCH */
+  markUnreadPending: boolean
   onPin: () => void
   onArchive: () => void
   onMute: (until: '8h' | '1w' | 'always') => void
   onUnmute: () => void
   onExport: () => void
   onClear: () => void
+  /** R44: flip the mark-as-unread flag */
+  onMarkUnread: () => void
   onClose: () => void
 }
 
@@ -201,12 +209,15 @@ export function ChatOptionsSheet({
   mutePending,
   clearPending,
   exportPending,
+  manualUnread,
+  markUnreadPending,
   onPin,
   onArchive,
   onMute,
   onUnmute,
   onExport,
   onClear,
+  onMarkUnread,
   onClose,
 }: ChatOptionsSheetProps) {
   /** 'actions' = main rows · 'mute' = the compact duration strip */
@@ -234,7 +245,11 @@ export function ChatOptionsSheet({
   return (
     <AnimatePresence>
       {conv !== null && !confirmClear ? (
-        <>
+        /* R44 fix: the fragment MUST carry a key — framer's AnimatePresence
+           tracks its direct child by key, and a bare <> renders as an
+           empty-keyed child that collides with itself on every open/close
+           transition ("two children with the same key``"). */
+        <Fragment key="chat-options">
           {/* backdrop — tap anywhere outside to dismiss */}
           <motion.div
             key="chat-options-backdrop"
@@ -278,6 +293,14 @@ export function ChatOptionsSheet({
                     label={conv.archivedAt !== null ? 'Unarchive chat' : 'Archive chat'}
                     disabled={archivePending}
                     onClick={onArchive}
+                  />
+                  {/* R44 — mark as unread/read: badges MY row until the room
+                      is opened again (the read route clears the flag). */}
+                  <GlassMenuItem
+                    icon={markUnreadPending ? LoaderCircle : manualUnread ? MailOpen : Mail}
+                    label={manualUnread ? 'Mark as read' : 'Mark as unread'}
+                    disabled={markUnreadPending}
+                    onClick={onMarkUnread}
                   />
                   <GlassMenuSeparator />
                   {muted ? (
@@ -349,7 +372,7 @@ export function ChatOptionsSheet({
               )}
             </GlassMenu>
           </div>
-        </>
+        </Fragment>
       ) : null}
 
       {/* destructive confirm — real copy: only MY messages are deletable */}
