@@ -313,7 +313,8 @@ exports.Prisma.ConversationParticipantScalarFieldEnum = {
   pinnedAt: 'pinnedAt',
   mutedUntil: 'mutedUntil',
   archivedAt: 'archivedAt',
-  handRaisedAt: 'handRaisedAt'
+  handRaisedAt: 'handRaisedAt',
+  screenPrivacy: 'screenPrivacy'
 };
 
 exports.Prisma.MessageScalarFieldEnum = {

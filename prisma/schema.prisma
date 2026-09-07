@@ -349,6 +349,7 @@ model ConversationParticipant {
   mutedUntil     DateTime? // per-user notification mute watermark (null = unmuted)
   archivedAt     DateTime? // per-user archive watermark (null = active; cleared when others send new msgs)
   handRaisedAt   DateTime? // Clubhouse-style raised hand (null = lowered)
+  screenPrivacy  Boolean    @default(false) // R42: per-VIEWER screen security (personal veil, OR'd with the conversation-wide flag)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 

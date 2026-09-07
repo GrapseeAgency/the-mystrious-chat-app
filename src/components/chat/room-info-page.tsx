@@ -600,6 +600,35 @@ export function RoomInfoPage({
     },
   })
 
+  // R42 — per-VIEWER screen security: the personal veil. Frost MY view only,
+  // never anyone else's (the row above is the room-wide switch). Same
+  // optimistic flip with honest rollback; hits the dedicated participant route.
+  const myPrivacyMutation = useMutation({
+    mutationFn: async (next: boolean) =>
+      apiJson<{ ok: true; screenPrivacy: boolean }>(
+        `/api/conversations/${encodeURIComponent(conversationId)}/screen-privacy`,
+        { method: 'PATCH', body: JSON.stringify({ userId: me.id, on: next }) },
+      ),
+    onMutate: async (next) => {
+      await queryClient.cancelQueries({ queryKey: ['conversation', conversationId] })
+      const previous = queryClient.getQueryData<ConversationDetail>(['conversation', conversationId])
+      queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
+        old ? { ...old, myScreenPrivacy: next } : old,
+      )
+      return { previous }
+    },
+    onSuccess: (_data, next) => {
+      toast.success(next ? 'Screen security on for you' : 'Screen security off for you')
+      haptic(12)
+    },
+    onError: (error, _next, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], context.previous)
+      }
+      toast.error(error instanceof Error ? error.message : 'Could not update screen security')
+    },
+  })
+
   // R35-a — Signal-style safety number (DMs ONLY): the shared GET feeds the
   // Encryption row's trailing state; the sheet reads the same cache key.
   // Groups render nothing extra — honest per-room-type UI.
@@ -899,11 +928,11 @@ export function RoomInfoPage({
             </AnimatePresence>
           </div>
 
-          {/* R38 — Signal "Screen security" switch. Row mirrors the mute/TTL
-              rows; the accessible switch flips per-conversation state via the
-              main conversation PATCH (TTL-style participant gating). */}
+          {/* R42 — Signal "Screen security", per-VIEWER half. The switch
+              below frosts MY view only; a second row offers the room-wide
+              switch. Both flags OR together inside the room. */}
           <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
-            {detail?.screenPrivacy ? (
+            {detail?.myScreenPrivacy ? (
               <ShieldCheck className="size-4 shrink-0 text-emerald-500" aria-hidden />
             ) : (
               <EyeOff className="size-4 shrink-0 text-zinc-400" aria-hidden />
@@ -913,14 +942,39 @@ export function RoomInfoPage({
                 Screen security
               </p>
               <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-                Blur messages when Pulse loses focus
+                Blur messages when Pulse loses focus — just for you
+              </p>
+            </div>
+            <Switch
+              checked={detail?.myScreenPrivacy ?? false}
+              disabled={detail === undefined || myPrivacyMutation.isPending}
+              onCheckedChange={(checked) => myPrivacyMutation.mutate(checked)}
+              aria-label="Screen security for you"
+            />
+          </div>
+
+          {/* R38/R42 — the room-wide half: frosts the message area for EVERY
+              member. Gated like the disappearing TTL — any participant may
+              toggle it (deliberately NOT admin-gated; a comfort setting). */}
+          <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
+            {detail?.screenPrivacy ? (
+              <ShieldCheck className="size-4 shrink-0 text-emerald-500" aria-hidden />
+            ) : (
+              <EyeOff className="size-4 shrink-0 text-zinc-400" aria-hidden />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                Screen security for everyone
+              </p>
+              <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                Applies to every member of this chat
               </p>
             </div>
             <Switch
               checked={detail?.screenPrivacy ?? false}
               disabled={detail === undefined || privacyMutation.isPending}
               onCheckedChange={(checked) => privacyMutation.mutate(checked)}
-              aria-label="Screen security"
+              aria-label="Screen security for everyone"
             />
           </div>
 

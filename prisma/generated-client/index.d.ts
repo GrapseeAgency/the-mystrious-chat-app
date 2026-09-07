@@ -25752,6 +25752,7 @@ export namespace Prisma {
     mutedUntil: Date | null
     archivedAt: Date | null
     handRaisedAt: Date | null
+    screenPrivacy: boolean | null
   }
 
   export type ConversationParticipantMaxAggregateOutputType = {
@@ -25765,6 +25766,7 @@ export namespace Prisma {
     mutedUntil: Date | null
     archivedAt: Date | null
     handRaisedAt: Date | null
+    screenPrivacy: boolean | null
   }
 
   export type ConversationParticipantCountAggregateOutputType = {
@@ -25778,6 +25780,7 @@ export namespace Prisma {
     mutedUntil: number
     archivedAt: number
     handRaisedAt: number
+    screenPrivacy: number
     _all: number
   }
 
@@ -25793,6 +25796,7 @@ export namespace Prisma {
     mutedUntil?: true
     archivedAt?: true
     handRaisedAt?: true
+    screenPrivacy?: true
   }
 
   export type ConversationParticipantMaxAggregateInputType = {
@@ -25806,6 +25810,7 @@ export namespace Prisma {
     mutedUntil?: true
     archivedAt?: true
     handRaisedAt?: true
+    screenPrivacy?: true
   }
 
   export type ConversationParticipantCountAggregateInputType = {
@@ -25819,6 +25824,7 @@ export namespace Prisma {
     mutedUntil?: true
     archivedAt?: true
     handRaisedAt?: true
+    screenPrivacy?: true
     _all?: true
   }
 
@@ -25905,6 +25911,7 @@ export namespace Prisma {
     mutedUntil: Date | null
     archivedAt: Date | null
     handRaisedAt: Date | null
+    screenPrivacy: boolean
     _count: ConversationParticipantCountAggregateOutputType | null
     _min: ConversationParticipantMinAggregateOutputType | null
     _max: ConversationParticipantMaxAggregateOutputType | null
@@ -25935,6 +25942,7 @@ export namespace Prisma {
     mutedUntil?: boolean
     archivedAt?: boolean
     handRaisedAt?: boolean
+    screenPrivacy?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["conversationParticipant"]>
@@ -25950,6 +25958,7 @@ export namespace Prisma {
     mutedUntil?: boolean
     archivedAt?: boolean
     handRaisedAt?: boolean
+    screenPrivacy?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["conversationParticipant"]>
@@ -25965,6 +25974,7 @@ export namespace Prisma {
     mutedUntil?: boolean
     archivedAt?: boolean
     handRaisedAt?: boolean
+    screenPrivacy?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["conversationParticipant"]>
@@ -25980,9 +25990,10 @@ export namespace Prisma {
     mutedUntil?: boolean
     archivedAt?: boolean
     handRaisedAt?: boolean
+    screenPrivacy?: boolean
   }
 
-  export type ConversationParticipantOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "conversationId" | "role" | "joinedAt" | "lastReadAt" | "pinnedAt" | "mutedUntil" | "archivedAt" | "handRaisedAt", ExtArgs["result"]["conversationParticipant"]>
+  export type ConversationParticipantOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "conversationId" | "role" | "joinedAt" | "lastReadAt" | "pinnedAt" | "mutedUntil" | "archivedAt" | "handRaisedAt" | "screenPrivacy", ExtArgs["result"]["conversationParticipant"]>
   export type ConversationParticipantInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -26013,6 +26024,7 @@ export namespace Prisma {
       mutedUntil: Date | null
       archivedAt: Date | null
       handRaisedAt: Date | null
+      screenPrivacy: boolean
     }, ExtArgs["result"]["conversationParticipant"]>
     composites: {}
   }
@@ -26448,6 +26460,7 @@ export namespace Prisma {
     readonly mutedUntil: FieldRef<"ConversationParticipant", 'DateTime'>
     readonly archivedAt: FieldRef<"ConversationParticipant", 'DateTime'>
     readonly handRaisedAt: FieldRef<"ConversationParticipant", 'DateTime'>
+    readonly screenPrivacy: FieldRef<"ConversationParticipant", 'Boolean'>
   }
     
 
@@ -50849,7 +50862,8 @@ export namespace Prisma {
     pinnedAt: 'pinnedAt',
     mutedUntil: 'mutedUntil',
     archivedAt: 'archivedAt',
-    handRaisedAt: 'handRaisedAt'
+    handRaisedAt: 'handRaisedAt',
+    screenPrivacy: 'screenPrivacy'
   };
 
   export type ConversationParticipantScalarFieldEnum = (typeof ConversationParticipantScalarFieldEnum)[keyof typeof ConversationParticipantScalarFieldEnum]
@@ -52523,6 +52537,7 @@ export namespace Prisma {
     mutedUntil?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     archivedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     handRaisedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
+    screenPrivacy?: BoolFilter<"ConversationParticipant"> | boolean
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
   }
@@ -52538,6 +52553,7 @@ export namespace Prisma {
     mutedUntil?: SortOrderInput | SortOrder
     archivedAt?: SortOrderInput | SortOrder
     handRaisedAt?: SortOrderInput | SortOrder
+    screenPrivacy?: SortOrder
     user?: UserOrderByWithRelationInput
     conversation?: ConversationOrderByWithRelationInput
   }
@@ -52557,6 +52573,7 @@ export namespace Prisma {
     mutedUntil?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     archivedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     handRaisedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
+    screenPrivacy?: BoolFilter<"ConversationParticipant"> | boolean
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
   }, "id" | "userId_conversationId">
@@ -52572,6 +52589,7 @@ export namespace Prisma {
     mutedUntil?: SortOrderInput | SortOrder
     archivedAt?: SortOrderInput | SortOrder
     handRaisedAt?: SortOrderInput | SortOrder
+    screenPrivacy?: SortOrder
     _count?: ConversationParticipantCountOrderByAggregateInput
     _max?: ConversationParticipantMaxOrderByAggregateInput
     _min?: ConversationParticipantMinOrderByAggregateInput
@@ -52591,6 +52609,7 @@ export namespace Prisma {
     mutedUntil?: DateTimeNullableWithAggregatesFilter<"ConversationParticipant"> | Date | string | null
     archivedAt?: DateTimeNullableWithAggregatesFilter<"ConversationParticipant"> | Date | string | null
     handRaisedAt?: DateTimeNullableWithAggregatesFilter<"ConversationParticipant"> | Date | string | null
+    screenPrivacy?: BoolWithAggregatesFilter<"ConversationParticipant"> | boolean
   }
 
   export type MessageWhereInput = {
@@ -55518,6 +55537,7 @@ export namespace Prisma {
     mutedUntil?: Date | string | null
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
     user: UserCreateNestedOneWithoutParticipationsInput
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
   }
@@ -55533,6 +55553,7 @@ export namespace Prisma {
     mutedUntil?: Date | string | null
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
   }
 
   export type ConversationParticipantUpdateInput = {
@@ -55544,6 +55565,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
   }
@@ -55559,6 +55581,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type ConversationParticipantCreateManyInput = {
@@ -55572,6 +55595,7 @@ export namespace Prisma {
     mutedUntil?: Date | string | null
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
   }
 
   export type ConversationParticipantUpdateManyMutationInput = {
@@ -55583,6 +55607,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type ConversationParticipantUncheckedUpdateManyInput = {
@@ -55596,6 +55621,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type MessageCreateInput = {
@@ -58323,6 +58349,7 @@ export namespace Prisma {
     mutedUntil?: SortOrder
     archivedAt?: SortOrder
     handRaisedAt?: SortOrder
+    screenPrivacy?: SortOrder
   }
 
   export type ConversationParticipantMaxOrderByAggregateInput = {
@@ -58336,6 +58363,7 @@ export namespace Prisma {
     mutedUntil?: SortOrder
     archivedAt?: SortOrder
     handRaisedAt?: SortOrder
+    screenPrivacy?: SortOrder
   }
 
   export type ConversationParticipantMinOrderByAggregateInput = {
@@ -58349,6 +58377,7 @@ export namespace Prisma {
     mutedUntil?: SortOrder
     archivedAt?: SortOrder
     handRaisedAt?: SortOrder
+    screenPrivacy?: SortOrder
   }
 
   export type IntNullableFilter<$PrismaModel = never> = {
@@ -62295,6 +62324,7 @@ export namespace Prisma {
     mutedUntil?: Date | string | null
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
   }
 
@@ -62308,6 +62338,7 @@ export namespace Prisma {
     mutedUntil?: Date | string | null
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
   }
 
   export type ConversationParticipantCreateOrConnectWithoutUserInput = {
@@ -62852,6 +62883,7 @@ export namespace Prisma {
     mutedUntil?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     archivedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     handRaisedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
+    screenPrivacy?: BoolFilter<"ConversationParticipant"> | boolean
   }
 
   export type MessageUpsertWithWhereUniqueWithoutSenderInput = {
@@ -64840,6 +64872,7 @@ export namespace Prisma {
     mutedUntil?: Date | string | null
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
     user: UserCreateNestedOneWithoutParticipationsInput
   }
 
@@ -64853,6 +64886,7 @@ export namespace Prisma {
     mutedUntil?: Date | string | null
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
   }
 
   export type ConversationParticipantCreateOrConnectWithoutConversationInput = {
@@ -70577,6 +70611,7 @@ export namespace Prisma {
     mutedUntil?: Date | string | null
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
   }
 
   export type MessageCreateManySenderInput = {
@@ -70858,6 +70893,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
   }
 
@@ -70871,6 +70907,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type ConversationParticipantUncheckedUpdateManyWithoutUserInput = {
@@ -70883,6 +70920,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type MessageUpdateWithoutSenderInput = {
@@ -71228,6 +71266,7 @@ export namespace Prisma {
     mutedUntil?: Date | string | null
     archivedAt?: Date | string | null
     handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
   }
 
   export type MessageCreateManyConversationInput = {
@@ -71360,6 +71399,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
   }
 
@@ -71373,6 +71413,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type ConversationParticipantUncheckedUpdateManyWithoutConversationInput = {
@@ -71385,6 +71426,7 @@ export namespace Prisma {
     mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type MessageUpdateWithoutConversationInput = {

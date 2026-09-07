@@ -1586,3 +1586,26 @@ Stage Summary:
 - Contract: UploadedFile rows are written by POST /api/uploads (dual-write) and read by GET /api/uploads/[file] (disk → store fallback); forward payloads carry kind 'file' fields; automations PATCH gains trigger; search matches fileName
 - Honest gaps: files uploaded BEFORE this store whose disk copies were already lost (2 old demo PDFs) had their bytes regenerated, not recovered — historical media outside the backfill (old avatars, already nulled) remains unrecoverable by design honesty; forward-sheet UI verified via crew screenshot + API shape (lead's forward was API-level)
 - Evidence: download/qa-r41-01-forward-sheet-doc.png (+ crew debug shots); lead proofs were curl/node-level, reproducible from this log
+---
+Task ID: R42 (lead-worked wave — no crew; the honest-gaps queue is now EMPTY)
+Agent: orchestrator (Z.ai Code)
+Task: Per-VIEWER screen security — the last item on the R39/R40 honest-gap queue. Each participant gets a personal veil flag (OR'd with the room-wide flag), plus the db.ts singleton protocol hardening the wave uncovered.
+
+Work Log:
+- Schema: ConversationParticipant.screenPrivacy Boolean @default(false) — the personal half of Signal screen security; bun run db:push + db:generate
+- db.ts protocol v8 (schema push) — then the wave's real bug: PATCH 500 "Unknown argument 'screenPrivacy'" because the v8 key got bound BEFORE the client regen finished (HMR evaluated db.ts between the edit and the regen, so prismaV8 wrapped the STALE pre-screenPrivacy runtime; the globalThis singleton then reused it forever). FIX: bumped the key again POST-regen → v9 (fresh construction from the current generated client) — PATCH went 500 → 200 instantly. Protocol lesson written into db.ts comments: never reuse a key across a client regen
+- NEW route PATCH /api/conversations/[id]/screen-privacy body { userId, on:boolean } (mute-route template): 404 unknown conv, participant-only 403, honest 400s for missing userId / non-boolean on; returns { ok, screenPrivacy }; deliberately NOT admin-gated (mirrors R38 room-wide gating)
+- serializers buildConversationDetail + types.ts ConversationDetail: additive myScreenPrivacy (mine?.screenPrivacy ?? false) — room reads detail; chats list untouched (veil only matters inside a room)
+- room-info-page: SECOND row under the R38 switch — personal "Screen security / Blur messages when Pulse loses focus — just for you" (myPrivacyMutation: dedicated route, optimistic flip, rollback + toast "Screen security on/off for you"); the original row relabeled "Screen security for everyone / Applies to every member of this chat" (same room-wide PATCH as R38)
+- chat-room: screenPrivacyOn = room-wide OR personal (3-line change; listener economics unchanged — zero listeners while both flags off)
+- LEAD curl proofs: Alice personal ON → 200; Alice detail (room-wide false | personal true); Bob detail (false | false) — per-viewer isolation at the data layer; non-participant 403; missing on 400; non-boolean on 400; restore-off 200 + verified false
+- agent-browser E2E as Alice (fresh hard-reloaded tab): info sheet shows BOTH rows with correct states (personal ON from probe, room-wide OFF) → qa-r42-01; UI toggle OFF → switch false, server re-fetch confirms false; room blur → NOT veiled (negative control, qa-r42-02) — message area fully readable with PDF card while window blurred; UI toggle ON → toast "Screen security on for you" (qa-r42-03); blur → FULL glass veil "Screen security is on / Messages are hidden while Pulse is not focused" (qa-r42-04); focus → instant restore (qa-r42-05). Same viewport, same chat, only the personal flag differs between 02 and 04
+- Cleanup: Alice personal restored OFF via API (verified); QA group room-wide stays OFF; no messages/rows created (toggle-only wave); recent dev.log error-free; tsc src 0 errors; lint clean
+- Environment notes: 6 files were mode-only (100644→100755) from a prior environment reset — restored via git checkout; a long-lived tab was stuck in a stale z-72 overlay from the R41 debug session (hard reload fixed); observed pre-existing cosmetic nit: swipe-action labels (Unpin/Archive) ghost through the translucent pinned row (qa-r42-debug-swipe.png) — documented, not fixed this wave
+- Evidence: download/qa-r42-01-privacy-rows.png, -02-clear-when-off.png, -03-personal-on-toast.png, -04-veil-personal-on.png, -05-refocus-clear.png, -debug-swipe.png (cosmetic nit)
+
+Stage Summary:
+- SHIPPED: per-viewer screen security — the FINAL item from the R39/R40 honest-gap queue. Room veil engages when (room-wide OR viewer-personal) flag is on; each member controls only their own flag; UI, API, serializer, types all proven live
+- Contract: PATCH /api/conversations/[id]/screen-privacy { userId, on } → { ok, screenPrivacy }; ConversationDetail.myScreenPrivacy additive; veil = detail.screenPrivacy || detail.myScreenPrivacy
+- db.ts singleton protocol v9 + rule: bump the key AFTER every client regen (a key bound pre-regen wraps a stale runtime)
+- HONEST-GAPS QUEUE IS NOW EMPTY. Next candidates (platform-inspired, consumer-messenger fit): scheduled messages (Telegram-style send-later via Reminder infra), chat folders polish, message translation hook, per-chat wallpaper; plus the documented cosmetic swipe-ghost nit and the ongoing review-cron polish loop

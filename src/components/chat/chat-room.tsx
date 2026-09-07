@@ -826,9 +826,12 @@ export function ChatRoom({
   })
 
   // ── R38: Signal "Screen security" — frost the message area while unfocused ──
-  // Registered ONLY while the conversation's screenPrivacy flag is on (zero
-  // listener overhead when off); cleaned up on toggle/unmount/route change.
-  const screenPrivacyOn = detail.data?.screenPrivacy === true
+  // R42: the veil engages when EITHER flag is on — the room-wide switch
+  // (screenPrivacy) or the viewer's personal flag (myScreenPrivacy).
+  // Registered ONLY while either flag is on (zero listener overhead when off);
+  // cleaned up on toggle/unmount/route change.
+  const screenPrivacyOn =
+    detail.data?.screenPrivacy === true || detail.data?.myScreenPrivacy === true
   const [privacyHidden, setPrivacyHidden] = useState(false)
   useEffect(() => {
     if (!screenPrivacyOn) {

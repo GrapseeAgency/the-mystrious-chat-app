@@ -191,6 +191,9 @@ export interface ConversationDetail {
   /** R38 additive: Signal screen security — frost the message area whenever
    *  the Pulse window loses focus (blur / hidden tab). false = plain room. */
   screenPrivacy: boolean
+  /** R42 additive: the VIEWER's personal screen-security flag (per-participant
+   *  veil). The room frosts when EITHER this or the room-wide flag is on. */
+  myScreenPrivacy: boolean
   isSelf: boolean // Signal-style Note to Self conversation
   description: string // channel/group purpose line (R30-c)
 }

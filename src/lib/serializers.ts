@@ -454,6 +454,9 @@ export async function buildConversationDetail(
     // R38 additive — Signal screen security: frost the message area while the
     // Pulse window is unfocused. Detail-level only (the room reads it here).
     screenPrivacy: conv.screenPrivacy,
+    // R42 additive — the viewer's personal screen-security flag (per-VIEWER
+    // veil; chat-room frosts when EITHER flag is on).
+    myScreenPrivacy: mine?.screenPrivacy ?? false,
     isSelf: conv.isSelf,
     description: conv.description,
   }

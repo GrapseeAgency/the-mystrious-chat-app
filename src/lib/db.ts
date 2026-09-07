@@ -12,14 +12,20 @@ import { PrismaClient } from '../../prisma/generated-client'
 // push + client regen (the long-running dev server held a pre-filePath client).
 // v7 — R41: same protocol after the UploadedFile model push + client regen
 // (durable attachment store — upload bytes live in SQLite, disk is the fast path).
+// v8 — R42: same protocol after the ConversationParticipant.screenPrivacy column
+// push + client regen (per-viewer screen security veil).
+// v9 — R42 fix: the v8 key got bound BEFORE the regen finished (HMR evaluated
+// db.ts between the edit and the client regen), so the running server kept a
+// pre-screenPrivacy runtime. Key bumped again POST-regen to force a truly
+// fresh client construction — do not reuse a key across a client regen.
 const globalForPrisma = globalThis as unknown as {
-  prismaV7: PrismaClient | undefined
+  prismaV9: PrismaClient | undefined
 }
 
 export const db =
-  globalForPrisma.prismaV7 ??
+  globalForPrisma.prismaV9 ??
   new PrismaClient({
     log: ['query'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV7 = db
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV9 = db
