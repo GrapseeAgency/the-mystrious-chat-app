@@ -1791,3 +1791,16 @@ Stage Summary:
 - Contract: ScheduledMessage.cancelledAt/cancelledReason; dispatch sweep excludes cancelled; GET scheduled returns refused rows; POST/GET /api/users/[id]/report; AccountReport unique triple; POST /api/voice/transcribe; socket voice:transcript relay (identity gate + 700 ms rate limit)
 - Honest gaps: reports have no admin/moderation surface yet (rows are stored, unread by any UI — by design, moderation review is out of product scope for now); captions are speaker-side ASR only (each participant captions their own mic — there is no server-side audio mixing in the relay architecture); a caption window in flight when the tab closes is dropped (best-effort); the scheduled chip only appears once the schedule query has been opened once per room (pre-existing R19 quirk, untouched per the no-polish directive)
 - Evidence: download/qa-r48-01..10 (+ curl/SDK/relay matrices reproducible from this log), all through the :81 gateway
+---
+Task ID: R48-ship (lead addendum)
+Agent: orchestrator (Z.ai Code)
+Task: Shipping note — R48 committed; GitHub push blocked by ANOTHER environment credential wipe
+
+Work Log:
+- Committed 72d4c3f on main (R48: dispatch block guard + report flow + voice captions)
+- git push origin main FAILED: the GitHub PAT was wiped by the environment reset — ~/.git-credentials gone, no cron brief carries it anymore (the old review crons that held it were deleted), no recoverable trace in history/agent-ctx
+- STOPGAP: recreated /home/z/pulse-mirror.git (the reset wiped the mirror too) and pushed main there — mirror head == 72d4c3f, R48 is durably stored in TWO sandbox locations
+- NEXT WAVE MUST: obtain a fresh GitHub PAT from the user (or a brief that carries it), write https://<token>@github.com into ~/.git-credentials with credential.helper=store, then `git push origin main` — origin is https://github.com/GrapseeAgency/the-mystrious-chat-app.git; local main is 72d4c3f (origin/main expected at 7a45593 / R47+worklog)
+
+Stage Summary:
+- Local state: main == 72d4c3f (R48), mirror == 72d4c3f, origin == 7a45593 — PUSH PENDING CREDENTIALS
