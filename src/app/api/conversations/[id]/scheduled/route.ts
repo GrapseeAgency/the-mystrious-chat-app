@@ -21,6 +21,8 @@ function toItem(row: {
   content: string
   scheduledAt: Date
   sentAt: Date | null
+  cancelledAt: Date | null
+  cancelledReason: string | null
 }): ScheduledItem {
   return {
     id: row.id,
@@ -28,6 +30,8 @@ function toItem(row: {
     content: row.content,
     scheduledAt: row.scheduledAt.toISOString(),
     sentAt: row.sentAt ? row.sentAt.toISOString() : null,
+    cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
+    cancelledReason: row.cancelledReason,
   }
 }
 
@@ -54,9 +58,11 @@ export async function GET(req: Request, { params }: RouteCtx) {
     )
   }
 
+  // Pending rows AND rows dispatch refused to send (cancelled) — the sender
+  // keeps visibility into both until they delete them.
   const rows = await db.scheduledMessage.findMany({
     where: { conversationId: id, senderId: userId, sentAt: null },
-    orderBy: { scheduledAt: 'asc' },
+    orderBy: [{ cancelledAt: 'asc' }, { scheduledAt: 'asc' }],
     take: 50,
   })
   return NextResponse.json({ items: rows.map(toItem) })

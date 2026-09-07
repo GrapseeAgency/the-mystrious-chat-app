@@ -47,8 +47,32 @@ model User {
   automationsCreated Automation[]              @relation("AutomationCreator")
   blocksIssued   UserBlock[]                   @relation("BlocksIssued")
   blocksReceived UserBlock[]                   @relation("BlocksReceived")
+  reportsFiled   AccountReport[]               @relation("ReportReporter")
+  reportsReceived AccountReport[]             @relation("ReportReported")
 
   @@index([name])
+}
+
+/**
+ * R48 — account reports (WhatsApp/Telegram-style "Report account").
+ * Private by design: the reported account is NEVER notified and reports
+ * are not visible to other users — they land here for moderation review.
+ * One row per (reporter, reported, reason): a repeat submission refreshes
+ * the details/timestamp instead of spamming duplicates.
+ */
+model AccountReport {
+  id         String   @id @default(cuid())
+  reporterId String
+  reportedId String
+  reason     String // spam|harassment|impersonation|inappropriate|scam|other
+  details    String   @default("") // optional free-text context (0..500 chars)
+  createdAt  DateTime @default(now())
+  reporter   User     @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reported   User     @relation("ReportReported", fields: [reportedId], references: [id], onDelete: Cascade)
+
+  @@unique([reporterId, reportedId, reason])
+  @@index([reporterId])
+  @@index([reportedId])
 }
 
 /**
@@ -487,14 +511,16 @@ model SavedMessage {
  * Telegram/WhatsApp-style delayed send — flushed to a real message by the dispatch sweep.
  */
 model ScheduledMessage {
-  id             String       @id @default(cuid())
-  conversationId String
-  senderId       String
-  content        String
-  scheduledAt    DateTime
-  sentAt         DateTime? // null = pending
-  createdAt      DateTime     @default(now())
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  id              String       @id @default(cuid())
+  conversationId  String
+  senderId        String
+  content         String
+  scheduledAt     DateTime
+  sentAt          DateTime? // null = pending
+  cancelledAt     DateTime? // R48: set when dispatch refuses to send (block pair in a DM)
+  cancelledReason String? // R48: why dispatch skipped this row ('blocked')
+  createdAt       DateTime     @default(now())
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([scheduledAt, sentAt])
   @@index([conversationId, senderId])

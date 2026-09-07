@@ -29,6 +29,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Flag,
   LoaderCircle,
   Ban,
   MessageCircle,
@@ -48,6 +49,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 import { ChatRoom } from '@/components/chat/chat-room'
 import { StatusGlyph } from '@/components/profile/status-glyph'
+import { ReportPanel } from '@/components/chat/report-panel'
 
 const EMPTY_ONLINE_IDS: ReadonlySet<string> = new Set()
 
@@ -128,6 +130,8 @@ function UserPageBody({
 
   const [roomId, setRoomId] = useState<string | null>(null)
   const [handleCopied, setHandleCopied] = useState(false)
+  /** R48: the report panel expands under the block row */
+  const [reportOpen, setReportOpen] = useState(false)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [nowTick, setNowTick] = useState(() => Date.now())
 
@@ -581,25 +585,57 @@ function UserPageBody({
             </motion.button>
           </motion.div>
 
-          {/* ── R47 — block / unblock (danger quiet row; toggles in place) ── */}
+          {/* ── R47 — block / unblock (danger quiet row) + R48 report (expanding panel) ── */}
           {me && user.id !== me.id ? (
-            <motion.button
-              type="button"
-              onClick={() => blockMutation.mutate(!(blockQ.data ?? false))}
-              disabled={blockMutation.isPending || blockQ.isPending}
-              aria-pressed={blockQ.data ?? false}
-              aria-label={blockQ.data ? `Unblock ${user.name}` : `Block ${user.name}`}
-              whileTap={reducedMotion ? undefined : pressTap}
-              transition={pressSpring}
-              className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] px-3 py-2.5 text-[13px] font-bold text-rose-600 outline-none transition-colors hover:bg-rose-500/[0.12] disabled:opacity-50 dark:text-rose-400"
-            >
-              {blockMutation.isPending || blockQ.isPending ? (
-                <LoaderCircle className="size-4 animate-spin" aria-hidden />
-              ) : (
-                <Ban className="size-4" aria-hidden />
-              )}
-              {blockQ.data ? `Unblock ${firstName}` : `Block ${firstName}`}
-            </motion.button>
+            <>
+              <motion.button
+                type="button"
+                onClick={() => blockMutation.mutate(!(blockQ.data ?? false))}
+                disabled={blockMutation.isPending || blockQ.isPending}
+                aria-pressed={blockQ.data ?? false}
+                aria-label={blockQ.data ? `Unblock ${user.name}` : `Block ${user.name}`}
+                whileTap={reducedMotion ? undefined : pressTap}
+                transition={pressSpring}
+                className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] px-3 py-2.5 text-[13px] font-bold text-rose-600 outline-none transition-colors hover:bg-rose-500/[0.12] disabled:opacity-50 dark:text-rose-400"
+              >
+                {blockMutation.isPending || blockQ.isPending ? (
+                  <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <Ban className="size-4" aria-hidden />
+                )}
+                {blockQ.data ? `Unblock ${firstName}` : `Block ${firstName}`}
+              </motion.button>
+              <motion.button
+                type="button"
+                onClick={() => {
+                  haptic(8)
+                  setReportOpen((v) => !v)
+                }}
+                aria-expanded={reportOpen}
+                aria-label={`Report ${user.name}`}
+                whileTap={reducedMotion ? undefined : pressTap}
+                transition={pressSpring}
+                className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2.5 text-[13px] font-bold text-amber-700 outline-none transition-colors hover:bg-amber-500/[0.12] dark:text-amber-400"
+              >
+                <Flag className="size-4" aria-hidden />
+                Report {firstName}
+              </motion.button>
+              {reportOpen ? (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.16 }}
+                  className="mt-2"
+                >
+                  <ReportPanel
+                    reportedId={user.id}
+                    reporterId={me?.id}
+                    reportedName={user.name}
+                    onDone={() => setReportOpen(false)}
+                  />
+                </motion.div>
+              ) : null}
+            </>
           ) : null}
           {!me ? (
             <p className="mt-2 text-center text-[11px] font-medium text-zinc-400 dark:text-zinc-500">

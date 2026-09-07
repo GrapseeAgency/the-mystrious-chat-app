@@ -19,6 +19,16 @@ export type PrismaPromise<T> = $Public.PrismaPromise<T>
  */
 export type User = $Result.DefaultSelection<Prisma.$UserPayload>
 /**
+ * Model AccountReport
+ * *
+ *  * R48 — account reports (WhatsApp/Telegram-style "Report account").
+ *  * Private by design: the reported account is NEVER notified and reports
+ *  * are not visible to other users — they land here for moderation review.
+ *  * One row per (reporter, reported, reason): a repeat submission refreshes
+ *  * the details/timestamp instead of spamming duplicates.
+ */
+export type AccountReport = $Result.DefaultSelection<Prisma.$AccountReportPayload>
+/**
  * Model UserBlock
  * *
  *  * R47 — WhatsApp/Telegram-style account block. One row per direction:
@@ -400,6 +410,16 @@ export class PrismaClient<
     * ```
     */
   get user(): Prisma.UserDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.accountReport`: Exposes CRUD operations for the **AccountReport** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more AccountReports
+    * const accountReports = await prisma.accountReport.findMany()
+    * ```
+    */
+  get accountReport(): Prisma.AccountReportDelegate<ExtArgs, ClientOptions>;
 
   /**
    * `prisma.userBlock`: Exposes CRUD operations for the **UserBlock** model.
@@ -1242,6 +1262,7 @@ export namespace Prisma {
 
   export const ModelName: {
     User: 'User',
+    AccountReport: 'AccountReport',
     UserBlock: 'UserBlock',
     Reminder: 'Reminder',
     ConversationStreak: 'ConversationStreak',
@@ -1300,7 +1321,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -1375,6 +1396,80 @@ export namespace Prisma {
           count: {
             args: Prisma.UserCountArgs<ExtArgs>
             result: $Utils.Optional<UserCountAggregateOutputType> | number
+          }
+        }
+      }
+      AccountReport: {
+        payload: Prisma.$AccountReportPayload<ExtArgs>
+        fields: Prisma.AccountReportFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.AccountReportFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.AccountReportFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload>
+          }
+          findFirst: {
+            args: Prisma.AccountReportFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.AccountReportFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload>
+          }
+          findMany: {
+            args: Prisma.AccountReportFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload>[]
+          }
+          create: {
+            args: Prisma.AccountReportCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload>
+          }
+          createMany: {
+            args: Prisma.AccountReportCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.AccountReportCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload>[]
+          }
+          delete: {
+            args: Prisma.AccountReportDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload>
+          }
+          update: {
+            args: Prisma.AccountReportUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload>
+          }
+          deleteMany: {
+            args: Prisma.AccountReportDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.AccountReportUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.AccountReportUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload>[]
+          }
+          upsert: {
+            args: Prisma.AccountReportUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AccountReportPayload>
+          }
+          aggregate: {
+            args: Prisma.AccountReportAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateAccountReport>
+          }
+          groupBy: {
+            args: Prisma.AccountReportGroupByArgs<ExtArgs>
+            result: $Utils.Optional<AccountReportGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.AccountReportCountArgs<ExtArgs>
+            result: $Utils.Optional<AccountReportCountAggregateOutputType> | number
           }
         }
       }
@@ -4435,6 +4530,7 @@ export namespace Prisma {
   }
   export type GlobalOmitConfig = {
     user?: UserOmit
+    accountReport?: AccountReportOmit
     userBlock?: UserBlockOmit
     reminder?: ReminderOmit
     conversationStreak?: ConversationStreakOmit
@@ -4574,6 +4670,8 @@ export namespace Prisma {
     automationsCreated: number
     blocksIssued: number
     blocksReceived: number
+    reportsFiled: number
+    reportsReceived: number
   }
 
   export type UserCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -4596,6 +4694,8 @@ export namespace Prisma {
     automationsCreated?: boolean | UserCountOutputTypeCountAutomationsCreatedArgs
     blocksIssued?: boolean | UserCountOutputTypeCountBlocksIssuedArgs
     blocksReceived?: boolean | UserCountOutputTypeCountBlocksReceivedArgs
+    reportsFiled?: boolean | UserCountOutputTypeCountReportsFiledArgs
+    reportsReceived?: boolean | UserCountOutputTypeCountReportsReceivedArgs
   }
 
   // Custom InputTypes
@@ -4740,6 +4840,20 @@ export namespace Prisma {
    */
   export type UserCountOutputTypeCountBlocksReceivedArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: UserBlockWhereInput
+  }
+
+  /**
+   * UserCountOutputType without action
+   */
+  export type UserCountOutputTypeCountReportsFiledArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: AccountReportWhereInput
+  }
+
+  /**
+   * UserCountOutputType without action
+   */
+  export type UserCountOutputTypeCountReportsReceivedArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: AccountReportWhereInput
   }
 
 
@@ -5508,6 +5622,8 @@ export namespace Prisma {
     automationsCreated?: boolean | User$automationsCreatedArgs<ExtArgs>
     blocksIssued?: boolean | User$blocksIssuedArgs<ExtArgs>
     blocksReceived?: boolean | User$blocksReceivedArgs<ExtArgs>
+    reportsFiled?: boolean | User$reportsFiledArgs<ExtArgs>
+    reportsReceived?: boolean | User$reportsReceivedArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["user"]>
 
@@ -5584,6 +5700,8 @@ export namespace Prisma {
     automationsCreated?: boolean | User$automationsCreatedArgs<ExtArgs>
     blocksIssued?: boolean | User$blocksIssuedArgs<ExtArgs>
     blocksReceived?: boolean | User$blocksReceivedArgs<ExtArgs>
+    reportsFiled?: boolean | User$reportsFiledArgs<ExtArgs>
+    reportsReceived?: boolean | User$reportsReceivedArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type UserIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
@@ -5612,6 +5730,8 @@ export namespace Prisma {
       automationsCreated: Prisma.$AutomationPayload<ExtArgs>[]
       blocksIssued: Prisma.$UserBlockPayload<ExtArgs>[]
       blocksReceived: Prisma.$UserBlockPayload<ExtArgs>[]
+      reportsFiled: Prisma.$AccountReportPayload<ExtArgs>[]
+      reportsReceived: Prisma.$AccountReportPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -6042,6 +6162,8 @@ export namespace Prisma {
     automationsCreated<T extends User$automationsCreatedArgs<ExtArgs> = {}>(args?: Subset<T, User$automationsCreatedArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AutomationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     blocksIssued<T extends User$blocksIssuedArgs<ExtArgs> = {}>(args?: Subset<T, User$blocksIssuedArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UserBlockPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     blocksReceived<T extends User$blocksReceivedArgs<ExtArgs> = {}>(args?: Subset<T, User$blocksReceivedArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$UserBlockPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    reportsFiled<T extends User$reportsFiledArgs<ExtArgs> = {}>(args?: Subset<T, User$reportsFiledArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    reportsReceived<T extends User$reportsReceivedArgs<ExtArgs> = {}>(args?: Subset<T, User$reportsReceivedArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -6946,6 +7068,54 @@ export namespace Prisma {
   }
 
   /**
+   * User.reportsFiled
+   */
+  export type User$reportsFiledArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    where?: AccountReportWhereInput
+    orderBy?: AccountReportOrderByWithRelationInput | AccountReportOrderByWithRelationInput[]
+    cursor?: AccountReportWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: AccountReportScalarFieldEnum | AccountReportScalarFieldEnum[]
+  }
+
+  /**
+   * User.reportsReceived
+   */
+  export type User$reportsReceivedArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    where?: AccountReportWhereInput
+    orderBy?: AccountReportOrderByWithRelationInput | AccountReportOrderByWithRelationInput[]
+    cursor?: AccountReportWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: AccountReportScalarFieldEnum | AccountReportScalarFieldEnum[]
+  }
+
+  /**
    * User without action
    */
   export type UserDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -6961,6 +7131,1083 @@ export namespace Prisma {
      * Choose, which related nodes to fetch as well
      */
     include?: UserInclude<ExtArgs> | null
+  }
+
+
+  /**
+   * Model AccountReport
+   */
+
+  export type AggregateAccountReport = {
+    _count: AccountReportCountAggregateOutputType | null
+    _min: AccountReportMinAggregateOutputType | null
+    _max: AccountReportMaxAggregateOutputType | null
+  }
+
+  export type AccountReportMinAggregateOutputType = {
+    id: string | null
+    reporterId: string | null
+    reportedId: string | null
+    reason: string | null
+    details: string | null
+    createdAt: Date | null
+  }
+
+  export type AccountReportMaxAggregateOutputType = {
+    id: string | null
+    reporterId: string | null
+    reportedId: string | null
+    reason: string | null
+    details: string | null
+    createdAt: Date | null
+  }
+
+  export type AccountReportCountAggregateOutputType = {
+    id: number
+    reporterId: number
+    reportedId: number
+    reason: number
+    details: number
+    createdAt: number
+    _all: number
+  }
+
+
+  export type AccountReportMinAggregateInputType = {
+    id?: true
+    reporterId?: true
+    reportedId?: true
+    reason?: true
+    details?: true
+    createdAt?: true
+  }
+
+  export type AccountReportMaxAggregateInputType = {
+    id?: true
+    reporterId?: true
+    reportedId?: true
+    reason?: true
+    details?: true
+    createdAt?: true
+  }
+
+  export type AccountReportCountAggregateInputType = {
+    id?: true
+    reporterId?: true
+    reportedId?: true
+    reason?: true
+    details?: true
+    createdAt?: true
+    _all?: true
+  }
+
+  export type AccountReportAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which AccountReport to aggregate.
+     */
+    where?: AccountReportWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AccountReports to fetch.
+     */
+    orderBy?: AccountReportOrderByWithRelationInput | AccountReportOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: AccountReportWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AccountReports from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AccountReports.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned AccountReports
+    **/
+    _count?: true | AccountReportCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: AccountReportMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: AccountReportMaxAggregateInputType
+  }
+
+  export type GetAccountReportAggregateType<T extends AccountReportAggregateArgs> = {
+        [P in keyof T & keyof AggregateAccountReport]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateAccountReport[P]>
+      : GetScalarType<T[P], AggregateAccountReport[P]>
+  }
+
+
+
+
+  export type AccountReportGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: AccountReportWhereInput
+    orderBy?: AccountReportOrderByWithAggregationInput | AccountReportOrderByWithAggregationInput[]
+    by: AccountReportScalarFieldEnum[] | AccountReportScalarFieldEnum
+    having?: AccountReportScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: AccountReportCountAggregateInputType | true
+    _min?: AccountReportMinAggregateInputType
+    _max?: AccountReportMaxAggregateInputType
+  }
+
+  export type AccountReportGroupByOutputType = {
+    id: string
+    reporterId: string
+    reportedId: string
+    reason: string
+    details: string
+    createdAt: Date
+    _count: AccountReportCountAggregateOutputType | null
+    _min: AccountReportMinAggregateOutputType | null
+    _max: AccountReportMaxAggregateOutputType | null
+  }
+
+  type GetAccountReportGroupByPayload<T extends AccountReportGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<AccountReportGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof AccountReportGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], AccountReportGroupByOutputType[P]>
+            : GetScalarType<T[P], AccountReportGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type AccountReportSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    reporterId?: boolean
+    reportedId?: boolean
+    reason?: boolean
+    details?: boolean
+    createdAt?: boolean
+    reporter?: boolean | UserDefaultArgs<ExtArgs>
+    reported?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["accountReport"]>
+
+  export type AccountReportSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    reporterId?: boolean
+    reportedId?: boolean
+    reason?: boolean
+    details?: boolean
+    createdAt?: boolean
+    reporter?: boolean | UserDefaultArgs<ExtArgs>
+    reported?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["accountReport"]>
+
+  export type AccountReportSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    reporterId?: boolean
+    reportedId?: boolean
+    reason?: boolean
+    details?: boolean
+    createdAt?: boolean
+    reporter?: boolean | UserDefaultArgs<ExtArgs>
+    reported?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["accountReport"]>
+
+  export type AccountReportSelectScalar = {
+    id?: boolean
+    reporterId?: boolean
+    reportedId?: boolean
+    reason?: boolean
+    details?: boolean
+    createdAt?: boolean
+  }
+
+  export type AccountReportOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "reporterId" | "reportedId" | "reason" | "details" | "createdAt", ExtArgs["result"]["accountReport"]>
+  export type AccountReportInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    reporter?: boolean | UserDefaultArgs<ExtArgs>
+    reported?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type AccountReportIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    reporter?: boolean | UserDefaultArgs<ExtArgs>
+    reported?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type AccountReportIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    reporter?: boolean | UserDefaultArgs<ExtArgs>
+    reported?: boolean | UserDefaultArgs<ExtArgs>
+  }
+
+  export type $AccountReportPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "AccountReport"
+    objects: {
+      reporter: Prisma.$UserPayload<ExtArgs>
+      reported: Prisma.$UserPayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      reporterId: string
+      reportedId: string
+      reason: string
+      details: string
+      createdAt: Date
+    }, ExtArgs["result"]["accountReport"]>
+    composites: {}
+  }
+
+  type AccountReportGetPayload<S extends boolean | null | undefined | AccountReportDefaultArgs> = $Result.GetResult<Prisma.$AccountReportPayload, S>
+
+  type AccountReportCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<AccountReportFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: AccountReportCountAggregateInputType | true
+    }
+
+  export interface AccountReportDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['AccountReport'], meta: { name: 'AccountReport' } }
+    /**
+     * Find zero or one AccountReport that matches the filter.
+     * @param {AccountReportFindUniqueArgs} args - Arguments to find a AccountReport
+     * @example
+     * // Get one AccountReport
+     * const accountReport = await prisma.accountReport.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends AccountReportFindUniqueArgs>(args: SelectSubset<T, AccountReportFindUniqueArgs<ExtArgs>>): Prisma__AccountReportClient<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one AccountReport that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {AccountReportFindUniqueOrThrowArgs} args - Arguments to find a AccountReport
+     * @example
+     * // Get one AccountReport
+     * const accountReport = await prisma.accountReport.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends AccountReportFindUniqueOrThrowArgs>(args: SelectSubset<T, AccountReportFindUniqueOrThrowArgs<ExtArgs>>): Prisma__AccountReportClient<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first AccountReport that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AccountReportFindFirstArgs} args - Arguments to find a AccountReport
+     * @example
+     * // Get one AccountReport
+     * const accountReport = await prisma.accountReport.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends AccountReportFindFirstArgs>(args?: SelectSubset<T, AccountReportFindFirstArgs<ExtArgs>>): Prisma__AccountReportClient<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first AccountReport that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AccountReportFindFirstOrThrowArgs} args - Arguments to find a AccountReport
+     * @example
+     * // Get one AccountReport
+     * const accountReport = await prisma.accountReport.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends AccountReportFindFirstOrThrowArgs>(args?: SelectSubset<T, AccountReportFindFirstOrThrowArgs<ExtArgs>>): Prisma__AccountReportClient<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more AccountReports that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AccountReportFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all AccountReports
+     * const accountReports = await prisma.accountReport.findMany()
+     * 
+     * // Get first 10 AccountReports
+     * const accountReports = await prisma.accountReport.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const accountReportWithIdOnly = await prisma.accountReport.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends AccountReportFindManyArgs>(args?: SelectSubset<T, AccountReportFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a AccountReport.
+     * @param {AccountReportCreateArgs} args - Arguments to create a AccountReport.
+     * @example
+     * // Create one AccountReport
+     * const AccountReport = await prisma.accountReport.create({
+     *   data: {
+     *     // ... data to create a AccountReport
+     *   }
+     * })
+     * 
+     */
+    create<T extends AccountReportCreateArgs>(args: SelectSubset<T, AccountReportCreateArgs<ExtArgs>>): Prisma__AccountReportClient<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many AccountReports.
+     * @param {AccountReportCreateManyArgs} args - Arguments to create many AccountReports.
+     * @example
+     * // Create many AccountReports
+     * const accountReport = await prisma.accountReport.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends AccountReportCreateManyArgs>(args?: SelectSubset<T, AccountReportCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many AccountReports and returns the data saved in the database.
+     * @param {AccountReportCreateManyAndReturnArgs} args - Arguments to create many AccountReports.
+     * @example
+     * // Create many AccountReports
+     * const accountReport = await prisma.accountReport.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many AccountReports and only return the `id`
+     * const accountReportWithIdOnly = await prisma.accountReport.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends AccountReportCreateManyAndReturnArgs>(args?: SelectSubset<T, AccountReportCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a AccountReport.
+     * @param {AccountReportDeleteArgs} args - Arguments to delete one AccountReport.
+     * @example
+     * // Delete one AccountReport
+     * const AccountReport = await prisma.accountReport.delete({
+     *   where: {
+     *     // ... filter to delete one AccountReport
+     *   }
+     * })
+     * 
+     */
+    delete<T extends AccountReportDeleteArgs>(args: SelectSubset<T, AccountReportDeleteArgs<ExtArgs>>): Prisma__AccountReportClient<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one AccountReport.
+     * @param {AccountReportUpdateArgs} args - Arguments to update one AccountReport.
+     * @example
+     * // Update one AccountReport
+     * const accountReport = await prisma.accountReport.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends AccountReportUpdateArgs>(args: SelectSubset<T, AccountReportUpdateArgs<ExtArgs>>): Prisma__AccountReportClient<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more AccountReports.
+     * @param {AccountReportDeleteManyArgs} args - Arguments to filter AccountReports to delete.
+     * @example
+     * // Delete a few AccountReports
+     * const { count } = await prisma.accountReport.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends AccountReportDeleteManyArgs>(args?: SelectSubset<T, AccountReportDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more AccountReports.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AccountReportUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many AccountReports
+     * const accountReport = await prisma.accountReport.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends AccountReportUpdateManyArgs>(args: SelectSubset<T, AccountReportUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more AccountReports and returns the data updated in the database.
+     * @param {AccountReportUpdateManyAndReturnArgs} args - Arguments to update many AccountReports.
+     * @example
+     * // Update many AccountReports
+     * const accountReport = await prisma.accountReport.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more AccountReports and only return the `id`
+     * const accountReportWithIdOnly = await prisma.accountReport.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends AccountReportUpdateManyAndReturnArgs>(args: SelectSubset<T, AccountReportUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one AccountReport.
+     * @param {AccountReportUpsertArgs} args - Arguments to update or create a AccountReport.
+     * @example
+     * // Update or create a AccountReport
+     * const accountReport = await prisma.accountReport.upsert({
+     *   create: {
+     *     // ... data to create a AccountReport
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the AccountReport we want to update
+     *   }
+     * })
+     */
+    upsert<T extends AccountReportUpsertArgs>(args: SelectSubset<T, AccountReportUpsertArgs<ExtArgs>>): Prisma__AccountReportClient<$Result.GetResult<Prisma.$AccountReportPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of AccountReports.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AccountReportCountArgs} args - Arguments to filter AccountReports to count.
+     * @example
+     * // Count the number of AccountReports
+     * const count = await prisma.accountReport.count({
+     *   where: {
+     *     // ... the filter for the AccountReports we want to count
+     *   }
+     * })
+    **/
+    count<T extends AccountReportCountArgs>(
+      args?: Subset<T, AccountReportCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], AccountReportCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a AccountReport.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AccountReportAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends AccountReportAggregateArgs>(args: Subset<T, AccountReportAggregateArgs>): Prisma.PrismaPromise<GetAccountReportAggregateType<T>>
+
+    /**
+     * Group by AccountReport.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AccountReportGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends AccountReportGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: AccountReportGroupByArgs['orderBy'] }
+        : { orderBy?: AccountReportGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, AccountReportGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetAccountReportGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the AccountReport model
+   */
+  readonly fields: AccountReportFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for AccountReport.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__AccountReportClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    reporter<T extends UserDefaultArgs<ExtArgs> = {}>(args?: Subset<T, UserDefaultArgs<ExtArgs>>): Prisma__UserClient<$Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    reported<T extends UserDefaultArgs<ExtArgs> = {}>(args?: Subset<T, UserDefaultArgs<ExtArgs>>): Prisma__UserClient<$Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the AccountReport model
+   */
+  interface AccountReportFieldRefs {
+    readonly id: FieldRef<"AccountReport", 'String'>
+    readonly reporterId: FieldRef<"AccountReport", 'String'>
+    readonly reportedId: FieldRef<"AccountReport", 'String'>
+    readonly reason: FieldRef<"AccountReport", 'String'>
+    readonly details: FieldRef<"AccountReport", 'String'>
+    readonly createdAt: FieldRef<"AccountReport", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * AccountReport findUnique
+   */
+  export type AccountReportFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    /**
+     * Filter, which AccountReport to fetch.
+     */
+    where: AccountReportWhereUniqueInput
+  }
+
+  /**
+   * AccountReport findUniqueOrThrow
+   */
+  export type AccountReportFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    /**
+     * Filter, which AccountReport to fetch.
+     */
+    where: AccountReportWhereUniqueInput
+  }
+
+  /**
+   * AccountReport findFirst
+   */
+  export type AccountReportFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    /**
+     * Filter, which AccountReport to fetch.
+     */
+    where?: AccountReportWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AccountReports to fetch.
+     */
+    orderBy?: AccountReportOrderByWithRelationInput | AccountReportOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for AccountReports.
+     */
+    cursor?: AccountReportWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AccountReports from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AccountReports.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of AccountReports.
+     */
+    distinct?: AccountReportScalarFieldEnum | AccountReportScalarFieldEnum[]
+  }
+
+  /**
+   * AccountReport findFirstOrThrow
+   */
+  export type AccountReportFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    /**
+     * Filter, which AccountReport to fetch.
+     */
+    where?: AccountReportWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AccountReports to fetch.
+     */
+    orderBy?: AccountReportOrderByWithRelationInput | AccountReportOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for AccountReports.
+     */
+    cursor?: AccountReportWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AccountReports from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AccountReports.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of AccountReports.
+     */
+    distinct?: AccountReportScalarFieldEnum | AccountReportScalarFieldEnum[]
+  }
+
+  /**
+   * AccountReport findMany
+   */
+  export type AccountReportFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    /**
+     * Filter, which AccountReports to fetch.
+     */
+    where?: AccountReportWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AccountReports to fetch.
+     */
+    orderBy?: AccountReportOrderByWithRelationInput | AccountReportOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing AccountReports.
+     */
+    cursor?: AccountReportWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AccountReports from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AccountReports.
+     */
+    skip?: number
+    distinct?: AccountReportScalarFieldEnum | AccountReportScalarFieldEnum[]
+  }
+
+  /**
+   * AccountReport create
+   */
+  export type AccountReportCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    /**
+     * The data needed to create a AccountReport.
+     */
+    data: XOR<AccountReportCreateInput, AccountReportUncheckedCreateInput>
+  }
+
+  /**
+   * AccountReport createMany
+   */
+  export type AccountReportCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many AccountReports.
+     */
+    data: AccountReportCreateManyInput | AccountReportCreateManyInput[]
+  }
+
+  /**
+   * AccountReport createManyAndReturn
+   */
+  export type AccountReportCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * The data used to create many AccountReports.
+     */
+    data: AccountReportCreateManyInput | AccountReportCreateManyInput[]
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * AccountReport update
+   */
+  export type AccountReportUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    /**
+     * The data needed to update a AccountReport.
+     */
+    data: XOR<AccountReportUpdateInput, AccountReportUncheckedUpdateInput>
+    /**
+     * Choose, which AccountReport to update.
+     */
+    where: AccountReportWhereUniqueInput
+  }
+
+  /**
+   * AccountReport updateMany
+   */
+  export type AccountReportUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update AccountReports.
+     */
+    data: XOR<AccountReportUpdateManyMutationInput, AccountReportUncheckedUpdateManyInput>
+    /**
+     * Filter which AccountReports to update
+     */
+    where?: AccountReportWhereInput
+    /**
+     * Limit how many AccountReports to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * AccountReport updateManyAndReturn
+   */
+  export type AccountReportUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * The data used to update AccountReports.
+     */
+    data: XOR<AccountReportUpdateManyMutationInput, AccountReportUncheckedUpdateManyInput>
+    /**
+     * Filter which AccountReports to update
+     */
+    where?: AccountReportWhereInput
+    /**
+     * Limit how many AccountReports to update.
+     */
+    limit?: number
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportIncludeUpdateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * AccountReport upsert
+   */
+  export type AccountReportUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    /**
+     * The filter to search for the AccountReport to update in case it exists.
+     */
+    where: AccountReportWhereUniqueInput
+    /**
+     * In case the AccountReport found by the `where` argument doesn't exist, create a new AccountReport with this data.
+     */
+    create: XOR<AccountReportCreateInput, AccountReportUncheckedCreateInput>
+    /**
+     * In case the AccountReport was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<AccountReportUpdateInput, AccountReportUncheckedUpdateInput>
+  }
+
+  /**
+   * AccountReport delete
+   */
+  export type AccountReportDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
+    /**
+     * Filter which AccountReport to delete.
+     */
+    where: AccountReportWhereUniqueInput
+  }
+
+  /**
+   * AccountReport deleteMany
+   */
+  export type AccountReportDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which AccountReports to delete
+     */
+    where?: AccountReportWhereInput
+    /**
+     * Limit how many AccountReports to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * AccountReport without action
+   */
+  export type AccountReportDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AccountReport
+     */
+    select?: AccountReportSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AccountReport
+     */
+    omit?: AccountReportOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: AccountReportInclude<ExtArgs> | null
   }
 
 
@@ -34189,6 +35436,8 @@ export namespace Prisma {
     content: string | null
     scheduledAt: Date | null
     sentAt: Date | null
+    cancelledAt: Date | null
+    cancelledReason: string | null
     createdAt: Date | null
   }
 
@@ -34199,6 +35448,8 @@ export namespace Prisma {
     content: string | null
     scheduledAt: Date | null
     sentAt: Date | null
+    cancelledAt: Date | null
+    cancelledReason: string | null
     createdAt: Date | null
   }
 
@@ -34209,6 +35460,8 @@ export namespace Prisma {
     content: number
     scheduledAt: number
     sentAt: number
+    cancelledAt: number
+    cancelledReason: number
     createdAt: number
     _all: number
   }
@@ -34221,6 +35474,8 @@ export namespace Prisma {
     content?: true
     scheduledAt?: true
     sentAt?: true
+    cancelledAt?: true
+    cancelledReason?: true
     createdAt?: true
   }
 
@@ -34231,6 +35486,8 @@ export namespace Prisma {
     content?: true
     scheduledAt?: true
     sentAt?: true
+    cancelledAt?: true
+    cancelledReason?: true
     createdAt?: true
   }
 
@@ -34241,6 +35498,8 @@ export namespace Prisma {
     content?: true
     scheduledAt?: true
     sentAt?: true
+    cancelledAt?: true
+    cancelledReason?: true
     createdAt?: true
     _all?: true
   }
@@ -34324,6 +35583,8 @@ export namespace Prisma {
     content: string
     scheduledAt: Date
     sentAt: Date | null
+    cancelledAt: Date | null
+    cancelledReason: string | null
     createdAt: Date
     _count: ScheduledMessageCountAggregateOutputType | null
     _min: ScheduledMessageMinAggregateOutputType | null
@@ -34351,6 +35612,8 @@ export namespace Prisma {
     content?: boolean
     scheduledAt?: boolean
     sentAt?: boolean
+    cancelledAt?: boolean
+    cancelledReason?: boolean
     createdAt?: boolean
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["scheduledMessage"]>
@@ -34362,6 +35625,8 @@ export namespace Prisma {
     content?: boolean
     scheduledAt?: boolean
     sentAt?: boolean
+    cancelledAt?: boolean
+    cancelledReason?: boolean
     createdAt?: boolean
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["scheduledMessage"]>
@@ -34373,6 +35638,8 @@ export namespace Prisma {
     content?: boolean
     scheduledAt?: boolean
     sentAt?: boolean
+    cancelledAt?: boolean
+    cancelledReason?: boolean
     createdAt?: boolean
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["scheduledMessage"]>
@@ -34384,10 +35651,12 @@ export namespace Prisma {
     content?: boolean
     scheduledAt?: boolean
     sentAt?: boolean
+    cancelledAt?: boolean
+    cancelledReason?: boolean
     createdAt?: boolean
   }
 
-  export type ScheduledMessageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "senderId" | "content" | "scheduledAt" | "sentAt" | "createdAt", ExtArgs["result"]["scheduledMessage"]>
+  export type ScheduledMessageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "senderId" | "content" | "scheduledAt" | "sentAt" | "cancelledAt" | "cancelledReason" | "createdAt", ExtArgs["result"]["scheduledMessage"]>
   export type ScheduledMessageInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }
@@ -34410,6 +35679,8 @@ export namespace Prisma {
       content: string
       scheduledAt: Date
       sentAt: Date | null
+      cancelledAt: Date | null
+      cancelledReason: string | null
       createdAt: Date
     }, ExtArgs["result"]["scheduledMessage"]>
     composites: {}
@@ -34841,6 +36112,8 @@ export namespace Prisma {
     readonly content: FieldRef<"ScheduledMessage", 'String'>
     readonly scheduledAt: FieldRef<"ScheduledMessage", 'DateTime'>
     readonly sentAt: FieldRef<"ScheduledMessage", 'DateTime'>
+    readonly cancelledAt: FieldRef<"ScheduledMessage", 'DateTime'>
+    readonly cancelledReason: FieldRef<"ScheduledMessage", 'String'>
     readonly createdAt: FieldRef<"ScheduledMessage", 'DateTime'>
   }
     
@@ -51935,6 +53208,18 @@ export namespace Prisma {
   export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
 
 
+  export const AccountReportScalarFieldEnum: {
+    id: 'id',
+    reporterId: 'reporterId',
+    reportedId: 'reportedId',
+    reason: 'reason',
+    details: 'details',
+    createdAt: 'createdAt'
+  };
+
+  export type AccountReportScalarFieldEnum = (typeof AccountReportScalarFieldEnum)[keyof typeof AccountReportScalarFieldEnum]
+
+
   export const UserBlockScalarFieldEnum: {
     id: 'id',
     blockerId: 'blockerId',
@@ -52270,6 +53555,8 @@ export namespace Prisma {
     content: 'content',
     scheduledAt: 'scheduledAt',
     sentAt: 'sentAt',
+    cancelledAt: 'cancelledAt',
+    cancelledReason: 'cancelledReason',
     createdAt: 'createdAt'
   };
 
@@ -52576,6 +53863,8 @@ export namespace Prisma {
     automationsCreated?: AutomationListRelationFilter
     blocksIssued?: UserBlockListRelationFilter
     blocksReceived?: UserBlockListRelationFilter
+    reportsFiled?: AccountReportListRelationFilter
+    reportsReceived?: AccountReportListRelationFilter
   }
 
   export type UserOrderByWithRelationInput = {
@@ -52613,6 +53902,8 @@ export namespace Prisma {
     automationsCreated?: AutomationOrderByRelationAggregateInput
     blocksIssued?: UserBlockOrderByRelationAggregateInput
     blocksReceived?: UserBlockOrderByRelationAggregateInput
+    reportsFiled?: AccountReportOrderByRelationAggregateInput
+    reportsReceived?: AccountReportOrderByRelationAggregateInput
   }
 
   export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -52653,6 +53944,8 @@ export namespace Prisma {
     automationsCreated?: AutomationListRelationFilter
     blocksIssued?: UserBlockListRelationFilter
     blocksReceived?: UserBlockListRelationFilter
+    reportsFiled?: AccountReportListRelationFilter
+    reportsReceived?: AccountReportListRelationFilter
   }, "id" | "username">
 
   export type UserOrderByWithAggregationInput = {
@@ -52695,6 +53988,70 @@ export namespace Prisma {
     xp?: IntWithAggregatesFilter<"User"> | number
     xpToday?: IntWithAggregatesFilter<"User"> | number
     xpDay?: StringWithAggregatesFilter<"User"> | string
+  }
+
+  export type AccountReportWhereInput = {
+    AND?: AccountReportWhereInput | AccountReportWhereInput[]
+    OR?: AccountReportWhereInput[]
+    NOT?: AccountReportWhereInput | AccountReportWhereInput[]
+    id?: StringFilter<"AccountReport"> | string
+    reporterId?: StringFilter<"AccountReport"> | string
+    reportedId?: StringFilter<"AccountReport"> | string
+    reason?: StringFilter<"AccountReport"> | string
+    details?: StringFilter<"AccountReport"> | string
+    createdAt?: DateTimeFilter<"AccountReport"> | Date | string
+    reporter?: XOR<UserScalarRelationFilter, UserWhereInput>
+    reported?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }
+
+  export type AccountReportOrderByWithRelationInput = {
+    id?: SortOrder
+    reporterId?: SortOrder
+    reportedId?: SortOrder
+    reason?: SortOrder
+    details?: SortOrder
+    createdAt?: SortOrder
+    reporter?: UserOrderByWithRelationInput
+    reported?: UserOrderByWithRelationInput
+  }
+
+  export type AccountReportWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    reporterId_reportedId_reason?: AccountReportReporterIdReportedIdReasonCompoundUniqueInput
+    AND?: AccountReportWhereInput | AccountReportWhereInput[]
+    OR?: AccountReportWhereInput[]
+    NOT?: AccountReportWhereInput | AccountReportWhereInput[]
+    reporterId?: StringFilter<"AccountReport"> | string
+    reportedId?: StringFilter<"AccountReport"> | string
+    reason?: StringFilter<"AccountReport"> | string
+    details?: StringFilter<"AccountReport"> | string
+    createdAt?: DateTimeFilter<"AccountReport"> | Date | string
+    reporter?: XOR<UserScalarRelationFilter, UserWhereInput>
+    reported?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }, "id" | "reporterId_reportedId_reason">
+
+  export type AccountReportOrderByWithAggregationInput = {
+    id?: SortOrder
+    reporterId?: SortOrder
+    reportedId?: SortOrder
+    reason?: SortOrder
+    details?: SortOrder
+    createdAt?: SortOrder
+    _count?: AccountReportCountOrderByAggregateInput
+    _max?: AccountReportMaxOrderByAggregateInput
+    _min?: AccountReportMinOrderByAggregateInput
+  }
+
+  export type AccountReportScalarWhereWithAggregatesInput = {
+    AND?: AccountReportScalarWhereWithAggregatesInput | AccountReportScalarWhereWithAggregatesInput[]
+    OR?: AccountReportScalarWhereWithAggregatesInput[]
+    NOT?: AccountReportScalarWhereWithAggregatesInput | AccountReportScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"AccountReport"> | string
+    reporterId?: StringWithAggregatesFilter<"AccountReport"> | string
+    reportedId?: StringWithAggregatesFilter<"AccountReport"> | string
+    reason?: StringWithAggregatesFilter<"AccountReport"> | string
+    details?: StringWithAggregatesFilter<"AccountReport"> | string
+    createdAt?: DateTimeWithAggregatesFilter<"AccountReport"> | Date | string
   }
 
   export type UserBlockWhereInput = {
@@ -54461,6 +55818,8 @@ export namespace Prisma {
     content?: StringFilter<"ScheduledMessage"> | string
     scheduledAt?: DateTimeFilter<"ScheduledMessage"> | Date | string
     sentAt?: DateTimeNullableFilter<"ScheduledMessage"> | Date | string | null
+    cancelledAt?: DateTimeNullableFilter<"ScheduledMessage"> | Date | string | null
+    cancelledReason?: StringNullableFilter<"ScheduledMessage"> | string | null
     createdAt?: DateTimeFilter<"ScheduledMessage"> | Date | string
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
   }
@@ -54472,6 +55831,8 @@ export namespace Prisma {
     content?: SortOrder
     scheduledAt?: SortOrder
     sentAt?: SortOrderInput | SortOrder
+    cancelledAt?: SortOrderInput | SortOrder
+    cancelledReason?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     conversation?: ConversationOrderByWithRelationInput
   }
@@ -54486,6 +55847,8 @@ export namespace Prisma {
     content?: StringFilter<"ScheduledMessage"> | string
     scheduledAt?: DateTimeFilter<"ScheduledMessage"> | Date | string
     sentAt?: DateTimeNullableFilter<"ScheduledMessage"> | Date | string | null
+    cancelledAt?: DateTimeNullableFilter<"ScheduledMessage"> | Date | string | null
+    cancelledReason?: StringNullableFilter<"ScheduledMessage"> | string | null
     createdAt?: DateTimeFilter<"ScheduledMessage"> | Date | string
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
   }, "id">
@@ -54497,6 +55860,8 @@ export namespace Prisma {
     content?: SortOrder
     scheduledAt?: SortOrder
     sentAt?: SortOrderInput | SortOrder
+    cancelledAt?: SortOrderInput | SortOrder
+    cancelledReason?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     _count?: ScheduledMessageCountOrderByAggregateInput
     _max?: ScheduledMessageMaxOrderByAggregateInput
@@ -54513,6 +55878,8 @@ export namespace Prisma {
     content?: StringWithAggregatesFilter<"ScheduledMessage"> | string
     scheduledAt?: DateTimeWithAggregatesFilter<"ScheduledMessage"> | Date | string
     sentAt?: DateTimeNullableWithAggregatesFilter<"ScheduledMessage"> | Date | string | null
+    cancelledAt?: DateTimeNullableWithAggregatesFilter<"ScheduledMessage"> | Date | string | null
+    cancelledReason?: StringNullableWithAggregatesFilter<"ScheduledMessage"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"ScheduledMessage"> | Date | string
   }
 
@@ -55572,6 +56939,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateInput = {
@@ -55609,6 +56978,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserUpdateInput = {
@@ -55646,6 +57017,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateInput = {
@@ -55683,6 +57056,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateManyInput = {
@@ -55734,6 +57109,67 @@ export namespace Prisma {
     xp?: IntFieldUpdateOperationsInput | number
     xpToday?: IntFieldUpdateOperationsInput | number
     xpDay?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type AccountReportCreateInput = {
+    id?: string
+    reason: string
+    details?: string
+    createdAt?: Date | string
+    reporter: UserCreateNestedOneWithoutReportsFiledInput
+    reported: UserCreateNestedOneWithoutReportsReceivedInput
+  }
+
+  export type AccountReportUncheckedCreateInput = {
+    id?: string
+    reporterId: string
+    reportedId: string
+    reason: string
+    details?: string
+    createdAt?: Date | string
+  }
+
+  export type AccountReportUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reporter?: UserUpdateOneRequiredWithoutReportsFiledNestedInput
+    reported?: UserUpdateOneRequiredWithoutReportsReceivedNestedInput
+  }
+
+  export type AccountReportUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reporterId?: StringFieldUpdateOperationsInput | string
+    reportedId?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AccountReportCreateManyInput = {
+    id?: string
+    reporterId: string
+    reportedId: string
+    reason: string
+    details?: string
+    createdAt?: Date | string
+  }
+
+  export type AccountReportUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AccountReportUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reporterId?: StringFieldUpdateOperationsInput | string
+    reportedId?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
   export type UserBlockCreateInput = {
@@ -57587,6 +59023,8 @@ export namespace Prisma {
     content: string
     scheduledAt: Date | string
     sentAt?: Date | string | null
+    cancelledAt?: Date | string | null
+    cancelledReason?: string | null
     createdAt?: Date | string
     conversation: ConversationCreateNestedOneWithoutScheduledMessagesInput
   }
@@ -57598,6 +59036,8 @@ export namespace Prisma {
     content: string
     scheduledAt: Date | string
     sentAt?: Date | string | null
+    cancelledAt?: Date | string | null
+    cancelledReason?: string | null
     createdAt?: Date | string
   }
 
@@ -57607,6 +59047,8 @@ export namespace Prisma {
     content?: StringFieldUpdateOperationsInput | string
     scheduledAt?: DateTimeFieldUpdateOperationsInput | Date | string
     sentAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledReason?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     conversation?: ConversationUpdateOneRequiredWithoutScheduledMessagesNestedInput
   }
@@ -57618,6 +59060,8 @@ export namespace Prisma {
     content?: StringFieldUpdateOperationsInput | string
     scheduledAt?: DateTimeFieldUpdateOperationsInput | Date | string
     sentAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledReason?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -57628,6 +59072,8 @@ export namespace Prisma {
     content: string
     scheduledAt: Date | string
     sentAt?: Date | string | null
+    cancelledAt?: Date | string | null
+    cancelledReason?: string | null
     createdAt?: Date | string
   }
 
@@ -57637,6 +59083,8 @@ export namespace Prisma {
     content?: StringFieldUpdateOperationsInput | string
     scheduledAt?: DateTimeFieldUpdateOperationsInput | Date | string
     sentAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledReason?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -57647,6 +59095,8 @@ export namespace Prisma {
     content?: StringFieldUpdateOperationsInput | string
     scheduledAt?: DateTimeFieldUpdateOperationsInput | Date | string
     sentAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledReason?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -58873,6 +60323,12 @@ export namespace Prisma {
     none?: UserBlockWhereInput
   }
 
+  export type AccountReportListRelationFilter = {
+    every?: AccountReportWhereInput
+    some?: AccountReportWhereInput
+    none?: AccountReportWhereInput
+  }
+
   export type SortOrderInput = {
     sort: SortOrder
     nulls?: NullsOrder
@@ -58943,6 +60399,10 @@ export namespace Prisma {
   }
 
   export type UserBlockOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
+  export type AccountReportOrderByRelationAggregateInput = {
     _count?: SortOrder
   }
 
@@ -59074,6 +60534,39 @@ export namespace Prisma {
   export type UserScalarRelationFilter = {
     is?: UserWhereInput
     isNot?: UserWhereInput
+  }
+
+  export type AccountReportReporterIdReportedIdReasonCompoundUniqueInput = {
+    reporterId: string
+    reportedId: string
+    reason: string
+  }
+
+  export type AccountReportCountOrderByAggregateInput = {
+    id?: SortOrder
+    reporterId?: SortOrder
+    reportedId?: SortOrder
+    reason?: SortOrder
+    details?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type AccountReportMaxOrderByAggregateInput = {
+    id?: SortOrder
+    reporterId?: SortOrder
+    reportedId?: SortOrder
+    reason?: SortOrder
+    details?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type AccountReportMinOrderByAggregateInput = {
+    id?: SortOrder
+    reporterId?: SortOrder
+    reportedId?: SortOrder
+    reason?: SortOrder
+    details?: SortOrder
+    createdAt?: SortOrder
   }
 
   export type UserBlockBlockerIdBlockedIdCompoundUniqueInput = {
@@ -60266,6 +61759,8 @@ export namespace Prisma {
     content?: SortOrder
     scheduledAt?: SortOrder
     sentAt?: SortOrder
+    cancelledAt?: SortOrder
+    cancelledReason?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -60276,6 +61771,8 @@ export namespace Prisma {
     content?: SortOrder
     scheduledAt?: SortOrder
     sentAt?: SortOrder
+    cancelledAt?: SortOrder
+    cancelledReason?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -60286,6 +61783,8 @@ export namespace Prisma {
     content?: SortOrder
     scheduledAt?: SortOrder
     sentAt?: SortOrder
+    cancelledAt?: SortOrder
+    cancelledReason?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -61048,6 +62547,20 @@ export namespace Prisma {
     connect?: UserBlockWhereUniqueInput | UserBlockWhereUniqueInput[]
   }
 
+  export type AccountReportCreateNestedManyWithoutReporterInput = {
+    create?: XOR<AccountReportCreateWithoutReporterInput, AccountReportUncheckedCreateWithoutReporterInput> | AccountReportCreateWithoutReporterInput[] | AccountReportUncheckedCreateWithoutReporterInput[]
+    connectOrCreate?: AccountReportCreateOrConnectWithoutReporterInput | AccountReportCreateOrConnectWithoutReporterInput[]
+    createMany?: AccountReportCreateManyReporterInputEnvelope
+    connect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+  }
+
+  export type AccountReportCreateNestedManyWithoutReportedInput = {
+    create?: XOR<AccountReportCreateWithoutReportedInput, AccountReportUncheckedCreateWithoutReportedInput> | AccountReportCreateWithoutReportedInput[] | AccountReportUncheckedCreateWithoutReportedInput[]
+    connectOrCreate?: AccountReportCreateOrConnectWithoutReportedInput | AccountReportCreateOrConnectWithoutReportedInput[]
+    createMany?: AccountReportCreateManyReportedInputEnvelope
+    connect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+  }
+
   export type AppInstallUncheckedCreateNestedManyWithoutUserInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -61185,6 +62698,20 @@ export namespace Prisma {
     connectOrCreate?: UserBlockCreateOrConnectWithoutBlockedInput | UserBlockCreateOrConnectWithoutBlockedInput[]
     createMany?: UserBlockCreateManyBlockedInputEnvelope
     connect?: UserBlockWhereUniqueInput | UserBlockWhereUniqueInput[]
+  }
+
+  export type AccountReportUncheckedCreateNestedManyWithoutReporterInput = {
+    create?: XOR<AccountReportCreateWithoutReporterInput, AccountReportUncheckedCreateWithoutReporterInput> | AccountReportCreateWithoutReporterInput[] | AccountReportUncheckedCreateWithoutReporterInput[]
+    connectOrCreate?: AccountReportCreateOrConnectWithoutReporterInput | AccountReportCreateOrConnectWithoutReporterInput[]
+    createMany?: AccountReportCreateManyReporterInputEnvelope
+    connect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+  }
+
+  export type AccountReportUncheckedCreateNestedManyWithoutReportedInput = {
+    create?: XOR<AccountReportCreateWithoutReportedInput, AccountReportUncheckedCreateWithoutReportedInput> | AccountReportCreateWithoutReportedInput[] | AccountReportUncheckedCreateWithoutReportedInput[]
+    connectOrCreate?: AccountReportCreateOrConnectWithoutReportedInput | AccountReportCreateOrConnectWithoutReportedInput[]
+    createMany?: AccountReportCreateManyReportedInputEnvelope
+    connect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
   }
 
   export type StringFieldUpdateOperationsInput = {
@@ -61483,6 +63010,34 @@ export namespace Prisma {
     deleteMany?: UserBlockScalarWhereInput | UserBlockScalarWhereInput[]
   }
 
+  export type AccountReportUpdateManyWithoutReporterNestedInput = {
+    create?: XOR<AccountReportCreateWithoutReporterInput, AccountReportUncheckedCreateWithoutReporterInput> | AccountReportCreateWithoutReporterInput[] | AccountReportUncheckedCreateWithoutReporterInput[]
+    connectOrCreate?: AccountReportCreateOrConnectWithoutReporterInput | AccountReportCreateOrConnectWithoutReporterInput[]
+    upsert?: AccountReportUpsertWithWhereUniqueWithoutReporterInput | AccountReportUpsertWithWhereUniqueWithoutReporterInput[]
+    createMany?: AccountReportCreateManyReporterInputEnvelope
+    set?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    disconnect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    delete?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    connect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    update?: AccountReportUpdateWithWhereUniqueWithoutReporterInput | AccountReportUpdateWithWhereUniqueWithoutReporterInput[]
+    updateMany?: AccountReportUpdateManyWithWhereWithoutReporterInput | AccountReportUpdateManyWithWhereWithoutReporterInput[]
+    deleteMany?: AccountReportScalarWhereInput | AccountReportScalarWhereInput[]
+  }
+
+  export type AccountReportUpdateManyWithoutReportedNestedInput = {
+    create?: XOR<AccountReportCreateWithoutReportedInput, AccountReportUncheckedCreateWithoutReportedInput> | AccountReportCreateWithoutReportedInput[] | AccountReportUncheckedCreateWithoutReportedInput[]
+    connectOrCreate?: AccountReportCreateOrConnectWithoutReportedInput | AccountReportCreateOrConnectWithoutReportedInput[]
+    upsert?: AccountReportUpsertWithWhereUniqueWithoutReportedInput | AccountReportUpsertWithWhereUniqueWithoutReportedInput[]
+    createMany?: AccountReportCreateManyReportedInputEnvelope
+    set?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    disconnect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    delete?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    connect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    update?: AccountReportUpdateWithWhereUniqueWithoutReportedInput | AccountReportUpdateWithWhereUniqueWithoutReportedInput[]
+    updateMany?: AccountReportUpdateManyWithWhereWithoutReportedInput | AccountReportUpdateManyWithWhereWithoutReportedInput[]
+    deleteMany?: AccountReportScalarWhereInput | AccountReportScalarWhereInput[]
+  }
+
   export type AppInstallUncheckedUpdateManyWithoutUserNestedInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -61757,6 +63312,62 @@ export namespace Prisma {
     update?: UserBlockUpdateWithWhereUniqueWithoutBlockedInput | UserBlockUpdateWithWhereUniqueWithoutBlockedInput[]
     updateMany?: UserBlockUpdateManyWithWhereWithoutBlockedInput | UserBlockUpdateManyWithWhereWithoutBlockedInput[]
     deleteMany?: UserBlockScalarWhereInput | UserBlockScalarWhereInput[]
+  }
+
+  export type AccountReportUncheckedUpdateManyWithoutReporterNestedInput = {
+    create?: XOR<AccountReportCreateWithoutReporterInput, AccountReportUncheckedCreateWithoutReporterInput> | AccountReportCreateWithoutReporterInput[] | AccountReportUncheckedCreateWithoutReporterInput[]
+    connectOrCreate?: AccountReportCreateOrConnectWithoutReporterInput | AccountReportCreateOrConnectWithoutReporterInput[]
+    upsert?: AccountReportUpsertWithWhereUniqueWithoutReporterInput | AccountReportUpsertWithWhereUniqueWithoutReporterInput[]
+    createMany?: AccountReportCreateManyReporterInputEnvelope
+    set?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    disconnect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    delete?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    connect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    update?: AccountReportUpdateWithWhereUniqueWithoutReporterInput | AccountReportUpdateWithWhereUniqueWithoutReporterInput[]
+    updateMany?: AccountReportUpdateManyWithWhereWithoutReporterInput | AccountReportUpdateManyWithWhereWithoutReporterInput[]
+    deleteMany?: AccountReportScalarWhereInput | AccountReportScalarWhereInput[]
+  }
+
+  export type AccountReportUncheckedUpdateManyWithoutReportedNestedInput = {
+    create?: XOR<AccountReportCreateWithoutReportedInput, AccountReportUncheckedCreateWithoutReportedInput> | AccountReportCreateWithoutReportedInput[] | AccountReportUncheckedCreateWithoutReportedInput[]
+    connectOrCreate?: AccountReportCreateOrConnectWithoutReportedInput | AccountReportCreateOrConnectWithoutReportedInput[]
+    upsert?: AccountReportUpsertWithWhereUniqueWithoutReportedInput | AccountReportUpsertWithWhereUniqueWithoutReportedInput[]
+    createMany?: AccountReportCreateManyReportedInputEnvelope
+    set?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    disconnect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    delete?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    connect?: AccountReportWhereUniqueInput | AccountReportWhereUniqueInput[]
+    update?: AccountReportUpdateWithWhereUniqueWithoutReportedInput | AccountReportUpdateWithWhereUniqueWithoutReportedInput[]
+    updateMany?: AccountReportUpdateManyWithWhereWithoutReportedInput | AccountReportUpdateManyWithWhereWithoutReportedInput[]
+    deleteMany?: AccountReportScalarWhereInput | AccountReportScalarWhereInput[]
+  }
+
+  export type UserCreateNestedOneWithoutReportsFiledInput = {
+    create?: XOR<UserCreateWithoutReportsFiledInput, UserUncheckedCreateWithoutReportsFiledInput>
+    connectOrCreate?: UserCreateOrConnectWithoutReportsFiledInput
+    connect?: UserWhereUniqueInput
+  }
+
+  export type UserCreateNestedOneWithoutReportsReceivedInput = {
+    create?: XOR<UserCreateWithoutReportsReceivedInput, UserUncheckedCreateWithoutReportsReceivedInput>
+    connectOrCreate?: UserCreateOrConnectWithoutReportsReceivedInput
+    connect?: UserWhereUniqueInput
+  }
+
+  export type UserUpdateOneRequiredWithoutReportsFiledNestedInput = {
+    create?: XOR<UserCreateWithoutReportsFiledInput, UserUncheckedCreateWithoutReportsFiledInput>
+    connectOrCreate?: UserCreateOrConnectWithoutReportsFiledInput
+    upsert?: UserUpsertWithoutReportsFiledInput
+    connect?: UserWhereUniqueInput
+    update?: XOR<XOR<UserUpdateToOneWithWhereWithoutReportsFiledInput, UserUpdateWithoutReportsFiledInput>, UserUncheckedUpdateWithoutReportsFiledInput>
+  }
+
+  export type UserUpdateOneRequiredWithoutReportsReceivedNestedInput = {
+    create?: XOR<UserCreateWithoutReportsReceivedInput, UserUncheckedCreateWithoutReportsReceivedInput>
+    connectOrCreate?: UserCreateOrConnectWithoutReportsReceivedInput
+    upsert?: UserUpsertWithoutReportsReceivedInput
+    connect?: UserWhereUniqueInput
+    update?: XOR<XOR<UserUpdateToOneWithWhereWithoutReportsReceivedInput, UserUpdateWithoutReportsReceivedInput>, UserUncheckedUpdateWithoutReportsReceivedInput>
   }
 
   export type UserCreateNestedOneWithoutBlocksIssuedInput = {
@@ -64393,6 +66004,56 @@ export namespace Prisma {
     data: UserBlockCreateManyBlockedInput | UserBlockCreateManyBlockedInput[]
   }
 
+  export type AccountReportCreateWithoutReporterInput = {
+    id?: string
+    reason: string
+    details?: string
+    createdAt?: Date | string
+    reported: UserCreateNestedOneWithoutReportsReceivedInput
+  }
+
+  export type AccountReportUncheckedCreateWithoutReporterInput = {
+    id?: string
+    reportedId: string
+    reason: string
+    details?: string
+    createdAt?: Date | string
+  }
+
+  export type AccountReportCreateOrConnectWithoutReporterInput = {
+    where: AccountReportWhereUniqueInput
+    create: XOR<AccountReportCreateWithoutReporterInput, AccountReportUncheckedCreateWithoutReporterInput>
+  }
+
+  export type AccountReportCreateManyReporterInputEnvelope = {
+    data: AccountReportCreateManyReporterInput | AccountReportCreateManyReporterInput[]
+  }
+
+  export type AccountReportCreateWithoutReportedInput = {
+    id?: string
+    reason: string
+    details?: string
+    createdAt?: Date | string
+    reporter: UserCreateNestedOneWithoutReportsFiledInput
+  }
+
+  export type AccountReportUncheckedCreateWithoutReportedInput = {
+    id?: string
+    reporterId: string
+    reason: string
+    details?: string
+    createdAt?: Date | string
+  }
+
+  export type AccountReportCreateOrConnectWithoutReportedInput = {
+    where: AccountReportWhereUniqueInput
+    create: XOR<AccountReportCreateWithoutReportedInput, AccountReportUncheckedCreateWithoutReportedInput>
+  }
+
+  export type AccountReportCreateManyReportedInputEnvelope = {
+    data: AccountReportCreateManyReportedInput | AccountReportCreateManyReportedInput[]
+  }
+
   export type AppInstallUpsertWithWhereUniqueWithoutUserInput = {
     where: AppInstallWhereUniqueInput
     update: XOR<AppInstallUpdateWithoutUserInput, AppInstallUncheckedUpdateWithoutUserInput>
@@ -64963,6 +66624,386 @@ export namespace Prisma {
     data: XOR<UserBlockUpdateManyMutationInput, UserBlockUncheckedUpdateManyWithoutBlockedInput>
   }
 
+  export type AccountReportUpsertWithWhereUniqueWithoutReporterInput = {
+    where: AccountReportWhereUniqueInput
+    update: XOR<AccountReportUpdateWithoutReporterInput, AccountReportUncheckedUpdateWithoutReporterInput>
+    create: XOR<AccountReportCreateWithoutReporterInput, AccountReportUncheckedCreateWithoutReporterInput>
+  }
+
+  export type AccountReportUpdateWithWhereUniqueWithoutReporterInput = {
+    where: AccountReportWhereUniqueInput
+    data: XOR<AccountReportUpdateWithoutReporterInput, AccountReportUncheckedUpdateWithoutReporterInput>
+  }
+
+  export type AccountReportUpdateManyWithWhereWithoutReporterInput = {
+    where: AccountReportScalarWhereInput
+    data: XOR<AccountReportUpdateManyMutationInput, AccountReportUncheckedUpdateManyWithoutReporterInput>
+  }
+
+  export type AccountReportScalarWhereInput = {
+    AND?: AccountReportScalarWhereInput | AccountReportScalarWhereInput[]
+    OR?: AccountReportScalarWhereInput[]
+    NOT?: AccountReportScalarWhereInput | AccountReportScalarWhereInput[]
+    id?: StringFilter<"AccountReport"> | string
+    reporterId?: StringFilter<"AccountReport"> | string
+    reportedId?: StringFilter<"AccountReport"> | string
+    reason?: StringFilter<"AccountReport"> | string
+    details?: StringFilter<"AccountReport"> | string
+    createdAt?: DateTimeFilter<"AccountReport"> | Date | string
+  }
+
+  export type AccountReportUpsertWithWhereUniqueWithoutReportedInput = {
+    where: AccountReportWhereUniqueInput
+    update: XOR<AccountReportUpdateWithoutReportedInput, AccountReportUncheckedUpdateWithoutReportedInput>
+    create: XOR<AccountReportCreateWithoutReportedInput, AccountReportUncheckedCreateWithoutReportedInput>
+  }
+
+  export type AccountReportUpdateWithWhereUniqueWithoutReportedInput = {
+    where: AccountReportWhereUniqueInput
+    data: XOR<AccountReportUpdateWithoutReportedInput, AccountReportUncheckedUpdateWithoutReportedInput>
+  }
+
+  export type AccountReportUpdateManyWithWhereWithoutReportedInput = {
+    where: AccountReportScalarWhereInput
+    data: XOR<AccountReportUpdateManyMutationInput, AccountReportUncheckedUpdateManyWithoutReportedInput>
+  }
+
+  export type UserCreateWithoutReportsFiledInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallCreateNestedManyWithoutUserInput
+    wallet?: UserWalletCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantCreateNestedManyWithoutUserInput
+    messages?: MessageCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseCreateNestedManyWithoutUserInput
+    stories?: StatusStoryCreateNestedManyWithoutUserInput
+    folders?: FolderCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
+    blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
+    blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
+  }
+
+  export type UserUncheckedCreateWithoutReportsFiledInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
+    wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskUncheckedCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventUncheckedCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingUncheckedCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingUncheckedCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantUncheckedCreateNestedManyWithoutUserInput
+    messages?: MessageUncheckedCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageUncheckedCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseUncheckedCreateNestedManyWithoutUserInput
+    stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
+    folders?: FolderUncheckedCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
+    blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
+    blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
+  }
+
+  export type UserCreateOrConnectWithoutReportsFiledInput = {
+    where: UserWhereUniqueInput
+    create: XOR<UserCreateWithoutReportsFiledInput, UserUncheckedCreateWithoutReportsFiledInput>
+  }
+
+  export type UserCreateWithoutReportsReceivedInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallCreateNestedManyWithoutUserInput
+    wallet?: UserWalletCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantCreateNestedManyWithoutUserInput
+    messages?: MessageCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseCreateNestedManyWithoutUserInput
+    stories?: StatusStoryCreateNestedManyWithoutUserInput
+    folders?: FolderCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerCreateNestedManyWithoutUserInput
+    reminders?: ReminderCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
+    blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
+    blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+  }
+
+  export type UserUncheckedCreateWithoutReportsReceivedInput = {
+    id?: string
+    name: string
+    username?: string | null
+    about?: string
+    color?: string
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    preferences?: string | null
+    createdAt?: Date | string
+    lastSeenAt?: Date | string
+    xp?: number
+    xpToday?: number
+    xpDay?: string
+    appInstalls?: AppInstallUncheckedCreateNestedManyWithoutUserInput
+    wallet?: UserWalletUncheckedCreateNestedOneWithoutUserInput
+    ledger?: WalletLedgerUncheckedCreateNestedManyWithoutUserInput
+    hubTasks?: HubTaskUncheckedCreateNestedManyWithoutOwnerInput
+    logEvents?: LogEventUncheckedCreateNestedManyWithoutUserInput
+    marketListings?: MarketListingUncheckedCreateNestedManyWithoutSellerInput
+    marketPurchases?: MarketListingUncheckedCreateNestedManyWithoutBuyerInput
+    participations?: ConversationParticipantUncheckedCreateNestedManyWithoutUserInput
+    messages?: MessageUncheckedCreateNestedManyWithoutSenderInput
+    savedMessages?: SavedMessageUncheckedCreateNestedManyWithoutUserInput
+    quickPhrases?: QuickPhraseUncheckedCreateNestedManyWithoutUserInput
+    stories?: StatusStoryUncheckedCreateNestedManyWithoutUserInput
+    folders?: FolderUncheckedCreateNestedManyWithoutUserInput
+    tournamentEntries?: TournamentPlayerUncheckedCreateNestedManyWithoutUserInput
+    reminders?: ReminderUncheckedCreateNestedManyWithoutUserInput
+    streaks?: ConversationStreakUncheckedCreateNestedManyWithoutUserInput
+    verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
+    automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
+    blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
+    blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+  }
+
+  export type UserCreateOrConnectWithoutReportsReceivedInput = {
+    where: UserWhereUniqueInput
+    create: XOR<UserCreateWithoutReportsReceivedInput, UserUncheckedCreateWithoutReportsReceivedInput>
+  }
+
+  export type UserUpsertWithoutReportsFiledInput = {
+    update: XOR<UserUpdateWithoutReportsFiledInput, UserUncheckedUpdateWithoutReportsFiledInput>
+    create: XOR<UserCreateWithoutReportsFiledInput, UserUncheckedCreateWithoutReportsFiledInput>
+    where?: UserWhereInput
+  }
+
+  export type UserUpdateToOneWithWhereWithoutReportsFiledInput = {
+    where?: UserWhereInput
+    data: XOR<UserUpdateWithoutReportsFiledInput, UserUncheckedUpdateWithoutReportsFiledInput>
+  }
+
+  export type UserUpdateWithoutReportsFiledInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUpdateManyWithoutUserNestedInput
+    messages?: MessageUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUpdateManyWithoutUserNestedInput
+    folders?: FolderUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
+    blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
+    blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
+  }
+
+  export type UserUncheckedUpdateWithoutReportsFiledInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUncheckedUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUncheckedUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUncheckedUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUncheckedUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUncheckedUpdateManyWithoutUserNestedInput
+    messages?: MessageUncheckedUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUncheckedUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUncheckedUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
+    folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
+    blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
+    blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
+  }
+
+  export type UserUpsertWithoutReportsReceivedInput = {
+    update: XOR<UserUpdateWithoutReportsReceivedInput, UserUncheckedUpdateWithoutReportsReceivedInput>
+    create: XOR<UserCreateWithoutReportsReceivedInput, UserUncheckedCreateWithoutReportsReceivedInput>
+    where?: UserWhereInput
+  }
+
+  export type UserUpdateToOneWithWhereWithoutReportsReceivedInput = {
+    where?: UserWhereInput
+    data: XOR<UserUpdateWithoutReportsReceivedInput, UserUncheckedUpdateWithoutReportsReceivedInput>
+  }
+
+  export type UserUpdateWithoutReportsReceivedInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUpdateManyWithoutUserNestedInput
+    messages?: MessageUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUpdateManyWithoutUserNestedInput
+    folders?: FolderUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
+    blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
+    blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+  }
+
+  export type UserUncheckedUpdateWithoutReportsReceivedInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    username?: NullableStringFieldUpdateOperationsInput | string | null
+    about?: StringFieldUpdateOperationsInput | string
+    color?: StringFieldUpdateOperationsInput | string
+    avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
+    statusText?: NullableStringFieldUpdateOperationsInput | string | null
+    preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    xp?: IntFieldUpdateOperationsInput | number
+    xpToday?: IntFieldUpdateOperationsInput | number
+    xpDay?: StringFieldUpdateOperationsInput | string
+    appInstalls?: AppInstallUncheckedUpdateManyWithoutUserNestedInput
+    wallet?: UserWalletUncheckedUpdateOneWithoutUserNestedInput
+    ledger?: WalletLedgerUncheckedUpdateManyWithoutUserNestedInput
+    hubTasks?: HubTaskUncheckedUpdateManyWithoutOwnerNestedInput
+    logEvents?: LogEventUncheckedUpdateManyWithoutUserNestedInput
+    marketListings?: MarketListingUncheckedUpdateManyWithoutSellerNestedInput
+    marketPurchases?: MarketListingUncheckedUpdateManyWithoutBuyerNestedInput
+    participations?: ConversationParticipantUncheckedUpdateManyWithoutUserNestedInput
+    messages?: MessageUncheckedUpdateManyWithoutSenderNestedInput
+    savedMessages?: SavedMessageUncheckedUpdateManyWithoutUserNestedInput
+    quickPhrases?: QuickPhraseUncheckedUpdateManyWithoutUserNestedInput
+    stories?: StatusStoryUncheckedUpdateManyWithoutUserNestedInput
+    folders?: FolderUncheckedUpdateManyWithoutUserNestedInput
+    tournamentEntries?: TournamentPlayerUncheckedUpdateManyWithoutUserNestedInput
+    reminders?: ReminderUncheckedUpdateManyWithoutUserNestedInput
+    streaks?: ConversationStreakUncheckedUpdateManyWithoutUserNestedInput
+    verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
+    automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
+    blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
+    blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+  }
+
   export type UserCreateWithoutBlocksIssuedInput = {
     id?: string
     name: string
@@ -64997,6 +67038,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutBlocksIssuedInput = {
@@ -65033,6 +67076,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutBlocksIssuedInput = {
@@ -65074,6 +67119,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutBlocksReceivedInput = {
@@ -65110,6 +67157,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutBlocksReceivedInput = {
@@ -65162,6 +67211,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutBlocksIssuedInput = {
@@ -65198,6 +67249,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUpsertWithoutBlocksReceivedInput = {
@@ -65245,6 +67298,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutBlocksReceivedInput = {
@@ -65281,6 +67336,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutRemindersInput = {
@@ -65317,6 +67374,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutRemindersInput = {
@@ -65353,6 +67412,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutRemindersInput = {
@@ -65405,6 +67466,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutRemindersInput = {
@@ -65441,6 +67504,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutStreaksInput = {
@@ -65477,6 +67542,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutStreaksInput = {
@@ -65513,6 +67580,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutStreaksInput = {
@@ -65565,6 +67634,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutStreaksInput = {
@@ -65601,6 +67672,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutVerificationsGivenInput = {
@@ -65637,6 +67710,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutVerificationsGivenInput = {
@@ -65673,6 +67748,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutVerificationsGivenInput = {
@@ -65725,6 +67802,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutVerificationsGivenInput = {
@@ -65761,6 +67840,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutWalletInput = {
@@ -65797,6 +67878,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutWalletInput = {
@@ -65833,6 +67916,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutWalletInput = {
@@ -65885,6 +67970,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutWalletInput = {
@@ -65921,6 +68008,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutLedgerInput = {
@@ -65957,6 +68046,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutLedgerInput = {
@@ -65993,6 +68084,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutLedgerInput = {
@@ -66045,6 +68138,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLedgerInput = {
@@ -66081,6 +68176,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutHubTasksInput = {
@@ -66117,6 +68214,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutHubTasksInput = {
@@ -66153,6 +68252,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutHubTasksInput = {
@@ -66205,6 +68306,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutHubTasksInput = {
@@ -66241,6 +68344,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutAppInstallsInput = {
@@ -66277,6 +68382,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutAppInstallsInput = {
@@ -66313,6 +68420,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutAppInstallsInput = {
@@ -66365,6 +68474,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutAppInstallsInput = {
@@ -66401,6 +68512,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutMarketListingsInput = {
@@ -66437,6 +68550,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutMarketListingsInput = {
@@ -66473,6 +68588,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutMarketListingsInput = {
@@ -66514,6 +68631,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutMarketPurchasesInput = {
@@ -66550,6 +68669,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutMarketPurchasesInput = {
@@ -66602,6 +68723,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketListingsInput = {
@@ -66638,6 +68761,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUpsertWithoutMarketPurchasesInput = {
@@ -66685,6 +68810,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMarketPurchasesInput = {
@@ -66721,6 +68848,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutLogEventsInput = {
@@ -66757,6 +68886,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutLogEventsInput = {
@@ -66793,6 +68924,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutLogEventsInput = {
@@ -66845,6 +68978,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutLogEventsInput = {
@@ -66881,6 +69016,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type UserCreateWithoutQuickPhrasesInput = {
@@ -66917,6 +69054,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutQuickPhrasesInput = {
@@ -66953,6 +69092,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutQuickPhrasesInput = {
@@ -67005,6 +69146,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutQuickPhrasesInput = {
@@ -67041,6 +69184,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type ConversationParticipantCreateWithoutConversationInput = {
@@ -67177,6 +69322,8 @@ export namespace Prisma {
     content: string
     scheduledAt: Date | string
     sentAt?: Date | string | null
+    cancelledAt?: Date | string | null
+    cancelledReason?: string | null
     createdAt?: Date | string
   }
 
@@ -67186,6 +69333,8 @@ export namespace Prisma {
     content: string
     scheduledAt: Date | string
     sentAt?: Date | string | null
+    cancelledAt?: Date | string | null
+    cancelledReason?: string | null
     createdAt?: Date | string
   }
 
@@ -67498,6 +69647,8 @@ export namespace Prisma {
     content?: StringFilter<"ScheduledMessage"> | string
     scheduledAt?: DateTimeFilter<"ScheduledMessage"> | Date | string
     sentAt?: DateTimeNullableFilter<"ScheduledMessage"> | Date | string | null
+    cancelledAt?: DateTimeNullableFilter<"ScheduledMessage"> | Date | string | null
+    cancelledReason?: StringNullableFilter<"ScheduledMessage"> | string | null
     createdAt?: DateTimeFilter<"ScheduledMessage"> | Date | string
   }
 
@@ -67821,6 +69972,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationCreateNestedManyWithoutOwnerInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutAutomationsCreatedInput = {
@@ -67857,6 +70010,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationUncheckedCreateNestedManyWithoutOwnerInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutAutomationsCreatedInput = {
@@ -67974,6 +70129,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationUpdateManyWithoutOwnerNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutAutomationsCreatedInput = {
@@ -68010,6 +70167,8 @@ export namespace Prisma {
     verificationsGiven?: UserVerificationUncheckedUpdateManyWithoutOwnerNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type ConversationCreateWithoutWebhooksInput = {
@@ -68170,6 +70329,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutStoriesInput = {
@@ -68206,6 +70367,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutStoriesInput = {
@@ -68279,6 +70442,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutStoriesInput = {
@@ -68315,6 +70480,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type StoryViewUpsertWithWhereUniqueWithoutStoryInput = {
@@ -68433,6 +70600,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutParticipationsInput = {
@@ -68469,6 +70638,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutParticipationsInput = {
@@ -68580,6 +70751,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutParticipationsInput = {
@@ -68616,6 +70789,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type ConversationUpsertWithoutParticipantsInput = {
@@ -68717,6 +70892,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutMessagesInput = {
@@ -68753,6 +70930,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutMessagesInput = {
@@ -69379,6 +71558,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutMessagesInput = {
@@ -69415,6 +71596,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type ConversationUpsertWithoutMessagesInput = {
@@ -70291,6 +72474,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutSavedMessagesInput = {
@@ -70327,6 +72512,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutSavedMessagesInput = {
@@ -70464,6 +72651,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutSavedMessagesInput = {
@@ -70500,6 +72689,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type MessageUpsertWithoutSavedByInput = {
@@ -71437,6 +73628,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutFoldersInput = {
@@ -71473,6 +73666,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutFoldersInput = {
@@ -71546,6 +73741,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutFoldersInput = {
@@ -71582,6 +73779,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type FolderConversationUpsertWithWhereUniqueWithoutFolderInput = {
@@ -72006,6 +74205,8 @@ export namespace Prisma {
     automationsCreated?: AutomationCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportCreateNestedManyWithoutReportedInput
   }
 
   export type UserUncheckedCreateWithoutTournamentEntriesInput = {
@@ -72042,6 +74243,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedCreateNestedManyWithoutCreatedByInput
     blocksIssued?: UserBlockUncheckedCreateNestedManyWithoutBlockerInput
     blocksReceived?: UserBlockUncheckedCreateNestedManyWithoutBlockedInput
+    reportsFiled?: AccountReportUncheckedCreateNestedManyWithoutReporterInput
+    reportsReceived?: AccountReportUncheckedCreateNestedManyWithoutReportedInput
   }
 
   export type UserCreateOrConnectWithoutTournamentEntriesInput = {
@@ -72127,6 +74330,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUpdateManyWithoutReportedNestedInput
   }
 
   export type UserUncheckedUpdateWithoutTournamentEntriesInput = {
@@ -72163,6 +74368,8 @@ export namespace Prisma {
     automationsCreated?: AutomationUncheckedUpdateManyWithoutCreatedByNestedInput
     blocksIssued?: UserBlockUncheckedUpdateManyWithoutBlockerNestedInput
     blocksReceived?: UserBlockUncheckedUpdateManyWithoutBlockedNestedInput
+    reportsFiled?: AccountReportUncheckedUpdateManyWithoutReporterNestedInput
+    reportsReceived?: AccountReportUncheckedUpdateManyWithoutReportedNestedInput
   }
 
   export type MessageCreateWithoutRedPacketInput = {
@@ -73134,6 +75341,22 @@ export namespace Prisma {
     createdAt?: Date | string
   }
 
+  export type AccountReportCreateManyReporterInput = {
+    id?: string
+    reportedId: string
+    reason: string
+    details?: string
+    createdAt?: Date | string
+  }
+
+  export type AccountReportCreateManyReportedInput = {
+    id?: string
+    reporterId: string
+    reason: string
+    details?: string
+    createdAt?: Date | string
+  }
+
   export type AppInstallUpdateWithoutUserInput = {
     id?: StringFieldUpdateOperationsInput | string
     appId?: StringFieldUpdateOperationsInput | string
@@ -73722,6 +75945,54 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
+  export type AccountReportUpdateWithoutReporterInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reported?: UserUpdateOneRequiredWithoutReportsReceivedNestedInput
+  }
+
+  export type AccountReportUncheckedUpdateWithoutReporterInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reportedId?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AccountReportUncheckedUpdateManyWithoutReporterInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reportedId?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AccountReportUpdateWithoutReportedInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reporter?: UserUpdateOneRequiredWithoutReportsFiledNestedInput
+  }
+
+  export type AccountReportUncheckedUpdateWithoutReportedInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reporterId?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type AccountReportUncheckedUpdateManyWithoutReportedInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    reporterId?: StringFieldUpdateOperationsInput | string
+    reason?: StringFieldUpdateOperationsInput | string
+    details?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
   export type ConversationParticipantCreateManyConversationInput = {
     id?: string
     userId: string
@@ -73776,6 +76047,8 @@ export namespace Prisma {
     content: string
     scheduledAt: Date | string
     sentAt?: Date | string | null
+    cancelledAt?: Date | string | null
+    cancelledReason?: string | null
     createdAt?: Date | string
   }
 
@@ -74025,6 +76298,8 @@ export namespace Prisma {
     content?: StringFieldUpdateOperationsInput | string
     scheduledAt?: DateTimeFieldUpdateOperationsInput | Date | string
     sentAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledReason?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -74034,6 +76309,8 @@ export namespace Prisma {
     content?: StringFieldUpdateOperationsInput | string
     scheduledAt?: DateTimeFieldUpdateOperationsInput | Date | string
     sentAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledReason?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -74043,6 +76320,8 @@ export namespace Prisma {
     content?: StringFieldUpdateOperationsInput | string
     scheduledAt?: DateTimeFieldUpdateOperationsInput | Date | string
     sentAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    cancelledReason?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 

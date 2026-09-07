@@ -15,6 +15,14 @@
 //  · nothing is recorded, stored, or uploaded — chunks are relayed
 //    peer-to-peer through the socket service and dropped.
 //
+// R48 — LIVE CAPTIONS (opt-in): while transmitting with captions
+// enabled, the speaker's own downsampled PCM is additionally
+// accumulated into ~4 s windows, wrapped in a WAV container and
+// POSTed to /api/voice/transcribe (real ASR, participant-gated).
+// The returned text is relayed as an ephemeral `voice:transcript`
+// socket event and rendered as a caption strip for everyone in the
+// room. Transcripts are never stored — same "live only" contract.
+//
 // The session ENGINE (mic + socket + roster) lives in the
 // `useVoiceRoom` hook so the room keeps running while the sheet
 // is closed (the chat shows a "Voice · N live" pill). The sheet
@@ -28,6 +36,7 @@ import { motion } from 'framer-motion'
 import {
   AlertTriangle,
   AudioLines,
+  Captions,
   LoaderCircle,
   Mic,
   MicOff,
@@ -49,11 +58,29 @@ const CHUNK_SAMPLES = Math.round((TARGET_RATE * CHUNK_MS) / 1000) // 4000 sample
 const JITTER_BUFFER_S = 0.085 // playback pre-roll for smooth-ish scheduling
 const RELAY_CONNECT_TIMEOUT_MS = 8_000
 
+// R48 — live-caption windows
+const CAPTION_WINDOW_MS = 4_000 // one ASR window ≈ 4 s of speech
+const CAPTION_WINDOW_SAMPLES = Math.round((TARGET_RATE * CAPTION_WINDOW_MS) / 1000) // 64 000
+const CAPTION_MIN_SAMPLES = TARGET_RATE // never ASR less than ~1 s of audio
+const CAPTION_TTL_MS = 7_000 // captions fade after 7 s
+const CAPTION_KEEP = 3 // strip shows the last three lines
+const CAPTIONS_PREF_KEY = 'pulse-voice-captions' // localStorage flag
+
 export interface VoicePeerInfo {
   id: string
   name: string
   username: string | null
   color: string
+}
+
+/** R48 — one ephemeral live-caption line (never persisted). */
+export interface VoiceCaption {
+  id: string
+  userId: string
+  name: string
+  color: string
+  text: string
+  at: number
 }
 
 export type VoiceRoomStatus = 'idle' | 'joining' | 'joined' | 'error'
@@ -75,6 +102,10 @@ export interface VoiceRoomController {
   leave: () => void
   setPtt: (on: boolean) => void
   toggleMute: () => void
+  /** R48 — live captions toggle + current strip (ephemeral) */
+  captionsOn: boolean
+  toggleCaptions: () => void
+  captions: VoiceCaption[]
 }
 
 // ── binary helpers ───────────────────────────────────────────
@@ -132,6 +163,34 @@ function downsampleBlock(input: Float32Array, outLen: number): Float32Array {
   return out
 }
 
+/**
+ * R48 — wrap 16 kHz mono Float32 PCM in a minimal 44-byte-header WAV
+ * container (PCM16) so the ASR service accepts the raw capture window.
+ */
+function encodeWav(samples: Float32Array): Uint8Array {
+  const pcm = floatToInt16(samples)
+  const buffer = new ArrayBuffer(44 + pcm.byteLength)
+  const view = new DataView(buffer)
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i))
+  }
+  ascii(0, 'RIFF')
+  view.setUint32(4, 36 + pcm.byteLength, true)
+  ascii(8, 'WAVE')
+  ascii(12, 'fmt ')
+  view.setUint32(16, 16, true) // fmt chunk size
+  view.setUint16(20, 1, true) // PCM
+  view.setUint16(22, 1, true) // mono
+  view.setUint32(24, TARGET_RATE, true)
+  view.setUint32(28, TARGET_RATE * 2, true) // byte rate (16-bit mono)
+  view.setUint16(32, 2, true) // block align
+  view.setUint16(34, 16, true) // bits per sample
+  ascii(36, 'data')
+  view.setUint32(40, pcm.byteLength, true)
+  new Uint8Array(buffer, 44).set(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength))
+  return new Uint8Array(buffer)
+}
+
 // ── the engine hook ──────────────────────────────────────────
 
 export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomController {
@@ -142,6 +201,15 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
   const [speakingIds, setSpeakingIds] = useState<ReadonlySet<string>>(new Set())
   const [micMuted, setMicMuted] = useState(false)
   const [transmitting, setTransmitting] = useState(false)
+  // R48 — live captions (opt-in, remembered per browser)
+  const [captionsOn, setCaptionsOn] = useState(() => {
+    try {
+      return window.localStorage.getItem(CAPTIONS_PREF_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const [captions, setCaptions] = useState<VoiceCaption[]>([])
 
   const socketRef = useRef<Socket | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -155,6 +223,12 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
   const transmittingRef = useRef(false)
   const mutedRef = useRef(false)
   const mountedRef = useRef(true)
+  // R48 — caption plumbing
+  const captionsOnRef = useRef(captionsOn)
+  const captionChunksRef = useRef<Float32Array[]>([])
+  const captionCountRef = useRef(0)
+  const captionBusyRef = useRef(false)
+  const captionConvRef = useRef<string | null>(null)
 
   // ── socket plumbing ────────────────────────────────────────
 
@@ -285,10 +359,87 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
       }
     })
 
+    sock.on('voice:transcript', (raw: unknown) => {
+      if (!mountedRef.current) return
+      if (raw === null || typeof raw !== 'object') return
+      const r = raw as { conversationId?: unknown; userId?: unknown; name?: unknown; color?: unknown; text?: unknown; at?: unknown }
+      const convId = typeof r.conversationId === 'string' ? r.conversationId : ''
+      const userId = typeof r.userId === 'string' ? r.userId : ''
+      const text = typeof r.text === 'string' ? r.text.trim() : ''
+      if (!convId || convId !== joinedConvRef.current || !userId || text.length === 0) return
+      const caption: VoiceCaption = {
+        id: `${typeof r.at === 'number' ? r.at : Date.now()}-${userId}`,
+        userId,
+        name: typeof r.name === 'string' && r.name.length > 0 ? r.name : 'Someone',
+        color: typeof r.color === 'string' && r.color.length > 0 ? r.color : 'emerald',
+        text: text.slice(0, 280),
+        at: typeof r.at === 'number' && Number.isFinite(r.at) ? r.at : Date.now(),
+      }
+      setCaptions((prev) => [...prev.slice(-(CAPTION_KEEP - 1)), caption])
+    })
+
     return sock
   }, [emitVoiceJoin, me.id])
 
   // ── capture pipeline ───────────────────────────────────────
+
+  /**
+   * R48 — ship one caption window: concat the accumulated 16 kHz PCM,
+   * wrap it in WAV and run it through the real ASR endpoint, then relay
+   * the text to the voice room. One window in flight at a time; audio
+   * that arrives while busy keeps accumulating and merges into the next
+   * window (never double-billed). Best-effort: failures stay silent and
+   * never block the mic.
+   */
+  const flushCaptionWindow = useCallback((final: boolean) => {
+    const chunks = captionChunksRef.current
+    const total = captionCountRef.current
+    if (chunks.length === 0 || total < CAPTION_MIN_SAMPLES) {
+      if (final) {
+        captionChunksRef.current = []
+        captionCountRef.current = 0
+      }
+      return
+    }
+    if (captionBusyRef.current) return // keep accumulating — merges into the next window
+
+    const merged = new Float32Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      merged.set(chunk, offset)
+      offset += chunk.length
+    }
+    captionChunksRef.current = []
+    captionCountRef.current = 0
+    captionBusyRef.current = true
+
+    const convId = captionConvRef.current
+    const sock = socketRef.current
+    void (async () => {
+      try {
+        const wav = encodeWav(merged)
+        const res = await fetch('/api/voice/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversationId: convId,
+            requesterId: me.id,
+            audioBase64: bytesToBase64(wav),
+          }),
+        })
+        if (!res.ok) return // honest silence — captions are best-effort
+        const data = (await res.json()) as { transcript?: string }
+        const text = (data.transcript ?? '').trim()
+        if (text.length > 0 && sock && sock.connected && convId) {
+          sock.emit('voice:transcript', { conversationId: convId, userId: me.id, text })
+        }
+      } catch {
+        // network hiccup — drop the window; the next one retries on its own
+      } finally {
+        captionBusyRef.current = false
+      }
+    })()
+  }, [me.id])
 
   const sendChunk = useCallback((samples: Float32Array) => {
     const sock = socketRef.current
@@ -320,11 +471,20 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
       block.count += take
       srcOff += take
       if (block.count === block.buf.length) {
-        sendChunk(downsampleBlock(block.buf, CHUNK_SAMPLES))
+        const down = downsampleBlock(block.buf, CHUNK_SAMPLES)
+        sendChunk(down)
+        // R48 — tap the same downsampled stream for the caption window
+        if (captionsOnRef.current && captionConvRef.current) {
+          captionChunksRef.current.push(down)
+          captionCountRef.current += down.length
+          if (captionCountRef.current >= CAPTION_WINDOW_SAMPLES) {
+            flushCaptionWindow(false)
+          }
+        }
         block.count = 0
       }
     }
-  }, [sendChunk])
+  }, [sendChunk, flushCaptionWindow])
 
   /** AudioWorklet source inlined as a Blob URL — no extra public file needed. */
   const attachCapture = useCallback(async (ctx: AudioContext, stream: MediaStream) => {
@@ -515,11 +675,15 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
     transmittingRef.current = false
     mutedRef.current = false
     seqRef.current = 1
+    captionConvRef.current = null
+    captionChunksRef.current = []
+    captionCountRef.current = 0
     if (mountedRef.current) {
       setTransmitting(false)
       setMicMuted(false)
       setRoster([])
       setSpeakingIds(new Set())
+      setCaptions([])
       setStatus('idle')
       setErrorMsg('')
     }
@@ -535,6 +699,9 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
       if (transmittingRef.current || mutedRef.current || !sock.connected) return
       transmittingRef.current = true
       blockRef.current.count = 0 // fresh capture window per transmission
+      captionConvRef.current = convId // caption windows tag the CURRENT room
+      captionChunksRef.current = []
+      captionCountRef.current = 0
       setTransmitting(true)
       try {
         sock.emit('voice:ptt', { conversationId: convId, userId: me.id, on: true })
@@ -552,13 +719,15 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
         sendChunk(downsampleBlock(block.buf.subarray(0, block.count), outLen))
         block.count = 0
       }
+      // R48 — ship the final caption window (if the tail reached ~1 s)
+      flushCaptionWindow(true)
       try {
         sock.emit('voice:ptt', { conversationId: convId, userId: me.id, on: false })
       } catch {
         /* best effort */
       }
     }
-  }, [me.id, sendChunk])
+  }, [me.id, sendChunk, flushCaptionWindow])
 
   const toggleMute = useCallback(() => {
     const next = !mutedRef.current
@@ -576,6 +745,37 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
       }
     }
   }, [setPtt])
+
+  // R48 — captions toggle (persisted; turning OFF mid-flight drops the
+  // accumulated window so no audio is transcribed after the opt-out)
+  const toggleCaptions = useCallback(() => {
+    const next = !captionsOnRef.current
+    captionsOnRef.current = next
+    setCaptionsOn(next)
+    try {
+      window.localStorage.setItem(CAPTIONS_PREF_KEY, next ? '1' : '0')
+    } catch {
+      /* private mode — session-only preference is fine */
+    }
+    if (!next) {
+      captionChunksRef.current = []
+      captionCountRef.current = 0
+    }
+  }, [])
+
+  // R48 — caption strip TTL: drop faded lines every second
+  const hasCaptions = captions.length > 0
+  useEffect(() => {
+    if (!hasCaptions) return
+    const timer = window.setInterval(() => {
+      const cutoff = Date.now() - CAPTION_TTL_MS
+      setCaptions((prev) => {
+        const next = prev.filter((c) => c.at > cutoff)
+        return next.length === prev.length ? prev : next
+      })
+    }, 1_000)
+    return () => window.clearInterval(timer)
+  }, [hasCaptions])
 
   // conversation switch mid-session → the mic belongs to ONE room
   useEffect(() => {
@@ -608,6 +808,9 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
     leave,
     setPtt,
     toggleMute,
+    captionsOn,
+    toggleCaptions,
+    captions,
   }
 }
 
@@ -880,6 +1083,29 @@ export function VoiceRoomSheet({
               Mic is muted — unmute to talk.
             </p>
           ) : null}
+
+          {/* R48 — live caption strip (ephemeral, fades after 7 s) */}
+          {voice.captions.length > 0 ? (
+            <div
+              role="log"
+              aria-live="polite"
+              aria-label="Live captions"
+              className="mt-3 space-y-1.5"
+            >
+              {voice.captions.map((caption) => (
+                <motion.p
+                  key={caption.id}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-2 text-[12.5px] leading-snug"
+                >
+                  <span className="mr-1.5 font-bold text-emerald-300">{caption.name}</span>
+                  <span className="text-zinc-100">{caption.text}</span>
+                </motion.p>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {/* PTT + controls */}
@@ -985,10 +1211,33 @@ export function VoiceRoomSheet({
             )}
           </div>
 
+          {/* R48 — captions toggle row */}
+          <div className="flex items-center justify-center pb-2">
+            <button
+              type="button"
+              onClick={() => {
+                haptic(8)
+                voice.toggleCaptions()
+              }}
+              aria-pressed={voice.captionsOn}
+              aria-label={voice.captionsOn ? 'Turn live captions off' : 'Turn live captions on'}
+              className={cn(
+                'flex min-h-[34px] items-center gap-1.5 rounded-full border px-3.5 text-[11px] font-bold uppercase tracking-wider outline-none transition-colors',
+                voice.captionsOn
+                  ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300'
+                  : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200',
+              )}
+            >
+              <Captions className="size-4" aria-hidden />
+              {voice.captionsOn ? 'Captions on' : 'Captions off'}
+            </button>
+          </div>
+
           <p className="text-center text-[10px] leading-relaxed text-zinc-500">
             Hold to talk · tap to latch · {voice.inRoom ? `${voice.roster.length} on stage` : 'join to open the mic'}
             <span className="mt-0.5 block text-zinc-600">
               Voice is streamed live in 250 ms chunks and never recorded or stored.
+              {voice.captionsOn ? ' Captions transcribe your own mic in ~4 s windows while you talk.' : ''}
             </span>
           </p>
         </div>

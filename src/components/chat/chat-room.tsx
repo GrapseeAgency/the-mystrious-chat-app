@@ -8475,27 +8475,53 @@ function ScheduledListDrawer({
             </p>
           ) : (
             <ul className="pulse-scroll max-h-[44dvh] space-y-2 overflow-y-auto py-1">
-              {items.map((item) => (
-                <li key={item.id} className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2.5 dark:border-zinc-700 dark:bg-zinc-800/60">
+              {items.map((item) => {
+                const refused = !!item.cancelledAt
+                return (
+                <li
+                  key={item.id}
+                  className={cn(
+                    'rounded-2xl border p-2.5',
+                    refused
+                      ? 'border-rose-500/30 bg-rose-500/[0.06] dark:border-rose-500/25 dark:bg-rose-500/[0.08]'
+                      : 'border-zinc-200 bg-zinc-50/70 dark:border-zinc-700 dark:bg-zinc-800/60',
+                  )}
+                >
                   <div className="flex items-center gap-2">
-                    <CalendarClock className="size-3.5 shrink-0 text-amber-500" aria-hidden />
-                    <span className="text-[11px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
-                      {formatListStamp(item.scheduledAt)} · {formatTime(item.scheduledAt)}
-                    </span>
+                    {refused ? (
+                      <Ban className="size-3.5 shrink-0 text-rose-500" aria-hidden />
+                    ) : (
+                      <CalendarClock className="size-3.5 shrink-0 text-amber-500" aria-hidden />
+                    )}
+                    {refused ? (
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-400">
+                        Not sent — blocked · was {formatListStamp(item.scheduledAt)}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                        {formatListStamp(item.scheduledAt)} · {formatTime(item.scheduledAt)}
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => onCancel(item.id)}
                       className="ml-auto rounded-full p-1 text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 active:scale-90"
-                      aria-label="Cancel this scheduled message"
+                      aria-label={refused ? 'Remove this blocked message' : 'Cancel this scheduled message'}
                     >
                       <Trash2 className="size-3.5" aria-hidden />
                     </button>
                   </div>
-                  <p className="mt-1 line-clamp-3 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
+                  <p className={cn(
+                    'mt-1 line-clamp-3 text-[13px] leading-snug',
+                    refused
+                      ? 'text-rose-700/70 line-through decoration-rose-400/60 dark:text-rose-300/70'
+                      : 'text-zinc-600 dark:text-zinc-300',
+                  )}>
                     {item.content.replace(/\s+/g, ' ').trim()}
                   </p>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
           <button

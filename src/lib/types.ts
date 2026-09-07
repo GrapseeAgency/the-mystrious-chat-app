@@ -252,6 +252,9 @@ export interface ScheduledItem {
   content: string
   scheduledAt: string // ISO
   sentAt: string | null
+  /** R48: set when dispatch refused to send the row (block pair in a DM) */
+  cancelledAt?: string | null
+  cancelledReason?: string | null
 }
 
 /** Beeper/Zulip-style per-message reminder row (GET/POST /api/reminders). */

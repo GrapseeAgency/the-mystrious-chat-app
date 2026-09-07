@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   }
 
   const due = await db.scheduledMessage.findMany({
-    where: { sentAt: null, scheduledAt: { lte: new Date() } },
+    where: { sentAt: null, cancelledAt: null, scheduledAt: { lte: new Date() } },
     orderBy: { scheduledAt: 'asc' },
     take: 25,
     select: { id: true },
@@ -42,7 +42,44 @@ export async function POST(req: Request) {
     try {
       const result = await db.$transaction(async (tx) => {
         const row = await tx.scheduledMessage.findUnique({ where: { id } })
-        if (!row || row.sentAt !== null || row.scheduledAt > new Date()) return null
+        if (!row || row.sentAt !== null || row.cancelledAt !== null || row.scheduledAt > new Date()) return null
+
+        // R48 — dispatch-time block guard: a DM scheduled BEFORE a block must
+        // never fire after the block lands (the send pipeline would reject it,
+        // but replaying a 403 forever is worse than an honest refusal). In a
+        // DM with a UserBlock in EITHER direction the row is marked cancelled
+        // (cancelledAt + cancelledReason='blocked') so it leaves the queue and
+        // shows "Not sent — blocked" in the sender's scheduled list. Groups
+        // are untouched (shared groups keep working — WhatsApp semantics).
+        const conv = await tx.conversation.findUnique({
+          where: { id: row.conversationId },
+          select: { isGroup: true },
+        })
+        if (conv && !conv.isGroup) {
+          const others = await tx.conversationParticipant.findMany({
+            where: { conversationId: row.conversationId, userId: { not: row.senderId } },
+            select: { userId: true },
+          })
+          if (others.length > 0) {
+            const blockRow = await tx.userBlock.findFirst({
+              where: {
+                OR: others.flatMap((o) => [
+                  { blockerId: row.senderId, blockedId: o.userId },
+                  { blockerId: o.userId, blockedId: row.senderId },
+                ]),
+              },
+              select: { id: true },
+            })
+            if (blockRow) {
+              const now = new Date()
+              await tx.scheduledMessage.update({
+                where: { id },
+                data: { cancelledAt: now, cancelledReason: 'blocked' },
+              })
+              return null
+            }
+          }
+        }
 
         const created = await tx.message.create({
           data: { conversationId: row.conversationId, senderId: row.senderId, content: row.content },

@@ -7,7 +7,8 @@
  *  - Presence tracking   : onlineUsers Map<userId, Set<socketId>>, rooms `user:{userId}`
  *  - Client→client relay : `typing`
  *  - Live voice rooms    : in-memory rosters `voiceRooms` Map + `voice:{conversationId}`
- *                          socket.io rooms; `voice:join|leave|roster|ptt|chunk` relay
+ *                          socket.io rooms; `voice:join|leave|roster|ptt|chunk` relay;
+ *                          R48 `voice:transcript` ephemeral live-caption relay
  *  - Stage rooms (R24-c) : Clubhouse hierarchy in `stageRooms` Map + `stage:{conversationId}`
  *                          socket.io rooms; `stage:join|hand|approve|mute|end|leave` → `stage:state`
  *  - Spatial presence    : Gather-style positions in `spaceRooms` Map + `space:{conversationId}`
@@ -946,6 +947,46 @@ io.on('connection', (socket: Socket) => {
       userId,
       seq,
       data: data.data,
+    })
+  })
+
+  /**
+   * voice:transcript (R48) { conversationId, userId, name, color, text } —
+   * live-caption relay. The SPEAKER's client runs its own mic through the
+   * real ASR service (/api/voice/transcribe, participant-gated) and emits
+   * the resulting text here; the relay broadcasts it to the WHOLE voice
+   * room (sender included) so every viewer sees the same caption strip.
+   * Identity-gated to the registered peer + rate-limited (min 700 ms
+   * between captions per socket) + length-capped. Ephemeral: never stored.
+   */
+  const MAX_TRANSCRIPT_CHARS = 280
+  const TRANSCRIPT_MIN_INTERVAL_MS = 700
+  const lastTranscriptAt = new Map<string, number>()
+  socket.on('voice:transcript', (raw: unknown) => {
+    const data = (raw ?? {}) as {
+      conversationId?: unknown
+      userId?: unknown
+      text?: unknown
+    }
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const userId = asTrimmedString(data.userId).slice(0, 64)
+    const text = asTrimmedString(data.text).slice(0, MAX_TRANSCRIPT_CHARS)
+    if (!conversationId || !userId || text.length === 0) return
+    // Identity gate: a socket may only caption AS the peer it registered.
+    const room = voiceRooms.get(conversationId)
+    const peer = room?.get(userId)
+    if (!peer || peer.socketId !== socket.id) return
+    const now = Date.now()
+    const last = lastTranscriptAt.get(socket.id) ?? 0
+    if (now - last < TRANSCRIPT_MIN_INTERVAL_MS) return
+    lastTranscriptAt.set(socket.id, now)
+    io.to(voiceRoomName(conversationId)).emit('voice:transcript', {
+      conversationId,
+      userId,
+      name: peer.name,
+      color: peer.color,
+      text,
+      at: now,
     })
   })
 

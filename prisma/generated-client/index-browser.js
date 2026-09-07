@@ -135,6 +135,15 @@ exports.Prisma.UserScalarFieldEnum = {
   xpDay: 'xpDay'
 };
 
+exports.Prisma.AccountReportScalarFieldEnum = {
+  id: 'id',
+  reporterId: 'reporterId',
+  reportedId: 'reportedId',
+  reason: 'reason',
+  details: 'details',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.UserBlockScalarFieldEnum = {
   id: 'id',
   blockerId: 'blockerId',
@@ -398,6 +407,8 @@ exports.Prisma.ScheduledMessageScalarFieldEnum = {
   content: 'content',
   scheduledAt: 'scheduledAt',
   sentAt: 'sentAt',
+  cancelledAt: 'cancelledAt',
+  cancelledReason: 'cancelledReason',
   createdAt: 'createdAt'
 };
 
@@ -565,6 +576,7 @@ exports.Prisma.NullsOrder = {
 
 exports.Prisma.ModelName = {
   User: 'User',
+  AccountReport: 'AccountReport',
   UserBlock: 'UserBlock',
   Reminder: 'Reminder',
   ConversationStreak: 'ConversationStreak',

@@ -31,6 +31,7 @@ import {
   Ban,
   Check,
   Copy,
+  Flag,
   LoaderCircle,
   MessageCircle,
 } from 'lucide-react'
@@ -47,6 +48,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 import { StatusGlyph } from '@/components/profile/status-glyph'
+import { ReportPanel } from '@/components/chat/report-panel'
 
 const itemVariants = {
   hidden: { opacity: 0, y: 14 },
@@ -91,6 +93,8 @@ export function UserProfileSheet({
   const queryClient = useQueryClient()
   /** transient flash on the copy-handle secondary button */
   const [handleCopied, setHandleCopied] = useState(false)
+  /** R48: the report panel expands under the block row */
+  const [reportOpen, setReportOpen] = useState(false)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     return () => {
@@ -194,6 +198,7 @@ export function UserProfileSheet({
   const online = onlineIds.has(user.id)
   const stats = statsQ.data
   const firstName = user.name.split(' ')[0]
+  const isSelfView = !me || user.id === me.id
 
   const copyHandle = async () => {
     if (!user.username) return
@@ -479,26 +484,54 @@ export function UserProfileSheet({
             ) : null}
           </motion.div>
 
-          {/* ── R47 — block / unblock (danger quiet row; toggles in place) ── */}
-          {me && user.id !== me.id ? (
-            <motion.button
-              variants={itemVariants}
-              type="button"
-              onClick={() => blockMutation.mutate(!(blockQ.data ?? false))}
-              disabled={blockMutation.isPending || blockQ.isPending}
-              aria-pressed={blockQ.data ?? false}
-              aria-label={blockQ.data ? `Unblock ${user.name}` : `Block ${user.name}`}
-              whileTap={reducedMotion ? undefined : pressTap}
-              transition={pressSpring}
-              className="flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] px-3 py-2.5 text-[13px] font-bold text-rose-600 outline-none transition-colors hover:bg-rose-500/[0.12] disabled:opacity-50 dark:text-rose-400"
-            >
-              {blockMutation.isPending || blockQ.isPending ? (
-                <LoaderCircle className="size-4 animate-spin" aria-hidden />
-              ) : (
-                <Ban className="size-4" aria-hidden />
-              )}
-              {blockQ.data ? `Unblock ${firstName}` : `Block ${firstName}`}
-            </motion.button>
+          {/* ── R47 — block / unblock (danger quiet row; toggles in place) + R48 report ── */}
+          {!isSelfView ? (
+            <>
+              <motion.button
+                variants={itemVariants}
+                type="button"
+                onClick={() => blockMutation.mutate(!(blockQ.data ?? false))}
+                disabled={blockMutation.isPending || blockQ.isPending}
+                aria-pressed={blockQ.data ?? false}
+                aria-label={blockQ.data ? `Unblock ${user.name}` : `Block ${user.name}`}
+                whileTap={reducedMotion ? undefined : pressTap}
+                transition={pressSpring}
+                className="flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] px-3 py-2.5 text-[13px] font-bold text-rose-600 outline-none transition-colors hover:bg-rose-500/[0.12] disabled:opacity-50 dark:text-rose-400"
+              >
+                {blockMutation.isPending || blockQ.isPending ? (
+                  <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <Ban className="size-4" aria-hidden />
+                )}
+                {blockQ.data ? `Unblock ${firstName}` : `Block ${firstName}`}
+              </motion.button>
+              <motion.button
+                variants={itemVariants}
+                type="button"
+                onClick={() => {
+                  haptic(8)
+                  setReportOpen((v) => !v)
+                }}
+                aria-expanded={reportOpen}
+                aria-label={`Report ${user.name}`}
+                whileTap={reducedMotion ? undefined : pressTap}
+                transition={pressSpring}
+                className="flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2.5 text-[13px] font-bold text-amber-700 outline-none transition-colors hover:bg-amber-500/[0.12] dark:text-amber-400"
+              >
+                <Flag className="size-4" aria-hidden />
+                Report {firstName}
+              </motion.button>
+              {reportOpen ? (
+                <motion.div variants={itemVariants}>
+                  <ReportPanel
+                    reportedId={user.id}
+                    reporterId={me?.id}
+                    reportedName={user.name}
+                    onDone={() => setReportOpen(false)}
+                  />
+                </motion.div>
+              ) : null}
+            </>
           ) : null}
         </motion.div>
       </DrawerContent>
