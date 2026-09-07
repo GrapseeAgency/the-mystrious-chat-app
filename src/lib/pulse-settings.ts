@@ -21,12 +21,15 @@ interface PulseSettingsState {
   quietEnd: string
   /** Telegram-style folder filter on the chats list */
   listFilter: ChatsListFilter
+  /** R45 — voice-note playback rate (1 | 1.5 | 2) — persisted like Telegram's speed chip */
+  voiceRate: number
   setSoundOn: (on: boolean) => void
   setHapticsOn: (on: boolean) => void
   setQuietHoursOn: (on: boolean) => void
   setQuietStart: (value: string) => void
   setQuietEnd: (value: string) => void
   setListFilter: (value: ChatsListFilter) => void
+  setVoiceRate: (value: number) => void
 }
 
 export const pulseSettingsStore = create<PulseSettingsState>()(
@@ -38,12 +41,14 @@ export const pulseSettingsStore = create<PulseSettingsState>()(
       quietStart: '22:00',
       quietEnd: '07:00',
       listFilter: 'all',
+      voiceRate: 1,
       setSoundOn: (on) => set({ soundOn: on }),
       setHapticsOn: (on) => set({ hapticsOn: on }),
       setQuietHoursOn: (on) => set({ quietHoursOn: on }),
       setQuietStart: (value) => set({ quietStart: value }),
       setQuietEnd: (value) => set({ quietEnd: value }),
       setListFilter: (value) => set({ listFilter: value }),
+      setVoiceRate: (value) => set({ voiceRate: value }),
     }),
     {
       name: 'pulse.settings.v1',

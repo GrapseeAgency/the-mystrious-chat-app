@@ -1675,3 +1675,25 @@ Work Log:
 
 Stage Summary:
 - Local state: main == a494ff6 (R44), mirror == a494ff6, origin == 9dbf8f8 (R43) — PUSH PENDING CREDENTIALS
+---
+Task ID: R45 (lead-worked wave)
+Agent: orchestrator (Z.ai Code)
+Task: "Continue for rest of them" — two genuinely-new messenger features: Telegram-style voice-note playback speed (1x/1.5x/2x, persisted) AND cross-device server-synced drafts (upgrade of the localStorage-only drafts: server persistence + cross-device restore + list preview fallback). Push-state record correction first: R44-ship's "push pending credentials" note is STALE — origin/main == ef03fc4 locally AND on GitHub (ls-remote verified), credentials were re-seeded and the push succeeded.
+
+Work Log:
+- STATE CORRECTION: git ls-remote origin main → ef03fc4 (matches local); R44 ship note's pending-push concern is resolved; working tree was clean at wave start; app healthy (200), dev.log error-free
+- Voice speed: pulse-settings gains voiceRate (1 | 1.5 | 2, persisted in pulse.settings.v1 — zustand persist merge keeps existing users at default 1); VoiceBubble gains a speed chip between waveform and duration — tap cycles 1x → 1.5x → 2x → 1x, persists globally, applies audio.playbackRate live and on every (re)start; ring accent when ≠1x; mine = white/20 glass, theirs = emerald tint; stopPropagation so taps don't open the bubble menu; E2E: chip 1x → tap → 1.5x → tap → 2x (qa-r45-01) → reload → ALL bubbles mount at 2x (persisted) → reset to 1x
+- Drafts cross-device: ConversationParticipant.draft String? (db:push + db:generate); db.ts v13 authored pre-regen (HMR-gap risk) then v14 POST-regen per the v9/v11 lesson; NEW PATCH /api/conversations/[id]/draft { userId, draft } — self-service participant-only (403), honest 400s (missing userId / non-string draft), ≤2000 cap, '' clears → null; serializers summary+detail gain myDraft (mine?.draft ?? null), types additive
+- The sync funnel lives INSIDE pulse-drafts.ts (the single funnel for ALL local draft mutations): setDraft/clearDraft now schedule a debounced (~600ms, per-conversation timer map) keepalive PATCH carrying getPulseUser().id — zero call-site churn, so send/edit-cancel/slash/clear-all paths all inherit server sync automatically; silent catch (drafts stay local-first if offline)
+- Restore: chat-room effect ONCE per opened conversation (ref-guarded) — when detail arrives with a server myDraft AND the local store has none, the composer seeds it; local always wins; ref guard prevents intentional clears from being resurrected by the 6s detail refetch; switchRoom inherits via the same effect (query key change)
+- Chats list: row draft now `local ?? conv.myDraft ?? null` — the "Draft: …" preview renders from the server when the device has no local copy (cross-device parity)
+- curl guard matrix: happy PATCH 200; detail.myDraft + summary.myDraft round-trip; '' → null; missing userId 400; non-string 400; non-participant 403; unknown conv 404
+- Browser E2E: typed in composer → server myDraft matched within debounce window (fetch instrumented: PATCH fires with exact body); back → row shows "Draft: Reminder for tomorrow…" (qa-r45-02); DELETED the local draft from localStorage + hard reload → preview STILL renders (server-backed) → opened room → composer auto-restored the draft from the server (qa-r45-03, cross-device proof); Control+A + Backspace → PATCH draft "" → server null (fetch instrumented again)
+- Testing lesson: agent-browser `fill` sets DOM value without React onChange — a following "clear" via real keys on the visually-empty field fires NO input event, so React state silently diverges; use keyboard.type/press for React-controlled fields (funnel was never broken — the first clear was a phantom)
+- Cleanup: server draft null, browser local draft deleted during the wipe test, speed reset to 1x, no demo rows left; tsc src 0 errors; lint clean; console error-free
+
+Stage Summary:
+- SHIPPED: voice playback speed (Telegram parity, persisted) + cross-device server-synced drafts (Telegram "Draft:" parity: server persistence, cross-device composer restore, list preview from any device)
+- Contract: PATCH /api/conversations/[id]/draft { userId, draft ≤2000 } → { ok, draft } | 400/403/404; ConversationSummary.myDraft + ConversationDetail.myDraft additive; voiceRate in pulse-settings (persisted)
+- Honest gaps: draft sync is per-user rows only (no sharing — correct); last-writer-wins per conversation (no merge/cursor sync — Telegram also last-writer-wins); sync is debounced 600ms so a hard tab-kill within the window can lose the final keystrokes locally-persisted-but-unsynced (local copy still has them); voice rate is global (not per-chat) matching Telegram; persistence audit: drafts of OTHER users never leave their rows
+- Evidence: download/qa-r45-01-voice-speed-2x.png, -02-draft-preview.png, -03-draft-restored.png (+ fetch-level instrumented proofs reproducible from this log)

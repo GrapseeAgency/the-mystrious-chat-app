@@ -155,6 +155,8 @@ export interface ConversationSummary {
   /** R44 additive: viewer's mark-as-unread flag — the row shows the unread
    *  dot even when unreadCount is 0; cleared when the room is opened. */
   myManualUnread: boolean
+  /** R45 — server-synced composer draft (cross-device; null = none). */
+  myDraft: string | null
 }
 
 export type GroupRole = 'admin' | 'member'
@@ -206,6 +208,9 @@ export interface ConversationDetail {
   slowModeSeconds: number
   /** R44 additive: viewer's mark-as-unread flag (row badge until opened). */
   myManualUnread: boolean
+  /** R45 — the viewer's server-synced composer draft (restored in the composer
+   * when this device has no local draft for the conversation). */
+  myDraft: string | null
   isSelf: boolean // Signal-style Note to Self conversation
   description: string // channel/group purpose line (R30-c)
 }

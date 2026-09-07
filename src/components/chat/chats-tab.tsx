@@ -365,7 +365,7 @@ export function ChatsTab({
           preview: previewInfo.text,
           previewPrefix: conversationPreviewPrefix(previewInfo, conv.isGroup),
           previewDeleted: previewInfo.deleted,
-          draft: allDrafts[conv.id] ?? null,
+          draft: allDrafts[conv.id] ?? conv.myDraft ?? null, // R45: server draft fills in cross-device
           unreadCount: conv.unreadCount,
           manualUnread: conv.myManualUnread, // R44: mark-as-unread dot
           dmName: other?.name ?? null,

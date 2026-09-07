@@ -127,7 +127,7 @@ import {
   splitUrlSegments,
   uid,
 } from '@/lib/pulse-utils'
-import { haptic } from '@/lib/pulse-settings'
+import { haptic, pulseSettingsStore } from '@/lib/pulse-settings'
 import { spring, ease, pressTap, pressSpring, fireParticles, type ParticleKind } from '@/lib/motion'
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
 import { pulseOutboxStore, outboxCount } from '@/lib/pulse-outbox'
@@ -830,6 +830,23 @@ export function ChatRoom({
     // safety net: keeps read-ticks/membership fresh even if the socket path degrades
     refetchInterval: 6_000,
   })
+
+  // ── R45: server-synced draft restore (cross-device) ──────────
+  // The local (localStorage) draft always wins when present. When this device
+  // has none — fresh tab, another phone — the server draft (kept fresh by the
+  // drafts-store funnel PATCHing from every device) seeds the composer ONCE
+  // per opened conversation. Never re-seeds afterwards, so an intentional
+  // clear can't be resurrected by the next detail refetch.
+  const serverDraftSeededRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (serverDraftSeededRef.current === conversationId) return
+    if (!detail.isSuccess) return
+    serverDraftSeededRef.current = conversationId
+    const serverDraft = detail.data.myDraft ?? null
+    if (!serverDraft) return
+    if (pulseDraftsStore.getState().drafts[conversationId] !== undefined) return // local wins
+    setInput(serverDraft)
+  }, [conversationId, detail.isSuccess, detail.data?.myDraft])
 
   // ── R38: Signal "Screen security" — frost the message area while unfocused ──
   // R42: the veil engages when EITHER flag is on — the room-wide switch
@@ -6300,7 +6317,20 @@ function VoiceBubble({
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
+  // R45 — Telegram-style playback speed (1x → 1.5x → 2x), persisted globally
+  const [rate, setRate] = useState(() => pulseSettingsStore.getState().voiceRate)
   const bars = useMemo(() => voiceBars(seed), [seed])
+
+  /** Cycle 1x → 1.5x → 2x → 1x, persist the choice, apply it live. */
+  const cycleRate = (event: React.SyntheticEvent) => {
+    event.stopPropagation()
+    const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1
+    setRate(next)
+    pulseSettingsStore.getState().setVoiceRate(next)
+    const audio = audioRef.current
+    if (audio) audio.playbackRate = next
+    haptic(8)
+  }
 
   const toggle = (event: React.SyntheticEvent) => {
     event.stopPropagation()
@@ -6309,6 +6339,7 @@ function VoiceBubble({
     if (playing) {
       audio.pause()
     } else {
+      audio.playbackRate = rate // honor the persisted speed on (re)start
       void audio.play().catch(() => {
         toast.error('Could not play this voice note')
       })
@@ -6349,6 +6380,20 @@ function VoiceBubble({
             )
           })}
       </div>
+      <button
+        type="button"
+        aria-label={`Playback speed ${rate}x — tap to change`}
+        onClick={cycleRate}
+        className={cn(
+          'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums outline-none transition-transform active:scale-90',
+          mine
+            ? 'bg-white/20 text-white hover:bg-white/30'
+            : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400',
+          rate !== 1 && (mine ? 'ring-1 ring-white/40' : 'ring-1 ring-emerald-500/40'),
+        )}
+      >
+        {rate}x
+      </button>
       <span
         className={cn(
           'shrink-0 text-[10px] font-semibold tabular-nums',

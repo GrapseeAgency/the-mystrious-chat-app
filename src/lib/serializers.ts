@@ -419,6 +419,9 @@ export async function buildConversationSummary(
     // R44 additive — mark-as-unread: the viewer's row-badge flag (chats tab
     // shows the dot even when unreadCount is 0; cleared by the read route).
     myManualUnread: mine?.manualUnread ?? false,
+    // R45 additive — server-synced draft (cross-device "Draft: …" preview;
+    // local draft wins when present, server fills in from other devices).
+    myDraft: mine?.draft ?? null,
   }
 }
 
@@ -467,6 +470,9 @@ export async function buildConversationDetail(
     // between sends) + the viewer's mark-as-unread flag.
     slowModeSeconds: conv.slowModeSeconds,
     myManualUnread: mine?.manualUnread ?? false,
+    // R45 additive — the viewer's server-synced composer draft (restored in
+    // the composer when no local draft exists for this device/tab).
+    myDraft: mine?.draft ?? null,
     isSelf: conv.isSelf,
     description: conv.description,
   }
