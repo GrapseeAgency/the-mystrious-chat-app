@@ -7,6 +7,10 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// Release channel plumbing — CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 1
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.1.0-native"
+
 android {
     namespace = "app.pulse.android"
     compileSdk = 35
@@ -15,21 +19,42 @@ android {
         applicationId = "app.pulse.chat"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0-native"
+        versionCode = pulseVersionCode
+        versionName = pulseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Deployment knobs (PulseEndpoints comment promised this wave) — a public
+        // gateway can be baked in with -PpulseGateway=https://… without code changes.
+        buildConfigField("String", "PULSE_GATEWAY", "\"${project.findProperty("pulseGateway") ?: "http://10.0.2.2:81"}\"")
+        buildConfigField("String", "PULSE_SOCKET", "\"${project.findProperty("pulseSocket") ?: "http://10.0.2.2:3003"}\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            // The committed distribution keystore (GS-distribution model): every
+            // build — sandbox, CI, future waves — signs identically, so the
+            // LiveUpdater can overwrite-install without an uninstall.
+            storeFile = rootProject.file("keystores/pulse-release.keystore")
+            storePassword = "pulse-live-update"
+            keyAlias = "pulse"
+            keyPassword = "pulse-live-update"
+        }
     }
 
     buildTypes {
         debug { applicationIdSuffix = ".debug" }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Minify stays OFF for the shipped release: the 3–4GB sandbox cannot
+            // survive R8, and CI runners are reserved for verify/build parity.
+            // Re-enable alongside CI-only builds when the pipeline owns releases.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

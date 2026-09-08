@@ -65,6 +65,8 @@ apps/android/.idea/
 apps/android/app/release/
 *.apk
 *.aab
+# LiveUpdate ships the current release APK on the repo CDN (raw.githubusercontent)
+!download/Pulse.apk
 
 # iOS / macOS
 apps/ios/Pulse.xcodeproj/

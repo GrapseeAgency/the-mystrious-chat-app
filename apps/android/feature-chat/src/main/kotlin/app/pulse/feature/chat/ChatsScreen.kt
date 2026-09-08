@@ -69,6 +69,7 @@ import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.shimmer
+import app.pulse.ui.update.UpdaterBanner
 import app.pulse.core.time.PulseTime
 import app.pulse.domain.model.Conversation
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -137,6 +138,9 @@ fun ChatsScreen(
                     }
                 }
             }
+
+            // LiveUpdate pill — renders nothing until the CDN serves a newer versionCode.
+            UpdaterBanner(Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
 
             PullToRefreshBox(
                 isRefreshing = state.loading,

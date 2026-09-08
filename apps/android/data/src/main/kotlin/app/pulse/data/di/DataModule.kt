@@ -59,6 +59,11 @@ object DataModule {
 
     @Provides
     fun provideMessageDao(db: PulseDatabase): MessageDao = db.messageDao()
+
+    /** Domain stays pure Kotlin (no javax.inject) — the graph provides use cases here. */
+    @Provides
+    fun provideSendMessageUseCase(repo: PulseRepository): app.pulse.domain.usecase.SendMessageUseCase =
+        app.pulse.domain.usecase.SendMessageUseCase(repo)
 }
 
 @Module

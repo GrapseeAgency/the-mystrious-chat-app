@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -44,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +53,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,7 +62,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.update.LiveUpdater
+import app.pulse.ui.update.UpdaterDetail
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 
 private val FX_OPTIONS = listOf(
     "aurora" to "Aurora",
@@ -89,6 +95,8 @@ fun ProfileScreen(viewModel: ProfileViewModel = hiltViewModel()) {
 
     var identitySheet by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Column(
         Modifier
@@ -200,13 +208,37 @@ fun ProfileScreen(viewModel: ProfileViewModel = hiltViewModel()) {
         SectionHeader(Icons.Filled.Info, "About")
         SettingCard {
             Column {
-                Text("Pulse 1.0.0-native", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Pulse ${LiveUpdater.installedVersionLabel(context) ?: "?"}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Kotlin · Compose · Hilt · Room · Ktor · Socket.IO — rebuilt natively against the same live gateway as the web app.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        SectionHeader(Icons.Filled.SystemUpdate, "App updates")
+        SettingCard {
+            Column {
+                UpdaterDetail()
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Quiet check on every launch · byte-range resume · integrity-gated before install",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    scope.launch { LiveUpdater.syncFrom(context, force = true) }
+                }) {
+                    Text("Check for updates", color = PulsePalette.Emerald)
+                }
             }
         }
 

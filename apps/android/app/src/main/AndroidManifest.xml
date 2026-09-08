@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- LiveUpdate: hand the downloaded APK to the system installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".PulseApplication"
@@ -31,5 +33,16 @@
                 <data android:scheme="pulse" />
             </intent-filter>
         </activity>
+
+        <!-- LiveUpdate: read-only URI for the system installer on cacheDir/liveupdate. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updater"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/liveupdate_paths" />
+        </provider>
     </application>
 </manifest>

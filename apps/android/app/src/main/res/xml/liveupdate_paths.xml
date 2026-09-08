@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LiveUpdate staging area: the downloaded .part/.apk handed to the system installer. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path
+        name="liveupdate"
+        path="liveupdate/" />
+</paths>
