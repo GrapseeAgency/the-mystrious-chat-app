@@ -19,6 +19,99 @@ public struct WireReaction: Codable, Hashable, Sendable {
     public let createdAt: String?
 }
 
+/// N3-b — reactions as the wire actually carries them: grouped per emoji
+/// (see serializers.groupReactions: { emoji, userIds, count }).
+public struct WireReactionGroup: Codable, Hashable, Sendable {
+    public let emoji: String
+    public let userIds: [String]
+    public let count: Int
+}
+
+/// N3-b — the quoted-parent snippet embedded on replies. The wire shape is
+/// { id, content, senderName, deleted } (NO conversationId/senderId/kind),
+/// so it decodes into its own type — decoding it as WireChatMessage (N2
+/// placeholder) failed for every message that actually had a reply.
+public struct WireReplySnippet: Codable, Hashable, Sendable {
+    public let id: String
+    public let content: String
+    public let senderName: String
+    public let deleted: Bool?
+}
+
+/// N3-b — AppUser mirror (GET/POST /api/users), tolerant decode: unknown
+/// keys ignored, every field optional except id/name (live shapes verified).
+public struct WireUser: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public let username: String?
+    public let about: String?
+    public let color: String?
+    public let avatar: String?
+    public let statusEmoji: String?
+    public let statusText: String?
+    public let createdAt: String?
+    public let lastSeenAt: String?
+    public let verified: Bool?
+}
+
+public struct WireUsersPage: Codable, Sendable {
+    public let users: [WireUser]
+}
+
+public struct WireUserEnvelope: Codable, Sendable {
+    public let user: WireUser
+}
+
+/// N3-b — Hub wallet (GET /api/hub/wallet?userId=). Real economy numbers.
+public struct WireWallet: Codable, Hashable, Sendable {
+    public let userId: String?
+    public let coins: Int?
+    public let gems: Int?
+    public let streak: Int?
+    public let lastCheckIn: String?
+    public let checkedInToday: Bool?
+}
+
+public struct WireWalletPage: Codable, Sendable {
+    public let wallet: WireWallet
+}
+
+/// N3-b — error body with the username-taken contract
+/// (409 { error, code: "username_taken", suggestion }).
+public struct WireErrorBody: Codable, Sendable {
+    public let error: String?
+    public let code: String?
+    public let suggestion: String?
+}
+
+/// Tolerant wrapper: responses arrive as { "conversation": ... } (200 deduped
+/// / 201 created) — and defensively as the bare object on older relays.
+public struct WireConversationEnvelope: Codable, Sendable {
+    public let conversation: WireConversationSummary?
+
+    public static func extract(from data: Data) throws -> WireConversationSummary {
+        if let wrapped = try? JSONDecoder().decode(WireConversationEnvelope.self, from: data),
+           let conversation = wrapped.conversation {
+            return conversation
+        }
+        return try JSONDecoder().decode(WireConversationSummary.self, from: data)
+    }
+}
+
+/// Tolerant wrapper: { "message": ... } (POST messages / POST react add a
+/// streak + xpAwarded sibling) — falls back to the bare message object.
+public struct WireMessageEnvelope: Codable, Sendable {
+    public let message: WireChatMessage?
+
+    public static func extract(from data: Data) throws -> WireChatMessage {
+        if let wrapped = try? JSONDecoder().decode(WireMessageEnvelope.self, from: data),
+           let message = wrapped.message {
+            return message
+        }
+        return try JSONDecoder().decode(WireChatMessage.self, from: data)
+    }
+}
+
 public struct WireChatMessage: Codable, Hashable, Sendable {
     public let id: String
     public let conversationId: String
@@ -29,7 +122,8 @@ public struct WireChatMessage: Codable, Hashable, Sendable {
     public let editedAt: String?
     public let deletedAt: String?
     public let sender: WireSender?
-    public let replyTo: WireChatMessage?
+    public let reactions: [WireReactionGroup]?
+    public let replyTo: WireReplySnippet?
     public let parentId: String?
     public let imagePath: String?
     public let audioPath: String?
@@ -143,6 +237,20 @@ extension WireConversationSummary {
 }
 
 extension WireChatMessage {
+    /// Tombstone copy for message:deleted socket events. The memberwise
+    /// initializer is internal, which is fine — every caller is in-module.
+    public func deletedCopy() -> WireChatMessage {
+        WireChatMessage(
+            id: id, conversationId: conversationId, senderId: senderId,
+            content: content, kind: kind, createdAt: createdAt,
+            editedAt: editedAt, deletedAt: deletedAt ?? createdAt,
+            sender: sender, reactions: reactions, replyTo: replyTo,
+            parentId: parentId, imagePath: imagePath, audioPath: audioPath,
+            durationMs: durationMs, filePath: filePath, fileName: fileName,
+            pinnedAt: pinnedAt, viewOnce: viewOnce, anon: anon, anonAlias: anonAlias
+        )
+    }
+
     public func toDomain() -> PulseMessage {
         PulseMessage(
             id: id,

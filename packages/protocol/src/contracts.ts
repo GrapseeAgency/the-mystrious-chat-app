@@ -46,6 +46,35 @@ export interface WireReaction {
   createdAt?: string | null
 }
 
+/**
+ * N3: the live wire groups reactions per emoji (serializers.groupReactions).
+ * Android (ReactionDto) tolerates both this and the flat legacy shape.
+ */
+export interface WireReactionGroup {
+  emoji: string
+  userIds: string[]
+  count: number
+}
+
+/** GET/POST /api/users — identity picker + contacts (N3). */
+export interface WireUser {
+  id: string
+  name: string
+  username?: string | null
+  about?: string | null
+  color?: string | null
+  avatar?: string | null
+  statusEmoji?: string | null
+  statusText?: string | null
+  createdAt?: string | null
+  lastSeenAt?: string | null
+  verified?: boolean | null
+}
+
+export interface WireUsersPage {
+  users: WireUser[]
+}
+
 /** GET /api/conversations/{id}/messages row — lowercase wire kinds. */
 export interface WireChatMessage {
   id: string
@@ -58,7 +87,7 @@ export interface WireChatMessage {
   editedAt?: string | null
   deletedAt?: string | null
   sender?: WireSender | null
-  reactions?: WireReaction[]
+  reactions?: WireReactionGroup[] | WireReaction[]
   replyTo?: WireChatMessage | null
   parentId?: string | null
   imagePath?: string | null

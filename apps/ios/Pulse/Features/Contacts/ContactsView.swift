@@ -1,0 +1,191 @@
+import SwiftUI
+
+/// Contacts — the native directory: every identity on this Pulse with live
+/// presence rings, one-tap DM creation (server-side dedupe), and native
+/// safety actions (block / report) via confirmationDialog.
+struct ContactsView: View {
+    @ObservedObject var session: PulseSession
+
+    @State private var viewModel = ContactsViewModel()
+    @State private var reportTarget: WireUser?
+    @State private var reportReason = ""
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if viewModel.loading && viewModel.users.isEmpty {
+                    ProgressView("Loading contacts…")
+                } else if let error = viewModel.errorText, viewModel.users.isEmpty {
+                    ContentUnavailableCompat(
+                        title: "Contacts unavailable",
+                        systemImage: "person.2.slash",
+                        note: error,
+                    )
+                } else {
+                    list
+                }
+            }
+            .navigationTitle("Contacts")
+            .navigationBarTitleDisplayMode(.large)
+            .searchable(text: $viewModel.query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Find people")
+            .refreshable { await viewModel.load(api: session.api) }
+            .task { await viewModel.load(api: session.api) }
+        }
+        .onAppear { viewModel.observe(session: session) }
+    }
+
+    private var filtered: [WireUser] {
+        let needle = viewModel.query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return viewModel.users }
+        return viewModel.users.filter {
+            $0.name.lowercased().contains(needle) || ($0.username ?? "").lowercased().contains(needle)
+        }
+    }
+
+    private var list: some View {
+        List {
+            Section {
+                ForEach(filtered) { user in
+                    ContactRow(
+                        user: user,
+                        online: session.isOnline(user.id),
+                        isViewer: user.id == session.viewer?.id,
+                    ) {
+                        viewModel.openDM(user, session: session)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            Task { await viewModel.block(user, session: session) }
+                        } label: {
+                            Label("Block", systemImage: "hand.raised.fill")
+                        }
+                        Button {
+                            reportTarget = user
+                        } label: {
+                            Label("Report", systemImage: "flag.fill")
+                        }
+                        .tint(.orange)
+                    }
+                }
+            } header: {
+                Text("\(session.onlineUserIds.count) online · \(filtered.count) people")
+            } footer: {
+                Text("Swipe for safety actions. Opening a chat reuses the existing DM — the server dedupes pairs.")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+    }
+}
+
+private struct ContactRow: View {
+    let user: WireUser
+    let online: Bool
+    let isViewer: Bool
+    let onMessage: () -> Void
+
+    @State private var opening = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PulseAvatar(
+                name: user.name,
+                color: PulseTheme.color(named: user.color),
+                photoURL: PulseTheme.photoURL(user.avatar),
+                online: online,
+                size: 44,
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(user.name).font(.body.weight(.semibold))
+                    if user.verified == true {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.caption)
+                            .foregroundStyle(PulseTheme.emerald)
+                    }
+                    if isViewer {
+                        Text("You")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(PulseTheme.emerald)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(PulseTheme.emerald.opacity(0.14)))
+                    }
+                }
+                Text(user.statusText ?? user.username.map { "@\($0)" } ?? "On Pulse")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Button {
+                opening = true
+                onMessage()
+            } label: {
+                if opening {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("Chat", systemImage: "bubble.left.fill")
+                        .font(.footnote.weight(.semibold))
+                }
+            }
+            .tint(PulseTheme.emerald)
+            .buttonStyle(.bordered)
+            .disabled(isViewer)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// Contacts state holder (UDF).
+@MainActor
+final class ContactsViewModel: ObservableObject {
+    @Published private(set) var users: [WireUser] = []
+    @Published private(set) var loading = false
+    @Published private(set) var errorText: String?
+    @Published var query = ""
+
+    private var observing = false
+
+    func observe(session: PulseSession) {
+        guard !observing else { return }
+        observing = true
+    }
+
+    func load(api: PulseAPIClient) async {
+        loading = users.isEmpty
+        defer { loading = false }
+        do {
+            users = try await api.users()
+            errorText = nil
+        } catch {
+            if users.isEmpty { errorText = ChatsViewModel.describe(error) }
+        }
+    }
+
+    func openDM(_ user: WireUser, session: PulseSession) {
+        guard user.id != session.viewer?.id else { return }
+        PulseHaptics.tap()
+        Task { [weak self] in
+            do {
+                let conversation = try await session.api.createConversation(memberIds: [user.id], isGroup: false)
+                _ = conversation
+                session.noteInboxChanged() // Chats tab re-fetches and shows the row
+                PulseHaptics.success()
+            } catch {
+                PulseHaptics.warning()
+                errorText = ChatsViewModel.describe(error)
+            }
+            self?.loading = false
+        }
+    }
+
+    func block(_ user: WireUser, session: PulseSession) async {
+        do {
+            try await session.api.block(userId: user.id)
+            PulseHaptics.success()
+        } catch {
+            errorText = ChatsViewModel.describe(error)
+        }
+    }
+}

@@ -51,6 +51,10 @@ object DataModule {
             .build()
 
     @Provides
+    @Singleton
+    fun providePrefsStore(impl: app.pulse.data.local.PulsePrefsStoreImpl): app.pulse.domain.repository.PulsePrefsStore = impl
+
+    @Provides
     fun provideConversationDao(db: PulseDatabase): ConversationDao = db.conversationDao()
 
     @Provides

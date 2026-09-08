@@ -26,7 +26,7 @@ class PulseSocketClient(
         data class MessageNew(val conversationId: String, val raw: JSONObject) : Signal
         data class MessageDeleted(val conversationId: String, val messageId: String) : Signal
         data class MessageRead(val conversationId: String, val userId: String, val at: String?) : Signal
-        data class Typing(val conversationId: String, val userId: String, val isTyping: Boolean) : Signal
+        data class Typing(val conversationId: String, val userId: String, val userName: String, val isTyping: Boolean) : Signal
         data class VoiceTranscript(val roomId: String, val speakerId: String, val text: String) : Signal
         data class CallSignal(val event: String, val raw: JSONObject) : Signal
     }
@@ -69,7 +69,7 @@ class PulseSocketClient(
         socket.on(SocketEvents.TYPING) { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
             _signals.tryEmit(
-                Signal.Typing(obj.optString("conversationId"), obj.optString("userId"), obj.optBoolean("isTyping")),
+                Signal.Typing(obj.optString("conversationId"), obj.optString("userId"), obj.optString("userName"), obj.optBoolean("isTyping")),
             )
         }
         socket.on(SocketEvents.MESSAGE_READ) { args ->

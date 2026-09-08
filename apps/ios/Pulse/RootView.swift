@@ -8,62 +8,75 @@ enum PulseTheme {
     static let mist = Color(red: 0.98, green: 0.98, blue: 0.976)
 }
 
-/// Four destinations — parity with web NAV_ITEMS + Android bottom bar.
+/// Root shell — session + prefs live here (single ownership), the ambient
+/// field renders behind the tab chrome, the particle overlay above it, and
+/// the identity picker gates the app until a viewer exists (web onboarding
+/// parity). Color scheme follows prefs (system/light/dark).
 struct RootView: View {
-    @State private var tab: PulseTab = .chats
+    @StateObject private var session = PulseSession()
+    @StateObject private var prefs = PulsePrefs()
+    @State private var onboardingPresented = false
+    @State private var didBootstrap = false
 
-    enum PulseTab: Hashable { case chats, hub, contacts, profile }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var systemScheme
 
-    var body: some View {
-        TabView(selection: $tab) {
-            ChatsScreen()
-                .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
-                .tag(PulseTab.chats)
-            HubScreen()
-                .tabItem { Label("Hub", systemImage: "flame.fill") }
-                .tag(PulseTab.hub)
-            ContactsScreen()
-                .tabItem { Label("Contacts", systemImage: "person.2.fill") }
-                .tag(PulseTab.contacts)
-            ProfileScreen()
-                .tabItem { Label("Profile", systemImage: "person.crop.circle.fill") }
-                .tag(PulseTab.profile)
+    private var colorScheme: ColorScheme? {
+        switch prefs.appearance {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
         }
     }
-}
 
-struct ChatsScreen: View {
-    var body: some View {
-        NavigationStack {
-            ContentUnavailableCompat(title: "Chats", systemImage: "bubble.left.and.bubble.right.fill", note: "Data layer lands in wave N2.")
-                .navigationTitle("Chats")
-        }
+    private var isDark: Bool {
+        prefs.appearance == "dark" || (prefs.appearance == "system" && systemScheme == .dark)
     }
-}
 
-struct HubScreen: View {
     var body: some View {
-        NavigationStack {
-            ContentUnavailableCompat(title: "Hub", systemImage: "flame.fill", note: "Wallet, market, tasks and tournaments land later.")
-                .navigationTitle("Hub")
+        ZStack {
+            AmbientFieldView(mode: prefs.ambientMode, dark: isDark)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            TabView {
+                ChatsView(session: session, prefs: prefs)
+                    .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
+                HubView(session: session)
+                    .tabItem { Label("Hub", systemImage: "flame.fill") }
+                ContactsView(session: session)
+                    .tabItem { Label("Contacts", systemImage: "person.2.fill") }
+                ProfileView(session: session, prefs: prefs)
+                    .tabItem { Label("Profile", systemImage: "person.crop.circle.fill") }
+            }
+            .scrollContentBackground(.hidden)
+            .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+
+            ParticleOverlayView(bus: session.particles)
         }
-    }
-}
-
-struct ContactsScreen: View {
-    var body: some View {
-        NavigationStack {
-            ContentUnavailableCompat(title: "Contacts", systemImage: "person.2.fill", note: "Synced contacts land with the data layer.")
-                .navigationTitle("Contacts")
+        .tint(PulseTheme.emerald)
+        .preferredColorScheme(colorScheme)
+        .onAppear {
+            session.particles.reduceMotionDisabled = reduceMotion
+            // Bootstrap the live layer when identity already exists.
+            if !didBootstrap, let viewer = prefs.viewer {
+                didBootstrap = true
+                session.start(as: viewer)
+            }
+            // Gate on identity exactly like the web onboarding.
+            if prefs.viewer == nil && !onboardingPresented {
+                onboardingPresented = true
+            }
         }
-    }
-}
-
-struct ProfileScreen: View {
-    var body: some View {
-        NavigationStack {
-            ContentUnavailableCompat(title: "Profile", systemImage: "person.crop.circle.fill", note: "Account, appearance, privacy — 9 sections like the web.")
-                .navigationTitle("Profile")
+        .onChange(of: reduceMotion) { _, newValue in
+            session.particles.reduceMotionDisabled = newValue
+        }
+        .sheet(isPresented: $onboardingPresented) {
+            IdentityPickerSheet(
+                mode: .onboarding,
+                session: session,
+                prefs: prefs,
+                onPicked: { didBootstrap = true },
+            )
         }
     }
 }

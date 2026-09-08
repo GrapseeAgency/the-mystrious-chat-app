@@ -4,6 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * REAL wire DTOs — reverse-engineered from the live gateway (:81), the same
@@ -24,6 +25,9 @@ data class SenderDto(
 data class ReactionDto(
     val id: String? = null,
     val userId: String? = null,
+    /** Live wire groups reactions: { emoji, userIds, count } (serializers.groupReactions). */
+    val userIds: List<String>? = null,
+    val count: Int? = null,
     val emoji: String? = null,
     val createdAt: String? = null,
 )
@@ -117,9 +121,37 @@ data class ConversationsPageDto(
     val conversations: List<ConversationSummaryDto>,
 )
 
+@Serializable
+data class UserDto(
+    val id: String,
+    val name: String,
+    val username: String? = null,
+    val color: String? = null,
+    val avatar: String? = null,
+    val bio: String? = null,
+    val lastSeen: String? = null,
+    val verified: Boolean? = null,
+    val statusEmoji: String? = null,
+    val statusText: String? = null,
+    val xp: Int? = null,
+    val level: Int? = null,
+)
+
+@Serializable
+data class UsersPageDto(
+    val users: List<UserDto> = emptyList(),
+)
+
 /** One shared decoder for every Pulse client surface. */
 val PulseJson: Json = Json {
     ignoreUnknownKeys = true
     explicitNulls = false
     isLenient = true
 }
+
+/** Tolerant unwrap: takes `{"<key>": …}` inner object when present, else the root. */
+fun JsonElement.unwrapOrRoot(key: String): JsonElement =
+    (this as? JsonObject)?.get(key)?.takeIf { it is JsonObject } ?: this
+
+/** Serializer handle for the Room reactions column (shared by data mappers). */
+val ReactionListSerializer = kotlinx.serialization.builtins.ListSerializer(ReactionDto.serializer())

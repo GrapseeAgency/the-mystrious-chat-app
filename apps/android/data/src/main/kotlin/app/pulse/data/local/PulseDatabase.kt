@@ -12,37 +12,66 @@ import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import kotlinx.coroutines.flow.Flow
 
-/** Room cache — offline-first inbox (Room wraps SQLite; FTS5 tables follow in N2). */
+/**
+ * Room cache — offline-first inbox. v2 adds the UI-era columns: members,
+ * accent color, streaks, drafts, reactions and reply denormalization.
+ * (fallbackToDestructiveMigration is on — v1 rows rebuild from the gateway.)
+ */
 @Entity(tableName = "conversations")
 data class ConversationEntity(
     @PrimaryKey val id: String,
     val kind: String,
     val title: String,
     val lastMessagePreview: String?,
+    val lastMessageAuthorName: String?,
+    val lastMessageKind: String?,
     val lastActivityAt: String?,
     val unreadCount: Int,
     val isPinned: Boolean,
     val isMuted: Boolean,
     val isArchived: Boolean,
+    val memberIdsCsv: String,
+    val memberNamesCsv: String,
+    val accentColor: String?,
+    val streakCount: Int,
+    val myDraft: String?,
+    val isSelf: Boolean,
 ) {
     fun toDomain() = Conversation(
         id = id,
         kind = Conversation.Kind.valueOf(kind),
         title = title,
         lastMessagePreview = lastMessagePreview,
+        lastMessageAuthorName = lastMessageAuthorName,
+        lastMessageKind = lastMessageKind,
         lastActivityAt = lastActivityAt,
         unreadCount = unreadCount,
         isPinned = isPinned,
         isMuted = isMuted,
         isArchived = isArchived,
+        memberIds = memberIdsCsv.split(',').filter { it.isNotBlank() },
+        memberNames = memberNamesCsv.split(',').filter { it.isNotBlank() },
+        accentColor = accentColor,
+        streakCount = streakCount,
+        myDraft = myDraft,
+        isSelf = isSelf,
     )
 
     companion object {
         fun from(m: Conversation) = ConversationEntity(
             id = m.id, kind = m.kind.name, title = m.title,
-            lastMessagePreview = m.lastMessagePreview, lastActivityAt = m.lastActivityAt,
+            lastMessagePreview = m.lastMessagePreview,
+            lastMessageAuthorName = m.lastMessageAuthorName,
+            lastMessageKind = m.lastMessageKind,
+            lastActivityAt = m.lastActivityAt,
             unreadCount = m.unreadCount, isPinned = m.isPinned,
             isMuted = m.isMuted, isArchived = m.isArchived,
+            memberIdsCsv = m.memberIds.joinToString(","),
+            memberNamesCsv = m.memberNames.joinToString(","),
+            accentColor = m.accentColor,
+            streakCount = m.streakCount,
+            myDraft = m.myDraft,
+            isSelf = m.isSelf,
         )
     }
 }
@@ -56,23 +85,48 @@ data class MessageEntity(
     val kind: String,
     val body: String,
     val createdAt: String,
+    val editedAt: String?,
+    val deletedAt: String?,
     val replyToId: String?,
     val threadRootId: String?,
     val pinnedAt: String?,
+    val reactionsJson: String?,
+    val replyToBody: String?,
+    val replyToAuthor: String?,
+    val senderColor: String?,
+    val viaAutomation: Boolean,
+    val durationMs: Long?,
 ) {
-    fun toDomain() = Message(
-        id = id, conversationId = conversationId, authorId = authorId,
-        authorName = authorName, kind = Message.Kind.valueOf(kind), body = body,
-        createdAt = createdAt, replyToId = replyToId, threadRootId = threadRootId,
-        pinnedAt = pinnedAt,
-    )
+    fun toDomain(): Message {
+        val reactionDtos = reactionsJson?.let { json ->
+            runCatching {
+                app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ReactionListSerializer, json)
+            }.getOrDefault(emptyList())
+        } ?: emptyList()
+        val reactions = reactionDtos.mapNotNull { dto ->
+            val emoji = dto.emoji ?: return@mapNotNull null
+            val userId = dto.userId ?: return@mapNotNull null
+            app.pulse.domain.model.Reaction(emoji = emoji, userId = userId)
+        }
+        return Message(
+            id = id, conversationId = conversationId, authorId = authorId,
+            authorName = authorName, kind = Message.Kind.valueOf(kind), body = body,
+            createdAt = createdAt, editedAt = editedAt, deletedAt = deletedAt,
+            replyToId = replyToId, threadRootId = threadRootId, pinnedAt = pinnedAt,
+            reactions = reactions, replyToBody = replyToBody, replyToAuthor = replyToAuthor,
+            senderColor = senderColor, viaAutomation = viaAutomation, durationMs = durationMs,
+        )
+    }
 
     companion object {
-        fun from(m: Message) = MessageEntity(
+        fun from(m: Message, reactionsJson: String? = null) = MessageEntity(
             id = m.id, conversationId = m.conversationId, authorId = m.authorId,
             authorName = m.authorName, kind = m.kind.name, body = m.body,
-            createdAt = m.createdAt, replyToId = m.replyToId,
-            threadRootId = m.threadRootId, pinnedAt = m.pinnedAt,
+            createdAt = m.createdAt, editedAt = m.editedAt, deletedAt = m.deletedAt,
+            replyToId = m.replyToId, threadRootId = m.threadRootId, pinnedAt = m.pinnedAt,
+            reactionsJson = reactionsJson, replyToBody = m.replyToBody,
+            replyToAuthor = m.replyToAuthor, senderColor = m.senderColor,
+            viaAutomation = m.viaAutomation, durationMs = m.durationMs,
         )
     }
 }
@@ -94,14 +148,17 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
+    @Query("SELECT * FROM messages WHERE id = :id")
+    suspend fun byId(id: String): MessageEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(items: List<MessageEntity>)
 }
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class],
-    version = 1,
-    exportSchema = true,
+    version = 2,
+    exportSchema = false,
 )
 abstract class PulseDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao

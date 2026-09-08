@@ -8,9 +8,12 @@ public final class PulseSocketClient {
         case joined(onlineUserIds: [String])
         case presenceSnapshot(onlineUserIds: [String])
         case messageNew(conversationId: String, raw: [String: Any])
-        case messageDeleted(conversationId: String, messageId: String)
+        /// N3-b — payload is { type, message (tombstoned), recipientIds, conversationId }.
+        case messageDeleted(conversationId: String, raw: [String: Any])
+        /// N3-b — payload is { type, message (fresh reactions), ... }.
+        case messageReact(conversationId: String, raw: [String: Any])
         case messageRead(conversationId: String, userId: String)
-        case typing(conversationId: String, userId: String, isTyping: Bool)
+        case typing(conversationId: String, userId: String, userName: String, isTyping: Bool)
         case voiceTranscript(roomId: String, speakerId: String, text: String)
         case callSignal(event: String, raw: [String: Any])
     }
@@ -45,11 +48,20 @@ public final class PulseSocketClient {
             guard let obj = data.first as? [String: Any] else { return }
             self?.signals?(.messageNew(conversationId: obj["conversationId"] as? String ?? "", raw: obj))
         }
+        socket.on("message:deleted") { [weak self] data, _ in
+            guard let obj = data.first as? [String: Any] else { return }
+            self?.signals?(.messageDeleted(conversationId: obj["conversationId"] as? String ?? "", raw: obj))
+        }
+        socket.on("message:react") { [weak self] data, _ in
+            guard let obj = data.first as? [String: Any] else { return }
+            self?.signals?(.messageReact(conversationId: obj["conversationId"] as? String ?? "", raw: obj))
+        }
         socket.on("typing") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any] else { return }
             self?.signals?(.typing(
                 conversationId: obj["conversationId"] as? String ?? "",
                 userId: obj["userId"] as? String ?? "",
+                userName: obj["userName"] as? String ?? "",
                 isTyping: obj["isTyping"] as? Bool ?? false,
             ))
         }
