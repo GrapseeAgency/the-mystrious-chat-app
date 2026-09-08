@@ -1,0 +1,8 @@
+{
+  "versionCode": 2,
+  "versionName": "0.1.1-native",
+  "apkUrl": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
+  "notes": "LiveUpdate channel live — byte-range resume, integrity gates, one-tap install",
+  "minRequired": false,
+  "updatedAt": "2026-09-08T19:57:40Z"
+}
