@@ -1,0 +1,44 @@
+name: Pulse iOS CI
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/ios/**', 'packages/**', '.github/workflows/ios-ci.yml']
+  pull_request:
+    paths: ['apps/ios/**', '.github/workflows/ios-ci.yml']
+
+jobs:
+  build-test:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (iPhone 16 simulator)
+        run: |
+          set -o pipefail
+          xcodebuild -project Pulse.xcodeproj -scheme Pulse \
+            -destination 'platform=iOS Simulator,name=iPhone 16' build \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild -project Pulse.xcodeproj -scheme Pulse \
+            -destination 'platform=iOS Simulator,name=iPhone 16' test \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify
+
+      - name: Upload simulator app artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-ios-simulator-build
+          path: ~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug-iphonesimulator/*.app
