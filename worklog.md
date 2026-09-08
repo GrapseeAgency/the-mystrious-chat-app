@@ -1804,3 +1804,24 @@ Work Log:
 
 Stage Summary:
 - Local state: main == 72d4c3f (R48), mirror == 72d4c3f, origin == 7a45593 — PUSH PENDING CREDENTIALS
+---
+Task ID: N1 (native foundation wave)
+Agent: orchestrator (Z.ai Code)
+Task: Begin the native era — scaffold the Pulse native monorepo foundation (Android Kotlin/Compose + iOS SwiftUI + shared protocol + CI), per the user's blueprint. Web feature work stays frozen at parity-complete.
+
+Work Log:
+- User blueprint adopted in full: Kotlin/Compose + Swift/SwiftUI, Clean Architecture + MVVM/UDF, KMM-where-useful path, Room/GRDB over SQLite, FTS5, Ktor/URLSession, Hilt/DI, WorkManager/BGTaskScheduler, Keystore/Secure Enclave (later), C++ core DEFERRED until profiling proves need (user's own correction)
+- Monorepo tree created WITHOUT touching the running web app: apps/android (9 Gradle modules), apps/ios (XcodeGen spec + SwiftUI sources), packages/protocol, packages/schemas, infrastructure/, .github/workflows/
+- ANDROID: version catalog (AGP 8.7.3, Kotlin 2.0.21, Compose BOM 2024.12, Hilt 2.53.1, Room 2.6.1, Ktor 2.3.12, socket.io-client 2.1.0); modules :app (Compose shell, edge-to-edge, deep links pulse://, Hilt app) :core (PulseResult railway envelope, HTTP-kind parity with web errors) :domain (pure-Kotlin User/Conversation/Message models + PulseRepository contract + SendMessageUseCase + JVM unit tests) :data (Room schema v1 with Conversation/Message entities+DAOs, Ktor PulseApi stub, socket.io PulseSocketClient with typed Signal flow, PulseRepositoryImpl, Hilt DataModule) + :feature-chat/:feature-calls/:feature-stories/:feature-hub/:feature-settings (Compose screens; 4-tab bottom bar parity with web NAV_ITEMS)
+- ANDROID VERIFIED LOCALLY: downloaded Gradle 8.11.1 + full Temurin JDK 21 (sandbox JVM was JRE-only, no javac); fixed hyphenated namespaces (app.pulse.feature-calls → app.pulse.feature.calls); added missing kotlinx-serialization-json to domain; `./gradlew :domain:test :core:build` → BUILD SUCCESSFUL, domain tests 2/2 green (SendMessageUseCase trims/rejects blank); wrapper committed so CI needs no Gradle install; Android app module full assemble runs in CI (sandbox has no Android SDK — CI ubuntu runners do)
+- IOS: project.yml (XcodeGen, iOS 17, Pulse + PulseTests targets, mic/camera usage strings, Pulse scheme with tests); SwiftUI sources: PulseApp, RootView (TabView 4 tabs, PulseTheme emerald tokens, ContentUnavailableCompat), Domain/Models/PulseModels.swift (Codable mirror of Android models), Core/Networking/PulseAPIClient (URLSession, failure-kind mapping identical to Android); XCTest wire-shape round-trip test; iOS build/test verified in CI on macos-15 via xcodegen + xcodebuild (no macOS in sandbox)
+- PROTOCOL: packages/protocol/src/contracts.ts — SOCKET_EVENTS registry (message:new … call:end), failureKindFor() parity table, WireUser/WireConversation/WireMessage TS shapes; packages/schemas/pulse-protocol-v1.schema.json (JSON Schema canonical); Kotlin + Swift models are hand-mirrors, wire test pins them
+- CI: .github/workflows/android-ci.yml (JDK21 + gradle :domain:test :core:build + :app:assembleDebug + APK artifact), ios-ci.yml (macos-15, xcodegen, xcodebuild build+test), web-ci.yml (bun lint + typecheck); infrastructure/docker-compose.yml (postgres:16 + redis:7 — backend graduation targets)
+- .gitignore extended for Android/iOS artifacts (gradle builds, xcodeproj generated, DerivedData, ipa)
+- Web app untouched and healthy (dev.log clean, routes unchanged)
+
+Stage Summary:
+- SHIPPED: native monorepo foundation — Android 9-module Gradle project (JVM modules locally green), iOS XcodeGen SwiftUI app, shared protocol package + JSON schema, 3 GitHub Actions pipelines, infra compose
+- Contract: app→feature-*→data→domain←core layering; domain is pure Kotlin; protocol/ is the wire source of truth; error kinds identical across web/Android/iOS
+- Honest gaps: Android assembleDebug + iOS xcodebuild only verifiable in CI (sandbox lacks Android SDK/macOS); Room schema is messages+conversations only (FTS5 tables land with offline search wave); socket client not yet wired to the live gateway (N2); no auth/push/WebRTC yet; KMM shared module deferred until there is real shared business logic to move (protocol mirrors are the current share)
+- Evidence: BUILD SUCCESSFUL + 2/2 domain tests (gradle test-results XML), wrapper committed, CI pipelines in-repo

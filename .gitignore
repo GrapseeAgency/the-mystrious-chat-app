@@ -55,3 +55,27 @@ server.log
 /skills/
 /uploads/
 tool-results/
+# ── Native app artifacts (N1) ─────────────────────────────────
+# Android
+apps/android/.gradle/
+apps/android/build/
+apps/android/*/build/
+apps/android/local.properties
+apps/android/.idea/
+apps/android/app/release/
+*.apk
+*.aab
+
+# iOS / macOS
+apps/ios/Pulse.xcodeproj/
+apps/ios/DerivedData/
+apps/ios/build/
+*.xcuserstate
+xcuserdata/
+*.ipa
+*.dSYM.zip
+
+# Gradle global
+.gradle/
+
+# Keep generated Xcode project out of diffs; project.yml is the source.

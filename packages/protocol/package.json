@@ -1,0 +1,9 @@
+{
+  "name": "@pulse/protocol",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pulse shared wire protocol — consumed by web; mirrored by Kotlin (Models.kt) and Swift (PulseModels.swift).",
+  "main": "./src/contracts.ts",
+  "types": "./src/contracts.ts"
+}

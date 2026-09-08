@@ -1,0 +1,45 @@
+# Pulse iOS — XcodeGen project spec.
+# Generate the .xcodeproj with `xcodegen` (CI does this automatically):
+#   cd apps/ios && xcodegen generate
+name: Pulse
+options:
+  bundleIdPrefix: app.pulse
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    TARGETED_DEVICE_FAMILY: "1"
+    GENERATE_INFOPLIST_FILE: true
+    CODE_SIGNING_ALLOWED: "NO"
+targets:
+  Pulse:
+    type: application
+    platform: iOS
+    sources:
+      - Pulse
+    infoProperties:
+      CFBundleDisplayName: Pulse
+      UILaunchScreen: {}
+      UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+      NSMicrophoneUsageDescription: Pulse uses the microphone for voice notes, voice rooms and calls.
+      NSCameraUsageDescription: Pulse uses the camera for photos, video notes and calls.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.pulse.chat
+        ENABLE_PREVIEWS: "YES"
+  PulseTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [PulseTests]
+    dependencies:
+      - target: Pulse
+schemes:
+  Pulse:
+    build:
+      targets:
+        Pulse: all
+        PulseTests: [test]
+    test:
+      targets: [PulseTests]

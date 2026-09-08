@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Pulse wire protocol v1",
+  "description": "Canonical JSON shapes shared by web, Android and iOS. Generated consumers validate against this.",
+  "definitions": {
+    "WireMessage": {
+      "type": "object",
+      "required": ["id", "conversationId", "authorId", "authorName", "kind", "body", "createdAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "kind": { "enum": ["TEXT", "IMAGE", "VOICE", "VIDEO", "FILE", "POLL", "RED_PACKET", "SYSTEM"] },
+        "body": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "editedAt": { "type": ["string", "null"] },
+        "deletedAt": { "type": ["string", "null"] },
+        "replyToId": { "type": ["string", "null"] },
+        "threadRootId": { "type": ["string", "null"] },
+        "pinnedAt": { "type": ["string", "null"] },
+        "viewedOnce": { "type": "boolean", "default": false }
+      }
+    },
+    "WireConversation": {
+      "type": "object",
+      "required": ["id", "kind", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["DM", "GROUP", "CHANNEL", "SPACE", "VOICE", "STAGE"] },
+        "title": { "type": "string" },
+        "avatar": { "type": ["string", "null"] },
+        "lastMessagePreview": { "type": ["string", "null"] },
+        "lastActivityAt": { "type": ["string", "null"] },
+        "unreadCount": { "type": "integer", "minimum": 0, "default": 0 },
+        "isPinned": { "type": "boolean", "default": false },
+        "isMuted": { "type": "boolean", "default": false },
+        "isArchived": { "type": "boolean", "default": false }
+      }
+    },
+    "WireUser": {
+      "type": "object",
+      "required": ["id", "name", "handle"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "handle": { "type": "string" },
+        "avatar": { "type": ["string", "null"] },
+        "bio": { "type": ["string", "null"] },
+        "lastSeen": { "type": ["string", "null"] },
+        "verified": { "type": "boolean", "default": false }
+      }
+    }
+  }
+}

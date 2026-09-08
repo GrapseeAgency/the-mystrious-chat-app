@@ -1,0 +1,26 @@
+# Pulse infrastructure — cloud backend evolution targets.
+# The backend graduates from embedded SQLite to PostgreSQL + Redis
+# (protocol unchanged; see the native-plan in worklog).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse
+      POSTGRES_DB: pulse
+    ports:
+      - '5432:5432'
+    volumes:
+      - pulse-pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - pulse-redisdata:/data
+
+volumes:
+  pulse-pgdata:
+  pulse-redisdata:
