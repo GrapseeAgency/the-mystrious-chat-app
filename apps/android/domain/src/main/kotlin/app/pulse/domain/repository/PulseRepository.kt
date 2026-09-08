@@ -7,8 +7,15 @@ import kotlinx.coroutines.flow.Flow
 
 /** Contract every Pulse data source (remote-first, Room cache) must honor. */
 interface PulseRepository {
+    /** Bind the client to a viewer identity (REST userId + socket join). */
+    fun start(userId: String)
+
     fun observeConversations(query: String = ""): Flow<List<Conversation>>
     fun observeMessages(conversationId: String): Flow<List<Message>>
+
+    /** Pull the latest lists from the gateway into the local cache. */
+    suspend fun refreshConversations(): Result<Unit>
+    suspend fun refreshMessages(conversationId: String, limit: Int = 200): Result<Unit>
 
     suspend fun me(): User
     suspend fun sendMessage(conversationId: String, body: String, replyToId: String?): Result<Message>

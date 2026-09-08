@@ -2,10 +2,12 @@ package app.pulse.data.di
 
 import android.content.Context
 import androidx.room.Room
+import app.pulse.core.PulseEndpoints
 import app.pulse.data.local.ConversationDao
 import app.pulse.data.local.MessageDao
 import app.pulse.data.local.PulseDatabase
 import app.pulse.data.remote.PulseApi
+import app.pulse.data.remote.PulseSocketClient
 import app.pulse.data.repository.PulseRepositoryImpl
 import app.pulse.domain.repository.PulseRepository
 import dagger.Binds
@@ -14,11 +16,32 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import io.ktor.client.HttpClient
 import javax.inject.Singleton
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.serialization.kotlinx.json.json as ktorJson
 
 @Module
 @InstallIn(SingletonComponent::class)
 object DataModule {
+
+    @Provides
+    @Singleton
+    fun provideHttpClient(): HttpClient = HttpClient {
+        install(ContentNegotiation) {
+            ktorJson(Json { ignoreUnknownKeys = true; explicitNulls = false })
+        }
+    }
+
+    @Provides
+    @Singleton
+    fun provideApi(http: HttpClient): PulseApi = PulseApi(http)
+
+    @Provides
+    @Singleton
+    fun provideSocket(): PulseSocketClient = PulseSocketClient(PulseEndpoints.socketUrl)
 
     @Provides
     @Singleton
@@ -32,13 +55,6 @@ object DataModule {
 
     @Provides
     fun provideMessageDao(db: PulseDatabase): MessageDao = db.messageDao()
-
-    @Provides
-    @Singleton
-    fun provideApi(): PulseApi = PulseApi(
-        baseUrl = "https://pulse.example", // overridden per-build in N2 (gateway base URL)
-        authTokenProvider = { null },
-    )
 }
 
 @Module

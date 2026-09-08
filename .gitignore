@@ -46,7 +46,7 @@ local-*
 *.log
 dev.log
 dev.out.log
-test
+/test
 prompt
 
 server.log
@@ -79,3 +79,4 @@ xcuserdata/
 .gradle/
 
 # Keep generated Xcode project out of diffs; project.yml is the source.
+apps/android/.kotlin/

@@ -17,6 +17,7 @@ rootProject.name = "Pulse"
 
 include(":app")
 include(":core")
+include(":protocol")
 include(":domain")
 include(":data")
 include(":feature-chat")

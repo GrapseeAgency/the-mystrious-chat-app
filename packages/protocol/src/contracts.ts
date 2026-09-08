@@ -1,20 +1,15 @@
 /**
- * Pulse shared protocol — the single wire contract every client renders.
- * Web (Next.js), Android (Ktor DTOs) and iOS (Codable) all parse these shapes.
- * Source of truth: the web API's serializers (src/lib/serializers.ts + types.ts).
- * Change here → change there, in the same commit.
+ * Pulse shared protocol — the REAL wire contract the live Next.js API emits
+ * (captured from the :81 gateway). Web, Android (WireDtos.kt) and iOS
+ * (WireDtos.swift) parse these exact shapes. Source of truth; change here →
+ * change the mirrors in the same commit.
  */
 
 export const SOCKET_EVENTS = [
-  'message:new',
-  'message:updated',
-  'message:deleted',
-  'typing',
-  'presence',
-  'voice:transcript',
-  'call:ring',
-  'call:accept',
-  'call:end',
+  'join', 'joined', 'presence:snapshot', 'typing',
+  'message:new', 'message:deleted', 'message:read',
+  'voice:transcript', 'voice:join', 'voice:leave', 'voice:ptt',
+  'call:offer', 'call:answer', 'call:ice', 'call:reject', 'call:cancel', 'call:hangup',
 ] as const
 
 export type SocketEvent = (typeof SOCKET_EVENTS)[number]
@@ -24,7 +19,7 @@ export interface ApiError {
   error: string
 }
 
-/** HTTP status → client failure kind. Android `PulseResult.Kind` mirrors this. */
+/** HTTP status → client failure kind. Android PulseResult.Kind / iOS Failure.Kind mirror this. */
 export function failureKindFor(status: number): string {
   if (status === 401) return 'AUTH'
   if (status === 403) return 'FORBIDDEN'
@@ -35,42 +30,100 @@ export function failureKindFor(status: number): string {
   return 'UNKNOWN'
 }
 
-/** Core wire shapes (mirrored by Kotlin Models.kt and Swift PulseModels.swift). */
-export interface WireUser {
+/** Sender embedded in message payloads. */
+export interface WireSender {
   id: string
   name: string
-  handle: string
-  avatar: string | null
-  bio: string | null
-  lastSeen: string | null
-  verified: boolean
+  username?: string | null
+  color?: string | null
+  avatar?: string | null
 }
 
-export interface WireConversation {
-  id: string
-  kind: 'DM' | 'GROUP' | 'CHANNEL' | 'SPACE' | 'VOICE' | 'STAGE'
-  title: string
-  avatar: string | null
-  lastMessagePreview: string | null
-  lastActivityAt: string | null
-  unreadCount: number
-  isPinned: boolean
-  isMuted: boolean
-  isArchived: boolean
+export interface WireReaction {
+  id?: string | null
+  userId?: string | null
+  emoji?: string | null
+  createdAt?: string | null
 }
 
-export interface WireMessage {
+/** GET /api/conversations/{id}/messages row — lowercase wire kinds. */
+export interface WireChatMessage {
   id: string
   conversationId: string
-  authorId: string
-  authorName: string
-  kind: 'TEXT' | 'IMAGE' | 'VOICE' | 'VIDEO' | 'FILE' | 'POLL' | 'RED_PACKET' | 'SYSTEM'
-  body: string
+  senderId: string
+  content: string
+  kind: string // text | image | voice | video | file | poll | system | sticker | location | red_packet…
+  payload?: unknown
   createdAt: string
-  editedAt: string | null
-  deletedAt: string | null
-  replyToId: string | null
-  threadRootId: string | null
-  pinnedAt: string | null
-  viewedOnce: boolean
+  editedAt?: string | null
+  deletedAt?: string | null
+  sender?: WireSender | null
+  reactions?: WireReaction[]
+  replyTo?: WireChatMessage | null
+  parentId?: string | null
+  imagePath?: string | null
+  audioPath?: string | null
+  durationMs?: number | null
+  filePath?: string | null
+  fileName?: string | null
+  fileSize?: number | null
+  linkUrl?: string | null
+  linkPreview?: unknown
+  pinnedAt?: string | null
+  pinnedBy?: string | null
+  poll?: unknown
+  topicId?: string | null
+  transcript?: string | null
+  transcribedAt?: string | null
+  viaAutomation?: boolean | null
+  viewOnce?: boolean | null
+  viewedAt?: string | null
+  viewedBy?: unknown
+  anon?: boolean | null
+  anonAlias?: string | null
+  expiresAt?: string | null
+}
+
+export interface WireMessagesPage {
+  messages: WireChatMessage[]
+  hasMore: boolean
+  total: number
+}
+
+/** GET /api/conversations?userId= row. */
+export interface WireConversationSummary {
+  id: string
+  isGroup: boolean
+  name?: string | null
+  photo?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  members: Array<{
+    id: string
+    name: string
+    username?: string | null
+    color?: string | null
+    avatar?: string | null
+    statusEmoji?: string | null
+    statusText?: string | null
+    lastReadAt?: string | null
+    role?: string | null
+  }>
+  lastMessage?: WireChatMessage | null
+  unreadCount?: number
+  pinnedAt?: string | null
+  mutedUntil?: string | null
+  archivedAt?: string | null
+  ttlSeconds?: number | null
+  broadcastMode?: boolean | null
+  isSelf?: boolean | null
+  myDraft?: string | null
+  myManualUnread?: boolean | null
+  myStreak?: number | { count?: number } | null
+  deadStreak?: { count?: number } | null
+  lostStreak?: { count?: number } | null
+}
+
+export interface WireConversationsPage {
+  conversations: WireConversationSummary[]
 }
