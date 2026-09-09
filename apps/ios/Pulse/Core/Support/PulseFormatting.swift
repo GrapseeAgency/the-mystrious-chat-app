@@ -85,7 +85,7 @@ public enum PulseFormat {
         let parts = name.split(separator: " ").filter { !$0.isEmpty }
         let first = parts.first?.first.map(String.init) ?? ""
         let second = parts.count > 1 ? parts[1].first.map(String.init) : (parts.first?.dropFirst().first.map(String.init) ?? "")
-        let joined = first + second
+        let joined = first + (second ?? "")
         return joined.isEmpty ? "?" : joined.uppercased()
     }
 

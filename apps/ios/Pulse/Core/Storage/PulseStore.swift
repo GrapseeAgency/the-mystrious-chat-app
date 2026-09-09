@@ -71,8 +71,12 @@ public final class PulseStore: Sendable {
         }
     }
 
-    public func observeConversations() throws -> DatabasePublishers.Value<[PulseConversation]> {
-        try PulseConversationRow.all().observationForAll().mapAll { rows in rows.map { $0.toDomain() } }
+    public func observeConversations() -> DatabasePublishers.Value<[PulseConversation]> {
+        ValueObservation.tracking { db in
+            try PulseConversationRow.fetchAll(db)
+        }
+        .map { rows in rows.map { $0.toDomain() } }
+        .publisher(in: dbQueue)
     }
 
     // ── message cache (N3-b — room offline-first seed) ──────

@@ -26,7 +26,7 @@ extension PulseTheme {
 
     /// Flat tint from a wire color name (falls back to emerald).
     static func color(named name: String?) -> Color {
-        gradient(named: name).colors.first ?? emerald
+        gradient(named: name).gradient.colors.first ?? emerald
     }
 
     /// Photo URL resolution matching the web <img src> handling: absolute

@@ -43,25 +43,25 @@ public struct PulseAPIClient: Sendable {
 
     // ── reads ────────────────────────────────────────────────
     public func conversations() async throws -> [WireConversationSummary] {
-        let page: WireConversationsPage = try get("/api/conversations?userId=\(userId)")
+        let page: WireConversationsPage = try await get("/api/conversations?userId=\(userId)")
         return page.conversations
     }
 
     public func messages(conversationId: String, limit: Int = 200, before: String? = nil) async throws -> WireMessagesPage {
         var path = "/api/conversations/\(conversationId)/messages?limit=\(limit)"
         if let before { path += "&before=\(before)" }
-        return try get(path)
+        return try await get(path)
     }
 
     /// N3-b — every identity on this Pulse (contacts + onboarding picker).
     public func users() async throws -> [WireUser] {
-        let page: WireUsersPage = try get("/api/users")
+        let page: WireUsersPage = try await get("/api/users")
         return page.users
     }
 
     /// N3-b — Hub wallet (real coins / gems / streak numbers).
     public func wallet() async throws -> WireWallet {
-        let page: WireWalletPage = try get("/api/hub/wallet?userId=\(userId)")
+        let page: WireWalletPage = try await get("/api/hub/wallet?userId=\(userId)")
         return page.wallet
     }
 
@@ -73,14 +73,14 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extract(from: data)
     }
 
-    public func markRead(conversationId: String) async throws { try postEmpty("/api/conversations/\(conversationId)/read") }
-    public func togglePin(conversationId: String, pinned: Bool) async throws { try postEmpty("/api/conversations/\(conversationId)/pin", body: ["pinned": pinned]) }
-    public func setMuted(conversationId: String, muted: Bool) async throws { try postEmpty("/api/conversations/\(conversationId)/mute", body: ["muted": muted]) }
-    public func archive(conversationId: String, archived: Bool) async throws { try postEmpty("/api/conversations/\(conversationId)/archive", body: ["archived": archived]) }
+    public func markRead(conversationId: String) async throws { try await postEmpty("/api/conversations/\(conversationId)/read") }
+    public func togglePin(conversationId: String, pinned: Bool) async throws { try await postEmpty("/api/conversations/\(conversationId)/pin", body: ["pinned": pinned]) }
+    public func setMuted(conversationId: String, muted: Bool) async throws { try await postEmpty("/api/conversations/\(conversationId)/mute", body: ["muted": muted]) }
+    public func archive(conversationId: String, archived: Bool) async throws { try await postEmpty("/api/conversations/\(conversationId)/archive", body: ["archived": archived]) }
 
     /// N3-b — per-viewer unread dot (PATCH, body { userId, on }).
     public func markUnread(conversationId: String, on: Bool) async throws {
-        try patchEmpty("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on])
+        try await patchEmpty("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on])
     }
 
     /// N3-b — toggle an emoji reaction. Server replies with the FRESH message.
@@ -106,15 +106,15 @@ public struct PulseAPIClient: Sendable {
     }
 
     public func block(userId target: String) async throws {
-        try postEmpty("/api/users/\(target)/block", body: ["userId": userId])
+        try await postEmpty("/api/users/\(target)/block", body: ["userId": userId])
     }
     public func unblock(userId target: String) async throws {
-        try postEmpty("/api/users/\(target)/unblock", body: ["userId": userId])
+        try await postEmpty("/api/users/\(target)/unblock", body: ["userId": userId])
     }
     public func report(userId target: String, reason: String, details: String?) async throws {
         var body: [String: Any] = ["userId": userId, "reason": reason]
         if let details { body["details"] = details }
-        try postEmpty("/api/users/\(target)/report", body: body)
+        try await postEmpty("/api/users/\(target)/report", body: body)
     }
 
     // ── plumbing ─────────────────────────────────────────────
@@ -124,12 +124,12 @@ public struct PulseAPIClient: Sendable {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
             ?? URLComponents(string: "http://localhost:81")!
         if let queryStart = path.firstIndex(of: "?") {
-            components?.path += String(path[..<queryStart])
-            components?.query = String(path[path.index(after: queryStart)...])
+            components.path += String(path[..<queryStart])
+            components.query = String(path[path.index(after: queryStart)...])
         } else {
-            components?.path += path
+            components.path += path
         }
-        return components?.url ?? baseURL
+        return components.url ?? baseURL
     }
 
     private func get<T: Decodable>(_ path: String, as type: T.Type = T.self) async throws -> T {
@@ -172,14 +172,17 @@ public struct PulseAPIClient: Sendable {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure(kind: .network, message: nil) }
         guard (200..<300).contains(http.statusCode) else {
-            var failure = Failure(kind: Self.kind(for: http.statusCode), message: String(data: data, encoding: .utf8))
+            var kind = Self.kind(for: http.statusCode)
+            var message = String(data: data, encoding: .utf8)
+            var code: String?
+            var suggestion: String?
             if let body = try? decoder.decode(WireErrorBody.self, from: data) {
-                if let error = body.error, !error.isEmpty { failure.message = error }
-                failure.code = body.code
-                failure.suggestion = body.suggestion
-                if body.code == "username_taken" { failure.kind = .validation }
+                if let error = body.error, !error.isEmpty { message = error }
+                code = body.code
+                suggestion = body.suggestion
+                if body.code == "username_taken" { kind = .validation }
             }
-            throw failure
+            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion)
         }
         return data
     }
