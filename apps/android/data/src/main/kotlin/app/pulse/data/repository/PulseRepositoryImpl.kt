@@ -378,8 +378,10 @@ class PulseRepositoryImpl @Inject constructor(
             it.copy(mutedUntilEpoch = epoch, isMuted = epoch > System.currentTimeMillis())
         }
         val body = kotlinx.serialization.json.buildJsonObject {
-            put("userId", viewerId ?: "")
-            put("until", until) // nullable overload → JSON null for Unmute (web parity)
+            // Explicit JsonPrimitive/JsonNull — JsonObjectBuilder.put has no
+            // String overload at the resolved serialization version.
+            put("userId", kotlinx.serialization.json.JsonPrimitive(viewerId ?: ""))
+            put("until", until?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull)
         }
         val result = api.patchAction("/api/conversations/$conversationId/mute", body).toResult()
         refreshConversations()

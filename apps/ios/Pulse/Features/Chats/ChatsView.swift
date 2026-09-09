@@ -594,6 +594,10 @@ private extension PulseTheme {
 private struct SearchHeaderBar: View {
     @Binding var query: String
     @Binding var focused: Bool
+    // .focused() requires a FocusState projection, not a plain Binding —
+    // keep the view-local FocusState and mirror it both ways with the
+    // parent-owned binding (pill tap sets searchFocused = true → keyboard).
+    @FocusState private var keyFocus: Bool
     let onClose: () -> Void
     let onQueryChange: (String) -> Void
 
@@ -618,7 +622,9 @@ private struct SearchHeaderBar: View {
                 .foregroundStyle(PulseTheme.titleOnWash)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-                .focused($focused)
+                .focused($keyFocus)
+                .onChange(of: keyFocus) { focused = $0 }
+                .onChange(of: focused) { keyFocus = $0 }
                 .accessibilityLabel("Search conversations")
 
                 if !query.isEmpty {
@@ -1546,7 +1552,7 @@ private struct HighlightedSnippet: View {
     var body: some View {
         let lower = content.lowercased()
         let q = query.lowercased()
-        let idx = q.isEmpty ? -1 : lower.range(of: q)?.lowerBound.map { lower.distance(from: lower.startIndex, to: $0) } ?? -1
+        let idx = q.isEmpty ? -1 : (lower.range(of: q)?.lowerBound).map { lower.distance(from: lower.startIndex, to: $0) } ?? -1
         // (recomputed below — kept simple and total)
         let window = Self.window(content: content, query: q)
         return HStack(spacing: 0) {
