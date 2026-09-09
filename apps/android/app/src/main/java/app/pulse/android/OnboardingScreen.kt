@@ -68,6 +68,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawOutline
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -95,6 +96,7 @@ import app.pulse.ui.rememberPressSource
 // ─────────────────────────────────────────────────────────────
 
 // Tailwind palette slices the web screen uses (light/dark variants).
+private val Zinc200 = Color(0xFFE4E4E7)
 private val Zinc400 = Color(0xFFA1A1AA)
 private val Zinc500 = Color(0xFF71717A)
 private val Zinc700 = Color(0xFF3F3F46)

@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           xcrun simctl list runtimes available
           xcrun simctl list devices available
-          DEVICE=$(xcrun simctl list devices available | sed -nE 's/^ *([^()]*iPhone[^()]*?) \([0-9A-Fa-f-]{36}\).*/\1/p' | head -1 | xargs)
+          DEVICE=$(xcrun simctl list devices available | awk '/iPhone/ { sub(/\(.*/, ""); gsub(/^ +| +$/, ""); print; exit }')
           echo "device=${DEVICE}" >> "$GITHUB_OUTPUT"
 
       # Compilation proof — generic destination never fails on device churn.
