@@ -372,7 +372,7 @@ struct RowAvatar: View {
         }
         .frame(width: size, height: size)
         .clipShape(clipShape)
-        .overlay(clipShape.strokeBorder(rimGradient, lineWidth: 1))
+        .overlay(clipShape.stroke(rimGradient, lineWidth: 1))
         .overlay(alignment: .bottomTrailing) {
             if showPresence {
                 let dot = max(9, round(size * 0.26))
