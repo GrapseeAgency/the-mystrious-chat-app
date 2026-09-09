@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,14 +41,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.AtSign
+import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
@@ -74,6 +77,9 @@ import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -363,6 +369,7 @@ fun ChatsScreen(
                         actionLabel = "Say hi to someone",
                         onAction = { onSwitchTab("contacts") },
                         showImage = true,
+                        showArrow = true,
                     )
                     else -> LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -377,7 +384,7 @@ fun ChatsScreen(
                         }
                         item(key = "pill-mentions") {
                             EntryPill(
-                                icon = Icons.Filled.AtSign,
+                                icon = Icons.Filled.AlternateEmail,
                                 label = "Mentions",
                                 badge = mentionCount.takeIf { it > 0 },
                                 trailing = if (mentionCount == 1) "1 mention" else "$mentionCount mentions",
@@ -929,10 +936,12 @@ private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) 
                         countLabel(unreadTotal),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
                         color = Emerald600,
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
                             .background(Emerald500.copy(alpha = 0.2f))
+                            .defaultMinSize(minWidth = 15.dp, minHeight = 15.dp)
                             .padding(horizontal = 4.dp, vertical = 1.dp),
                     )
                 }
@@ -2084,6 +2093,7 @@ private fun EmptyStateCard(
     actionLabel: String?,
     onAction: (() -> Unit)?,
     showImage: Boolean = false,
+    showArrow: Boolean = false,
 ) {
     val dark = isPulseDarkTheme()
     Column(
@@ -2146,6 +2156,14 @@ private fun EmptyStateCard(
                         ),
                         border = BorderStroke(1.dp, Emerald500.copy(alpha = 0.4f)),
                     ) {
+                        if (showArrow) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
                         Text(actionLabel, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }

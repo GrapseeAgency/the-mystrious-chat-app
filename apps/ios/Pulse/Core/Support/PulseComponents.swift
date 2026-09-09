@@ -456,7 +456,7 @@ struct StoryRingCell: View {
                         colorName: color,
                         photoPath: nil,
                         size: innerSize,
-                        shape: .circle,
+                        avatarShape: .circle,
                     )
                 }
                 .frame(width: cellSize, height: cellSize)

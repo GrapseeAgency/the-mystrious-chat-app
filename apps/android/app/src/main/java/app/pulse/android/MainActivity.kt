@@ -34,7 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Aperture
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Group
@@ -615,19 +615,19 @@ private fun MoreDockButton(
             containerColor = if (dark) Color(0xFF1C1C1F) else Color.White,
         ) {
             DropdownMenuItem(
-                text = { Text("Search", fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = DockEmerald600) },
-                onClick = {
-                    onOpenChange(false)
-                    onSearch()
-                },
-            )
-            DropdownMenuItem(
                 text = { Text("Settings", fontSize = 14.sp) },
                 leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null, tint = DockEmerald600) },
                 onClick = {
                     onOpenChange(false)
                     onDeferred("Settings aren't available in this native build yet.")
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Search", fontSize = 14.sp) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = DockEmerald600) },
+                onClick = {
+                    onOpenChange(false)
+                    onSearch()
                 },
             )
             DropdownMenuItem(
@@ -640,7 +640,7 @@ private fun MoreDockButton(
             )
             DropdownMenuItem(
                 text = { Text("Stories", fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Filled.Aperture, contentDescription = null, tint = DockEmerald600) },
+                leadingIcon = { Icon(Icons.Filled.AutoStories, contentDescription = null, tint = DockEmerald600) },
                 onClick = {
                     onOpenChange(false)
                     onDeferred("Stories aren't available in this native build yet.")

@@ -71,7 +71,7 @@ struct ChatsView: View {
     /// Whether this tab is the visible one (dock-level tab switch).
     var isActive: Bool = true
 
-    @State private var viewModel = ChatsViewModel()
+    @StateObject private var viewModel = ChatsViewModel()
     @State private var path = NavigationPath()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -234,16 +234,22 @@ struct ChatsView: View {
             }
 
             if viewModel.selectMode {
-                MultiSelectBar(
-                    count: viewModel.selection.count,
-                    archivePending: viewModel.batchArchivePending,
-                    mutePending: viewModel.batchMutePending,
-                    readPending: viewModel.batchReadPending,
-                    onArchive: { Task { await viewModel.batchArchive(session: session) } },
-                    onMute: { Task { await viewModel.batchMute8h(session: session) } },
-                    onRead: { Task { await viewModel.batchMarkRead(session: session) } },
-                    onExit: { viewModel.exitSelect() },
-                )
+                // Pinned near the bottom, centered (web §7.5: bottom-[86px]) —
+                // the outer ZStack is top-aligned, so pin via a filling spacer.
+                VStack {
+                    Spacer(minLength: 0)
+                    MultiSelectBar(
+                        count: viewModel.selection.count,
+                        archivePending: viewModel.batchArchivePending,
+                        mutePending: viewModel.batchMutePending,
+                        readPending: viewModel.batchReadPending,
+                        onArchive: { Task { await viewModel.batchArchive(session: session) } },
+                        onMute: { Task { await viewModel.batchMute8h(session: session) } },
+                        onRead: { Task { await viewModel.batchMarkRead(session: session) } },
+                        onExit: { viewModel.exitSelect() },
+                    )
+                    .padding(.bottom, 86)
+                }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -256,7 +262,16 @@ struct ChatsView: View {
                 NoteToSelfCard(
                     exists: viewModel.selfConv != nil,
                     creating: viewModel.selfCreating,
-                    onPress: { Task { await viewModel.pressSelf(session: session) } },
+                    onPress: {
+                        if let conv = viewModel.selfConv {
+                            // Existing Note to Self — open directly (the id never
+                            // changes, so the onChange replay hook can't fire).
+                            viewModel.sheet = nil
+                            openRoom(conv)
+                        } else {
+                            Task { await viewModel.pressSelf(session: session) }
+                        }
+                    },
                     onOpened: { conv in openRoom(conv) },
                 )
                 .onChange(of: viewModel.selfConv?.id) { _, newValue in
@@ -1115,7 +1130,7 @@ private struct ConversationRow: View {
                 onLongPress()
             }
         }
-        .simultaneousGesture(selectMode ? DragGesture(minimumDistance: 1000) : swipeGesture)
+        .simultaneousGesture(swipeGesture)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(row.name), \(row.time), \(row.previewText)")
     }
@@ -1400,7 +1415,7 @@ private struct MultiSelectBar: View {
                 .padding(.trailing, 4)
             barAction(icon: "archivebox", pending: archivePending, label: "Archive selected chats", action: onArchive)
             barAction(icon: "bell.slash", pending: mutePending, label: "Mute selected chats for 8 hours", action: onMute)
-            barAction(icon: "checkmark.circle.fill", pending: readPending, label: "Mark selected chats read", action: onRead)
+            barAction(icon: "checkmark.double", pending: readPending, label: "Mark selected chats read", action: onRead)
             Button(action: onExit) {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .medium))
@@ -1586,7 +1601,7 @@ private struct HighlightedSnippet: View {
             from = content.index(content.startIndex, offsetBy: idx - 24)
             clippedHead = true
         }
-        let matchEnd = content.index(from: from, offsetBy: min(query.count, content.distance(from: from, to: content.endIndex)))
+        let matchEnd = content.index(from, offsetBy: min(query.count, content.distance(from: from, to: content.endIndex)))
         var to = content.endIndex
         var clippedTail = false
         if content.distance(from: matchEnd, to: content.endIndex) > 28 {
@@ -1987,7 +2002,12 @@ private struct ChatActionSheet: View {
             try await session.api.setMuted(conversationId: conversation.id, until: preset)
             await MainActor.run {
                 if let preset {
-                    session.toasts.show(preset == "always" ? "Muted — always" : "Muted — \(preset)")
+                    if preset == "always" {
+                        session.toasts.show("Muted — always")
+                    } else {
+                        let until = Date().addingTimeInterval(preset == "1w" ? 7 * 86_400 : 8 * 3_600)
+                        session.toasts.show("Muted until \(PulseFormat.listStamp(until))")
+                    }
                 } else {
                     session.toasts.show("Notifications unmuted")
                 }
@@ -2625,7 +2645,12 @@ final class ChatsViewModel: ObservableObject {
         do {
             try await session.api.setMuted(conversationId: conv.id, until: until)
             if let until {
-                session.toasts.show(until == "always" ? "Muted — always" : "Muted — \(until)")
+                if until == "always" {
+                    session.toasts.show("Muted — always")
+                } else {
+                    let stamp = Date().addingTimeInterval(until == "1w" ? 7 * 86_400 : 8 * 3_600)
+                    session.toasts.show("Muted until \(PulseFormat.listStamp(stamp))")
+                }
             } else {
                 session.toasts.show("Notifications unmuted")
             }

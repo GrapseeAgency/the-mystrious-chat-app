@@ -33,6 +33,11 @@ struct ChatRoomView: View {
             if viewModel == nil {
                 viewModel = RoomViewModel(conversation: conversation, session: session)
             }
+            // The dock hides itself while a room owns the screen (web §12).
+            session.roomVisible = true
+        }
+        .onDisappear {
+            session.roomVisible = false
         }
     }
 

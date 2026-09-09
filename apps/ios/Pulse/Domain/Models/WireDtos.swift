@@ -214,6 +214,9 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     public var isPinned: Bool { !(pinnedAt ?? "").isEmpty }
     public var isMuted: Bool { !(mutedUntil ?? "").isEmpty }
 
+    /// N10-b — archive state from the wire timestamp (ChatActionSheet reads it).
+    public var isArchived: Bool { !(archivedAt ?? "").isEmpty }
+
     /// N10-b — nil-coalescing helper: the mark-as-unread dot flag.
     public var manualUnread: Bool { myManualUnread ?? false }
 

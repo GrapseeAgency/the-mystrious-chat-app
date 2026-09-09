@@ -43,6 +43,12 @@ extension PulseTheme {
         Color(UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light })
     }
 
+    /// SwiftUI.Color flavor — the zinc/accent token helpers pass Color values
+    /// (zinc(_:), emerald600, …), which do NOT implicitly convert to UIColor.
+    private static func adaptive(_ light: Color, _ dark: Color) -> Color {
+        Color(UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })
+    }
+
     /// Page wash behind everything — the translucent layer that makes glass read.
     static var pageWash: Color {
         adaptive(

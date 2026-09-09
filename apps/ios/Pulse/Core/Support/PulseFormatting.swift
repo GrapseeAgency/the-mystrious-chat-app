@@ -69,6 +69,11 @@ public enum PulseFormat {
         return Self.day.string(from: date)
     }
 
+    /// listStamp for a computed instant (mute presets — "Muted until <stamp>").
+    public static func listStamp(_ date: Date) -> String {
+        listStamp(isoFractional.string(from: date))
+    }
+
     /// Day-separator capsule label ("Today", "Yesterday", else "Sep 4").
     public static func dayLabel(_ iso: String?) -> String {
         guard let date = date(iso) else { return "" }
