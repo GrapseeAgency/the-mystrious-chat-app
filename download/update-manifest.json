@@ -1,8 +1,8 @@
 {
-  "versionCode": 2,
-  "versionName": "0.1.1-native",
-  "apkUrl": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "notes": "LiveUpdate channel live — byte-range resume, integrity gates, one-tap install",
+  "versionCode": 3,
+  "versionName": "0.1.2-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.2-native/Pulse-v0.1.2-native.apk",
+  "notes": "Manifest-driven gateway resolution + socket relay query (XTransformPort) — live devices adopt a published gateway without a new APK",
   "minRequired": false,
-  "updatedAt": "2026-09-08T19:57:40Z"
+  "updatedAt": "2026-09-09T07:38:44Z"
 }

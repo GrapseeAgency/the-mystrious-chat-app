@@ -38,7 +38,10 @@ class PulseSocketClient(
     )
     val signals: SharedFlow<Signal> = _signals
 
-    private val socket: Socket = IO.socket(app.pulse.core.PulseEndpoints.socketUrl)
+    private val socket: Socket = IO.socket(
+        app.pulse.core.PulseEndpoints.socketUrl,
+        IO.Options().apply { query = "XTransformPort=3003" },
+    )
 
     @Volatile private var joinedUserId: String? = null
 
