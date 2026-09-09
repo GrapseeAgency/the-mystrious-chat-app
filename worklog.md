@@ -1897,3 +1897,35 @@ Stage Summary:
 - Contract: update-manifest.json {versionCode, versionName, apkUrl, notes, minRequired, updatedAt} at download/ on main; LiveUpdater.MANIFEST_URL constant; keystore + pass committed (GS tradeoff, acknowledged); release builds = :app:assembleRelease with committed signing
 - Honest gaps: CI workflows held locally (need workflow-scoped PAT — the ONE blocker, user must mint it); app gateway defaults to emulator loopback (10.0.2.2) — on a physical phone the inbox shows the honest offline state until a public gateway URL is baked via -PpulseGateway (LiveUpdate itself works everywhere); iOS remains source+CI (no macOS here, iOS cannot sideload — TestFlight/App Store territory); minify OFF until CI owns R8 builds
 - Evidence: BUILD SUCCESSFUL ×2, apksigner/aapt outputs in log, raw CDN HTTP 200 ×2 (ranges advertised), releases API 201 ×2, assets uploaded 201 ×2, remote main == a40cdd9
+---
+Task ID: N7 (onboarding CI-green wave — Android Kotlin + iOS Swift only)
+Agent: orchestrator (Z.ai Code)
+Task: Finish the user's sole directive for this wave — native onboarding (name → Continue → live @handle validation, web-identical design) — by turning the N6 feature commits green in CI on BOTH platforms. No other scope.
+
+Work Log:
+- RECON: N6 onboarding (ff358c0) + 3 fix commits were already pushed (remote main == 891bc2b), but EVERY N6 CI run was RED (4 Android + 4 iOS runs failed); the last session's summary wrongly claimed green (those greens were N5-c commits e513e46/a316854)
+- ANDROID ROOT CAUSE (from CI log 34334465514, exactly 2 errors): `import androidx.compose.ui.graphics.drawscope.drawOutline` — drawOutline is NOT in drawscope; verified against the real androidx source (android.googlesource.com Outline.kt): package androidx.compose.ui.graphics, signature drawOutline(outline, color, alpha, style, …). Fix: one-line import move in OnboardingScreen.kt (call site with named args already matches the real signature)
+- iOS ROOT CAUSE (from CI log 34334465536): `##[error] None of the input catalogs contained a matching stickers icon set or app icon set named "AppIcon"` — N6 introduced Assets.xcassets (OnboardingHero), which made actool actually run; Xcode's app-target default expects an AppIcon set that never existed. Fix: real AppIcon.appiconset (single-size 1024 PNG, no-alpha RGB — actool-safe) + explicit ASSETCATALOG_COMPILER_APPICON_NAME/STANDALONE_ICON_NAME: AppIcon in project.yml for determinism
+- HOUSEKEEPING: the stray UUID-commit icon1024.png at repo root (c984533, unpushed) git-rm'd — the bytes now live properly inside AppIcon.appiconset
+- VERIFICATION BEFORE PUSH (after 4 red rounds, no more CI roulette): swept both full CI logs for every error/warning line — Android had ONLY the 2 drawOutline errors, iOS ONLY the AppIcon error (Swift files compiled clean up to the asset phase); verified OnboardingHero is genuinely JPEG (matches extension post-ba897c2), icon PNG is alpha-free RGB; drawOutline signature verified from source, not memory; maven AAR stub dead-end documented (dl.google.com serves 289-byte BOM-anchor stubs for ui-graphics 1.7.6)
+- PUSHED e83493c (891bc2b..e83493c) → CI triggered on main for both pipelines
+- Sandbox note: /tmp toolchain (Android SDK + JDK) and ~/.gradle caches were wiped again by the reset — local compile verification was impossible this round; CI is the verifier (as designed)
+
+Stage Summary:
+- The onboarding feature (N6) is unchanged feature-wise; N7 is purely the compile-truth wave: Android one-liner import fix + iOS app icon catalog
+- Onboarding scope remains exactly what the user ordered: name → Continue → debounced @handle availability check (check-username), server suggestion pill, skip-for-now, 409 "log in instead" reclaim — web onboarding-screen.tsx parity, zero web tech
+- Deferred (user-locked): CDN download/ manifest refresh for a v0.1.3 APK carrying onboarding, TestFlight distribution, gateway baking — untouched this wave
+- Evidence: git push 891bc2b..e83493c, CI runs dispatched for e83493c (results recorded in next entry if needed)
+---
+Task ID: N7-completion (lead addendum — CI results)
+Agent: orchestrator (Z.ai Code)
+
+Work Log:
+- e83493c: Android CI ✅ SUCCESS (pulse-release-apk artifact, 12,929,693 bytes — signed release APK carrying the N6 onboarding); iOS still red → fresh logs pulled
+- iOS red at 83217ef-pre: `static member 'nameMax' cannot be used on instance of type 'OnboardingViewModel'` — the actool failure had been ABORTING whole-module compilation before reaching OnboardingView.swift, so this latent Swift error was invisible in all 4 earlier runs; fixed OnboardingViewModel.validName to use Self.nameMax (only instance-context static reference in the file — swept usernameMin/usernameMax/checkDebounceNanos: all static-context or Self-qualified)
+- 83217ef: iOS CI ✅ SUCCESS (pulse-ios-simulator-build artifact, 9,350,184 bytes)
+
+Stage Summary:
+- BOTH PLATFORMS GREEN at HEAD with the complete onboarding flow — task complete
+- Root-cause chain worth remembering: asset-catalog errors kill xcodebuild before Swift whole-module type-check completes → Swift errors hide behind actool errors; fix assets first, then expect latent Swift errors to surface one round later
+- Scope kept: ONLY .kt/.swift/asset/project.yml files touched; no web tech; no CDN/manifest/deploy work (user-locked)
