@@ -19,7 +19,7 @@ final class WireParityTests: XCTestCase {
         let conv = try JSONDecoder().decode(WireConversationSummary.self, from: Data(json.utf8))
         XCTAssertEqual(conv.toDomain().title, "Bot & Webhook QA")
         XCTAssertEqual(conv.toDomain().kind, .GROUP)
-        XCTAssertEqual(conv.myStreak, 3)
+        XCTAssertEqual(conv.myStreak?.count, 3)
     }
 
     func testMessageRoundTripAndKindMapping() throws {
