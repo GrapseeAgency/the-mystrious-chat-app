@@ -9,24 +9,26 @@ extension PulseTheme {
 
     /// Tailwind 400→600 gradient pairs keyed by the server's color names
     /// (src/lib/pulse-utils.ts AVATAR_GRADIENTS — the exact web outcome).
-    static func gradient(named name: String?) -> LinearGradient {
-        let colors: [Color]
+    private static func palette(named name: String?) -> [Color] {
         switch name {
-        case "rose": colors = [Color(red: 0.984, green: 0.445, blue: 0.522), Color(red: 0.882, green: 0.114, blue: 0.282)]
-        case "amber": colors = [Color(red: 0.984, green: 0.749, blue: 0.141), Color(red: 0.851, green: 0.467, blue: 0.024)]
-        case "violet": colors = [Color(red: 0.655, green: 0.545, blue: 0.980), Color(red: 0.486, green: 0.227, blue: 0.929)]
-        case "teal": colors = [Color(red: 0.176, green: 0.831, blue: 0.749), Color(red: 0.051, green: 0.580, blue: 0.533)]
-        case "orange": colors = [Color(red: 0.984, green: 0.573, blue: 0.235), Color(red: 0.918, green: 0.345, blue: 0.047)]
-        case "pink": colors = [Color(red: 0.957, green: 0.447, blue: 0.694), Color(red: 0.859, green: 0.153, blue: 0.467)]
-        case "cyan": colors = [Color(red: 0.133, green: 0.827, blue: 0.933), Color(red: 0.031, green: 0.569, blue: 0.698)]
-        default: colors = [Color(red: 0.204, green: 0.827, blue: 0.600), Color(red: 0.020, green: 0.588, blue: 0.412)]
+        case "rose": return [Color(red: 0.984, green: 0.445, blue: 0.522), Color(red: 0.882, green: 0.114, blue: 0.282)]
+        case "amber": return [Color(red: 0.984, green: 0.749, blue: 0.141), Color(red: 0.851, green: 0.467, blue: 0.024)]
+        case "violet": return [Color(red: 0.655, green: 0.545, blue: 0.980), Color(red: 0.486, green: 0.227, blue: 0.929)]
+        case "teal": return [Color(red: 0.176, green: 0.831, blue: 0.749), Color(red: 0.051, green: 0.580, blue: 0.533)]
+        case "orange": return [Color(red: 0.984, green: 0.573, blue: 0.235), Color(red: 0.918, green: 0.345, blue: 0.047)]
+        case "pink": return [Color(red: 0.957, green: 0.447, blue: 0.694), Color(red: 0.859, green: 0.153, blue: 0.467)]
+        case "cyan": return [Color(red: 0.133, green: 0.827, blue: 0.933), Color(red: 0.031, green: 0.569, blue: 0.698)]
+        default: return [Color(red: 0.204, green: 0.827, blue: 0.600), Color(red: 0.020, green: 0.588, blue: 0.412)]
         }
-        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    static func gradient(named name: String?) -> LinearGradient {
+        LinearGradient(colors: palette(named: name), startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     /// Flat tint from a wire color name (falls back to emerald).
     static func color(named name: String?) -> Color {
-        gradient(named: name).gradient.colors.first ?? emerald
+        palette(named: name).first ?? emerald
     }
 
     /// Photo URL resolution matching the web <img src> handling: absolute
