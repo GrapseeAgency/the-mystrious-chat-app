@@ -17,7 +17,7 @@ android {
 
     defaultConfig {
         applicationId = "app.pulse.chat"
-        minSdk = 26
+        minSdk = 21
         targetSdk = 35
         versionCode = pulseVersionCode
         versionName = pulseVersionName
@@ -44,11 +44,13 @@ android {
             storePassword = "pulse-live-update"
             keyAlias = "pulse"
             keyPassword = "pulse-live-update"
-            // ALL signing schemes, explicitly. With minSdk 26 the AGP default is
-            // v2/v3 only (no v1 JAR signature), and some ROM installers reject
-            // v2-only APKs with "There was a problem parsing the package" — the
-            // exact field report from v0.1.2. v1 costs ~20KB and removes the
-            // entire class of picky-parser failures.
+            // ALL signing schemes, explicitly. AGP defaults skimp on the v1 JAR
+            // signature for modern minSdks, and some ROM installers reject such
+            // APKs with "There was a problem parsing the package" — the exact
+            // field report from v0.1.2. v1 costs ~20KB and removes the entire
+            // class of picky-parser failures. minSdk itself is now 21 so even
+            // pre-Android-8 devices can parse+install (a device below minSdk
+            // reports the SAME parse error — the last surviving cause).
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = true
@@ -72,12 +74,15 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // java.time etc. must survive on API < 26 — desugar at final DEX time.
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions { jvmTarget = "17" }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(project(":core"))
     implementation(project(":ui"))
     implementation(project(":domain"))

@@ -1985,3 +1985,19 @@ Stage Summary:
 - N10 is now COMPLETE IN CODE on both platforms against apps/HOMEPAGE-SPEC.md: every hard compile blocker fixed pre-push (zero-CI-cost audit instead of CI roulette), all discovered parity holes closed, honest-degradation contract restored (toasts actually render)
 - Version: 0.1.5-native (versionCode 6) — release/manifest publish only after green CI (N8/N9 pipeline)
 - The user's two questions answered with evidence; warning emoji explained (updater Failed state, was a symptom of the dead gateway, killed by v0.1.4)
+---
+Task ID: N10-b (parse-package final lever + release/CDN publish wave)
+Agent: orchestrator (Z.ai Code)
+Task: User token provided; orders: push the N10 wave, one CI round, verify green, publish release + CDN manifest, and FIX the still-unfixed "There was a problem parsing the package" on his real device.
+
+Work Log:
+- STATE AT ENTRY: remote pinned at 4383a46 (N9-c, v0.1.4-native on CDN); local ahead 2 with the complete N10 home-page wave (74727f7 spec+implementation versionCode 6 / 0.1.5-native, 48e652e compile-blocker fixes) — CI had never seen either commit
+- PARSE-ERROR ROOT-CAUSE AUDIT (round 3): v1+v2+v3 signing shipped in v0.1.3/v0.1.4 and forensically verified, yet the device still refuses to parse — the ONLY build-side cause that survives is minSdk 26 > device API level, which reports EXACTLY "There was a problem parsing the package" on every build regardless of signing. Android 5.1-7.x devices could never install any v0.1.x
+- FIX: minSdk 26 → 21 in all 8 Android modules (app/data/ui/feature-chat/feature-calls/feature-hub/feature-settings/feature-stories); core library desugaring enabled at final-DEX time in :app (desugar_jdk_libs 2.1.5) because java.time lives in core/data/feature-chat sources and API < 26 has no java.time; risky-API grep confirmed ZERO hard API-26+ usages (no NotificationChannel/registerReceiver/startForegroundService/etc.), lintVital NewApi exposure clear (lint respects desugaring for java.time)
+- Kept: v1+v2+v3 signing, universal APK, committed keystore, sha256-gated LiveUpdater
+- PUBLISH (this wave): push 3 commits in one round → android-ci (:domain:test :protocol:test :core:build + :app:assembleRelease) + ios-ci (xcodegen + xcodebuild, first compile of the N10 RootView rewrite) → on green: download artifact, forensic gate (minSdk=21 AXML walk, v1 META-INF files, v2/v3 block, CRC sweep, resources.arsc STORED+aligned), Release v0.1.5-native via REST (full-SHA target_commitish, --http1.1), CDN Pulse.apk + update-manifest.json (versionCode 6, sha256 of shipped bytes)
+- RESULTS: appended below after the CI run
+
+Stage Summary:
+- Parse-error coverage now complete: signing schemes (N8) + content integrity gates (N8) + HTTPS gateway (N9) + minSdk floor 21 (N10-b) — every documented cause of "There was a problem parsing the package" eliminated on the build side
+- N10 home page rides the same CI round; release v0.1.5-native = home page + parse fix in one install for the user

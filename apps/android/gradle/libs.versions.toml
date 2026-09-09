@@ -16,9 +16,11 @@ socketIo = "2.1.0"
 datastore = "1.1.1"
 coreKtx = "1.15.0"
 junitJupiter = "5.11.4"
+desugar = "2.1.5"
 turbine = "1.2.0"
 
 [libraries]
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
