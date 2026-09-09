@@ -81,7 +81,7 @@ final class OnboardingViewModel: ObservableObject {
     var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
     var validName: Bool {
         let trimmed = trimmedName
-        return !trimmed.isEmpty && trimmed.count <= nameMax
+        return !trimmed.isEmpty && trimmed.count <= Self.nameMax
     }
 
     // ── intents ──────────────────────────────────────────────
