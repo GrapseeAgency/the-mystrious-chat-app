@@ -74,6 +74,7 @@ object LiveUpdater {
         val versionCode: Long,
         val apkUrl: String,
         val notes: String?,
+        val sha256: String?,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -180,6 +181,7 @@ object LiveUpdater {
             versionCode = json.optLong("versionCode", 0L),
             apkUrl = json.optString("apkUrl"),
             notes = json.optString("notes").takeIf { it.isNotBlank() },
+            sha256 = json.optString("sha256").takeIf { it.isNotBlank() },
         )
     }
 
@@ -275,6 +277,8 @@ object LiveUpdater {
         }
         val apk = File(part.parentFile, APK_NAME)
         if (!part.renameTo(apk)) return reject("could not finalize update file")
+        // Gate 1 — the PackageManager parse: a real manifest, the right app, the
+        // exact expected version. Cheap, catches the coarse cases.
         val info = context.packageManager.getPackageArchiveInfo(apk.absolutePath, 0)
         if (info == null) {
             apk.delete()
@@ -284,7 +288,57 @@ object LiveUpdater {
             apk.delete()
             return reject("update stale or foreign — tap to re-download")
         }
+        // Gate 2 — full ZIP sweep with CRC: every entry read and checksummed.
+        // getPackageArchiveInfo only reads AndroidManifest.xml — a bit-flipped
+        // classes.dex mid-file passed v0.1.2's gates and THEN died in the system
+        // installer as "There was a problem parsing the package". This sweep
+        // catches that corruption here, with an honest message, before the
+        // installer ever opens the file.
+        if (!zipSweepClean(apk)) {
+            apk.delete()
+            return reject("update corrupted in transit — tap to re-download")
+        }
+        // Gate 3 — manifest-declared SHA-256 (publishers append it to
+        // update-manifest.json). End-to-end content identity, immune to any
+        // byte-preserving tamper on the path. Absent field = legacy manifest, skip.
+        if (m.sha256 != null) {
+            val actual = apk.inputStream().use { input ->
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n == -1) break
+                    md.update(buf, 0, n)
+                }
+                md.digest().joinToString("") { "%02x".format(it) }
+            }
+            if (!actual.equals(m.sha256, ignoreCase = true)) {
+                apk.delete()
+                return reject("update checksum mismatch — tap to re-download")
+            }
+        }
         return true
+    }
+
+    /** Reads every ZIP entry (ZipFile CRC-validates on read). False on any damage. */
+    private fun zipSweepClean(apk: File): Boolean = try {
+        java.util.zip.ZipFile(apk).use { zip ->
+            val buf = ByteArray(64 * 1024)
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                if (entry.isDirectory) continue
+                zip.getInputStream(entry).use { input ->
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n == -1) break
+                    }
+                }
+            }
+            true
+        }
+    } catch (_: Exception) {
+        false
     }
 
     private fun install(context: Context, apk: File) {

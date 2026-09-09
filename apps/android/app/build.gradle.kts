@@ -8,8 +8,8 @@ plugins {
 }
 
 // Release channel plumbing — CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 3
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.1.2-native"
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 4
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.1.3-native"
 
 android {
     namespace = "app.pulse.android"
@@ -38,6 +38,14 @@ android {
             storePassword = "pulse-live-update"
             keyAlias = "pulse"
             keyPassword = "pulse-live-update"
+            // ALL signing schemes, explicitly. With minSdk 26 the AGP default is
+            // v2/v3 only (no v1 JAR signature), and some ROM installers reject
+            // v2-only APKs with "There was a problem parsing the package" — the
+            // exact field report from v0.1.2. v1 costs ~20KB and removes the
+            // entire class of picky-parser failures.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
