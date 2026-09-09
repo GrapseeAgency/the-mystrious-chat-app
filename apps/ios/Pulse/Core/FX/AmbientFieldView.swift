@@ -69,11 +69,11 @@ public struct AmbientFieldView: View {
         ]
         switch mode {
         case .mesh:
-            return ShaderLibrary.meshField(common)
+            return ShaderLibrary.meshField(common[0], common[1], common[2], common[3])
         case .stars:
-            return ShaderLibrary.starsField(common)
+            return ShaderLibrary.starsField(common[0], common[1], common[2], common[3])
         default:
-            return ShaderLibrary.auroraField(common)
+            return ShaderLibrary.auroraField(common[0], common[1], common[2], common[3])
         }
     }
 }
@@ -114,7 +114,7 @@ private struct CanvasAmbient: View {
         context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(base))
 
         var glow = context
-        glow.addFilter(.blur(dark ? 26 : 34))
+        glow.addFilter(.blur(radius: dark ? 26 : 34))
         glow.blendMode = dark ? .plusLighter : .normal
         let aqua = dark ? Color(red: 0.30, green: 0.91, blue: 0.85) : Color(red: 0.10, green: 0.55, blue: 0.55).opacity(0.35)
         let emerald = dark ? Color(red: 0.063, green: 0.725, blue: 0.506) : Color(red: 0.063, green: 0.50, blue: 0.38).opacity(0.22)
@@ -135,7 +135,7 @@ private struct CanvasAmbient: View {
         context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(base))
 
         var glow = context
-        glow.addFilter(.blur(dark ? 44 : 56))
+        glow.addFilter(.blur(radius: dark ? 44 : 56))
         glow.blendMode = dark ? .plusLighter : .normal
 
         // Five drifting metaball centers (Lissajous family, web R31-b spirit).

@@ -353,7 +353,8 @@ struct BubbleView: View {
                         .frame(width: 2.5, height: height)
                 }
             }
-            if let duration = PulseFormat.duration(message.durationMs), !duration.isEmpty {
+            let duration = PulseFormat.duration(message.durationMs)
+            if !duration.isEmpty {
                 Text(duration)
                     .font(.caption2)
                     .foregroundStyle(mine ? Color.white.opacity(0.85) : .secondary)

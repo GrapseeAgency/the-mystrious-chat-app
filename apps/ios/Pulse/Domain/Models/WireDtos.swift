@@ -193,6 +193,11 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     public let myStreak: WireStreak?
     public let deadStreak: WireStreak?
     public let lostStreak: WireStreak?
+
+    /// Pin/mute state derived from the wire timestamps (web parity helpers —
+    /// ChatsView swipe + context menus read these).
+    public var isPinned: Bool { !(pinnedAt ?? "").isEmpty }
+    public var isMuted: Bool { !(mutedUntil ?? "").isEmpty }
 }
 
 public struct WireConversationsPage: Codable, Sendable {
