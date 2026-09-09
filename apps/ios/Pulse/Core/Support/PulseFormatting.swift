@@ -59,6 +59,16 @@ public enum PulseFormat {
         return Self.day.string(from: date)
     }
 
+    /// Web formatListStamp parity — today → "14:05" · yesterday → "Yesterday"
+    /// · else "Aug 3" (the chats-list stamp the spec pins).
+    public static func listStamp(_ iso: String?) -> String {
+        guard let date = date(iso) else { return "" }
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return Self.clock.string(from: date) }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        return Self.day.string(from: date)
+    }
+
     /// Day-separator capsule label ("Today", "Yesterday", else "Sep 4").
     public static func dayLabel(_ iso: String?) -> String {
         guard let date = date(iso) else { return "" }

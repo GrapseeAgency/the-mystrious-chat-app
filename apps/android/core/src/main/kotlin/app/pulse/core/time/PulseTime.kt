@@ -45,4 +45,22 @@ object PulseTime {
             else -> date.format(DateTimeFormatter.ofPattern("MMM d"))
         }
     }
+
+    /**
+     * Conversation-row stamp (web formatListStamp parity):
+     * today → "14:05" · yesterday → "Yesterday" · else "3 Aug".
+     */
+    fun listStamp(raw: String?): String {
+        val t = parse(raw) ?: return ""
+        val local = t.atZoneSameInstant(ZoneId.systemDefault())
+        return when (local.toLocalDate()) {
+            LocalDate.now() -> local.format(DateTimeFormatter.ofPattern("HH:mm"))
+            LocalDate.now().minusDays(1) -> "Yesterday"
+            else -> local.format(DateTimeFormatter.ofPattern("d MMM"))
+        }
+    }
+
+    /** Wire ISO timestamp → epoch ms (0 when unparseable) — mute windows compare in ms. */
+    fun epochMs(raw: String?): Long =
+        parse(raw)?.toInstant()?.toEpochMilli() ?: 0L
 }

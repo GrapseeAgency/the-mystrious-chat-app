@@ -23,25 +23,33 @@ public struct PulseViewer: Codable, Equatable {
 }
 
 /// UserDefaults-backed prefs (web parity keys where they exist):
-/// viewer identity, ambient FX mode ("fx.ambientMode"), appearance override.
+/// viewer identity, ambient FX mode ("fx.ambientMode"), appearance override,
+/// chats-list filter (All / Unread / Groups — persisted like the web).
 @MainActor
 public final class PulsePrefs: ObservableObject {
     private let defaults: UserDefaults
 
     public static let ambientModeKey = "fx.ambientMode"
     public static let appearanceKey = "appearance"
+    public static let chatsFilterKey = "chats.listFilter"
     private static let viewerKey = "pulse.viewer"
+
+    public enum ChatsFilter: String, CaseIterable {
+        case all, unread, groups
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         viewer = Self.readViewer(defaults)
         ambientMode = AmbientMode.parse(defaults.string(forKey: Self.ambientModeKey) ?? "aurora")
         appearance = defaults.string(forKey: Self.appearanceKey) ?? "system"
+        chatsFilter = ChatsFilter(rawValue: defaults.string(forKey: Self.chatsFilterKey) ?? "") ?? .all
     }
 
     @Published public private(set) var viewer: PulseViewer?
     @Published public private(set) var ambientMode: AmbientMode
     @Published public private(set) var appearance: String
+    @Published public private(set) var chatsFilter: ChatsFilter
 
     public var hasIdentity: Bool { viewer != nil }
 
@@ -64,6 +72,20 @@ public final class PulsePrefs: ObservableObject {
     public func setAppearance(_ value: String) {
         appearance = value
         defaults.set(value, forKey: Self.appearanceKey)
+    }
+
+    /// Cycles system → light → dark (header theme toggle).
+    public func cycleAppearance() {
+        switch appearance {
+        case "light": setAppearance("dark")
+        case "dark": setAppearance("system")
+        default: setAppearance("light")
+        }
+    }
+
+    public func setChatsFilter(_ filter: ChatsFilter) {
+        chatsFilter = filter
+        defaults.set(filter.rawValue, forKey: Self.chatsFilterKey)
     }
 
     private static func readViewer(_ defaults: UserDefaults) -> PulseViewer? {

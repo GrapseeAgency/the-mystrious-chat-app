@@ -26,25 +26,31 @@ class PulsePrefsStoreImpl @Inject constructor(
     private object Keys {
         val VIEWER_ID = stringPreferencesKey("viewer.id")
         val VIEWER_NAME = stringPreferencesKey("viewer.name")
+        val VIEWER_COLOR = stringPreferencesKey("viewer.color")
         val FX_MODE = stringPreferencesKey("fx.ambientMode")
         val DARK = stringPreferencesKey("ui.darkOverride")
         val REDUCED = booleanPreferencesKey("ui.reducedMotion")
+        val CHATS_FILTER = stringPreferencesKey("chats.listFilter")
     }
 
     override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
     override val viewerName: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_NAME] }
+    override val viewerColor: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_COLOR] }
     override val fxMode: Flow<String> = context.pulsePrefs.data.map { it[Keys.FX_MODE] ?: "aurora" }
     override val darkOverride: Flow<String> = context.pulsePrefs.data.map { it[Keys.DARK] ?: "system" }
     override val reducedMotion: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.REDUCED] ?: false }
+    override val chatsListFilter: Flow<String> = context.pulsePrefs.data.map { it[Keys.CHATS_FILTER] ?: "all" }
 
-    override suspend fun setViewer(id: String?, name: String?) {
+    override suspend fun setViewer(id: String?, name: String?, color: String?) {
         context.pulsePrefs.edit { p ->
             if (id == null) {
                 p.remove(Keys.VIEWER_ID)
                 p.remove(Keys.VIEWER_NAME)
+                p.remove(Keys.VIEWER_COLOR)
             } else {
                 p[Keys.VIEWER_ID] = id
                 if (name != null) p[Keys.VIEWER_NAME] = name else p.remove(Keys.VIEWER_NAME)
+                if (color != null) p[Keys.VIEWER_COLOR] = color
             }
         }
     }
@@ -59,5 +65,9 @@ class PulsePrefsStoreImpl @Inject constructor(
 
     override suspend fun setReducedMotion(value: Boolean) {
         context.pulsePrefs.edit { it[Keys.REDUCED] = value }
+    }
+
+    override suspend fun setChatsListFilter(value: String) {
+        context.pulsePrefs.edit { it[Keys.CHATS_FILTER] = value }
     }
 }

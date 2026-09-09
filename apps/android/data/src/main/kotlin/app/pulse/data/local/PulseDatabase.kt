@@ -13,9 +13,11 @@ import app.pulse.domain.model.Message
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Room cache — offline-first inbox. v2 adds the UI-era columns: members,
+ * Room cache — offline-first inbox. v2 added the UI-era columns: members,
  * accent color, streaks, drafts, reactions and reply denormalization.
- * (fallbackToDestructiveMigration is on — v1 rows rebuild from the gateway.)
+ * v3 (N10) adds the home-page-era columns: manual unread, streak at-risk/lost,
+ * last-message shape flags, mute window epoch, other-user id and channel flag.
+ * (fallbackToDestructiveMigration is on — rows rebuild from the gateway.)
  */
 @Entity(tableName = "conversations")
 data class ConversationEntity(
@@ -36,6 +38,19 @@ data class ConversationEntity(
     val streakCount: Int,
     val myDraft: String?,
     val isSelf: Boolean,
+    val myManualUnread: Boolean,
+    val streakAtRiskCount: Int,
+    val streakLost: Boolean,
+    val lastMessageMine: Boolean,
+    val lastMessageDeleted: Boolean,
+    val lastMessageIsReply: Boolean,
+    val lastMessageIsImage: Boolean,
+    val lastMessageIsAudio: Boolean,
+    val lastMessageIsFile: Boolean,
+    val lastMessageFileName: String?,
+    val mutedUntilEpoch: Long,
+    val otherUserId: String?,
+    val isChannel: Boolean,
 ) {
     fun toDomain() = Conversation(
         id = id,
@@ -55,6 +70,19 @@ data class ConversationEntity(
         streakCount = streakCount,
         myDraft = myDraft,
         isSelf = isSelf,
+        myManualUnread = myManualUnread,
+        streakAtRiskCount = streakAtRiskCount,
+        streakLost = streakLost,
+        lastMessageMine = lastMessageMine,
+        lastMessageDeleted = lastMessageDeleted,
+        lastMessageIsReply = lastMessageIsReply,
+        lastMessageIsImage = lastMessageIsImage,
+        lastMessageIsAudio = lastMessageIsAudio,
+        lastMessageIsFile = lastMessageIsFile,
+        lastMessageFileName = lastMessageFileName,
+        mutedUntilEpoch = mutedUntilEpoch,
+        otherUserId = otherUserId,
+        isChannel = isChannel,
     )
 
     companion object {
@@ -72,6 +100,19 @@ data class ConversationEntity(
             streakCount = m.streakCount,
             myDraft = m.myDraft,
             isSelf = m.isSelf,
+            myManualUnread = m.myManualUnread,
+            streakAtRiskCount = m.streakAtRiskCount,
+            streakLost = m.streakLost,
+            lastMessageMine = m.lastMessageMine,
+            lastMessageDeleted = m.lastMessageDeleted,
+            lastMessageIsReply = m.lastMessageIsReply,
+            lastMessageIsImage = m.lastMessageIsImage,
+            lastMessageIsAudio = m.lastMessageIsAudio,
+            lastMessageIsFile = m.lastMessageIsFile,
+            lastMessageFileName = m.lastMessageFileName,
+            mutedUntilEpoch = m.mutedUntilEpoch,
+            otherUserId = m.otherUserId,
+            isChannel = m.isChannel,
         )
     }
 }
@@ -136,6 +177,9 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations ORDER BY isPinned DESC, lastActivityAt DESC")
     fun observeAll(): Flow<List<ConversationEntity>>
 
+    @Query("SELECT * FROM conversations WHERE id = :id")
+    suspend fun byId(id: String): ConversationEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(items: List<ConversationEntity>)
 
@@ -153,11 +197,17 @@ interface MessageDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(items: List<MessageEntity>)
+
+    @Query("DELETE FROM messages WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM messages WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
 }
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class PulseDatabase : RoomDatabase() {

@@ -5,15 +5,21 @@ import app.pulse.core.result.PulseResult
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.ConversationsPageDto
+import app.pulse.protocol.FoldersPageDto
 import app.pulse.protocol.HandleRegistryDto
+import app.pulse.protocol.MentionsPageDto
 import app.pulse.protocol.MessagesPageDto
 import app.pulse.protocol.PulseJson
+import app.pulse.protocol.SearchPageDto
+import app.pulse.protocol.StoriesPageDto
 import app.pulse.protocol.UserDto
 import app.pulse.protocol.UsernameCheckDto
 import app.pulse.protocol.UsersPageDto
 import app.pulse.protocol.unwrapOrRoot
 import io.ktor.client.HttpClient
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -45,6 +51,29 @@ class PulseApi(private val http: HttpClient) {
     private suspend fun <T> post(path: String, body: JsonObject?, parse: ((String) -> T)? = null): PulseResult<T> =
         try {
             val res = http.post(PulseEndpoints.http(path)) {
+                contentType(ContentType.Application.Json)
+                if (body != null) setBody(body.toString())
+            }
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) {
+                @Suppress("UNCHECKED_CAST")
+                PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
+            } else {
+                failureOf(res.status.value, text)
+            }
+        } catch (e: kotlinx.serialization.SerializationException) {
+            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+        }
+
+    /**
+     * PATCH verb — the conversation flag routes (pin/mute/archive/mark-unread) are
+     * PATCH on the wire; POST was the N3-era wrong verb (spec §14 transport fixes).
+     */
+    private suspend fun <T> patch(path: String, body: JsonObject?, parse: ((String) -> T)? = null): PulseResult<T> =
+        try {
+            val res = http.patch(PulseEndpoints.http(path)) {
                 contentType(ContentType.Application.Json)
                 if (body != null) setBody(body.toString())
             }
@@ -172,9 +201,66 @@ class PulseApi(private val http: HttpClient) {
             },
         ) { PulseJson.decodeFromString(UserDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("user").toString()) }
 
-    /** Small action POSTs (read/mute/pin/archive/block/report) share one runner. */
+    /** Small action POSTs (read/react/block/report) share one runner. */
     suspend fun postAction(path: String, body: JsonObject? = null): PulseResult<Unit> =
         post(path, body)
+
+    /** Small action PATCHes (pin/mute/archive/mark-unread) share one runner. */
+    suspend fun patchAction(path: String, body: JsonObject? = null): PulseResult<Unit> =
+        patch(path, body)
+
+    /** POST /api/conversations/self {userId} — the viewer's Note to Self chat. */
+    suspend fun createSelfChat(userId: String): PulseResult<ConversationSummaryDto> =
+        post(
+            "/api/conversations/self",
+            buildJsonObject { put("userId", userId) },
+        ) {
+            PulseJson.decodeFromString(
+                ConversationSummaryDto.serializer(),
+                PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
+            )
+        }
+
+    /** GET /api/search?userId=&q= — server message search (≥2 chars upstream). */
+    suspend fun search(userId: String, query: String): PulseResult<SearchPageDto> =
+        get(
+            "/api/search?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
+                "&q=" + java.net.URLEncoder.encode(query, "UTF-8"),
+        ) {
+            PulseJson.decodeFromString(SearchPageDto.serializer(), it)
+        }
+
+    /** GET /api/stories?requesterId= — 24h status rail (tolerant subset). */
+    suspend fun stories(requesterId: String): PulseResult<StoriesPageDto> =
+        get("/api/stories?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")) {
+            PulseJson.decodeFromString(StoriesPageDto.serializer(), it)
+        }
+
+    /** GET /api/folders?userId= — Signal-style folder rail. */
+    suspend fun folders(userId: String): PulseResult<FoldersPageDto> =
+        get("/api/folders?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(FoldersPageDto.serializer(), it)
+        }
+
+    /** GET /api/mentions?userId=&limit=50 — @mention feed (count consumer). */
+    suspend fun mentions(userId: String): PulseResult<MentionsPageDto> =
+        get(
+            "/api/mentions?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&limit=50",
+        ) {
+            PulseJson.decodeFromString(MentionsPageDto.serializer(), it)
+        }
+
+    /** DELETE /api/messages/{id} {requesterId} — sender-gated soft delete (clear chat). */
+    suspend fun deleteMessage(messageId: String, requesterId: String): PulseResult<Unit> = try {
+        val res = http.delete(PulseEndpoints.http("/api/messages/$messageId")) {
+            contentType(ContentType.Application.Json)
+            setBody(jsonOf("requesterId" to requesterId).toString())
+        }
+        val text = res.bodyAsText()
+        if (res.status.isSuccess()) PulseResult.Success(Unit) else failureOf(res.status.value, text)
+    } catch (e: Exception) {
+        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+    }
 
     companion object {
         fun jsonOf(vararg pairs: Pair<String, Any?>): JsonObject = buildJsonObject {

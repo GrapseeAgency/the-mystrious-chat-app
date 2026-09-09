@@ -254,7 +254,7 @@ class OnboardingViewModel @Inject constructor(
         _state.value.handle == handle && _state.value.step == OnboardingStep.HANDLE
 
     private suspend fun complete(user: User) {
-        prefs.setViewer(user.id, user.name)
+        prefs.setViewer(user.id, user.name, user.color)
         repo.start(user.id)
         PulseFx.fire(PulseFx.BurstKind.CONFETTI, count = 120)
         _state.value = _state.value.copy(pending = false, signingIn = false)

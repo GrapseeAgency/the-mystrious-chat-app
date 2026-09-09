@@ -4,52 +4,152 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Aperture
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Whatshot
-import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.Whatshot
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import app.pulse.android.ui.AmbientField
 import app.pulse.android.ui.FxMode
 import app.pulse.android.ui.ParticleBurstHost
-import app.pulse.ui.PulseTheme
+import app.pulse.domain.repository.PulseRepository
 import app.pulse.feature.calls.ContactsScreen
+import app.pulse.feature.chat.ArchivedScreen
 import app.pulse.feature.chat.ChatsScreen
 import app.pulse.feature.chat.ChatRoomScreen
 import app.pulse.feature.hub.HubScreen
 import app.pulse.feature.settings.ProfileScreen
-import dagger.hilt.android.AndroidEntryPoint
+import app.pulse.ui.PulseMotion
+import app.pulse.ui.PulsePalette
+import app.pulse.ui.PulseTheme
+import app.pulse.ui.isPulseDarkTheme
+import app.pulse.ui.pulseGlass
 import androidx.hilt.navigation.compose.hiltViewModel
+import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
-private data class PulseTab(val route: String, val label: String, val icon: ImageVector)
+private val DockEmerald600 = Color(0xFF059669)
+private val DockTeal600 = Color(0xFF0D9488)
+private val DockInactiveDark = Color(0xFFA1A1AA)
+private val DockInactiveLight = Color(0xFF71717A)
 
-/** Four destinations — parity with the web NAV_ITEMS registry (nav-registry.ts). */
-private val TABS = listOf(
-    PulseTab("chats", "Chats", Icons.AutoMirrored.Filled.Chat),
-    PulseTab("hub", "Hub", Icons.Filled.Whatshot),
-    PulseTab("contacts", "Contacts", Icons.Filled.Groups),
-    PulseTab("profile", "Profile", Icons.Filled.AccountCircle),
+/** Canonical tab order — drives dock layout + direction-aware transitions. */
+private val TAB_ROUTES = listOf("chats", "hub", "contacts", "profile")
+
+private data class DockTab(
+    val route: String,
+    val label: String,
+    val activeIcon: ImageVector,
+    val inactiveIcon: ImageVector,
+    val carriesUnread: Boolean = false,
 )
+
+/** Registry parity with web NAV_ITEMS (nav-router.ts) — Lucide icon mapping. */
+private val DOCK_TABS = listOf(
+    DockTab("chats", "Chats", Icons.Filled.ChatBubble, Icons.Outlined.ChatBubbleOutline, carriesUnread = true),
+    DockTab("hub", "Hub", Icons.Filled.Whatshot, Icons.Outlined.Whatshot),
+    DockTab("contacts", "Contacts", Icons.Filled.Group, Icons.Outlined.Group),
+    DockTab("profile", "Profile", Icons.Filled.AccountCircle, Icons.Outlined.AccountCircle),
+)
+
+/** Dock-scoped state — live unread total for the Chats badge (web useUnread). */
+@HiltViewModel
+class ShellViewModel @Inject constructor(
+    repo: PulseRepository,
+) : ViewModel() {
+    val unread: StateFlow<Int> = repo.observeConversations()
+        .map { list -> list.sumOf { it.unreadCount } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    private val _searchTick = MutableStateFlow(0)
+    val searchTick: StateFlow<Int> = _searchTick.asStateFlow()
+
+    fun requestSearch() {
+        _searchTick.value += 1
+    }
+}
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -108,55 +208,86 @@ fun PulseRoot(session: SessionViewModel = hiltViewModel()) {
     }
 }
 
-/** The four-tab shell — unchanged chrome behind the onboarding gate. */
+/**
+ * The four-tab shell behind the onboarding gate — web MainShell parity:
+ * direction-aware tab transitions + the floating glass Capsule dock.
+ */
 @Composable
 private fun PulseShell(viewerId: String?, session: SessionViewModel) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
-    val showBars = currentRoute in TABS.map { it.route }
+    val shell: ShellViewModel = hiltViewModel()
+    val unread by shell.unread.collectAsStateWithLifecycle()
+    val searchTick by shell.searchTick.collectAsStateWithLifecycle()
+    val viewerName by session.viewerName.collectAsStateWithLifecycle()
+    val viewerColor by session.viewerColor.collectAsStateWithLifecycle()
 
-    Scaffold(
-        containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        bottomBar = {
-            if (showBars) {
-                NavigationBar {
-                    TABS.forEach { tab ->
-                        NavigationBarItem(
-                            selected = currentRoute == tab.route,
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) },
-                        )
-                    }
-                }
-            }
-        },
-    ) { padding ->
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    var moreMenuOpen by remember { mutableStateOf(false) }
+    val dark = isPulseDarkTheme()
+
+    fun switchTab(route: String) {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        navController.navigate(route) {
+            popUpTo(navController.graph.startDestinationId) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    fun honest(message: String) {
+        scope.launch { snackbar.showSnackbar(message, withDismissAction = false) }
+    }
+
+    // Dock visibility: tabs + the archived sub-page keep the chrome (web keeps
+    // the nav over hash sub-pages); rooms own the whole screen.
+    val showDock = currentRoute in TAB_ROUTES || currentRoute == "archived"
+
+    Box(Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
             startDestination = "chats",
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize(),
+            enterTransition = { tabEnter(initialState.destination.route, targetState.destination.route) },
+            exitTransition = { tabExit(initialState.destination.route, targetState.destination.route) },
+            popEnterTransition = { tabEnter(initialState.destination.route, targetState.destination.route) },
+            popExitTransition = { tabExit(initialState.destination.route, targetState.destination.route) },
         ) {
             composable("chats") {
                 ChatsScreen(
                     viewerId = viewerId,
+                    viewerName = viewerName,
+                    viewerColor = viewerColor,
                     onOpenRoom = { id -> navController.navigate("room/$id") },
                     onNeedIdentity = { navController.navigate("profile") { launchSingleTop = true } },
+                    onSwitchTab = { route -> switchTab(route) },
+                    onOpenArchived = { navController.navigate("archived") },
+                    onCycleTheme = { session.cycleDarkOverride() },
+                    searchRequest = searchTick,
                 )
             }
-            composable("hub") { HubScreen(viewerName = session.viewerName.collectAsStateWithLifecycle().value) }
-            composable("contacts") { ContactsScreen(onOpenRoom = { id -> navController.navigate("room/$id") }) }
-            composable("profile") { ProfileScreen() }
-            composable("room/{conversationId}") { entry ->
+            composable("hub") {
+                Box(Modifier.fillMaxSize().padding(bottom = 108.dp)) {
+                    HubScreen(viewerName = viewerName ?: "")
+                }
+            }
+            composable("contacts") {
+                Box(Modifier.fillMaxSize().padding(bottom = 108.dp)) {
+                    ContactsScreen(onOpenRoom = { id -> navController.navigate("room/$id") })
+                }
+            }
+            composable("profile") {
+                Box(Modifier.fillMaxSize().padding(bottom = 108.dp)) {
+                    ProfileScreen()
+                }
+            }
+            composable(
+                "room/{conversationId}",
+                arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
+            ) { entry ->
                 val conversationId = entry.arguments?.getString("conversationId").orEmpty()
                 ChatRoomScreen(
                     conversationId = conversationId,
@@ -164,6 +295,357 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                     onBack = { navController.popBackStack() },
                 )
             }
+            composable("archived") {
+                ArchivedScreen(
+                    viewerId = viewerId,
+                    onOpenRoom = { id -> navController.navigate("room/$id") },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+
+        if (showDock) {
+            CapsuleDock(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                active = if (currentRoute == "archived") "chats" else currentRoute ?: "chats",
+                unread = unread,
+                dark = dark,
+                onSelect = { route -> switchTab(route) },
+                onCompose = {
+                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    honest("The new chat composer isn't available in this native build yet.")
+                },
+                onSearch = {
+                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    if (currentRoute != "chats") switchTab("chats")
+                    shell.requestSearch()
+                },
+                onDeferred = { message -> honest(message) },
+                moreMenuOpen = moreMenuOpen,
+                onMoreMenuChange = { moreMenuOpen = it },
+            )
+        }
+
+        SnackbarHost(
+            snackbar,
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 108.dp),
+        ) { data ->
+            Snackbar(
+                containerColor = if (dark) Color(0xFF27272A) else Color(0xFF18181B),
+                contentColor = Color.White,
+                shape = RoundedCornerShape(14.dp),
+            ) { Text(data.visualMessage, fontSize = 13.sp) }
+        }
+    }
+}
+
+// ── direction-aware tab transitions (web ±24px slide + 220ms fade) ────
+
+private val pulseEaseOut = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+
+private fun tabEnter(fromRoute: String?, toRoute: String?): EnterTransition {
+    val from = TAB_ROUTES.indexOf(fromRoute)
+    val to = TAB_ROUTES.indexOf(toRoute)
+    if (from < 0 || to < 0 || from == to) return fadeIn(tween(220, easing = pulseEaseOut))
+    val dir = if (to > from) 1 else -1
+    return slideInHorizontally(tween(220, easing = pulseEaseOut)) { dir * it / 8 } +
+        fadeIn(tween(220, easing = pulseEaseOut))
+}
+
+private fun tabExit(fromRoute: String?, toRoute: String?): ExitTransition {
+    val from = TAB_ROUTES.indexOf(fromRoute)
+    val to = TAB_ROUTES.indexOf(toRoute)
+    if (from < 0 || to < 0 || from == to) return fadeOut(tween(220, easing = pulseEaseOut))
+    val dir = if (to > from) 1 else -1
+    return slideOutHorizontally(tween(220, easing = pulseEaseOut)) { -dir * it / 8 } +
+        fadeOut(tween(220, easing = pulseEaseOut))
+}
+
+// ── the Floating Capsule dock (web default nav, spec §12) ─────────────
+
+@Composable
+private fun CapsuleDock(
+    modifier: Modifier = Modifier,
+    active: String,
+    unread: Int,
+    dark: Boolean,
+    onSelect: (String) -> Unit,
+    onCompose: () -> Unit,
+    onSearch: () -> Unit,
+    onDeferred: (String) -> Unit,
+    moreMenuOpen: Boolean,
+    onMoreMenuChange: (Boolean) -> Unit,
+) {
+    Box(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 10.dp),
+    ) {
+        BoxWithConstraints {
+            val pad = 6.dp
+            val gap = 4.dp
+            val composeW = 46.dp
+            // children: chats · hub · compose · contacts · profile · more
+            val slotW = (maxWidth - pad * 2 - composeW - 40.dp - gap * 5) / 4
+            val tabIndex = TAB_ROUTES.indexOf(active).coerceAtLeast(0)
+            val pillX = pad +
+                tabIndex * (slotW + gap) +
+                (if (tabIndex >= 2) composeW + gap else 0.dp)
+            val pillXAnim by animateDpAsState(
+                targetValue = pillX,
+                animationSpec = PulseMotion.snappy(),
+                label = "dockPill",
+            )
+
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .pulseGlass(dark, RoundedCornerShape(28.dp)),
+            ) {
+                // active pill — slides between tab slots (web layoutId pill)
+                Box(
+                    Modifier
+                        .offset(x = pillXAnim, y = pad)
+                        .size(width = slotW, height = 56.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    PulsePalette.Emerald.copy(alpha = if (dark) 0.16f else 0.20f),
+                                    PulsePalette.Emerald.copy(alpha = if (dark) 0.05f else 0.06f),
+                                ),
+                            ),
+                        )
+                        .border(
+                            1.dp,
+                            PulsePalette.Emerald.copy(alpha = if (dark) 0.25f else 0.30f),
+                            RoundedCornerShape(22.dp),
+                        ),
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(pad),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DockTabButton(
+                        tab = DOCK_TABS[0],
+                        active = active == "chats",
+                        unread = unread,
+                        dark = dark,
+                        modifier = Modifier.weight(1f),
+                        onSelect = { onSelect("chats") },
+                    )
+                    Spacer(Modifier.width(gap))
+                    DockTabButton(
+                        tab = DOCK_TABS[1],
+                        active = active == "hub",
+                        unread = 0,
+                        dark = dark,
+                        modifier = Modifier.weight(1f),
+                        onSelect = { onSelect("hub") },
+                    )
+                    Spacer(Modifier.width(gap))
+                    ComposeDockButton(onCompose)
+                    Spacer(Modifier.width(gap))
+                    DockTabButton(
+                        tab = DOCK_TABS[2],
+                        active = active == "contacts",
+                        unread = 0,
+                        dark = dark,
+                        modifier = Modifier.weight(1f),
+                        onSelect = { onSelect("contacts") },
+                    )
+                    Spacer(Modifier.width(gap))
+                    DockTabButton(
+                        tab = DOCK_TABS[3],
+                        active = active == "profile",
+                        unread = 0,
+                        dark = dark,
+                        modifier = Modifier.weight(1f),
+                        onSelect = { onSelect("profile") },
+                    )
+                    Spacer(Modifier.width(gap))
+                    MoreDockButton(
+                        dark = dark,
+                        open = moreMenuOpen,
+                        onOpenChange = onMoreMenuChange,
+                        onSearch = onSearch,
+                        onDeferred = onDeferred,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DockTabButton(
+    tab: DockTab,
+    active: Boolean,
+    unread: Int,
+    dark: Boolean,
+    modifier: Modifier = Modifier,
+    onSelect: () -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    // web wobble — icon rotates [0, -8, 6, 0]° when a tab becomes active
+    val rotate = remember { Animatable(0f) }
+    LaunchedEffect(active) {
+        if (active) {
+            rotate.animateTo(-8f, tween(90))
+            rotate.animateTo(6f, tween(90))
+            rotate.animateTo(0f, tween(110))
+        } else {
+            rotate.snapTo(0f)
+        }
+    }
+    val activeTint = DockEmerald600
+    val inactiveTint = if (dark) DockInactiveDark else DockInactiveLight
+    Box(
+        modifier
+            .height(56.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .clickable {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onSelect()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (active) tab.activeIcon else tab.inactiveIcon,
+                    contentDescription = tab.label,
+                    tint = if (active) activeTint else inactiveTint,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer {
+                            rotationZ = rotate.value
+                            scaleX = if (active) 1.08f else 1f
+                            scaleY = if (active) 1.08f else 1f
+                            translationY = if (active) -1.dp.toPx() else 0f
+                        },
+                )
+                if (tab.carriesUnread && unread > 0) {
+                    DockUnreadBadge(unread, dark)
+                }
+            }
+            Spacer(Modifier.height(3.dp))
+            Text(
+                tab.label,
+                fontSize = 10.sp,
+                lineHeight = 10.sp,
+                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (active) activeTint else inactiveTint,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DockUnreadBadge(count: Int, dark: Boolean) {
+    val label = if (count > 99) "99+" else "$count"
+    Text(
+        label,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        color = Color.White,
+        modifier = Modifier
+            .offset(x = 10.dp, y = (-6).dp)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.Teal)))
+            .border(2.dp, if (dark) Color(0xFF18181B) else Color.White, CircleShape)
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
+}
+
+@Composable
+private fun ComposeDockButton(onCompose: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Box(
+        Modifier
+            .size(46.dp)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(listOf(PulsePalette.Emerald, DockTeal600)))
+            .clickable {
+                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                onCompose()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Filled.Add, contentDescription = "New chat", tint = Color.White, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun MoreDockButton(
+    dark: Boolean,
+    open: Boolean,
+    onOpenChange: (Boolean) -> Unit,
+    onSearch: () -> Unit,
+    onDeferred: (String) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    Box {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onOpenChange(!open)
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.MoreHoriz,
+                contentDescription = "More options",
+                tint = if (dark) DockInactiveDark else DockInactiveLight,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { onOpenChange(false) },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = if (dark) Color(0xFF1C1C1F) else Color.White,
+        ) {
+            DropdownMenuItem(
+                text = { Text("Search", fontSize = 14.sp) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = DockEmerald600) },
+                onClick = {
+                    onOpenChange(false)
+                    onSearch()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Settings", fontSize = 14.sp) },
+                leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null, tint = DockEmerald600) },
+                onClick = {
+                    onOpenChange(false)
+                    onDeferred("Settings aren't available in this native build yet.")
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Saved", fontSize = 14.sp) },
+                leadingIcon = { Icon(Icons.Filled.Bookmark, contentDescription = null, tint = DockEmerald600) },
+                onClick = {
+                    onOpenChange(false)
+                    onDeferred("Saved messages aren't available in this native build yet.")
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Stories", fontSize = 14.sp) },
+                leadingIcon = { Icon(Icons.Filled.Aperture, contentDescription = null, tint = DockEmerald600) },
+                onClick = {
+                    onOpenChange(false)
+                    onDeferred("Stories aren't available in this native build yet.")
+                },
+            )
         }
     }
 }

@@ -1,8 +1,12 @@
 package app.pulse.domain.repository
 
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.HandleCheck
 import app.pulse.domain.model.Message
+import app.pulse.domain.model.MessageHit
+import app.pulse.domain.model.MentionItem
+import app.pulse.domain.model.StoryCell
 import app.pulse.domain.model.User
 import kotlinx.coroutines.flow.Flow
 
@@ -23,14 +27,19 @@ sealed interface PulseEvent {
 interface PulsePrefsStore {
     val viewerId: Flow<String?>
     val viewerName: Flow<String?>
+    /** The avatar palette key chosen at onboarding ("emerald"…"cyan") — header avatar. */
+    val viewerColor: Flow<String?>
     val fxMode: Flow<String>
     val darkOverride: Flow<String>
     val reducedMotion: Flow<Boolean>
+    /** Persisted chats-list filter — "all" | "unread" | "groups" (web ChatsListFilter). */
+    val chatsListFilter: Flow<String>
 
-    suspend fun setViewer(id: String?, name: String?)
+    suspend fun setViewer(id: String?, name: String?, color: String? = null)
     suspend fun setFxMode(mode: String)
     suspend fun setDarkOverride(value: String)
     suspend fun setReducedMotion(value: Boolean)
+    suspend fun setChatsListFilter(value: String)
 }
 
 /** Contract every Pulse data source (remote-first, Room cache) must honor. */
@@ -69,4 +78,39 @@ interface PulseRepository {
     suspend fun block(userId: String): Result<Unit>
     suspend fun unblock(userId: String): Result<Unit>
     suspend fun report(userId: String, reason: String, details: String?): Result<Unit>
+
+    // ── N10 home-page era (HOMEPAGE-SPEC §8/§14) ────────────────────
+
+    /** PATCH /mark-unread {userId, on} — Telegram mark-as-unread dot. */
+    suspend fun markUnread(conversationId: String, on: Boolean): Result<Unit>
+
+    /** PATCH /mute {userId, until} — until: "8h" | "1w" | "always" | null. */
+    suspend fun setMutedUntil(conversationId: String, until: String?): Result<Unit>
+
+    /** POST /api/conversations/self {userId} — the viewer's Note to Self chat. */
+    suspend fun createSelfChat(): Result<Conversation>
+
+    /** GET /api/stories?requesterId= — null-safe: failure degrades to the honest empty rail. */
+    suspend fun stories(): Result<List<StoryCell>>
+
+    /** GET /api/folders?userId= — failure degrades to All-only rail. */
+    suspend fun folders(): Result<List<FolderSummary>>
+
+    /** GET /api/mentions?userId= — failure yields an honest 0 count. */
+    suspend fun mentions(): Result<List<MentionItem>>
+
+    /** GET /api/search?userId=&q= — server message search (≥2 chars, caller debounces). */
+    suspend fun searchMessages(query: String): Result<List<MessageHit>>
+
+    /** Full paginated-ish history for export/clear (single bounded fetch). */
+    suspend fun fullHistory(conversationId: String): Result<List<Message>>
+
+    /** DELETE /api/messages/{id} {requesterId} — sender-gated soft delete. */
+    suspend fun deleteMessage(messageId: String): Result<Unit>
+
+    /** Export the room transcript to a .txt file in app cache — returns the file name. */
+    suspend fun exportChat(conversationId: String): Result<String>
+
+    /** Soft-delete MY OWN non-deleted messages sequentially — returns the cleared count. */
+    suspend fun clearMyMessages(conversationId: String): Result<Int>
 }

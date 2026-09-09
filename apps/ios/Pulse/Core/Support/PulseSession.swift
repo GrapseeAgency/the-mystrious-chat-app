@@ -20,6 +20,15 @@ public final class PulseSession: ObservableObject {
     /// Bumped whenever a surface mutates the inbox (e.g. a fresh DM create)
     /// so the Chats view model can re-fetch without polling.
     @Published public private(set) var inboxRefreshTick = 0
+    /// Live total unread feeding the dock badge (Chats view model writes it).
+    @Published public var dockUnreadCount = 0
+    /// True while a chat room owns the screen — the dock hides itself.
+    @Published public var roomVisible = false
+    /// Dock "More → Search" asks the Chats tab to enter search mode.
+    @Published public private(set) var searchRequestTick = 0
+
+    /// Honest-toast center shared by every surface (not-yet-built features).
+    public let toasts = ToastCenter()
 
     public private(set) var api: PulseAPIClient
     public private(set) var store: PulseStore?
@@ -89,6 +98,12 @@ public final class PulseSession: ObservableObject {
     /// Surfaces call this after inbox mutations (DM create, archive, …).
     public func noteInboxChanged() {
         inboxRefreshTick += 1
+    }
+
+    /// Dock "More → Search" — the Chats tab listens for this tick and opens
+    /// its search mode (real search, not a fake).
+    public func requestChatsSearch() {
+        searchRequestTick += 1
     }
 
     public func typers(in conversationId: String, excluding userId: String?) -> [Typer] {

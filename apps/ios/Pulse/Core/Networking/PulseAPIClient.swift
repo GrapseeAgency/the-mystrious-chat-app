@@ -133,10 +133,33 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extract(from: data)
     }
 
-    public func markRead(conversationId: String) async throws { try await postEmpty("/api/conversations/\(conversationId)/read") }
-    public func togglePin(conversationId: String, pinned: Bool) async throws { try await postEmpty("/api/conversations/\(conversationId)/pin", body: ["pinned": pinned]) }
-    public func setMuted(conversationId: String, muted: Bool) async throws { try await postEmpty("/api/conversations/\(conversationId)/mute", body: ["muted": muted]) }
-    public func archive(conversationId: String, archived: Bool) async throws { try await postEmpty("/api/conversations/\(conversationId)/archive", body: ["archived": archived]) }
+    public func markRead(conversationId: String) async throws {
+        // N10-b transport fix — POST /read requires { userId } (400 otherwise).
+        try await postEmpty("/api/conversations/\(conversationId)/read", body: ["userId": userId])
+    }
+
+    /// N10-b transport fix — PATCH /pin { userId }; the server TOGGLES the pin
+    /// (the old POST { pinned } body was never part of the route contract).
+    public func togglePin(conversationId: String) async throws {
+        try await patchEmpty("/api/conversations/\(conversationId)/pin", body: ["userId": userId])
+    }
+
+    /// N10-b — per-viewer notification mute with the wire preset until:
+    /// "8h" | "1w" | "always" | null (unmute).
+    public func setMuted(conversationId: String, until preset: String?) async throws {
+        let body: [String: Any] = ["userId": userId, "until": preset ?? NSNull()]
+        try await patchEmpty("/api/conversations/\(conversationId)/mute", body: body)
+    }
+
+    /// Boolean overload kept for older callers — true → 8h, false → unmute.
+    public func setMuted(conversationId: String, muted: Bool) async throws {
+        try await setMuted(conversationId: conversationId, until: muted ? "8h" : nil)
+    }
+
+    /// N10-b transport fix — PATCH /archive { userId, archived }.
+    public func archive(conversationId: String, archived: Bool) async throws {
+        try await patchEmpty("/api/conversations/\(conversationId)/archive", body: ["userId": userId, "archived": archived])
+    }
 
     /// N3-b — per-viewer unread dot (PATCH, body { userId, on }).
     public func markUnread(conversationId: String, on: Bool) async throws {
@@ -177,6 +200,64 @@ public struct PulseAPIClient: Sendable {
         try await postEmpty("/api/users/\(target)/report", body: body)
     }
 
+    // ── N10-b home-page endpoints (all degrade to nil on failure) ──
+
+    /// POST /api/conversations/self { userId } — Note to Self create/dedupe.
+    public func createSelfChat() async throws -> WireConversationSummary {
+        let data = try await postRaw("/api/conversations/self", body: ["userId": userId])
+        return try WireConversationEnvelope.extract(from: data)
+    }
+
+    /// GET /api/stories?requesterId= — 24h status groups (nil = unreachable,
+    /// the UI renders only the My-status cell — honest empty, no fakes).
+    public func stories() async -> WireStoriesPage? {
+        try? await get("/api/stories?requesterId=\(userId)", as: WireStoriesPage.self)
+    }
+
+    /// GET /api/folders?userId= — chat folders (nil = unreachable → All only).
+    public func folders() async -> [WireFolder]? {
+        guard let page: WireFoldersPage = try? await get("/api/folders?userId=\(userId)", as: WireFoldersPage.self) else { return nil }
+        return page.folders
+    }
+
+    /// GET /api/mentions?userId= — mention count for the entry pill (nil → 0).
+    public func mentionsCount() async -> Int? {
+        guard let page: WireMentionsPage = try? await get("/api/mentions?userId=\(userId)&limit=50", as: WireMentionsPage.self) else { return nil }
+        return page.items?.count
+    }
+
+    /// GET /api/search?userId=&q= — server message search (nil = unreachable;
+    /// the Messages section is omitted silently — local results still work).
+    public func searchMessages(_ query: String) async -> WireSearchPage? {
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        return try? await get("/api/search?userId=\(userId)&q=\(encoded)", as: WireSearchPage.self)
+    }
+
+    /// DELETE /api/messages/{id} { requesterId } — soft-delete MY OWN message
+    /// (clear-chat; the route is sender-gated server-side).
+    public func deleteOwnMessage(id: String) async throws {
+        try await deleteEmpty("/api/messages/\(id)", body: ["requesterId": userId])
+    }
+
+    /// Every message in a room, oldest → newest (paginated via the `before`
+    /// cursor) — feeds the .txt export and the clear-chat sweep.
+    public func fullHistory(conversationId: String) async -> [WireChatMessage]? {
+        var pages: [[WireChatMessage]] = []
+        var before: String?
+        for _ in 0..<24 {
+            var path = "/api/conversations/\(conversationId)/messages?limit=500"
+            if let before { path += "&before=\(before)" }
+            guard let page: WireMessagesPage = try? await get(path, as: WireMessagesPage.self),
+                  !page.messages.isEmpty else { break }
+            pages.append(page.messages)
+            if !page.hasMore { break }
+            guard let cursor = page.messages.first?.createdAt else { break }
+            before = cursor.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+        }
+        guard !pages.isEmpty else { return nil }
+        return pages.reversed().flatMap { $0 }
+    }
+
     // ── plumbing ─────────────────────────────────────────────
     /// URL builder that keeps query strings intact (appendingPathComponent
     /// would percent-encode "?", breaking every ?userId= route).
@@ -209,6 +290,14 @@ public struct PulseAPIClient: Sendable {
     private func patchEmpty(_ path: String, body: [String: Any]) async throws {
         var request = URLRequest(url: url(path))
         request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        _ = try await send(request)
+    }
+
+    private func deleteEmpty(_ path: String, body: [String: Any]) async throws {
+        var request = URLRequest(url: url(path))
+        request.httpMethod = "DELETE"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         _ = try await send(request)

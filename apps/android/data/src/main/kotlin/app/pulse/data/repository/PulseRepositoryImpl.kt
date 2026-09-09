@@ -1,18 +1,23 @@
 package app.pulse.data.repository
 
+import android.content.Context
 import android.util.Log
 import app.pulse.core.result.PulseResult
+import app.pulse.core.time.PulseTime
 import app.pulse.data.local.ConversationDao
 import app.pulse.data.local.ConversationEntity
 import app.pulse.data.local.MessageDao
 import app.pulse.data.local.MessageEntity
-import app.pulse.data.local.PulseDatabase
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.HandleCheck
 import app.pulse.domain.model.Message
+import app.pulse.domain.model.MessageHit
+import app.pulse.domain.model.MentionItem
 import app.pulse.domain.model.Reaction
+import app.pulse.domain.model.StoryCell
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
@@ -20,6 +25,8 @@ import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.UserDto
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -36,9 +43,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.intOrNull
 
 /**
  * REAL remote-first, Room-cached repository (N3 UI-era surface).
@@ -52,6 +61,7 @@ class PulseRepositoryImpl @Inject constructor(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val socket: PulseSocketClient,
+    @ApplicationContext private val context: Context,
 ) : PulseRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -286,7 +296,21 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun markRead(conversationId: String): Result<Unit> = api.postAction("/api/conversations/$conversationId/read").toResult()
+    override suspend fun markRead(conversationId: String): Result<Unit> {
+        // Optimistic: zero the badge locally, revert if the server refuses.
+        val before = conversationDao.byId(conversationId)?.toDomain()
+        if (before != null) {
+            mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
+        }
+        val result = api.postAction(
+            "/api/conversations/$conversationId/read",
+            PulseApi.jsonOf("userId" to (viewerId ?: "")),
+        ).toResult()
+        if (result.isFailure && before != null) {
+            mutateConversation(conversationId) { before }
+        }
+        return result
+    }
 
     override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {
         socket.emitTyping(recipients = emptyList(), conversationId, viewerId ?: "", userName = userName, isTyping = typing)
@@ -320,19 +344,197 @@ class PulseRepositoryImpl @Inject constructor(
         return result.toResult()
     }
 
-    override suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit> =
-        api.postAction("/api/conversations/$conversationId/pin", PulseApi.jsonOf("pinned" to pinned)).toResult()
+    /**
+     * Optimistic local mutation of one cached conversation row — the flag flips
+     * instantly and the server call + refresh reconcile the truth afterwards.
+     */
+    private suspend fun mutateConversation(id: String, transform: (Conversation) -> Conversation) {
+        val row = conversationDao.byId(id) ?: return
+        conversationDao.upsertAll(listOf(ConversationEntity.from(transform(row.toDomain()))))
+    }
+
+    override suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit> {
+        mutateConversation(conversationId) { it.copy(isPinned = pinned) }
+        val result = api.patchAction(
+            "/api/conversations/$conversationId/pin",
+            PulseApi.jsonOf("userId" to (viewerId ?: "")),
+        ).toResult()
+        refreshConversations() // server toggles — reconcile from truth either way
+        return result
+    }
 
     override suspend fun setMuted(conversationId: String, muted: Boolean): Result<Unit> =
-        api.postAction("/api/conversations/$conversationId/mute", PulseApi.jsonOf("muted" to muted)).toResult()
+        setMutedUntil(conversationId, if (muted) "8h" else null)
 
-    override suspend fun archive(conversationId: String, archived: Boolean): Result<Unit> =
-        api.postAction("/api/conversations/$conversationId/archive", PulseApi.jsonOf("archived" to archived)).toResult()
+    override suspend fun setMutedUntil(conversationId: String, until: String?): Result<Unit> {
+        val epoch = when (until) {
+            null -> 0L
+            "8h" -> System.currentTimeMillis() + 8 * 60 * 60 * 1000L
+            "1w" -> System.currentTimeMillis() + 7 * 24 * 60 * 60 * 1000L
+            "always" -> System.currentTimeMillis() + 50L * 365 * 24 * 60 * 60 * 1000L
+            else -> 0L
+        }
+        mutateConversation(conversationId) {
+            it.copy(mutedUntilEpoch = epoch, isMuted = epoch > System.currentTimeMillis())
+        }
+        val body = kotlinx.serialization.json.buildJsonObject {
+            put("userId", viewerId ?: "")
+            put("until", until) // nullable overload → JSON null for Unmute (web parity)
+        }
+        val result = api.patchAction("/api/conversations/$conversationId/mute", body).toResult()
+        refreshConversations()
+        return result
+    }
+
+    override suspend fun archive(conversationId: String, archived: Boolean): Result<Unit> {
+        mutateConversation(conversationId) { it.copy(isArchived = archived) }
+        val result = api.patchAction(
+            "/api/conversations/$conversationId/archive",
+            PulseApi.jsonOf("userId" to (viewerId ?: ""), "archived" to archived),
+        ).toResult()
+        refreshConversations()
+        return result
+    }
+
+    override suspend fun markUnread(conversationId: String, on: Boolean): Result<Unit> {
+        mutateConversation(conversationId) { it.copy(myManualUnread = on) }
+        val result = api.patchAction(
+            "/api/conversations/$conversationId/mark-unread",
+            PulseApi.jsonOf("userId" to (viewerId ?: ""), "on" to on),
+        ).toResult()
+        if (result.isFailure) {
+            mutateConversation(conversationId) { it.copy(myManualUnread = !on) }
+        }
+        return result
+    }
 
     override suspend fun block(userId: String): Result<Unit> = api.postAction("/api/users/$userId/block").toResult()
     override suspend fun unblock(userId: String): Result<Unit> = api.postAction("/api/users/$userId/unblock").toResult()
     override suspend fun report(userId: String, reason: String, details: String?): Result<Unit> =
         api.postAction("/api/users/$userId/report", PulseApi.jsonOf("reason" to reason, "details" to details)).toResult()
+
+    // ── N10 home-page era ──────────────────────────────────────
+
+    override suspend fun createSelfChat(): Result<Conversation> =
+        when (val r = api.createSelfChat(viewerId ?: "")) {
+            is PulseResult.Success -> {
+                val conversation = r.value.toDomain(viewerId)
+                conversationDao.upsertAll(listOf(ConversationEntity.from(conversation)))
+                Result.success(conversation)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun stories(): Result<List<StoryCell>> = when (val r = api.stories(viewerId ?: "")) {
+        is PulseResult.Success -> Result.success(
+            r.value.groups.mapNotNull { group ->
+                val user = group.user ?: return@mapNotNull null
+                if (group.stories.isEmpty()) return@mapNotNull null
+                StoryCell(
+                    userId = user.id,
+                    name = user.name,
+                    color = user.color,
+                    mine = group.mine,
+                    unseen = !group.allSeen,
+                )
+            },
+        )
+        is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    }
+
+    override suspend fun folders(): Result<List<FolderSummary>> = when (val r = api.folders(viewerId ?: "")) {
+        is PulseResult.Success -> Result.success(
+            r.value.folders.map { f ->
+                FolderSummary(id = f.id, name = f.name, emoji = f.emoji, conversationIds = f.conversationIds)
+            },
+        )
+        is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    }
+
+    override suspend fun mentions(): Result<List<MentionItem>> = when (val r = api.mentions(viewerId ?: "")) {
+        is PulseResult.Success -> Result.success(
+            r.value.items.map { m ->
+                MentionItem(
+                    messageId = m.messageId,
+                    conversationId = m.conversationId,
+                    conversationName = m.conversationName,
+                    authorName = m.author?.name ?: "",
+                    snippet = m.snippet,
+                    createdAt = m.createdAt,
+                )
+            },
+        )
+        is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    }
+
+    override suspend fun searchMessages(query: String): Result<List<MessageHit>> {
+        val id = viewerId ?: return Result.success(emptyList())
+        return when (val r = api.search(id, query)) {
+            is PulseResult.Success -> Result.success(
+                r.value.messages.map { hit ->
+                    MessageHit(
+                        id = hit.id,
+                        conversationId = hit.conversationId,
+                        conversationName = hit.conversationName ?: "Chat",
+                        isGroup = hit.isGroup,
+                        senderName = hit.sender?.name ?: "",
+                        senderColor = hit.sender?.color,
+                        content = hit.content,
+                        createdAt = hit.createdAt,
+                        deleted = hit.deletedAt != null,
+                        imageOnly = hit.imagePath != null && hit.content.isBlank(),
+                        isFile = hit.filePath != null,
+                        fileName = hit.fileName,
+                    )
+                },
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+    }
+
+    override suspend fun fullHistory(conversationId: String): Result<List<Message>> =
+        when (val r = api.messages(conversationId, 500)) {
+            is PulseResult.Success -> Result.success(r.value.messages.map { it.toDomain() })
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun deleteMessage(messageId: String): Result<Unit> =
+        api.deleteMessage(messageId, viewerId ?: "").toResult()
+
+    override suspend fun exportChat(conversationId: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val history = fullHistory(conversationId).getOrThrow()
+            val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+            val fileName = "pulse-${conversationId.take(12)}-${java.time.LocalDate.now()}.txt"
+            File(dir, fileName).writeText(
+                buildString {
+                    appendLine("Pulse — exported chat")
+                    appendLine("Conversation: $conversationId")
+                    appendLine("Messages: ${history.size}")
+                    appendLine("Exported: ${java.time.LocalDateTime.now()}")
+                    appendLine()
+                    for (m in history) {
+                        val body = if (m.isDeleted) "(message deleted)" else m.body
+                        appendLine("[${PulseTime.clock(m.createdAt)}] ${m.authorName}: $body")
+                    }
+                },
+            )
+            fileName
+        }
+    }
+
+    override suspend fun clearMyMessages(conversationId: String): Result<Int> {
+        val history = fullHistory(conversationId).getOrElse { return Result.failure(it) }
+        val mine = history.filter { it.authorId == viewerId && !it.isDeleted }
+        var cleared = 0
+        for (message in mine) {
+            if (api.deleteMessage(message.id, viewerId ?: "") is PulseResult.Success) cleared += 1
+            // keep going — clear as many of my own messages as the server allows
+        }
+        if (cleared > 0) messageDao.deleteByIds(mine.map { it.id })
+        scheduleConversationsRefresh()
+        return Result.success(cleared)
+    }
 
     private fun <T> PulseResult<T>.toResult(): Result<T> = when (this) {
         is PulseResult.Success -> Result.success(value)
@@ -371,18 +573,26 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
         isGroup -> Conversation.Kind.GROUP
         else -> Conversation.Kind.DM
     }
+    val last = lastMessage
+    val collapsed = last?.content?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+    val isImage = last?.imagePath != null && collapsed.isEmpty()
+    val isAudio = !isImage && last?.audioPath != null && collapsed.isEmpty()
+    val isFile = !isImage && !isAudio && last?.kind == "file" && last?.filePath != null
+    val mutedEpoch = PulseTime.epochMs(mutedUntil)
     return Conversation(
         id = id,
         kind = kind,
         title = title,
         avatar = photo ?: others.firstOrNull()?.avatar,
-        lastMessagePreview = lastMessage?.let { previewOf(it) },
-        lastMessageAuthorName = lastMessage?.sender?.name,
-        lastMessageKind = lastMessage?.kind,
-        lastActivityAt = updatedAt ?: lastMessage?.createdAt,
+        lastMessagePreview = if (last == null) null else collapsed,
+        lastMessageAuthorName = last?.sender?.name,
+        lastMessageKind = last?.kind,
+        // Web row stamp prefers the last message's time, falling back to updatedAt.
+        lastActivityAt = last?.createdAt ?: updatedAt,
         unreadCount = unreadCount,
         isPinned = !pinnedAt.isNullOrBlank(),
-        isMuted = !mutedUntil.isNullOrBlank(),
+        // Mute truth = the window is in the future, not merely non-null (spec §7.4).
+        isMuted = mutedEpoch > System.currentTimeMillis(),
         isArchived = !archivedAt.isNullOrBlank(),
         memberIds = members.map { it.id },
         memberNames = members.map { it.name },
@@ -390,12 +600,25 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
         streakCount = streakCountOf(myStreak),
         myDraft = myDraft,
         isSelf = isSelf == true,
+        myManualUnread = myManualUnread == true,
+        streakAtRiskCount = streakCountOf(deadStreak),
+        streakLost = streakCountOf(lostStreak) > 0,
+        lastMessageMine = last != null && last.senderId == viewerId,
+        lastMessageDeleted = last?.deletedAt != null,
+        lastMessageIsReply = last?.replyTo != null || last?.parentId != null,
+        lastMessageIsImage = isImage,
+        lastMessageIsAudio = isAudio,
+        lastMessageIsFile = isFile,
+        lastMessageFileName = last?.fileName,
+        mutedUntilEpoch = mutedEpoch,
+        otherUserId = others.firstOrNull()?.id ?: members.firstOrNull()?.id,
+        isChannel = broadcastMode == true,
     )
 }
 
-/** myStreak is {"count": n} on the wire (N2 parity fix) — tolerate ints too. */
+/** myStreak/deadStreak/lostStreak are {"count": n} on the wire — tolerate ints too. */
 private fun streakCountOf(el: kotlinx.serialization.json.JsonElement?): Int = runCatching {
-    el?.jsonObject?.get("count")?.jsonPrimitive?.intOrNull
+    (el?.jsonObject?.get("count") as? JsonPrimitive)?.intOrNull
         ?: el?.jsonPrimitive?.intOrNull
         ?: 0
 }.getOrDefault(0)
@@ -449,15 +672,6 @@ private fun kindOf(wire: String): Message.Kind = when (wire) {
     "poll" -> Message.Kind.POLL
     "red_packet" -> Message.Kind.RED_PACKET
     else -> Message.Kind.SYSTEM
-}
-
-private fun previewOf(m: ChatMessageDto): String = when (m.kind) {
-    "image" -> "Photo"
-    "voice" -> "Voice message"
-    "video" -> "Video"
-    "file" -> m.fileName ?: "File"
-    "poll" -> "Poll"
-    else -> m.content
 }
 
 /**

@@ -206,15 +206,151 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     public let myStreak: WireStreak?
     public let deadStreak: WireStreak?
     public let lostStreak: WireStreak?
+    /// N10-b — viewer flagged this row mark-as-unread (nil on older relays).
+    public let myManualUnread: Bool?
 
     /// Pin/mute state derived from the wire timestamps (web parity helpers —
     /// ChatsView swipe + context menus read these).
     public var isPinned: Bool { !(pinnedAt ?? "").isEmpty }
     public var isMuted: Bool { !(mutedUntil ?? "").isEmpty }
+
+    /// N10-b — nil-coalescing helper: the mark-as-unread dot flag.
+    public var manualUnread: Bool { myManualUnread ?? false }
+
+    /// N10-b — server-truth mute: mutedUntil in the FUTURE, not merely non-null
+    /// (expired mutes must not mute — web mutedUntil > Date.now() check).
+    public var isMutedNow: Bool {
+        guard let mutedUntil, !mutedUntil.isEmpty, let date = PulseFormat.date(mutedUntil) else { return false }
+        return date > Date()
+    }
+
+    /// N10-b — optimistic helper: replaces one field in the summary.
+    public func withMutedUntil(_ value: String?) -> WireConversationSummary {
+        WireConversationSummary(
+            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
+            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
+            unreadCount: unreadCount, pinnedAt: pinnedAt, mutedUntil: value,
+            archivedAt: archivedAt, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
+            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
+            lostStreak: lostStreak, myManualUnread: myManualUnread,
+        )
+    }
+
+    /// N10-b — optimistic helper: flips the manual-unread flag.
+    public func withManualUnread(_ value: Bool) -> WireConversationSummary {
+        WireConversationSummary(
+            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
+            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
+            unreadCount: unreadCount, pinnedAt: pinnedAt, mutedUntil: mutedUntil,
+            archivedAt: archivedAt, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
+            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
+            lostStreak: lostStreak, myManualUnread: value,
+        )
+    }
+
+    /// N10-b — optimistic helper: sets/clears the archived watermark.
+    public func withArchived(_ value: String?) -> WireConversationSummary {
+        WireConversationSummary(
+            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
+            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
+            unreadCount: unreadCount, pinnedAt: pinnedAt, mutedUntil: mutedUntil,
+            archivedAt: value, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
+            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
+            lostStreak: lostStreak, myManualUnread: myManualUnread,
+        )
+    }
+
+    /// N10-b — optimistic helper: zeroes the unread count.
+    public func withUnreadCount(_ value: Int) -> WireConversationSummary {
+        WireConversationSummary(
+            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
+            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
+            unreadCount: value, pinnedAt: pinnedAt, mutedUntil: mutedUntil,
+            archivedAt: archivedAt, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
+            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
+            lostStreak: lostStreak, myManualUnread: myManualUnread,
+        )
+    }
+
+    /// N10-b — optimistic helper: sets/clears the pinned watermark.
+    public func withPinnedAt(_ value: String?) -> WireConversationSummary {
+        WireConversationSummary(
+            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
+            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
+            unreadCount: unreadCount, pinnedAt: value, mutedUntil: mutedUntil,
+            archivedAt: archivedAt, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
+            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
+            lostStreak: lostStreak, myManualUnread: myManualUnread,
+        )
+    }
 }
 
 public struct WireConversationsPage: Codable, Sendable {
     public let conversations: [WireConversationSummary]
+}
+
+// ── N10-b home-page wire shapes (tolerant: unreachable features degrade) ──
+
+/// GET /api/stories?requesterId= — 24h status groups. The static CDN gateway
+/// has no such route today → decode failures surface as nil, and the UI
+/// degrades to the honest My-status-only row.
+public struct WireStoryGroup: Codable, Hashable, Sendable {
+    public let user: WireSender?
+    public let mine: Bool?
+    public let allSeen: Bool?
+    public let stories: [WireStoryItem]?
+}
+
+public struct WireStoryItem: Codable, Hashable, Sendable {
+    public let id: String?
+    public let createdAt: String?
+}
+
+public struct WireStoriesPage: Codable, Sendable {
+    public let groups: [WireStoryGroup]?
+}
+
+/// GET /api/folders?userId= — Signal/Beeper chat folders.
+public struct WireFolder: Codable, Hashable, Sendable {
+    public let id: String
+    public let name: String
+    public let emoji: String?
+    public let position: Int?
+    public let conversationIds: [String]?
+}
+
+public struct WireFoldersPage: Codable, Sendable {
+    public let folders: [WireFolder]?
+}
+
+/// GET /api/mentions?userId= — only the item count feeds the entry pill.
+public struct WireMentionsPage: Codable, Sendable {
+    public let items: [WireMentionItem]?
+}
+
+public struct WireMentionItem: Codable, Hashable, Sendable {
+    public let id: String?
+}
+
+/// GET /api/search?userId=&q= — global message search hits.
+public struct WireSearchMessage: Codable, Hashable, Sendable {
+    public let id: String
+    public let conversationId: String
+    public let conversationName: String?
+    public let isGroup: Bool?
+    public let content: String?
+    public let kind: String?
+    public let createdAt: String?
+    public let deletedAt: String?
+    public let imagePath: String?
+    public let filePath: String?
+    public let fileName: String?
+    public let sender: WireSender?
+}
+
+public struct WireSearchPage: Codable, Sendable {
+    public let messages: [WireSearchMessage]?
+    public let total: Int?
 }
 
 // ── wire → domain mappers (mirror Android data/repository mappers) ──

@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -22,6 +23,8 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -134,3 +137,36 @@ fun Modifier.shimmer(): Modifier = composed {
         ),
     )
 }
+
+// ── N10 glass recipe ─────────────────────────────────────────
+// Compose has no backdrop blur; the established native recipe is a
+// translucent panel fill + 1dp hairline border (+ a brighter top edge when
+// a deep panel asks for the specular rim). Same recipe as ChatsScreen rows.
+
+/** True when the active Pulse theme is dark (background luminance test). */
+@Composable
+fun isPulseDarkTheme(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+object PulseGlass {
+    val LightFill = Color.White.copy(alpha = 0.78f)
+    val LightBorder = Color(0xFFE4E4E7).copy(alpha = 0.70f)
+    val LightDeepFill = Color.White.copy(alpha = 0.88f)
+    val DarkFill = Color(0xFF18181B).copy(alpha = 0.70f)
+    val DarkBorder = Color.White.copy(alpha = 0.06f)
+    val DarkDeepFill = Color(0xFF0C0C0E).copy(alpha = 0.80f)
+
+    fun fill(dark: Boolean, deep: Boolean = false): Color = when {
+        deep && dark -> DarkDeepFill
+        deep -> LightDeepFill
+        dark -> DarkFill
+        else -> LightFill
+    }
+
+    fun border(dark: Boolean): Color = if (dark) DarkBorder else LightBorder
+}
+
+/** Translucent panel + 1dp hairline — the fake-glass baseline for rows and pills. */
+fun Modifier.pulseGlass(dark: Boolean, shape: Shape, deep: Boolean = false): Modifier = this
+    .clip(shape)
+    .background(PulseGlass.fill(dark, deep), shape)
+    .border(1.dp, PulseGlass.border(dark), shape)

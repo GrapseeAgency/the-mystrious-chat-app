@@ -156,6 +156,84 @@ data class HandleRegistryDto(
     val taken: List<String> = emptyList(),
 )
 
+// ── N10 home-page era — search / stories / folders / mentions ────
+
+/** GET /api/search — one message hit with the resolved conversation title. */
+@Serializable
+data class SearchHitDto(
+    val id: String = "",
+    val conversationId: String = "",
+    val conversationName: String? = null,
+    val isGroup: Boolean = false,
+    val senderId: String = "",
+    val content: String = "",
+    val kind: String = "text",
+    val createdAt: String = "",
+    val deletedAt: String? = null,
+    val imagePath: String? = null,
+    val audioPath: String? = null,
+    val filePath: String? = null,
+    val fileName: String? = null,
+    val sender: SenderDto? = null,
+)
+
+@Serializable
+data class SearchPageDto(
+    val messages: List<SearchHitDto> = emptyList(),
+    val total: Int = 0,
+)
+
+/** GET /api/folders — Signal-style folder rail (tolerant subset). */
+@Serializable
+data class FolderDto(
+    val id: String = "",
+    val name: String = "",
+    val emoji: String = "",
+    val position: Int? = null,
+    val conversationIds: List<String> = emptyList(),
+)
+
+@Serializable
+data class FoldersPageDto(
+    val folders: List<FolderDto> = emptyList(),
+)
+
+/** GET /api/mentions — one @mention row (tolerant subset; the list pill counts only). */
+@Serializable
+data class MentionDto(
+    val messageId: String = "",
+    val conversationId: String = "",
+    val conversationName: String? = null,
+    val isGroup: Boolean = false,
+    val author: SenderDto? = null,
+    val snippet: String = "",
+    val createdAt: String = "",
+)
+
+@Serializable
+data class MentionsPageDto(
+    val items: List<MentionDto> = emptyList(),
+)
+
+/** GET /api/stories — 24h status rail (tolerant subset: ring/name/mine/allSeen only). */
+@Serializable
+data class StoryItemDto(
+    val id: String = "",
+)
+
+@Serializable
+data class StoryGroupDto(
+    val user: SenderDto? = null,
+    val mine: Boolean = false,
+    val allSeen: Boolean = false,
+    val stories: List<StoryItemDto> = emptyList(),
+)
+
+@Serializable
+data class StoriesPageDto(
+    val groups: List<StoryGroupDto> = emptyList(),
+)
+
 /** One shared decoder for every Pulse client surface. */
 val PulseJson: Json = Json {
     ignoreUnknownKeys = true
