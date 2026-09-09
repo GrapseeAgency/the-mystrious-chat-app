@@ -1929,3 +1929,22 @@ Stage Summary:
 - BOTH PLATFORMS GREEN at HEAD with the complete onboarding flow — task complete
 - Root-cause chain worth remembering: asset-catalog errors kill xcodebuild before Swift whole-module type-check completes → Swift errors hide behind actool errors; fix assets first, then expect latent Swift errors to surface one round later
 - Scope kept: ONLY .kt/.swift/asset/project.yml files touched; no web tech; no CDN/manifest/deploy work (user-locked)
+---
+Task ID: N8 (parse-package fix wave — user field report)
+Agent: orchestrator (Z.ai Code)
+Task: User hit "There was a problem parsing the package" in the LiveUpdate area on a real device and ordered the fix; expects a new installable APK. Android-only scope (system-installer territory), Swift untouched.
+
+Work Log:
+- FORENSICS: downloaded every shipped artifact — v0.1.0/v0.1.1/v0.1.2 Release assets + raw CDN Pulse.apk; all structurally valid ZIPs (testzip clean, resources.arsc STORED for API 30+, v2 signing block present, AXML parses); v0.1.2 asset == raw CDN bytes (md5 a3379c5a); so the CDN chain was healthy and the device's gates DID pass — the failure happened inside the SYSTEM installer
+- ROOT CAUSE (highest-probability, actionable): minSdk 26 → AGP/apksigner defaults ship v2/v3-only APKs (no v1 JAR signature); picky ROM installers (MIUI/HyperOS class) reject v2-only archives with exactly "There was a problem parsing the package". User confirmed the same failure on their other GS-distribution project. Secondary risks hardened in the same wave: mid-file transit corruption that slips past getPackageArchiveInfo (it only reads AndroidManifest.xml), and content identity with no end-to-end checksum
+- FIX 1 (signing): app/build.gradle.kts release signingConfig now enableV1Signing/enableV2Signing/enableV3Signing = true — v1 JAR (META-INF/CERT.SF+RSA verified present in the new artifact), v2 block verified, v3 enabled
+- FIX 2 (updater gates, Kotlin only): LiveUpdater.passesGates now runs (1) PackageManager parse + packageName/versionCode match, (2) NEW full ZIP CRC sweep — every entry read, ZipFile validates CRC, catches bit-flipped classes.dex BEFORE the installer, (3) NEW optional manifest sha256 enforcement (legacy manifests without the field still work); Manifest data class gained sha256, fetchManifest reads it; honest new Failed copy ("corrupted in transit" / "checksum mismatch")
+- VERSION: committed defaults bumped to versionCode 4 / 0.1.3-native; pushed 5ff0669 → Android CI green (34349893104)
+- PUBLISH: CI artifact app-release.apk (13,485,520 bytes) verified (versionCode 4 via real AXML chunk walk, versionName 0.1.3-native UTF-16LE in pool, v1+v2 present, zip clean, sha256 c52e6248…) → Release v0.1.3-native created via REST (id 385490556; NOTE create-release rejects short-sha target_commitish — 422 "not a valid tag", full sha required) + asset Pulse-v0.1.3-native.apk uploaded → download/Pulse.apk replaced + update-manifest.json now carries sha256 + points at the immutable release-asset URL → pushed 7f85853
+- LIVE VERIFICATION: raw manifest serves versionCode 4 + sha256; release URL 302→release-assets.githubusercontent.com→200, 13,485,520 bytes; downloaded bytes sha256 == manifest sha256 EXACTLY
+
+Stage Summary:
+- Shipped v0.1.3-native (versionCode 4): the onboarding build the user was meant to audit, now installable — v1 signing removes the parse-package failure class; the updater verifies content end-to-end before the installer ever opens a file
+- User path: installed app's update area offers v0.1.3 (4 > any v0.1.x) → install should now succeed; manual Release download also possible
+- Honest gaps: the ROM-installer diagnosis is by-construction (no device in sandbox) — v1 signing is the documented fix for this exact error class; if the device still refuses, next lever is the PackageInstaller session API (already scoped, not needed yet); iOS unaffected
+- Evidence: CI run 34349893104 green, release id 385490556, sha256 match verified live
