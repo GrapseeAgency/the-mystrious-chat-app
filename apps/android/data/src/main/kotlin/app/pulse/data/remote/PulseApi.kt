@@ -5,6 +5,7 @@ import app.pulse.core.result.PulseResult
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.ConversationsPageDto
+import app.pulse.protocol.HandleRegistryDto
 import app.pulse.protocol.MessagesPageDto
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.UserDto
@@ -145,6 +146,13 @@ class PulseApi(private val http: HttpClient) {
     suspend fun checkUsername(username: String): PulseResult<UsernameCheckDto> =
         get("/api/users/check-username?username=" + java.net.URLEncoder.encode(username, "UTF-8")) {
             PulseJson.decodeFromString(UsernameCheckDto.serializer(), it)
+        }
+
+    /** GET registry/handles.json — the static CDN availability registry (the
+     *  offline-first fallback when no live gateway answers). */
+    suspend fun fetchHandleRegistry(): PulseResult<HandleRegistryDto> =
+        get("/registry/handles.json") {
+            PulseJson.decodeFromString(HandleRegistryDto.serializer(), it)
         }
 
     /** GET /api/users?name=X → { user } — case-insensitive lookup (404 when free). */

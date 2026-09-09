@@ -90,6 +90,13 @@ public struct WireUsernameCheck: Codable, Sendable {
     public let suggestion: String?
 }
 
+/// GET registry/handles.json — static-CDN availability source
+/// (offline-first fallback when no live gateway answers).
+public struct WireHandleRegistry: Codable, Sendable {
+    public let reserved: [String]?
+    public let taken: [String]?
+}
+
 /// Tolerant wrapper: responses arrive as { "conversation": ... } (200 deduped
 /// / 201 created) — and defensively as the bare object on older relays.
 public struct WireConversationEnvelope: Codable, Sendable {

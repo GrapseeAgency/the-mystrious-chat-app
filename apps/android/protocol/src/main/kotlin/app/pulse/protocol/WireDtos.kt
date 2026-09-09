@@ -149,6 +149,13 @@ data class UsernameCheckDto(
     val suggestion: String? = null,
 )
 
+/** GET registry/handles.json — static-CDN availability source (offline-first onboarding). */
+@Serializable
+data class HandleRegistryDto(
+    val reserved: List<String> = emptyList(),
+    val taken: List<String> = emptyList(),
+)
+
 /** One shared decoder for every Pulse client surface. */
 val PulseJson: Json = Json {
     ignoreUnknownKeys = true

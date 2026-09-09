@@ -1,0 +1,27 @@
+{
+  "reserved": [
+    "admin",
+    "administrator",
+    "root",
+    "system",
+    "support",
+    "help",
+    "team",
+    "official",
+    "moderator",
+    "mod",
+    "pulse",
+    "staff",
+    "security",
+    "noreply",
+    "no_reply",
+    "notifications",
+    "notify",
+    "bot",
+    "api",
+    "null",
+    "undefined",
+    "gs"
+  ],
+  "taken": []
+}

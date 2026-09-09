@@ -1,13 +1,17 @@
 import Foundation
 
 /// Gateway endpoints — iOS mirror of Android `PulseEndpoints`.
-/// Sandbox defaults match the monorepo dev topology: Next.js gateway on :81,
-/// Socket.IO relay on :3003 (the simulator reaches the host via localhost).
-/// ATS: project.yml declares NSAllowsLocalNetworking so plain http to the
-/// local gateway is allowed.
+/// The default base is the repo's public HTTPS CDN: reachable from ANY device
+/// (the old `http://localhost:81` default only ever worked on the simulator).
+/// Bake a real gateway by swapping these constants at build time.
 public enum PulseEndpoints {
-    /// REST gateway (Next.js API routes).
-    public static var gatewayURL: URL { URL(string: "http://localhost:81")! }
-    /// Socket.IO relay (mini-services/pulse-socket).
-    public static var socketURL: URL { URL(string: "http://localhost:3003")! }
+    /// REST gateway base (Next.js API routes through the gateway).
+    public static var gatewayURL: URL {
+        URL(string: "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main")!
+    }
+
+    /// Socket.IO relay — nil = realtime disabled (offline-first client, zero
+    /// reconnect spam against a dead address). Set a live relay URL here once
+    /// one is deployed.
+    public static var socketURL: URL? { nil }
 }

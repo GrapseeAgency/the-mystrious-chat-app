@@ -172,6 +172,10 @@ final class OnboardingViewModel: ObservableObject {
                     // display-name clash → step back and reuse the "log in instead" flow
                     self.step = .name
                     self.nameTaken = true
+                } else if failure.status == nil || failure.status == 404 || (500...599).contains(failure.status ?? 0) {
+                    // offline-first: no live gateway answered → local identity.
+                    // Onboarding completes; the app runs offline-first from here.
+                    onSuccess(Self.localIdentity(name: trimmed, color: self.color, username: username))
                 } else {
                     self.notice = failure.message ?? "Network error — try again."
                 }
@@ -198,7 +202,7 @@ final class OnboardingViewModel: ObservableObject {
             guard !Task.isCancelled, self.handle == candidate, self.step == .handle else { return }
             self.checking = true
             do {
-                let result = try await self.api.checkUsername(candidate)
+                let result = try await self.api.checkUsernameWithFallback(candidate)
                 guard !Task.isCancelled, self.handle == candidate, self.step == .handle else { return }
                 self.checking = false
                 self.checkedHandle = candidate
@@ -216,10 +220,30 @@ final class OnboardingViewModel: ObservableObject {
     }
 
     static func message(of error: Error) -> String {
-        if let failure = error as? PulseAPIClient.Failure, let message = failure.message {
-            return message
+        if let failure = error as? PulseAPIClient.Failure {
+            // Transport-level errors carry raw engine strings — humans get copy.
+            if failure.status == nil { return "Can't reach the Pulse server — check your connection." }
+            if let message = failure.message { return message }
         }
         return "Network error — try again."
+    }
+
+    /// Offline identity — stable random id, same shape as a server row.
+    static func localIdentity(name: String, color: String, username: String?) -> WireUser {
+        let suffix = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
+        return WireUser(
+            id: "local_" + String(suffix.prefix(12)),
+            name: name,
+            username: username,
+            about: nil,
+            color: color,
+            avatar: nil,
+            statusEmoji: nil,
+            statusText: nil,
+            createdAt: nil,
+            lastSeenAt: nil,
+            verified: nil,
+        )
     }
 }
 

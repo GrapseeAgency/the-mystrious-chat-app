@@ -68,6 +68,45 @@ public struct PulseAPIClient: Sendable {
         return try await get("/api/users/check-username?username=\(query)")
     }
 
+    /// Offline-first @handle verdict: live server first; when it can't answer
+    /// (unreachable / route-less static CDN / 5xx) fall back to the repo's
+    /// registry JSON, then a local verdict. Definitive 400/409 stay errors.
+    public func checkUsernameWithFallback(_ username: String) async throws -> WireUsernameCheck {
+        do {
+            return try await checkUsername(username)
+        } catch let failure as Failure where failure.status == 400 || failure.status == 409 {
+            throw failure
+        } catch {
+            return await registryVerdict(username)
+        }
+    }
+
+    /// Static CDN registry (registry/handles.json) → local verdict last resort.
+    func registryVerdict(_ username: String) async -> WireUsernameCheck {
+        do {
+            let request = URLRequest(url: url("/registry/handles.json"))
+            let data = try await send(request)
+            let registry = try decoder.decode(WireHandleRegistry.self, from: data)
+            let claimed = ((registry.taken ?? []) + (registry.reserved ?? [])).map { $0.lowercased() }
+            if claimed.contains(username.lowercased()) {
+                return WireUsernameCheck(available: false, suggestion: username + "_")
+            }
+            return WireUsernameCheck(available: true, suggestion: nil)
+        } catch {
+            if Self.reservedHandles.contains(username.lowercased()) {
+                return WireUsernameCheck(available: false, suggestion: username + "_")
+            }
+            return WireUsernameCheck(available: true, suggestion: nil)
+        }
+    }
+
+    /// Handles nobody may claim — mirrors registry/handles.json (offline net).
+    static let reservedHandles: Set<String> = [
+        "admin", "administrator", "root", "system", "support", "help", "team",
+        "official", "moderator", "mod", "pulse", "staff", "security", "noreply",
+        "notifications", "bot", "api", "gs",
+    ]
+
     /// Onboarding — case-insensitive name lookup ("that's me — log in").
     /// 404 means the name is free — surfaced as nil, not an error.
     public func lookupUserByName(_ name: String) async throws -> WireUser? {
@@ -143,7 +182,7 @@ public struct PulseAPIClient: Sendable {
     /// would percent-encode "?", breaking every ?userId= route).
     private func url(_ path: String) -> URL {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-            ?? URLComponents(string: "http://localhost:81")!
+            ?? URLComponents(string: PulseEndpoints.gatewayURL.absoluteString)!
         if let queryStart = path.firstIndex(of: "?") {
             components.path += String(path[..<queryStart])
             components.query = String(path[path.index(after: queryStart)...])
@@ -190,6 +229,9 @@ public struct PulseAPIClient: Sendable {
 
     /// Shared transport: status check + tolerant error-body enrichment.
     private func send(_ request: URLRequest) async throws -> Data {
+        var request = request
+        // Fail fast — an unreachable gateway must never spin for a minute.
+        request.timeoutInterval = min(request.timeoutInterval, 6)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure(kind: .network, message: nil) }
         guard (200..<300).contains(http.statusCode) else {

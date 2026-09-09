@@ -17,6 +17,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -32,6 +33,13 @@ object DataModule {
     fun provideHttpClient(): HttpClient = HttpClient {
         install(ContentNegotiation) {
             ktorJson(Json { ignoreUnknownKeys = true; explicitNulls = false })
+        }
+        // Fail fast instead of hanging for minutes on an unreachable gateway —
+        // the onboarding @handle probe must never outlive a blink.
+        install(HttpTimeout) {
+            connectTimeoutMillis = 3_000
+            requestTimeoutMillis = 6_000
+            socketTimeoutMillis = 6_000
         }
     }
 

@@ -60,6 +60,9 @@ class PulseRepositoryImpl @Inject constructor(
     )
     private val onlineIds = MutableStateFlow<Set<String>>(emptySet())
 
+    /** Backoff so a dead network doesn't re-pay the timeout on every keystroke. */
+    @Volatile private var offlineUntil: Long = 0L
+
     @Volatile override var viewerId: String? = null
         private set
 
@@ -176,13 +179,76 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun createIdentity(name: String, color: String?, username: String?): Result<User> =
         when (val r = api.createUser(name, color, username)) {
             is PulseResult.Success -> Result.success(r.value.toDomain())
-            is PulseResult.Failure -> Result.failure(OnboardingError.of(r))
+            is PulseResult.Failure ->
+                when {
+                    // Definitive live-server verdicts surface untouched —
+                    // 409 name clash / username_taken keep the web flows.
+                    r.status == 400 || r.status == 409 -> Result.failure(OnboardingError.of(r))
+                    // No reachable server → local identity. Onboarding completes
+                    // offline; the inbox renders the honest offline state.
+                    else -> {
+                        offlineUntil = System.currentTimeMillis() + OFFLINE_BACKOFF_MS
+                        Result.success(localIdentity(name, color, username))
+                    }
+                }
         }
 
+    /** Offline identity — stable random id, kept in prefs like a server row. */
+    private fun localIdentity(name: String, color: String?, username: String?): User = User(
+        id = "local_" + java.util.UUID.randomUUID().toString().replace("-", "").take(12),
+        name = name,
+        handle = username ?: "",
+        color = color ?: "emerald",
+    )
+
+    /**
+     * Availability never blocks onboarding: server → static CDN registry →
+     * local rules. The worst case (fully offline) still answers in one blink
+     * after the backoff, instead of spinning forever like a dead gateway.
+     */
     override suspend fun checkHandle(handle: String): Result<HandleCheck> =
         when (val r = api.checkUsername(handle)) {
-            is PulseResult.Success -> Result.success(HandleCheck(available = r.value.available, suggestion = r.value.suggestion))
-            is PulseResult.Failure -> Result.failure(OnboardingError.of(r))
+            is PulseResult.Success ->
+                Result.success(HandleCheck(available = r.value.available, suggestion = r.value.suggestion))
+            is PulseResult.Failure ->
+                // 400 invalid / 409 taken are definitive live-server verdicts —
+                // never second-guess them. Anything else (unreachable host,
+                // route-less static CDN, 5xx) falls through to the registry.
+                if (r.status == 400 || r.status == 409) {
+                    Result.failure(OnboardingError.of(r))
+                } else {
+                    registryOrLocalVerdict(handle)
+                }
+        }
+
+    /** Fresh registry verdict unless a recent attempt already proved offline. */
+    private suspend fun registryOrLocalVerdict(handle: String): Result<HandleCheck> {
+        if (System.currentTimeMillis() < offlineUntil) {
+            return Result.success(localVerdict(handle))
+        }
+        return when (val reg = api.fetchHandleRegistry()) {
+            is PulseResult.Success -> {
+                val claimed = (reg.value.taken + reg.value.reserved).map { it.lowercase() }
+                if (handle.lowercase() in claimed) {
+                    Result.success(HandleCheck(available = false, suggestion = "${handle}_"))
+                } else {
+                    Result.success(HandleCheck(available = true, suggestion = null))
+                }
+            }
+            is PulseResult.Failure -> {
+                // fully offline — stop paying the timeout on every keystroke
+                offlineUntil = System.currentTimeMillis() + OFFLINE_BACKOFF_MS
+                Result.success(localVerdict(handle))
+            }
+        }
+    }
+
+    /** Local rules — the last line of defense so onboarding always completes. */
+    private fun localVerdict(handle: String): HandleCheck =
+        if (handle.lowercase() in BUILT_IN_RESERVED) {
+            HandleCheck(available = false, suggestion = "${handle}_")
+        } else {
+            HandleCheck(available = true, suggestion = null)
         }
 
     override suspend fun lookupUserByName(name: String): Result<User?> =
@@ -280,6 +346,14 @@ class PulseRepositoryImpl @Inject constructor(
 
     companion object {
         private const val TAG = "PulseRepo"
+        private const val OFFLINE_BACKOFF_MS = 60_000L
+
+        /** Handles nobody may claim — offline safety net mirroring registry/handles.json. */
+        private val BUILT_IN_RESERVED = setOf(
+            "admin", "administrator", "root", "system", "support", "help", "team",
+            "official", "moderator", "mod", "pulse", "staff", "security", "noreply",
+            "notifications", "bot", "api", "gs",
+        )
     }
 }
 
@@ -401,7 +475,11 @@ class OnboardingError(
     val isNameClash: Boolean get() = status == 409 && !isUsernameTaken
 
     companion object {
-        fun of(f: PulseResult.Failure): OnboardingError =
-            OnboardingError(f.status, f.code, f.suggestion, f.message)
+        fun of(f: PulseResult.Failure): OnboardingError {
+            // Transport-level failures carry raw engine strings ("CLEARTEXT
+            // communication … not permitted") — humans get real copy instead.
+            val human = if (f.status == null) "Can't reach the Pulse server — check your connection." else f.message
+            return OnboardingError(f.status, f.code, f.suggestion, human)
+        }
     }
 }

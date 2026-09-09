@@ -50,7 +50,10 @@ public final class PulseSession: ObservableObject {
         api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id)
         store = Self.openStore()
 
-        let client = PulseSocketClient(socketURL: PulseEndpoints.socketURL)
+        // Realtime only when a relay base is configured (nil → offline-first,
+        // no reconnect spam against a dead address).
+        guard let socketBase = PulseEndpoints.socketURL else { return }
+        let client = PulseSocketClient(socketURL: socketBase)
         client.signals = { [weak self] signal in
             Task { @MainActor in self?.handle(signal) }
         }

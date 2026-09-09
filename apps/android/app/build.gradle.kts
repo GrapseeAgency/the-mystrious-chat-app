@@ -8,8 +8,8 @@ plugins {
 }
 
 // Release channel plumbing — CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 4
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.1.3-native"
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 5
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.1.4-native"
 
 android {
     namespace = "app.pulse.android"
@@ -23,10 +23,16 @@ android {
         versionName = pulseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Deployment knobs (PulseEndpoints comment promised this wave) — a public
-        // gateway can be baked in with -PpulseGateway=https://… without code changes.
-        buildConfigField("String", "PULSE_GATEWAY", "\"${project.findProperty("pulseGateway") ?: "http://10.0.2.2:81"}\"")
-        buildConfigField("String", "PULSE_SOCKET", "\"${project.findProperty("pulseSocket") ?: "http://10.0.2.2:3003"}\"")
+        // Deployment knobs. The baked default is the repo's public HTTPS CDN —
+        // reachable from ANY device on earth. The old http://10.0.2.2:* emulator
+        // defaults were unreachable on real phones AND cleartext (Android blocks
+        // plain http → "CLEARTEXT communication not permitted"). Emulator dev:
+        // -PpulseGateway=http://10.0.2.2:81 -PpulseSocket=http://10.0.2.2:3003
+        buildConfigField("String", "PULSE_GATEWAY", "\"${project.findProperty("pulseGateway") ?: "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main"}\"")
+        // Blank socket base = realtime relay disabled (no public relay yet) —
+        // the client then stays offline-first instead of reconnect-spamming a
+        // dead address forever.
+        buildConfigField("String", "PULSE_SOCKET", "\"${project.findProperty("pulseSocket") ?: ""}\"")
     }
 
     signingConfigs {

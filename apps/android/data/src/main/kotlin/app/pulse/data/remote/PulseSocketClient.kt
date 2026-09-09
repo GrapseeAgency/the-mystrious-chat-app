@@ -38,19 +38,28 @@ class PulseSocketClient(
     )
     val signals: SharedFlow<Signal> = _signals
 
-    private val socket: Socket = IO.socket(
-        app.pulse.core.PulseEndpoints.socketUrl,
-        IO.Options().apply { query = "XTransformPort=3003" },
-    )
+    /** Null when no relay base is baked — realtime stays off, zero reconnect spam. */
+    private val socket: Socket? by lazy {
+        val base = app.pulse.core.PulseEndpoints.socketUrl
+        if (base.isBlank()) {
+            null
+        } else {
+            IO.socket(base, IO.Options().apply { query = "XTransformPort=3003" })
+        }
+    }
 
     @Volatile private var joinedUserId: String? = null
 
     fun connect(userId: String) {
         joinedUserId = userId
-        socket.on(Socket.EVENT_CONNECT) {
-            socket.emit(SocketEvents.JOIN, JSONObject().put("userId", userId))
+        val sock = socket ?: run {
+            Log.i(TAG, "Realtime disabled — no relay base baked; staying offline-first")
+            return
         }
-        socket.on(SocketEvents.JOINED) { args ->
+        sock.on(Socket.EVENT_CONNECT) {
+            sock.emit(SocketEvents.JOIN, JSONObject().put("userId", userId))
+        }
+        sock.on(SocketEvents.JOINED) { args ->
             runCatching {
                 val ack = PulseJson.decodeFromString(
                     JoinedAck.serializer(),
@@ -59,29 +68,29 @@ class PulseSocketClient(
                 _signals.tryEmit(Signal.Joined(ack.onlineUserIds))
             }.onFailure { Log.w(TAG, "joined parse failed", it) }
         }
-        socket.on(SocketEvents.PRESENCE_SNAPSHOT) { args ->
+        sock.on(SocketEvents.PRESENCE_SNAPSHOT) { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
             val ids = obj.optJSONArray("onlineUserIds") ?: return@on
             val list = buildList { for (i in 0 until ids.length()) add(ids.optString(i)) }
             _signals.tryEmit(Signal.PresenceSnapshot(list))
         }
-        socket.on(SocketEvents.MESSAGE_NEW) { args ->
+        sock.on(SocketEvents.MESSAGE_NEW) { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
             _signals.tryEmit(Signal.MessageNew(obj.optString("conversationId"), obj))
         }
-        socket.on(SocketEvents.TYPING) { args ->
+        sock.on(SocketEvents.TYPING) { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
             _signals.tryEmit(
                 Signal.Typing(obj.optString("conversationId"), obj.optString("userId"), obj.optString("userName"), obj.optBoolean("isTyping")),
             )
         }
-        socket.on(SocketEvents.MESSAGE_READ) { args ->
+        sock.on(SocketEvents.MESSAGE_READ) { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
             _signals.tryEmit(
                 Signal.MessageRead(obj.optString("conversationId"), obj.optString("userId"), obj.optString("at", null)),
             )
         }
-        socket.on(SocketEvents.VOICE_TRANSCRIPT) { args ->
+        sock.on(SocketEvents.VOICE_TRANSCRIPT) { args ->
             val obj = args.firstOrNull() as? JSONObject ?: return@on
             _signals.tryEmit(
                 Signal.VoiceTranscript(obj.optString("conversationId"), obj.optString("userId"), obj.optString("text")),
@@ -89,11 +98,11 @@ class PulseSocketClient(
         }
         listOf(SocketEvents.CALL_OFFER, SocketEvents.CALL_ANSWER, SocketEvents.CALL_ICE, SocketEvents.CALL_CANCEL, SocketEvents.CALL_HANGUP)
             .forEach { event ->
-                socket.on(event) { args ->
+                sock.on(event) { args ->
                     (args.firstOrNull() as? JSONObject)?.let { _signals.tryEmit(Signal.CallSignal(event, it)) }
                 }
             }
-        socket.connect()
+        sock.connect()
     }
 
     fun emitTyping(recipients: List<String>, conversationId: String, userId: String, userName: String, isTyping: Boolean) {
@@ -103,16 +112,18 @@ class PulseSocketClient(
             .put("userId", userId)
             .put("userName", userName)
             .put("isTyping", isTyping)
-        socket.emit(SocketEvents.TYPING, payload)
+        socket?.emit(SocketEvents.TYPING, payload)
     }
 
     fun disconnect() {
-        socket.disconnect()
-        socket.off()
+        socket?.let {
+            it.disconnect()
+            it.off()
+        }
         joinedUserId = null
     }
 
-    val isJoined: Boolean get() = joinedUserId != null && socket.connected()
+    val isJoined: Boolean get() = joinedUserId != null && socket?.connected() == true
 
     private companion object {
         const val TAG = "PulseSocket"
