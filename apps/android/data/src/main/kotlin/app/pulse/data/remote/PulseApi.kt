@@ -8,6 +8,7 @@ import app.pulse.protocol.ConversationsPageDto
 import app.pulse.protocol.MessagesPageDto
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.UserDto
+import app.pulse.protocol.UsernameCheckDto
 import app.pulse.protocol.UsersPageDto
 import app.pulse.protocol.unwrapOrRoot
 import io.ktor.client.HttpClient
@@ -33,7 +34,7 @@ class PulseApi(private val http: HttpClient) {
         val res = http.get(PulseEndpoints.http(path))
         val text = res.bodyAsText()
         if (res.status.isSuccess()) PulseResult.Success(parse(text))
-        else PulseResult.fromHttp(res.status.value, text.take(300))
+        else failureOf(res.status.value, text)
     } catch (e: kotlinx.serialization.SerializationException) {
         PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
     } catch (e: Exception) {
@@ -51,13 +52,42 @@ class PulseApi(private val http: HttpClient) {
                 @Suppress("UNCHECKED_CAST")
                 PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
             } else {
-                PulseResult.fromHttp(res.status.value, text.take(300))
+                failureOf(res.status.value, text)
             }
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
+
+    /**
+     * HTTP failure → Failure with the body's error/code/suggestion intact —
+     * the onboarding username_taken flow needs the server's suggestion to
+     * survive the trip (web parity: createUserRequest in onboarding-screen.tsx).
+     */
+    private fun failureOf(status: Int, body: String): PulseResult.Failure {
+        var message: String? = body.take(300)
+        var code: String? = null
+        var suggestion: String? = null
+        try {
+            val json = PulseJson.parseToJsonElement(body)
+            if (json is JsonObject) {
+                (json["error"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
+                    if (it.isString) message = it.content
+                }
+                (json["code"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
+                    if (it.isString) code = it.content
+                }
+                (json["suggestion"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
+                    if (it.isString) suggestion = it.content
+                }
+            }
+        } catch (_: Exception) {
+            // non-JSON body — keep the raw text as the message
+        }
+        val base = PulseResult.fromHttp(status, message)
+        return base.copy(code = code, suggestion = suggestion, status = status)
+    }
 
     // ── conversations ───────────────────────────────────────────
     suspend fun conversations(userId: String): PulseResult<ConversationsPageDto> =
@@ -111,13 +141,26 @@ class PulseApi(private val http: HttpClient) {
     suspend fun users(): PulseResult<UsersPageDto> =
         get("/api/users") { PulseJson.decodeFromString(UsersPageDto.serializer(), it) }
 
-    /** POST /api/users { name, color } → { user } (201) | 409 username_taken. */
-    suspend fun createUser(name: String, color: String?): PulseResult<UserDto> =
+    /** GET /api/users/check-username?username=x → { available, suggestion } (400 on invalid). */
+    suspend fun checkUsername(username: String): PulseResult<UsernameCheckDto> =
+        get("/api/users/check-username?username=" + java.net.URLEncoder.encode(username, "UTF-8")) {
+            PulseJson.decodeFromString(UsernameCheckDto.serializer(), it)
+        }
+
+    /** GET /api/users?name=X → { user } — case-insensitive lookup (404 when free). */
+    suspend fun lookupUserByName(name: String): PulseResult<UserDto> =
+        get("/api/users?name=" + java.net.URLEncoder.encode(name, "UTF-8")) {
+            PulseJson.decodeFromString(UserDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("user").toString())
+        }
+
+    /** POST /api/users { name, color, username? } → 201 { user } | 409 username_taken | 409 name clash. */
+    suspend fun createUser(name: String, color: String?, username: String? = null): PulseResult<UserDto> =
         post(
             "/api/users",
             buildJsonObject {
                 put("name", name)
                 if (color != null) put("color", color)
+                if (!username.isNullOrBlank()) put("username", username)
             },
         ) { PulseJson.decodeFromString(UserDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("user").toString()) }
 

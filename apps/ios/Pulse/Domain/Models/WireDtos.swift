@@ -84,6 +84,12 @@ public struct WireErrorBody: Codable, Sendable {
     public let suggestion: String?
 }
 
+/// GET /api/users/check-username — live @handle availability (onboarding picker).
+public struct WireUsernameCheck: Codable, Sendable {
+    public let available: Bool
+    public let suggestion: String?
+}
+
 /// Tolerant wrapper: responses arrive as { "conversation": ... } (200 deduped
 /// / 201 created) — and defensively as the bare object on older relays.
 public struct WireConversationEnvelope: Codable, Sendable {

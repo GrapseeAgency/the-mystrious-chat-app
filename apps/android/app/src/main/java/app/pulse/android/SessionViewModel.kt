@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -20,6 +21,15 @@ class SessionViewModel @Inject constructor(
 
     val viewerId: StateFlow<String?> = prefs.viewerId
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /**
+     * True once the persisted prefs have emitted at least once — gates the
+     * onboarding screen so a fresh launch doesn't flash it before DataStore
+     * hands back an existing viewer.
+     */
+    val hydrated: StateFlow<Boolean> = prefs.viewerId
+        .map { true }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val viewerName: StateFlow<String?> = prefs.viewerName
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)

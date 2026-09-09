@@ -7,7 +7,16 @@ package app.pulse.core.result
  */
 sealed interface PulseResult<out T> {
     data class Success<T>(val value: T) : PulseResult<T>
-    data class Failure(val kind: Kind, val message: String? = null) : PulseResult<Nothing> {
+    data class Failure(
+        val kind: Kind,
+        val message: String? = null,
+        /** Machine code from the wire body (e.g. "username_taken") — null when absent. */
+        val code: String? = null,
+        /** Server-suggested alternative (username_taken flow). */
+        val suggestion: String? = null,
+        /** Raw HTTP status (409 name-clash vs username-taken branches need it). */
+        val status: Int? = null,
+    ) : PulseResult<Nothing> {
         enum class Kind { NETWORK, AUTH, FORBIDDEN, RATE_LIMITED, NOT_FOUND, VALIDATION, SERVER, UNKNOWN }
     }
 

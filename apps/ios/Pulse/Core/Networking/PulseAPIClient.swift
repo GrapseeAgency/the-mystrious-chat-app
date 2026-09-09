@@ -15,12 +15,15 @@ public struct PulseAPIClient: Sendable {
         public var code: String?
         /// N3-b — server-suggested alternative (username_taken flow).
         public var suggestion: String?
+        /// Onboarding — raw HTTP status (409 name-clash vs username-taken branches).
+        public var status: Int?
 
-        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil) {
+        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil) {
             self.kind = kind
             self.message = message
             self.code = code
             self.suggestion = suggestion
+            self.status = status
         }
     }
 
@@ -57,6 +60,24 @@ public struct PulseAPIClient: Sendable {
     public func users() async throws -> [WireUser] {
         let page: WireUsersPage = try await get("/api/users")
         return page.users
+    }
+
+    /// Onboarding — live @handle availability (web check-username).
+    public func checkUsername(_ username: String) async throws -> WireUsernameCheck {
+        let query = username.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? username
+        return try await get("/api/users/check-username?username=\(query)")
+    }
+
+    /// Onboarding — case-insensitive name lookup ("that's me — log in").
+    /// 404 means the name is free — surfaced as nil, not an error.
+    public func lookupUserByName(_ name: String) async throws -> WireUser? {
+        let query = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
+        do {
+            let envelope: WireUserEnvelope = try await get("/api/users?name=\(query)")
+            return envelope.user
+        } catch let failure as Failure where failure.kind == .notFound {
+            return nil
+        }
     }
 
     /// N3-b — Hub wallet (real coins / gems / streak numbers).
@@ -182,7 +203,7 @@ public struct PulseAPIClient: Sendable {
                 suggestion = body.suggestion
                 if body.code == "username_taken" { kind = .validation }
             }
-            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion)
+            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode)
         }
         return data
     }

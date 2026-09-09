@@ -37,7 +37,10 @@ class SendMessageUseCaseTest {
         override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {}
         override suspend fun react(messageId: String, emoji: String) = Result.success(Unit)
         override suspend fun users(query: String) = Result.success(emptyList<app.pulse.domain.model.User>())
-        override suspend fun createIdentity(name: String, color: String?) =
+        override suspend fun checkHandle(handle: String) =
+            Result.success(app.pulse.domain.model.HandleCheck(available = true))
+        override suspend fun lookupUserByName(name: String) = Result.success<app.pulse.domain.model.User?>(null)
+        override suspend fun createIdentity(name: String, color: String?, username: String?) =
             Result.success(app.pulse.domain.model.User(id = "a", name = name, handle = "n"))
         override suspend fun createDm(otherUserId: String) =
             Result.success(app.pulse.domain.model.Conversation(id = "c", kind = app.pulse.domain.model.Conversation.Kind.DM, title = "x"))

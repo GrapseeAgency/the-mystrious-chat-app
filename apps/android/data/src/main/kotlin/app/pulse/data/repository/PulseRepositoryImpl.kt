@@ -10,6 +10,7 @@ import app.pulse.data.local.PulseDatabase
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.HandleCheck
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.Reaction
 import app.pulse.domain.model.User
@@ -172,10 +173,24 @@ class PulseRepositoryImpl @Inject constructor(
         is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
     }
 
-    override suspend fun createIdentity(name: String, color: String?): Result<User> =
-        when (val r = api.createUser(name, color)) {
+    override suspend fun createIdentity(name: String, color: String?, username: String?): Result<User> =
+        when (val r = api.createUser(name, color, username)) {
             is PulseResult.Success -> Result.success(r.value.toDomain())
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(OnboardingError.of(r))
+        }
+
+    override suspend fun checkHandle(handle: String): Result<HandleCheck> =
+        when (val r = api.checkUsername(handle)) {
+            is PulseResult.Success -> Result.success(HandleCheck(available = r.value.available, suggestion = r.value.suggestion))
+            is PulseResult.Failure -> Result.failure(OnboardingError.of(r))
+        }
+
+    override suspend fun lookupUserByName(name: String): Result<User?> =
+        when (val r = api.lookupUserByName(name)) {
+            is PulseResult.Success -> Result.success(r.value.toDomain())
+            // 404 = the name is free — the caller decides what that means
+            is PulseResult.Failure if r.kind == PulseResult.Failure.Kind.NOT_FOUND -> Result.success(null)
+            is PulseResult.Failure -> Result.failure(OnboardingError.of(r))
         }
 
     override suspend fun createDm(otherUserId: String): Result<Conversation> = createConversation(listOf(otherUserId), isGroup = false, name = null)
@@ -368,4 +383,24 @@ private fun previewOf(m: ChatMessageDto): String = when (m.kind) {
     "file" -> m.fileName ?: "File"
     "poll" -> "Poll"
     else -> m.content
+}
+
+/**
+ * Identity-flow failure that keeps the wire's error/code/suggestion intact —
+ * the onboarding screen branches on exactly these (web parity with the
+ * createUserRequest 409 handling in onboarding-screen.tsx).
+ */
+class OnboardingError(
+    val status: Int?,
+    val code: String?,
+    val suggestion: String?,
+    message: String?,
+) : Exception(message ?: "Request failed") {
+    val isUsernameTaken: Boolean get() = code == "username_taken"
+    val isNameClash: Boolean get() = status == 409 && !isUsernameTaken
+
+    companion object {
+        fun of(f: PulseResult.Failure): OnboardingError =
+            OnboardingError(f.status, f.code, f.suggestion, f.message)
+    }
 }

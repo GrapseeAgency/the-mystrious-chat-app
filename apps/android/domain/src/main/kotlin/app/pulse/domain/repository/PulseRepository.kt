@@ -1,6 +1,7 @@
 package app.pulse.domain.repository
 
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.HandleCheck
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.User
 import kotlinx.coroutines.flow.Flow
@@ -49,7 +50,11 @@ interface PulseRepository {
     suspend fun refreshMessages(conversationId: String, limit: Int = 200): Result<Unit>
 
     suspend fun users(query: String = ""): Result<List<User>>
-    suspend fun createIdentity(name: String, color: String?): Result<User>
+    suspend fun createIdentity(name: String, color: String?, username: String? = null): Result<User>
+    /** Live @handle availability for the onboarding picker (web check-username). */
+    suspend fun checkHandle(handle: String): Result<HandleCheck>
+    /** Case-insensitive name lookup (onboarding "that's me — log in"); null when free. */
+    suspend fun lookupUserByName(name: String): Result<User?>
     suspend fun createDm(otherUserId: String): Result<Conversation>
     suspend fun createGroup(name: String, memberIds: List<String>): Result<Conversation>
 

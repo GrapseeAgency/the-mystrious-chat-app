@@ -17,6 +17,12 @@ data class User(
     val statusText: String? = null,
 )
 
+/** GET /api/users/check-username outcome — onboarding @handle picker (web parity). */
+data class HandleCheck(
+    val available: Boolean,
+    val suggestion: String? = null,
+)
+
 /** One emoji reaction on a message (toggled per user, wire parity with web). */
 @Serializable
 data class Reaction(

@@ -10,12 +10,11 @@ enum PulseTheme {
 
 /// Root shell — session + prefs live here (single ownership), the ambient
 /// field renders behind the tab chrome, the particle overlay above it, and
-/// the identity picker gates the app until a viewer exists (web onboarding
-/// parity). Color scheme follows prefs (system/light/dark).
+/// the onboarding (name → live @handle picker, web design parity) IS the app
+/// until a viewer exists. Color scheme follows prefs (system/light/dark).
 struct RootView: View {
     @StateObject private var session = PulseSession()
     @StateObject private var prefs = PulsePrefs()
-    @State private var onboardingPresented = false
     @State private var didBootstrap = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -38,18 +37,24 @@ struct RootView: View {
             AmbientFieldView(mode: prefs.ambientMode, dark: isDark)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            TabView {
-                ChatsView(session: session, prefs: prefs)
-                    .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
-                HubView(session: session)
-                    .tabItem { Label("Hub", systemImage: "flame.fill") }
-                ContactsView(session: session)
-                    .tabItem { Label("Contacts", systemImage: "person.2.fill") }
-                ProfileView(session: session, prefs: prefs)
-                    .tabItem { Label("Profile", systemImage: "person.crop.circle.fill") }
+            if prefs.viewer != nil {
+                TabView {
+                    ChatsView(session: session, prefs: prefs)
+                        .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
+                    HubView(session: session)
+                        .tabItem { Label("Hub", systemImage: "flame.fill") }
+                    ContactsView(session: session)
+                        .tabItem { Label("Contacts", systemImage: "person.2.fill") }
+                    ProfileView(session: session, prefs: prefs)
+                        .tabItem { Label("Profile", systemImage: "person.crop.circle.fill") }
+                }
+                .scrollContentBackground(.hidden)
+                .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+            } else {
+                // Gate on identity exactly like the web onboarding — the
+                // two-step screen replaces the shell (not a modal sheet).
+                OnboardingView(session: session, prefs: prefs, onPicked: { didBootstrap = true })
             }
-            .scrollContentBackground(.hidden)
-            .toolbarBackground(.ultraThinMaterial, for: .tabBar)
 
             ParticleOverlayView(bus: session.particles)
         }
@@ -62,21 +67,9 @@ struct RootView: View {
                 didBootstrap = true
                 session.start(as: viewer)
             }
-            // Gate on identity exactly like the web onboarding.
-            if prefs.viewer == nil && !onboardingPresented {
-                onboardingPresented = true
-            }
         }
         .onChange(of: reduceMotion) { _, newValue in
             session.particles.reduceMotionDisabled = newValue
-        }
-        .sheet(isPresented: $onboardingPresented) {
-            IdentityPickerSheet(
-                mode: .onboarding,
-                session: session,
-                prefs: prefs,
-                onPicked: { didBootstrap = true },
-            )
         }
     }
 }

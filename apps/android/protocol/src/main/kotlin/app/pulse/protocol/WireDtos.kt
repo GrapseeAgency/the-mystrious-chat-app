@@ -142,6 +142,13 @@ data class UsersPageDto(
     val users: List<UserDto> = emptyList(),
 )
 
+/** GET /api/users/check-username — live @handle availability (onboarding picker). */
+@Serializable
+data class UsernameCheckDto(
+    val available: Boolean = false,
+    val suggestion: String? = null,
+)
+
 /** One shared decoder for every Pulse client surface. */
 val PulseJson: Json = Json {
     ignoreUnknownKeys = true
