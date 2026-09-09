@@ -39,6 +39,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.pulse.chat
         ENABLE_PREVIEWS: "YES"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_STANDALONE_ICON_NAME: AppIcon
   PulseTests:
     type: bundle.unit-test
     platform: iOS
