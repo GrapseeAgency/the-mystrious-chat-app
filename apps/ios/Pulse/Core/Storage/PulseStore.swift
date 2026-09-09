@@ -4,7 +4,7 @@ import GRDB
 /// GRDB (SQLite) local cache — the iOS mirror of Android's Room schema v1.
 /// Offline-first: reads come from here, refreshes upsert from the wire.
 public final class PulseStore: Sendable {
-    private let dbQueue: any DatabaseQueue
+    private let dbQueue: DatabaseQueue
 
     public init(path: String) throws {
         dbQueue = try DatabaseQueue(path: path)
