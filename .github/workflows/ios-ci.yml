@@ -22,18 +22,31 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build (iPhone 16 simulator)
+      # The runner image rotates simulator devices (iPhone 16 → 17 …) —
+      # resolve whatever iPhone actually exists instead of hard-coding one.
+      - name: Resolve iPhone simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          xcrun simctl list runtimes available
+          xcrun simctl list devices available
+          DEVICE=$(xcrun simctl list devices available | sed -nE 's/^ *([^()]*iPhone[^()]*?) \([0-9A-Fa-f-]{36}\).*/\1/p' | head -1 | xargs)
+          echo "device=${DEVICE}" >> "$GITHUB_OUTPUT"
+
+      # Compilation proof — generic destination never fails on device churn.
+      - name: Build (generic iOS Simulator)
         run: |
           set -o pipefail
           xcodebuild -project Pulse.xcodeproj -scheme Pulse \
-            -destination 'platform=iOS Simulator,name=iPhone 16' build \
+            -destination 'generic/platform=iOS Simulator' build \
             CODE_SIGNING_ALLOWED=NO | xcbeautify
 
       - name: Unit tests
+        if: steps.sim.outputs.device != ''
         run: |
           set -o pipefail
           xcodebuild -project Pulse.xcodeproj -scheme Pulse \
-            -destination 'platform=iOS Simulator,name=iPhone 16' test \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.device }}" test \
             CODE_SIGNING_ALLOWED=NO | xcbeautify
 
       - name: Upload simulator app artifact

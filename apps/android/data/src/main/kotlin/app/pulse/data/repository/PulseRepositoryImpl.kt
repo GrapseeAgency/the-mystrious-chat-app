@@ -188,9 +188,10 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun lookupUserByName(name: String): Result<User?> =
         when (val r = api.lookupUserByName(name)) {
             is PulseResult.Success -> Result.success(r.value.toDomain())
-            // 404 = the name is free — the caller decides what that means
-            is PulseResult.Failure if r.kind == PulseResult.Failure.Kind.NOT_FOUND -> Result.success(null)
-            is PulseResult.Failure -> Result.failure(OnboardingError.of(r))
+            is PulseResult.Failure ->
+                // 404 = the name is free — the caller decides what that means
+                if (r.kind == PulseResult.Failure.Kind.NOT_FOUND) Result.success(null)
+                else Result.failure(OnboardingError.of(r))
         }
 
     override suspend fun createDm(otherUserId: String): Result<Conversation> = createConversation(listOf(otherUserId), isGroup = false, name = null)
