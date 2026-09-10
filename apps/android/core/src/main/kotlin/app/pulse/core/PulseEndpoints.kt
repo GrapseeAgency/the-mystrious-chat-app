@@ -3,10 +3,10 @@ package app.pulse.core
 /**
  * Deployment endpoints — the ONE place a Pulse client learns where the cloud
  * lives. DEFAULT IS EMPTY = honest offline-first: there is NO baked host that
- * pretends to serve REST (a static CDN cannot execute /api/* — pointing REST
- * at raw.githubusercontent made every request a guaranteed 404). The gateway
- * origin is set at runtime: (a) from the user's persisted Server field in
- * Profile → Connection, or (b) release builds may bake one via
+ * pretends to serve REST (a static CDN cannot execute the API routes —
+ * pointing REST at raw.githubusercontent made every request a guaranteed 404).
+ * The gateway origin is set at runtime: (a) from the user's persisted Server
+ * field in Profile → Connection, or (b) release builds may bake one via
  * gradle -PpulseGateway=… (BuildConfig). Never localhost, never 10.0.2.2.
  *
  * The SAME origin drives realtime: the socket client dials <base> with the

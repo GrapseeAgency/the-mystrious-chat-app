@@ -10,19 +10,26 @@ import Foundation
 public enum PulseEndpoints {
     private static let baseKey = "net.serverBase"
 
+    /// Trim trailing slashes without touching the leading part.
+    private static func withoutTrailingSlashes(_ s: String) -> String {
+        var t = Substring(s)
+        while t.hasSuffix("/") { t = t.dropLast() }
+        return String(t)
+    }
+
     /// User-persisted origin ("https://host"), nil = offline-first.
     public static var configuredBase: String? {
         get {
             let raw = UserDefaults.standard.string(forKey: baseKey)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard let raw, !raw.isEmpty else { return nil }
-            return String(raw.dropLastWhile { $0 == "/" })
+            return withoutTrailingSlashes(raw)
         }
         set {
             let clean = newValue?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if let clean, !clean.isEmpty {
-                UserDefaults.standard.set(String(clean.dropLastWhile { $0 == "/" }), forKey: baseKey)
+                UserDefaults.standard.set(withoutTrailingSlashes(clean), forKey: baseKey)
             } else {
                 UserDefaults.standard.removeObject(forKey: baseKey)
             }
