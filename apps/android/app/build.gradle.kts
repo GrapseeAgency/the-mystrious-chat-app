@@ -8,8 +8,8 @@ plugins {
 }
 
 // Release channel plumbing — CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 8
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.1.7-native"
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 9
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.2.0-native"
 
 android {
     namespace = "app.pulse.android"
@@ -89,7 +89,6 @@ dependencies {
     implementation(project(":data"))
     implementation(project(":feature-chat"))
     implementation(project(":feature-calls"))
-    implementation(project(":feature-stories"))
     implementation(project(":feature-hub"))
     implementation(project(":feature-settings"))
 
@@ -109,4 +108,11 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+
+    // OutboxWorker (Wave 0 offline core) — the expedited flusher lives in :app.
+    implementation(libs.androidx.work.runtime)
+
+    androidTestImplementation(libs.androidx.test.core.ktx)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Pulse wire protocol v2",
-  "description": "Canonical JSON shapes captured live from the gateway. Mirrored by Kotlin WireDtos.kt, Swift WireDtos.swift and TS contracts.ts.",
+  "description": "Canonical JSON shapes captured live from the gateway. v2 (Wave 0) adds the COMPLETE socket.io event registry + payload definitions alongside the REST DTOs. Mirrored by Kotlin WireDtos.kt/SocketContracts.kt, Swift WireDtos.swift/PulseSocketClient.swift and TS contracts.ts.",
   "definitions": {
     "WireSender": {
       "type": "object",
@@ -67,6 +67,201 @@
       "properties": {
         "conversations": { "type": "array", "items": { "$ref": "#/definitions/WireConversationSummary" } }
       }
+    },
+
+    "JoinPayload": {
+      "type": "object",
+      "required": ["userId"],
+      "properties": { "userId": { "type": "string", "maxLength": 64 } }
+    },
+    "JoinedAck": {
+      "type": "object",
+      "required": ["onlineUserIds"],
+      "properties": { "onlineUserIds": { "type": "array", "items": { "type": "string" } } }
+    },
+    "PresenceSnapshot": {
+      "type": "object",
+      "required": ["onlineUserIds"],
+      "properties": { "onlineUserIds": { "type": "array", "items": { "type": "string" } } }
+    },
+    "TypingEvent": {
+      "type": "object",
+      "required": ["conversationId", "userId", "userName", "isTyping"],
+      "properties": {
+        "conversationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string", "maxLength": 32 },
+        "isTyping": { "type": "boolean" }
+      }
+    },
+    "ReadEvent": {
+      "type": "object",
+      "required": ["conversationId", "userId"],
+      "properties": {
+        "conversationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "lastReadAt": { "type": ["string", "null"] }
+      }
+    },
+    "SocketMessageEvent": {
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "type": "string", "enum": ["message:new", "message:deleted", "message:react", "message:edited", "message:pinned", "message:viewed", "poll:voted", "link:preview", "translation:added"] },
+        "message": { "$ref": "#/definitions/WireChatMessage" },
+        "recipientIds": { "type": "array", "items": { "type": "string" } },
+        "conversationId": { "type": "string" }
+      }
+    },
+    "ConversationUpdatedEvent": {
+      "type": "object",
+      "required": ["conversationId"],
+      "properties": {
+        "conversationId": { "type": "string" },
+        "conversation": { "$ref": "#/definitions/WireConversationSummary" }
+      }
+    },
+    "VoicePeer": {
+      "type": "object",
+      "required": ["userId", "name"],
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string", "maxLength": 64 },
+        "username": { "type": ["string", "null"] },
+        "color": { "type": ["string", "null"] },
+        "joinedAt": { "type": ["integer", "null"] }
+      }
+    },
+    "VoiceRosterEvent": {
+      "type": "object",
+      "required": ["conversationId", "roster"],
+      "properties": {
+        "conversationId": { "type": "string" },
+        "roster": { "type": "array", "items": { "$ref": "#/definitions/VoicePeer" } }
+      }
+    },
+    "VoicePttEvent": {
+      "type": "object",
+      "required": ["conversationId", "userId", "active"],
+      "properties": {
+        "conversationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "active": { "type": "boolean" }
+      }
+    },
+    "VoiceChunkEvent": {
+      "type": "object",
+      "required": ["conversationId", "userId", "seq", "data"],
+      "properties": {
+        "conversationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "seq": { "type": "integer" },
+        "data": { "type": "string", "description": "base64 16kHz PCM frame" }
+      }
+    },
+    "VoiceTranscriptEvent": {
+      "type": "object",
+      "required": ["conversationId", "userId", "text"],
+      "properties": {
+        "conversationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "text": { "type": "string" }
+      }
+    },
+    "StageStateEvent": {
+      "type": "object",
+      "required": ["conversationId", "state"],
+      "properties": {
+        "conversationId": { "type": "string" },
+        "state": { "type": "object" }
+      }
+    },
+    "StageEndedEvent": {
+      "type": "object",
+      "required": ["conversationId"],
+      "properties": { "conversationId": { "type": "string" } }
+    },
+    "SpaceStateEvent": {
+      "type": "object",
+      "required": ["conversationId", "state"],
+      "properties": {
+        "conversationId": { "type": "string" },
+        "state": { "type": "object" }
+      }
+    },
+    "CallSignalBase": {
+      "type": "object",
+      "required": ["callId", "conversationId", "from", "to", "kind"],
+      "properties": {
+        "callId": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "kind": { "type": "string", "enum": ["voice", "video"] }
+      }
+    },
+    "CallOfferPayload": {
+      "allOf": [
+        { "$ref": "#/definitions/CallSignalBase" },
+        {
+          "type": "object",
+          "required": ["sdp", "callerName", "callerColor"],
+          "properties": {
+            "sdp": { "type": "string" },
+            "callerName": { "type": "string" },
+            "callerColor": { "type": "string" },
+            "callerAvatar": { "type": ["string", "null"] }
+          }
+        }
+      ]
+    },
+    "CallAnswerPayload": {
+      "allOf": [
+        { "$ref": "#/definitions/CallSignalBase" },
+        { "type": "object", "required": ["sdp"], "properties": { "sdp": { "type": "string" } } }
+      ]
+    },
+    "CallIcePayload": {
+      "allOf": [
+        { "$ref": "#/definitions/CallSignalBase" },
+        {
+          "type": "object",
+          "required": ["candidate"],
+          "properties": {
+            "candidate": {
+              "type": "object",
+              "properties": {
+                "candidate": { "type": ["string", "null"] },
+                "sdpMid": { "type": ["string", "null"] },
+                "sdpMLineIndex": { "type": ["integer", "null"] }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "CallRejectPayload": {
+      "allOf": [
+        { "$ref": "#/definitions/CallSignalBase" },
+        { "type": "object", "properties": { "reason": { "type": "string", "enum": ["busy", "declined"] } } }
+      ]
+    },
+    "CallCancelPayload": {
+      "allOf": [
+        { "$ref": "#/definitions/CallSignalBase" },
+        { "type": "object", "required": ["reason"], "properties": { "reason": { "type": "string", "enum": ["timeout", "cancel", "busy", "offline"] } } }
+      ]
+    },
+    "CallHangupPayload": {
+      "allOf": [
+        { "$ref": "#/definitions/CallSignalBase" },
+        { "type": "object", "properties": { "durationMs": { "type": ["integer", "null"] } } }
+      ]
     }
+  },
+  "socket": {
+    "clientToServer": ["join", "typing", "voice:join", "voice:leave", "voice:ptt", "voice:chunk", "voice:transcript", "stage:join", "stage:hand", "stage:approve", "stage:mute", "stage:end", "stage:leave", "space:join", "space:move", "space:leave", "call:offer", "call:answer", "call:ice", "call:reject", "call:cancel", "call:hangup"],
+    "serverToClient": ["joined", "presence:snapshot", "typing", "message:new", "message:deleted", "message:read", "message:react", "message:edited", "message:pinned", "message:viewed", "poll:voted", "link:preview", "translation:added", "conversation:updated", "voice:roster", "voice:ptt", "voice:chunk", "voice:transcript", "stage:state", "stage:ended", "space:state", "call:offer", "call:answer", "call:ice", "call:reject", "call:cancel", "call:hangup"],
+    "notifyWhitelist": ["message:new", "message:deleted", "message:read", "message:react", "message:edited", "message:pinned", "message:viewed", "poll:voted", "link:preview", "translation:added", "conversation:updated"]
   }
 }

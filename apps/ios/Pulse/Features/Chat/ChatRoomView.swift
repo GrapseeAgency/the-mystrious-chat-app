@@ -251,6 +251,8 @@ struct BubbleView: View {
 
     private var isDeleted: Bool { message.deletedAt != nil }
     private var isSystem: Bool { message.kind == "system" }
+    /// Wave 0 outbox — optimistic queued bubble (id "local_<clientId>").
+    private var isPending: Bool { message.id.hasPrefix("local_") }
 
     private var bubbleShape: UnevenRoundedRectangle {
         mine
@@ -308,6 +310,12 @@ struct BubbleView: View {
                 Text(PulseFormat.clockTime(message.createdAt))
                     .font(.caption2)
                     .foregroundStyle(mine ? Color.white.opacity(0.8) : .secondary)
+                if isPending {
+                    // Queued offline — still in the outbox, clock = not sent yet.
+                    Image(systemName: "clock")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(mine ? Color.white.opacity(0.85) : PulseTheme.amber)
+                }
                 if message.pinnedAt != nil {
                     Image(systemName: "pin.fill")
                         .font(.caption2)
@@ -448,6 +456,7 @@ final class RoomViewModel: ObservableObject {
     private weak var session: PulseSession?
     private var cancellables: Set<AnyCancellable> = []
     private var typingStopTask: Task<Void, Never>?
+    private var draftSaveTask: Task<Void, Never>?
 
     var canSend: Bool { !draft.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -455,7 +464,24 @@ final class RoomViewModel: ObservableObject {
         self.conversationId = conversation.id
         self.session = session
         observe(session: session)
+        seedLocalState(conversation: conversation, session: session)
         Task { await refresh(session: session) }
+    }
+
+    /// Wave 0 offline rehydration — runs BEFORE the network fetch:
+    ///   • messages rehydrate from the GRDB cache (relaunch works offline)
+    ///   • the composer seeds from the local draft, falling back to myDraft
+    private func seedLocalState(conversation: WireConversationSummary, session: PulseSession) {
+        if let store = session.store {
+            let cached = (try? store.messages(conversationId: conversationId)) ?? []
+            if !cached.isEmpty {
+                messages = cached
+                phase = .loaded
+            }
+            draft = store.draft(conversationId: conversationId) ?? (conversation.myDraft ?? "")
+        } else {
+            draft = conversation.myDraft ?? ""
+        }
     }
 
     func observe(session: PulseSession) {
@@ -470,18 +496,22 @@ final class RoomViewModel: ObservableObject {
                     guard convId == self.conversationId,
                           let message = PulseSession.decodeMessage(from: raw) else { return }
                     upsert(message)
+                    try? session.store?.upsert(messages: [message])
                     if message.senderId != session.viewer?.id {
                         Task { try? await session.api.markRead(conversationId: self.conversationId) }
                     }
                 case .messageDeleted(let convId, let raw):
                     guard convId == self.conversationId else { return }
                     if let message = PulseSession.decodeMessage(from: raw) {
-                        upsert(message.deletedCopy())
+                        let tombstone = message.deletedCopy()
+                        upsert(tombstone)
+                        try? session.store?.upsert(messages: [tombstone])
                     }
                 case .messageReact(let convId, let raw):
                     guard convId == self.conversationId,
                           let message = PulseSession.decodeMessage(from: raw) else { return }
                     upsert(message)
+                    try? session.store?.upsert(messages: [message])
                 case .messageRead(let convId, let userId):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
                     partnerLastReadAt = Date()
@@ -495,6 +525,15 @@ final class RoomViewModel: ObservableObject {
                 default:
                     break
                 }
+            }
+            .store(in: &cancellables)
+
+        // Wave 0 — the outbox engine swaps the queued placeholder for the real
+        // row (web sendMessage.onSuccess dedupe parity), drops it on 4xx.
+        session.outboxEvents
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                self?.handleOutboxEvent(event)
             }
             .store(in: &cancellables)
 
@@ -512,6 +551,15 @@ final class RoomViewModel: ObservableObject {
     }
 
     func refresh(session: PulseSession) async {
+        // Cache seed first — the room renders instantly (offline too), then
+        // the network refresh replaces it.
+        if messages.isEmpty, let store = session.store {
+            let cached = (try? store.messages(conversationId: conversationId)) ?? []
+            if !cached.isEmpty {
+                messages = cached
+                phase = .loaded
+            }
+        }
         phase = messages.isEmpty ? .loading : phase
         do {
             let page = try await session.api.messages(conversationId: conversationId)
@@ -541,6 +589,9 @@ final class RoomViewModel: ObservableObject {
     }
 
     func draftChanged(session: PulseSession) {
+        // Wave 0 — 600ms debounced draft persistence (web pulse-drafts parity).
+        scheduleDraftSave(session: session)
+
         let text = draft
         if !text.isEmpty && typingStopTask == nil {
             session.emitTyping(conversationId: conversationId, recipients: [], isTyping: true)
@@ -556,9 +607,37 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
+    private func scheduleDraftSave(session: PulseSession) {
+        let text = draft
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.persistDraft(text, session: session)
+        }
+    }
+
+    private func persistDraft(_ text: String, session: PulseSession) {
+        guard let store = session.store else { return }
+        if text.trimmingCharacters(in: .whitespaces).isEmpty {
+            try? store.deleteDraft(conversationId: conversationId)
+        } else {
+            try? store.saveDraft(conversationId: conversationId, text: text)
+        }
+    }
+
+    /// Called on the successful-send path — the composer is clean, so the
+    /// local draft must go (server myDraft takes over on the next read).
+    func clearDraft(session: PulseSession) {
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        try? session.store?.deleteDraft(conversationId: conversationId)
+    }
+
     func send(session: PulseSession) {
         let body = draft.trimmingCharacters(in: .whitespaces)
         let replyId = replyTarget?.id
+        let replySource = replyTarget
         guard !body.isEmpty else { return }
         draft = ""
         replyTarget = nil
@@ -569,11 +648,97 @@ final class RoomViewModel: ObservableObject {
             do {
                 let message = try await session.api.sendMessage(conversationId: conversationId, content: body, replyToId: replyId)
                 upsert(message)
+                try? session.store?.upsert(messages: [message])
+                clearDraft(session: session)
                 session.particles.fire(kind: .burst, count: 22)
                 session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
             } catch {
-                errorText = Self.describe(error)
+                await handleSendFailure(
+                    error,
+                    body: body,
+                    replyId: replyId,
+                    replySource: replySource,
+                    session: session,
+                )
             }
+        }
+    }
+
+    /// Wave 0 outbox send-path: 4xx = honest in-room error (retrying could
+    /// never succeed); network-class failure = optimistic queued bubble +
+    /// outbox entry, flushed by the engine on the next trigger.
+    private func handleSendFailure(_ error: Error, body: String, replyId: String?, replySource: WireChatMessage?, session: PulseSession) async {
+        if PulseOutboxEngine.isDroppable(error) {
+            errorText = Self.describe(error)
+            return
+        }
+        enqueueTempMessage(body: body, replyId: replyId, replySource: replySource, session: session)
+        session.toasts.show("Message queued — sends when you're back online")
+    }
+
+    private func enqueueTempMessage(body: String, replyId: String?, replySource: WireChatMessage?, session: PulseSession) {
+        guard let viewer = session.viewer else {
+            errorText = "The gateway is unreachable."
+            return
+        }
+        let clientId = UUID().uuidString
+        let sender = WireSender(
+            id: viewer.id,
+            name: viewer.name,
+            username: viewer.username,
+            color: viewer.color,
+            avatar: viewer.avatar,
+        )
+        let quoted = replySource.map { source in
+            WireReplySnippet(
+                id: source.id,
+                content: source.content,
+                senderName: source.sender?.name ?? "",
+                deleted: source.deletedAt != nil,
+            )
+        }
+        let temp = WireChatMessage(
+            id: PulseOutboxEngine.tempMessageId(clientId: clientId),
+            conversationId: conversationId,
+            senderId: viewer.id,
+            content: body,
+            kind: "text",
+            createdAt: PulseOutboxClock.now(),
+            editedAt: nil,
+            deletedAt: nil,
+            sender: sender,
+            reactions: nil,
+            replyTo: quoted,
+            parentId: replyId,
+            imagePath: nil,
+            audioPath: nil,
+            durationMs: nil,
+            filePath: nil,
+            fileName: nil,
+            pinnedAt: nil,
+            viewOnce: nil,
+            anon: nil,
+            anonAlias: nil,
+        )
+        upsert(temp)
+        try? session.store?.upsert(messages: [temp])
+        session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
+    }
+
+    private func handleOutboxEvent(_ event: PulseOutboxEvent) {
+        switch event {
+        case .delivered(let message, let conversationId):
+            guard conversationId == self.conversationId else { return }
+            upsert(message)
+            // Generic temp dedupe (web parity): same content + sender.
+            messages.removeAll {
+                $0.id.hasPrefix("local_")
+                    && $0.content == message.content
+                    && $0.senderId == message.senderId
+            }
+        case .dropped(let clientId, let conversationId):
+            guard conversationId == self.conversationId else { return }
+            messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
         }
     }
 

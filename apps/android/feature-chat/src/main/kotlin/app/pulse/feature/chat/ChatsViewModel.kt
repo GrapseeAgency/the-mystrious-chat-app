@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -352,6 +353,10 @@ class ChatRoomViewModel @Inject constructor(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    /** Composer restore seed — local draft table first, server myDraft fallback. */
+    private val _initialDraft = MutableStateFlow<String?>(null)
+    val initialDraft: StateFlow<String?> = _initialDraft.asStateFlow()
+
     val messages: StateFlow<List<Message>> = repo.observeMessages(conversationId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -360,6 +365,21 @@ class ChatRoomViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     init {
+        viewModelScope.launch {
+            // Wave 0 draft restore: the local draft table wins; when it is
+            // empty fall back to the server-mirrored myDraft on the summary.
+            val local = runCatching { repo.observeDraft(conversationId).firstOrNull() }.getOrNull()
+            if (!local.isNullOrBlank()) {
+                _initialDraft.value = local
+            } else {
+                val server = runCatching {
+                    repo.observeConversations()
+                        .map { list -> list.firstOrNull { it.id == conversationId }?.myDraft }
+                        .firstOrNull { !it.isNullOrBlank() }
+                }.getOrNull()
+                if (!server.isNullOrBlank()) _initialDraft.value = server
+            }
+        }
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true)
             repo.refreshMessages(conversationId).fold(
@@ -396,6 +416,7 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     private var typingJob: Job? = null
+    private var draftSaveJob: Job? = null
 
     fun onDraftChanged(text: String) {
         // Debounced typing signal — emit start now, stop after 1.2s idle (web parity).
@@ -408,6 +429,13 @@ class ChatRoomViewModel @Inject constructor(
             delay(1_200)
             repo.setTyping(conversationId, userName, false)
             typingJob = null
+        }
+        // Wave 0 draft persistence — 600ms debounce (web pulse-drafts parity).
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch {
+            delay(600)
+            runCatching { repo.saveDraft(conversationId, text) }
+                .onFailure { _state.value = _state.value.copy(error = it.message) }
         }
     }
 
@@ -426,9 +454,17 @@ class ChatRoomViewModel @Inject constructor(
         _state.value = _state.value.copy(replyTo = null)
         viewModelScope.launch {
             sendUseCase(conversationId, body, replyId)
-                .onSuccess {
-                    PulseFx.fire(PulseFx.BurstKind.BURST, count = 26)
-                    repo.setTyping(conversationId, viewerName(), false)
+                .onSuccess { message ->
+                    if (message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) {
+                        // Network-class failure → queued in the outbox. The
+                        // composer text has left for the queue — clear the
+                        // draft and let the pending bubble + banner tell it.
+                        runCatching { repo.clearDraft(conversationId) }
+                    } else {
+                        PulseFx.fire(PulseFx.BurstKind.BURST, count = 26)
+                        repo.setTyping(conversationId, viewerName(), false)
+                        runCatching { repo.clearDraft(conversationId) }
+                    }
                 }
                 .onFailure { failure ->
                     _state.value = _state.value.copy(error = failure.message)

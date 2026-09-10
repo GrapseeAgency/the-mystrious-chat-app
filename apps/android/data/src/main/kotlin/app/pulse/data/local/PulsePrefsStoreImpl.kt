@@ -12,11 +12,14 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.pulsePrefs by preferencesDataStore(name = "pulse.prefs")
+/** Shared DataStore instance — prefs + the SecureSessionStore vault live in one file. */
+internal val Context.pulsePrefs by preferencesDataStore(name = "pulse.prefs")
 
 /**
  * DataStore-backed prefs — the single source of device-side settings
  * (viewer identity, ambient FX mode, dark override, reduced motion).
+ * Note: the DataStore instance is shared with [SecureSessionStore] (the
+ * encrypted "session.vault" key lives in this same file).
  */
 @Singleton
 class PulsePrefsStoreImpl @Inject constructor(

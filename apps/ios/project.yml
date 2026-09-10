@@ -35,6 +35,8 @@ targets:
       UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
       NSMicrophoneUsageDescription: Pulse uses the microphone for voice notes, voice rooms and calls.
       NSCameraUsageDescription: Pulse uses the camera for photos, video notes and calls.
+      # Wave 0 — outbox background refresh (matches PulseApp.outboxTaskID).
+      BGTaskSchedulerPermittedIdentifiers: ["app.pulse.chat.outbox"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.pulse.chat
@@ -44,7 +46,12 @@ targets:
   PulseTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [PulseTests]
+    sources:
+      - path: PulseTests
+        # The socket fixture runs from the SOURCE tree (Process + #filePath
+        # lookup) — node_modules must never leak into the generated project.
+        excludes:
+          - "Fixtures/node_modules"
     dependencies:
       - target: Pulse
 schemes:

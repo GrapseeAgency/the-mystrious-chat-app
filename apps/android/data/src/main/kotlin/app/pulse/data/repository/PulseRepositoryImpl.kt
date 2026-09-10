@@ -6,21 +6,30 @@ import app.pulse.core.result.PulseResult
 import app.pulse.core.time.PulseTime
 import app.pulse.data.local.ConversationDao
 import app.pulse.data.local.ConversationEntity
+import app.pulse.data.local.DraftDao
+import app.pulse.data.local.DraftEntity
 import app.pulse.data.local.MessageDao
 import app.pulse.data.local.MessageEntity
+import app.pulse.data.local.OutboxDao
+import app.pulse.data.local.OutboxEntity
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.FlushReport
 import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.HandleCheck
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.MentionItem
+import app.pulse.domain.model.OutboxDeliveryException
+import app.pulse.domain.model.OutboxEntry
+import app.pulse.domain.model.OutboxFailureClass
 import app.pulse.domain.model.Reaction
 import app.pulse.domain.model.StoryCell
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.domain.usecase.FlushOutboxUseCase
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.PulseJson
@@ -31,6 +40,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -43,6 +53,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
@@ -60,6 +72,8 @@ class PulseRepositoryImpl @Inject constructor(
     private val api: PulseApi,
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
+    private val outboxDao: OutboxDao,
+    private val draftDao: DraftDao,
     private val socket: PulseSocketClient,
     @ApplicationContext private val context: Context,
 ) : PulseRepository {
@@ -78,12 +92,21 @@ class PulseRepositoryImpl @Inject constructor(
 
     @Volatile private var pumpStarted = false
 
+    private val flushMutex = Mutex()
+    private var selfHealJob: Job? = null
+
     override fun start(userId: String) {
         if (viewerId == userId && socket.isJoined) return
         viewerId = userId
         startPump()
         socket.connect(userId)
         scope.launch { refreshConversations() }
+        // Flush trigger: app start with a pending queue (web pwa-provider parity).
+        scope.launch {
+            runCatching {
+                if (outboxDao.count() > 0) flushOutbox()
+            }.onFailure { Log.w(TAG, "start flush failed", it) }
+        }
     }
 
     /** One collector, started once per process: signals → Room + events. */
@@ -93,40 +116,54 @@ class PulseRepositoryImpl @Inject constructor(
         scope.launch {
             socket.signals.collect { signal ->
                 when (signal) {
+                    is PulseSocketClient.Signal.Connection -> if (signal.connected) {
+                        // Flush trigger: the relay came back — drain the outbox first
+                        // so queued sends overtake anything new.
+                        scope.launch {
+                            runCatching { flushOutbox() }
+                                .onFailure { Log.w(TAG, "reconnect flush failed", it) }
+                        }
+                    }
                     is PulseSocketClient.Signal.Joined -> onlineIds.value = signal.onlineUserIds.toSet()
                     is PulseSocketClient.Signal.PresenceSnapshot -> onlineIds.value = signal.onlineUserIds.toSet()
-                    is PulseSocketClient.Signal.MessageNew -> onMessageNew(signal)
-                    is PulseSocketClient.Signal.MessageDeleted -> {
-                        // Tombstone in cache + event (message row content untouched in Room;
-                        // screens treat the event as authoritative for live removal).
-                        eventsBus.tryEmit(
-                            PulseEvent.MessageDeleted(signal.conversationId, signal.messageId),
-                        )
-                        scheduleConversationsRefresh()
-                    }
-                    is PulseSocketClient.Signal.MessageRead -> eventsBus.tryEmit(
-                        PulseEvent.MessageRead(signal.conversationId, signal.userId, signal.at),
+                    is PulseSocketClient.Signal.MessageEnvelope -> onMessageEnvelope(signal)
+                    is PulseSocketClient.Signal.Read -> eventsBus.tryEmit(
+                        PulseEvent.MessageRead(signal.conversationId, signal.userId, signal.lastReadAt),
                     )
                     is PulseSocketClient.Signal.Typing -> eventsBus.tryEmit(
                         PulseEvent.Typing(signal.conversationId, signal.userId, signal.userName, signal.isTyping),
                     )
+                    is PulseSocketClient.Signal.ConversationUpdated -> scheduleConversationsRefresh()
+                    is PulseSocketClient.Signal.VoiceRoster -> Unit
+                    is PulseSocketClient.Signal.VoicePtt -> Unit
+                    is PulseSocketClient.Signal.VoiceChunk -> Unit
                     is PulseSocketClient.Signal.VoiceTranscript -> Unit
+                    is PulseSocketClient.Signal.StageState -> Unit
+                    is PulseSocketClient.Signal.StageEnded -> Unit
+                    is PulseSocketClient.Signal.SpaceState -> Unit
                     is PulseSocketClient.Signal.CallSignal -> Unit
                 }
             }
         }
     }
 
-    private suspend fun onMessageNew(signal: PulseSocketClient.Signal.MessageNew) {
-        val dto = runCatching {
-            PulseJson.decodeFromString(ChatMessageDto.serializer(), signal.raw.toString())
-        }.getOrNull() ?: return
+    /**
+     * Every message:* envelope carries the authoritative row — upsert it and
+     * fan the event out. message:deleted keeps its tombstone semantics.
+     */
+    private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
+        val dto = signal.dto ?: return
         val message = dto.toDomain()
-        messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-        eventsBus.tryEmit(PulseEvent.MessageReceived(signal.conversationId, message))
+        if (signal.event == app.pulse.protocol.SocketEvents.MESSAGE_DELETED) {
+            eventsBus.tryEmit(
+                PulseEvent.MessageDeleted(signal.conversationId, message.id),
+            )
+        } else {
+            messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+            eventsBus.tryEmit(PulseEvent.MessageReceived(signal.conversationId, message))
+        }
         scheduleConversationsRefresh()
     }
-
 
     private var refreshScheduled = false
 
@@ -293,8 +330,137 @@ class PulseRepositoryImpl @Inject constructor(
                 scheduleConversationsRefresh()
                 Result.success(message)
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure ->
+                // Network-class failure → the optimistic offline core: temp
+                // `local_<clientId>` bubble + outbox row; the flush engine
+                // delivers it on the next trigger. 4xx verdicts surface as-is.
+                if (r.kind == PulseResult.Failure.Kind.NETWORK && !viewerId.isNullOrBlank()) {
+                    val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
+                    val nowIso = java.time.OffsetDateTime.now()
+                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                    val temp = Message(
+                        id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
+                        conversationId = conversationId,
+                        authorId = viewerId ?: "",
+                        authorName = viewerId ?: "",
+                        kind = Message.Kind.TEXT,
+                        body = body,
+                        createdAt = nowIso,
+                    )
+                    messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+                    outboxDao.insert(
+                        OutboxEntity(
+                            conversationId = conversationId,
+                            clientId = clientId,
+                            content = body,
+                            createdAt = nowIso,
+                        ),
+                    )
+                    outboxDao.trimBeyond(MAX_OUTBOX)
+                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
+                    Result.success(temp)
+                } else {
+                    Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+                }
         }
+
+    // ── offline outbox engine (Wave 0 — web pulse-outbox parity) ───
+
+    override suspend fun enqueueOutbox(entry: OutboxEntry): Result<Unit> = try {
+        outboxDao.insert(OutboxEntity.from(entry))
+        outboxDao.trimBeyond(MAX_OUTBOX)
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override fun observeOutbox(): Flow<List<OutboxEntry>> =
+        outboxDao.observeAll().map { rows -> rows.map { it.toEntry() } }
+
+    override suspend fun outboxPending(): List<OutboxEntry> = outboxDao.all().map { it.toEntry() }
+
+    /** ONE POST attempt — classification rides on OutboxDeliveryException. */
+    override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> =
+        when (val r = api.sendMessage(entry.conversationId, viewerId ?: "", entry.content)) {
+            is PulseResult.Success -> Result.success(r.value.toDomain())
+            is PulseResult.Failure -> {
+                val classification = when (r.kind) {
+                    PulseResult.Failure.Kind.VALIDATION,
+                    PulseResult.Failure.Kind.FORBIDDEN,
+                    PulseResult.Failure.Kind.NOT_FOUND,
+                    PulseResult.Failure.Kind.AUTH,
+                    -> OutboxFailureClass.DROP
+                    else -> OutboxFailureClass.RETRY
+                }
+                Result.failure(
+                    OutboxDeliveryException(classification, r.message ?: r.kind.name),
+                )
+            }
+        }
+
+    override suspend fun resolveOutboxDelivery(entry: OutboxEntry, real: Message) {
+        messageDao.upsertAll(listOf(MessageEntity.from(real, reactionsJsonOf(real))))
+        messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+        outboxDao.deleteByClientId(entry.clientId)
+        scheduleConversationsRefresh()
+        eventsBus.tryEmit(PulseEvent.OutboxFlushed(entry.clientId, real))
+    }
+
+    override suspend fun dropOutboxEntry(clientId: String, reason: String) {
+        outboxDao.deleteByClientId(clientId)
+        messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+        eventsBus.tryEmit(PulseEvent.OutboxDropped(clientId, reason))
+    }
+
+    override suspend fun bumpOutboxAttempts(clientId: String) {
+        outboxDao.incrementAttempts(clientId)
+    }
+
+    /**
+     * Every trigger funnels here (start / reconnect / foreground / worker /
+     * self-heal). The drain policy itself is FlushOutboxUseCase — single
+     * source of truth, unit-tested at the domain layer.
+     */
+    override suspend fun flushOutbox(): FlushReport = flushMutex.withLock {
+        val report = FlushOutboxUseCase(this).invoke()
+        if (report.pending > 0) scheduleSelfHeal()
+        report
+    }
+
+    /** 20s self-heal — a pending queue never waits longer than one beat. */
+    private fun scheduleSelfHeal() {
+        if (selfHealJob?.isActive == true) return
+        selfHealJob = scope.launch {
+            delay(SELF_HEAL_MS)
+            runCatching { flushOutbox() }
+                .onFailure { Log.w(TAG, "self-heal flush failed", it) }
+        }
+    }
+
+    // ── drafts (Wave 0 — web pulse-drafts parity) ──────────────────
+
+    override suspend fun saveDraft(conversationId: String, text: String) {
+        val trimmed = text.take(MAX_DRAFT)
+        if (trimmed.isBlank()) {
+            draftDao.delete(conversationId)
+            return
+        }
+        draftDao.upsert(
+            DraftEntity(
+                conversationId = conversationId,
+                text = trimmed,
+                updatedAt = java.time.OffsetDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+            ),
+        )
+    }
+
+    override suspend fun clearDraft(conversationId: String) {
+        draftDao.delete(conversationId)
+    }
+
+    override fun observeDraft(conversationId: String): Flow<String?> =
+        draftDao.observe(conversationId).map { it?.text }
 
     override suspend fun markRead(conversationId: String): Result<Unit> {
         // Optimistic: zero the badge locally, revert if the server refuses.
@@ -551,6 +717,15 @@ class PulseRepositoryImpl @Inject constructor(
     companion object {
         private const val TAG = "PulseRepo"
         private const val OFFLINE_BACKOFF_MS = 60_000L
+
+        /** Web MAX_QUEUE parity — the outbox never holds more rows. */
+        const val MAX_OUTBOX = 50
+
+        /** Web MAX_DRAFT parity. */
+        const val MAX_DRAFT = 2000
+
+        /** Self-heal beat while a flush is pending (plan §6). */
+        const val SELF_HEAL_MS = 20_000L
 
         /** Handles nobody may claim — offline safety net mirroring registry/handles.json. */
         private val BUILT_IN_RESERVED = setOf(

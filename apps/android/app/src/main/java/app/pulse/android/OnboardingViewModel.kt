@@ -3,10 +3,13 @@ package app.pulse.android
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pulse.core.fx.PulseFx
+import app.pulse.data.local.SessionVault
+import app.pulse.data.local.SecureSessionStore
 import app.pulse.data.repository.OnboardingError
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.protocol.PulseJson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -76,6 +79,7 @@ data class OnboardingUiState(
 class OnboardingViewModel @Inject constructor(
     private val repo: PulseRepository,
     private val prefs: PulsePrefsStore,
+    private val secureSessionStore: SecureSessionStore,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(OnboardingUiState())
@@ -255,6 +259,24 @@ class OnboardingViewModel @Inject constructor(
 
     private suspend fun complete(user: User) {
         prefs.setViewer(user.id, user.name, user.color)
+        // The encrypted vault is the durable identity — the plaintext prefs
+        // keys remain only as the read-only UI mirror (Wave 0 secure session).
+        runCatching {
+            val current = secureSessionStore.load()
+                ?.let { runCatching { PulseJson.decodeFromString(SessionVault.serializer(), it) }.getOrNull() }
+                ?: SessionVault()
+            secureSessionStore.save(
+                PulseJson.encodeToString(
+                    SessionVault.serializer(),
+                    current.copy(
+                        viewerId = user.id,
+                        viewerName = user.name,
+                        viewerUsername = user.handle.takeIf { it.isNotBlank() },
+                        viewerColor = user.color,
+                    ),
+                ),
+            )
+        }
         repo.start(user.id)
         PulseFx.fire(PulseFx.BurstKind.CONFETTI, count = 120)
         _state.value = _state.value.copy(pending = false, signingIn = false)

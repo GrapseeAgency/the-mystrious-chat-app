@@ -2,18 +2,19 @@ package app.pulse.android
 
 import android.app.Application
 import app.pulse.core.PulseEndpoints
+import app.pulse.data.remote.ManifestEndpoints
 import app.pulse.ui.update.LiveUpdater
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
+import javax.inject.Inject
 
 @HiltAndroidApp
 class PulseApplication : Application() {
+
+    @Inject lateinit var manifestEndpoints: ManifestEndpoints
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -25,34 +26,23 @@ class PulseApplication : Application() {
         PulseEndpoints.gatewayHttpUrl = BuildConfig.PULSE_GATEWAY
         PulseEndpoints.socketUrl = BuildConfig.PULSE_SOCKET
 
-        // LiveUpdate quiet check — throttled inside, silent on failure, so the
-        // update surfaces are ready before the first frame is drawn.
-        appScope.launch { LiveUpdater.syncFrom(this@PulseApplication) }
-
-        // Manifest-driven gateway resolution (N5-c): the distribution manifest
-        // may carry a live "gateway" URL (e.g. an interim tunnel or the future
-        // VPS). Fetch it quietly in the background; on ANY failure keep the
-        // BuildConfig defaults. Socket routing goes through the same base URL
-        // via the XTransformPort relay query (see PulseSocketClient).
+        // Wave 0 deployment hook, ordered so overrides ALWAYS beat network:
+        //   1. re-apply the persisted secure-vault overrides (instant, no IO);
+        //   2. LiveUpdate quiet check — throttled inside, silent on failure;
+        //   3. fetch update-manifest.json (3s timeout, silent) and adopt its
+        //      `gateway` / `socket` fields when present — today's manifest
+        //      carries neither, so the client stays offline-first on the baked
+        //      CDN until a real host is deployed; the hook works the day they do.
+        val persisted = appScope.launch {
+            runCatching { manifestEndpoints.applyPersisted() }
+        }
         appScope.launch {
-            runCatching {
-                val conn = URL(
-                    "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/update-manifest.json",
-                ).openConnection() as HttpURLConnection
-                conn.connectTimeout = 10_000
-                conn.readTimeout = 10_000
-                conn.instanceFollowRedirects = true
-                try {
-                    val body = conn.inputStream.bufferedReader().use { it.readText() }
-                    val gateway = JSONObject(body).optString("gateway", "")
-                    if (gateway.isNotEmpty()) {
-                        PulseEndpoints.gatewayHttpUrl = gateway
-                        PulseEndpoints.socketUrl = gateway
-                    }
-                } finally {
-                    conn.disconnect()
-                }
-            }
+            persisted.join()
+            runCatching { LiveUpdater.syncFrom(this@PulseApplication) }
+        }
+        appScope.launch {
+            persisted.join()
+            runCatching { manifestEndpoints.fetchAndApply() }
         }
     }
 }

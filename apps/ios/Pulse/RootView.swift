@@ -33,6 +33,7 @@ struct RootView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var systemScheme
+    @Environment(\.scenePhase) private var scenePhase
 
     private var colorScheme: ColorScheme? {
         switch prefs.appearance {
@@ -63,6 +64,7 @@ struct RootView: View {
                             prefs: prefs,
                             onGoContacts: { switchTab(.contacts) },
                             onGoProfile: { switchTab(.profile) },
+                            isActive: tab == .chats,
                         )
                         .transition(panelTransition)
                     case .hub:
@@ -135,6 +137,17 @@ struct RootView: View {
         }
         .onChange(of: reduceMotion) { _, newValue in
             session.particles.reduceMotionDisabled = newValue
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                // Outbox flush trigger: app foreground (web visibilitychange).
+                session.flushOutbox()
+            case .background:
+                PulseApp.scheduleOutboxRefresh()
+            default:
+                break
+            }
         }
     }
 

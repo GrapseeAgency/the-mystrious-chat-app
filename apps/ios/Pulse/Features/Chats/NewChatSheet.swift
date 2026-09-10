@@ -151,7 +151,16 @@ struct NewChatSheet: View {
             }
         } label: {
             HStack(spacing: 12) {
-                PulseAvatar(name: user.name, color: PulseTheme.color(named: user.color), photoURL: user.avatar.flatMap(URL.init(string:)), online: online, size: 46)
+                // Wave 0 fix — resolve through PulseTheme.photoURL like every
+                // other surface (relative /uploads paths hang off the gateway;
+                // the raw URL(string:) bypass broke those avatars).
+                PulseAvatar(
+                    name: user.name,
+                    color: PulseTheme.color(named: user.color),
+                    photoURL: PulseTheme.photoURL(user.avatar),
+                    online: online,
+                    size: 46,
+                )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(user.name)
                         .font(.system(size: 16, weight: .semibold))

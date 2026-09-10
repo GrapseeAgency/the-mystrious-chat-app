@@ -107,10 +107,11 @@ struct ChatsView: View {
                 )
             }
         }
-        .onAppear { viewModel.start(session: session) }
+        .onAppear { viewModel.start(session: session, prefs: prefs) }
+        .onDisappear { viewModel.stop() }
         .onChange(of: isActive) { _, active in
             if active {
-                viewModel.start(session: session)
+                viewModel.start(session: session, prefs: prefs)
             } else {
                 viewModel.stop()
             }
@@ -2267,6 +2268,11 @@ final class ChatsViewModel: ObservableObject {
     // list data
     @Published private(set) var summaries: [WireConversationSummary] = []
     @Published private(set) var phase: Phase = .idle
+    /// Offline rehydration — cached rows published FIRST (before the network
+    /// answers), replaced once live summaries arrive.
+    @Published private(set) var cachedRows: [ChatRowModel] = []
+    /// Local composer drafts — a non-empty local draft wins over myDraft.
+    @Published private(set) var localDrafts: [String: String] = [:]
 
     // search
     @Published var searching = false
@@ -2320,7 +2326,8 @@ final class ChatsViewModel: ObservableObject {
             : conv.members.filter { $0.id != viewerId }.map(\.name).joined(separator: ", ")
         let displayName = conv.isGroup
             ? groupName
-            : (other?.name ?? "You")
+            // Cached rows carry no members — fall back to the stored title.
+            : (other?.name ?? conv.name ?? "You")
 
         // Preview (web conversationPreview parity).
         var previewText = "No messages yet"
@@ -2357,7 +2364,7 @@ final class ChatsViewModel: ObservableObject {
             }
         }
 
-        let draft = conv.myDraft.flatMap { $0.isEmpty ? nil : $0 }
+        let draft = Self.draftPreview(local: localDrafts[conv.id], server: conv.myDraft)
         return ChatRowModel(
             conv: conv,
             id: conv.id,
@@ -2388,6 +2395,9 @@ final class ChatsViewModel: ObservableObject {
     }
 
     var rows: [ChatRowModel] {
+        if summaries.isEmpty && !cachedRows.isEmpty {
+            return cachedRows
+        }
         guard let session = observedSession else {
             return summaries.filter { $0.isSelf != true }.map { row(for: $0, session: PulseSession()) }
         }
@@ -2454,17 +2464,30 @@ final class ChatsViewModel: ObservableObject {
         return counts
     }
 
-    /// Filter preference lives on prefs (persisted) — ChatsView passes it in.
-    var prefsFilter: PulsePrefs.ChatsFilter = .all
+    /// Filter preference lives on prefs (persisted, OBSERVED — the Wave 0 fix
+    /// for the stale filter: chips re-filter the list without a tab remount).
+    @Published private(set) var prefsFilter: PulsePrefs.ChatsFilter = .all
 
     private weak var observedSession: PulseSession?
+    private weak var boundPrefs: PulsePrefs?
+    private var storeBinding = false
+    private var storeAttached = false
+
+    /// Web `local ?? conv.myDraft` parity — the local draft wins when present.
+    static func draftPreview(local: String?, server: String?) -> String? {
+        if let local, !local.isEmpty { return local }
+        if let server, !server.isEmpty { return server }
+        return nil
+    }
 
     // ── lifecycle ────────────────────────────────────────────
 
-    func start(session: PulseSession) {
+    func start(session: PulseSession, prefs: PulsePrefs) {
         observedSession = session
-        prefsFilter = (try? PulsePrefs().chatsFilter) ?? .all
+        bind(prefs: prefs)
         observe(session: session)
+        bindStore(session)
+        reloadDrafts(session: session)
         guard pollTask == nil else { return }
         guard session.viewer != nil else { return }
         Task { await refresh(session: session, force: summaries.isEmpty) }
@@ -2482,6 +2505,55 @@ final class ChatsViewModel: ObservableObject {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+    }
+
+    /// Wave 0 — bind the filter to the LIVE prefs object (the old code read a
+    /// throwaway PulsePrefs() in start(), so chips never re-filtered the list).
+    private func bind(prefs: PulsePrefs) {
+        guard boundPrefs !== prefs else { return }
+        boundPrefs = prefs
+        prefsFilter = prefs.chatsFilter
+        prefs.$chatsFilter
+            .removeDuplicates()
+            .sink { [weak self] filter in
+                self?.prefsFilter = filter
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Wave 0 — offline rehydration: publish cached conversations the moment
+    /// the store exists (before the first network answer lands).
+    private func bindStore(_ session: PulseSession) {
+        guard !storeBinding else { return }
+        storeBinding = true
+        session.$store
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] store in
+                self?.attachStore(store)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func attachStore(_ store: PulseStore) {
+        guard !storeAttached else { return }
+        storeAttached = true
+        store.observeConversations()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] rows in
+                guard let self, self.summaries.isEmpty else { return }
+                let session = self.observedSession ?? PulseSession()
+                self.cachedRows = rows.map { row in
+                    let summary = WireConversationSummary(cached: row)
+                    return self.row(for: summary, session: session)
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func reloadDrafts(session: PulseSession) {
+        guard let store = session.store else { return }
+        localDrafts = store.allDrafts()
     }
 
     private func observe(session: PulseSession) {
@@ -2504,6 +2576,17 @@ final class ChatsViewModel: ObservableObject {
         session.$inboxRefreshTick
             .dropFirst()
             .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                Task { await self.refreshQuiet(session: session) }
+            }
+            .store(in: &cancellables)
+
+        // Wave 0 — the message:* envelope family + conversation:updated bump
+        // the session's realtimeRefreshTick; the inbox re-fetches on it.
+        session.$realtimeRefreshTick
+            .dropFirst()
+            .debounce(for: .milliseconds(400), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 Task { await self.refreshQuiet(session: session) }
@@ -2542,6 +2625,7 @@ final class ChatsViewModel: ObservableObject {
         } catch {
             // Poll failures stay silent — the list keeps its cached rows.
         }
+        reloadDrafts(session: session)
     }
 
     private func loadSideQueries(session: PulseSession) async {

@@ -109,6 +109,7 @@ import app.pulse.ui.PulseTheme
 import app.pulse.ui.isPulseDarkTheme
 import app.pulse.ui.pulseGlass
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -163,6 +164,16 @@ class ShellViewModel @Inject constructor(
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var repository: app.pulse.domain.repository.PulseRepository
+
+    override fun onStart() {
+        super.onStart()
+        // Foreground outbox trigger (Wave 0): whatever queued while the app
+        // was dead/backgrounded drains the moment the surface is up.
+        lifecycleScope.launch { runCatching { repository.flushOutbox() } }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // True edge-to-edge with NO system scrims: the app surface (ambient field)

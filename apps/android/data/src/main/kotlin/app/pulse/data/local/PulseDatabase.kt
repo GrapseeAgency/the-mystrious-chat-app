@@ -3,11 +3,14 @@ package app.pulse.data.local
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import kotlinx.coroutines.flow.Flow
@@ -17,7 +20,9 @@ import kotlinx.coroutines.flow.Flow
  * accent color, streaks, drafts, reactions and reply denormalization.
  * v3 (N10) adds the home-page-era columns: manual unread, streak at-risk/lost,
  * last-message shape flags, mute window epoch, other-user id and channel flag.
- * (fallbackToDestructiveMigration is on — rows rebuild from the gateway.)
+ * v4 (Wave 0) adds the offline core WITHOUT touching v3 rows: the FIFO
+ * `outbox` (queued sends) and the per-conversation `draft` table — migrated
+ * non-destructively (MIGRATION_3_4).
  */
 @Entity(tableName = "conversations")
 data class ConversationEntity(
@@ -172,6 +177,58 @@ data class MessageEntity(
     }
 }
 
+/**
+ * One queued outgoing message (Wave 0 offline core — web pulse-outbox parity).
+ * `clientId` is UNIQUE: it links the optimistic `local_<clientId>` message row
+ * to the queue row through enqueue → flush → resolve/drop.
+ */
+@Entity(
+    tableName = "outbox",
+    indices = [
+        Index(value = ["conversationId"]),
+        Index(value = ["clientId"], unique = true),
+    ],
+)
+data class OutboxEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val conversationId: String,
+    val clientId: String,
+    val content: String,
+    val kind: String = "text",
+    val createdAt: String,
+    val attempts: Int = 0,
+) {
+    fun toEntry() = app.pulse.domain.model.OutboxEntry(
+        id = id,
+        conversationId = conversationId,
+        clientId = clientId,
+        content = content,
+        kind = kind,
+        createdAt = createdAt,
+        attempts = attempts,
+    )
+
+    companion object {
+        fun from(entry: app.pulse.domain.model.OutboxEntry) = OutboxEntity(
+            id = entry.id,
+            conversationId = entry.conversationId,
+            clientId = entry.clientId,
+            content = entry.content,
+            kind = entry.kind,
+            createdAt = entry.createdAt,
+            attempts = entry.attempts,
+        )
+    }
+}
+
+/** Per-conversation composer draft (Wave 0 — web pulse-drafts parity). */
+@Entity(tableName = "draft")
+data class DraftEntity(
+    @PrimaryKey val conversationId: String,
+    val text: String,
+    val updatedAt: String,
+)
+
 @Dao
 interface ConversationDao {
     @Query("SELECT * FROM conversations ORDER BY isPinned DESC, lastActivityAt DESC")
@@ -205,16 +262,91 @@ interface MessageDao {
     suspend fun deleteByIds(ids: List<String>)
 }
 
+@Dao
+interface OutboxDao {
+    /** Insert/replace by autoGenerate id — clientId uniqueness is enforced by the index. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entry: OutboxEntity): Long
+
+    @Query("SELECT * FROM outbox ORDER BY id ASC LIMIT 50")
+    fun observeAll(): Flow<List<OutboxEntity>>
+
+    @Query("SELECT * FROM outbox ORDER BY id ASC LIMIT 50")
+    suspend fun all(): List<OutboxEntity>
+
+    @Query("DELETE FROM outbox WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM outbox WHERE clientId = :clientId")
+    suspend fun deleteByClientId(clientId: String)
+
+    @Query("UPDATE outbox SET attempts = attempts + 1 WHERE clientId = :clientId")
+    suspend fun incrementAttempts(clientId: String)
+
+    @Query("SELECT COUNT(*) FROM outbox")
+    suspend fun count(): Int
+
+    /** FIFO cap — keep only the newest [max] rows (web MAX_QUEUE = 50). */
+    @Query("DELETE FROM outbox WHERE id NOT IN (SELECT id FROM outbox ORDER BY id DESC LIMIT :max)")
+    suspend fun trimBeyond(max: Int)
+}
+
+@Dao
+interface DraftDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(draft: DraftEntity)
+
+    @Query("SELECT * FROM draft WHERE conversationId = :conversationId")
+    fun observe(conversationId: String): Flow<DraftEntity?>
+
+    @Query("SELECT * FROM draft WHERE conversationId = :conversationId")
+    suspend fun get(conversationId: String): DraftEntity?
+
+    @Query("DELETE FROM draft WHERE conversationId = :conversationId")
+    suspend fun delete(conversationId: String)
+
+    @Query("DELETE FROM draft")
+    suspend fun clearAll()
+}
+
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class],
-    version = 3,
-    exportSchema = false,
+    entities = [
+        ConversationEntity::class,
+        MessageEntity::class,
+        OutboxEntity::class,
+        DraftEntity::class,
+    ],
+    version = 4,
+    exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
+    abstract fun outboxDao(): OutboxDao
+    abstract fun draftDao(): DraftDao
 
     companion object {
         const val NAME = "pulse.db"
+
+        /**
+         * v3 → v4 (Wave 0): add the outbox + draft tables. Non-destructive —
+         * every deployed v3 conversation/message row survives untouched.
+         * DDL mirrors Room's generated schema exactly (see schemas/4.json).
+         */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `outbox` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`conversationId` TEXT NOT NULL, `clientId` TEXT NOT NULL, `content` TEXT NOT NULL, " +
+                        "`kind` TEXT NOT NULL, `createdAt` TEXT NOT NULL, `attempts` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_outbox_conversationId` ON `outbox` (`conversationId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_outbox_clientId` ON `outbox` (`clientId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `draft` (`conversationId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
+                        "`updatedAt` TEXT NOT NULL, PRIMARY KEY(`conversationId`))",
+                )
+            }
+        }
     }
 }

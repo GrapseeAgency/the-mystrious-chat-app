@@ -1,0 +1,9 @@
+{
+  "name": "pulse-socket-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal socket.io relay used by SocketRoundTripTests (join/typing/notify).",
+  "dependencies": {
+    "socket.io": "^4.8.3"
+  }
+}

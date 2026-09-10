@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,6 +82,7 @@ import app.pulse.ui.PulsePalette
 import app.pulse.core.time.PulseTime
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
+import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import androidx.hilt.navigation.compose.hiltViewModel
 
 private val QUICK_REACTIONS = listOf("❤️", "👍", "😂", "😮", "😢", "🙏")
@@ -108,6 +110,14 @@ fun ChatRoomScreen(
     val haptics = LocalHapticFeedback.current
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
+
+    // Wave 0 draft restore — the VM seeds from the local draft table (or the
+    // server myDraft fallback) exactly once; never stomp live typing.
+    val initialDraft by viewModel.initialDraft.collectAsStateWithLifecycle()
+    LaunchedEffect(initialDraft) {
+        val seed = initialDraft
+        if (!seed.isNullOrBlank() && draft.isBlank()) draft = seed
+    }
 
     // Auto-scroll to the newest row when the tail grows (and near the tail).
     LaunchedEffect(messages.size) {
@@ -167,6 +177,37 @@ fun ChatRoomScreen(
                         Text(state.error ?: "", color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.width(10.dp))
                         TextButton(onClick = viewModel::retry) { Text("Retry") }
+                    }
+                }
+            }
+
+            // Wave 0 offline core — pending outbox state is honest, neutral,
+            // and self-clearing: it shows while a `local_` bubble is queued
+            // and disappears the moment the flush swaps it for the real row.
+            val hasPending = messages.any { it.id.startsWith(TEMP_MESSAGE_PREFIX) }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = hasPending && state.error == null,
+                enter = fadeIn() + scaleIn(initialScale = 0.9f, animationSpec = PulseMotion.soft()),
+                exit = fadeOut() + scaleOut(targetScale = 0.9f),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Outlined.Schedule,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Queued — will send when online",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
             }
@@ -432,13 +473,28 @@ private fun MessageRow(
         }
 
         if (mine && isLastMine) {
-            val seen = partnerLastReadAt != null && (PulseTime.parse(message.createdAt)?.toInstant()?.toEpochMilli() ?: 0L) <= partnerLastReadAt
-            Text(
-                if (seen) "Seen" else PulseTime.clock(message.createdAt),
-                style = MaterialTheme.typography.labelSmall,
-                color = if (seen) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 4.dp, top = 1.dp),
-            )
+            if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
+                // Queued in the outbox — a clock, never a false "Seen".
+                Row(
+                    Modifier.padding(end = 4.dp, top = 1.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Schedule,
+                        contentDescription = "Queued",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+            } else {
+                val seen = partnerLastReadAt != null && (PulseTime.parse(message.createdAt)?.toInstant()?.toEpochMilli() ?: 0L) <= partnerLastReadAt
+                Text(
+                    if (seen) "Seen" else PulseTime.clock(message.createdAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (seen) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 4.dp, top = 1.dp),
+                )
+            }
         }
     }
 }
@@ -522,11 +578,21 @@ private fun Bubble(
 
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(
-                    PulseTime.clock(message.createdAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (mine) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
+                    // Pending outbox bubble — clock marker replaces the clock text.
+                    Icon(
+                        Icons.Outlined.Schedule,
+                        contentDescription = "Queued",
+                        tint = if (mine) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(11.dp),
+                    )
+                } else {
+                    Text(
+                        PulseTime.clock(message.createdAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (mine) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (message.viaAutomation) {
                     Text(
                         "Automation",

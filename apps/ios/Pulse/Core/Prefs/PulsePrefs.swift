@@ -62,6 +62,9 @@ public final class PulsePrefs: ObservableObject {
         } else {
             defaults.removeObject(forKey: Self.viewerKey)
         }
+        // Wave 0 — secure mirror (viewer.identity + token slot for later).
+        // Best effort: UserDefaults stays the source of truth.
+        PulseKeychain.shared.saveViewer(viewer)
     }
 
     public func setAmbientMode(_ mode: AmbientMode) {

@@ -64,6 +64,20 @@ class SendMessageUseCaseTest {
         override suspend fun block(userId: String) = Result.success(Unit)
         override suspend fun unblock(userId: String) = Result.success(Unit)
         override suspend fun report(userId: String, reason: String, details: String?) = Result.success(Unit)
+        override suspend fun enqueueOutbox(entry: app.pulse.domain.model.OutboxEntry) = Result.success(Unit)
+        override fun observeOutbox() = MutableStateFlow(emptyList<app.pulse.domain.model.OutboxEntry>())
+        override suspend fun outboxPending() = emptyList<app.pulse.domain.model.OutboxEntry>()
+        override suspend fun attemptOutboxSend(entry: app.pulse.domain.model.OutboxEntry) = Result.success(Message(
+            id = "m1", conversationId = entry.conversationId, authorId = "a", authorName = "n",
+            kind = Message.Kind.TEXT, body = entry.content, createdAt = "t",
+        ))
+        override suspend fun resolveOutboxDelivery(entry: app.pulse.domain.model.OutboxEntry, real: Message) {}
+        override suspend fun dropOutboxEntry(clientId: String, reason: String) {}
+        override suspend fun bumpOutboxAttempts(clientId: String) {}
+        override suspend fun flushOutbox() = app.pulse.domain.model.FlushReport()
+        override suspend fun saveDraft(conversationId: String, text: String) {}
+        override suspend fun clearDraft(conversationId: String) {}
+        override fun observeDraft(conversationId: String) = MutableStateFlow<String?>(null)
     }
 
     @Test

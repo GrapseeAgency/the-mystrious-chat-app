@@ -1,0 +1,9 @@
+{
+  "name": "pulse-wave0-relay",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Wave-0 Socket.IO relay subset for the Android JVM round-trip test (join/ack/presence/typing//notify).",
+  "dependencies": {
+    "socket.io": "^4.8.3"
+  }
+}

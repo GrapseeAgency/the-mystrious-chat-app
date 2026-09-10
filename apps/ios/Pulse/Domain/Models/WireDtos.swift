@@ -359,6 +359,51 @@ public struct WireSearchPage: Codable, Sendable {
 // ── wire → domain mappers (mirror Android data/repository mappers) ──
 
 extension WireConversationSummary {
+    /// Cache-restore constructor — rebuilds a display-grade summary from a
+    /// PulseConversation row (Wave 0 offline rehydration: title, preview,
+    /// unread, pin/mute/archive flags). Members/lastMessage are NOT cached;
+    /// bubbles fall back to the domain fields. Replaced on first refresh.
+    init(cached: PulseConversation) {
+        // Fabricate a display-grade last message from the cached preview so
+        // offline rows keep their snippet (kind/author are not cached).
+        let cachedMessage = cached.lastMessagePreview.map { preview in
+            WireChatMessage(
+                id: "cached-\(cached.id)",
+                conversationId: cached.id,
+                senderId: "",
+                content: preview,
+                kind: "text",
+                createdAt: cached.lastActivityAt ?? "",
+                editedAt: nil, deletedAt: nil, sender: nil, reactions: nil,
+                replyTo: nil, parentId: nil, imagePath: nil, audioPath: nil,
+                durationMs: nil, filePath: nil, fileName: nil, pinnedAt: nil,
+                viewOnce: nil, anon: nil, anonAlias: nil,
+            )
+        }
+        self.init(
+            id: cached.id,
+            isGroup: cached.kind == .GROUP || cached.kind == .CHANNEL,
+            name: cached.kind == .DM ? nil : cached.title,
+            photo: cached.avatar,
+            createdAt: nil,
+            updatedAt: cached.lastActivityAt,
+            members: [],
+            lastMessage: cachedMessage,
+            unreadCount: cached.unreadCount,
+            pinnedAt: cached.isPinned ? "cached" : nil,
+            mutedUntil: nil,
+            archivedAt: cached.isArchived ? "cached" : nil,
+            ttlSeconds: nil,
+            broadcastMode: cached.kind == .CHANNEL ? true : nil,
+            isSelf: false,
+            myDraft: nil,
+            myStreak: nil,
+            deadStreak: nil,
+            lostStreak: nil,
+            myManualUnread: nil,
+        )
+    }
+
     public func toDomain() -> PulseConversation {
         let title = name
             ?? members.first(where: { $0.id != lastMessage?.senderId })?.name

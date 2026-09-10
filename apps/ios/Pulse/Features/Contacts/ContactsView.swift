@@ -9,6 +9,8 @@ struct ContactsView: View {
     @State private var viewModel = ContactsViewModel()
     @State private var reportTarget: WireUser?
     @State private var reportReason = ""
+    @State private var reportDetails = ""
+    @State private var reportPending = false
 
     var body: some View {
         NavigationStack {
@@ -32,6 +34,40 @@ struct ContactsView: View {
             .task { await viewModel.load(api: session.api) }
         }
         .onAppear { viewModel.observe(session: session) }
+        .sheet(item: $reportTarget) { target in
+            ReportSheet(
+                user: target,
+                reason: $reportReason,
+                details: $reportDetails,
+                pending: reportPending,
+                onSubmit: { Task { await submitReport(target) } },
+            )
+        }
+    }
+
+    /// Wave 0 — the report dialog is now WIRED to the real endpoint
+    /// (POST /api/users/{id}/report via PulseAPIClient.report) with an
+    /// honest success/failure toast.
+    private func submitReport(_ user: WireUser) async {
+        guard !reportPending else { return }
+        let reason = reportReason.trimmingCharacters(in: .whitespaces)
+        guard !reason.isEmpty else {
+            session.toasts.show("Pick a reason first")
+            return
+        }
+        reportPending = true
+        defer { reportPending = false }
+        let details = reportDetails.trimmingCharacters(in: .whitespaces)
+        do {
+            try await session.api.report(userId: user.id, reason: reason, details: details.isEmpty ? nil : details)
+            PulseHaptics.success()
+            session.toasts.show("Report sent — our team will review")
+            reportTarget = nil
+            reportReason = ""
+            reportDetails = ""
+        } catch {
+            session.toasts.show(ChatsViewModel.describe(error))
+        }
     }
 
     private var filtered: [WireUser] {
@@ -75,6 +111,66 @@ struct ContactsView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+    }
+}
+
+private struct ReportSheet: View {
+    let user: WireUser
+    @Binding var reason: String
+    @Binding var details: String
+    let pending: Bool
+    let onSubmit: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    /// Wire reasons — the exact values POST /api/users/[id]/report accepts.
+    private static let options: [(label: String, wire: String)] = [
+        ("Spam or scam", "spam"),
+        ("Harassment", "harassment"),
+        ("Inappropriate content", "inappropriate"),
+        ("Impersonation", "impersonation"),
+        ("Other", "other"),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Reporting @\(user.username ?? user.name)") {
+                    Picker("Reason", selection: $reason) {
+                        Text("Select a reason").tag("")
+                        ForEach(Self.options, id: \.wire) { option in
+                            Text(option.label).tag(option.wire)
+                        }
+                    }
+                    TextField("Details (optional)", text: $details, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+                Section {
+                    Button {
+                        onSubmit()
+                    } label: {
+                        if pending {
+                            ProgressView().frame(maxWidth: .infinity)
+                        } else {
+                            Text("Send report")
+                                .frame(maxWidth: .infinity)
+                                .font(.body.weight(.semibold))
+                        }
+                    }
+                    .disabled(reason.isEmpty || pending)
+                } footer: {
+                    Text("Reports go to the moderation team. Blocking stays separate — use the red swipe action.")
+                }
+            }
+            .navigationTitle("Report")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .interactiveDismissDisabled(pending)
+        }
     }
 }
 

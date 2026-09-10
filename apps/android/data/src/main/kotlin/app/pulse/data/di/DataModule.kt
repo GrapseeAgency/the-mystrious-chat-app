@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.room.Room
 import app.pulse.core.PulseEndpoints
 import app.pulse.data.local.ConversationDao
+import app.pulse.data.local.DraftDao
 import app.pulse.data.local.MessageDao
+import app.pulse.data.local.OutboxDao
 import app.pulse.data.local.PulseDatabase
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
@@ -55,7 +57,9 @@ object DataModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): PulseDatabase =
         Room.databaseBuilder(context, PulseDatabase::class.java, PulseDatabase.NAME)
-            .fallbackToDestructiveMigration()
+            // Wave 0: destructive migration is GONE — v3 → v4 is additive
+            // (outbox + draft tables) and deployed v3 rows must survive.
+            .addMigrations(PulseDatabase.MIGRATION_3_4)
             .build()
 
     @Provides
@@ -68,10 +72,20 @@ object DataModule {
     @Provides
     fun provideMessageDao(db: PulseDatabase): MessageDao = db.messageDao()
 
+    @Provides
+    fun provideOutboxDao(db: PulseDatabase): OutboxDao = db.outboxDao()
+
+    @Provides
+    fun provideDraftDao(db: PulseDatabase): DraftDao = db.draftDao()
+
     /** Domain stays pure Kotlin (no javax.inject) — the graph provides use cases here. */
     @Provides
     fun provideSendMessageUseCase(repo: PulseRepository): app.pulse.domain.usecase.SendMessageUseCase =
         app.pulse.domain.usecase.SendMessageUseCase(repo)
+
+    @Provides
+    fun provideFlushOutboxUseCase(repo: PulseRepository): app.pulse.domain.usecase.FlushOutboxUseCase =
+        app.pulse.domain.usecase.FlushOutboxUseCase(repo)
 }
 
 @Module
