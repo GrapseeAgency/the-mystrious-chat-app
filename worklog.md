@@ -2047,3 +2047,27 @@ Work Log:
 Stage Summary:
 - Double-check passed on all fronts; no defects found, nothing to re-ship
 - v0.1.6-native remains live on release + CDN with mirror; user guidance unchanged: uninstall old Pulse once, install v0.1.6 fresh, then future updates run through the in-app session installer with exact status reporting
+
+---
+Task ID: F2-IOSNAV
+Agent: orchestrator (Z.ai Code)
+Task: Android v0.1.6 final verify + iOS navigation bar wave (user sequencing: verify → iOS nav bar → report; step-by-step).
+
+Work Log:
+- ANDROID FINAL VERIFY (shipped v0.1.6 bytes, the runtime-risk class): byte-scan of the compiled AndroidManifest.xml inside download/Pulse.apk found REQUEST_INSTALL_PACKAGES [utf16], FileProvider authority app.pulse.chat.updater [utf16], FILE_PROVIDER_PATHS meta-data [utf16]; obfuscated res/M6.xml inside the APK carries the liveupdate cache-path (matches LiveUpdater DIR="liveupdate" + installViaFileProvider authority "${packageName}.updater" + liveupdate_paths.xml <cache-path name="liveupdate" path="liveupdate/"/>). Combined with prior sha256 byte-chain + apksigner v1/v2/v3 "Verifies" + cert fingerprint match — nothing left to verify outside a physical device; PackageInstaller session path will surface the exact system verdict if a device ever refuses.
+- PARITY AUDIT: Android MainActivity More menu has the SAME four dead-end toasts as iOS (Settings/Saved/Stories "aren't available in this native build yet", compose "isn't available") — the gap is shared; iOS fixed first per user instruction.
+- iOS NAV-BAR WAVE (3 commits: 8ca436b, 0b2aeb4, 1777292 fix, 2589b03 fix):
+  1) PulseSession: pendingOpenRoom bridge (@Published + requestOpenRoom/consumePendingOpenRoom) — dock lives above the shell, ChatsView owns the NavigationStack; same replay-on-subscribe pattern as searchRequestTick.
+  2) NewChatSheet (Features/Chats): compose button now opens a real sheet — live GET /api/users roster (viewer excluded), search, Direct mode (tap row → POST /api/conversations → push room) and Group mode (name + multi-select chips → create); server folds creator into member set (distinctIds).
+  3) SettingsView (Features/Settings): real screen — App (version/build/platform/bundle from Bundle.main), Connection (gateway host, realtime mode, LIVE gateway probe with ms + honest failure text), Chats (default list filter persisted via PulsePrefs), Updates (honest TestFlight/App Store channel note). Does NOT duplicate ProfileView's appearance/ambient sections.
+  4) StoriesView (Features/Stories): fetches the live stories endpoint, renders real story groups (StoryRingCell rings, mine/seen chips); honest empty state + honest viewer toast until the stories data wave.
+  5) RootView: all four dock dead-ends wired (compose→sheet, More→Settings/Saved/Stories); Saved = idempotent createSelfChat (server get-or-creates isSelf) → switchTab(.chats) → pendingOpenRoom handoff; dock labels get lineLimit+minimumScaleFactor for small phones.
+  6) ChatsView: onReceive(pendingOpenRoom) → consume → openRoom.
+- CI FIX ROUNDS: r1 failure — composeButton/moreMenu live inside the SEPARATE CapsuleDock struct (cannot reach RootView @State) → converted to RootView-owned callbacks (onCompose/onSettings/onSaved/onStories). r2 failure — SwiftUI type-checker timeout in groupComposer + mixed-type ternary (LinearGradient vs Color in .fill) → broke builder into chipsRow/pickedChip/groupNameField/createButton/createButtonFill/composerPanel + AnyShapeStyle. r3 SUCCESS: all 9 steps green (xcodegen, build, unit tests, artifact) on commit 2589b03.
+- NOTE: earlier "branches: ain]" suspicion was a terminal-render artifact — ios-ci.yml is correct (branches: [main]).
+- Push auth: user-provided PAT used for pushes this session.
+
+Stage Summary:
+- Android v0.1.6 chain: verification CLOSED at every provable level (bytes, signature, manifest, provider, paths) — no re-ship needed.
+- iOS navigation bar: 100% functional — compose opens real New Chat (DM+group), More menu items all real surfaces, zero dead-end toasts left in the dock; CI green incl. unit tests.
+- Next steps (user drives, step-by-step): (a) Android parity wave for the same four dock items (new release cycle v0.1.7), (b) iOS room-view feature parity vs Android, (c) decide on baking a live gateway/socket endpoint for both natives (currently offline-first against the static CDN by design).
