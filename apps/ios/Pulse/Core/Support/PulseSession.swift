@@ -26,6 +26,10 @@ public final class PulseSession: ObservableObject {
     @Published public var roomVisible = false
     /// Dock "More → Search" asks the Chats tab to enter search mode.
     @Published public private(set) var searchRequestTick = 0
+    /// Dock compose / More → Saved hand a freshly-resolved conversation to the
+    /// Chats tab's NavigationStack (the dock lives above the shell, the stack
+    /// lives inside ChatsView — this is the bridge, same pattern as search).
+    @Published public private(set) var pendingOpenRoom: WireConversationSummary?
 
     /// Honest-toast center shared by every surface (not-yet-built features).
     public let toasts = ToastCenter()
@@ -104,6 +108,17 @@ public final class PulseSession: ObservableObject {
     /// its search mode (real search, not a fake).
     public func requestChatsSearch() {
         searchRequestTick += 1
+    }
+
+    /// Dock compose / More → Saved — hand a conversation to the Chats tab to
+    /// push onto its NavigationStack. Consumers must call `consumePendingOpenRoom()`
+    /// when received (the published value also replays on re-subscription).
+    public func requestOpenRoom(_ conversation: WireConversationSummary) {
+        pendingOpenRoom = conversation
+    }
+
+    public func consumePendingOpenRoom() {
+        pendingOpenRoom = nil
     }
 
     public func typers(in conversationId: String, excluding userId: String?) -> [Typer] {
