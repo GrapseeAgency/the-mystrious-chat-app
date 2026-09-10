@@ -1,10 +1,10 @@
 {
-  "versionCode": 8,
-  "versionName": "0.1.7-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.7-native/Pulse-v0.1.7-native.apk",
+  "versionCode": 9,
+  "versionName": "0.1.8-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.8-native/Pulse-v0.1.8-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "3685e24e8b136f88e97e17582ecbb274010ab28ae64cd905c335a1c549604a40",
-  "notes": "System-bar wave: the Android navigation bar no longer sits on top of the app dock — the dock now floats above the system buttons/pill, the gray scrim is gone, status-bar icons follow the in-app theme, and the chat room composer clears the system bars. Update from inside the app, not the browser.",
+  "sha256": "a8cc43ade616b070b37e5d87ff1e5e8a4064883908e83fdc6da14a0e89eabd2a",
+  "notes": "Gateway truth wave: the app no longer pretends a static CDN is a chat backend. Open Profile → Connection, paste your Pulse server origin, Test it, Save — REST and realtime both use it. If the in-app installer ever refuses the package again, the update banner now offers BROWSER (one tap, hands the same verified file to your browser — the install path that works on every device).",
   "minRequired": false,
-  "updatedAt": "2026-09-10T06:00:00Z"
+  "updatedAt": "2026-09-10T09:00:00Z"
 }
