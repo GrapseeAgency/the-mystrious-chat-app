@@ -141,6 +141,24 @@ fun UpdaterBanner(modifier: Modifier = Modifier) {
                     Spacer(Modifier.width(10.dp))
                     Text("Opening installer…", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 }
+                is UpdateState.Installing -> Row(
+                    Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.SystemUpdate,
+                        contentDescription = null,
+                        tint = PulsePalette.Emerald,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "Installing — confirm the system dialog",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 is UpdateState.Failed -> Row(
                     Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -225,6 +243,11 @@ fun UpdaterDetail(modifier: Modifier = Modifier) {
             }
             is UpdateState.Ready -> Text(
                 "Ready — the system installer is opening",
+                style = MaterialTheme.typography.bodySmall,
+                color = PulsePalette.Emerald,
+            )
+            is UpdateState.Installing -> Text(
+                "Handed to the system installer — confirm to finish",
                 style = MaterialTheme.typography.bodySmall,
                 color = PulsePalette.Emerald,
             )
