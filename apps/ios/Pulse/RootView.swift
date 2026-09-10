@@ -90,6 +90,10 @@ struct RootView: View {
                             reduceMotion: reduceMotion,
                             tab: tab,
                             onTab: { switchTab($0) },
+                            onCompose: { newChatOpen = true },
+                            onSettings: { settingsOpen = true },
+                            onSaved: { Task { await openSaved() } },
+                            onStories: { storiesOpen = true },
                         )
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
@@ -178,6 +182,11 @@ private struct CapsuleDock: View {
     let reduceMotion: Bool
     let tab: PulseTab
     let onTab: (PulseTab) -> Void
+    // Dock actions owned by RootView (sheets + Saved handoff live there).
+    var onCompose: () -> Void = {}
+    var onSettings: () -> Void = {}
+    var onSaved: () -> Void = {}
+    var onStories: () -> Void = {}
 
     @State private var moreOpen = false
     @State private var wobbling: PulseTab?
@@ -271,7 +280,7 @@ private struct CapsuleDock: View {
     private var composeButton: some View {
         Button {
             PulseHaptics.tap()
-            newChatOpen = true
+            onCompose()
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 20, weight: .semibold))
@@ -302,16 +311,16 @@ private struct CapsuleDock: View {
     private var moreMenu: some View {
         VStack(alignment: .leading, spacing: 2) {
             moreItem("Settings", icon: "gearshape") {
-                settingsOpen = true
+                onSettings()
             }
             moreItem("Search", icon: "magnifyingglass") {
                 session.requestChatsSearch()
             }
             moreItem("Saved", icon: "bookmark") {
-                Task { await openSaved() }
+                onSaved()
             }
             moreItem("Stories", icon: "sparkles") {
-                storiesOpen = true
+                onStories()
             }
         }
         .padding(6)
