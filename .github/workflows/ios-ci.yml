@@ -32,6 +32,8 @@ jobs:
           xcrun simctl list devices available
           DEVICE=$(xcrun simctl list devices available | awk '/iPhone/ { sub(/\(.*/, ""); gsub(/^ +| +$/, ""); print; exit }')
           echo "device=${DEVICE}" >> "$GITHUB_OUTPUT"
+          UDID=$(xcrun simctl list devices available | awk "/iPhone/ {f=1} f && /-/ {gsub(/^ +| +$/, \"\"); print \$1; exit}")
+          echo "udid=${UDID}" >> "$GITHUB_OUTPUT"
 
       # Compilation proof — generic destination never fails on device churn.
       - name: Build (generic iOS Simulator)
@@ -41,7 +43,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' build \
             CODE_SIGNING_ALLOWED=NO | xcbeautify
 
-      - name: Unit tests
+      - name: Unit tests (incl. GRDB v2 migration, outbox engine, socket round-trip vs node relay)
         if: steps.sim.outputs.device != ''
         run: |
           set -o pipefail
@@ -54,3 +56,68 @@ jobs:
         with:
           name: pulse-ios-simulator-build
           path: ~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug-iphonesimulator/*.app
+
+      # Wave 0 quality gate: the app must actually LAUNCH on a simulator.
+      - name: Launch smoke (install + launch + screenshot)
+        if: steps.sim.outputs.udid != ''
+        run: |
+          set -euo pipefail
+          UDID="${{ steps.sim.outputs.udid }}"
+          xcrun simctl boot "$UDID" || true
+          APP=$(ls -d ~/Library/Developer/Xcode/DerivedData/*/Build/Products/Debug-iphonesimulator/Pulse.app | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" app.pulse.chat
+          sleep 6
+          mkdir -p /tmp/wave0
+          xcrun simctl io "$UDID" screenshot /tmp/wave0/pulse-launch.png
+          xcrun simctl terminate "$UDID" app.pulse.chat || true
+          xcrun simctl shutdown "$UDID" || true
+          echo "launch smoke OK"
+
+      - name: Upload launch screenshot
+        if: steps.sim.outputs.udid != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-ios-launch-screenshot
+          path: /tmp/wave0/pulse-launch.png
+          if-no-files-found: ignore
+
+  # Wave 0: a valid iOS archive through macOS CI (unsigned — no Apple
+  # Developer Program yet; TestFlight lane lands when credentials exist).
+  archive:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Archive (unsigned, generic iOS device)
+        run: |
+          set -o pipefail
+          xcodebuild archive -project Pulse.xcodeproj -scheme Pulse \
+            -destination 'generic/platform=iOS' \
+            -archivePath /tmp/Pulse.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | xcbeautify
+
+      - name: Verify archive structure
+        run: |
+          test -d /tmp/Pulse.xcarchive/Products/Applications/Pulse.app
+          test -f /tmp/Pulse.xcarchive/Info.plist
+          test -x /tmp/Pulse.xcarchive/Products/Applications/Pulse.app/Pulse
+          du -sh /tmp/Pulse.xcarchive
+
+      - name: Zip archive
+        run: cd /tmp && zip -qry Pulse.xcarchive.zip Pulse.xcarchive
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-ios-xcarchive
+          path: /tmp/Pulse.xcarchive.zip
