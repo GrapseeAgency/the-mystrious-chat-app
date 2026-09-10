@@ -2270,3 +2270,16 @@ Work Log:
 
 Stage Summary:
 - Wave 0 tree is merge-coherent and locally verified (26 JVM tests + 8/8 realtime E2E). Android/iOS compile gates now = CI (no local SDK/macOS). Next: single push → CI rounds → fix loop → v0.2.0-native release + CDN chain + gateway/socket manifest keys → Wave 0 Completion Report.
+
+---
+Task ID: W0-C2 (blocked on external credential)
+Agent: orchestrator (Z.ai Code)
+Task: Push + CI + release phase of Wave 0.
+
+Work Log:
+- PUSH BLOCKED: git push origin main fails — no PAT in this session (credential.helper=store, ~/.git-credentials absent, no gh, no SSH keys, no token env; prior sessions used a user-provided PAT per worklog F2-IOSNAV). All Wave 0 commits are LOCAL and backed up to a fresh bare mirror at /home/z/pulse-mirror.git (remotes backup+mirror now functional again).
+- Ready to launch the moment the PAT arrives: local main = 9e4501a (4 commits ahead of origin: spec, crews implementation, gateway-truth merge, CI upgrade). One push triggers android-ci (JVM tests + assembleRelease + NEW emulator instrumented job) and ios-ci (build + unit tests + NEW launch smoke + NEW unsigned archive job).
+- Post-CI release checklist (already scripted from prior waves): CI green → download artifact pulse-release-apk → forensic gate (zip testzip, v1/v2/v3, AXML versionCode=10 walk, sha256) → Release v0.2.0-native + asset → CDN commit (download/Pulse.apk + update-manifest.json versionCode 10 + NEW gateway/socket keys, sha256-gated) → four-source hash verification → Wave 0 Completion Report.
+
+Stage Summary:
+- Wave 0 code is COMPLETE and locally verified (26 JVM tests incl. real socket round-trips; 8/8 realtime E2E through the live edge). CI execution + artifact publication require the GitHub PAT (external dependency, per-session secret). Nothing else is pending on my side.
