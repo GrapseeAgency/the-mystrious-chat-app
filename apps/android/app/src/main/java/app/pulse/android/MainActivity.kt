@@ -1,7 +1,9 @@
 package app.pulse.android
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.EnterTransition
@@ -23,12 +25,17 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateBottomPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,6 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +79,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,6 +93,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.core.view.WindowCompat
 import app.pulse.android.ui.AmbientField
 import app.pulse.android.ui.FxMode
 import app.pulse.android.ui.ParticleBurstHost
@@ -156,7 +166,19 @@ class ShellViewModel @Inject constructor(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // True edge-to-edge with NO system scrims: the app surface (ambient field)
+        // shows behind the status bar AND the navigation bar — the default
+        // enableEdgeToEdge() nav scrim is what painted a gray band over the dock.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ),
+            navigationBarStyle = SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ),
+        )
         setContent {
             PulseRoot()
         }
@@ -175,6 +197,19 @@ fun PulseRoot(session: SessionViewModel = hiltViewModel()) {
         "light" -> false
         "dark" -> true
         else -> isSystemInDarkTheme()
+    }
+
+    // System bars follow the IN-APP theme (not just the system one), so the
+    // clock/battery icons flip together with the in-app light/dark override.
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
     }
 
     // Boot the live layer (REST refresh + socket join) as soon as identity exists.
@@ -247,6 +282,11 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
     // the nav over hash sub-pages); rooms own the whole screen.
     val showDock = currentRoute in TAB_ROUTES || currentRoute == "archived"
 
+    // The system nav bar (gesture pill or 3-button strip) draws over the app —
+    // every bottom-anchored surface must clear it.
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val dockSpace = 108.dp + navBottom
+
     Box(Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
@@ -271,17 +311,17 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                 )
             }
             composable("hub") {
-                Box(Modifier.fillMaxSize().padding(bottom = 108.dp)) {
+                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
                     HubScreen(viewerName = viewerName ?: "")
                 }
             }
             composable("contacts") {
-                Box(Modifier.fillMaxSize().padding(bottom = 108.dp)) {
+                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
                     ContactsScreen(onOpenRoom = { id -> navController.navigate("room/$id") })
                 }
             }
             composable("profile") {
-                Box(Modifier.fillMaxSize().padding(bottom = 108.dp)) {
+                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
                     ProfileScreen()
                 }
             }
@@ -331,7 +371,7 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
             snackbar,
             Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 108.dp),
+                .padding(bottom = dockSpace),
         ) { data ->
             Snackbar(
                 containerColor = if (dark) Color(0xFF27272A) else Color(0xFF18181B),
@@ -382,6 +422,7 @@ private fun CapsuleDock(
     Box(
         modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .padding(horizontal = 12.dp)
             .padding(bottom = 10.dp),
     ) {

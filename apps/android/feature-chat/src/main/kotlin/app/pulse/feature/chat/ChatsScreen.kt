@@ -29,6 +29,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateBottomPadding
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +39,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -271,6 +275,10 @@ fun ChatsScreen(
         scope.launch { snackbar.showSnackbar(message, withDismissAction = false) }
     }
 
+    // Clear the system nav bar (gesture pill / 3-button strip) that draws over
+    // the app under edge-to-edge — the dock lifts by the same amount.
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             if (search) {
@@ -373,7 +381,7 @@ fun ChatsScreen(
                     )
                     else -> LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 128.dp),
+                        contentPadding = PaddingValues(bottom = 128.dp + navBottom),
                     ) {
                         item(key = "note-to-self") {
                             NoteToSelfCard(
@@ -499,7 +507,7 @@ fun ChatsScreen(
             visible = selectMode,
             enter = slideInVertically(PulseMotion.snappy()) { it / 2 } + fadeIn(),
             exit = slideOutVertically(PulseMotion.snappy()) { it / 2 } + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp + navBottom),
         ) {
             MultiSelectBar(
                 count = selectedIds.size,
@@ -529,7 +537,7 @@ fun ChatsScreen(
 
         SnackbarHost(
             snackbar,
-            Modifier.align(Alignment.BottomCenter).padding(bottom = 112.dp),
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 112.dp + navBottom),
         ) { data ->
             Snackbar(
                 containerColor = if (dark) Color(0xFF27272A) else Color(0xFF18181B),
@@ -612,6 +620,7 @@ fun ArchivedScreen(
     }
 
     val archived = chats.filter { it.isArchived }
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -653,7 +662,7 @@ fun ArchivedScreen(
                     )
                     else -> LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 128.dp),
+                        contentPadding = PaddingValues(bottom = 128.dp + navBottom),
                     ) {
                         items(archived, key = { it.id }) { conv ->
                             ConversationRowItem(
@@ -680,7 +689,7 @@ fun ArchivedScreen(
         }
         SnackbarHost(
             snackbar,
-            Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp + navBottom),
         ) { data ->
             Snackbar(
                 containerColor = Color(0xFF18181B),

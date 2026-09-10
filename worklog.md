@@ -2071,3 +2071,21 @@ Stage Summary:
 - Android v0.1.6 chain: verification CLOSED at every provable level (bytes, signature, manifest, provider, paths) — no re-ship needed.
 - iOS navigation bar: 100% functional — compose opens real New Chat (DM+group), More menu items all real surfaces, zero dead-end toasts left in the dock; CI green incl. unit tests.
 - Next steps (user drives, step-by-step): (a) Android parity wave for the same four dock items (new release cycle v0.1.7), (b) iOS room-view feature parity vs Android, (c) decide on baking a live gateway/socket endpoint for both natives (currently offline-first against the static CDN by design).
+
+---
+Task ID: F3-ANDNAV
+Agent: Z.ai Code (main)
+Task: Fix Android system-bar collision reported from the user's device screenshot — 3-button system nav bar paints ON TOP of the app's Capsule dock (both unusable), default edge-to-edge gray nav scrim over it, and the status bar doesn't follow the in-app theme. Ship as v0.1.7-native.
+
+Work Log:
+- Diagnosed from the user's device screenshot (Pulse chats screen vs Telegram reference): enableEdgeToEdge() was on, but NOTHING consumed WindowInsets.navigationBars — dock had only 10dp bottom padding, so the system 3-button nav drew directly over it; the default enableEdgeToEdge() navigationBarStyle also applies a light scrim (0xe6FFFFFF) = the gray band over the dock.
+- Audited insets usage repo-wide: only OnboardingScreen handled navigationBars/ime correctly; shell, dock, chats screen, archived page, and room composer all ignored the nav inset.
+- MainActivity.kt: (1) enableEdgeToEdge now passes explicit SystemBarStyle.auto(TRANSPARENT, TRANSPARENT) for BOTH status and nav bars — kills the gray scrim, app ambient field shows behind both system bars; (2) added SideEffect syncing WindowInsetsController.isAppearanceLightStatusBars/NavigationBars to the IN-APP theme override (icons flip with in-app dark/light, not system); (3) PulseShell computes navBottom from WindowInsets.navigationBars and dockSpace = 108dp + navBottom now used for hub/contacts/profile bottom padding and the shell SnackbarHost; (4) CapsuleDock wrapper got .navigationBarsPadding() — dock floats above the system strip.
+- ChatsScreen.kt: navBottom inset added to main list contentPadding (128dp+nav), archived list contentPadding, MultiSelectBar (96dp+nav), both SnackbarHosts (112dp+nav, 24dp+nav).
+- ChatRoomScreen.kt: room Column got .navigationBarsPadding() between statusBarsPadding and imePadding (consumption chain prevents double-pad when keyboard opens).
+- Version bump: app/build.gradle.kts defaults versionCode 8 / versionName 0.1.7-native.
+- Scope discipline: dock dead-end toasts (Settings/Saved/Stories/compose) NOT touched — that's the user-gated parity wave, separate release.
+
+Stage Summary:
+- Code wave complete: system nav no longer overlaps the dock (dock lifts by the real inset), no gray scrim, status/nav icons follow the in-app theme, room composer clears the nav strip, lists clear the raised dock.
+- NEXT (in flight): push → android-ci green → forensic gate (AXML versionCode=8, v1+v2+v3, sha256) → Release v0.1.7-native → CDN download/Pulse.apk + update-manifest.json (versionCode 8) → tell user to update in-app or via link.
