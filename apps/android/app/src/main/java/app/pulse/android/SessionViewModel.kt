@@ -2,6 +2,7 @@ package app.pulse.android
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.pulse.core.PulseEndpoints
 import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -46,6 +47,9 @@ class SessionViewModel @Inject constructor(
     val reducedMotion: StateFlow<Boolean> = prefs.reducedMotion
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val serverBase: StateFlow<String?> = prefs.serverBase
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     fun chooseViewer(id: String, name: String, color: String? = null) {
         viewModelScope.launch {
             prefs.setViewer(id, name, color)
@@ -59,6 +63,12 @@ class SessionViewModel @Inject constructor(
 
     fun bootstrap(viewerId: String?) {
         viewerId?.let { repo.start(it) }
+    }
+
+    /** Point REST + realtime at a user-provided origin (null = go offline). */
+    fun setServerBase(value: String?) {
+        PulseEndpoints.applyBase(value)
+        viewModelScope.launch { prefs.setServerBase(value) }
     }
 
     /** Header theme toggle — cycles system → light → dark (web ThemeToggleButton). */

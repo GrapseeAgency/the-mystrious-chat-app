@@ -23,7 +23,13 @@ public final class PulseSocketClient {
     private let handlers: ArrayBuilder<()>
 
     public init(socketURL: URL) {
-        manager = SocketManager(socketURL: socketURL, config: [.log(false), .reconnects(true)])
+        // `.connectParams` appends XTransformPort=3003 to every poll/WS request
+        // — the edge routes on the query (the /socket.io/ path rule 308s and
+        // would break WS upgrades). Mirrors Android PulseSocketClient exactly.
+        manager = SocketManager(
+            socketURL: socketURL,
+            config: [.log(false), .reconnects(true), .connectParams(["XTransformPort": "3003"])],
+        )
         socket = manager.defaultSocket
         handlers = .init()
     }
