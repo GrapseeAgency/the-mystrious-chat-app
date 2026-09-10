@@ -2030,3 +2030,20 @@ Stage Summary:
 - CDN manifest after publish: versionCode 7 / 0.1.6-native / apkUrl (release asset) + apkUrlMirror (raw CDN) / sha256 of shipped bytes
 - RESULTS: android-ci GREEN first round (run 34424858351); artifact 13,984,863 bytes, sha256 39a4d96053284614607caf46c88346e5994f5b0951d53c32e8495799698d3096; forensic gate passed (AXML versionCode=7, versionName 0.1.6-native, package app.pulse.chat, minSdk 21, targetSdk 35, extractNativeLibs TRUE; ZIP clean; arsc STORED+aligned; v1 CERT.SF/CERT.RSA + v2/v3 block); Release v0.1.6-native (id 385945616) + asset Pulse-v0.1.6-native.apk (id 553968679, state uploaded); public release URL bytes sha256 == artifact EXACTLY; CDN manifest live with apkUrlMirror; mirror (raw CDN download/Pulse.apk) bytes sha256 == artifact EXACTLY. Push chain: 3333e5d (code) + 7a3b512 (CDN)
 
+
+---
+Task ID: F1-VERIFY (double-check pass on user request)
+Agent: orchestrator (Z.ai Code)
+Task: User asked to double-check the v0.1.6-native release chain end to end.
+
+Work Log:
+- BYTE CHAIN: live CDN manifest (versionCode 7 / 0.1.6-native / sha256 39a4d960…) == release-asset download == raw-CDN mirror download == repo download/Pulse.apk — four sources, one hash; GitHub's own asset digest field independently reports sha256:39a4d960…
+- RELEASE: id 385945616, tag v0.1.6-native pinned to full SHA 3333e5d (the exact commit android-ci built), asset Pulse-v0.1.6-native.apk state "uploaded", not draft/prerelease
+- CI: android-ci success on 3333e5d; CDN/worklog commits (7a3b512, a408c72) correctly trigger no CI (paths filter); git clean, local == remote a408c72
+- APK FORENSICS (shipped bytes): AXML versionCode=7, versionName 0.1.6-native, package app.pulse.chat, minSdk 21, targetSdk 35, extractNativeLibs TRUE; ZIP 164 entries clean; resources.arsc STORED + 4-byte aligned; APK Sig Block present (magic + footer==leading length consistency), pairs 0x7109871a (v2) + 0xf05368c0 (v3) + SDKP + padding
+- CRYPTOGRAPHIC VERIFICATION (new — the gap left open last round): fetched Android build-tools r34 from dl.google.com and ran the REAL apksigner (same verifier PackageInstaller runs) on the shipped bytes: "Verifies — v1 scheme true, v2 scheme true, v3 scheme true, number of signers 1"; signer cert CN=Pulse Live Update / O=Grapsee Agency / C=BD, cert SHA-256 c14a4367189ad25c8b58ff22d453c0bea5869136c48e9f82a51a121cafa5d79c — IDENTICAL to the keystore fingerprint recorded at N4-a (key never changed across all releases). The META-INF "not protected by signature" warnings are standard v1 JAR properties present in every Play-Store APK — benign
+- CONCLUSION: the v0.1.6 APK is proven valid at every checkable level outside a physical device: content identity, ZIP integrity, packaging policy, binary manifest values, and now full cryptographic signature verification. If a device still refuses it, the in-app PackageInstaller session path will surface the exact system status code in the update UI
+
+Stage Summary:
+- Double-check passed on all fronts; no defects found, nothing to re-ship
+- v0.1.6-native remains live on release + CDN with mirror; user guidance unchanged: uninstall old Pulse once, install v0.1.6 fresh, then future updates run through the in-app session installer with exact status reporting
