@@ -1,9 +1,9 @@
 {
-  "versionCode": 5,
-  "versionName": "0.1.4-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.4-native/Pulse-v0.1.4-native.apk",
-  "sha256": "139c00185a15df3ca0e9777a128ca89451312e4a01901023ab8890eca9b34b1b",
-  "notes": "Fixes 'CLEARTEXT communication to 10.0.2.2 not permitted' — the app now targets a public HTTPS endpoint from any device. @handle check is instant (hard timeouts + fallback chain) and onboarding completes offline (local identity). Human-readable error copy.",
+  "versionCode": 6,
+  "versionName": "0.1.5-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.5-native/Pulse-v0.1.5-native.apk",
+  "sha256": "df708296b6f3c742572a1b41b3b005c99a0e96cdf3a95ed441787b98f042bed1",
+  "notes": "Fixes 'There was a problem parsing the package' on older devices: minSdk lowered 26 → 21 (Android 5.0+) with core-library desugaring, all three signature schemes (v1+v2+v3). Home page now ships on Android and iOS, 1:1 with the web app. Carries the v0.1.4 fixes: HTTPS gateway (no CLEARTEXT), instant @handle check, offline-first onboarding.",
   "minRequired": false,
-  "updatedAt": "2026-09-09T13:25:00Z"
+  "updatedAt": "2026-09-10T00:25:00Z"
 }
