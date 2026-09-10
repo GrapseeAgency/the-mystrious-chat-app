@@ -188,70 +188,100 @@ struct NewChatSheet: View {
     private var groupComposer: some View {
         VStack(spacing: 10) {
             if !picked.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(users.filter { picked.contains($0.id) }) { user in
-                            HStack(spacing: 6) {
-                                Text(user.name).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                                Button {
-                                    picked.remove(user.id)
-                                } label: {
-                                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
-                                }
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(PulseTheme.emerald.opacity(0.14)))
-                            .foregroundStyle(PulseTheme.emeraldDeep)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                chipsRow
             }
             HStack(spacing: 10) {
-                TextField("Group name", text: $groupName)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 15, weight: .medium))
-                    .padding(.horizontal, 14)
-                    .frame(height: 46)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(PulseTheme.zinc(200).opacity(0.6), lineWidth: 1)
-                    )
-                Button {
-                    createGroup()
-                } label: {
-                    Group {
-                        if creating {
-                            ProgressView().tint(.white)
-                        } else {
-                            Text("Create").font(.system(size: 15, weight: .bold))
-                        }
-                    }
-                    .frame(width: 104, height: 46)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(canCreateGroup ? PulseTheme.brandGradient : PulseTheme.zinc(300))
-                    )
-                    .foregroundStyle(.white)
-                }
-                .disabled(!canCreateGroup || creating)
+                groupNameField
+                createButton
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
         }
         .padding(.top, 8)
-        .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .ignoresSafeArea()
-                .overlay(alignment: .top) {
-                    Rectangle().fill(PulseTheme.zinc(200).opacity(0.6)).frame(height: 1)
-                }
-        )
+        .background(composerPanel)
         .animation(reduceMotion ? nil : .pulse(.pulseSnappy, reduceMotion: reduceMotion), value: picked)
+    }
+
+    private var chipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(users.filter { picked.contains($0.id) }) { user in
+                    pickedChip(user)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+
+    private func pickedChip(_ user: WireUser) -> some View {
+        HStack(spacing: 6) {
+            Text(user.name)
+                .font(.system(size: 12.5, weight: .semibold))
+                .lineLimit(1)
+            Button {
+                picked.remove(user.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(PulseTheme.emerald.opacity(0.14)))
+        .foregroundStyle(PulseTheme.emeraldDeep)
+    }
+
+    private var groupNameField: some View {
+        TextField("Group name", text: $groupName)
+            .textFieldStyle(.plain)
+            .font(.system(size: 15, weight: .medium))
+            .padding(.horizontal, 14)
+            .frame(height: 46)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(PulseTheme.zinc(200).opacity(0.6), lineWidth: 1)
+            )
+    }
+
+    private var createButton: some View {
+        Button {
+            createGroup()
+        } label: {
+            Group {
+                if creating {
+                    ProgressView().tint(.white)
+                } else {
+                    Text("Create")
+                        .font(.system(size: 15, weight: .bold))
+                }
+            }
+            .frame(width: 104, height: 46)
+            .background(createButtonFill)
+            .foregroundStyle(.white)
+        }
+        .disabled(!canCreateGroup || creating)
+    }
+
+    private var createButtonFill: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(
+                canCreateGroup
+                    ? AnyShapeStyle(PulseTheme.brandGradient)
+                    : AnyShapeStyle(PulseTheme.zinc(300))
+            )
+    }
+
+    private var composerPanel: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .ignoresSafeArea()
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(PulseTheme.zinc(200).opacity(0.6))
+                    .frame(height: 1)
+            }
     }
 
     // ── actions ──────────────────────────────────────────────
