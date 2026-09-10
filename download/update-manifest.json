@@ -1,9 +1,10 @@
 {
-  "versionCode": 6,
-  "versionName": "0.1.5-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.5-native/Pulse-v0.1.5-native.apk",
-  "sha256": "df708296b6f3c742572a1b41b3b005c99a0e96cdf3a95ed441787b98f042bed1",
-  "notes": "Fixes 'There was a problem parsing the package' on older devices: minSdk lowered 26 → 21 (Android 5.0+) with core-library desugaring, all three signature schemes (v1+v2+v3). Home page now ships on Android and iOS, 1:1 with the web app. Carries the v0.1.4 fixes: HTTPS gateway (no CLEARTEXT), instant @handle check, offline-first onboarding.",
+  "versionCode": 7,
+  "versionName": "0.1.6-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.6-native/Pulse-v0.1.6-native.apk",
+  "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
+  "sha256": "39a4d96053284614607caf46c88346e5994f5b0951d53c32e8495799698d3096",
+  "notes": "Install-path wave: updates now go through the platform PackageInstaller session and the app shows the system's EXACT verdict if anything is refused (no more silent parse dialog). Signer pre-check, automatic mirror download if the release asset fails on your network, Android 5-7 install crash fix. Tip: update from inside the app, not the browser.",
   "minRequired": false,
-  "updatedAt": "2026-09-10T00:25:00Z"
+  "updatedAt": "2026-09-10T01:40:00Z"
 }
