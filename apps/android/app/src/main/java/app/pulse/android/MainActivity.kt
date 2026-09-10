@@ -17,6 +17,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -312,11 +313,11 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                 dark = dark,
                 onSelect = { route -> switchTab(route) },
                 onCompose = {
-                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     honest("The new chat composer isn't available in this native build yet.")
                 },
                 onSearch = {
-                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     if (currentRoute != "chats") switchTab("chats")
                     shell.requestSearch()
                 },
@@ -392,7 +393,7 @@ private fun CapsuleDock(
             val slotW = (maxWidth - pad * 2 - composeW - 40.dp - gap * 5) / 4
             val tabIndex = TAB_ROUTES.indexOf(active).coerceAtLeast(0)
             val pillX = pad +
-                tabIndex * (slotW + gap) +
+                (slotW + gap) * tabIndex +
                 (if (tabIndex >= 2) composeW + gap else 0.dp)
             val pillXAnim by animateDpAsState(
                 targetValue = pillX,
@@ -572,7 +573,7 @@ private fun ComposeDockButton(onCompose: () -> Unit) {
             .clip(CircleShape)
             .background(Brush.linearGradient(listOf(PulsePalette.Emerald, DockTeal600)))
             .clickable {
-                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onCompose()
             },
         contentAlignment = Alignment.Center,
