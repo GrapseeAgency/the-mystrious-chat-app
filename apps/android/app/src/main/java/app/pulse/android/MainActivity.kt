@@ -336,7 +336,7 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                 containerColor = if (dark) Color(0xFF27272A) else Color(0xFF18181B),
                 contentColor = Color.White,
                 shape = RoundedCornerShape(14.dp),
-            ) { Text(data.visualMessage, fontSize = 13.sp) }
+            ) { Text(data.visuals.message, fontSize = 13.sp) }
         }
     }
 }

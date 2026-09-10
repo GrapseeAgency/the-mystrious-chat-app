@@ -90,7 +90,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -535,7 +535,7 @@ fun ChatsScreen(
                 containerColor = if (dark) Color(0xFF27272A) else Color(0xFF18181B),
                 contentColor = Color.White,
                 shape = RoundedCornerShape(14.dp),
-            ) { Text(data.visualMessage, fontSize = 13.sp) }
+            ) { Text(data.visuals.message, fontSize = 13.sp) }
         }
     }
 
@@ -686,7 +686,7 @@ fun ArchivedScreen(
                 containerColor = Color(0xFF18181B),
                 contentColor = Color.White,
                 shape = RoundedCornerShape(14.dp),
-            ) { Text(data.visualMessage, fontSize = 13.sp) }
+            ) { Text(data.visuals.message, fontSize = 13.sp) }
         }
     }
 
@@ -1522,7 +1522,7 @@ private fun ConversationRowItem(
                             Text("Draft:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Amber600)
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                conversation.myDraft,
+                                conversation.myDraft ?: "",
                                 fontSize = 13.sp,
                                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                                 color = Zinc500,
@@ -1596,7 +1596,7 @@ private fun previewText(c: Conversation): String = when {
     c.lastMessageIsImage && c.lastMessagePreview.isNullOrBlank() -> "📷 Photo"
     c.lastMessageIsAudio && c.lastMessagePreview.isNullOrBlank() -> "🎤 Voice message"
     c.lastMessageIsFile -> "Document — ${c.lastMessageFileName ?: "file"}"
-    !c.lastMessagePreview.isNullOrBlank() -> c.lastMessagePreview
+    !c.lastMessagePreview.isNullOrBlank() -> c.lastMessagePreview ?: "No messages yet"
     else -> "No messages yet"
 }
 
@@ -1943,7 +1943,7 @@ private fun SearchResults(
                     fontSize = 12.sp,
                     color = Zinc400,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 4.dp, horizontal = 32.dp),
+                    modifier = Modifier.padding(top = 4.dp).padding(horizontal = 32.dp),
                 )
             }
         }
