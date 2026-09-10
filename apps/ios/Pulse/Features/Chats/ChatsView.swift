@@ -118,6 +118,14 @@ struct ChatsView: View {
         .onReceive(session.$searchRequestTick.dropFirst().removeDuplicates()) { _ in
             enterSearch()
         }
+        .onReceive(session.$pendingOpenRoom) { pending in
+            // Dock compose / More → Saved hand a conversation here. The
+            // Published value also replays on re-subscription, so consume
+            // immediately (nil re-fire is guarded).
+            guard let conv = pending else { return }
+            session.consumePendingOpenRoom()
+            openRoom(conv)
+        }
     }
 
     // ── actions ──────────────────────────────────────────────

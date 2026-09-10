@@ -25,6 +25,11 @@ struct RootView: View {
     @State private var didBootstrap = false
     @State private var tab: PulseTab = .chats
     @State private var navDirection = 0
+    // Dock nav surfaces — every dock button now opens something real.
+    @State private var newChatOpen = false
+    @State private var settingsOpen = false
+    @State private var storiesOpen = false
+    @State private var savedInFlight = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var systemScheme
@@ -93,6 +98,19 @@ struct RootView: View {
                 .overlay {
                     ToastHostView(center: session.toasts)
                 }
+                .sheet(isPresented: $newChatOpen) {
+                    NewChatSheet(session: session) { conv in
+                        newChatOpen = false
+                        switchTab(.chats)
+                        session.requestOpenRoom(conv)
+                    }
+                }
+                .sheet(isPresented: $settingsOpen) {
+                    SettingsView(session: session, prefs: prefs)
+                }
+                .sheet(isPresented: $storiesOpen) {
+                    StoriesView(session: session)
+                }
             } else {
                 // Gate on identity exactly like the web onboarding — the
                 // two-step screen replaces the shell (not a modal sheet).
@@ -120,6 +138,22 @@ struct RootView: View {
         guard target != tab else { return }
         navDirection = target.rawValue > tab.rawValue ? 1 : -1
         tab = target
+    }
+
+    /// More → Saved — the idempotent self-chat (server get-or-creates the
+    /// isSelf conversation), then the Chats tab pushes it. Land on Chats
+    /// first so the NavigationStack exists to receive the room handoff.
+    private func openSaved() async {
+        guard !savedInFlight else { return }
+        savedInFlight = true
+        defer { savedInFlight = false }
+        switchTab(.chats)
+        do {
+            let conv = try await session.api.createSelfChat()
+            session.requestOpenRoom(conv)
+        } catch {
+            session.toasts.show("Could not open Note to Self")
+        }
     }
 
     private var panelTransition: AnyTransition {
@@ -195,6 +229,8 @@ private struct CapsuleDock: View {
                     .offset(y: isActive ? -1 : 0)
                 Text(label)
                     .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
             .frame(maxWidth: .infinity, minHeight: 52)
@@ -235,8 +271,7 @@ private struct CapsuleDock: View {
     private var composeButton: some View {
         Button {
             PulseHaptics.tap()
-            // Honest degradation — the New Chat composer is not in this native build.
-            session.toasts.show("New chat composer isn't in this native build yet.")
+            newChatOpen = true
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 20, weight: .semibold))
@@ -267,16 +302,16 @@ private struct CapsuleDock: View {
     private var moreMenu: some View {
         VStack(alignment: .leading, spacing: 2) {
             moreItem("Settings", icon: "gearshape") {
-                session.toasts.show("Settings aren't available in this native build yet.")
+                settingsOpen = true
             }
             moreItem("Search", icon: "magnifyingglass") {
                 session.requestChatsSearch()
             }
             moreItem("Saved", icon: "bookmark") {
-                session.toasts.show("Saved messages aren't available in this native build yet.")
+                Task { await openSaved() }
             }
             moreItem("Stories", icon: "sparkles") {
-                session.toasts.show("Stories aren't available in this native build yet.")
+                storiesOpen = true
             }
         }
         .padding(6)
