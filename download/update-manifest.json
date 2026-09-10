@@ -1,10 +1,10 @@
 {
-  "versionCode": 7,
-  "versionName": "0.1.6-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.6-native/Pulse-v0.1.6-native.apk",
+  "versionCode": 8,
+  "versionName": "0.1.7-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.7-native/Pulse-v0.1.7-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "39a4d96053284614607caf46c88346e5994f5b0951d53c32e8495799698d3096",
-  "notes": "Install-path wave: updates now go through the platform PackageInstaller session and the app shows the system's EXACT verdict if anything is refused (no more silent parse dialog). Signer pre-check, automatic mirror download if the release asset fails on your network, Android 5-7 install crash fix. Tip: update from inside the app, not the browser.",
+  "sha256": "3685e24e8b136f88e97e17582ecbb274010ab28ae64cd905c335a1c549604a40",
+  "notes": "System-bar wave: the Android navigation bar no longer sits on top of the app dock — the dock now floats above the system buttons/pill, the gray scrim is gone, status-bar icons follow the in-app theme, and the chat room composer clears the system bars. Update from inside the app, not the browser.",
   "minRequired": false,
-  "updatedAt": "2026-09-10T01:40:00Z"
+  "updatedAt": "2026-09-10T06:00:00Z"
 }
