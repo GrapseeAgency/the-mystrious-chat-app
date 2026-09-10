@@ -14,6 +14,7 @@ struct SettingsView: View {
 
     @State private var probing = false
     @State private var probeResult: ProbeResult?
+    @State private var serverField = PulseEndpoints.configuredBase ?? ""
 
     private enum ProbeResult: Equatable {
         case ok(String)
@@ -29,7 +30,9 @@ struct SettingsView: View {
     }
 
     private var gatewayHost: String {
-        PulseEndpoints.gatewayURL.host ?? PulseEndpoints.gatewayURL.absoluteString
+        PulseEndpoints.configuredBase
+            ?? PulseEndpoints.gatewayURL.host
+            ?? PulseEndpoints.gatewayURL.absoluteString
     }
 
     var body: some View {
@@ -76,12 +79,50 @@ struct SettingsView: View {
 
     private var connectionCard: some View {
         settingsCard(title: "Connection", icon: "antenna.radiowaves.left.and.right") {
-            settingsRow(icon: "network", label: "Gateway", value: gatewayHost)
+            settingsRow(
+                icon: "network",
+                label: "Gateway",
+                value: PulseEndpoints.configuredBase == nil ? "Not set — offline-first" : gatewayHost,
+            )
             settingsRow(
                 icon: "bolt",
                 label: "Realtime",
-                value: PulseEndpoints.socketURL == nil ? "Offline-first build" : "Socket.IO live",
+                value: PulseEndpoints.socketURL == nil ? "Offline" : "Socket.IO live",
             )
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Server address")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                TextField("https://your-pulse-server", text: $serverField)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .font(.system(size: 14, design: .monospaced))
+                Text("Paste the origin of your Pulse web server. Applied on next launch; Test probes it right away.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 18) {
+                    Button("Test") { probe(hostOverride: serverField) }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(PulseTheme.accent)
+                        .disabled(probing)
+                    Button("Save") {
+                        PulseEndpoints.configuredBase = serverField.isEmpty ? nil : serverField
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(PulseTheme.accent)
+                    if PulseEndpoints.configuredBase != nil {
+                        Button("Go offline", role: .destructive) {
+                            PulseEndpoints.configuredBase = nil
+                            serverField = ""
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                    }
+                    Spacer()
+                }
+            }
+            .padding(.vertical, 4)
             Button {
                 probe()
             } label: {
@@ -229,14 +270,23 @@ struct SettingsView: View {
 
     // ── actions ──────────────────────────────────────────────
 
-    private func probe() {
+    private func probe(hostOverride: String? = nil) {
         guard !probing else { return }
         probing = true
         probeResult = nil
         Task {
             let started = Date()
+            // The probe must honor the FIELD, not the frozen session base —
+            // build a throwaway client against the candidate origin.
+            let target: String
+            if let hostOverride, !hostOverride.isEmpty {
+                target = hostOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                target = PulseEndpoints.gatewayURL.absoluteString
+            }
+            let candidate = PulseAPIClient(baseURL: URL(string: target) ?? PulseEndpoints.gatewayURL)
             do {
-                _ = try await session.api.users()
+                _ = try await candidate.users()
                 let ms = Int(Date().timeIntervalSince(started) * 1000)
                 withAnimation { probeResult = .ok("Reachable — identities endpoint answered in \(ms) ms.") }
             } catch {

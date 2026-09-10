@@ -177,7 +177,18 @@ fun UpdaterBanner(modifier: Modifier = Modifier) {
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        if (s is UpdateState.Failed && needsPermission(context)) "OPEN SETTINGS" else "RESUME",
+                        "BROWSER",
+                        color = PulsePalette.Emerald,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            LiveUpdater.downloadViaBrowser(context)
+                        },
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        if (needsPermission(context)) "OPEN SETTINGS" else "RESUME",
                         color = PulsePalette.Emerald,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp,
@@ -257,6 +268,13 @@ fun UpdaterDetail(modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.bodySmall,
                     color = PulsePalette.Amber,
                     modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "BROWSER",
+                    color = PulsePalette.Emerald,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    modifier = Modifier.clickable { LiveUpdater.downloadViaBrowser(context) },
                 )
                 if (needsPermission(context)) {
                     Text(

@@ -44,12 +44,15 @@ interface PulsePrefsStore {
     val reducedMotion: Flow<Boolean>
     /** Persisted chats-list filter — "all" | "unread" | "groups" (web ChatsListFilter). */
     val chatsListFilter: Flow<String>
+    /** Optional user-set gateway origin ("https://host") — null/empty = offline-first. */
+    val serverBase: Flow<String?>
 
     suspend fun setViewer(id: String?, name: String?, color: String? = null)
     suspend fun setFxMode(mode: String)
     suspend fun setDarkOverride(value: String)
     suspend fun setReducedMotion(value: Boolean)
     suspend fun setChatsListFilter(value: String)
+    suspend fun setServerBase(value: String?)
 }
 
 /** Contract every Pulse data source (remote-first, Room cache) must honor. */

@@ -89,9 +89,11 @@ public final class PulseSession: ObservableObject {
 
     private func startRealtime(as viewer: PulseViewer) async {
         // 1. Manifest-driven endpoint override (cached in the Keychain from a
-        //    previous launch is applied first, then a fresh fetch may refine).
+        //    previous launch is applied first, then a fresh fetch may refine;
+        //    the probe targets the distribution CDN — the manifest lives there
+        //    — and the user's Settings → Connection field always wins over it).
         PulseEndpoints.loadPersistedOverride()
-        await PulseEndpoints.fetchManifestOverride(base: PulseEndpoints.gatewayURL)
+        await PulseEndpoints.fetchManifestOverride()
 
         // 2. Rebind the API client — the override may have moved the gateway.
         api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id)

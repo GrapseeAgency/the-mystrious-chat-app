@@ -8,7 +8,7 @@ plugins {
 }
 
 // Release channel plumbing — CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 9
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 10
 val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.2.0-native"
 
 android {
@@ -28,7 +28,7 @@ android {
         // defaults were unreachable on real phones AND cleartext (Android blocks
         // plain http → "CLEARTEXT communication not permitted"). Emulator dev:
         // -PpulseGateway=http://10.0.2.2:81 -PpulseSocket=http://10.0.2.2:3003
-        buildConfigField("String", "PULSE_GATEWAY", "\"${project.findProperty("pulseGateway") ?: "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main"}\"")
+        buildConfigField("String", "PULSE_GATEWAY", "\"${project.findProperty("pulseGateway") ?: ""}\"")
         // Blank socket base = realtime relay disabled (no public relay yet) —
         // the client then stays offline-first instead of reconnect-spamming a
         // dead address forever.

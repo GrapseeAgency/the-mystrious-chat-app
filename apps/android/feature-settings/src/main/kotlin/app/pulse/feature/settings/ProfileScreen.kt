@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -238,6 +239,69 @@ fun ProfileScreen(viewModel: ProfileViewModel = hiltViewModel()) {
                     scope.launch { LiveUpdater.syncFrom(context, force = true) }
                 }) {
                     Text("Check for updates", color = PulsePalette.Emerald)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        SectionHeader(Icons.Filled.Wifi, "Connection")
+        SettingCard {
+            val savedBase by viewModel.serverBase.collectAsStateWithLifecycle()
+            val probe by viewModel.probe.collectAsStateWithLifecycle()
+            var serverField by remember(savedBase) { mutableStateOf(savedBase ?: "") }
+            Column {
+                Text("Server address", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    if (savedBase.isNullOrBlank()) {
+                        "Not set — Pulse runs offline-first. Paste your Pulse web origin (the https:// address of this app's server) to go live."
+                    } else {
+                        "REST + realtime point at:\n$savedBase"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = serverField,
+                    onValueChange = { serverField = it },
+                    singleLine = true,
+                    placeholder = { Text("https://your-pulse-server") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(4.dp))
+                Row {
+                    TextButton(onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.probeServer(serverField)
+                    }) { Text("Test", color = PulsePalette.Emerald) }
+                    TextButton(onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.setServerBase(serverField.trim().takeIf { it.isNotBlank() })
+                    }) { Text("Save & use", color = PulsePalette.Emerald) }
+                    if (!savedBase.isNullOrBlank()) {
+                        TextButton(onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            serverField = ""
+                            viewModel.setServerBase(null)
+                        }) { Text("Go offline", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+                when {
+                    probe.running -> Text(
+                        "Testing $serverField/api/users …",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    probe.ok == true -> Text(
+                        "✓ ${probe.detail}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = PulsePalette.Emerald,
+                    )
+                    probe.ok == false -> Text(
+                        "✗ ${probe.detail}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = PulsePalette.Amber,
+                    )
                 }
             }
         }

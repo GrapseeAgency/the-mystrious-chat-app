@@ -34,6 +34,7 @@ class PulsePrefsStoreImpl @Inject constructor(
         val DARK = stringPreferencesKey("ui.darkOverride")
         val REDUCED = booleanPreferencesKey("ui.reducedMotion")
         val CHATS_FILTER = stringPreferencesKey("chats.listFilter")
+        val SERVER_BASE = stringPreferencesKey("net.serverBase")
     }
 
     override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
@@ -43,6 +44,7 @@ class PulsePrefsStoreImpl @Inject constructor(
     override val darkOverride: Flow<String> = context.pulsePrefs.data.map { it[Keys.DARK] ?: "system" }
     override val reducedMotion: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.REDUCED] ?: false }
     override val chatsListFilter: Flow<String> = context.pulsePrefs.data.map { it[Keys.CHATS_FILTER] ?: "all" }
+    override val serverBase: Flow<String?> = context.pulsePrefs.data.map { it[Keys.SERVER_BASE]?.takeIf { v -> v.isNotBlank() } }
 
     override suspend fun setViewer(id: String?, name: String?, color: String?) {
         context.pulsePrefs.edit { p ->
@@ -72,5 +74,12 @@ class PulsePrefsStoreImpl @Inject constructor(
 
     override suspend fun setChatsListFilter(value: String) {
         context.pulsePrefs.edit { it[Keys.CHATS_FILTER] = value }
+    }
+
+    override suspend fun setServerBase(value: String?) {
+        context.pulsePrefs.edit { p ->
+            val clean = value?.trim()?.trimEnd('/')?.takeIf { v -> v.isNotBlank() }
+            if (clean == null) p.remove(Keys.SERVER_BASE) else p[Keys.SERVER_BASE] = clean
+        }
     }
 }

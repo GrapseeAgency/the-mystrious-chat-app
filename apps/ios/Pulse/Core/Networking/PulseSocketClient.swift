@@ -48,9 +48,17 @@ public final class PulseSocketClient {
         // Reconnect backoff — W0-PLAN parity with Android (800ms → 5s cap;
         // the Swift client is integer-seconds: 1s → exponential 1.5^n with
         // jitter, clamped at 5s). reconnects(true) keeps retrying forever.
+        // `.connectParams` appends XTransformPort=3003 to every poll/WS request
+        // — the edge routes on the query (the /socket.io/ path rule 308s and
+        // would break WS upgrades). Mirrors Android PulseSocketClient exactly;
+        // a direct relay server ignores the extra query key.
         manager = SocketManager(
             socketURL: socketURL,
-            config: [.log(false), .reconnects(true), .reconnectWait(1), .reconnectWaitMax(5)],
+            config: [
+                .log(false), .reconnects(true),
+                .reconnectWait(1), .reconnectWaitMax(5),
+                .connectParams(["XTransformPort": "3003"]),
+            ],
         )
         socket = manager.defaultSocket
     }

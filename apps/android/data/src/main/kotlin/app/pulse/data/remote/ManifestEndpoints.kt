@@ -55,9 +55,13 @@ class ManifestEndpoints @Inject constructor(
         for (url in urls) {
             val (gateway, socket) = fetchOverrides(url)
             if (gateway != null || socket != null) {
-                PulseEndpoints.applyOverride(gateway, socket)
-                persistOverrides(gateway, socket)
-                Log.i(TAG, "endpoint override adopted — gateway=$gateway socket=$socket")
+                // v0.1.8 semantics: a manifest `gateway` drives BOTH rest and
+                // realtime (the edge serves both); an explicit `socket` field
+                // overrides the relay separately when deployments split them.
+                val effectiveSocket = socket ?: gateway
+                PulseEndpoints.applyOverride(gateway, effectiveSocket)
+                persistOverrides(gateway, effectiveSocket)
+                Log.i(TAG, "endpoint override adopted — gateway=$gateway socket=$effectiveSocket")
                 return@withContext
             }
         }

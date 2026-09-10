@@ -199,6 +199,21 @@ object LiveUpdater {
         app.startActivity(intent)
     }
 
+    /**
+     * Escape hatch: hand the SAME verified release URL to the system browser.
+     * The browser download path is the one that demonstrably installs on every
+     * ROM we've seen — if the in-app session handoff is refused by an OEM
+     * installer, this always remains.
+     */
+    fun downloadViaBrowser(context: Context) {
+        val url = manifest?.apkUrl ?: MANIFEST_URL.removeSuffix("update-manifest.json")
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
+
     fun installedVersionLabel(context: Context): String? = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrNull()
@@ -487,6 +502,13 @@ object LiveUpdater {
                     }
                     else -> {
                         runCatching { app.unregisterReceiver(this) }
+                        // A parse verdict means the ROM's installer refused the
+                        // handoff — the staged file is done for on that device.
+                        // Drop it so the next tap re-downloads instead of
+                        // replaying the same refusal forever.
+                        if (status == PackageInstaller.STATUS_FAILURE_INVALID) {
+                            runCatching { File(File(app.cacheDir, DIR), APK_NAME).delete() }
+                        }
                         _state.value = UpdateState.Failed(
                             installFailureText(status, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)),
                         )
@@ -534,7 +556,7 @@ object LiveUpdater {
         val why = when (status) {
             PackageInstaller.STATUS_FAILURE_ABORTED -> "install cancelled before finishing"
             PackageInstaller.STATUS_FAILURE_BLOCKED -> "blocked by the device (Play Protect or unknown-apps policy)"
-            PackageInstaller.STATUS_FAILURE_INVALID -> "the system could not parse the update — tap to re-download"
+            PackageInstaller.STATUS_FAILURE_INVALID -> "the system could not parse the update — tap BROWSER to download it with your browser instead"
             PackageInstaller.STATUS_FAILURE_CONFLICT -> "conflicts with an installed app — uninstall the old Pulse first"
             PackageInstaller.STATUS_FAILURE_STORAGE -> "not enough storage to install"
             PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "this update is incompatible with the device"

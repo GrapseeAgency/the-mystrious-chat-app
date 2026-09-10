@@ -104,6 +104,10 @@ class PulseSocketClient(
                 reconnection = true
                 reconnectionDelay = 800L
                 reconnectionDelayMax = 5_000L
+                // Edge-gateway routing: the query route connects where the
+                // /socket.io/ path rule 308-redirects and breaks WS upgrades
+                // (verified empirically). A direct relay ignores the extra key.
+                query = "XTransformPort=3003"
             },
         )
 
