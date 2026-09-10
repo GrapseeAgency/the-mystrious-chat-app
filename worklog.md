@@ -2089,3 +2089,22 @@ Work Log:
 Stage Summary:
 - Code wave complete: system nav no longer overlaps the dock (dock lifts by the real inset), no gray scrim, status/nav icons follow the in-app theme, room composer clears the nav strip, lists clear the raised dock.
 - NEXT (in flight): push → android-ci green → forensic gate (AXML versionCode=8, v1+v2+v3, sha256) → Release v0.1.7-native → CDN download/Pulse.apk + update-manifest.json (versionCode 8) → tell user to update in-app or via link.
+
+---
+Task ID: F3-ANDNAV (completion)
+Agent: Z.ai Code (main)
+Task: Ship the Android system-bar fix as v0.1.7-native.
+
+Work Log:
+- Push 1 (2090405): full insets wave — CI round 1 FAILED: `calculateBottomPadding` is a PaddingValues member, not a top-level import (bogus import in MainActivity + ChatsScreen).
+- Push 2 (aac6518): import removed → android-ci run 34442007550 GREEN.
+- Forensic gate on artifact pulse-release-apk (13,985,275 B, sha256 3685e24e8b136f88e97e17582ecbb274010ab28ae64cd905c335a1c549604a40): zip testzip CLEAN; v1 META-INF/CERT.SF+RSA present; "APK Sig Block 42" v2/v3 magic present; resources.arsc STORED; AXML walk (correct attrExt layout: attrs at i+16+attributeStart) → versionCode=8, versionName="0.1.7-native", package=app.pulse.chat, compileSdk=35; updater authority string in pool.
+- Release v0.1.7-native created (id 386032907, full-SHA target aac6518c…) + asset Pulse-v0.1.7-native.apk (id 554350784, uploaded, 13,985,275 B).
+- Public release-asset bytes sha256 == artifact EXACTLY.
+- CDN commit 032454a: download/Pulse.apk replaced + update-manifest.json → versionCode 8 / 0.1.7-native / new apkUrl + mirror + sha256 / nav-fix notes.
+- Live re-check: raw manifest serves versionCode 8; raw mirror bytes sha256 == 3685e24e… — four sources (repo, release asset, raw mirror, manifest target) one hash.
+
+Stage Summary:
+- SHIPPED: v0.1.7-native live on the CDN. In-app updater (versionCode 8 > 7) will offer it; PackageInstaller flow shows the system verdict directly.
+- User device: system nav no longer overlaps the dock; no gray scrim; status-bar icons follow in-app theme.
+- Next (user-gated): Android parity wave for the four dock dead-ends (Settings/Saved/Stories/compose), iOS room-view parity, live gateway decision.
