@@ -97,6 +97,9 @@ import app.pulse.android.ui.AmbientField
 import app.pulse.android.ui.FxMode
 import app.pulse.android.ui.ParticleBurstHost
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.feature.calls.CallOverlay
+import app.pulse.feature.calls.CallViewModel
+import app.pulse.feature.calls.CallsView
 import app.pulse.feature.calls.ContactsScreen
 import app.pulse.feature.chat.ArchivedScreen
 import app.pulse.feature.chat.ChatsScreen
@@ -266,6 +269,9 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val shell: ShellViewModel = hiltViewModel()
+    // Wave 3 — activity-scoped call surface. The engine is a @Singleton; this
+    // VM just exposes it to every screen + the root overlay.
+    val callVm: CallViewModel = hiltViewModel()
     val unread by shell.unread.collectAsStateWithLifecycle()
     val searchTick by shell.searchTick.collectAsStateWithLifecycle()
     val viewerName by session.viewerName.collectAsStateWithLifecycle()
@@ -332,7 +338,28 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
             }
             composable("contacts") {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
-                    ContactsScreen(onOpenRoom = { id -> navController.navigate("room/$id") })
+                    ContactsScreen(
+                        onOpenRoom = { id -> navController.navigate("room/$id") },
+                        onCallUser = { user ->
+                            callVm.callPeer(
+                                peerId = user.id,
+                                name = user.name,
+                                color = user.color,
+                                avatar = user.avatar,
+                                callerName = viewerName,
+                                callerColor = viewerColor,
+                            )
+                        },
+                        onOpenCalls = { navController.navigate("calls") },
+                    )
+                }
+            }
+            composable("calls") {
+                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                    CallsView(
+                        onBack = { navController.popBackStack() },
+                        onOpenRoom = { id -> navController.navigate("room/$id") },
+                    )
                 }
             }
             composable("profile") {
@@ -433,6 +460,11 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                 shape = RoundedCornerShape(14.dp),
             ) { Text(data.visuals.message, fontSize = 13.sp) }
         }
+
+        // Wave 3 — the call overlay owns the WHOLE screen whenever the engine
+        // is not idle (ringing/connecting/connected/ended). Renders above the
+        // dock and every tab — one call, one surface.
+        CallOverlay(callVm)
     }
 }
 

@@ -2,6 +2,8 @@ package app.pulse.data.remote
 
 import app.pulse.core.PulseEndpoints
 import app.pulse.core.result.PulseResult
+import app.pulse.protocol.CallLogCreatedDto
+import app.pulse.protocol.CallLogsPageDto
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.ConversationsPageDto
@@ -498,6 +500,39 @@ class PulseApi(private val http: HttpClient) {
     } catch (e: Exception) {
         PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
     }
+
+    // ── Wave 3 native calls — REST /api/calls (call-types.ts parity) ──
+
+    /** GET /api/calls?userId= → { items } — newest-first history, server cap 50. */
+    suspend fun callLogs(userId: String): PulseResult<CallLogsPageDto> =
+        get("/api/calls?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(CallLogsPageDto.serializer(), it)
+        }
+
+    /**
+     * POST /api/calls { userId, conversationId, peerId, kind, status, durationSec? }
+     * → 201 { item }. SINGLE-WRITER RULE: the viewer is always the CALLER
+     * (callerId = userId, calleeId = peerId) — the callee never writes.
+     */
+    suspend fun createCallLog(
+        userId: String,
+        conversationId: String,
+        peerId: String,
+        kind: String,
+        status: String,
+        durationSec: Long,
+    ): PulseResult<CallLogCreatedDto> =
+        post(
+            "/api/calls",
+            buildJsonObject {
+                put("userId", userId)
+                put("conversationId", conversationId)
+                put("peerId", peerId)
+                put("kind", kind)
+                put("status", status)
+                put("durationSec", durationSec)
+            },
+        ) { PulseJson.decodeFromString(CallLogCreatedDto.serializer(), it) }
 
     companion object {
         fun jsonOf(vararg pairs: Pair<String, Any?>): JsonObject = buildJsonObject {

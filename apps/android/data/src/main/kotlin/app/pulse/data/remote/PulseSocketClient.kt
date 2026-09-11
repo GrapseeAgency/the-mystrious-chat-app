@@ -2,6 +2,12 @@ package app.pulse.data.remote
 
 import android.util.Log
 import app.pulse.core.PulseEndpoints
+import app.pulse.protocol.CallAnswerDto
+import app.pulse.protocol.CallCancelDto
+import app.pulse.protocol.CallHangupDto
+import app.pulse.protocol.CallIceDto
+import app.pulse.protocol.CallOfferDto
+import app.pulse.protocol.CallRejectDto
 import app.pulse.protocol.CallSignalDto
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.ConversationUpdatedPayload
@@ -67,7 +73,39 @@ class PulseSocketClient(
         data class StageState(val conversationId: String, val state: kotlinx.serialization.json.JsonElement?) : Signal
         data class StageEnded(val conversationId: String) : Signal
         data class SpaceState(val conversationId: String, val state: kotlinx.serialization.json.JsonElement?) : Signal
-        data class CallSignal(val event: String, val payload: CallSignalDto) : Signal
+        data class CallSignal(val signal: CallSignal) : Signal
+    }
+
+    /**
+     * Typed per-event call:* signal — each payload decodes into its EXACT
+     * wire DTO (flat ICE triple, durationSec hangup). Wave-3 engine feed.
+     */
+    sealed interface CallSignal {
+        val callId: String
+
+        data class Offer(val dto: CallOfferDto) : CallSignal {
+            override val callId: String get() = dto.callId
+        }
+
+        data class Answer(val dto: CallAnswerDto) : CallSignal {
+            override val callId: String get() = dto.callId
+        }
+
+        data class Ice(val dto: CallIceDto) : CallSignal {
+            override val callId: String get() = dto.callId
+        }
+
+        data class Reject(val dto: CallRejectDto) : CallSignal {
+            override val callId: String get() = dto.callId
+        }
+
+        data class Cancel(val dto: CallCancelDto) : CallSignal {
+            override val callId: String get() = dto.callId
+        }
+
+        data class Hangup(val dto: CallHangupDto) : CallSignal {
+            override val callId: String get() = dto.callId
+        }
     }
 
     private val _signals = MutableSharedFlow<Signal>(
@@ -180,12 +218,16 @@ class PulseSocketClient(
         sock.on(SocketEvents.SPACE_STATE) { args ->
             decode<SpaceStatePayload>(args)?.let { _signals.tryEmit(Signal.SpaceState(it.conversationId, it.state)) }
         }
-        for (event in listOf(
-            SocketEvents.CALL_OFFER, SocketEvents.CALL_ANSWER, SocketEvents.CALL_ICE,
-            SocketEvents.CALL_REJECT, SocketEvents.CALL_CANCEL, SocketEvents.CALL_HANGUP,
+        for (pair in listOf(
+            SocketEvents.CALL_OFFER to CallSignalDecoder.offer,
+            SocketEvents.CALL_ANSWER to CallSignalDecoder.answer,
+            SocketEvents.CALL_ICE to CallSignalDecoder.ice,
+            SocketEvents.CALL_REJECT to CallSignalDecoder.reject,
+            SocketEvents.CALL_CANCEL to CallSignalDecoder.cancel,
+            SocketEvents.CALL_HANGUP to CallSignalDecoder.hangup,
         )) {
-            sock.on(event) { args ->
-                decode<CallSignalDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(event, it)) }
+            sock.on(pair.first) { args ->
+                pair.second(args)?.let { _signals.tryEmit(Signal.CallSignal(it)) }
             }
         }
 
@@ -212,6 +254,65 @@ class PulseSocketClient(
             .put("userName", userName)
             .put("isTyping", isTyping)
         socket?.emit(SocketEvents.TYPING, payload)
+    }
+
+    // ── Wave-3 call signaling emission (wire-perfect payloads) ─────
+
+    /** call:offer — opens the ring; carries the caller's identity decoration. */
+    fun emitCallOffer(payload: CallOfferDto) {
+        emitCall(SocketEvents.CALL_OFFER, payload.toJsonObject())
+    }
+
+    /** call:answer — callee accepted, SDP answer attached. */
+    fun emitCallAnswer(payload: CallAnswerDto) {
+        emitCall(SocketEvents.CALL_ANSWER, payload.toJsonObject())
+    }
+
+    /** call:ice — flat candidate triple, trickled any time after the offer. */
+    fun emitCallIce(payload: CallIceDto) {
+        emitCall(SocketEvents.CALL_ICE, payload.toJsonObject())
+    }
+
+    /** call:reject — callee declined (busy / explicit). */
+    fun emitCallReject(payload: CallRejectDto) {
+        emitCall(SocketEvents.CALL_REJECT, payload.toJsonObject())
+    }
+
+    /** call:cancel — caller aborts while ringing. */
+    fun emitCallCancel(payload: CallCancelDto) {
+        emitCall(SocketEvents.CALL_CANCEL, payload.toJsonObject())
+    }
+
+    /** call:hangup — either side ends an ACTIVE call (durationSec on the wire). */
+    fun emitCallHangup(payload: CallHangupDto) {
+        emitCall(SocketEvents.CALL_HANGUP, payload.toJsonObject())
+    }
+
+    private fun emitCall(event: String, payload: kotlinx.serialization.json.JsonObject) {
+        val sock = socket ?: return
+        sock.emit(event, JSONObject(payload.toString()))
+    }
+
+    /** Per-event decode table for the six S→C call:* payloads. */
+    private object CallSignalDecoder {
+        val offer: (Array<out Any?>) -> CallSignal? = { args ->
+            decode<CallOfferDto>(args)?.let { CallSignal.Offer(it) }
+        }
+        val answer: (Array<out Any?>) -> CallSignal? = { args ->
+            decode<CallAnswerDto>(args)?.let { CallSignal.Answer(it) }
+        }
+        val ice: (Array<out Any?>) -> CallSignal? = { args ->
+            decode<CallIceDto>(args)?.let { CallSignal.Ice(it) }
+        }
+        val reject: (Array<out Any?>) -> CallSignal? = { args ->
+            decode<CallRejectDto>(args)?.let { CallSignal.Reject(it) }
+        }
+        val cancel: (Array<out Any?>) -> CallSignal? = { args ->
+            decode<CallCancelDto>(args)?.let { CallSignal.Cancel(it) }
+        }
+        val hangup: (Array<out Any?>) -> CallSignal? = { args ->
+            decode<CallHangupDto>(args)?.let { CallSignal.Hangup(it) }
+        }
     }
 
     fun disconnect() {

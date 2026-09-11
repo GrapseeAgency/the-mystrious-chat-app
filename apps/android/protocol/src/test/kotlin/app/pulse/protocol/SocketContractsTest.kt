@@ -1,5 +1,6 @@
 package app.pulse.protocol
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -282,4 +283,186 @@ class SocketContractsTest {
         assertEquals("u-9", decoded.userId)
         assertEquals(JsonPrimitive("u-9"), JsonPrimitive(decoded.userId))
     }
+
+    // ── Wave-3 full-fidelity call payloads — encode/decode round-trips ──
+
+    @Test
+    fun `call offer round-trips with caller identity`() {
+        val dto = CallOfferDto(
+            callId = "call-1",
+            conversationId = "c1",
+            from = "u1",
+            to = "u2",
+            kind = "video",
+            sdp = "v=0 o=- 461173... IN IP4 127.0.0.1",
+            callerName = "Alice",
+            callerColor = "emerald",
+            callerAvatar = null,
+        )
+        val json = PulseJson.encodeToString(CallOfferDto.serializer(), dto)
+        val decoded = PulseJson.decodeFromString(CallOfferDto.serializer(), json)
+        assertEquals(dto, decoded)
+
+        // Wire fixture from the relay (index.ts call:offer handler shape).
+        val fromWire = PulseJson.decodeFromString(
+            CallOfferDto.serializer(),
+            """
+            {"callId":"call-1","conversationId":"c1","from":"u1","to":"u2","kind":"voice",
+             "sdp":"v=0 o=- ...","callerName":"Alice","callerColor":"emerald","callerAvatar":null,
+             "futureField":{"x":1}}
+            """.trimIndent(),
+        )
+        assertEquals("call-1", fromWire.callId)
+        assertEquals("Alice", fromWire.callerName)
+        assertEquals("emerald", fromWire.callerColor)
+        assertNull(fromWire.callerAvatar)
+        assertEquals("v=0 o=- ...", fromWire.sdp)
+    }
+
+    @Test
+    fun `call answer round-trips with the sdp`() {
+        val dto = CallAnswerDto(
+            callId = "call-1", conversationId = "c1", from = "u2", to = "u1",
+            kind = "voice", sdp = "v=0 o=- answer ...",
+        )
+        val decoded = PulseJson.decodeFromString(
+            CallAnswerDto.serializer(),
+            PulseJson.encodeToString(CallAnswerDto.serializer(), dto),
+        )
+        assertEquals(dto, decoded)
+        // Relay emits the callee's answer with the caller as `to`.
+        val fromWire = PulseJson.decodeFromString(
+            CallAnswerDto.serializer(),
+            """{"callId":"call-1","conversationId":"c1","from":"u2","to":"u1","kind":"voice","sdp":"v=0"}""",
+        )
+        assertEquals("u2", fromWire.from)
+        assertEquals("v=0", fromWire.sdp)
+    }
+
+    @Test
+    fun `call ice round-trips the FLAT candidate triple`() {
+        val dto = CallIceDto(
+            callId = "call-1", conversationId = "c1", from = "u1", to = "u2", kind = "voice",
+            candidate = "candidate:842163049 1 udp 1677729535 192.168.0.1 54400 typ srflx",
+            sdpMid = "0",
+            sdpMLineIndex = 0,
+        )
+        val encoded = PulseJson.encodeToString(CallIceDto.serializer(), dto)
+        // WIRE truth: candidate is a flat STRING — a nested object would be wrong.
+        assertTrue(encoded.contains("\"candidate\":\"candidate:"))
+        val decoded = PulseJson.decodeFromString(CallIceDto.serializer(), encoded)
+        assertEquals(dto, decoded)
+
+        // Relay fixture: nullable sdpMid/sdpMLineIndex ride as JSON nulls.
+        val fromWire = PulseJson.decodeFromString(
+            CallIceDto.serializer(),
+            """
+            {"callId":"call-1","conversationId":"c1","from":"u2","to":"u1","kind":"voice",
+             "candidate":"candidate:1 1 UDP ...","sdpMid":null,"sdpMLineIndex":null}
+            """.trimIndent(),
+        )
+        assertEquals("candidate:1 1 UDP ...", fromWire.candidate)
+        assertNull(fromWire.sdpMid)
+        assertNull(fromWire.sdpMLineIndex)
+    }
+
+    @Test
+    fun `call reject round-trips with its optional reason`() {
+        val declined = CallRejectDto(
+            callId = "call-1", conversationId = "c1", from = "u2", to = "u1",
+            kind = "voice", reason = CallRejectReasons.DECLINED,
+        )
+        val decoded = PulseJson.decodeFromString(
+            CallRejectDto.serializer(),
+            PulseJson.encodeToString(CallRejectDto.serializer(), declined),
+        )
+        assertEquals(declined, decoded)
+
+        // The busy reject from the relayed call:reject carries no reason on the wire
+        // (relay emits the plain base quintet) — tolerant decode keeps it null.
+        val bare = PulseJson.decodeFromString(
+            CallRejectDto.serializer(),
+            """{"callId":"call-1","conversationId":"c1","from":"u2","to":"u1","kind":"voice"}""",
+        )
+        assertNull(bare.reason)
+
+        val busy = PulseJson.decodeFromString(
+            CallRejectDto.serializer(),
+            """{"callId":"call-1","conversationId":"c1","from":"u2","to":"u1","kind":"voice","reason":"busy"}""",
+        )
+        assertEquals(CallRejectReasons.BUSY, busy.reason)
+    }
+
+    @Test
+    fun `call cancel round-trips every wire reason`() {
+        for (reason in listOf("timeout", "cancel", "busy", "offline")) {
+            val dto = CallCancelDto(
+                callId = "call-1", conversationId = "c1", from = "u1", to = "u2",
+                kind = "voice", reason = reason,
+            )
+            val decoded = PulseJson.decodeFromString(
+                CallCancelDto.serializer(),
+                PulseJson.encodeToString(CallCancelDto.serializer(), dto),
+            )
+            assertEquals(dto, decoded)
+            assertEquals(reason, decoded.reason)
+        }
+        // Server ring-timeout cancel toward the callee (from = caller id).
+        val fromWire = PulseJson.decodeFromString(
+            CallCancelDto.serializer(),
+            """{"callId":"call-1","conversationId":"c1","from":"u1","to":"u2","kind":"voice","reason":"timeout"}""",
+        )
+        assertEquals("timeout", fromWire.reason)
+        assertEquals("u1", fromWire.from)
+    }
+
+    @Test
+    fun `call hangup round-trips durationSec — never durationMs`() {
+        val dto = CallHangupDto(
+            callId = "call-1", conversationId = "c1", from = "u1", to = "u2",
+            kind = "voice", durationSec = 42L,
+        )
+        val encoded = PulseJson.encodeToString(CallHangupDto.serializer(), dto)
+        assertTrue(encoded.contains("\"durationSec\":42"))
+        assertTrue(!encoded.contains("durationMs"))
+        val decoded = PulseJson.decodeFromString(CallHangupDto.serializer(), encoded)
+        assertEquals(42L, decoded.durationSec)
+
+        // The REAL relay drops the session and reports elapsed seconds; a
+        // durationMs field on the wire must never be mistaken for seconds.
+        val fromWire = PulseJson.decodeFromString(
+            CallHangupDto.serializer(),
+            """{"callId":"call-1","conversationId":"c1","from":"u1","to":"u2","kind":"voice","durationSec":61}""",
+        )
+        assertEquals(61L, fromWire.durationSec)
+    }
+
+    @Test
+    fun `wire json builders emit relay-shaped payloads`() {
+        val offerJson = CallOfferDto(
+            callId = "call-1", conversationId = "c1", from = "u1", to = "u2", kind = "voice",
+            sdp = "v=0", callerName = "Alice", callerColor = "cyan", callerAvatar = null,
+        ).toJsonObject()
+        assertEquals("Alice", offerJson.str("callerName"))
+        assertEquals("cyan", offerJson.str("callerColor"))
+        assertTrue(!offerJson.containsKey("callerAvatar")) // null omitted like the web client
+
+        val iceJson = CallIceDto(
+            callId = "call-1", conversationId = "c1", from = "u1", to = "u2", kind = "voice",
+            candidate = "candidate:1 1 UDP 1", sdpMid = null, sdpMLineIndex = null,
+        ).toJsonObject()
+        assertEquals("candidate:1 1 UDP 1", iceJson.str("candidate"))
+        assertTrue(!iceJson.containsKey("sdpMid"))
+        assertTrue(!iceJson.containsKey("sdpMLineIndex"))
+
+        val hangupJson = CallHangupDto(
+            callId = "call-1", conversationId = "c1", from = "u1", to = "u2", kind = "voice",
+            durationSec = 7L,
+        ).toJsonObject()
+        assertEquals(7L, (hangupJson["durationSec"] as JsonPrimitive).content.toLong())
+        assertEquals("call-1", hangupJson.str("callId"))
+    }
+
+    private fun JsonObject.str(key: String): String =
+        (this[key] as? JsonPrimitive)?.content ?: ""
 }

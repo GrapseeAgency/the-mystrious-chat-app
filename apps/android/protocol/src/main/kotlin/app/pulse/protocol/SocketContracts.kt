@@ -2,6 +2,9 @@ package app.pulse.protocol
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Socket.IO contract — the COMPLETE pulse-socket relay surface, mirroring
@@ -246,3 +249,160 @@ data class CallSignalDto(
     val callerColor: String? = null,
     val callerAvatar: String? = null,
 )
+
+// ── Wave-3 full-fidelity call payloads (wire = src/lib/call-types.ts) ────
+//
+// The generic CallSignalDto above stays for back-compat, but the WIRE (relay
+// mini-services/pulse-socket/index.ts + the web client) carries:
+//   • call:ice  → a FLAT candidate string triple (NOT a nested object);
+//   • call:hangup → durationSec (contracts.ts says durationMs — known drift,
+//     the relay and the web client both emit durationSec; native follows the
+//     WIRE).
+// One exact DTO per event follows, plus pure-kotlinx JSON builders so the
+// data layer can emit wire-perfect payloads (org.json stays out of :protocol
+// so the JVM tests can run the round-trips).
+
+/** call:reject reason — "busy" (callee busy) | "declined" (explicit). */
+object CallRejectReasons {
+    const val BUSY = "busy"
+    const val DECLINED = "declined"
+}
+
+/** call:offer — opens the ring (30s server-side timeout). */
+@Serializable
+data class CallOfferDto(
+    val callId: String = "",
+    val conversationId: String = "",
+    val from: String = "",
+    val to: String = "",
+    val kind: String = "voice",
+    val sdp: String = "",
+    val callerName: String? = null,
+    val callerColor: String? = null,
+    val callerAvatar: String? = null,
+)
+
+/** call:answer — callee accepted; SDP answer attached. */
+@Serializable
+data class CallAnswerDto(
+    val callId: String = "",
+    val conversationId: String = "",
+    val from: String = "",
+    val to: String = "",
+    val kind: String = "voice",
+    val sdp: String = "",
+)
+
+/** call:ice — thin FLAT candidate triple (JSON-safe everywhere). */
+@Serializable
+data class CallIceDto(
+    val callId: String = "",
+    val conversationId: String = "",
+    val from: String = "",
+    val to: String = "",
+    val kind: String = "voice",
+    val candidate: String = "",
+    val sdpMid: String? = null,
+    val sdpMLineIndex: Int? = null,
+)
+
+/** call:reject — callee declined (busy / explicit). */
+@Serializable
+data class CallRejectDto(
+    val callId: String = "",
+    val conversationId: String = "",
+    val from: String = "",
+    val to: String = "",
+    val kind: String = "voice",
+    val reason: String? = null,
+)
+
+/** call:cancel — caller gave up / server tore the ring down. */
+@Serializable
+data class CallCancelDto(
+    val callId: String = "",
+    val conversationId: String = "",
+    val from: String = "",
+    val to: String = "",
+    val kind: String = "voice",
+    val reason: String = "cancel",
+)
+
+/** call:hangup — either side ended an ACTIVE call. WIRE = durationSec. */
+@Serializable
+data class CallHangupDto(
+    val callId: String = "",
+    val conversationId: String = "",
+    val from: String = "",
+    val to: String = "",
+    val kind: String = "voice",
+    /** Seconds the call was connected, reported by whoever hangs up (advisory). */
+    val durationSec: Long? = null,
+)
+
+// ── wire-perfect JSON builders (pure kotlinx — JVM-test friendly) ────────
+
+/** Builds the exact call:offer wire object (null avatar omitted — the relay tolerates it). */
+fun CallOfferDto.toJsonObject(): JsonObject = buildJsonObject {
+    put("callId", callId)
+    put("conversationId", conversationId)
+    put("from", from)
+    put("to", to)
+    put("kind", kind)
+    put("sdp", sdp)
+    put("callerName", callerName ?: "")
+    put("callerColor", callerColor ?: "emerald")
+    if (callerAvatar != null) put("callerAvatar", callerAvatar)
+}
+
+/** Builds the exact call:answer wire object. */
+fun CallAnswerDto.toJsonObject(): JsonObject = buildJsonObject {
+    put("callId", callId)
+    put("conversationId", conversationId)
+    put("from", from)
+    put("to", to)
+    put("kind", kind)
+    put("sdp", sdp)
+}
+
+/** Builds the exact call:ice wire object — flat candidate triple. */
+fun CallIceDto.toJsonObject(): JsonObject = buildJsonObject {
+    put("callId", callId)
+    put("conversationId", conversationId)
+    put("from", from)
+    put("to", to)
+    put("kind", kind)
+    put("candidate", candidate)
+    if (sdpMid != null) put("sdpMid", sdpMid)
+    if (sdpMLineIndex != null) put("sdpMLineIndex", sdpMLineIndex)
+}
+
+/** Builds the exact call:reject wire object. */
+fun CallRejectDto.toJsonObject(): JsonObject = buildJsonObject {
+    put("callId", callId)
+    put("conversationId", conversationId)
+    put("from", from)
+    put("to", to)
+    put("kind", kind)
+    if (reason != null) put("reason", reason)
+}
+
+/** Builds the exact call:cancel wire object. */
+fun CallCancelDto.toJsonObject(): JsonObject = buildJsonObject {
+    put("callId", callId)
+    put("conversationId", conversationId)
+    put("from", from)
+    put("to", to)
+    put("kind", kind)
+    put("reason", reason)
+}
+
+/** Builds the exact call:hangup wire object — durationSec, never durationMs. */
+fun CallHangupDto.toJsonObject(): JsonObject = buildJsonObject {
+    put("callId", callId)
+    put("conversationId", conversationId)
+    put("from", from)
+    put("to", to)
+    put("kind", kind)
+    if (durationSec != null) put("durationSec", durationSec)
+}

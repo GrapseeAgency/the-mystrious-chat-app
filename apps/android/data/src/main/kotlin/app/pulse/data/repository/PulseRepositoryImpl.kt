@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.Log
 import app.pulse.core.result.PulseResult
 import app.pulse.core.time.PulseTime
+import app.pulse.data.local.CallLogDao
+import app.pulse.data.local.CallLogCacheEntity
+import app.pulse.data.local.CallLogQueueEntity
 import app.pulse.data.local.ConversationDao
 import app.pulse.data.local.ConversationEntity
 import app.pulse.data.local.DraftDao
@@ -19,6 +22,11 @@ import app.pulse.data.local.TopicEntity
 import app.pulse.data.local.toInfo
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
+import app.pulse.domain.model.CallKind
+import app.pulse.domain.model.CallLogEntry
+import app.pulse.domain.model.CallPeer
+import app.pulse.domain.model.CallSignalOut
+import app.pulse.domain.model.CallStatus
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.FlushReport
@@ -40,6 +48,14 @@ import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.usecase.FlushOutboxUseCase
 import app.pulse.protocol.ChatMessageDto
+import app.pulse.protocol.CallAnswerDto
+import app.pulse.protocol.CallCancelDto
+import app.pulse.protocol.CallHangupDto
+import app.pulse.protocol.CallIceDto
+import app.pulse.protocol.CallLogCreatedDto
+import app.pulse.protocol.CallLogItemDto
+import app.pulse.protocol.CallOfferDto
+import app.pulse.protocol.CallRejectDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.SavedItemDto
@@ -70,9 +86,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 
 /**
  * REAL remote-first, Room-cached repository (N3 UI-era surface).
@@ -89,6 +108,7 @@ class PulseRepositoryImpl @Inject constructor(
     private val draftDao: DraftDao,
     private val topicDao: TopicDao,
     private val savedDao: SavedDao,
+    private val callLogDao: CallLogDao,
     private val socket: PulseSocketClient,
     @ApplicationContext private val context: Context,
 ) : PulseRepository {
@@ -129,6 +149,12 @@ class PulseRepositoryImpl @Inject constructor(
                 if (outboxDao.count() > 0) flushOutbox()
             }.onFailure { Log.w(TAG, "start flush failed", it) }
         }
+        // Call-log queue rides the same trigger (single-writer rows that
+        // died offline must land as soon as the gateway answers).
+        scope.launch {
+            runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() }
+                .onFailure { Log.w(TAG, "start call-log flush failed", it) }
+        }
     }
 
     /** One collector, started once per process: signals → Room + events. */
@@ -146,6 +172,10 @@ class PulseRepositoryImpl @Inject constructor(
                             scope.launch {
                                 runCatching { flushOutbox() }
                                     .onFailure { Log.w(TAG, "reconnect flush failed", it) }
+                            }
+                            scope.launch {
+                                runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() }
+                                    .onFailure { Log.w(TAG, "reconnect call-log flush failed", it) }
                             }
                         }
                     }
@@ -166,11 +196,55 @@ class PulseRepositoryImpl @Inject constructor(
                     is PulseSocketClient.Signal.StageState -> Unit
                     is PulseSocketClient.Signal.StageEnded -> Unit
                     is PulseSocketClient.Signal.SpaceState -> Unit
-                    is PulseSocketClient.Signal.CallSignal -> Unit
+                    is PulseSocketClient.Signal.CallSignal -> eventsBus.tryEmit(
+                        PulseEvent.CallSignal(callSignalToDomain(signal.signal)),
+                    )
                 }
             }
         }
     }
+
+    /** Typed per-event socket union → the domain envelope the engine consumes. */
+    private fun callSignalToDomain(s: PulseSocketClient.CallSignal): app.pulse.domain.model.CallSignalData =
+        when (s) {
+            is PulseSocketClient.CallSignal.Offer -> app.pulse.domain.model.CallSignalData(
+                event = app.pulse.protocol.SocketEvents.CALL_OFFER,
+                callId = s.dto.callId, conversationId = s.dto.conversationId,
+                from = s.dto.from, to = s.dto.to, kind = app.pulse.domain.model.CallKind.of(s.dto.kind),
+                sdp = s.dto.sdp, callerName = s.dto.callerName,
+                callerColor = s.dto.callerColor, callerAvatar = s.dto.callerAvatar,
+            )
+            is PulseSocketClient.CallSignal.Answer -> app.pulse.domain.model.CallSignalData(
+                event = app.pulse.protocol.SocketEvents.CALL_ANSWER,
+                callId = s.dto.callId, conversationId = s.dto.conversationId,
+                from = s.dto.from, to = s.dto.to, kind = app.pulse.domain.model.CallKind.of(s.dto.kind),
+                sdp = s.dto.sdp,
+            )
+            is PulseSocketClient.CallSignal.Ice -> app.pulse.domain.model.CallSignalData(
+                event = app.pulse.protocol.SocketEvents.CALL_ICE,
+                callId = s.dto.callId, conversationId = s.dto.conversationId,
+                from = s.dto.from, to = s.dto.to, kind = app.pulse.domain.model.CallKind.of(s.dto.kind),
+                candidate = s.dto.candidate, sdpMid = s.dto.sdpMid, sdpMLineIndex = s.dto.sdpMLineIndex,
+            )
+            is PulseSocketClient.CallSignal.Reject -> app.pulse.domain.model.CallSignalData(
+                event = app.pulse.protocol.SocketEvents.CALL_REJECT,
+                callId = s.dto.callId, conversationId = s.dto.conversationId,
+                from = s.dto.from, to = s.dto.to, kind = app.pulse.domain.model.CallKind.of(s.dto.kind),
+                reason = s.dto.reason,
+            )
+            is PulseSocketClient.CallSignal.Cancel -> app.pulse.domain.model.CallSignalData(
+                event = app.pulse.protocol.SocketEvents.CALL_CANCEL,
+                callId = s.dto.callId, conversationId = s.dto.conversationId,
+                from = s.dto.from, to = s.dto.to, kind = app.pulse.domain.model.CallKind.of(s.dto.kind),
+                reason = s.dto.reason,
+            )
+            is PulseSocketClient.CallSignal.Hangup -> app.pulse.domain.model.CallSignalData(
+                event = app.pulse.protocol.SocketEvents.CALL_HANGUP,
+                callId = s.dto.callId, conversationId = s.dto.conversationId,
+                from = s.dto.from, to = s.dto.to, kind = app.pulse.domain.model.CallKind.of(s.dto.kind),
+                durationSec = s.dto.durationSec,
+            )
+        }
 
     /**
      * Every message:* envelope carries the authoritative row — upsert it and
@@ -1181,9 +1255,149 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
+    // ── Wave 3: native 1:1 calls — history cache + single-writer queue ──
+
+    override fun observeCallLog(): Flow<List<CallLogEntry>> =
+        callLogDao.observeAll().map { rows -> rows.map { it.toDomain() } }
+
+    override suspend fun refreshCallLog(): Result<List<CallLogEntry>> =
+        when (val r = api.callLogs(viewerId ?: "")) {
+            is PulseResult.Success -> {
+                val items = r.value.items.map { it.toDomain() }
+                callLogDao.upsertAll(items.map { CallLogCacheEntity.from(it) })
+                // Server is truth — prune rows it no longer lists (cap 50).
+                callLogDao.deleteNotIn(items.map { it.id })
+                Result.success(items)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun writeCallLog(entry: CallLogEntry): Result<Unit> {
+        val payload = buildJsonObject {
+            put("userId", entry.callerId)
+            put("conversationId", entry.conversationId)
+            put("peerId", entry.calleeId)
+            put("kind", entry.kind.wire)
+            put("status", entry.status.wire)
+            if (entry.durationSec > 0) put("durationSec", entry.durationSec)
+        }
+        // Instant local visibility — the refresh reconciles the server id later.
+        callLogDao.upsert(CallLogCacheEntity.from(entry))
+        return postCallLog(payload)
+    }
+
+    override suspend fun flushCallLogQueue(): Result<Int> {
+        val rows = callLogDao.queued(MAX_CALL_LOG_QUEUE)
+        if (rows.isEmpty()) return Result.success(0)
+        var flushed = 0
+        for (row in rows) {
+            val payload = runCatching {
+                PulseJson.parseToJsonElement(row.payloadJson).jsonObject
+            }.getOrElse {
+                Log.w(TAG, "call-log queue row ${row.id} unparseable — dropped", it)
+                callLogDao.dequeueById(row.id)
+                continue
+            }
+            when (val r = postCallLogRaw(payload)) {
+                is PulseResult.Success -> {
+                    callLogDao.dequeueById(row.id)
+                    flushed += 1
+                }
+                is PulseResult.Failure ->
+                    if (r.kind == PulseResult.Failure.Kind.NETWORK) {
+                        // FIFO stop-at-first-network-failure (outbox parity);
+                        // the row stays with a bumped attempt counter.
+                        callLogDao.bumpAttempts(row.id)
+                        return Result.success(flushed)
+                    } else {
+                        // Definitive 4xx verdict — the row is dead weight.
+                        callLogDao.dequeueById(row.id)
+                    }
+            }
+        }
+        return Result.success(flushed)
+    }
+
+    override suspend fun emitCall(signal: CallSignalOut) {
+        when (signal.event) {
+            app.pulse.protocol.SocketEvents.CALL_OFFER -> socket.emitCallOffer(
+                CallOfferDto(
+                    callId = signal.callId, conversationId = signal.conversationId,
+                    from = signal.from, to = signal.to, kind = signal.kind.wire, sdp = signal.sdp ?: "",
+                    callerName = signal.callerName, callerColor = signal.callerColor, callerAvatar = signal.callerAvatar,
+                ),
+            )
+            app.pulse.protocol.SocketEvents.CALL_ANSWER -> socket.emitCallAnswer(
+                CallAnswerDto(
+                    callId = signal.callId, conversationId = signal.conversationId,
+                    from = signal.from, to = signal.to, kind = signal.kind.wire, sdp = signal.sdp ?: "",
+                ),
+            )
+            app.pulse.protocol.SocketEvents.CALL_ICE -> socket.emitCallIce(
+                CallIceDto(
+                    callId = signal.callId, conversationId = signal.conversationId,
+                    from = signal.from, to = signal.to, kind = signal.kind.wire,
+                    candidate = signal.candidate ?: "", sdpMid = signal.sdpMid, sdpMLineIndex = signal.sdpMLineIndex,
+                ),
+            )
+            app.pulse.protocol.SocketEvents.CALL_REJECT -> socket.emitCallReject(
+                CallRejectDto(
+                    callId = signal.callId, conversationId = signal.conversationId,
+                    from = signal.from, to = signal.to, kind = signal.kind.wire, reason = signal.reason,
+                ),
+            )
+            app.pulse.protocol.SocketEvents.CALL_CANCEL -> socket.emitCallCancel(
+                CallCancelDto(
+                    callId = signal.callId, conversationId = signal.conversationId,
+                    from = signal.from, to = signal.to, kind = signal.kind.wire, reason = signal.reason ?: "cancel",
+                ),
+            )
+            app.pulse.protocol.SocketEvents.CALL_HANGUP -> socket.emitCallHangup(
+                CallHangupDto(
+                    callId = signal.callId, conversationId = signal.conversationId,
+                    from = signal.from, to = signal.to, kind = signal.kind.wire, durationSec = signal.durationSec,
+                ),
+            )
+        }
+    }
+
+    /** POST one terminal call-log row; network-class failures enqueue the EXACT payload. */
+    private suspend fun postCallLog(payload: kotlinx.serialization.json.JsonObject): Result<Unit> =
+        when (val r = postCallLogRaw(payload)) {
+            is PulseResult.Success -> {
+                // Reconcile the authoritative row (server id + resolved peer).
+                r.value.item?.let {
+                    callLogDao.upsert(CallLogCacheEntity.from(it.toDomain()))
+                }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure ->
+                if (r.kind == PulseResult.Failure.Kind.NETWORK) {
+                    callLogDao.enqueue(
+                        CallLogQueueEntity(payloadJson = payload.toString(), createdAt = java.time.Instant.now().toString()),
+                    )
+                    Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+                } else {
+                    Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+                }
+        }
+
+    private suspend fun postCallLogRaw(payload: kotlinx.serialization.json.JsonObject): PulseResult<CallLogCreatedDto> {
+        val userId = payload["userId"]?.jsonPrimitive?.content ?: ""
+        val conversationId = payload["conversationId"]?.jsonPrimitive?.content ?: ""
+        val peerId = payload["peerId"]?.jsonPrimitive?.content ?: ""
+        val kind = payload["kind"]?.jsonPrimitive?.content ?: "voice"
+        val status = payload["status"]?.jsonPrimitive?.content ?: "missed"
+        val durationSec = payload["durationSec"]?.jsonPrimitive?.longOrNull ?: 0L
+        return api.createCallLog(userId, conversationId, peerId, kind, status, durationSec)
+    }
+
     companion object {
         private const val TAG = "PulseRepo"
         private const val OFFLINE_BACKOFF_MS = 60_000L
+
+        /** Web MAX_QUEUE parity for the call-log single-writer queue. */
+        const val MAX_CALL_LOG_QUEUE = 50
 
         /** Web MAX_QUEUE parity — the outbox never holds more rows. */
         const val MAX_OUTBOX = 50
@@ -1391,3 +1605,17 @@ class OnboardingError(
         }
     }
 }
+
+/** GET /api/calls row → domain entry (peer resolved server-side relative to the viewer). */
+private fun CallLogItemDto.toDomain(): CallLogEntry = CallLogEntry(
+    id = id,
+    conversationId = conversationId,
+    callerId = callerId,
+    calleeId = calleeId,
+    kind = CallKind.of(kind),
+    status = CallStatus.of(status),
+    durationSec = durationSec,
+    startedAt = startedAt,
+    outgoing = outgoing,
+    peer = peer?.let { CallPeer(id = it.id, name = it.name, color = it.color, avatar = it.avatar) },
+)

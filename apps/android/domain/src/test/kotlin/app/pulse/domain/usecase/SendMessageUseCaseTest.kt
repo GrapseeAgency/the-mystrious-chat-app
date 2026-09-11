@@ -164,6 +164,14 @@ class SendMessageUseCaseTest {
         override suspend fun createTopic(conversationId: String, name: String, emoji: String) =
             Result.failure<app.pulse.domain.model.Topic>(UnsupportedOperationException())
         override suspend fun deleteTopic(conversationId: String, topicId: String) = Result.success(Unit)
+
+        // ── Wave 3 call surface (unused by these use-case tests) ──
+        override fun observeCallLog() = MutableStateFlow(emptyList<app.pulse.domain.model.CallLogEntry>())
+        override suspend fun refreshCallLog(): Result<List<app.pulse.domain.model.CallLogEntry>> =
+            Result.success(emptyList())
+        override suspend fun writeCallLog(entry: app.pulse.domain.model.CallLogEntry) = Result.success(Unit)
+        override suspend fun flushCallLogQueue(): Result<Int> = Result.success(0)
+        override suspend fun emitCall(signal: app.pulse.domain.model.CallSignalOut) {}
     }
 
     @Test

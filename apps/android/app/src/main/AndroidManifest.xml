@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Wave 3 calls: keep mic capture alive in an ongoing-call foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- LiveUpdate: hand the downloaded APK to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -55,5 +58,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/pulse_file_paths" />
         </provider>
+
+        <!-- Wave 3 calls: ongoing-call foreground service (microphone type). -->
+        <service
+            android:name="app.pulse.feature.calls.CallForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 </manifest>

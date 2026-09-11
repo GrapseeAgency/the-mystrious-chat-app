@@ -351,6 +351,51 @@ data class TopicEnvelopeDto(
     val topic: TopicDto? = null,
 )
 
+// ── Wave 3 native calls — REST /api/calls (src/lib/call-types.ts parity) ──
+
+/** Peer info resolved server-side for history rows (wire CallPeerInfo). */
+@Serializable
+data class CallPeerInfoDto(
+    val id: String = "",
+    val name: String = "Unknown",
+    val username: String? = null,
+    val color: String = "emerald",
+    val avatar: String? = null,
+)
+
+/**
+ * One call-history row as returned by GET /api/calls (wire CallLogItem).
+ * `outgoing` is relative to the requesting viewer; `peer` is the OTHER party.
+ */
+@Serializable
+data class CallLogItemDto(
+    val id: String = "",
+    val conversationId: String = "",
+    val callerId: String = "",
+    val calleeId: String = "",
+    /** "voice" | "video" — tolerant decode. */
+    val kind: String = "voice",
+    /** "completed" | "missed" | "declined" — tolerant decode. */
+    val status: String = "missed",
+    val durationSec: Long = 0,
+    /** ISO-8601 startedAt — verbatim. */
+    val startedAt: String = "",
+    val outgoing: Boolean = false,
+    val peer: CallPeerInfoDto? = null,
+)
+
+/** GET /api/calls?userId= → { items: [...] } (newest first, cap 50). */
+@Serializable
+data class CallLogsPageDto(
+    val items: List<CallLogItemDto> = emptyList(),
+)
+
+/** POST /api/calls → 201 { item }. SINGLE-WRITER: the viewer is the caller. */
+@Serializable
+data class CallLogCreatedDto(
+    val item: CallLogItemDto? = null,
+)
+
 /** POST /api/messages/{id}/transcribe { requesterId } → { transcript, transcribedAt, cached }. */
 @Serializable
 data class TranscribeResultDto(

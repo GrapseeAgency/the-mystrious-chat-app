@@ -357,6 +357,85 @@ data class SavedMessageEntity(
 )
 
 /**
+ * One cached call-history row (Wave 3 v7) — the offline mirror of
+ * GET /api/calls (server cap 50, newest first). Peer identity is
+ * denormalized exactly like the server resolves it: the OTHER party
+ * relative to the viewer, so the cache renders offline precisely what the
+ * endpoint renders online. Columns match the iOS callLogCache 1:1.
+ */
+@Entity(
+    tableName = "callLogCache",
+    indices = [Index(value = ["startedAt"])],
+)
+data class CallLogCacheEntity(
+    @PrimaryKey val id: String,
+    val conversationId: String,
+    val callerId: String,
+    val calleeId: String,
+    @ColumnInfo(defaultValue = "voice") val kind: String = "voice",
+    val status: String,
+    @ColumnInfo(defaultValue = "0") val durationSec: Long = 0,
+    val startedAt: String,
+    @ColumnInfo(defaultValue = "0") val outgoing: Boolean = false,
+    @ColumnInfo(defaultValue = "") val peerId: String = "",
+    @ColumnInfo(defaultValue = "Unknown") val peerName: String = "Unknown",
+    val peerUsername: String?,
+    val peerColor: String?,
+    val peerAvatar: String?,
+) {
+    fun toDomain(): app.pulse.domain.model.CallLogEntry = app.pulse.domain.model.CallLogEntry(
+        id = id,
+        conversationId = conversationId,
+        callerId = callerId,
+        calleeId = calleeId,
+        kind = app.pulse.domain.model.CallKind.of(kind),
+        status = app.pulse.domain.model.CallStatus.of(status),
+        durationSec = durationSec,
+        startedAt = startedAt,
+        outgoing = outgoing,
+        peer = app.pulse.domain.model.CallPeer(id = peerId, name = peerName, color = peerColor, avatar = peerAvatar)
+            .takeIf { peerId.isNotBlank() },
+    )
+
+    companion object {
+        fun from(e: app.pulse.domain.model.CallLogEntry) = CallLogCacheEntity(
+            id = e.id,
+            conversationId = e.conversationId,
+            callerId = e.callerId,
+            calleeId = e.calleeId,
+            kind = e.kind.wire,
+            status = e.status.wire,
+            durationSec = e.durationSec,
+            startedAt = e.startedAt,
+            outgoing = e.outgoing,
+            peerId = e.peer?.id ?: "",
+            peerName = e.peer?.name ?: "Unknown",
+            peerUsername = null,
+            peerColor = e.peer?.color,
+            peerAvatar = e.peer?.avatar,
+        )
+    }
+}
+
+/**
+ * One queued single-writer POST /api/calls row (Wave 3 v7) — a call that
+ * TERMINATED while the gateway was unreachable. `payloadJson` is UNIQUE:
+ * it dedupes double-enqueues exactly like outbox.clientId. Flushed FIFO on
+ * app start / socket reconnect (mirrors the outbox trigger style).
+ */
+@Entity(
+    tableName = "callLogQueue",
+    indices = [Index(value = ["payloadJson"], unique = true)],
+)
+data class CallLogQueueEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val payloadJson: String,
+    @ColumnInfo(defaultValue = "0") val attempts: Int = 0,
+    val createdAt: String,
+)
+
+
+/**
  * One queued outgoing message (Wave 0 offline core — web pulse-outbox parity).
  * `clientId` is UNIQUE: it links the optimistic `local_<clientId>` message row
  * to the queue row through enqueue → flush → resolve/drop.
@@ -549,6 +628,53 @@ interface TopicDao {
     suspend fun count(): Int
 }
 
+/**
+ * Call-history store (Wave 3 v7) — cache mirror of GET /api/calls plus the
+ * offline queue for the single-writer POST /api/calls.
+ */
+@Dao
+interface CallLogDao {
+    @Upsert
+    suspend fun upsertAll(items: List<CallLogCacheEntity>)
+
+    /** History order = startedAt DESC (the wire's own ordering, server cap 50). */
+    @Query("SELECT * FROM callLogCache ORDER BY startedAt DESC")
+    fun observeAll(): Flow<List<CallLogCacheEntity>>
+
+    @Query("SELECT * FROM callLogCache ORDER BY startedAt DESC")
+    suspend fun all(): List<CallLogCacheEntity>
+
+    @Query("SELECT * FROM callLogCache WHERE id = :callId")
+    suspend fun get(callId: String): CallLogCacheEntity?
+
+    /** Prune after refresh — rows the server no longer lists. */
+    @Query("DELETE FROM callLogCache WHERE id NOT IN (:keepIds)")
+    suspend fun deleteNotIn(keepIds: List<String>)
+
+    /** Upsert a locally-written terminal row (caller side) so the list is
+     *  instant even before the next refresh. */
+    @Upsert
+    suspend fun upsert(item: CallLogCacheEntity)
+
+    @Query("SELECT COUNT(*) FROM callLogCache")
+    suspend fun count(): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun enqueue(row: CallLogQueueEntity): Long
+
+    @Query("SELECT * FROM callLogQueue ORDER BY id ASC LIMIT :max")
+    suspend fun queued(max: Int = 50): List<CallLogQueueEntity>
+
+    @Query("DELETE FROM callLogQueue WHERE id = :id")
+    suspend fun dequeueById(id: Long)
+
+    @Query("UPDATE callLogQueue SET attempts = attempts + 1 WHERE id = :id")
+    suspend fun bumpAttempts(id: Long)
+
+    @Query("SELECT COUNT(*) FROM callLogQueue")
+    suspend fun queueCount(): Int
+}
+
 /** Saved-library index (Wave 2) — server cap 100, newest first, no pagination. */
 @Dao
 interface SavedDao {
@@ -580,8 +706,10 @@ interface SavedDao {
         DraftEntity::class,
         TopicEntity::class,
         SavedMessageEntity::class,
+        CallLogCacheEntity::class,
+        CallLogQueueEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -591,6 +719,7 @@ abstract class PulseDatabase : RoomDatabase() {
     abstract fun draftDao(): DraftDao
     abstract fun topicDao(): TopicDao
     abstract fun savedDao(): SavedDao
+    abstract fun callLogDao(): CallLogDao
 
     companion object {
         const val NAME = "pulse.db"
@@ -660,6 +789,31 @@ abstract class PulseDatabase : RoomDatabase() {
                         "`savedAt` TEXT NOT NULL, PRIMARY KEY(`messageId`))",
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_savedMessages_conversationId` ON `savedMessages` (`conversationId`)")
+            }
+        }
+
+        /**
+         * v6 → v7 (Wave 3): call history cache + offline call-log queue.
+         * Two NEW tables — every v6 row survives untouched. DDL mirrors
+         * Room's generated schema exactly (see schemas/7.json) and matches
+         * the iOS callLogCache/callLogQueue columns 1:1.
+         */
+        val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `callLogCache` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, " +
+                        "`callerId` TEXT NOT NULL, `calleeId` TEXT NOT NULL, `kind` TEXT NOT NULL DEFAULT 'voice', " +
+                        "`status` TEXT NOT NULL, `durationSec` INTEGER NOT NULL DEFAULT 0, `startedAt` TEXT NOT NULL, " +
+                        "`outgoing` INTEGER NOT NULL DEFAULT 0, `peerId` TEXT NOT NULL DEFAULT '', " +
+                        "`peerName` TEXT NOT NULL DEFAULT 'Unknown', `peerUsername` TEXT, `peerColor` TEXT, " +
+                        "`peerAvatar` TEXT, PRIMARY KEY(`id`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_callLogCache_startedAt` ON `callLogCache` (`startedAt`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `callLogQueue` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`payloadJson` TEXT NOT NULL, `attempts` INTEGER NOT NULL DEFAULT 0, `createdAt` TEXT NOT NULL)",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_callLogQueue_payloadJson` ON `callLogQueue` (`payloadJson`)")
             }
         }
     }

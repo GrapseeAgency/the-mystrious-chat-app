@@ -1,6 +1,9 @@
 package app.pulse.domain.repository
 
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.CallLogEntry
+import app.pulse.domain.model.CallSignalData
+import app.pulse.domain.model.CallSignalOut
 import app.pulse.domain.model.FlushReport
 import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.HandleCheck
@@ -34,6 +37,10 @@ sealed interface PulseEvent {
     data class OutboxDropped(val clientId: String, val reason: String) : PulseEvent
     /** A queued send delivered — the temp row was swapped for the real message. */
     data class OutboxFlushed(val clientId: String, val message: Message) : PulseEvent
+
+    // ── native 1:1 calls (Wave 3) ──────────────────────────────
+    /** A call:* relay signal reached this device (offer/answer/ice/reject/cancel/hangup). */
+    data class CallSignal(val signal: CallSignalData) : PulseEvent
 }
 
 /** Device-side preferences (DataStore on Android, UserDefaults on iOS). */
@@ -317,4 +324,26 @@ interface PulseRepository {
      * deleted (messages fall back to General server-side).
      */
     suspend fun deleteTopic(conversationId: String, topicId: String): Result<Unit>
+
+    // ── native 1:1 calls (Wave 3) ─────────────────────────────
+
+    /** Live call history from the Room cache (offline-first mirror of GET /api/calls). */
+    fun observeCallLog(): Flow<List<CallLogEntry>>
+
+    /** GET /api/calls?userId= — refetch history (newest first, server cap 50); prunes rows the server no longer lists. */
+    suspend fun refreshCallLog(): Result<List<CallLogEntry>>
+
+    /**
+     * POST /api/calls — SINGLE-WRITER: the caller writes the terminal row.
+     * A network-class failure enqueues the exact payload locally (UNIQUE
+     * dedupe) for the next flush; the row also lands in the local cache so
+     * the list is instant.
+     */
+    suspend fun writeCallLog(entry: CallLogEntry): Result<Unit>
+
+    /** FIFO drain of the queued single-writer rows; stops at the first network-class failure (outbox parity). */
+    suspend fun flushCallLogQueue(): Result<Int>
+
+    /** Emit one call:* signaling payload (offer/answer/ice/reject/cancel/hangup). */
+    suspend fun emitCall(signal: CallSignalOut)
 }

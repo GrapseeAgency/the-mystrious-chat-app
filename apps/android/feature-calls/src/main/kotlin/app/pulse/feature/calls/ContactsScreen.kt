@@ -57,6 +57,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
 import app.pulse.domain.model.User
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.Phone
 import androidx.hilt.navigation.compose.hiltViewModel
 
 /**
@@ -67,6 +70,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 @Composable
 fun ContactsScreen(
     onOpenRoom: (String) -> Unit,
+    onCallUser: (User) -> Unit = {},
+    onOpenCalls: () -> Unit = {},
     viewModel: ContactsViewModel = hiltViewModel(),
 ) {
     val users by viewModel.users.collectAsStateWithLifecycle()
@@ -78,6 +83,16 @@ fun ContactsScreen(
     var safetyTarget by remember { mutableStateOf<User?>(null) }
     var reportTarget by remember { mutableStateOf<User?>(null) }
     var reportReason by remember { mutableStateOf("") }
+    // Wave 3 — outgoing calls start here. RECORD_AUDIO must be live before
+    // the engine touches the mic; denial keeps the call unstarted (honest).
+    var callTarget by remember { mutableStateOf<User?>(null) }
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val target = callTarget
+        callTarget = null
+        if (granted && target != null) onCallUser(target)
+    }
 
     LaunchedEffect(dmResult) {
         when (val result = dmResult) {
@@ -139,6 +154,7 @@ fun ContactsScreen(
                         user = user,
                         online = presence.contains(user.id),
                         onMessage = { viewModel.openDm(user) },
+                        onCall = { callTarget = user; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
                         onSafety = { safetyTarget = user },
                     )
                 }
@@ -217,6 +233,7 @@ private fun ContactRow(
     user: User,
     online: Boolean,
     onMessage: () -> Unit,
+    onCall: () -> Unit = {},
     onSafety: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -249,6 +266,14 @@ private fun ContactRow(
                 Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(16.dp), tint = PulsePalette.Emerald)
                 Spacer(Modifier.width(6.dp))
                 Text("Chat", color = PulsePalette.Emerald)
+            }
+            IconButton(onClick = onCall) {
+                Icon(
+                    Icons.Filled.Phone,
+                    contentDescription = "Call ${user.name}",
+                    tint = PulsePalette.Emerald,
+                    modifier = Modifier.size(18.dp),
+                )
             }
             Box {
                 IconButton(onClick = { menuOpen = true; haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }) {
