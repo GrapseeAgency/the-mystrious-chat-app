@@ -623,7 +623,14 @@ class RoomMigrationTest {
         // Build the DB up to v6 first (the pre-Wave-3 truth), close, then
         // migrate through v7 — the real deployed device path.
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6)
+            // Room ALWAYS upgrades to the compiled schema version — even the
+            // "stop at v6" probe must carry the full chain through v7.
+            .addMigrations(
+                PulseDatabase.MIGRATION_3_4,
+                PulseDatabase.MIGRATION_4_5,
+                PulseDatabase.MIGRATION_5_6,
+                PulseDatabase.MIGRATION_6_7,
+            )
             .allowMainThreadQueries()
             .build()
         assertEquals("pre-v6 text row", db.messageDao().byId("m-v5")!!.body)
