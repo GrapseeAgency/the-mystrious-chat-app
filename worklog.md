@@ -2456,3 +2456,22 @@ Work Log:
 
 Stage Summary:
 - All 6 Wave 2 features implemented on BOTH platforms. Android fully verified locally. iOS CI-gated (brace/symbol/signature self-review clean). Next: wave2-depth-gate.js live E2E → push → CI loop → tag v0.4.0-native → release+CDN → report.
+
+---
+Task ID: W2-E2E
+Agent: orchestrator (Z.ai Code)
+Task: Wave 2 live E2E gate against the real stack.
+
+Work Log:
+- Wrote apps/qa/wave2-depth-gate.js (mirror of the proven wave1 gate): 2 identities + 3-member group, realtime via the SAME XTransformPort=3003 socket route natives dial, REAL REST routes only.
+- FIRST RUN found the gate's own bug (groups need ≥3 members) — fixed, re-ran clean.
+- RESULT: **40/40 PASSED** live:
+  VOICE upload→bytes-served→kind:"audio" send (native web-bug fix)→audioPath+durationMs on row; transcribe contract exercised → 502 on non-speech fixture = honest ENV-LIMITED (route+auth+validation proven; real ASR needs real speech).
+  VIEW-ONCE send wire 201 + viewOnce:true; non-image 400; burn stamps viewedAt; idempotent; sender self-open 400; message:viewed relay row authoritative.
+  POLLS create 201 (id/question/options/votedBy/totalVotes); vote 200; **RELAY myOptionId ACTOR-RELATIVE PROVEN LIVE** (B's copy shows A's pick) + history myOptionId null — natives' votedBy-only derivation validated; close non-creator 403; creator close closed:true; late vote frozen 400.
+  LINKS unfurl → linkUrl + full linkPreview shape; link:preview relay.
+  SAVED toggle→library item (conversation+message)→unsave→pruned.
+  TOPICS clean→create 201→case-insensitive dedupe 200 same row→filed send carries topicId→?topicId= filter→General=WHOLE room (web parity)→messageCount honest→foreign topicId 400.
+
+Stage Summary:
+- Wave 2 backend contract proven end-to-end live; zero backend changes. Chain TEXT→REALTIME→PERSISTENCE holds from Wave 1; every Wave 2 envelope family (message:viewed/poll:voted/link:preview) relayed and verified. Next: push → CI fix loop → tag v0.4.0-native.
