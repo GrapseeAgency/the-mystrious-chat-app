@@ -672,7 +672,7 @@ class RoomMigrationTest {
         db.callLogDao().upsertAll(listOf(callerRow, calleeRow))
         // History reads newest-first (startedAt DESC).
         assertEquals(listOf("call-2", "call-1"), db.callLogDao().all().map { it.id })
-        val domain = db.callLogDao().all().first().toDomain()
+        val domain = db.callLogDao().all().first { it.id == "call-1" }.toDomain()
         assertEquals("peer", domain.peer?.id)
         assertEquals("Ada Lovelace", domain.peer?.name)
 
