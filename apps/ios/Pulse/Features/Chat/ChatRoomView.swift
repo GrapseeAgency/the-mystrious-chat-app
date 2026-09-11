@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Combine
+import PhotosUI
 
 /// Chat room — native rebuild of the web conversation surface. Same outcome:
 /// emerald gradient bubbles for the viewer, material bubbles for others,
