@@ -2283,3 +2283,21 @@ Work Log:
 
 Stage Summary:
 - Wave 0 code is COMPLETE and locally verified (26 JVM tests incl. real socket round-trips; 8/8 realtime E2E through the live edge). CI execution + artifact publication require the GitHub PAT (external dependency, per-session secret). Nothing else is pending on my side.
+
+---
+Task ID: W0-C3
+Agent: orchestrator (Z.ai Code)
+Task: PAT received — push + CI + release phase of Wave 0.
+
+Work Log:
+- PAT provided by user; validated via /user (full repo+workflow scopes), stored in credential helper (user:token form — token-only username failed "could not read Username").
+- PUSHED: 46e63ee..87e0386 (5 commits: spec, crews, gateway-truth merge, CI upgrade, worklog) → both workflows triggered.
+- CI ROUND 1 (87e0386): iOS build-test + archive FAILED — ChatsView.swift:2541 `store.observeConversations().sink{rows}` — GRDB DatabasePublishers.Value Failure=Error, value-only sink doesn't compile. FIXED: `.replaceError(with: [])` (observation failure degrades to empty cached seed; network answer stays authoritative via summaries.isEmpty guard). Verified the ONLY GRDB publisher in the target is PulseStore.swift:103 (grep publisher(in:), all other sinks are @Published/PassthroughSubject = Never).
+- Android build + instrumented FAILED — :data:ksp{Debug,Release}Kotlin: Room 2.6.1 Database.exportSchema → SchemaBundle.deserialize re-reads the EXISTING 4.json for the current version at compile time; hand-written `"orders": {}` (object) crashed Gson "Expected BEGIN_ARRAY at $.indices[0].orders"; `"fieldPaths"` is not a schema key (columnNames never read). FIXED: orders → [] and fieldPaths → columnNames on both outbox indices. Verified migration test does NOT consume 4.json (raw v3 DDL + Room compiled validation), so format fix suffices; runtime identity hash comes from compiled Impl, not the JSON.
+- FALSE ALARM documented for future agents: `branches: ain]` in workflow YAML displayed by grep/cat/Read is an OUTPUT-CHANNEL ARTIFACT — the ANSI-stripping renderer eats the substring "[m", so "[main]" displays as "ain]". Byte checks (od -c / grep -c 'branches: \[main\]') prove the files were always correct. Never "fix" [main]-style content based on rendered text alone.
+- CI improved: both workflows get `tags: ['v*']` trigger (previously tag pushes never ran — only-branches filter), android-ci gains "Rename APK with release tag" step + release files glob Pulse-*.apk → tag builds now auto-publish GitHub Releases with convention-named APK (restores the intended built-from-tag provenance path; matches v0.1.x asset naming).
+- PUSHED 16e309b (CI round 2) → android-ci 34553529280 + ios-ci 34553529311 running.
+
+Stage Summary:
+- Root causes of round-1 failures: 2 real bugs (4.json format, iOS sink) — both fixed and pushed. Wave 0 code otherwise held: no other compile errors surfaced in either platform's logs before the crashes.
+- Release plan after green: tag v0.2.0-native → full CI gate re-runs from tag → auto-Release + Pulse-v0.2.0-native.apk → download → forensic gate (zip/signing/versionCode 10/sha256) → CDN commit (download/Pulse.apk + update-manifest.json v10 + gateway/socket keys) → four-source hash check → Wave 0 Completion Report.
