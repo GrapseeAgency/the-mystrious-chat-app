@@ -158,7 +158,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
 
     func createOffer() async throws -> String {
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        return try await withCheckedThrowingContinuation { continuation in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             pc.offer(for: constraints) { sdp, error in
                 if let sdp = sdp?.sdp {
                     continuation.resume(returning: sdp)
@@ -171,7 +171,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
 
     func createAnswer() async throws -> String {
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        return try await withCheckedThrowingContinuation { continuation in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             pc.answer(for: constraints) { sdp, error in
                 if let sdp = sdp?.sdp {
                     continuation.resume(returning: sdp)
@@ -187,7 +187,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         // (caller) → local offer; remote offer seen (callee) → local answer.
         let type: RTCSdpType = pc.remoteDescription?.type == .offer ? .answer : .offer
         let description = RTCSessionDescription(type: type, sdp: sdp)
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             pc.setLocalDescription(description) { error in
                 if let error {
                     continuation.resume(throwing: error)
@@ -201,7 +201,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     func setRemoteDescription(sdp: String, type: String) async throws {
         let sdpType: RTCSdpType = type == "answer" ? .answer : .offer
         let description = RTCSessionDescription(type: sdpType, sdp: sdp)
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             pc.setRemoteDescription(description) { error in
                 if let error {
                     continuation.resume(throwing: error)
@@ -213,12 +213,13 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     }
 
     func addRemoteCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) async throws {
+        // ObjC import order: sdp → sdpMLineIndex → sdpMid.
         let ice = RTCIceCandidate(
             sdp: candidate,
-            sdpMid: sdpMid,
             sdpMLineIndex: Int(sdpMLineIndex ?? 0),
+            sdpMid: sdpMid,
         )
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             pc.add(ice) { error in
                 if let error {
                     continuation.resume(throwing: error)
