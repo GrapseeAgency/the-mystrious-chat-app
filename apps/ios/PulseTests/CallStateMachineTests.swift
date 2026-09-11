@@ -164,10 +164,14 @@ final class CallStateMachineTests: XCTestCase {
         _ = machine.apply(.startOutgoing(outgoingInfo), now: Date())
         _ = machine.apply(.answerArrived, now: Date())
         _ = machine.apply(.peerConnectionReady, now: Date())
+        // ICE drops — the grace window opens NOW (the disconnected input
+        // is what arms the machine's disconnectedAt deadline).
+        let dis = machine.apply(.peerConnectionDisconnected, now: Date())
+        XCTAssertEqual(dis.to, .connected, "grace window holds the connected state")
         // Within the grace window nothing fires.
         XCTAssertNil(machine.checkTimeouts(now: Date()))
         // After it, the machine drops the call (answered → completed).
-        guard let fired = machine.checkTimeouts(now: Date().addingTimeInterval(0.1)) else {
+        guard let fired = machine.checkTimeouts(now: Date().addingTimeInterval(0.2)) else {
             return XCTFail("disconnect grace must fire")
         }
         let end = machine.apply(fired, now: Date())

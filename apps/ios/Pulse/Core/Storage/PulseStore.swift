@@ -688,6 +688,16 @@ public final class PulseStore: Sendable {
             )
         }
         try upsert(callLog: rows)
+        // Server truth — prune rows the endpoint no longer lists (the cap
+        // prune inside upsert(callLog:) is NOT enough: locally-written rows
+        // that failed their POST must not outlive the server's own list).
+        try dbQueue.write { db in
+            let keep = Set(rows.map(\.id))
+            let stale = try String.fetchAll(db, sql: "SELECT id FROM callLogCache")
+            for id in stale where !keep.contains(id) {
+                try db.execute(sql: "DELETE FROM callLogCache WHERE id = :id", arguments: ["id": id])
+            }
+        }
     }
 
     /// Cached history, newest first (mirrors the server's startedAt DESC).

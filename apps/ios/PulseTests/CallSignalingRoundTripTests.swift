@@ -84,8 +84,51 @@ final class CallSignalingRoundTripTests: XCTestCase {
             }
         }
 
+        let callerJoined = expectation(description: "caller joined")
+        let calleeJoined = expectation(description: "callee joined")
+        caller.signals = { signal in
+            if case .joined = signal { callerJoined.fulfill() }
+        }
+        callee.signals = { signal in
+            if case .joined = signal { calleeJoined.fulfill() }
+        }
         caller.connect(userId: callerId)
         callee.connect(userId: calleeId)
+        // The relay targets `user:<id>` rooms — both parties must have JOINED
+        // before any call:* emission or the relay drops it (empty room).
+        await fulfillment(of: [callerJoined, calleeJoined], timeout: 10)
+
+        // Re-arm the payload observers (signals is a single callback).
+        caller.signals = { [conversationId = self.conversationId] signal in
+            guard case .callSignal(let event, let raw) = signal else { return }
+            switch event {
+            case "call:answer":
+                if (raw["sdp"] as? String)?.isEmpty == false { answerArrived.fulfill() }
+            case "call:ice":
+                if conversationId == (raw["conversationId"] as? String) { iceArrived.fulfill() }
+            default:
+                break
+            }
+        }
+
+        callee.signals = { [conversationId = self.conversationId, callerId = self.callerId] signal in
+            guard case .callSignal(let event, let raw) = signal else { return }
+            switch event {
+            case "call:offer":
+                if raw["sdp"] as? String == "offer-sdp"
+                    && raw["callerName"] as? String == "Caller"
+                    && raw["from"] as? String == callerId
+                    && raw["conversationId"] as? String == conversationId {
+                    offerArrived.fulfill()
+                }
+            case "call:hangup":
+                if (raw["durationSec"] as? Double) == 12 || (raw["durationSec"] as? Int) == 12 {
+                    hangupArrived.fulfill()
+                }
+            default:
+                break
+            }
+        }
 
         // 1. Offer — caller → callee (identity decoration rides along).
         caller.emitCallSignal(
