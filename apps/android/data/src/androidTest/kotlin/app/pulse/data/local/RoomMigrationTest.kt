@@ -273,7 +273,7 @@ class RoomMigrationTest {
             // Wave 1: the compiled schema is now v5, so the REAL open path is
             // 3 → 4 → 5 — both migrations must be present (v5 columns are
             // additive; every assertion below still holds on the v5 state).
-            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6)
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
 
@@ -348,7 +348,7 @@ class RoomMigrationTest {
     fun migration4To5PreservesRowsAndAddsMediaAndMembers() = runBlocking {
         createV4DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6)
+            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
 
@@ -443,7 +443,7 @@ class RoomMigrationTest {
     fun migration5To6PreservesRowsAndAddsDepthColumnsAndTables() = runBlocking {
         createV5DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_5_6)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7)
             .allowMainThreadQueries()
             .build()
 
@@ -609,5 +609,78 @@ class RoomMigrationTest {
         assertEquals(listOf("m-v6"), db.savedDao().all().map { it.messageId })
         db.savedDao().deleteByIds(listOf("m-v6"))
         assertEquals(0, db.savedDao().count())
+    }
+
+    /**
+     * Wave-3 gate: a REAL v6 database migrates to v7 without destruction —
+     * every Wave-0/1/2 surface still works, the NEW callLogCache table is
+     * usable through its DAO (cache row + history order), and the call-log
+     * offline queue dedupes on payloadJson (UNIQUE) exactly like the outbox.
+     */
+    @Test
+    fun migration6To7PreservesRowsAndAddsCallLogTables() = runBlocking {
+        createV5DatabaseWithSeedRows()
+        // Build the DB up to v6 first (the pre-Wave-3 truth), close, then
+        // migrate through v7 — the real deployed device path.
+        db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6)
+            .allowMainThreadQueries()
+            .build()
+        assertEquals("pre-v6 text row", db.messageDao().byId("m-v5")!!.body)
+        db.close()
+
+        db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
+            .addMigrations(
+                PulseDatabase.MIGRATION_3_4,
+                PulseDatabase.MIGRATION_4_5,
+                PulseDatabase.MIGRATION_5_6,
+                PulseDatabase.MIGRATION_6_7,
+            )
+            .allowMainThreadQueries()
+            .build()
+
+        // ── every earlier surface survives the v7 hop ──────────
+        assertEquals("pre-v6 text row", db.messageDao().byId("m-v5")!!.body)
+        assertEquals(1, db.outboxDao().count())
+        assertEquals("half-typed pre-v6", db.draftDao().get("c1")?.text)
+        assertEquals(0, db.topicDao().count())
+        assertEquals(0, db.savedDao().count())
+
+        // ── callLogCache round-trip (Wave-3 v7) ─────────────────
+        assertEquals(0, db.callLogDao().count())
+        val callerRow = CallLogCacheEntity(
+            id = "call-1", conversationId = "c1", callerId = "me", calleeId = "peer",
+            kind = "voice", status = "completed", durationSec = 95,
+            startedAt = "2026-02-01T10:00:00.000Z", outgoing = true,
+            peerId = "peer", peerName = "Ada Lovelace", peerUsername = null,
+            peerColor = "emerald", peerAvatar = null,
+        )
+        val calleeRow = CallLogCacheEntity(
+            id = "call-2", conversationId = "c1", callerId = "me", calleeId = "peer",
+            kind = "voice", status = "missed", durationSec = 0,
+            startedAt = "2026-02-02T10:00:00.000Z", outgoing = false,
+            peerId = "me", peerName = "Me", peerUsername = null,
+            peerColor = null, peerAvatar = null,
+        )
+        db.callLogDao().upsertAll(listOf(callerRow, calleeRow))
+        // History reads newest-first (startedAt DESC).
+        assertEquals(listOf("call-2", "call-1"), db.callLogDao().all().map { it.id })
+        val domain = db.callLogDao().all().first().toDomain()
+        assertEquals("peer", domain.peer?.id)
+        assertEquals("Ada Lovelace", domain.peer?.name)
+
+        // ── callLogQueue dedupe (UNIQUE payloadJson, outbox parity) ──
+        val payload = CallLogQueueEntity(
+            payloadJson = "\"{\"userId\":\"me\",\"status\":\"missed\"}\"",
+            createdAt = "2026-02-02T10:01:00.000Z",
+        )
+        assertTrue("first enqueue must succeed", db.callLogDao().enqueue(payload) != -1L)
+        assertEquals(-1L, db.callLogDao().enqueue(payload), "duplicate payloadJson must IGNORE")
+        assertEquals(1, db.callLogDao().queueCount())
+        val queued = db.callLogDao().queued().first()
+        db.callLogDao().bumpAttempts(queued.id)
+        assertEquals(1, db.callLogDao().queued().first().attempts)
+        db.callLogDao().dequeueById(queued.id)
+        assertEquals(0, db.callLogDao().queueCount())
     }
 }
