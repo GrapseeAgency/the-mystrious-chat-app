@@ -2594,3 +2594,22 @@ Work Log:
 
 Stage Summary:
 - Wave 3 is CODE+CI+E2E VERIFIED end-to-end. HARDWARE VERIFICATION REQUIRED (explicitly not claimable from this sandbox): physical-device mic capture + remote audio, AEC quality, audio-focus arbitration, speaker/Bluetooth route switching, Android FGS microphone type on-device, iOS AVAudioSession configure/restore under real routes + interruptions, cross-platform device-to-device media flow (Android ↔ iPhone), background ring behaviour, and TURN-less NAT traversal limits (STUN-only: same-network device calls expected to work; cross-network calls need a TURN deployment — documented limitation).
+
+---
+Task ID: 3-HW
+Agent: Z.ai Code (main)
+Task: PULSE — WAVE 3-HW — REAL DEVICE CALL VALIDATION ONLY (no features, no Wave 4)
+
+Work Log:
+- Proved sandbox hardware capability is ZERO (probe output recorded in apps/qa/hw-wave3/RESULTS.md §0): no adb/fastboot, no /sys/bus/usb/devices (no USB subsystem at all), no xcodebuild/xcrun/simctl/idevice (Linux host), no /dev/snd audio hardware, egress-only networking (no inbound ports → no public gateway, no TURN host).
+- Established repo ground truth: Wave 3 CODE/CI exists (docs/WAVE3-COMPLETION-REPORT.md, tag v0.5.0-native, release APK versionCode 13); manifest gateway/socket keys still empty; both engines hardcoded STUN-only (CallEngine.kt:322, PulseRTCMediaProvider.swift:136) — a deployed TURN would have been UNUSED, making the directive's cross-network TURN gate unpassable.
+- SANCTIONED CALL-PATH FIX (W3-HW-1): manifest `ice` plumbing — update-manifest.json gains optional ice[] {urls,username,credential}; Android PulseEndpoints.applyIceOverride (vault-persisted via SessionVault.iceOverride, ManifestEndpoints parses+persists) → CallEngine.iceServers() (org.json parse, invalid JSON degrades to built-in STUN); iOS PulseIceServer (dual urls wire form) + applyIceOverride (decode-validated, blank-never-clobbers) → PulseRTCMediaProvider; 5× PulseIceOverrideTests.
+- Built the complete physical-validation kit apps/qa/hw-wave3/: README (11-item acceptance gate), 01-infrastructure (VPS + Caddy WSS compose + coturn turnserver.conf + manifest values + 6-step TURN/endpoint verification + 3-run network topology matrix), 02/03 device runbooks (adb capture script android-capture.sh incl. pm grant/revoke drills + mic-release dumpsys proof; iOS log stream + AVAudioSession restore/interruption drills), 04-test-matrix (M1 Android→iPhone + M2 iPhone→Android step scripts + F1–F16 failure matrix with EXPECTED pre-filled from actual implementation), 05-audio-quality (per-call evidence table + 8-defect taxonomy), 06-security-identity (S1–S7), 07-call-history (5 scenarios × both devices × server + offline-queue drill), 08-report-template, RESULTS.md (every device case seeded NOT TESTED — BLOCKED: NO HARDWARE).
+- Verified locally: Android :core/:protocol/:domain tests 95/95 (Temurin 21, fresh Android SDK installed to /home/z/android-sdk for compile gates); :data/:feature-calls compile ✅; bash -n on capture script.
+- CI: b9da249 pushed → Android build ✅ + instrumented ✅; iOS build-test FAILED once (my test wrongly expected nil to clear the override — blank-never-clobbers is the intended semantic) → test fixed 71757ee → iOS build-test ✅ + archive ✅. Tag v0.5.1-native (versionCode 14) → Android build ✅ instrumented ✅ release published; iOS tag run failed ONCE on the documented relay-fixture flake (testJoinPresenceTypingAndNotifyRoundTrip "joined ack" 10s timeout — unrelated to ICE), failed-job re-run PASSED; both facts recorded in RESULTS.md.
+- Release: GitHub Release v0.5.1-native with Pulse-v0.5.1-native.apk (TURN plumbing build for devices). RESULTS.md ledger finalized and pushed (c81e6f2).
+
+Stage Summary:
+- Wave 3-HW device gates: 0 of 11 claimable from this sandbox — every M/F/S/H case remains NOT TESTED — BLOCKED: NO HARDWARE; verdict unchanged: CODE/CI VERIFIED + HARDWARE VERIFICATION REQUIRED. Wave 3 is NOT complete.
+- The blocker is now ONLY operational: the kit at apps/qa/hw-wave3/ makes every gate executable by an operator with a physical Android + physical iPhone; infrastructure artifacts (compose, coturn, manifest ice JSON) are copy-paste ready; Release v0.5.1-native APK is device-installable.
+- One code change shipped this phase (TURN ICE plumbing, call-path only, both platforms, tests green) — required by the directive's TURN mandate; no features, no refactors, no Wave 4 started. HARD STOP honored.
