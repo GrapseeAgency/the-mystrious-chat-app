@@ -6,10 +6,9 @@ import XCTest
 /// rejection (a broken manifest must never strip a working STUN set),
 /// and the offline-relaunch persistence shape (`iceJson` in the vault).
 final class PulseIceOverrideTests: XCTestCase {
-    override func tearDown() {
-        PulseEndpoints.applyIceOverride(nil)
-        super.tearDown()
-    }
+    // No tearDown reset: `applyIceOverride(nil)` deliberately NEVER clears an
+    // adopted override (blank-never-clobbers, same rule as the base URLs) —
+    // that semantic is itself asserted below.
 
     func testUrlsAsArrayWithCredentialsDecodes() throws {
         let json = #"[{"urls":["turn:turn.example.com:3478?transport=udp","turn:turn.example.com:3478?transport=tcp"],"username":"pulse","credential":"s3cr3t"}]"#
@@ -43,8 +42,11 @@ final class PulseIceOverrideTests: XCTestCase {
         PulseEndpoints.applyIceOverride("[]")
         XCTAssertEqual(PulseEndpoints.manifestIceJSON, good, "empty ice array must be ignored")
 
+        PulseEndpoints.applyIceOverride("   ")
+        XCTAssertEqual(PulseEndpoints.manifestIceJSON, good, "blank must be ignored")
+
         PulseEndpoints.applyIceOverride(nil)
-        XCTAssertNil(PulseEndpoints.manifestIceJSON)
+        XCTAssertEqual(PulseEndpoints.manifestIceJSON, good, "nil must never clear an adopted override (blank-never-clobbers)")
     }
 
     func testPersistedVaultShapeWithIceJsonRoundTrips() throws {
