@@ -160,6 +160,32 @@ class FlushOutboxUseCaseTest {
             Result.failure<String>(UnsupportedOperationException())
         override suspend fun threadReplyCounts(rootIds: List<String>) = emptyMap<String, Int>()
 
+        // ── Wave 2 messaging depth (unused by the outbox policy) ──
+        override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =
+            Result.success(Unit)
+        override suspend fun transcribeMessage(messageId: String) =
+            Result.failure<app.pulse.domain.model.TranscribeOutcome>(UnsupportedOperationException())
+        override suspend fun markMessageViewed(messageId: String) {}
+        override suspend fun createPoll(conversationId: String, question: String, options: List<String>) =
+            Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun votePoll(pollId: String, optionId: String) =
+            Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun closePoll(pollId: String) =
+            Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun unfurlMessage(messageId: String) {}
+        override suspend fun refreshSavedLibrary() =
+            Result.success(emptyList<app.pulse.domain.model.SavedItem>())
+        override fun observeSavedLibrary() =
+            MutableStateFlow(emptyList<app.pulse.domain.model.SavedItem>())
+        override suspend fun unsaveMessage(messageId: String) =
+            Result.failure<Boolean>(UnsupportedOperationException())
+        override suspend fun refreshTopics(conversationId: String) = Result.success(Unit)
+        override fun observeTopics(conversationId: String) =
+            MutableStateFlow(emptyList<app.pulse.domain.model.Topic>())
+        override suspend fun createTopic(conversationId: String, name: String, emoji: String) =
+            Result.failure<app.pulse.domain.model.Topic>(UnsupportedOperationException())
+        override suspend fun deleteTopic(conversationId: String, topicId: String) = Result.success(Unit)
+
         private fun realMessage(id: String, entry: OutboxEntry) = Message(
             id = id,
             conversationId = entry.conversationId,

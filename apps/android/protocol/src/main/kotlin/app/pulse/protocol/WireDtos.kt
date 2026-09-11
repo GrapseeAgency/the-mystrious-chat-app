@@ -261,6 +261,122 @@ data class StoriesPageDto(
     val groups: List<StoryGroupDto> = emptyList(),
 )
 
+// ── Wave 2 messaging depth — polls / link previews / saved / topics / ASR ──
+
+/**
+ * One option of a live poll (wire shape inside message.poll.options).
+ * `votedBy` carries the voter ids — the ONLY trusted source for the viewer's
+ * own pick (server myOptionId is actor-relative on relayed rows and null on
+ * history GETs — spec §1 row 2).
+ */
+@Serializable
+data class PollOptionDto(
+    val id: String,
+    val text: String,
+    val position: Int = 0,
+    val voteCount: Int = 0,
+    val votedBy: List<String> = emptyList(),
+)
+
+/**
+ * Wire poll tally (message.poll): { id, question, closed, options[],
+ * totalVotes, myOptionId } — NO `multiple`, NO `closesAt` (server is
+ * single-choice + manual close only).
+ *
+ * `myOptionId` is parsed but NEVER trusted by clients: it is computed
+ * relative to the actor the server mapped the row for, so on poll:voted
+ * relays every recipient would see the voter's pick as "mine", and it is
+ * null on history GETs. Derive the viewer's pick from options[].votedBy.
+ */
+@Serializable
+data class PollDto(
+    val id: String,
+    val question: String,
+    val closed: Boolean = false,
+    val options: List<PollOptionDto> = emptyList(),
+    val totalVotes: Int = 0,
+    val myOptionId: String? = null,
+)
+
+/** Wire Open-Graph preview (message.linkPreview) — all metadata nullable. */
+@Serializable
+data class LinkPreviewDto(
+    val url: String,
+    val title: String? = null,
+    val description: String? = null,
+    val imageUrl: String? = null,
+    val siteName: String? = null,
+)
+
+/** Resolved conversation display info of one saved item (DM name server-side). */
+@Serializable
+data class SavedConversationDto(
+    val id: String,
+    val isGroup: Boolean = false,
+    val name: String? = null,
+)
+
+/** GET /api/users/{id}/saved → items[] rows: { savedAt, conversation, message }. */
+@Serializable
+data class SavedItemDto(
+    val savedAt: String,
+    val conversation: SavedConversationDto = SavedConversationDto(id = ""),
+    val message: ChatMessageDto,
+)
+
+@Serializable
+data class SavedPageDto(
+    val items: List<SavedItemDto> = emptyList(),
+)
+
+/** One Zulip-style topic chip (General is NOT a row — implicit whole room). */
+@Serializable
+data class TopicDto(
+    val id: String,
+    val name: String,
+    val emoji: String = "💬",
+    val lastMessageAt: String? = null,
+    val messageCount: Int = 0,
+)
+
+/** GET /api/conversations/{id}/topics?userId= → { topics: [...] }. */
+@Serializable
+data class TopicsPageDto(
+    val topics: List<TopicDto> = emptyList(),
+)
+
+/** POST /api/conversations/{id}/topics → 200 existing / 201 new — { topic }. */
+@Serializable
+data class TopicEnvelopeDto(
+    val topic: TopicDto? = null,
+)
+
+/** POST /api/messages/{id}/transcribe { requesterId } → { transcript, transcribedAt, cached }. */
+@Serializable
+data class TranscribeResultDto(
+    val transcript: String,
+    val transcribedAt: String? = null,
+    val cached: Boolean = false,
+)
+
+/** DELETE /api/topics/{id}?userId= → { ok: true }. */
+@Serializable
+data class OkDto(
+    val ok: Boolean = false,
+)
+
+/** Tolerant poll decode from message.poll (any JsonElement shape → null on mismatch). */
+fun JsonElement?.decodePollDto(): PollDto? = runCatching {
+    val el = this ?: return@runCatching null
+    PulseJson.decodeFromJsonElement(PollDto.serializer(), el)
+}.getOrNull()
+
+/** Tolerant Open-Graph decode from message.linkPreview. */
+fun JsonElement?.decodeLinkPreviewDto(): LinkPreviewDto? = runCatching {
+    val el = this ?: return@runCatching null
+    PulseJson.decodeFromJsonElement(LinkPreviewDto.serializer(), el)
+}.getOrNull()
+
 /** One shared decoder for every Pulse client surface. */
 val PulseJson: Json = Json {
     ignoreUnknownKeys = true

@@ -12,6 +12,11 @@ import app.pulse.data.local.MessageDao
 import app.pulse.data.local.MessageEntity
 import app.pulse.data.local.OutboxDao
 import app.pulse.data.local.OutboxEntity
+import app.pulse.data.local.SavedDao
+import app.pulse.data.local.SavedMessageEntity
+import app.pulse.data.local.TopicDao
+import app.pulse.data.local.TopicEntity
+import app.pulse.data.local.toInfo
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
 import app.pulse.domain.model.Conversation
@@ -26,7 +31,10 @@ import app.pulse.domain.model.OutboxDeliveryException
 import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.OutboxFailureClass
 import app.pulse.domain.model.Reaction
+import app.pulse.domain.model.SavedItem
 import app.pulse.domain.model.StoryCell
+import app.pulse.domain.model.Topic
+import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
@@ -34,7 +42,11 @@ import app.pulse.domain.usecase.FlushOutboxUseCase
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.PulseJson
+import app.pulse.protocol.SavedItemDto
+import app.pulse.protocol.TopicDto
 import app.pulse.protocol.UserDto
+import app.pulse.protocol.decodeLinkPreviewDto
+import app.pulse.protocol.decodePollDto
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -75,6 +87,8 @@ class PulseRepositoryImpl @Inject constructor(
     private val messageDao: MessageDao,
     private val outboxDao: OutboxDao,
     private val draftDao: DraftDao,
+    private val topicDao: TopicDao,
+    private val savedDao: SavedDao,
     private val socket: PulseSocketClient,
     @ApplicationContext private val context: Context,
 ) : PulseRepository {
@@ -238,7 +252,19 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     override suspend fun refreshMessages(conversationId: String, limit: Int): Result<Unit> =
-        when (val r = api.messages(conversationId, limit)) {
+        refreshMessagesWindow(conversationId, limit = limit)
+
+    /** Wave 2 topic-filtered refresh — only rows filed under `topicId`. */
+    override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =
+        refreshMessagesWindow(conversationId, topicId = topicId)
+
+    private suspend fun refreshMessagesWindow(
+        conversationId: String,
+        limit: Int = 200,
+        before: String? = null,
+        topicId: String? = null,
+    ): Result<Unit> =
+        when (val r = api.messages(conversationId, limit, before, topicId)) {
             is PulseResult.Success -> {
                 messageDao.upsertAll(
                     r.value.messages.map { dto ->
@@ -990,6 +1016,159 @@ class PulseRepositoryImpl @Inject constructor(
         m.reactions.map { app.pulse.protocol.ReactionDto(emoji = it.emoji, userId = it.userId) },
     )
 
+    /** One-row cache write shared by every Wave-2 read-modify-write path. */
+    private suspend fun upsertMessage(m: Message) {
+        messageDao.upsertAll(listOf(MessageEntity.from(m, reactionsJsonOf(m))))
+    }
+
+    // ── Wave 2 messaging depth (spec §0/§1 — routes verified live) ────
+
+    override suspend fun transcribeMessage(messageId: String): Result<TranscribeOutcome> =
+        when (val r = api.transcribe(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                val outcome = TranscribeOutcome(
+                    transcript = r.value.transcript,
+                    transcribedAt = PulseTime.epochMs(r.value.transcribedAt).takeIf { it > 0L },
+                    cached = r.value.cached,
+                )
+                // Targeted patch — never rewrites the row's other columns;
+                // Room's messages Flow re-emits the updated row.
+                messageDao.updateTranscription(
+                    id = messageId,
+                    transcript = outcome.transcript,
+                    transcribedAt = r.value.transcribedAt,
+                )
+                Result.success(outcome)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun markMessageViewed(messageId: String) {
+        when (val r = api.markViewed(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> upsertMessage(r.value.toDomain())
+            is PulseResult.Failure -> Log.w(TAG, "markViewed failed: ${r.kind}: ${r.message}")
+        }
+    }
+
+    override suspend fun createPoll(conversationId: String, question: String, options: List<String>): Result<Message> =
+        when (val r = api.createPoll(conversationId, viewerId ?: "", question, options)) {
+            is PulseResult.Success -> {
+                val message = r.value.toDomain()
+                upsertMessage(message)
+                scheduleConversationsRefresh()
+                Result.success(message)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun votePoll(pollId: String, optionId: String): Result<Message> =
+        when (val r = api.votePoll(pollId, viewerId ?: "", optionId)) {
+            is PulseResult.Success -> {
+                val message = r.value.toDomain()
+                upsertMessage(message)
+                Result.success(message)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun closePoll(pollId: String): Result<Message> =
+        when (val r = api.closePoll(pollId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                val message = r.value.toDomain()
+                upsertMessage(message)
+                Result.success(message)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun unfurlMessage(messageId: String) {
+        // Fire-and-forget (spec §1 row 8): absent preview / failures are
+        // silently ignored — the link:preview relay covers the rest.
+        when (val r = api.unfurl(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> r.value?.let { upsertMessage(it.toDomain()) }
+            is PulseResult.Failure -> Log.w(TAG, "unfurl failed: ${r.kind}: ${r.message}")
+        }
+    }
+
+    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> =
+        when (val r = api.savedList(viewerId ?: "")) {
+            is PulseResult.Success -> {
+                val items = r.value.items
+                // 1) the carried message rows into the cache — the library
+                //    renders them offline afterwards (spec §1 row 14).
+                messageDao.upsertAll(
+                    items.map { MessageEntity.from(it.message.toDomain(), reactionsJsonOf(it.message.toDomain())) },
+                )
+                // 2) the savedMessages index rows.
+                val savedRows = items.map { it.toSavedEntity() }
+                savedDao.upsertAll(savedRows)
+                // 3) prune — server truth: rows it no longer lists are gone.
+                val keep = savedRows.map { it.messageId }.toSet()
+                val stale = savedDao.all().filter { it.messageId !in keep }.map { it.messageId }
+                if (stale.isNotEmpty()) savedDao.deleteByIds(stale)
+                Result.success(items.map { it.toSavedItem() })
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override fun observeSavedLibrary(): Flow<List<SavedItem>> =
+        savedDao.observeAll().map { rows ->
+            rows.mapNotNull { row ->
+                val entity = messageDao.byId(row.messageId) ?: return@mapNotNull null
+                val conversation = conversationDao.byId(row.conversationId)
+                SavedItem(
+                    savedAt = PulseTime.epochMs(row.savedAt),
+                    conversationId = row.conversationId,
+                    conversationName = conversation?.title,
+                    isGroup = conversation?.kind == "GROUP",
+                    message = entity.toDomain(),
+                )
+            }
+        }
+
+    override suspend fun unsaveMessage(messageId: String): Result<Boolean> {
+        val result = toggleMessageSave(messageId)
+        if (result.getOrNull() == false) savedDao.deleteById(messageId)
+        return result
+    }
+
+    override suspend fun refreshTopics(conversationId: String): Result<Unit> =
+        when (val r = api.topics(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                val topics = r.value.topics
+                topicDao.upsertAll(topics.map { TopicEntity.from(conversationId, it.toDomain()) })
+                // Prune rows for this conversation the server no longer lists
+                // (deleted topics drop off the rail without a socket event).
+                val keep = topics.map { it.id }.toSet()
+                val stale = topicDao.all(conversationId).filter { it.id !in keep }.map { it.id }
+                stale.forEach { topicDao.deleteById(it) }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override fun observeTopics(conversationId: String): Flow<List<Topic>> =
+        topicDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }
+
+    override suspend fun createTopic(conversationId: String, name: String, emoji: String): Result<Topic> =
+        when (val r = api.createTopic(conversationId, viewerId ?: "", name, emoji)) {
+            is PulseResult.Success -> {
+                refreshTopics(conversationId) // counts + ordering reconcile from truth
+                Result.success(r.value.toDomain())
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun deleteTopic(conversationId: String, topicId: String): Result<Unit> =
+        when (val r = api.deleteTopic(topicId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                topicDao.deleteById(topicId)
+                refreshTopics(conversationId)
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
     companion object {
         private const val TAG = "PulseRepo"
         private const val OFFLINE_BACKOFF_MS = 60_000L
@@ -1131,6 +1310,39 @@ fun ChatMessageDto.toDomain(): Message = Message(
     fileName = fileName,
     fileSize = fileSize,
     viewOnce = viewOnce == true,
+    // ── Wave 2 depth (tolerant: absent/garbled keys degrade to null) ──
+    viewedAt = PulseTime.epochMs(viewedAt).takeIf { it > 0L },
+    transcript = transcript,
+    transcribedAt = PulseTime.epochMs(transcribedAt).takeIf { it > 0L },
+    // Poll pick derives from options[].votedBy via PollInfo.pickFor — the
+    // wire myOptionId is actor-relative on relays and NEVER trusted (spec §1 row 2).
+    poll = poll.decodePollDto()?.toInfo(),
+    linkPreview = linkPreview.decodeLinkPreviewDto()?.toInfo(),
+    topicId = topicId,
+)
+
+// ── Wave 2 wire → domain mappers (saved library + topics) ──────
+
+fun SavedItemDto.toSavedItem(): SavedItem = SavedItem(
+    savedAt = PulseTime.epochMs(savedAt),
+    conversationId = conversation.id,
+    conversationName = conversation.name,
+    isGroup = conversation.isGroup,
+    message = message.toDomain(),
+)
+
+fun SavedItemDto.toSavedEntity(): SavedMessageEntity = SavedMessageEntity(
+    messageId = message.id,
+    conversationId = conversation.id,
+    savedAt = savedAt,
+)
+
+fun TopicDto.toDomain(): Topic = Topic(
+    id = id,
+    name = name,
+    emoji = emoji,
+    lastMessageAt = PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
+    messageCount = messageCount,
 )
 
 private fun kindOf(wire: String): Message.Kind = when (wire) {

@@ -9,12 +9,17 @@ import app.pulse.protocol.FoldersPageDto
 import app.pulse.protocol.HandleRegistryDto
 import app.pulse.protocol.MentionsPageDto
 import app.pulse.protocol.MessagesPageDto
+import app.pulse.protocol.OkDto
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.PinnedPageDto
+import app.pulse.protocol.SavedPageDto
 import app.pulse.protocol.SavedToggleDto
 import app.pulse.protocol.SearchPageDto
 import app.pulse.protocol.StoriesPageDto
 import app.pulse.protocol.ThreadPageDto
+import app.pulse.protocol.TopicDto
+import app.pulse.protocol.TopicsPageDto
+import app.pulse.protocol.TranscribeResultDto
 import app.pulse.protocol.UploadResultDto
 import app.pulse.protocol.UserDto
 import app.pulse.protocol.UsernameCheckDto
@@ -130,9 +135,15 @@ class PulseApi(private val http: HttpClient) {
             PulseJson.decodeFromString(ConversationsPageDto.serializer(), it)
         }
 
-    suspend fun messages(conversationId: String, limit: Int = 200, before: String? = null): PulseResult<MessagesPageDto> {
+    suspend fun messages(
+        conversationId: String,
+        limit: Int = 200,
+        before: String? = null,
+        topicId: String? = null,
+    ): PulseResult<MessagesPageDto> {
         val cursor = before?.let { "&before=$it" } ?: ""
-        return get("/api/conversations/$conversationId/messages?limit=$limit$cursor") {
+        val topic = topicId?.let { "&topicId=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
+        return get("/api/conversations/$conversationId/messages?limit=$limit$cursor$topic") {
             PulseJson.decodeFromString(MessagesPageDto.serializer(), it)
         }
     }
@@ -368,6 +379,118 @@ class PulseApi(private val http: HttpClient) {
         }
         val text = res.bodyAsText()
         if (res.status.isSuccess()) PulseResult.Success(Unit) else failureOf(res.status.value, text)
+    } catch (e: Exception) {
+        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+    }
+
+    // ── Wave 2 messaging depth (spec §0 — every route exists on the wire) ──
+
+    /** POST /api/messages/{id}/transcribe {requesterId} → { transcript, transcribedAt, cached }. */
+    suspend fun transcribe(messageId: String, requesterId: String): PulseResult<TranscribeResultDto> =
+        post("/api/messages/$messageId/transcribe", jsonOf("requesterId" to requesterId)) {
+            PulseJson.decodeFromString(TranscribeResultDto.serializer(), it)
+        }
+
+    /** POST /api/messages/{id}/viewed {userId} → { message } (idempotent burn stamp). */
+    suspend fun markViewed(messageId: String, userId: String): PulseResult<ChatMessageDto> =
+        post("/api/messages/$messageId/viewed", jsonOf("userId" to userId)) { messageOf(it) }
+
+    /** POST /api/conversations/{id}/poll {senderId, question, options[]} → 201 { message } (poll attached). */
+    suspend fun createPoll(
+        conversationId: String,
+        senderId: String,
+        question: String,
+        options: List<String>,
+    ): PulseResult<ChatMessageDto> =
+        post(
+            "/api/conversations/$conversationId/poll",
+            buildJsonObject {
+                put("senderId", senderId)
+                put("question", question)
+                put("options", kotlinx.serialization.json.JsonArray(options.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+            },
+        ) { messageOf(it) }
+
+    /** POST /api/polls/{id}/vote {userId, optionId} → { message } (fresh tally). */
+    suspend fun votePoll(pollId: String, userId: String, optionId: String): PulseResult<ChatMessageDto> =
+        post(
+            "/api/polls/$pollId/vote",
+            jsonOf("userId" to userId, "optionId" to optionId),
+        ) { messageOf(it) }
+
+    /** POST /api/polls/{id}/close {userId} → { message } (creator-only; freezes the tally). */
+    suspend fun closePoll(pollId: String, userId: String): PulseResult<ChatMessageDto> =
+        post("/api/polls/$pollId/close", jsonOf("userId" to userId)) { messageOf(it) }
+
+    /**
+     * POST /api/messages/{id}/unfurl {userId} → { message: ChatMessage | null }.
+     * null is a VALID result (nothing unfurled) — decoded tolerantly. Own
+     * runner (the shared `post` helper cannot carry a null parse result).
+     */
+    suspend fun unfurl(messageId: String, userId: String): PulseResult<ChatMessageDto?> = try {
+        val res = http.post(PulseEndpoints.http("/api/messages/$messageId/unfurl")) {
+            contentType(ContentType.Application.Json)
+            setBody(jsonOf("userId" to userId).toString())
+        }
+        val text = res.bodyAsText()
+        if (!res.status.isSuccess()) {
+            failureOf(res.status.value, text)
+        } else {
+            val root = PulseJson.parseToJsonElement(text)
+            val inner = (root as? JsonObject)?.get("message") as? JsonObject
+            PulseResult.Success(inner?.let { PulseJson.decodeFromJsonElement(ChatMessageDto.serializer(), it) })
+        }
+    } catch (e: kotlinx.serialization.SerializationException) {
+        PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+    } catch (e: Exception) {
+        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+    }
+
+    /** GET /api/users/{id}/saved → { items: [{savedAt, conversation, message}] } (newest first, cap 100). */
+    suspend fun savedList(userId: String): PulseResult<SavedPageDto> =
+        get("/api/users/$userId/saved") {
+            PulseJson.decodeFromString(SavedPageDto.serializer(), it)
+        }
+
+    /** GET /api/conversations/{id}/topics?userId= → { topics: [...] } (lastMessageAt desc, General NOT a row). */
+    suspend fun topics(conversationId: String, userId: String): PulseResult<TopicsPageDto> =
+        get(
+            "/api/conversations/$conversationId/topics?userId=" +
+                java.net.URLEncoder.encode(userId, "UTF-8"),
+        ) {
+            PulseJson.decodeFromString(TopicsPageDto.serializer(), it)
+        }
+
+    /**
+     * POST /api/conversations/{id}/topics {userId, name, emoji?} — 200 existing
+     * (case-insensitive dedupe) / 201 new; both carry { topic }.
+     */
+    suspend fun createTopic(conversationId: String, userId: String, name: String, emoji: String?): PulseResult<TopicDto> =
+        post(
+            "/api/conversations/$conversationId/topics",
+            buildJsonObject {
+                put("userId", userId)
+                put("name", name)
+                if (!emoji.isNullOrBlank()) put("emoji", emoji)
+            },
+        ) {
+            PulseJson.decodeFromString(
+                TopicDto.serializer(),
+                PulseJson.parseToJsonElement(it).unwrapOrRoot("topic").toString(),
+            )
+        }
+
+    /** DELETE /api/topics/{id}?userId= → { ok: true } (creator/admin only — query-param identity). */
+    suspend fun deleteTopic(topicId: String, userId: String): PulseResult<OkDto> = try {
+        val res = http.delete(
+            PulseEndpoints.http("/api/topics/$topicId?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
+        )
+        val text = res.bodyAsText()
+        if (res.status.isSuccess()) {
+            PulseResult.Success(runCatching { PulseJson.decodeFromString(OkDto.serializer(), text) }.getOrDefault(OkDto(ok = true)))
+        } else {
+            failureOf(res.status.value, text)
+        }
     } catch (e: Exception) {
         PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
     }

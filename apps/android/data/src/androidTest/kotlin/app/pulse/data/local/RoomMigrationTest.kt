@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import app.pulse.domain.model.Message
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -18,11 +19,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Wave-0 + Wave-1 migration gate — REAL databases are built from raw SQL
+ * Wave-0 + Wave-1 + Wave-2 migration gate — REAL databases are built from raw SQL
  * matching the deployed schema exactly, seeded, then opened with Room:
  *   - v3 → MIGRATION_3_4: rows survive; outbox + draft DAOs round-trip;
  *   - v4 → MIGRATION_4_5: rows survive; message media columns + membersJson
- *     are usable (DAO round-trip) and old rows backfill with defaults.
+ *     are usable (DAO round-trip) and old rows backfill with defaults;
+ *   - v5 → MIGRATION_5_6: rows survive; Wave-2 depth columns (viewedAt/
+ *     transcript/transcribedAt/pollJson/linkPreviewJson/topicId) + the new
+ *     topics/savedMessages tables are usable (DAO round-trips).
  * Runs on the emulator (android-ci connectedDebugAndroidTest).
  */
 @RunWith(AndroidJUnit4::class)
@@ -172,6 +176,87 @@ class RoomMigrationTest {
         })
         // Mark the file as the deployed v4 schema.
         raw.version = 4
+        raw.close()
+    }
+
+    /**
+     * EXACT v5 DDL — v5 = v4 tables + Wave-1 media columns + membersJson.
+     * Built from the v3 DDL strings by splicing the extra columns in before
+     * the PRIMARY KEY clause (the deployed schema is exactly this).
+     */
+    private val createConversationsV5 = createConversationsV3
+        .removeSuffix("PRIMARY KEY(`id`))") +
+        "`membersJson` TEXT NOT NULL DEFAULT '[]', PRIMARY KEY(`id`))"
+
+    private val createMessagesV5 = createMessagesV3
+        .removeSuffix("PRIMARY KEY(`id`))") +
+        "`imagePath` TEXT, `audioPath` TEXT, `filePath` TEXT, `fileName` TEXT, " +
+        "`fileSize` INTEGER, `viewOnce` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))"
+
+    private fun createV5DatabaseWithSeedRows() {
+        val raw = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName), null)
+        raw.execSQL(createConversationsV5)
+        raw.execSQL(createMessagesV5)
+        raw.execSQL(
+            "CREATE TABLE IF NOT EXISTS `outbox` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`conversationId` TEXT NOT NULL, `clientId` TEXT NOT NULL, `content` TEXT NOT NULL, " +
+                "`kind` TEXT NOT NULL, `createdAt` TEXT NOT NULL, `attempts` INTEGER NOT NULL)",
+        )
+        raw.execSQL("CREATE INDEX IF NOT EXISTS `index_outbox_conversationId` ON `outbox` (`conversationId`)")
+        raw.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_outbox_clientId` ON `outbox` (`clientId`)")
+        raw.execSQL(
+            "CREATE TABLE IF NOT EXISTS `draft` (`conversationId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
+                "`updatedAt` TEXT NOT NULL, PRIMARY KEY(`conversationId`))",
+        )
+        raw.insert("conversations", null, ContentValues().apply {
+            put("id", "c1")
+            put("kind", "GROUP")
+            put("title", "Wave Crew")
+            put("unreadCount", 1)
+            put("isPinned", 0)
+            put("isMuted", 0)
+            put("isArchived", 0)
+            put("memberIdsCsv", "u1,u2")
+            put("memberNamesCsv", "Alice,Bob")
+            put("streakCount", 2)
+            put("isSelf", 0)
+            put("myManualUnread", 0)
+            put("streakAtRiskCount", 0)
+            put("streakLost", 0)
+            put("lastMessageMine", 0)
+            put("lastMessageDeleted", 0)
+            put("lastMessageIsReply", 0)
+            put("lastMessageIsImage", 0)
+            put("lastMessageIsAudio", 0)
+            put("lastMessageIsFile", 0)
+            put("mutedUntilEpoch", 0)
+            put("isChannel", 0)
+        })
+        raw.insert("messages", null, ContentValues().apply {
+            put("id", "m-v5")
+            put("conversationId", "c1")
+            put("authorId", "u2")
+            put("authorName", "Bob")
+            put("kind", "TEXT")
+            put("body", "pre-v6 text row")
+            put("createdAt", "2026-02-20T10:00:00.000Z")
+            put("viaAutomation", 0)
+        })
+        raw.insert("outbox", null, ContentValues().apply {
+            put("conversationId", "c1")
+            put("clientId", "client-v5")
+            put("content", "queued pre-v6")
+            put("kind", "text")
+            put("createdAt", "2026-02-20T10:01:00.000Z")
+            put("attempts", 0)
+        })
+        raw.insert("draft", null, ContentValues().apply {
+            put("conversationId", "c1")
+            put("text", "half-typed pre-v6")
+            put("updatedAt", "t1")
+        })
+        // Mark the file as the deployed v5 schema.
+        raw.version = 5
         raw.close()
     }
 
@@ -345,5 +430,184 @@ class RoomMigrationTest {
         // Entity.from re-serializes the domain members back to JSON.
         val reSerialized = ConversationEntity.from(reloaded.toDomain().copy(members = listOf(member)))
         assertTrue(reSerialized.membersJson.contains(""""id":"u1""""))
+    }
+
+    /**
+     * Wave-2 gate: a REAL v5 database (v4 + media columns + membersJson)
+     * migrates to v6 without destruction — old rows survive with the six new
+     * nullable columns empty, the NEW topics/savedMessages tables are usable
+     * through their DAOs, and Wave-2 message data (pollJson/viewedAt/topicId)
+     * round-trips through the message DAO.
+     */
+    @Test
+    fun migration5To6PreservesRowsAndAddsDepthColumnsAndTables() = runBlocking {
+        createV5DatabaseWithSeedRows()
+        db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
+            .addMigrations(PulseDatabase.MIGRATION_5_6)
+            .allowMainThreadQueries()
+            .build()
+
+        // ── v5 rows intact + new columns empty ─────────────────
+        val oldMessage = db.messageDao().byId("m-v5")
+        assertNotNull("v5 message row was destroyed by the migration", oldMessage)
+        assertEquals("pre-v6 text row", oldMessage!!.body)
+        assertNull(oldMessage.viewedAt) // nullable depth columns start empty
+        assertNull(oldMessage.transcript)
+        assertNull(oldMessage.transcribedAt)
+        assertNull(oldMessage.pollJson)
+        assertNull(oldMessage.linkPreviewJson)
+        assertNull(oldMessage.topicId)
+
+        // Wave-0/1 surfaces still work after the v6 migration.
+        assertEquals(1, db.outboxDao().count())
+        assertEquals("half-typed pre-v6", db.draftDao().get("c1")?.text)
+        val conversation = db.conversationDao().byId("c1")
+        assertNotNull(conversation)
+        assertEquals("[]", conversation!!.membersJson)
+
+        // ── topics DAO round-trip (General is NOT a row) ────────
+        assertEquals(0, db.topicDao().count())
+        db.topicDao().upsertAll(
+            listOf(
+                TopicEntity(
+                    id = "t1",
+                    conversationId = "c1",
+                    name = "Design",
+                    emoji = "🎨",
+                    lastMessageAt = "2026-02-20T14:00:00.000Z",
+                    messageCount = 7,
+                ),
+                TopicEntity(
+                    id = "t2",
+                    conversationId = "c1",
+                    name = "Launch",
+                    lastMessageAt = "2026-02-20T13:00:00.000Z",
+                    // defaults: emoji '💬', messageCount 0
+                ),
+            ),
+        )
+        assertEquals(2, db.topicDao().count())
+        // Rail order: lastMessageAt DESC.
+        val rail = db.topicDao().observeFor("c1").first()
+        assertEquals(listOf("t1", "t2"), rail.map { it.id })
+        assertEquals("Design", rail.first().name)
+        assertEquals(7, rail.first().messageCount)
+        assertEquals("💬", rail[1].emoji) // backfilled by the column default
+        // Domain mapping: ISO → epoch, count carried.
+        val domainTopic = rail.first().toDomain()
+        assertEquals("Design", domainTopic.name)
+        val domainTopicLastMessageAt = domainTopic.lastMessageAt
+        assertTrue(domainTopicLastMessageAt != null && domainTopicLastMessageAt > 0L)
+        // Other conversations see nothing; scoped delete works.
+        assertTrue(db.topicDao().all("cX").isEmpty())
+        db.topicDao().deleteById("t2")
+        assertEquals(1, db.topicDao().count())
+        db.topicDao().deleteByConversation("c1")
+        assertEquals(0, db.topicDao().count())
+
+        // ── savedMessages DAO round-trip ────────────────────────
+        assertEquals(0, db.savedDao().count())
+        db.savedDao().upsertAll(
+            listOf(
+                SavedMessageEntity(
+                    messageId = "m-v6",
+                    conversationId = "c1",
+                    savedAt = "2026-02-20T12:00:00.000Z",
+                ),
+                SavedMessageEntity(
+                    messageId = "m-v5",
+                    conversationId = "c1",
+                    savedAt = "2026-02-20T11:00:00.000Z",
+                ),
+            ),
+        )
+        assertEquals(2, db.savedDao().count())
+        // Library order: savedAt DESC (newest first — wire parity).
+        val savedRows = db.savedDao().observeAll().first()
+        assertEquals(listOf("m-v6", "m-v5"), savedRows.map { it.messageId })
+
+        // ── Wave-2 message columns round-trip through the DAO ──
+        val pollJson = """
+            {"id":"p1","question":"Lunch?","closed":false,
+             "options":[{"id":"optA","text":"Ramen","position":0,"voteCount":2,
+             "votedBy":["u2","u3"]}],"totalVotes":2,"myOptionId":"optA"}
+        """.trimIndent().replace("\n", "")
+        val depth = MessageEntity(
+            id = "m-v6",
+            conversationId = "c1",
+            authorId = "u1",
+            authorName = "Alice",
+            kind = "POLL",
+            body = "",
+            createdAt = "2026-02-20T10:00:00.000Z",
+            editedAt = null,
+            deletedAt = null,
+            replyToId = null,
+            threadRootId = null,
+            pinnedAt = null,
+            reactionsJson = null,
+            replyToBody = null,
+            replyToAuthor = null,
+            senderColor = "emerald",
+            viaAutomation = false,
+            durationMs = null,
+            imagePath = null,
+            audioPath = "voice-1.m4a",
+            filePath = null,
+            fileName = null,
+            fileSize = null,
+            viewOnce = true,
+            viewedAt = "2026-02-20T10:05:00.000Z",
+            transcript = "hey team, shipping the demo",
+            transcribedAt = "2026-02-20T10:06:00.000Z",
+            pollJson = pollJson,
+            linkPreviewJson = """{"url":"https://example.com","title":"Example Domain"}""",
+            topicId = "t1",
+        )
+        db.messageDao().upsertAll(listOf(depth))
+        val roundTripped = db.messageDao().byId("m-v6")
+        assertNotNull("depth row missing after insert", roundTripped)
+        assertEquals("2026-02-20T10:05:00.000Z", roundTripped!!.viewedAt)
+        assertEquals("hey team, shipping the demo", roundTripped.transcript)
+        assertEquals("2026-02-20T10:06:00.000Z", roundTripped.transcribedAt)
+        assertTrue(roundTripped.pollJson!!.contains(""""votedBy":["u2","u3"]"""))
+        assertTrue(roundTripped.linkPreviewJson!!.contains("Example Domain"))
+        assertEquals("t1", roundTripped.topicId)
+
+        // Entity ⇄ domain: poll JSON decodes back into PollInfo, ISO → epoch.
+        val domain = roundTripped.toDomain()
+        assertEquals(Message.Kind.POLL, domain.kind)
+        val poll = domain.poll
+        assertNotNull("pollJson must decode back into PollInfo", poll)
+        assertEquals("p1", poll!!.id)
+        assertEquals("Lunch?", poll.question)
+        assertEquals(1, poll.options.size)
+        assertEquals(listOf("u2", "u3"), poll.options.first().votedBy)
+        assertEquals("optA", poll.pickFor("u2")) // votedBy-derived pick
+        // ISO stored in the column parses back to the same epoch instant.
+        assertEquals(
+            java.time.Instant.parse("2026-02-20T10:05:00.000Z"),
+            java.time.Instant.ofEpochMilli(domain.viewedAt!!),
+        )
+        val domainTranscribedAt = domain.transcribedAt
+        assertTrue(domainTranscribedAt != null && domainTranscribedAt > 0L)
+        assertEquals("hey team, shipping the demo", domain.transcript)
+        assertEquals("t1", domain.topicId)
+        val preview = domain.linkPreview
+        assertTrue(preview != null && preview.url == "https://example.com")
+
+        // Targeted ASR patch (repo path) touches ONLY the transcript columns.
+        db.messageDao().updateTranscription("m-v6", "patched transcript", "2026-02-20T10:07:00.000Z")
+        val patched = db.messageDao().byId("m-v6")!!
+        assertEquals("patched transcript", patched.transcript)
+        assertEquals("2026-02-20T10:07:00.000Z", patched.transcribedAt)
+        assertEquals("t1", patched.topicId) // untouched
+        assertTrue(patched.pollJson!!.contains("optA")) // untouched
+
+        // Unsave drops exactly one saved row (repo unsave path).
+        db.savedDao().deleteById("m-v5")
+        assertEquals(listOf("m-v6"), db.savedDao().all().map { it.messageId })
+        db.savedDao().deleteByIds(listOf("m-v6"))
+        assertEquals(0, db.savedDao().count())
     }
 }

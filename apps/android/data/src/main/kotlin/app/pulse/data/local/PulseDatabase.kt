@@ -10,11 +10,18 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import androidx.room.Upsert
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
+import app.pulse.domain.model.LinkPreviewInfo
 import app.pulse.domain.model.Message
+import app.pulse.domain.model.PollInfo
+import app.pulse.domain.model.PollOptionInfo
+import app.pulse.protocol.LinkPreviewDto
+import app.pulse.protocol.PollDto
+import app.pulse.protocol.PollOptionDto
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -29,6 +36,10 @@ import kotlinx.coroutines.flow.Flow
  * (imagePath/audioPath/filePath/fileName/fileSize/viewOnce) and the
  * conversation `membersJson` (id/name/color/lastReadAt/role per member —
  * powers read ticks + the info sheet) — all additive (MIGRATION_4_5).
+ * v6 (Wave 2) adds the messaging-depth columns: viewedAt/transcript/
+ * transcribedAt/pollJson/linkPreviewJson/topicId on messages, plus the NEW
+ * `topics` rail and `savedMessages` library tables — all additive
+ * (MIGRATION_5_6).
  */
 @Entity(tableName = "conversations")
 data class ConversationEntity(
@@ -169,6 +180,13 @@ data class MessageEntity(
     val fileName: String?,
     val fileSize: Long?,
     @ColumnInfo(defaultValue = "0") val viewOnce: Boolean = false,
+    // Wave 2 depth columns (v6) — nullable TEXT, ISO timestamps verbatim.
+    val viewedAt: String? = null,
+    val transcript: String? = null,
+    val transcribedAt: String? = null,
+    val pollJson: String? = null,
+    val linkPreviewJson: String? = null,
+    val topicId: String? = null,
 ) {
     fun toDomain(): Message {
         val reactionDtos = reactionsJson?.let { json ->
@@ -190,6 +208,20 @@ data class MessageEntity(
             senderColor = senderColor, viaAutomation = viaAutomation, durationMs = durationMs,
             imagePath = imagePath, audioPath = audioPath, filePath = filePath,
             fileName = fileName, fileSize = fileSize, viewOnce = viewOnce,
+            viewedAt = epochOrNull(viewedAt),
+            transcript = transcript,
+            transcribedAt = epochOrNull(transcribedAt),
+            poll = pollJson?.let { json ->
+                runCatching {
+                    app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.PollDto.serializer(), json).toInfo()
+                }.getOrNull()
+            },
+            linkPreview = linkPreviewJson?.let { json ->
+                runCatching {
+                    app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.LinkPreviewDto.serializer(), json).toInfo()
+                }.getOrNull()
+            },
+            topicId = topicId,
         )
     }
 
@@ -204,9 +236,125 @@ data class MessageEntity(
             viaAutomation = m.viaAutomation, durationMs = m.durationMs,
             imagePath = m.imagePath, audioPath = m.audioPath, filePath = m.filePath,
             fileName = m.fileName, fileSize = m.fileSize, viewOnce = m.viewOnce,
+            viewedAt = m.viewedAt?.let { java.time.Instant.ofEpochMilli(it).toString() },
+            transcript = m.transcript,
+            transcribedAt = m.transcribedAt?.let { java.time.Instant.ofEpochMilli(it).toString() },
+            // Wire-shape JSON (PollDto/LinkPreviewDto) — same compact form the
+            // gateway emits, so the column decodes identically no matter which
+            // upsert path wrote it (REST row, socket relay, optimistic copy).
+            pollJson = m.poll?.let { poll ->
+                app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.PollDto.serializer(), poll.toDto())
+            },
+            linkPreviewJson = m.linkPreview?.let { preview ->
+                app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.LinkPreviewDto.serializer(), preview.toDto())
+            },
+            topicId = m.topicId,
+        )
+
+        /** ISO wire timestamp → epoch ms (null when absent/unparseable). */
+        private fun epochOrNull(iso: String?): Long? =
+            app.pulse.core.time.PulseTime.epochMs(iso).takeIf { it > 0L }
+    }
+}
+
+// ── Wave 2 wire-shape ⇄ domain converters (poll + link preview) ─────
+
+fun PollDto.toInfo(): PollInfo = PollInfo(
+    id = id,
+    question = question,
+    closed = closed,
+    options = options.map { o ->
+        PollOptionInfo(
+            id = o.id,
+            text = o.text,
+            position = o.position,
+            voteCount = o.voteCount,
+            votedBy = o.votedBy,
+        )
+    },
+    totalVotes = totalVotes,
+    myOptionId = myOptionId,
+)
+
+fun PollInfo.toDto(): PollDto = PollDto(
+    id = id,
+    question = question,
+    closed = closed,
+    options = options.map { o ->
+        PollOptionDto(
+            id = o.id,
+            text = o.text,
+            position = o.position,
+            voteCount = o.voteCount,
+            votedBy = o.votedBy,
+        )
+    },
+    totalVotes = totalVotes,
+    myOptionId = myOptionId,
+)
+
+fun LinkPreviewDto.toInfo(): LinkPreviewInfo = LinkPreviewInfo(
+    url = url,
+    title = title,
+    description = description,
+    imageUrl = imageUrl,
+    siteName = siteName,
+)
+
+fun LinkPreviewInfo.toDto(): LinkPreviewDto = LinkPreviewDto(
+    url = url,
+    title = title,
+    description = description,
+    imageUrl = imageUrl,
+    siteName = siteName,
+)
+
+/**
+ * One Zulip-style topic chip cached for the rail (Wave 2 v6). "General" is
+ * NOT a row — it is the implicit whole room (messages with topicId = null).
+ */
+@Entity(
+    tableName = "topics",
+    indices = [Index(value = ["conversationId"])],
+)
+data class TopicEntity(
+    @PrimaryKey val id: String,
+    val conversationId: String,
+    val name: String,
+    @ColumnInfo(defaultValue = "💬") val emoji: String = "💬",
+    val lastMessageAt: String?,
+    @ColumnInfo(defaultValue = "0") val messageCount: Int = 0,
+) {
+    fun toDomain(): app.pulse.domain.model.Topic = app.pulse.domain.model.Topic(
+        id = id,
+        name = name,
+        emoji = emoji,
+        lastMessageAt = app.pulse.core.time.PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
+        messageCount = messageCount,
+    )
+
+    companion object {
+        fun from(conversationId: String, t: app.pulse.domain.model.Topic) = TopicEntity(
+            id = t.id,
+            conversationId = conversationId,
+            name = t.name,
+            emoji = t.emoji,
+            lastMessageAt = t.lastMessageAt?.let { java.time.Instant.ofEpochMilli(it).toString() },
+            messageCount = t.messageCount,
         )
     }
 }
+
+/** One saved-library row (Wave 2 v6) — the message itself lives in `messages`. */
+@Entity(
+    tableName = "savedMessages",
+    indices = [Index(value = ["conversationId"])],
+)
+data class SavedMessageEntity(
+    @PrimaryKey val messageId: String,
+    val conversationId: String,
+    val savedAt: String,
+)
 
 /**
  * One queued outgoing message (Wave 0 offline core — web pulse-outbox parity).
@@ -315,6 +463,13 @@ interface MessageDao {
             "AND body = :body AND id LIKE 'local_%' AND id != :keepId",
     )
     suspend fun tempEchoes(conversationId: String, authorId: String, body: String, keepId: String): List<MessageEntity>
+
+    /**
+     * Targeted ASR patch (Wave 2) — transcribe() writes ONLY the transcript
+     * columns so reactions/media/poll JSON on the row are never rewritten.
+     */
+    @Query("UPDATE messages SET transcript = :transcript, transcribedAt = :transcribedAt WHERE id = :id")
+    suspend fun updateTranscription(id: String, transcript: String, transcribedAt: String?)
 }
 
 /** Projection row for the batched thread-count query (river reply chips). */
@@ -371,14 +526,62 @@ interface DraftDao {
     suspend fun clearAll()
 }
 
+/** Live topic rail for one conversation (Wave 2 — General is NOT a row). */
+@Dao
+interface TopicDao {
+    @Upsert
+    suspend fun upsertAll(items: List<TopicEntity>)
+
+    /** Rail order = lastMessageAt DESC (the wire's own ordering). */
+    @Query("SELECT * FROM topics WHERE conversationId = :conversationId ORDER BY lastMessageAt DESC")
+    fun observeFor(conversationId: String): Flow<List<TopicEntity>>
+
+    @Query("SELECT * FROM topics WHERE conversationId = :conversationId ORDER BY lastMessageAt DESC")
+    suspend fun all(conversationId: String): List<TopicEntity>
+
+    @Query("DELETE FROM topics WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM topics WHERE conversationId = :conversationId")
+    suspend fun deleteByConversation(conversationId: String)
+
+    @Query("SELECT COUNT(*) FROM topics")
+    suspend fun count(): Int
+}
+
+/** Saved-library index (Wave 2) — server cap 100, newest first, no pagination. */
+@Dao
+interface SavedDao {
+    @Upsert
+    suspend fun upsertAll(items: List<SavedMessageEntity>)
+
+    @Query("SELECT * FROM savedMessages ORDER BY savedAt DESC")
+    fun observeAll(): Flow<List<SavedMessageEntity>>
+
+    @Query("SELECT * FROM savedMessages ORDER BY savedAt DESC")
+    suspend fun all(): List<SavedMessageEntity>
+
+    @Query("DELETE FROM savedMessages WHERE messageId = :messageId")
+    suspend fun deleteById(messageId: String)
+
+    /** Prune after refreshSavedLibrary — rows the server no longer lists. */
+    @Query("DELETE FROM savedMessages WHERE messageId IN (:messageIds)")
+    suspend fun deleteByIds(messageIds: List<String>)
+
+    @Query("SELECT COUNT(*) FROM savedMessages")
+    suspend fun count(): Int
+}
+
 @Database(
     entities = [
         ConversationEntity::class,
         MessageEntity::class,
         OutboxEntity::class,
         DraftEntity::class,
+        TopicEntity::class,
+        SavedMessageEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -386,6 +589,8 @@ abstract class PulseDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun outboxDao(): OutboxDao
     abstract fun draftDao(): DraftDao
+    abstract fun topicDao(): TopicDao
+    abstract fun savedDao(): SavedDao
 
     companion object {
         const val NAME = "pulse.db"
@@ -426,6 +631,35 @@ abstract class PulseDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `fileSize` INTEGER")
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `viewOnce` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `conversations` ADD COLUMN `membersJson` TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
+        /**
+         * v5 → v6 (Wave 2): message depth columns (view-once burn stamp,
+         * ASR transcript, poll/linkPreview JSON, topic filing) + the NEW
+         * `topics` and `savedMessages` tables. All additive — every v5 row
+         * survives; nullable columns need no defaults. DDL mirrors Room's
+         * generated schema exactly (see schemas/6.json).
+         */
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `viewedAt` TEXT")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `transcript` TEXT")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `transcribedAt` TEXT")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `pollJson` TEXT")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `linkPreviewJson` TEXT")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `topicId` TEXT")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `topics` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, " +
+                        "`name` TEXT NOT NULL, `emoji` TEXT NOT NULL DEFAULT '💬', `lastMessageAt` TEXT, " +
+                        "`messageCount` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_topics_conversationId` ON `topics` (`conversationId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `savedMessages` (`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, " +
+                        "`savedAt` TEXT NOT NULL, PRIMARY KEY(`messageId`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_savedMessages_conversationId` ON `savedMessages` (`conversationId`)")
             }
         }
     }

@@ -111,6 +111,83 @@ data class MessageHit(
     val fileName: String? = null,
 )
 
+// ── Wave 2 messaging depth — polls / link previews / saved / topics / ASR ──
+
+/** One option of a live poll with its per-user tally (wire votedBy mirror). */
+@Serializable
+data class PollOptionInfo(
+    val id: String,
+    val text: String,
+    val position: Int = 0,
+    val voteCount: Int = 0,
+    val votedBy: List<String> = emptyList(),
+)
+
+/**
+ * Parsed poll tally of a message (from the wire `message.poll` object).
+ *
+ * `myOptionId` is carried for completeness but is ACTOR-RELATIVE on relayed
+ * rows (poll:voted maps the row with the VOTER as viewer → every recipient
+ * would see the voter's pick as "mine") and null on history GETs — NEVER use
+ * it. The viewer's own pick derives ONLY from [pickFor], which scans
+ * options[].votedBy for the viewer id.
+ */
+@Serializable
+data class PollInfo(
+    val id: String,
+    val question: String,
+    val closed: Boolean = false,
+    val options: List<PollOptionInfo> = emptyList(),
+    val totalVotes: Int = 0,
+    val myOptionId: String? = null,
+) {
+    /**
+     * The viewer's own pick, derived from options[].votedBy ONLY — never from
+     * [myOptionId] (actor-relative on relays, null on history). Null when the
+     * viewer has not voted (or viewerId is unknown).
+     */
+    fun pickFor(viewerId: String?): String? =
+        options.firstOrNull { viewerId != null && viewerId in it.votedBy }?.id
+}
+
+/** Open-Graph link preview attached to a message (wire linkPreview mirror). */
+@Serializable
+data class LinkPreviewInfo(
+    val url: String,
+    val title: String? = null,
+    val description: String? = null,
+    val imageUrl: String? = null,
+    val siteName: String? = null,
+)
+
+/** One row of the saved library (GET /api/users/{id}/saved). */
+@Serializable
+data class SavedItem(
+    val savedAt: Long,
+    val conversationId: String,
+    val conversationName: String?,
+    val isGroup: Boolean,
+    val message: Message,
+)
+
+/** One Zulip-style topic chip (General is NOT a row — implicit whole room). */
+@Serializable
+data class Topic(
+    val id: String,
+    val name: String,
+    val emoji: String = "💬",
+    val lastMessageAt: Long? = null,
+    val messageCount: Int = 0,
+)
+
+/** Outcome of POST /api/messages/{id}/transcribe (cached: server ASR cache hit). */
+@Serializable
+data class TranscribeOutcome(
+    val transcript: String,
+    val transcribedAt: Long? = null,
+    val cached: Boolean = false,
+)
+
 /** One cell in the chats stories rail (GET /api/stories — degrades to My status only). */
 data class StoryCell(
     val userId: String,
@@ -172,6 +249,19 @@ data class Message(
     val fileSize: Long? = null,
     /** View-once render gate (consume itself is a Wave 2 non-goal). */
     val viewOnce: Boolean = false,
+    // ── Wave 2 depth fields ─────────────────────────────────────
+    /** Epoch ms when the view-once photo was consumed (wire viewedAt ISO → parsed). Null = unopened. */
+    val viewedAt: Long? = null,
+    /** Voice-note transcript (server ASR cache — visible to every member). */
+    val transcript: String? = null,
+    /** Epoch ms the transcript was produced (wire transcribedAt ISO → parsed). */
+    val transcribedAt: Long? = null,
+    /** Parsed poll tally (null on non-poll rows). Pick derives from PollInfo.pickFor, NEVER myOptionId. */
+    val poll: PollInfo? = null,
+    /** Parsed Open-Graph preview (null until the unfurl round-trip lands). */
+    val linkPreview: LinkPreviewInfo? = null,
+    /** Zulip-style topic the message is filed under — null = General (whole room). */
+    val topicId: String? = null,
 ) {
     enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, SYSTEM }
 

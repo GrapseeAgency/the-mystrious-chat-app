@@ -8,7 +8,10 @@ import app.pulse.domain.model.Message
 import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.MentionItem
 import app.pulse.domain.model.OutboxEntry
+import app.pulse.domain.model.SavedItem
 import app.pulse.domain.model.StoryCell
+import app.pulse.domain.model.Topic
+import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
 import kotlinx.coroutines.flow.Flow
 
@@ -79,6 +82,13 @@ interface PulseRepository {
     /** Pull the latest lists from the gateway into the local cache. */
     suspend fun refreshConversations(): Result<Unit>
     suspend fun refreshMessages(conversationId: String, limit: Int = 200): Result<Unit>
+
+    /**
+     * Topic-filtered refresh (Wave 2): fetches only the messages filed under
+     * `topicId` (wire `&topicId=`) and upserts them. The unfiltered overload
+     * above stays the General/whole-room path.
+     */
+    suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit>
 
     suspend fun users(query: String = ""): Result<List<User>>
     suspend fun createIdentity(name: String, color: String?, username: String? = null): Result<User>
@@ -236,4 +246,66 @@ interface PulseRepository {
 
     /** Reply counts for river parent bubbles ("N replies ↳") — one batched Room query. */
     suspend fun threadReplyCounts(rootIds: List<String>): Map<String, Int>
+
+    // ── Wave 2 messaging depth (spec WAVE2 §0 — all routes exist on the wire) ──
+
+    /**
+     * POST /api/messages/{id}/transcribe {requesterId} — voice notes only.
+     * On success the cached Room row is patched (transcript + transcribedAt)
+     * so every surface observing it updates. cached=true = server ASR cache hit.
+     */
+    suspend fun transcribeMessage(messageId: String): Result<TranscribeOutcome>
+
+    /**
+     * POST /api/messages/{id}/viewed {userId} — consume a view-once photo.
+     * The returned authoritative row is upserted (viewedAt stamp); other
+     * members learn it via the message:viewed relay. Failures are logged
+     * only — the gate tap can be retried.
+     */
+    suspend fun markMessageViewed(messageId: String)
+
+    /** POST /api/conversations/{id}/poll {senderId, question, options[]} → fresh poll row (upserted). */
+    suspend fun createPoll(conversationId: String, question: String, options: List<String>): Result<Message>
+
+    /** POST /api/polls/{id}/vote {userId, optionId} → fresh tally row (upserted). */
+    suspend fun votePoll(pollId: String, optionId: String): Result<Message>
+
+    /** POST /api/polls/{id}/close {userId} — creator-only; freezes the tally (upserted). */
+    suspend fun closePoll(pollId: String): Result<Message>
+
+    /**
+     * POST /api/messages/{id}/unfurl {userId} — fire-and-forget Open-Graph
+     * fetch after OWN sends. A non-null returned row is upserted (linkPreview
+     * attached); null (= nothing unfurled) and failures are ignored/logged.
+     */
+    suspend fun unfurlMessage(messageId: String)
+
+    /**
+     * GET /api/users/{id}/saved — refetch the saved library (newest-first,
+     * server cap 100). Upserts the carried message rows + savedMessages rows
+     * and PRUNES local rows the server no longer lists (server is truth).
+     */
+    suspend fun refreshSavedLibrary(): Result<List<SavedItem>>
+
+    /** Live saved library from the Room cache (skips messages missing from cache gracefully). */
+    fun observeSavedLibrary(): Flow<List<SavedItem>>
+
+    /** POST /api/messages/{id}/save — reuse the toggle; unsaves (saved=false) also drops the local row. */
+    suspend fun unsaveMessage(messageId: String): Result<Boolean>
+
+    /** GET /api/conversations/{id}/topics?userId= — refresh the topic rail (prune not-in-response rows). */
+    suspend fun refreshTopics(conversationId: String): Result<Unit>
+
+    /** Live topic chips for one conversation (General is NOT a row — UI prepends it). */
+    fun observeTopics(conversationId: String): Flow<List<Topic>>
+
+    /** POST /api/conversations/{id}/topics {userId, name, emoji?} → 200 existing / 201 new; rail refreshes. */
+    suspend fun createTopic(conversationId: String, name: String, emoji: String = "💬"): Result<Topic>
+
+    /**
+     * DELETE /api/topics/{id}?userId= — creator/admin-only. Returns success
+     * with the deletion applied; the caller resets an active topic that got
+     * deleted (messages fall back to General server-side).
+     */
+    suspend fun deleteTopic(conversationId: String, topicId: String): Result<Unit>
 }

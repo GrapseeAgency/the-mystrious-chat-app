@@ -123,6 +123,18 @@ public struct WireMessageEnvelope: Codable, Sendable {
         }
         return try JSONDecoder().decode(WireChatMessage.self, from: data)
     }
+
+    /// Lenient variant for POST /api/messages/{id}/unfurl — the route answers
+    /// `{ message: null }` when nothing was unfurled (nothing link-ish in the
+    /// content / unreachable host). The strict extract above would fall
+    /// through to the bare-object decode and THROW on that body; this variant
+    /// tolerates "nothing happened" by returning nil. Never throws.
+    public static func extractOptional(from data: Data) -> WireChatMessage? {
+        if let wrapped = try? JSONDecoder().decode(WireMessageEnvelope.self, from: data) {
+            return wrapped.message
+        }
+        return try? JSONDecoder().decode(WireChatMessage.self, from: data)
+    }
 }
 
 public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
@@ -148,6 +160,23 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     public let viewOnce: Bool?
     public let anon: Bool?
     public let anonAlias: String?
+    // W2-DATA-B — Wave 2 additive fields (all optional: old relays never
+    // send them and the decoder must stay tolerant both ways).
+    /// View-once burn stamp — the FIRST non-sender open, wire ISO string.
+    public let viewedAt: String?
+    /// Who consumed the view-once attachment. Server column is a SINGLE
+    /// userId string (Message.viewedBy String? in prisma/schema.prisma) —
+    /// NOT an array, despite what stale fixtures once guessed.
+    public let viewedBy: String?
+    /// Cached voice-note transcription (real ASR, stored on the row).
+    public let transcript: String?
+    public let transcribedAt: String?
+    /// Zulip-style topic this row is filed under (null = General).
+    public let topicId: String?
+    /// First link inside the content once the unfurl pipeline consumed it.
+    public let linkUrl: String?
+    public let linkPreview: WireLinkPreview?
+    public let poll: WirePoll?
 }
 
 public struct WireMessagesPage: Codable, Sendable {
@@ -177,6 +206,114 @@ public struct WireSavedToggle: Codable, Sendable {
 public struct WireUploadResult: Codable, Sendable {
     public let filePath: String?
     public let imagePath: String?
+}
+
+// ── W2-DATA-B — Wave 2 wire shapes (polls, previews, saved, topics) ──
+
+/// One poll choice inside message.poll. `votedBy` is the vote source of
+/// truth (userIds); `myOptionId` on the parent poll is actor-relative, so
+/// UI derivation rides votedBy (see WirePoll.pickFor).
+public struct WirePollOption: Codable, Hashable, Sendable {
+    public let id: String
+    public let text: String
+    public let position: Int?
+    public let voteCount: Int?
+    public let votedBy: [String]?
+}
+
+/// Live poll card attached to exactly one message. Backend contract
+/// (spec §0): NO `multiple`, NO `closesAt` — single-choice, manual close.
+/// `myOptionId` is ACTOR-RELATIVE on relayed rows (poll:voted envelopes map
+/// the row with the ACTOR as viewer) and null on history GETs — UI must
+/// derive the own pick from votedBy ONLY.
+public struct WirePoll: Codable, Hashable, Sendable {
+    public let id: String
+    public let question: String
+    public let closed: Bool?
+    public let options: [WirePollOption]?
+    public let totalVotes: Int?
+    public let myOptionId: String?
+
+    /// Own poll pick — derived from votedBy ONLY (web parity, spec §1 row 2).
+    /// Rendering myOptionId would show another member's vote as "mine" on
+    /// vote/close relays. First option whose votedBy contains the viewer;
+    /// nil when the viewer has not voted (or no viewer).
+    public func pickFor(_ viewerId: String?) -> String? {
+        guard let viewerId else { return nil }
+        return (options ?? []).first { $0.votedBy?.contains(viewerId) == true }?.id
+    }
+}
+
+/// Open-Graph preview inside message.linkPreview (all string|null on the
+/// wire — the unfurl route fills og:title/description/image/site_name).
+public struct WireLinkPreview: Codable, Hashable, Sendable {
+    public let url: String?
+    public let title: String?
+    public let description: String?
+    public let imageUrl: String?
+    public let siteName: String?
+}
+
+/// Conversation display info on a saved-library item (DM names are resolved
+/// to the partner server-side; groups carry the room name).
+public struct WireSavedConversation: Codable, Hashable, Sendable {
+    public let id: String
+    public let isGroup: Bool?
+    public let name: String?
+}
+
+/// GET /api/users/{id}/saved item — newest-first, cap 100, NO server
+/// pagination/search (local filter/search is the native capability).
+public struct WireSavedItem: Codable, Hashable, Sendable {
+    public let savedAt: String
+    public let conversation: WireSavedConversation
+    public let message: WireChatMessage
+}
+
+public struct WireSavedPage: Codable, Hashable, Sendable {
+    public let items: [WireSavedItem]?
+}
+
+/// Zulip-style topic. "General" is NOT a row — it is the unfiltered room;
+/// only real Topic rows ride this shape.
+public struct WireTopic: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public let emoji: String?
+    public let lastMessageAt: String?
+    public let messageCount: Int?
+}
+
+public struct WireTopicsPage: Codable, Hashable, Sendable {
+    public let topics: [WireTopic]?
+}
+
+/// Tolerant wrapper: POST /api/conversations/{id}/topics answers
+/// { topic } on BOTH the 200 dedupe and the 201 create — falls back to the
+/// bare topic object defensively (older-relay pattern).
+public struct WireTopicEnvelope: Codable, Hashable, Sendable {
+    public let topic: WireTopic?
+
+    public static func extract(from data: Data) throws -> WireTopic {
+        if let wrapped = try? JSONDecoder().decode(WireTopicEnvelope.self, from: data),
+           let topic = wrapped.topic {
+            return topic
+        }
+        return try JSONDecoder().decode(WireTopic.self, from: data)
+    }
+}
+
+/// POST /api/messages/{id}/transcribe verdict — `cached: true` on the
+/// second call (the transcript is stored on the message row, never re-billed).
+public struct WireTranscribeResult: Codable, Hashable, Sendable {
+    public let transcript: String
+    public let transcribedAt: String?
+    public let cached: Bool?
+}
+
+/// DELETE /api/topics/{id} verdict — { ok: true } (creator/admin only).
+public struct WireOk: Codable, Hashable, Sendable {
+    public let ok: Bool?
 }
 
 public struct WireConversationMember: Codable, Hashable, Sendable {
@@ -402,6 +539,9 @@ extension WireConversationSummary {
                 replyTo: nil, parentId: nil, imagePath: nil, audioPath: nil,
                 durationMs: nil, filePath: nil, fileName: nil, fileSize: nil,
                 pinnedAt: nil, viewOnce: nil, anon: nil, anonAlias: nil,
+                viewedAt: nil, viewedBy: nil, transcript: nil,
+                transcribedAt: nil, topicId: nil, linkUrl: nil,
+                linkPreview: nil, poll: nil,
             )
         }
         self.init(
@@ -474,7 +614,10 @@ extension WireChatMessage {
             parentId: parentId, imagePath: imagePath, audioPath: audioPath,
             durationMs: durationMs, filePath: filePath, fileName: fileName,
             fileSize: fileSize, pinnedAt: pinnedAt, viewOnce: viewOnce,
-            anon: anon, anonAlias: anonAlias
+            anon: anon, anonAlias: anonAlias,
+            viewedAt: viewedAt, viewedBy: viewedBy, transcript: transcript,
+            transcribedAt: transcribedAt, topicId: topicId, linkUrl: linkUrl,
+            linkPreview: linkPreview, poll: poll
         )
     }
 

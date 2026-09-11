@@ -51,6 +51,41 @@ final class PulseDataLayerTests: XCTestCase {
         )
     }
 
+    // ── W2-DATA-B — topic-filtered timeline query (GET …&topicId=) ──
+
+    func testMessagesPathTopicFilter() {
+        XCTAssertEqual(
+            PulseAPIClient.messagesPath(conversationId: "c1", limit: 100, before: nil, query: nil, topicId: "topic-1"),
+            "/api/conversations/c1/messages?limit=100&topicId=topic-1",
+        )
+    }
+
+    func testMessagesPathBlankTopicIdIsOmitted() {
+        // General is the unfiltered room — a blank topicId must not hit the
+        // wire (nil and whitespace both collapse to the bare path).
+        XCTAssertEqual(
+            PulseAPIClient.messagesPath(conversationId: "c1", limit: 100, before: nil, query: nil, topicId: nil),
+            "/api/conversations/c1/messages?limit=100",
+        )
+        XCTAssertEqual(
+            PulseAPIClient.messagesPath(conversationId: "c1", limit: 100, before: nil, query: nil, topicId: "   "),
+            "/api/conversations/c1/messages?limit=100",
+        )
+    }
+
+    func testMessagesPathCombinesTopicBeforeAndQuery() {
+        XCTAssertEqual(
+            PulseAPIClient.messagesPath(
+                conversationId: "c1",
+                limit: 40,
+                before: "2026-09-08T12:00:00.000Z",
+                query: "ship it",
+                topicId: "topic-1"
+            ),
+            "/api/conversations/c1/messages?limit=40&before=2026-09-08T12:00:00.000Z&q=ship%20it&topicId=topic-1",
+        )
+    }
+
     // ── reactionsJson codec (v3 cache column ⇄ grouped wire shape) ──
 
     func testReactionsJsonRoundTripPreservesGroupsAndOrder() {

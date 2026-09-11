@@ -13,6 +13,12 @@ import GRDB
 /// inline-quote id), the media columns, editedAt/deletedAt, reactionsJson
 /// (grouped [{emoji,userIds}] parity) and senderColor. `upsert(messages:)`
 /// persists ALL of them — the lossy v2 cache is over.
+/// W2-DATA-B v4 — Wave 2 message depth (spec §2.2, mirrors Android Room v6):
+/// the message table gains the view-once burn stamp (viewedAt), the voice
+/// transcript cache (transcript/transcribedAt), pollJson + linkPreviewJson
+/// objects and topicId; NEW tables topics (Zulip-style sub-streams) and
+/// savedMessages (saved-library mirror). All additive, same non-destructive
+/// migrator — v1 stays untouched.
 public final class PulseStore: Sendable {
     private let dbQueue: DatabaseQueue
 
@@ -90,6 +96,37 @@ public final class PulseStore: Sendable {
                 t.add(column: "senderColor", .text)
             }
         }
+        m.registerMigration("v4") { db in
+            // W2-DATA-B — additive ALTERs only (spec §2.2): view-once burn
+            // stamp, voice-transcript cache, poll + link-preview JSON cards,
+            // topic filing. pollJson/linkPreviewJson are nullable (nil = no
+            // card), unlike the NOT-NULL reactionsJson v3 default.
+            try db.alter(table: "message") { t in
+                t.add(column: "viewedAt", .text)
+                t.add(column: "transcript", .text)
+                t.add(column: "transcribedAt", .text)
+                t.add(column: "pollJson", .text)
+                t.add(column: "linkPreviewJson", .text)
+                t.add(column: "topicId", .text)
+            }
+            // Zulip-style topic rail (General is NOT a row — unfiltered room).
+            try db.create(table: "topics") { t in
+                t.column("id", .text).primaryKey()
+                t.column("conversationId", .text).notNull().indexed()
+                t.column("name", .text).notNull()
+                t.column("emoji", .text).notNull().defaults(to: "💬")
+                t.column("lastMessageAt", .text)
+                t.column("messageCount", .integer).notNull().defaults(to: 0)
+            }
+            // Saved-library mirror (GET /api/users/{id}/saved, cap 100) —
+            // the message row itself lives in `message` via upsert(savedItems:).
+            try db.create(table: "savedMessages") { t in
+                t.column("messageId", .text).primaryKey()
+                t.column("conversationId", .text).notNull()
+                t.column("savedAt", .text).notNull()
+            }
+            try db.create(indexOn: "savedMessages", columns: ["conversationId"])
+        }
         return m
     }
 
@@ -132,42 +169,61 @@ public final class PulseStore: Sendable {
         }
     }
 
-    // ── message cache (N3-b — room offline-first seed; v3 full fidelity) ──
+    // ── message cache (N3-b — room offline-first seed; v3/v4 full fidelity) ──
     public func upsert(messages: [WireChatMessage]) throws {
         try dbQueue.write { db in
             for m in messages {
-                try db.execute(
-                    sql: """
-                    INSERT INTO message (id, conversationId, authorId, authorName, kind, body,
-                                         createdAt, replyToId, pinnedAt, parentId, imagePath,
-                                         audioPath, durationMs, filePath, fileName, fileSize,
-                                         editedAt, deletedAt, reactionsJson, senderColor)
-                    VALUES (:id, :conversationId, :authorId, :authorName, :kind, :body,
-                            :createdAt, :replyToId, :pinnedAt, :parentId, :imagePath,
-                            :audioPath, :durationMs, :filePath, :fileName, :fileSize,
-                            :editedAt, :deletedAt, :reactionsJson, :senderColor)
-                    ON CONFLICT(id) DO UPDATE SET
-                      authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt,
-                      parentId=:parentId, imagePath=:imagePath, audioPath=:audioPath,
-                      durationMs=:durationMs, filePath=:filePath, fileName=:fileName,
-                      fileSize=:fileSize, editedAt=:editedAt, deletedAt=:deletedAt,
-                      reactionsJson=:reactionsJson, senderColor=:senderColor
-                    """,
-                    arguments: [
-                        "id": m.id, "conversationId": m.conversationId, "authorId": m.senderId,
-                        "authorName": m.sender?.name ?? "", "kind": m.kind, "body": m.content,
-                        "createdAt": m.createdAt, "replyToId": m.replyTo?.id,
-                        "pinnedAt": m.pinnedAt, "parentId": m.parentId,
-                        "imagePath": m.imagePath, "audioPath": m.audioPath,
-                        "durationMs": m.durationMs, "filePath": m.filePath,
-                        "fileName": m.fileName, "fileSize": m.fileSize,
-                        "editedAt": m.editedAt, "deletedAt": m.deletedAt,
-                        "reactionsJson": Self.reactionsJsonData(m.reactions),
-                        "senderColor": m.sender?.color,
-                    ],
-                )
+                try Self.writeMessage(m, db: db)
             }
         }
+    }
+
+    /// One message row → message table (INSERT … ON CONFLICT full overwrite:
+    /// a fresh envelope row is AUTHORITATIVE — spec §0 — so every column,
+    /// v1 through v4, lands in both the INSERT and the conflict SET clause).
+    /// Shared by the bulk cache upsert and the saved-library sync.
+    private static func writeMessage(_ m: WireChatMessage, db: Database) throws {
+        try db.execute(
+            sql: """
+            INSERT INTO message (id, conversationId, authorId, authorName, kind, body,
+                                 createdAt, replyToId, pinnedAt, parentId, imagePath,
+                                 audioPath, durationMs, filePath, fileName, fileSize,
+                                 editedAt, deletedAt, reactionsJson, senderColor,
+                                 viewedAt, transcript, transcribedAt, pollJson,
+                                 linkPreviewJson, topicId)
+            VALUES (:id, :conversationId, :authorId, :authorName, :kind, :body,
+                    :createdAt, :replyToId, :pinnedAt, :parentId, :imagePath,
+                    :audioPath, :durationMs, :filePath, :fileName, :fileSize,
+                    :editedAt, :deletedAt, :reactionsJson, :senderColor,
+                    :viewedAt, :transcript, :transcribedAt, :pollJson,
+                    :linkPreviewJson, :topicId)
+            ON CONFLICT(id) DO UPDATE SET
+              authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt,
+              parentId=:parentId, imagePath=:imagePath, audioPath=:audioPath,
+              durationMs=:durationMs, filePath=:filePath, fileName=:fileName,
+              fileSize=:fileSize, editedAt=:editedAt, deletedAt=:deletedAt,
+              reactionsJson=:reactionsJson, senderColor=:senderColor,
+              viewedAt=:viewedAt, transcript=:transcript, transcribedAt=:transcribedAt,
+              pollJson=:pollJson, linkPreviewJson=:linkPreviewJson, topicId=:topicId
+            """,
+            arguments: [
+                "id": m.id, "conversationId": m.conversationId, "authorId": m.senderId,
+                "authorName": m.sender?.name ?? "", "kind": m.kind, "body": m.content,
+                "createdAt": m.createdAt, "replyToId": m.replyTo?.id,
+                "pinnedAt": m.pinnedAt, "parentId": m.parentId,
+                "imagePath": m.imagePath, "audioPath": m.audioPath,
+                "durationMs": m.durationMs, "filePath": m.filePath,
+                "fileName": m.fileName, "fileSize": m.fileSize,
+                "editedAt": m.editedAt, "deletedAt": m.deletedAt,
+                "reactionsJson": Self.reactionsJsonData(m.reactions),
+                "senderColor": m.sender?.color,
+                "viewedAt": m.viewedAt, "transcript": m.transcript,
+                "transcribedAt": m.transcribedAt,
+                "pollJson": Self.pollJsonData(m.poll),
+                "linkPreviewJson": Self.linkPreviewJsonData(m.linkPreview),
+                "topicId": m.topicId,
+            ],
+        )
     }
 
     public func deleteMessage(id: String) throws {
@@ -235,6 +291,9 @@ public final class PulseStore: Sendable {
     /// Rehydrate a wire-ish message from a cached row (v3 full fidelity:
     /// thread root, media, edit/delete stamps and grouped reactions all
     /// round-trip; only the sender OBJECT is reduced to name + color).
+    /// W2-DATA-B v4 — poll/linkPreview JSON cards, the burn stamp,
+    /// transcript pair and topicId rebuild too (viewedBy/linkUrl are NOT
+    /// cached columns; they arrive again with the next wire refresh).
     private static func messageRow(from row: Row) -> WireChatMessage? {
         guard let id: String = row["id"],
               let conversationId: String = row["conversationId"],
@@ -255,6 +314,12 @@ public final class PulseStore: Sendable {
         let deletedAt: String? = row["deletedAt"]
         let senderColor: String? = row["senderColor"]
         let decodedReactions = Self.reactions(fromJson: row["reactionsJson"])
+        let viewedAt: String? = row["viewedAt"]
+        let transcript: String? = row["transcript"]
+        let transcribedAt: String? = row["transcribedAt"]
+        let topicId: String? = row["topicId"]
+        let decodedPoll = Self.poll(fromJson: row["pollJson"])
+        let decodedLinkPreview = Self.linkPreview(fromJson: row["linkPreviewJson"])
         return WireChatMessage(
             id: id, conversationId: conversationId, senderId: authorId,
             content: body, kind: kind, createdAt: createdAt,
@@ -266,6 +331,9 @@ public final class PulseStore: Sendable {
             imagePath: imagePath, audioPath: audioPath, durationMs: durationMs,
             filePath: filePath, fileName: fileName, fileSize: fileSize,
             pinnedAt: pinnedAt, viewOnce: nil, anon: nil, anonAlias: nil,
+            viewedAt: viewedAt, viewedBy: nil, transcript: transcript,
+            transcribedAt: transcribedAt, topicId: topicId, linkUrl: nil,
+            linkPreview: decodedLinkPreview, poll: decodedPoll,
         )
     }
 
@@ -284,6 +352,151 @@ public final class PulseStore: Sendable {
     static func reactions(fromJson json: String?) -> [WireReactionGroup] {
         guard let json, !json.isEmpty, let data = json.data(using: .utf8) else { return [] }
         return (try? JSONDecoder().decode([WireReactionGroup].self, from: data)) ?? []
+    }
+
+    // ── poll/linkPreviewJson codecs (v4 cache columns ⇄ wire cards) ──
+
+    /// WirePoll → column text; nil poll → NULL (the v4 column is nullable,
+    /// unlike the NOT-NULL reactionsJson v3 default — no card, no bytes).
+    static func pollJsonData(_ poll: WirePoll?) -> String? {
+        guard let poll, let data = try? JSONEncoder().encode(poll) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Column text → WirePoll; anything unreadable is nil (a corrupt cache
+    /// row must never crash the read path).
+    static func poll(fromJson json: String?) -> WirePoll? {
+        guard let json, !json.isEmpty, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(WirePoll.self, from: data)
+    }
+
+    /// WireLinkPreview → column text; nil preview → NULL.
+    static func linkPreviewJsonData(_ preview: WireLinkPreview?) -> String? {
+        guard let preview, let data = try? JSONEncoder().encode(preview) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Column text → WireLinkPreview; corrupt rows degrade to nil.
+    static func linkPreview(fromJson json: String?) -> WireLinkPreview? {
+        guard let json, !json.isEmpty, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(WireLinkPreview.self, from: data)
+    }
+
+    // ── topics cache (W2-DATA-B — Zulip-style sub-streams) ──
+
+    /// Server topics page → cache, one atomic transaction: prune rows the
+    /// server no longer returns (a topic deleted by another member must not
+    /// haunt the rail), then upsert the page. General is never a row.
+    public func upsert(topics: [WireTopic], conversationId: String) throws {
+        try dbQueue.write { db in
+            let keepIds = Set(topics.map(\.id))
+            let existing = try String.fetchAll(
+                db,
+                sql: "SELECT id FROM topics WHERE conversationId = :cid",
+                arguments: ["cid": conversationId],
+            )
+            for staleId in existing where !keepIds.contains(staleId) {
+                try db.execute(sql: "DELETE FROM topics WHERE id = :id", arguments: ["id": staleId])
+            }
+            for topic in topics {
+                try db.execute(
+                    sql: """
+                    INSERT INTO topics (id, conversationId, name, emoji, lastMessageAt, messageCount)
+                    VALUES (:id, :cid, :name, :emoji, :lastMessageAt, :messageCount)
+                    ON CONFLICT(id) DO UPDATE SET
+                      conversationId=:cid, name=:name, emoji=:emoji,
+                      lastMessageAt=:lastMessageAt, messageCount=:messageCount
+                    """,
+                    arguments: [
+                        "id": topic.id, "cid": conversationId, "name": topic.name,
+                        "emoji": topic.emoji ?? "💬", "lastMessageAt": topic.lastMessageAt,
+                        "messageCount": topic.messageCount ?? 0,
+                    ],
+                )
+            }
+        }
+    }
+
+    /// Cached topics for one room, newest activity first (server ORDER BY).
+    public func topics(conversationId: String) throws -> [WireTopic] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT * FROM topics WHERE conversationId = :cid ORDER BY lastMessageAt DESC",
+                arguments: ["cid": conversationId],
+            )
+            return rows.compactMap(Self.topicRow(from:))
+        }
+    }
+
+    private static func topicRow(from row: Row) -> WireTopic? {
+        guard let id: String = row["id"],
+              let name: String = row["name"] else { return nil }
+        let emoji: String? = row["emoji"]
+        let lastMessageAt: String? = row["lastMessageAt"]
+        let messageCount: Int? = row["messageCount"]
+        return WireTopic(id: id, name: name, emoji: emoji, lastMessageAt: lastMessageAt, messageCount: messageCount)
+    }
+
+    // ── saved library cache (W2-DATA-B — GET /users/{id}/saved mirror) ──
+
+    /// Saved-library sync: upserts every item's message row (full fidelity,
+    /// shared writer) AND its savedMessages marker (savedAt ISO from wire).
+    public func upsert(savedItems: [WireSavedItem]) throws {
+        try dbQueue.write { db in
+            for item in savedItems {
+                try Self.writeMessage(item.message, db: db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO savedMessages (messageId, conversationId, savedAt)
+                    VALUES (:mid, :cid, :savedAt)
+                    ON CONFLICT(messageId) DO UPDATE SET
+                      conversationId=:cid, savedAt=:savedAt
+                    """,
+                    arguments: [
+                        "mid": item.message.id, "cid": item.message.conversationId,
+                        "savedAt": item.savedAt,
+                    ],
+                )
+            }
+        }
+    }
+
+    /// Keeps only the given saved rows — paired with upsert(savedItems:) to
+    /// make a full server-list refresh also prune what was unsaved elsewhere.
+    public func replaceSaved(messageIds: [String]) throws {
+        try dbQueue.write { db in
+            let keepIds = Set(messageIds)
+            let existing = try String.fetchAll(db, sql: "SELECT messageId FROM savedMessages")
+            for staleId in existing where !keepIds.contains(staleId) {
+                try db.execute(sql: "DELETE FROM savedMessages WHERE messageId = :id", arguments: ["id": staleId])
+            }
+        }
+    }
+
+    /// Every currently-saved message id (row-check + dock badge source).
+    public func savedIds() throws -> Set<String> {
+        try dbQueue.read { db in
+            Set(try String.fetchAll(db, sql: "SELECT messageId FROM savedMessages"))
+        }
+    }
+
+    /// Unsave one message locally (row action "Unsave").
+    public func deleteSaved(messageId: String) throws {
+        _ = try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM savedMessages WHERE messageId = :id", arguments: ["id": messageId])
+        }
+    }
+
+    /// Patches the cached voice-note row with a transcription verdict
+    /// (POST …/transcribe) — the transcript strip renders without a refetch.
+    public func updateTranscription(messageId: String, transcript: String, transcribedAt: String) throws {
+        _ = try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE message SET transcript = :transcript, transcribedAt = :at WHERE id = :id",
+                arguments: ["transcript": transcript, "at": transcribedAt, "id": messageId],
+            )
+        }
     }
 
     // ── outbox (Wave 0 — queued sends, web pulse-outbox parity) ──

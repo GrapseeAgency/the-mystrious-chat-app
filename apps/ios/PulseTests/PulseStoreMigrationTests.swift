@@ -48,6 +48,14 @@ final class PulseStoreMigrationTests: XCTestCase {
             viewOnce: nil,
             anon: nil,
             anonAlias: nil,
+            viewedAt: nil,
+            viewedBy: nil,
+            transcript: nil,
+            transcribedAt: nil,
+            topicId: nil,
+            linkUrl: nil,
+            linkPreview: nil,
+            poll: nil,
         )
     }
 
@@ -80,6 +88,67 @@ final class PulseStoreMigrationTests: XCTestCase {
             viewOnce: false,
             anon: false,
             anonAlias: nil,
+            viewedAt: nil,
+            viewedBy: nil,
+            transcript: nil,
+            transcribedAt: nil,
+            topicId: nil,
+            linkUrl: nil,
+            linkPreview: nil,
+            poll: nil,
+        )
+    }
+
+    /// Full-fidelity v4 row — a filed poll message with burn stamp, cached
+    /// transcription and a link preview (every Wave 2 column populated).
+    private func makeV4Message(id: String, conversationId: String, createdAt: String) -> WireChatMessage {
+        WireChatMessage(
+            id: id,
+            conversationId: conversationId,
+            senderId: "u3",
+            content: "",
+            kind: "poll",
+            createdAt: createdAt,
+            editedAt: nil,
+            deletedAt: nil,
+            sender: WireSender(id: "u3", name: "Linus", username: nil, color: "teal", avatar: nil),
+            reactions: nil,
+            replyTo: nil,
+            parentId: nil,
+            imagePath: nil,
+            audioPath: nil,
+            durationMs: nil,
+            filePath: nil,
+            fileName: nil,
+            fileSize: nil,
+            pinnedAt: nil,
+            viewOnce: nil,
+            anon: nil,
+            anonAlias: nil,
+            viewedAt: "2026-09-08T12:01:00.000Z",
+            viewedBy: "u9",
+            transcript: "spoken words",
+            transcribedAt: "2026-09-08T12:02:00.000Z",
+            topicId: "topic-1",
+            linkUrl: "https://example.com",
+            linkPreview: WireLinkPreview(
+                url: "https://example.com",
+                title: "Example Domain",
+                description: "An example",
+                imageUrl: "https://example.com/og.png",
+                siteName: "example.com",
+            ),
+            poll: WirePoll(
+                id: "poll-1",
+                question: "Ship it?",
+                closed: false,
+                options: [
+                    WirePollOption(id: "o1", text: "Yes", position: 0, voteCount: 1, votedBy: ["u1"]),
+                    WirePollOption(id: "o2", text: "No", position: 1, voteCount: 0, votedBy: nil),
+                ],
+                totalVotes: 1,
+                myOptionId: nil,
+            ),
         )
     }
 
@@ -291,6 +360,8 @@ final class PulseStoreMigrationTests: XCTestCase {
             parentId: nil, imagePath: nil, audioPath: nil, durationMs: nil,
             filePath: nil, fileName: nil, fileSize: nil, pinnedAt: nil,
             viewOnce: before.viewOnce, anon: before.anon, anonAlias: before.anonAlias,
+            viewedAt: nil, viewedBy: nil, transcript: nil, transcribedAt: nil,
+            topicId: nil, linkUrl: nil, linkPreview: nil, poll: nil,
         )
         try store.upsert(messages: [edited])
 
@@ -304,5 +375,220 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertNil(row.pinnedAt)
         XCTAssertNil(row.reactions) // reactionsJson reset to '[]'
         XCTAssertNil(row.imagePath)
+    }
+
+    // ── v4 (W2-DATA-B) — Wave 2 depth columns + topics + saved library ──
+
+    /// The v3→v4 upgrade, same pattern the v2→v3 test uses (the migrator is
+    /// private and GRDB is not linked into the test target): rows written
+    /// with every v4 column nil are byte-for-byte what a migrated v3 row
+    /// looks like after the ALTERs (NULLs). They must survive a reopen
+    /// alongside full-fidelity v4 rows, with every column usable.
+    func testV4ColumnsRoundTripAndLegacyRowsSurviveReopen() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pulse-store-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("pulse.sqlite").path
+
+        do {
+            let store = try PulseStore(path: path)
+            try store.upsert(conversations: [makeConversation(id: "c1")])
+            // v3-era row: only v1–v3 columns populated.
+            try store.upsert(messages: [makeV3Message(id: "v3-row", conversationId: "c1", parentId: nil, createdAt: "2026-09-08T11:00:00.000Z")])
+            // Full-fidelity v4 rows: a poll card + a transcript-only row.
+            try store.upsert(messages: [
+                makeV4Message(id: "v4-poll", conversationId: "c1", createdAt: "2026-09-08T12:00:00.000Z"),
+                makeMessage(id: "v4-transcript", conversationId: "c1", content: "voice note"),
+            ])
+            try store.updateTranscription(
+                messageId: "v4-transcript",
+                transcript: "hello from the mic",
+                transcribedAt: "2026-09-08T12:05:00.000Z",
+            )
+        }
+
+        let reopened = try PulseStore(path: path)
+        let rows = try reopened.messages(conversationId: "c1")
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(Set(rows.map(\.id)), ["v3-row", "v4-poll", "v4-transcript"])
+
+        // Legacy v3 row: every v4 column stays NULL after the migration.
+        let legacy = try XCTUnwrap(rows.first { $0.id == "v3-row" })
+        XCTAssertNil(legacy.viewedAt)
+        XCTAssertNil(legacy.viewedBy)
+        XCTAssertNil(legacy.transcript)
+        XCTAssertNil(legacy.transcribedAt)
+        XCTAssertNil(legacy.topicId)
+        XCTAssertNil(legacy.linkUrl)
+        XCTAssertNil(legacy.linkPreview)
+        XCTAssertNil(legacy.poll)
+
+        // Full-fidelity row: every v4 column round-trips through GRDB.
+        let rich = try XCTUnwrap(rows.first { $0.id == "v4-poll" })
+        XCTAssertEqual(rich.viewedAt, "2026-09-08T12:01:00.000Z")
+        XCTAssertEqual(rich.viewedBy, "u9")
+        XCTAssertEqual(rich.transcript, "spoken words")
+        XCTAssertEqual(rich.transcribedAt, "2026-09-08T12:02:00.000Z")
+        XCTAssertEqual(rich.topicId, "topic-1")
+        XCTAssertEqual(rich.linkUrl, "https://example.com")
+        XCTAssertEqual(rich.linkPreview?.url, "https://example.com")
+        XCTAssertEqual(rich.linkPreview?.title, "Example Domain")
+        XCTAssertEqual(rich.linkPreview?.imageUrl, "https://example.com/og.png")
+        let poll = try XCTUnwrap(rich.poll)
+        XCTAssertEqual(poll.id, "poll-1")
+        XCTAssertEqual(poll.question, "Ship it?")
+        XCTAssertEqual(poll.closed, false)
+        XCTAssertEqual(poll.totalVotes, 1)
+        XCTAssertEqual(poll.options?.count, 2)
+        XCTAssertEqual(poll.options?.first?.votedBy, ["u1"])
+        XCTAssertEqual(poll.pickFor("u1"), "o1")
+        XCTAssertNil(poll.pickFor("u2"))
+
+        // updateTranscription patched the cached row pre-reopen; the strip
+        // data survives the migration boundary too.
+        let voiced = try XCTUnwrap(rows.first { $0.id == "v4-transcript" })
+        XCTAssertEqual(voiced.transcript, "hello from the mic")
+        XCTAssertEqual(voiced.transcribedAt, "2026-09-08T12:05:00.000Z")
+    }
+
+    func testUpsertOverwritesV4ColumnsOnConflict() throws {
+        let store = try PulseStore()
+        try store.upsert(messages: [makeV4Message(id: "m1", conversationId: "c1", createdAt: "2026-09-08T12:00:00.000Z")])
+        // A plain follow-up row for the same id must clear the Wave 2
+        // columns (envelope rows are authoritative — spec §0).
+        let cleared = makeMessage(id: "m1", conversationId: "c1")
+        try store.upsert(messages: [cleared])
+
+        let row = try XCTUnwrap(try store.messages(conversationId: "c1").first)
+        XCTAssertNil(row.poll)
+        XCTAssertNil(row.linkPreview)
+        XCTAssertNil(row.viewedAt)
+        XCTAssertNil(row.transcript)
+        XCTAssertNil(row.topicId)
+    }
+
+    func testTopicsUpsertPrunesAndOrdersByLastMessageAt() throws {
+        let store = try PulseStore()
+        let design = WireTopic(id: "t1", name: "Design", emoji: "🎨", lastMessageAt: "2026-09-08T12:00:00.000Z", messageCount: 12)
+        let qa = WireTopic(id: "t2", name: "QA", emoji: nil, lastMessageAt: "2026-09-08T11:00:00.000Z", messageCount: 3)
+        try store.upsert(topics: [design, qa], conversationId: "c1")
+
+        // Newest activity first; nil emoji rehydrates from the column default.
+        var topics = try store.topics(conversationId: "c1")
+        XCTAssertEqual(topics.map(\.id), ["t1", "t2"])
+        XCTAssertEqual(topics[0].emoji, "🎨")
+        XCTAssertEqual(topics[0].messageCount, 12)
+        XCTAssertEqual(topics[1].emoji, "💬") // column NOT NULL DEFAULT '💬'
+
+        // A re-upsert without t2 prunes it (topic deleted by another member).
+        try store.upsert(topics: [design], conversationId: "c1")
+        topics = try store.topics(conversationId: "c1")
+        XCTAssertEqual(topics.map(\.id), ["t1"])
+
+        // Pruning is scoped to the conversation — c2 rows stay untouched.
+        let other = WireTopic(id: "t3", name: "Ops", emoji: "🛠️", lastMessageAt: "2026-09-08T10:00:00.000Z", messageCount: 1)
+        try store.upsert(topics: [other], conversationId: "c2")
+        XCTAssertEqual(try store.topics(conversationId: "c2").map(\.id), ["t3"])
+        XCTAssertEqual(try store.topics(conversationId: "c1").map(\.id), ["t1"])
+
+        // Unknown room reads empty.
+        XCTAssertEqual(try store.topics(conversationId: "c-missing").count, 0)
+    }
+
+    func testSavedLibraryUpsertReplaceAndDelete() throws {
+        let store = try PulseStore()
+        let first = WireSavedItem(
+            savedAt: "2026-09-08T12:00:00.000Z",
+            conversation: WireSavedConversation(id: "c1", isGroup: true, name: "Wave 2 QA"),
+            message: makeMessage(id: "m1", conversationId: "c1"),
+        )
+        let second = WireSavedItem(
+            savedAt: "2026-09-08T12:01:00.000Z",
+            conversation: WireSavedConversation(id: "c2", isGroup: false, name: "Ada"),
+            message: makeMessage(id: "m2", conversationId: "c2"),
+        )
+        try store.upsert(savedItems: [first, second])
+
+        // Both markers AND both message rows landed (jump-open needs the row).
+        XCTAssertEqual(try store.savedIds(), Set(["m1", "m2"]))
+        XCTAssertEqual(try store.message(id: "m1")?.content, "cached body")
+        XCTAssertEqual(try store.message(id: "m2")?.content, "cached body")
+
+        // Re-upsert with a NEWER savedAt keeps the marker fresh.
+        try store.upsert(savedItems: [WireSavedItem(
+            savedAt: "2026-09-08T13:00:00.000Z",
+            conversation: first.conversation,
+            message: first.message,
+        )])
+        XCTAssertEqual(try store.savedIds(), Set(["m1", "m2"]))
+
+        // Server list refresh → prune what is no longer saved (m2 unsaved
+        // elsewhere); the message ROW cache is untouched by the prune.
+        try store.replaceSaved(messageIds: ["m1"])
+        XCTAssertEqual(try store.savedIds(), Set(["m1"]))
+        XCTAssertEqual(try store.message(id: "m2")?.id, "m2")
+
+        // Row action "Unsave".
+        try store.deleteSaved(messageId: "m1")
+        XCTAssertTrue(try store.savedIds().isEmpty)
+
+        // Idempotent deletes never throw.
+        try store.deleteSaved(messageId: "m1")
+    }
+
+    func testUpdateTranscriptionPatchesCachedRow() throws {
+        let store = try PulseStore()
+        try store.upsert(messages: [makeMessage(id: "m1", conversationId: "c1")])
+        XCTAssertNil(try store.message(id: "m1")?.transcript)
+
+        try store.updateTranscription(
+            messageId: "m1",
+            transcript: "hello world",
+            transcribedAt: "2026-09-08T12:30:00.000Z",
+        )
+        let row = try XCTUnwrap(try store.message(id: "m1"))
+        XCTAssertEqual(row.transcript, "hello world")
+        XCTAssertEqual(row.transcribedAt, "2026-09-08T12:30:00.000Z")
+
+        // Unknown ids are a silent no-op (UPDATE matches nothing).
+        try store.updateTranscription(
+            messageId: "missing",
+            transcript: "nope",
+            transcribedAt: "2026-09-08T12:31:00.000Z",
+        )
+        XCTAssertEqual(try store.message(id: "m1")?.transcript, "hello world")
+    }
+
+    func testPollAndLinkPreviewJsonCodecs() throws {
+        let poll = WirePoll(
+            id: "poll-1",
+            question: "Ship it?",
+            closed: true,
+            options: [WirePollOption(id: "o1", text: "Yes", position: 0, voteCount: 2, votedBy: ["u1", "u2"])],
+            totalVotes: 2,
+            myOptionId: nil,
+        )
+        let json = PulseStore.pollJsonData(poll)
+        XCTAssertEqual(PulseStore.poll(fromJson: json), poll)
+
+        // nil → NULL column; empty/garbage → nil on the way back.
+        XCTAssertNil(PulseStore.pollJsonData(nil))
+        XCTAssertNil(PulseStore.poll(fromJson: nil))
+        XCTAssertNil(PulseStore.poll(fromJson: ""))
+        XCTAssertNil(PulseStore.poll(fromJson: "not json"))
+
+        let preview = WireLinkPreview(
+            url: "https://example.com",
+            title: "Example",
+            description: nil,
+            imageUrl: nil,
+            siteName: "example.com",
+        )
+        let previewJson = PulseStore.linkPreviewJsonData(preview)
+        XCTAssertEqual(PulseStore.linkPreview(fromJson: previewJson), preview)
+        XCTAssertNil(PulseStore.linkPreviewJsonData(nil))
+        XCTAssertNil(PulseStore.linkPreview(fromJson: nil))
+        XCTAssertNil(PulseStore.linkPreview(fromJson: "garbage"))
     }
 }

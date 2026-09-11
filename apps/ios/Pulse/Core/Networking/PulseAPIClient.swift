@@ -52,21 +52,46 @@ public struct PulseAPIClient: Sendable {
 
     /// Timeline pages: newest-first page (limit=200 default), older pages via
     /// the `before` cursor (ISO of the oldest loaded), in-conversation search
-    /// via `q` (server matches content + fileName). Pure query building lives
-    /// in messagesPath so unit tests can pin the wire shape without network.
-    public func messages(conversationId: String, limit: Int = 200, before: String? = nil, query: String? = nil) async throws -> WireMessagesPage {
-        try await get(Self.messagesPath(conversationId: conversationId, limit: limit, before: before, query: query))
+    /// via `q` (server matches content + fileName) and topic-filtered views
+    /// via `topicId` (W2-DATA-B spec §0 — General is the unfiltered room).
+    /// Pure query building lives in messagesPath so unit tests can pin the
+    /// wire shape without network.
+    public func messages(
+        conversationId: String,
+        limit: Int = 200,
+        before: String? = nil,
+        query: String? = nil,
+        topicId: String? = nil
+    ) async throws -> WireMessagesPage {
+        try await get(Self.messagesPath(
+            conversationId: conversationId,
+            limit: limit,
+            before: before,
+            query: query,
+            topicId: topicId
+        ))
     }
 
-    /// GET /api/conversations/{id}/messages?limit=&before=&q= — the exact
-    /// pagination/search contract from spec §1.1. Blank search strings are
-    /// omitted (the server would match nothing useful).
-    static func messagesPath(conversationId: String, limit: Int, before: String?, query: String?) -> String {
+    /// GET /api/conversations/{id}/messages?limit=&before=&q=&topicId= — the
+    /// exact pagination/search/topic contract from spec §0/§1. Blank search
+    /// strings AND blank topic ids are omitted (the server would match
+    /// nothing useful).
+    static func messagesPath(
+        conversationId: String,
+        limit: Int,
+        before: String?,
+        query: String?,
+        topicId: String? = nil
+    ) -> String {
         var path = "/api/conversations/\(conversationId)/messages?limit=\(limit)"
         if let before { path += "&before=\(before)" }
         if let query {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { path += "&q=\(queryEncoded(trimmed))" }
+        }
+        if let topicId {
+            let trimmed = topicId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { path += "&topicId=\(queryEncoded(trimmed))" }
         }
         return path
     }
@@ -366,6 +391,105 @@ public struct PulseAPIClient: Sendable {
         }
         guard !pages.isEmpty else { return nil }
         return pages.reversed().flatMap { $0 }
+    }
+
+    // ── W2-DATA-B — Wave 2 message depth (spec §0 contract) ─────
+
+    /// POST /api/messages/{id}/transcribe {requesterId} — voice notes only
+    /// (kind "audio"). → { transcript, transcribedAt, cached } (cached:true
+    /// on the second call; 422 empty ASR / 502 service down surface as
+    /// Failure.validation / Failure.server).
+    public func transcribe(messageId: String, requesterId: String) async throws -> WireTranscribeResult {
+        let data = try await postRaw("/api/messages/\(messageId)/transcribe", body: ["requesterId": requesterId])
+        return try decoder.decode(WireTranscribeResult.self, from: data)
+    }
+
+    /// POST /api/messages/{id}/viewed {userId} — consume a view-once
+    /// attachment. Idempotent: the FIRST non-sender open stamps
+    /// viewedAt/viewedBy forever; the {message} back is authoritative.
+    public func markViewed(messageId: String, userId: String) async throws -> WireChatMessage {
+        let data = try await postRaw("/api/messages/\(messageId)/viewed", body: ["userId": userId])
+        return try WireMessageEnvelope.extract(from: data)
+    }
+
+    /// POST /api/conversations/{id}/poll {senderId, question, options} —
+    /// single-choice poll message (2–6 non-blank options server-gated).
+    /// → 201 { message } with message.poll populated.
+    public func createPoll(
+        conversationId: String,
+        senderId: String,
+        question: String,
+        options: [String]
+    ) async throws -> WireChatMessage {
+        let data = try await postRaw(
+            "/api/conversations/\(conversationId)/poll",
+            body: ["senderId": senderId, "question": question, "options": options]
+        )
+        return try WireMessageEnvelope.extract(from: data)
+    }
+
+    /// POST /api/polls/{id}/vote {userId, optionId} — single-choice vote
+    /// (server moves the vote on revote; closed polls answer 400).
+    /// → { message } with the fresh tally.
+    public func votePoll(pollId: String, userId: String, optionId: String) async throws -> WireChatMessage {
+        let data = try await postRaw("/api/polls/\(pollId)/vote", body: ["userId": userId, "optionId": optionId])
+        return try WireMessageEnvelope.extract(from: data)
+    }
+
+    /// POST /api/polls/{id}/close {userId} — end voting (creator only).
+    /// → { message } with the frozen tally.
+    public func closePoll(pollId: String, userId: String) async throws -> WireChatMessage {
+        let data = try await postRaw("/api/polls/\(pollId)/close", body: ["userId": userId])
+        return try WireMessageEnvelope.extract(from: data)
+    }
+
+    /// POST /api/messages/{id}/unfurl {userId} — attach an Open-Graph
+    /// preview. → { message: ChatMessage | null } — null is VALID (nothing
+    /// link-ish / host unreachable), hence the lenient extract. The link
+    /// arrives for everyone else via the link:preview relay envelope.
+    public func unfurl(messageId: String, userId: String) async throws -> WireChatMessage? {
+        let data = try await postRaw("/api/messages/\(messageId)/unfurl", body: ["userId": userId])
+        return WireMessageEnvelope.extractOptional(from: data)
+    }
+
+    /// GET /api/users/{id}/saved — saved/starred library, newest-first,
+    /// cap 100, NO server pagination/search (local filter is the native
+    /// capability, spec §1 row 14).
+    public func savedLibrary(userId: String) async throws -> [WireSavedItem] {
+        let page: WireSavedPage = try await get("/api/users/\(userId)/saved")
+        return page.items ?? []
+    }
+
+    /// GET /api/conversations/{id}/topics?userId= — the topic rail
+    /// (participant-guarded; General is NOT a row).
+    public func topics(conversationId: String, userId: String) async throws -> [WireTopic] {
+        let page: WireTopicsPage = try await get("/api/conversations/\(conversationId)/topics?userId=\(userId)")
+        return page.topics ?? []
+    }
+
+    /// POST /api/conversations/{id}/topics {userId, name, emoji?} — create
+    /// (1..32 chars) or case-insensitive dedupe into the existing row
+    /// (200 dedupe / 201 create — both answer { topic }).
+    public func createTopic(
+        conversationId: String,
+        userId: String,
+        name: String,
+        emoji: String?
+    ) async throws -> WireTopic {
+        var body: [String: Any] = ["userId": userId, "name": name]
+        if let emoji { body["emoji"] = emoji }
+        let data = try await postRaw("/api/conversations/\(conversationId)/topics", body: body)
+        return try WireTopicEnvelope.extract(from: data)
+    }
+
+    /// DELETE /api/topics/{id}?userId= — hard-delete a topic (creator/admin
+    /// only). Filed messages drop back to General server-side (SetNull);
+    /// → { ok: true } — the status code is the contract, the body the verdict.
+    public func deleteTopic(topicId: String, userId: String) async throws {
+        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        var request = URLRequest(url: url("/api/topics/\(topicId)?userId=\(query)"))
+        request.httpMethod = "DELETE"
+        _ = try await send(request)
     }
 
     // ── plumbing ─────────────────────────────────────────────

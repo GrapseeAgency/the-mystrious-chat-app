@@ -2411,3 +2411,32 @@ Work Log:
 
 Stage Summary:
 - WAVE 1 COMPLETE. Gate passed: installable APK released + CDN-live; both platforms CI-green (main + tag); 27/27 live E2E gate (TEXT→REALTIME→PERSISTENCE→RECONNECT→OFFLINE→FLUSH + threads/media/pagination/search/receipts/actions/draft). Wave 2 NOT started (user gate).
+
+---
+Task ID: W2-G0
+Agent: orchestrator (Z.ai Code)
+Task: Wave 2 opened — ground truth re-verification + 3 parallel Explore audits + binding spec.
+
+Work Log:
+- User directive: WAVE 2 Native Messaging Depth II (voice notes, view-once, polls, link previews, saved library, topics — BOTH platforms; web = behaviour spec; backend frozen unless genuine gap proven; no Wave 3 auto-start).
+- Ground truth verified: git clean @d7dfe8f; Wave 0+1 genuinely closed (v0.3.0-native released, 27/27 E2E, both CI pipelines green); PAT validated (200 user, 200 repo); local Android SDK + JDK21 present.
+- 3 parallel Explore agents delivered: (1) Web behaviour spec for all 6 features with exact endpoint/JSON shapes and file:line evidence; (2) Android post-W1 integration surface (modules, Room v5, DAOs, repo/api/socket/outbox signatures, UI structure, permission state, tests); (3) iOS post-W1 surface (project.yml, WireDtos, PulseStore v3, APIClient, socket, outbox engine, views, CI pipeline).
+- Key contract findings: all Wave 2 backend surfaces EXIST (poll create/vote/close, unfurl, transcribe, viewed, saved list, topics CRUD, topicId filter on messages GET) → ZERO backend changes. Wire fields (poll, linkPreview, topicId, transcript, viewedAt, audioPath, durationMs) already in contracts.ts + Android DTOs; iOS WireChatMessage lacks them (additive).
+- Confirmed web defects to avoid: voice kind stays 'text' (native sends kind:"audio" so /transcribe works); poll myOptionId actor-relative on relayed rows + null on history (native derives pick from votedBy ONLY); view-once send UI absent (native adds image-caption-drawer toggle); server never wipes view-once media (native hardens: no render path after viewedAt); topic cache 3.5s poll lag (native live via store filtering).
+- Wrote binding spec docs/WAVE2-NATIVE-DEPTH-SPEC.md: §0 contract facts, §1 WEB→NATIVE→REASON decision table (15 rows), §2 platform work breakdown (Android Room v6 additive columns/topics/savedMessages tables; iOS GRDB v4; typed poll/link DTOs; 11 new API methods; full UI breakdown per feature), §3 testing gate incl. apps/qa/wave2-depth-gate.js, §4 non-goals.
+
+Stage Summary:
+- Wave 2 spec locked. Next: W2-DATA-A (Android protocol/domain/data) ∥ W2-DATA-B (iOS DTOs/store/api) in parallel → orchestrator local verification → W2-UI-A ∥ W2-UI-B → tests → E2E gate → CI loop → tag v0.4.0-native → release+CDN → Wave 2 Completion Report → HARD STOP.
+
+---
+Task ID: W2-DATA-A + W2-DATA-B (orchestrator recovery + verification)
+Agent: android/ios data agents (final reports lost to Task-tool timeout) + orchestrator diff-review
+Task: Wave 2 data layers — Android (protocol/domain/data, Room v6), iOS (WireDtos/PulseStore v4/APIClient).
+
+Work Log:
+- Both agents ran to completion despite Task-tool result timeout (reports lost; tree recovered and diff-reviewed line-by-line by orchestrator, same recovery pattern as Wave 1).
+- ANDROID (verified): WireDtos +PollDto/PollOptionDto/LinkPreviewDto/SavedItemDto/SavedPageDto/TopicDto/TopicsPageDto/TopicEnvelopeDto/TranscribeResultDto/OkDto + decodePollDto/decodeLinkPreviewDto helpers; domain Message +viewedAt/transcript/transcribedAt/poll/linkPreview/topicId + PollInfo.pickFor (votedBy-ONLY derivation, myOptionId documented untrusted) + SavedItem/Topic/TranscribeOutcome; Room v6 additive (messages +6 cols; NEW topics + savedMessages tables; MIGRATION_5_6; 6.json KSP-generated); PulseApi +11 methods (transcribe/markViewed/createPoll/votePoll/closePoll/unfurl-null-tolerant/savedList/topics/createTopic/deleteTopic/messages topicId param); PulseRepositoryImpl +14 members with cache upserts + prune-on-refresh (server-truth) + targeted updateTranscription DAO patch; ORCHESTRATOR FIX: RoomMigrationTest 3 error groups (JUnit4 assertTrue(message,obj) arg-order ×1, cross-module smart-cast ×2) — androidTest now compiles. LOCAL VERIFICATION GREEN: :protocol:test (Wave2DtoTest 5/5) :domain:test (PollPickTest) :data:compileDebugKotlin :app:compileDebugKotlin :data:compileDebugAndroidTestKotlin.
+- IOS (diff-reviewed, CI = compile gate): WireChatMessage +viewedAt/viewedBy(String)/transcript/transcribedAt/topicId/linkUrl/linkPreview/poll; WirePoll(+pickFor votedBy-only)/WirePollOption/WireLinkPreview/WireSavedItem/WireSavedPage/WireTopic/WireTopicsPage/WireTopicEnvelope/WireTranscribeResult/WireOk; WireMessageEnvelope.extractOptional for {message:null} unfurl; PulseStore v4 (additive ALTERs + topics/savedMessages tables, writeMessage shared full-fidelity writer, pollJson/linkPreviewJson codecs, upsert(topics:)/topics()/upsert(savedItems:)/replaceSaved/savedIds/deleteSaved/updateTranscription); PulseAPIClient +11 methods incl. messagesPath(topicId:); ALL 9 WireChatMessage construction sites updated (messageRow/TempMessages/deletedCopy/cached-init/fixtures×4); Wave2WireTests.swift (poll pickFor contradicts-myOptionId proof, linkPreview, saved, topic, transcribe, backward-compat); PulseStoreMigrationTests +v4 cases; WireParityTests viewedBy [] → null (server column is a string).
+
+Stage Summary:
+- Both platform data layers for all 6 Wave 2 features complete. Android locally compile+test verified; iOS self-reviewed (no local compiler). Next: W2-UI-A ∥ W2-UI-B, then E2E gate, CI, release.

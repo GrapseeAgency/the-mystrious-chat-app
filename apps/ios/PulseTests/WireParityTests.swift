@@ -32,7 +32,7 @@ final class WireParityTests: XCTestCase {
          "linkPreview":null,"linkUrl":null,"parentId":null,"pinnedAt":null,
          "poll":null,"topicId":null,"transcript":null,"transcribedAt":null,
          "translations":null,"viaAutomation":false,"viewOnce":false,
-         "viewedAt":null,"viewedBy":[],"anon":false,"anonAlias":null,"expiresAt":null,
+         "viewedAt":null,"viewedBy":null,"anon":false,"anonAlias":null,"expiresAt":null,
          "editedAt":null}
         """
         let msg = try JSONDecoder().decode(WireChatMessage.self, from: Data(json.utf8))
@@ -65,7 +65,7 @@ final class WireParityTests: XCTestCase {
          "reactions":[{"emoji":"👍","userIds":["u1"],"count":1}],
          "linkPreview":null,"linkUrl":null,"poll":null,"topicId":null,
          "transcript":null,"transcribedAt":null,"translations":null,
-         "viaAutomation":true,"viewedAt":null,"viewedBy":[],"anon":false,
+         "viaAutomation":true,"viewedAt":null,"viewedBy":null,"anon":false,
          "anonAlias":null,"expiresAt":null,
          "someFutureField":{"nested":{"deep":[1,2,3]}}}
         """

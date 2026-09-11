@@ -1798,6 +1798,14 @@ enum TempMessages {
             viewOnce: nil,
             anon: nil,
             anonAlias: nil,
+            viewedAt: nil,
+            viewedBy: nil,
+            transcript: nil,
+            transcribedAt: nil,
+            topicId: nil,
+            linkUrl: nil,
+            linkPreview: nil,
+            poll: nil,
         )
     }
 }
