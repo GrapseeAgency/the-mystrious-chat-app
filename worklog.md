@@ -2333,3 +2333,33 @@ Work Log:
 
 Stage Summary:
 - WAVE 0 COMPLETE: 16/16 mandates evidenced; Android CI green (main + tag), iOS CI green (main + tag); installable versionCode-10 APK released + CDN-live; report committed. Wave 1 NOT started (user gate).
+
+---
+Task ID: W1-G0
+Agent: orchestrator (Z.ai Code)
+Task: Wave 1 opened — ground truth + binding spec + toolchain provisioning.
+
+Work Log:
+- User directive: WAVE 1 Native Messaging Surface Parity (9 scope areas, both platforms, quality gates, no Wave 2 auto-start).
+- Ground truth via 3 parallel Explore agents: web messaging surface (endpoints/events/payloads — full inventory), Android post-W0 state, iOS post-W0 state. Key findings: ALL backend surfaces exist (threads parentId, media /api/uploads base64 dataURL, pagination before=, search q=, edit/delete/pin/save/draft/read) → ZERO backend changes; web thread-send bug is web-client cache-shape only (wire correct: send parentId; parent must be top-level); REAL Android bugs: sendMessage drops replyToId on wire, parentId conflated with replyToId, no media columns in Room; iOS lossy message cache (reactions/editedAt/deletedAt/media not persisted).
+- Wrote binding spec docs/WAVE1-NATIVE-MESSAGING-SPEC.md (contract §1, feature matrix §2, Room v5/GRDB v3 schemas §3, gate §4, non-goals §5).
+- Toolchain: sandbox reset had wiped JDK; downloaded Temurin JDK 21.0.12.1+1 → /home/z/jdks; Android cmdline-tools + platforms;android-35 + build-tools;35.0.0 + platform-tools → /home/z/android-sdk (licenses written). Baseline :app:assembleRelease started in background to warm Gradle caches and prove pre-Wave-1 build health.
+- PAT validated (GitHub API /user → 200); origin push ready.
+
+Stage Summary:
+- Wave 1 execution begins. Next: W1-DATA-A (Android data/domain layer) ∥ W1-DATA-B (iOS data layer) → verify → W1-UI-A ∥ W1-UI-B → integration tests/E2E → CI loop → report. Baseline build result must be GREEN before code changes.
+
+---
+Task ID: W1-DATA-A + W1-DATA-B (orchestrator review + commit)
+Agent: android/ios data agents (results recovered after tool-timeout) + orchestrator verification
+Task: Wave 1 platform data layers — Android (protocol/domain/data/Room v5), iOS (WireDtos/APIClient/PulseStore v3).
+
+Work Log:
+- Both agents ran to completion despite Task-tool result timeout (their final reports were lost; tree state recovered and diff-reviewed line-by-line by orchestrator instead).
+- ANDROID (W1-DATA-A, verified): WireDtos +parentId/imagePath/audioPath/filePath/fileName/fileSize decode; ConversationMember +lastReadAt; domain Message media fields + Conversation.members; PulseRepository +11 members (editMessage/toggleMessagePin/toggleMessageSave/pinnedMessages/loadThread/messagesPage/searchInConversation/uploadMedia/forwardMessage/setServerDraft/conversationDetail); PulseApi sendMessage now sends replyToId AND parentId + media keys (only non-null); mapper FIX replyTo?.id→replyToId, parentId→threadRootId (conflation killed); Room v5: messages +imagePath/audioPath/filePath/fileName/fileSize/viewOnce, conversations +membersJson, MIGRATION_4_5 additive, schemas/5.json correct format (columnNames + orders:[]), observeThread/countByThread DAOs; DataModule migration chain 3→4→5; RoomMigrationTest v4→v5 case; orchestrator FIX: missing assertTrue import (cascaded "Cannot infer type" at runBlocking); SendMessageUseCase +parentId param; FakeRepo updated; new ChatMessageDtoParityTest.
+- IOS (W1-DATA-B, diff-reviewed, CI is compile gate): WireDtos +WireThreadPage/WirePinnedPage/WireSavedToggle/WireUploadResult + parentId/media decode; PulseAPIClient +9 methods (edit/togglePin/toggleSave/pinned/thread/messages(before:,query:)/uploadMedia/setDraft/conversationDetail) + query-encoding helper + sendMessage extended (parentId + media, kind default text); PulseStore v3 migration (message +parentId/imagePath/audioPath/durationMs/filePath/fileName/fileSize/editedAt/deletedAt/reactionsJson/senderColor) ending the lossy cache; outbox still text-only; PulseTests extended (WireParity parentId/media, PulseStoreMigrationTests v2→v3, new PulseDataLayerTests); ChatRoomView/SocketClient/OutboxEngine minimal compatibility edits.
+- ORCHESTRATOR VERIFICATION (local, JDK21 + Android SDK @/home/z/android-sdk via local.properties): ./gradlew :protocol:test :domain:test --rerun-tasks → BUILD SUCCESSFUL (incl. REAL node-relay SocketRoundTripTest 5/5); :data:compileDebugKotlin :app:compileDebugKotlin GREEN; :data:compileDebugAndroidTestKotlin GREEN (after assertTrue fix); :app:assembleRelease GREEN → app-release.apk 14,068,726 bytes. NOTE: sandbox 3.9GB RAM OOM-killed one gradle run — always use -Dkotlin.daemon.jvm.options=-Xmx700m; local.properties (sdk.dir) committed? NO — untracked by convention (verify gitignore).
+- Committed 5dfa44c (both platforms' data layers, one commit; UI layers follow separately).
+
+Stage Summary:
+- Android data layer: LOCAL-VERIFIED (JVM tests + full compile + release assemble). iOS data layer: diff-reviewed, CI-gated. New repo surface ready for UI agents: edit/pin/save/thread/page/search/upload/forward/draft/detail. Next: W1-UI-A ∥ W1-UI-B.
