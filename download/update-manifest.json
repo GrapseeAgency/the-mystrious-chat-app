@@ -1,12 +1,12 @@
 {
-  "versionCode": 11,
-  "versionName": "0.3.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.3.0-native/Pulse-v0.3.0-native.apk",
+  "versionCode": 12,
+  "versionName": "0.4.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.4.0-native/Pulse-v0.4.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "bebf37b7b42999d9a24a5736f50da0caa98df110f933df41c91f058b8a2f21dc",
-  "notes": "Wave 1 \u2014 native messaging surface parity: conversation list (unread/timestamps/drafts/archive/mute/mark-unread/pin), chat room with cursor pagination + optimistic sends + sent/seen ticks + day separators, full realtime (Socket.IO reconnect/re-join, typing, presence, read receipts, unread updates), message actions (reply/react/edit/delete/pin/save/forward/info), threads with correct parentId behavior (one-level rule enforced server-side), drafts with server mirror, offline outbox (FIFO 50, retry/backoff, temp\u2192server reconciliation), search (global + in-room + jump-to-message), media messaging (image/file upload base64 \u2192 /api/uploads, captions, AsyncImage/Coil rendering, lightbox + QuickLook). Android Room v5 / iOS GRDB v3 full-fidelity caches. Installable APK versionCode 11.",
+  "sha256": "e3676d88b9ac2620333c8522f8111d1a49291470b5ae7398d4f3f38b30794aa4",
+  "notes": "Wave 2 — native messaging depth II: voice notes (record/cancel/send kind:audio, playback with 1x/1.5x/2x persisted rate + progress waveform, ASR transcript strips via /transcribe), view-once photos (native send toggle, tap-to-view burn gate, hard anti-replay: no image render after consumption), polls (create 2-6 options, votedBy-derived own pick — the actor-relative myOptionId bug is avoided, no revote, creator close, live tallies via poll:voted), link previews (post-send unfurl, OpenGraph card, link:preview relay), saved library (100-item mirror, search, jump-to-original, unsave), topics (Zulip-style rail, General = whole room, topic-filed sends, live topic views, counts). Android Room v6 / iOS GRDB v4. Live gate 40/40. Installable APK versionCode 12.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-11T09:54:15Z"
+  "updatedAt": "2026-09-11T13:56:12Z"
 }
