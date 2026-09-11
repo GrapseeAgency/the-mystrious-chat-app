@@ -25,15 +25,22 @@ jobs:
 
       # The runner image rotates simulator devices (iPhone 16 → 17 …) —
       # resolve whatever iPhone actually exists instead of hard-coding one.
+      # The device line looks like: "    iPhone 16 (AAAAAAAA-BBBB-… ) (Shutdown)"
+      # → name = everything before " (", udid = the UUID via -oE.
       - name: Resolve iPhone simulator
         id: sim
         run: |
           set -euo pipefail
           xcrun simctl list runtimes available
           xcrun simctl list devices available
-          DEVICE=$(xcrun simctl list devices available | awk '/iPhone/ { sub(/\(.*/, ""); gsub(/^ +| +$/, ""); print; exit }')
+          LINE=$(xcrun simctl list devices available | grep -m1 "iPhone" || true)
+          if [ -z "$LINE" ]; then
+            echo "no available iPhone simulator on this runner image" >&2
+            exit 1
+          fi
+          DEVICE=$(printf '%s' "$LINE" | sed -E 's/^[[:space:]]+//; s/ \(.+$//')
+          UDID=$(printf '%s' "$LINE" | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}')
           echo "device=${DEVICE}" >> "$GITHUB_OUTPUT"
-          UDID=$(xcrun simctl list devices available | awk "/iPhone/ {f=1} f && /-/ {gsub(/^ +| +$/, \"\"); print \$1; exit}")
           echo "udid=${UDID}" >> "$GITHUB_OUTPUT"
 
       # Compilation proof — generic destination never fails on device churn.
