@@ -250,13 +250,15 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         emitLocalCandidate(candidate)
     }
 
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeIceConnectionState newState: RTCIceConnectionState) {
-        emitConnectionState(Self.mapIceState(newState))
+    /// WebRTC M125 selector spelling — didChangeIceConnectionState was
+    /// renamed to didChange state: (RTCIceConnectionState).
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange state: RTCIceConnectionState) {
+        emitConnectionState(Self.mapIceState(state))
     }
 
     /// Modern peer-connection-state spelling — same mapping, idempotent at
     /// the state machine (ready-after-ready is a no-op).
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeConnectionState newState: RTCPeerConnectionState) {
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         emitConnectionState(Self.mapPcState(newState))
     }
 

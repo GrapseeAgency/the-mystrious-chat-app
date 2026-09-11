@@ -3,6 +3,7 @@ package app.pulse.data.di
 import android.content.Context
 import androidx.room.Room
 import app.pulse.core.PulseEndpoints
+import app.pulse.data.local.CallLogDao
 import app.pulse.data.local.ConversationDao
 import app.pulse.data.local.DraftDao
 import app.pulse.data.local.MessageDao
