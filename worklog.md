@@ -2316,3 +2316,20 @@ Work Log:
 
 Stage Summary:
 - Quality gate state: Android CI GREEN @28d74d0 (5 rounds), iOS CI GREEN @523c896 (5 rounds). Realtime proven on BOTH platforms: Android JVM vs node relay + web E2E 8/8 (W0-C1) + iOS in-simulator vs runner-side relay. Persistence proven: Room v3→v4 on emulator, GRDB v1→v2 in simulator. Next: tag v0.2.0-native → tag CI → auto-Release (Pulse-v0.2.0-native.apk) → forensic on release bytes → CDN commit (download/Pulse.apk + update-manifest.json v10 + gateway/socket keys) → four-source hash → completion report.
+
+---
+Task ID: W0-C5
+Agent: orchestrator (Z.ai Code)
+Task: Release + CDN + Wave 0 completion report.
+
+Work Log:
+- Tag v0.2.0-native pushed → tag CI: android build+instrumented success / ios build-test+archive success.
+- Android tag publish step 403 ("Resource not accessible by integration") — default GITHUB_TOKEN lacks contents:write. FIXED android-ci with permissions: contents: write (future tags auto-publish); THIS release created via user PAT (prior-wave pattern) from the tag-build bytes.
+- Release 386759368 created (target full SHA) + Pulse-v0.2.0-native.apk uploaded (state uploaded, 14,050,152 bytes).
+- Forensic gate re-run on the TAG apk: PASS (versionCode 10, 0.2.0-native, minSdk 21, v1+v2+v3, CRC 164/164, arsc aligned). sha256 4dadcd91e1aca6f8db2e7f12a0a906dede9e4756a1bd84ae57615d12db0e7d84 (build is reproducible-sized; zip timestamps differ per build — hash differs from main-run build, both valid).
+- CDN commit cdf6696: download/Pulse.apk (tag bytes) + update-manifest.json (versionCode 10, versionName 0.2.0-native, apkUrl→release asset, apkUrlMirror→raw CDN, sha256, Wave 0 notes, gateway:"" + socket:"" dormant hook keys — verified blank-safe on BOTH platforms: Android optString.takeIf(isNotBlank)→null; iOS non-empty-check).
+- FOUR-SOURCE HASH RULE: ALL EQUAL 4dadcd91…7d84 — (1) tag CI artifact (2) release asset bytes (3) live raw CDN bytes (4) live manifest sha256 field.
+- docs/WAVE-0-COMPLETION-REPORT.md written (files changed / architecture / contract / Android+iOS+CI verification with run IDs / blockers / Wave 1 recommendation).
+
+Stage Summary:
+- WAVE 0 COMPLETE: 16/16 mandates evidenced; Android CI green (main + tag), iOS CI green (main + tag); installable versionCode-10 APK released + CDN-live; report committed. Wave 1 NOT started (user gate).
