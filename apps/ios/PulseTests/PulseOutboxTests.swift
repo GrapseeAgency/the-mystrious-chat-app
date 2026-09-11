@@ -35,7 +35,22 @@ final class PulseOutboxTests: XCTestCase {
             return attempted.filter { $0 == content }.count
         }
 
-        func sendMessage(conversationId: String, content: String, replyToId: String?) async throws -> WireChatMessage {
+        // W1-DATA-B — full PulseOutboxSending requirement (mirrors the
+        // extended PulseAPIClient.sendMessage; the engine passes nil for
+        // every media/thread field — queued sends stay text-only).
+        func sendMessage(
+            conversationId: String,
+            content: String,
+            replyToId: String?,
+            parentId: String?,
+            imagePath: String?,
+            audioPath: String?,
+            durationMs: Double?,
+            filePath: String?,
+            fileName: String?,
+            fileSize: Int?,
+            kind: String?
+        ) async throws -> WireChatMessage {
             lock.lock()
             attempted.append(content)
             lock.unlock()
@@ -205,6 +220,7 @@ enum OutboxFixtures {
             durationMs: nil,
             filePath: nil,
             fileName: nil,
+            fileSize: nil,
             pinnedAt: nil,
             viewOnce: nil,
             anon: nil,

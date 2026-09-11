@@ -10,8 +10,12 @@ import app.pulse.protocol.HandleRegistryDto
 import app.pulse.protocol.MentionsPageDto
 import app.pulse.protocol.MessagesPageDto
 import app.pulse.protocol.PulseJson
+import app.pulse.protocol.PinnedPageDto
+import app.pulse.protocol.SavedToggleDto
 import app.pulse.protocol.SearchPageDto
 import app.pulse.protocol.StoriesPageDto
+import app.pulse.protocol.ThreadPageDto
+import app.pulse.protocol.UploadResultDto
 import app.pulse.protocol.UserDto
 import app.pulse.protocol.UsernameCheckDto
 import app.pulse.protocol.UsersPageDto
@@ -132,14 +136,40 @@ class PulseApi(private val http: HttpClient) {
         }
     }
 
-    /** POST /api/conversations/{id}/messages { senderId, content } → ChatMessageDto */
-    suspend fun sendMessage(conversationId: String, senderId: String, content: String): PulseResult<ChatMessageDto> =
+    /**
+     * POST /api/conversations/{id}/messages — the full Wave-1 wire body
+     * (spec §1.1): thread replies ride `parentId`, inline quotes `replyToId`,
+     * media rides imagePath/audioPath/filePath — only non-null keys are sent.
+     * `kind` whitelist: text|image|audio|sticker|location|file.
+     */
+    suspend fun sendMessage(
+        conversationId: String,
+        senderId: String,
+        content: String,
+        replyToId: String? = null,
+        parentId: String? = null,
+        imagePath: String? = null,
+        audioPath: String? = null,
+        durationMs: Long? = null,
+        filePath: String? = null,
+        fileName: String? = null,
+        fileSize: Long? = null,
+        kind: String? = null,
+    ): PulseResult<ChatMessageDto> =
         post(
             "/api/conversations/$conversationId/messages",
             buildJsonObject {
                 put("senderId", senderId)
                 put("content", content)
-                put("kind", "text")
+                put("kind", kind ?: "text")
+                if (replyToId != null) put("replyToId", replyToId)
+                if (parentId != null) put("parentId", parentId)
+                if (imagePath != null) put("imagePath", imagePath)
+                if (audioPath != null) put("audioPath", audioPath)
+                if (durationMs != null) put("durationMs", durationMs)
+                if (filePath != null) put("filePath", filePath)
+                if (fileName != null) put("fileName", fileName)
+                if (fileSize != null) put("fileSize", fileSize)
             },
         ) { PulseJson.decodeFromString(ChatMessageDto.serializer(), it) }
 
@@ -205,9 +235,73 @@ class PulseApi(private val http: HttpClient) {
     suspend fun postAction(path: String, body: JsonObject? = null): PulseResult<Unit> =
         post(path, body)
 
-    /** Small action PATCHes (pin/mute/archive/mark-unread) share one runner. */
+    /** Small action PATCHes (pin/mute/archive/mark-unread/draft) share one runner. */
     suspend fun patchAction(path: String, body: JsonObject? = null): PulseResult<Unit> =
         patch(path, body)
+
+    // ── Wave 1 messaging surface (spec §1.1) ───────────────────
+
+    /** `{message: ChatMessage}` unwrap shared by the edit/pin actions. */
+    private fun messageOf(json: String): ChatMessageDto =
+        PulseJson.decodeFromString(
+            ChatMessageDto.serializer(),
+            PulseJson.parseToJsonElement(json).unwrapOrRoot("message").toString(),
+        )
+
+    /** PATCH /api/messages/{id} { userId, content } → { message } (sender-only edit). */
+    suspend fun editMessage(messageId: String, userId: String, content: String): PulseResult<ChatMessageDto> =
+        patch("/api/messages/$messageId", jsonOf("userId" to userId, "content" to content)) { messageOf(it) }
+
+    /** POST /api/messages/{id}/pin { userId } → { message } (toggle; relays message:pinned). */
+    suspend fun toggleMessagePin(messageId: String, userId: String): PulseResult<ChatMessageDto> =
+        post("/api/messages/$messageId/pin", jsonOf("userId" to userId)) { messageOf(it) }
+
+    /** POST /api/messages/{id}/save { userId } → { saved } (per-user toggle). */
+    suspend fun toggleMessageSave(messageId: String, userId: String): PulseResult<SavedToggleDto> =
+        post("/api/messages/$messageId/save", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(SavedToggleDto.serializer(), it)
+        }
+
+    /** GET /api/conversations/{id}/pinned?userId= → { messages } (pinnedAt asc). */
+    suspend fun pinnedMessages(conversationId: String, userId: String): PulseResult<PinnedPageDto> =
+        get("/api/conversations/$conversationId/pinned?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(PinnedPageDto.serializer(), it)
+        }
+
+    /** GET /api/messages/{id}/thread?userId= → { parent, replies } (replies asc). */
+    suspend fun thread(rootId: String, userId: String): PulseResult<ThreadPageDto> =
+        get("/api/messages/$rootId/thread?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(ThreadPageDto.serializer(), it)
+        }
+
+    /** GET /api/conversations/{id}/messages?limit=100&q= — in-conversation search
+     *  (case-insensitive substring on content + fileName, asc, hasMore:false). */
+    suspend fun searchInConversation(conversationId: String, query: String, limit: Int = 100): PulseResult<MessagesPageDto> =
+        get(
+            "/api/conversations/$conversationId/messages?limit=$limit&q=" +
+                java.net.URLEncoder.encode(query, "UTF-8"),
+        ) {
+            PulseJson.decodeFromString(MessagesPageDto.serializer(), it)
+        }
+
+    /** POST /api/uploads { dataUrl } → 201 { filePath, imagePath } — base64 data URL, NOT multipart. */
+    suspend fun uploadMedia(dataUrl: String): PulseResult<UploadResultDto> =
+        post("/api/uploads", jsonOf("dataUrl" to dataUrl)) {
+            PulseJson.decodeFromString(UploadResultDto.serializer(), it)
+        }
+
+    /** PATCH /api/conversations/{id}/draft { userId, draft } → { ok, draft } ('' clears). */
+    suspend fun setDraft(conversationId: String, userId: String, draft: String): PulseResult<Unit> =
+        patch("/api/conversations/$conversationId/draft", jsonOf("userId" to userId, "draft" to draft))
+
+    /** GET /api/conversations/{id}?userId= → { conversation } (detail incl. members with lastReadAt). */
+    suspend fun conversationDetail(conversationId: String, userId: String): PulseResult<ConversationSummaryDto> =
+        get("/api/conversations/$conversationId?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(
+                ConversationSummaryDto.serializer(),
+                PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
+            )
+        }
 
     /** POST /api/conversations/self {userId} — the viewer's Note to Self chat. */
     suspend fun createSelfChat(userId: String): PulseResult<ConversationSummaryDto> =

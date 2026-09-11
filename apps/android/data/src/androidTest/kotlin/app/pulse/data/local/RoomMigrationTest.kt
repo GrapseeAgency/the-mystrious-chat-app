@@ -12,16 +12,17 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Wave-0 migration gate — a REAL v3 database (the only deployed schema with
- * users) is built from raw SQL matching the v3 entities exactly, seeded with
- * a conversation + message row, then opened with Room + MIGRATION_3_4:
- *   - NO destruction: both v3 rows survive;
- *   - the outbox + draft tables exist and their DAOs round-trip.
+ * Wave-0 + Wave-1 migration gate — REAL databases are built from raw SQL
+ * matching the deployed schema exactly, seeded, then opened with Room:
+ *   - v3 → MIGRATION_3_4: rows survive; outbox + draft DAOs round-trip;
+ *   - v4 → MIGRATION_4_5: rows survive; message media columns + membersJson
+ *     are usable (DAO round-trip) and old rows backfill with defaults.
  * Runs on the emulator (android-ci connectedDebugAndroidTest).
  */
 @RunWith(AndroidJUnit4::class)
@@ -59,8 +60,11 @@ class RoomMigrationTest {
             "`durationMs` INTEGER, PRIMARY KEY(`id`))"
 
     @Before
-    fun createV3DatabaseWithSeedRows() {
+    fun resetDbFile() {
         context.deleteDatabase(dbName)
+    }
+
+    private fun createV3DatabaseWithSeedRows() {
         val raw = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName), null)
         raw.execSQL(createConversationsV3)
         raw.execSQL(createMessagesV3)
@@ -103,6 +107,74 @@ class RoomMigrationTest {
         raw.close()
     }
 
+    /** EXACT v4 DDL — v4 = v3 tables + the Wave-0 outbox/draft tables. */
+    private fun createV4DatabaseWithSeedRows() {
+        val raw = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName), null)
+        raw.execSQL(createConversationsV3)
+        raw.execSQL(createMessagesV3)
+        raw.execSQL(
+            "CREATE TABLE IF NOT EXISTS `outbox` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`conversationId` TEXT NOT NULL, `clientId` TEXT NOT NULL, `content` TEXT NOT NULL, " +
+                "`kind` TEXT NOT NULL, `createdAt` TEXT NOT NULL, `attempts` INTEGER NOT NULL)",
+        )
+        raw.execSQL("CREATE INDEX IF NOT EXISTS `index_outbox_conversationId` ON `outbox` (`conversationId`)")
+        raw.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_outbox_clientId` ON `outbox` (`clientId`)")
+        raw.execSQL(
+            "CREATE TABLE IF NOT EXISTS `draft` (`conversationId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
+                "`updatedAt` TEXT NOT NULL, PRIMARY KEY(`conversationId`))",
+        )
+        raw.insert("conversations", null, ContentValues().apply {
+            put("id", "c1")
+            put("kind", "GROUP")
+            put("title", "Wave Crew")
+            put("unreadCount", 1)
+            put("isPinned", 0)
+            put("isMuted", 0)
+            put("isArchived", 0)
+            put("memberIdsCsv", "u1,u2")
+            put("memberNamesCsv", "Alice,Bob")
+            put("streakCount", 1)
+            put("isSelf", 0)
+            put("myManualUnread", 0)
+            put("streakAtRiskCount", 0)
+            put("streakLost", 0)
+            put("lastMessageMine", 0)
+            put("lastMessageDeleted", 0)
+            put("lastMessageIsReply", 0)
+            put("lastMessageIsImage", 0)
+            put("lastMessageIsAudio", 0)
+            put("lastMessageIsFile", 0)
+            put("mutedUntilEpoch", 0)
+            put("isChannel", 0)
+        })
+        raw.insert("messages", null, ContentValues().apply {
+            put("id", "m-old")
+            put("conversationId", "c1")
+            put("authorId", "u2")
+            put("authorName", "Bob")
+            put("kind", "TEXT")
+            put("body", "pre-v5 text row")
+            put("createdAt", "2026-02-14T10:00:00.000Z")
+            put("viaAutomation", 0)
+        })
+        raw.insert("outbox", null, ContentValues().apply {
+            put("conversationId", "c1")
+            put("clientId", "client-old")
+            put("content", "queued pre-v5")
+            put("kind", "text")
+            put("createdAt", "2026-02-14T10:01:00.000Z")
+            put("attempts", 0)
+        })
+        raw.insert("draft", null, ContentValues().apply {
+            put("conversationId", "c1")
+            put("text", "half-typed pre-v5")
+            put("updatedAt", "t1")
+        })
+        // Mark the file as the deployed v4 schema.
+        raw.version = 4
+        raw.close()
+    }
+
     @After
     fun tearDown() {
         if (this::db.isInitialized) db.close()
@@ -111,6 +183,7 @@ class RoomMigrationTest {
 
     @Test
     fun migration3To4PreservesRowsAndAddsOutboxDraft() = runBlocking {
+        createV3DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
             .addMigrations(PulseDatabase.MIGRATION_3_4)
             .allowMainThreadQueries()
@@ -175,5 +248,99 @@ class RoomMigrationTest {
         db.draftDao().upsert(DraftEntity(conversationId = "c2", text = "x", updatedAt = "t"))
         db.draftDao().clearAll()
         assertNull(db.draftDao().get("c2"))
+    }
+
+    /**
+     * Wave-1 gate: a REAL v4 database (conversations/messages/outbox/draft)
+     * migrates to v5 without destruction — old rows survive with the new
+     * columns backfilled (viewOnce=false, members="[]"), and the new media
+     * columns + membersJson are round-trippable through the DAOs.
+     */
+    @Test
+    fun migration4To5PreservesRowsAndAddsMediaAndMembers() = runBlocking {
+        createV4DatabaseWithSeedRows()
+        db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
+            .addMigrations(PulseDatabase.MIGRATION_4_5)
+            .allowMainThreadQueries()
+            .build()
+
+        // ── v4 rows intact + defaults backfilled ───────────────
+        val conversation = db.conversationDao().byId("c1")
+        assertNotNull("v4 conversation row was destroyed by the migration", conversation)
+        assertEquals("Wave Crew", conversation!!.title)
+        assertEquals("[]", conversation.membersJson) // ADD COLUMN DEFAULT '[]'
+
+        val oldMessage = db.messageDao().byId("m-old")
+        assertNotNull("v4 message row was destroyed by the migration", oldMessage)
+        assertEquals("pre-v5 text row", oldMessage!!.body)
+        assertNull(oldMessage.imagePath) // nullable media columns start empty
+        assertEquals(false, oldMessage.viewOnce) // NOT NULL DEFAULT 0 backfill
+
+        // Wave-0 surfaces still work after the v5 migration.
+        assertEquals(1, db.outboxDao().count())
+        assertEquals("queued pre-v5", db.outboxDao().all().first().content)
+        assertEquals("half-typed pre-v5", db.draftDao().get("c1")?.text)
+
+        // ── media columns round-trip through the DAO ───────────
+        val media = MessageEntity(
+            id = "m-media",
+            conversationId = "c1",
+            authorId = "u1",
+            authorName = "Alice",
+            kind = "IMAGE",
+            body = "captions ride content",
+            createdAt = "2026-02-14T10:02:00.000Z",
+            editedAt = null,
+            deletedAt = null,
+            replyToId = null,
+            threadRootId = "m-old",
+            pinnedAt = null,
+            reactionsJson = null,
+            replyToBody = null,
+            replyToAuthor = null,
+            senderColor = "emerald",
+            viaAutomation = false,
+            durationMs = 1500L,
+            imagePath = "9c1f...e7.jpg",
+            audioPath = "voice-1.m4a",
+            filePath = "/api/uploads/report.pdf",
+            fileName = "report.pdf",
+            fileSize = 123456L,
+            viewOnce = true,
+        )
+        db.messageDao().upsertAll(listOf(media))
+        val roundTripped = db.messageDao().byId("m-media")
+        assertNotNull("media row missing after insert", roundTripped)
+        assertEquals("9c1f...e7.jpg", roundTripped!!.imagePath)
+        assertEquals("voice-1.m4a", roundTripped.audioPath)
+        assertEquals("/api/uploads/report.pdf", roundTripped.filePath)
+        assertEquals("report.pdf", roundTripped.fileName)
+        assertEquals(123456L, roundTripped.fileSize)
+        assertEquals(true, roundTripped.viewOnce)
+        assertEquals(1500L, roundTripped.durationMs)
+
+        // ── thread queries (v5 DAO surface) ────────────────────
+        assertEquals(1, db.messageDao().countByThread("m-old"))
+        val threadRows = db.messageDao().observeThread("m-old").first()
+        assertEquals(listOf("m-media"), threadRows.map { it.id })
+
+        // ── membersJson round-trip (entity ⇄ domain) ───────────
+        val withMembers = conversation.copy(
+            membersJson = """[{"id":"u1","name":"Alice","color":"emerald","lastReadAt":1739524860000,"role":"admin"}]""",
+        )
+        db.conversationDao().upsertAll(listOf(withMembers))
+        val reloaded = db.conversationDao().byId("c1")
+        assertNotNull(reloaded)
+        assertEquals(1, reloaded!!.toDomain().members.size)
+        val member = reloaded.toDomain().members.first()
+        assertEquals("u1", member.id)
+        assertEquals("Alice", member.name)
+        assertEquals("emerald", member.color)
+        assertEquals(1739524860000L, member.lastReadAt)
+        assertEquals("admin", member.role)
+
+        // Entity.from re-serializes the domain members back to JSON.
+        val reSerialized = ConversationEntity.from(reloaded.toDomain().copy(members = listOf(member)))
+        assertTrue(reSerialized.membersJson.contains(""""id":"u1""""))
     }
 }

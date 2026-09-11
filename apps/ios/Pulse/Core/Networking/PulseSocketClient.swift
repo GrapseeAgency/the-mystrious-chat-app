@@ -18,7 +18,7 @@ public final class PulseSocketClient {
         case messageDeleted(conversationId: String, raw: [String: Any])
         /// N3-b — payload is { type, message (fresh reactions), ... }.
         case messageReact(conversationId: String, raw: [String: Any])
-        case messageRead(conversationId: String, userId: String)
+        case messageRead(conversationId: String, userId: String, lastReadAt: String?)
         /// Wave 0 — the rest of the message:* relay family (edited / pinned /
         /// viewed / poll:voted / link:preview / translation:added). The payload
         /// is the same SocketMessageEvent envelope; features decode it later.
@@ -131,9 +131,13 @@ public final class PulseSocketClient {
 
         socket.on("message:read") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any] else { return }
+            // W1-DATA-B — the watermark model: the relay carries the bumped
+            // participant lastReadAt; parse it tolerantly (older relays omit
+            // it and callers fall back to "now").
             self?.signals?(.messageRead(
                 conversationId: obj["conversationId"] as? String ?? "",
                 userId: obj["userId"] as? String ?? "",
+                lastReadAt: obj["lastReadAt"] as? String,
             ))
         }
         socket.on("typing") { [weak self] data, _ in

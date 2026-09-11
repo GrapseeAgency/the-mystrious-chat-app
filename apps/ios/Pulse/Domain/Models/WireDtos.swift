@@ -143,6 +143,7 @@ public struct WireChatMessage: Codable, Hashable, Sendable {
     public let durationMs: Double?
     public let filePath: String?
     public let fileName: String?
+    public let fileSize: Int?
     public let pinnedAt: String?
     public let viewOnce: Bool?
     public let anon: Bool?
@@ -153,6 +154,29 @@ public struct WireMessagesPage: Codable, Sendable {
     public let messages: [WireChatMessage]
     public let hasMore: Bool
     public let total: Int
+}
+
+/// GET /api/messages/{id}/thread?userId= — thread-root message + its replies
+/// (replies asc). Wave 1 thread sheet page (spec §1.1 "Thread read").
+public struct WireThreadPage: Codable, Sendable {
+    public let parent: WireChatMessage
+    public let replies: [WireChatMessage]
+}
+
+/// GET /api/conversations/{id}/pinned?userId= — pinned list (pinnedAt asc).
+public struct WirePinnedPage: Codable, Sendable {
+    public let messages: [WireChatMessage]
+}
+
+/// POST /api/messages/{id}/save {userId} — save/star toggle verdict.
+public struct WireSavedToggle: Codable, Sendable {
+    public let saved: Bool
+}
+
+/// POST /api/uploads {dataUrl} — media upload verdict (JSON, NOT multipart).
+public struct WireUploadResult: Codable, Sendable {
+    public let filePath: String?
+    public let imagePath: String?
 }
 
 public struct WireConversationMember: Codable, Hashable, Sendable {
@@ -376,8 +400,8 @@ extension WireConversationSummary {
                 createdAt: cached.lastActivityAt ?? "",
                 editedAt: nil, deletedAt: nil, sender: nil, reactions: nil,
                 replyTo: nil, parentId: nil, imagePath: nil, audioPath: nil,
-                durationMs: nil, filePath: nil, fileName: nil, pinnedAt: nil,
-                viewOnce: nil, anon: nil, anonAlias: nil,
+                durationMs: nil, filePath: nil, fileName: nil, fileSize: nil,
+                pinnedAt: nil, viewOnce: nil, anon: nil, anonAlias: nil,
             )
         }
         self.init(
@@ -449,7 +473,8 @@ extension WireChatMessage {
             sender: sender, reactions: reactions, replyTo: replyTo,
             parentId: parentId, imagePath: imagePath, audioPath: audioPath,
             durationMs: durationMs, filePath: filePath, fileName: fileName,
-            pinnedAt: pinnedAt, viewOnce: viewOnce, anon: anon, anonAlias: anonAlias
+            fileSize: fileSize, pinnedAt: pinnedAt, viewOnce: viewOnce,
+            anon: anon, anonAlias: anonAlias
         )
     }
 
@@ -464,8 +489,10 @@ extension WireChatMessage {
             createdAt: createdAt,
             editedAt: editedAt,
             deletedAt: deletedAt,
-            replyToId: parentId ?? replyTo?.id,
-            threadRootId: nil,
+            // Spec §2 row 5 — parentId is the THREAD ROOT; replyToId is ONLY
+            // the inline-quote snippet. Never conflate them again.
+            replyToId: replyTo?.id,
+            threadRootId: parentId,
             pinnedAt: pinnedAt,
             viewedOnce: viewOnce == true,
         )

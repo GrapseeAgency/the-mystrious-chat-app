@@ -54,7 +54,12 @@ class FlushOutboxUseCaseTest {
         override suspend fun createDm(otherUserId: String) = Result.success(app.pulse.domain.model.Conversation(id = "c", kind = app.pulse.domain.model.Conversation.Kind.DM, title = "t"))
         override suspend fun createGroup(name: String, memberIds: List<String>) = Result.success(app.pulse.domain.model.Conversation(id = "c", kind = app.pulse.domain.model.Conversation.Kind.GROUP, title = name))
         override suspend fun me() = null
-        override suspend fun sendMessage(conversationId: String, body: String, replyToId: String?): Result<Message> =
+        override suspend fun sendMessage(
+            conversationId: String,
+            body: String,
+            replyToId: String?,
+            parentId: String?,
+        ): Result<Message> =
             Result.failure(UnsupportedOperationException())
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
         override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {}
@@ -118,6 +123,27 @@ class FlushOutboxUseCaseTest {
         override suspend fun saveDraft(conversationId: String, text: String) {}
         override suspend fun clearDraft(conversationId: String) {}
         override fun observeDraft(conversationId: String) = MutableStateFlow<String?>(null)
+
+        // ── Wave 1 messaging surface (unused by the outbox policy) ──
+        override suspend fun editMessage(messageId: String, content: String) =
+            Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun toggleMessagePin(messageId: String) =
+            Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun toggleMessageSave(messageId: String) =
+            Result.failure<Boolean>(UnsupportedOperationException())
+        override suspend fun pinnedMessages(conversationId: String) = emptyList<Message>()
+        override suspend fun loadThread(rootId: String) =
+            Message(id = rootId, conversationId = "c1", authorId = "viewer", authorName = "Viewer", kind = Message.Kind.TEXT, body = "root", createdAt = "t") to emptyList<Message>()
+        override suspend fun messagesPage(conversationId: String, before: String?, limit: Int) =
+            emptyList<Message>() to false
+        override suspend fun searchInConversation(conversationId: String, query: String) = emptyList<Message>()
+        override suspend fun uploadMedia(dataUrl: String) =
+            Result.failure<String>(UnsupportedOperationException())
+        override suspend fun forwardMessage(targetConversationId: String, source: Message) =
+            Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun setServerDraft(conversationId: String, draft: String) {}
+        override suspend fun conversationDetail(conversationId: String) =
+            Result.failure<app.pulse.domain.model.Conversation>(UnsupportedOperationException())
 
         private fun realMessage(id: String, entry: OutboxEntry) = Message(
             id = id,

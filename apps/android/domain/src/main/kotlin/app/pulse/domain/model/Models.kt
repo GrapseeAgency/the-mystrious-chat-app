@@ -30,6 +30,22 @@ data class Reaction(
     val userId: String,
 )
 
+/**
+ * One conversation participant with the read watermark (wire members[]).
+ * Powers the ✓✓ read ticks (member.lastReadAt ≥ message createdAt) and the
+ * message-info "seen by" sheet. Serialized into the Room `membersJson` cache.
+ */
+@Serializable
+data class ConversationMember(
+    val id: String,
+    val name: String,
+    val color: String? = null,
+    /** Epoch ms of the member's read watermark — null = never read / unknown. */
+    val lastReadAt: Long? = null,
+    /** Wire role — "admin" | "member". */
+    val role: String? = null,
+)
+
 /** A conversation in the chats list — mirrors web `ConversationSummary`. */
 @Serializable
 data class Conversation(
@@ -47,6 +63,8 @@ data class Conversation(
     val isArchived: Boolean = false,
     val memberIds: List<String> = emptyList(),
     val memberNames: List<String> = emptyList(),
+    /** Full member rows with read watermarks (summaries + detail) — ticks/info sheet. */
+    val members: List<ConversationMember> = emptyList(),
     val accentColor: String? = null,
     val streakCount: Int = 0,
     val myDraft: String? = null,
@@ -145,6 +163,15 @@ data class Message(
     val senderColor: String? = null,
     val viaAutomation: Boolean = false,
     val durationMs: Long? = null,
+    // Wave 1 media fields — image/file/voice rows render without extra fetches.
+    /** Wire imagePath — served as {gateway}/api/uploads/{imagePath}. */
+    val imagePath: String? = null,
+    val audioPath: String? = null,
+    val filePath: String? = null,
+    val fileName: String? = null,
+    val fileSize: Long? = null,
+    /** View-once render gate (consume itself is a Wave 2 non-goal). */
+    val viewOnce: Boolean = false,
 ) {
     enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, SYSTEM }
 

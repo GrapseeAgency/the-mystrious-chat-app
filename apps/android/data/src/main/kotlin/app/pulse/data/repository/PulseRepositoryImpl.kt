@@ -15,6 +15,7 @@ import app.pulse.data.local.OutboxEntity
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.FlushReport
 import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.HandleCheck
@@ -322,8 +323,20 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun me(): User? = null // no /me route on the wire yet — viewer lives in prefs
 
     // ── writes ──────────────────────────────────────────────────
-    override suspend fun sendMessage(conversationId: String, body: String, replyToId: String?): Result<Message> =
-        when (val r = api.sendMessage(conversationId, viewerId ?: "", body)) {
+    override suspend fun sendMessage(
+        conversationId: String,
+        body: String,
+        replyToId: String?,
+        parentId: String?,
+    ): Result<Message> =
+        when (val r = api.sendMessage(
+            conversationId = conversationId,
+            senderId = viewerId ?: "",
+            content = body,
+            replyToId = replyToId,
+            // THREAD REPLY rides `parentId` — NEVER conflated with replyToId (spec §1.1).
+            parentId = parentId,
+        )) {
             is PulseResult.Success -> {
                 val message = r.value.toDomain()
                 messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
@@ -334,7 +347,9 @@ class PulseRepositoryImpl @Inject constructor(
                 // Network-class failure → the optimistic offline core: temp
                 // `local_<clientId>` bubble + outbox row; the flush engine
                 // delivers it on the next trigger. 4xx verdicts surface as-is.
-                if (r.kind == PulseResult.Failure.Kind.NETWORK && !viewerId.isNullOrBlank()) {
+                // Text-only outbox (spec §1.2): thread replies and inline
+                // quotes fail with an honest error — never queued.
+                if (r.kind == PulseResult.Failure.Kind.NETWORK && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
                     val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
                     val nowIso = java.time.OffsetDateTime.now()
                         .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
@@ -364,7 +379,158 @@ class PulseRepositoryImpl @Inject constructor(
                 }
         }
 
-    // ── offline outbox engine (Wave 0 — web pulse-outbox parity) ───
+    // ── Wave 1 messaging surface (spec §1.1 — every route exists today) ──
+
+    /** The outbox queues PURE TEXT only — thread/quote sends are online-only. */
+    private fun queueableSend(replyToId: String?, parentId: String?): Boolean =
+        replyToId == null && parentId == null
+
+    override suspend fun editMessage(messageId: String, content: String): Result<Message> =
+        when (val r = api.editMessage(messageId, viewerId ?: "", content)) {
+            is PulseResult.Success -> {
+                val message = r.value.toDomain()
+                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                Result.success(message)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun toggleMessagePin(messageId: String): Result<Message> =
+        when (val r = api.toggleMessagePin(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                val message = r.value.toDomain()
+                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                Result.success(message)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun toggleMessageSave(messageId: String): Result<Boolean> =
+        when (val r = api.toggleMessageSave(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.saved)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun pinnedMessages(conversationId: String): List<Message> {
+        val page = when (val r = api.pinnedMessages(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> r.value
+            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+        }
+        val rows = page.messages.map { it.toDomain() }
+        // Upsert keeps the Room cache (pin glyphs, banners) authoritative.
+        messageDao.upsertAll(rows.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+        return rows
+    }
+
+    override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
+        val page = when (val r = api.thread(rootId, viewerId ?: "")) {
+            is PulseResult.Success -> r.value
+            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+        }
+        val parent = page.parent?.toDomain() ?: throw IllegalStateException("thread parent missing")
+        val replies = page.replies.map { it.toDomain() } // wire order: createdAt asc
+        // Upsert both so observeThread(rootId) rehydrates the sheet offline
+        // and realtime reply appends merge with this window.
+        messageDao.upsertAll((listOf(parent) + replies).map { MessageEntity.from(it, reactionsJsonOf(it)) })
+        return parent to replies
+    }
+
+    override suspend fun messagesPage(conversationId: String, before: String?, limit: Int): Pair<List<Message>, Boolean> {
+        val page = when (val r = api.messages(conversationId, limit, before)) {
+            is PulseResult.Success -> r.value
+            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+        }
+        val rows = page.messages.map { it.toDomain() } // wire order: asc
+        // Pagination merge = plain upserts; loaded window grows in Room.
+        messageDao.upsertAll(rows.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+        return rows to page.hasMore
+    }
+
+    override suspend fun searchInConversation(conversationId: String, query: String): List<Message> {
+        if (query.isBlank()) return emptyList()
+        val page = when (val r = api.searchInConversation(conversationId, query)) {
+            is PulseResult.Success -> r.value
+            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+        }
+        val rows = page.messages.map { it.toDomain() }
+        messageDao.upsertAll(rows.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+        return rows
+    }
+
+    override suspend fun uploadMedia(dataUrl: String): Result<String> =
+        when (val r = api.uploadMedia(dataUrl)) {
+            is PulseResult.Success -> {
+                val path = r.value.filePath
+                if (path.isNullOrBlank()) {
+                    Result.failure(IllegalStateException("upload returned no filePath"))
+                } else {
+                    Result.success(path)
+                }
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    /**
+     * Forward = re-POST the SAME body into the target conversation (no wire
+     * endpoint — spec §1.1). Media is forwarded by reusing the stored paths;
+     * the wire kind maps back through the whitelist (text|image|audio|sticker|
+     * location|file). Never queued — media sends are online-only (spec §1.2).
+     */
+    override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> =
+        when (
+            val r = api.sendMessage(
+                conversationId = targetConversationId,
+                senderId = viewerId ?: "",
+                content = source.body,
+                imagePath = source.imagePath,
+                audioPath = source.audioPath,
+                durationMs = source.durationMs,
+                filePath = source.filePath,
+                fileName = source.fileName,
+                fileSize = source.fileSize,
+                kind = wireKindOf(source.kind),
+            )
+        ) {
+            is PulseResult.Success -> {
+                val message = r.value.toDomain()
+                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                scheduleConversationsRefresh()
+                Result.success(message)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    /** Domain kind → wire kind (whitelist text|image|audio|sticker|location|file). */
+    private fun wireKindOf(kind: Message.Kind): String? = when (kind) {
+        Message.Kind.TEXT -> "text"
+        Message.Kind.IMAGE -> "image"
+        Message.Kind.VOICE -> "audio"
+        Message.Kind.FILE -> "file"
+        // VIDEO/POLL/RED_PACKET/SYSTEM are outside the send whitelist — omit
+        // and let the server default to text (media fields still ride along).
+        else -> null
+    }
+
+    override suspend fun setServerDraft(conversationId: String, draft: String) {
+        val id = viewerId ?: return
+        runCatching {
+            api.setDraft(conversationId, id, draft.take(MAX_DRAFT))
+        }
+        // Fire-and-forget: the local draft wins; the server only seeds
+        // cross-device restore — failures are silently ignored.
+    }
+
+    override suspend fun conversationDetail(conversationId: String): Result<Conversation> =
+        when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                val conversation = r.value.toDomain(viewerId)
+                conversationDao.upsertAll(listOf(ConversationEntity.from(conversation)))
+                Result.success(conversation)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    // ── offline outbox engine (Wave 0 — web pulse-outbox parity) ────
 
     override suspend fun enqueueOutbox(entry: OutboxEntry): Result<Unit> = try {
         outboxDao.insert(OutboxEntity.from(entry))
@@ -443,20 +609,25 @@ class PulseRepositoryImpl @Inject constructor(
         val trimmed = text.take(MAX_DRAFT)
         if (trimmed.isBlank()) {
             draftDao.delete(conversationId)
-            return
+        } else {
+            draftDao.upsert(
+                DraftEntity(
+                    conversationId = conversationId,
+                    text = trimmed,
+                    updatedAt = java.time.OffsetDateTime.now()
+                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                ),
+            )
         }
-        draftDao.upsert(
-            DraftEntity(
-                conversationId = conversationId,
-                text = trimmed,
-                updatedAt = java.time.OffsetDateTime.now()
-                    .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-            ),
-        )
+        // Server mirror (web R45 parity): every local mutation also rides the
+        // PATCH /draft route ('' clears) so other devices restore it. Local
+        // still wins; the mirror is fire-and-forget.
+        setServerDraft(conversationId, trimmed)
     }
 
     override suspend fun clearDraft(conversationId: String) {
         draftDao.delete(conversationId)
+        setServerDraft(conversationId, "") // web parity: clear paths sync too
     }
 
     override fun observeDraft(conversationId: String): Flow<String?> =
@@ -790,6 +961,15 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
         mutedUntilEpoch = mutedEpoch,
         otherUserId = others.firstOrNull()?.id ?: members.firstOrNull()?.id,
         isChannel = broadcastMode == true,
+        members = members.map { dto ->
+            ConversationMember(
+                id = dto.id,
+                name = dto.name,
+                color = dto.color,
+                lastReadAt = PulseTime.epochMs(dto.lastReadAt).takeIf { it > 0 },
+                role = dto.role,
+            )
+        },
     )
 }
 
@@ -823,8 +1003,10 @@ fun ChatMessageDto.toDomain(): Message = Message(
     createdAt = createdAt,
     editedAt = editedAt,
     deletedAt = deletedAt,
-    replyToId = parentId ?: replyTo?.id,
-    threadRootId = null,
+    // THREAD vs QUOTE (spec §1.1): parentId is the thread root, replyTo is
+    // the inline quote — they are DIFFERENT axes and never merged.
+    replyToId = replyTo?.id,
+    threadRootId = parentId,
     pinnedAt = pinnedAt,
     viewedOnce = viewOnce == true,
     reactions = reactions.mapNotNull { r ->
@@ -838,6 +1020,12 @@ fun ChatMessageDto.toDomain(): Message = Message(
     senderColor = sender?.color,
     viaAutomation = viaAutomation == true,
     durationMs = durationMs,
+    imagePath = imagePath,
+    audioPath = audioPath,
+    filePath = filePath,
+    fileName = fileName,
+    fileSize = fileSize,
+    viewOnce = viewOnce == true,
 )
 
 private fun kindOf(wire: String): Message.Kind = when (wire) {

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -15,6 +16,8 @@ class SendMessageUseCaseTest {
 
     private class FakeRepo : PulseRepository {
         val sent = mutableListOf<Message>()
+        var lastReplyToId: String? = null
+        var lastParentId: String? = null
         override val viewerId: String? = "a"
         override fun start(userId: String) {}
         override fun observeConversations(query: String) =
@@ -25,12 +28,20 @@ class SendMessageUseCaseTest {
         override suspend fun refreshConversations(): Result<Unit> = Result.success(Unit)
         override suspend fun refreshMessages(conversationId: String, limit: Int): Result<Unit> = Result.success(Unit)
         override suspend fun me() = app.pulse.domain.model.User(id = "a", name = "n", handle = "n")
-        override suspend fun sendMessage(conversationId: String, body: String, replyToId: String?): Result<Message> {
+        override suspend fun sendMessage(
+            conversationId: String,
+            body: String,
+            replyToId: String?,
+            parentId: String?,
+        ): Result<Message> {
             val m = Message(
                 id = "m1", conversationId = conversationId, authorId = "a", authorName = "n",
                 kind = Message.Kind.TEXT, body = body, createdAt = "t", replyToId = replyToId,
+                threadRootId = parentId,
             )
             sent += m
+            lastReplyToId = replyToId
+            lastParentId = parentId
             return Result.success(m)
         }
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
@@ -78,6 +89,27 @@ class SendMessageUseCaseTest {
         override suspend fun saveDraft(conversationId: String, text: String) {}
         override suspend fun clearDraft(conversationId: String) {}
         override fun observeDraft(conversationId: String) = MutableStateFlow<String?>(null)
+
+        // ── Wave 1 messaging surface (stubs — the send path is the subject here) ──
+        override suspend fun editMessage(messageId: String, content: String) =
+            Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun toggleMessagePin(messageId: String) =
+            Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun toggleMessageSave(messageId: String) =
+            Result.failure<Boolean>(UnsupportedOperationException())
+        override suspend fun pinnedMessages(conversationId: String) = emptyList<Message>()
+        override suspend fun loadThread(rootId: String) =
+            Message(id = rootId, conversationId = "c1", authorId = "a", authorName = "n", kind = Message.Kind.TEXT, body = "root", createdAt = "t") to emptyList<Message>()
+        override suspend fun messagesPage(conversationId: String, before: String?, limit: Int) =
+            emptyList<Message>() to false
+        override suspend fun searchInConversation(conversationId: String, query: String) = emptyList<Message>()
+        override suspend fun uploadMedia(dataUrl: String) =
+            Result.failure<String>(UnsupportedOperationException())
+        override suspend fun forwardMessage(targetConversationId: String, source: Message) =
+            Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun setServerDraft(conversationId: String, draft: String) {}
+        override suspend fun conversationDetail(conversationId: String) =
+            Result.failure<app.pulse.domain.model.Conversation>(UnsupportedOperationException())
     }
 
     @Test
@@ -93,5 +125,36 @@ class SendMessageUseCaseTest {
     fun `rejects blank body`() = runTest {
         val result = SendMessageUseCase(FakeRepo())(conversationId = "c1", body = "   ")
         assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun `thread reply passes parentId without touching replyToId`() = runTest {
+        // Spec §1.1: a thread reply is an ordinary send whose parentId is the
+        // thread ROOT. replyToId (inline quote) and parentId (thread) are
+        // different axes — the use case must forward them independently.
+        val repo = FakeRepo()
+        val result = SendMessageUseCase(repo)(
+            conversationId = "c1",
+            body = "answering in thread",
+            parentId = "root-1",
+        )
+        assertTrue(result.isSuccess)
+        assertEquals("root-1", repo.lastParentId)
+        assertNull(repo.lastReplyToId)
+        assertEquals("root-1", result.getOrNull()?.threadRootId)
+        assertNull(result.getOrNull()?.replyToId)
+    }
+
+    @Test
+    fun `inline quote passes replyToId without touching parentId`() = runTest {
+        val repo = FakeRepo()
+        val result = SendMessageUseCase(repo)(
+            conversationId = "c1",
+            body = "quoting you",
+            replyToId = "m42",
+        )
+        assertTrue(result.isSuccess)
+        assertEquals("m42", repo.lastReplyToId)
+        assertNull(repo.lastParentId)
     }
 }

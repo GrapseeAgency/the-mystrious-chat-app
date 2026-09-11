@@ -50,10 +50,33 @@ public struct PulseAPIClient: Sendable {
         return page.conversations
     }
 
-    public func messages(conversationId: String, limit: Int = 200, before: String? = nil) async throws -> WireMessagesPage {
+    /// Timeline pages: newest-first page (limit=200 default), older pages via
+    /// the `before` cursor (ISO of the oldest loaded), in-conversation search
+    /// via `q` (server matches content + fileName). Pure query building lives
+    /// in messagesPath so unit tests can pin the wire shape without network.
+    public func messages(conversationId: String, limit: Int = 200, before: String? = nil, query: String? = nil) async throws -> WireMessagesPage {
+        try await get(Self.messagesPath(conversationId: conversationId, limit: limit, before: before, query: query))
+    }
+
+    /// GET /api/conversations/{id}/messages?limit=&before=&q= — the exact
+    /// pagination/search contract from spec §1.1. Blank search strings are
+    /// omitted (the server would match nothing useful).
+    static func messagesPath(conversationId: String, limit: Int, before: String?, query: String?) -> String {
         var path = "/api/conversations/\(conversationId)/messages?limit=\(limit)"
         if let before { path += "&before=\(before)" }
-        return try await get(path)
+        if let query {
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { path += "&q=\(queryEncoded(trimmed))" }
+        }
+        return path
+    }
+
+    /// Percent-encoding for query VALUES — plain `.urlQueryAllowed` keeps the
+    /// reserved `&=?#+` literal, so a search string containing "&" would split
+    /// into bogus params. Subtracting them forces percent-encoding.
+    private static func queryEncoded(_ value: String) -> String {
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=?#+"))
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
     /// N3-b — every identity on this Pulse (contacts + onboarding picker).
@@ -126,9 +149,33 @@ public struct PulseAPIClient: Sendable {
     }
 
     // ── writes ───────────────────────────────────────────────
-    public func sendMessage(conversationId: String, content: String, replyToId: String? = nil) async throws -> WireChatMessage {
-        var body: [String: Any] = ["senderId": userId, "content": content, "kind": "text"]
+    /// Send a message — TEXT is the default (outbox parity); thread replies
+    /// ride `parentId` (the thread-ROOT id — NEVER the inline-quote
+    /// replyToId, spec §1.1), media sends carry their upload paths + sizes.
+    /// Only non-nil fields enter the body; `kind` defaults to text (the
+    /// server whitelist is text|image|audio|sticker|location|file).
+    public func sendMessage(
+        conversationId: String,
+        content: String,
+        replyToId: String? = nil,
+        parentId: String? = nil,
+        imagePath: String? = nil,
+        audioPath: String? = nil,
+        durationMs: Double? = nil,
+        filePath: String? = nil,
+        fileName: String? = nil,
+        fileSize: Int? = nil,
+        kind: String? = nil
+    ) async throws -> WireChatMessage {
+        var body: [String: Any] = ["senderId": userId, "content": content, "kind": kind ?? "text"]
         if let replyToId { body["replyToId"] = replyToId }
+        if let parentId { body["parentId"] = parentId }
+        if let imagePath { body["imagePath"] = imagePath }
+        if let audioPath { body["audioPath"] = audioPath }
+        if let durationMs { body["durationMs"] = durationMs }
+        if let filePath { body["filePath"] = filePath }
+        if let fileName { body["fileName"] = fileName }
+        if let fileSize { body["fileSize"] = fileSize }
         let data = try await postRaw("/api/conversations/\(conversationId)/messages", body: body)
         return try WireMessageEnvelope.extract(from: data)
     }
@@ -170,6 +217,69 @@ public struct PulseAPIClient: Sendable {
     public func react(messageId: String, emoji: String) async throws -> WireChatMessage {
         let data = try await postRaw("/api/messages/\(messageId)/react", body: ["userId": userId, "emoji": emoji])
         return try WireMessageEnvelope.extract(from: data)
+    }
+
+    // ── W1-DATA-B — Wave 1 message actions (spec §1.1) ─────
+
+    /// PATCH /api/messages/{id} {userId, content} — sender-only edit; the
+    /// server stamps editedAt and replies with the fresh row.
+    public func editMessage(id: String, userId: String, content: String) async throws -> WireChatMessage {
+        let data = try await patchRaw("/api/messages/\(id)", body: ["userId": userId, "content": content])
+        return try WireMessageEnvelope.extract(from: data)
+    }
+
+    /// POST /api/messages/{id}/pin {userId} — toggle; the {message} back
+    /// carries pinnedAt/pinnedBy when pinned, nil when unpinned.
+    public func toggleMessagePin(id: String, userId: String) async throws -> WireChatMessage {
+        let data = try await postRaw("/api/messages/\(id)/pin", body: ["userId": userId])
+        return try WireMessageEnvelope.extract(from: data)
+    }
+
+    /// POST /api/messages/{id}/save {userId} — save/star toggle → {saved}.
+    public func toggleMessageSave(id: String, userId: String) async throws -> Bool {
+        let data = try await postRaw("/api/messages/\(id)/save", body: ["userId": userId])
+        return try decoder.decode(WireSavedToggle.self, from: data).saved
+    }
+
+    /// GET /api/conversations/{id}/pinned?userId= — pins list, pinnedAt asc.
+    public func pinnedMessages(conversationId: String, userId: String) async throws -> [WireChatMessage] {
+        let page: WirePinnedPage = try await get("/api/conversations/\(conversationId)/pinned?userId=\(userId)")
+        return page.messages
+    }
+
+    /// GET /api/messages/{id}/thread?userId= — thread root + replies (asc).
+    public func thread(rootId: String, userId: String) async throws -> WireThreadPage {
+        try await get("/api/messages/\(rootId)/thread?userId=\(userId)")
+    }
+
+    /// POST /api/uploads {dataUrl} — JSON body (NOT multipart); returns the
+    /// stored filePath the message body then references. Callers downscale
+    /// images (≤1280px JPEG q0.82) and stay under the size ceilings BEFORE
+    /// calling — the server rejects oversized payloads.
+    public func uploadMedia(dataUrl: String) async throws -> String {
+        let data = try await postRaw("/api/uploads", body: ["dataUrl": dataUrl])
+        let result = try decoder.decode(WireUploadResult.self, from: data)
+        guard let filePath = result.filePath, !filePath.isEmpty else {
+            throw Failure(kind: .validation, message: "Upload response missing filePath")
+        }
+        return filePath
+    }
+
+    /// PATCH /api/conversations/{id}/draft {userId, draft} — server-side draft
+    /// mirror ("" clears). The local draft stays authoritative; the mirror
+    /// only seeds cross-device. Call sites are allowed to silent-fail this.
+    public func setDraft(conversationId: String, userId: String, draft: String) async throws {
+        try await patchEmpty("/api/conversations/\(conversationId)/draft", body: ["userId": userId, "draft": draft])
+    }
+
+    /// GET /api/conversations/{id}?userId= — one conversation. The detail is
+    /// a superset of the summary shape; the tolerant envelope handles both
+    /// the {conversation: …} wrapper and the bare object.
+    public func conversationDetail(id: String, userId: String) async throws -> WireConversationSummary {
+        var request = URLRequest(url: url("/api/conversations/\(id)?userId=\(userId)"))
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        return try WireConversationEnvelope.extract(from: data)
     }
 
     /// N3-b — create (or dedupe into) a DM/group. Tolerant { conversation } envelope.
@@ -282,6 +392,14 @@ public struct PulseAPIClient: Sendable {
     private func postRaw(_ path: String, body: [String: Any]) async throws -> Data {
         var request = URLRequest(url: url(path))
         request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try await send(request)
+    }
+
+    private func patchRaw(_ path: String, body: [String: Any]) async throws -> Data {
+        var request = URLRequest(url: url(path))
+        request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return try await send(request)

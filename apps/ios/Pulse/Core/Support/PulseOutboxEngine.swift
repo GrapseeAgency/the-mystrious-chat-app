@@ -3,8 +3,25 @@ import Combine
 
 /// Sender boundary for the outbox engine — PulseAPIClient conforms in the
 /// app; tests stub it HERE (this is the only mock seam Wave 0 allows).
+/// W1-DATA-B — the requirement mirrors PulseAPIClient.sendMessage's FULL
+/// parameter list (Swift witness matching ignores default arguments, so a
+/// defaulted-param method would no longer witness a shorter requirement).
+/// The engine only ever fills the text fields — media/thread sends are
+/// online-only and never queued (spec §1.2).
 public protocol PulseOutboxSending: Sendable {
-    func sendMessage(conversationId: String, content: String, replyToId: String?) async throws -> WireChatMessage
+    func sendMessage(
+        conversationId: String,
+        content: String,
+        replyToId: String?,
+        parentId: String?,
+        imagePath: String?,
+        audioPath: String?,
+        durationMs: Double?,
+        filePath: String?,
+        fileName: String?,
+        fileSize: Int?,
+        kind: String?
+    ) async throws -> WireChatMessage
 }
 
 extension PulseAPIClient: PulseOutboxSending {}
@@ -122,6 +139,14 @@ public final class PulseOutboxEngine: ObservableObject {
                     conversationId: entry.conversationId,
                     content: entry.content,
                     replyToId: nil,
+                    parentId: nil,
+                    imagePath: nil,
+                    audioPath: nil,
+                    durationMs: nil,
+                    filePath: nil,
+                    fileName: nil,
+                    fileSize: nil,
+                    kind: nil,
                 )
                 try? store.upsert(messages: [real])
                 try? store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))

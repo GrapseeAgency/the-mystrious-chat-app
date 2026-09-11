@@ -81,7 +81,13 @@ interface PulseRepository {
     suspend fun createGroup(name: String, memberIds: List<String>): Result<Conversation>
 
     suspend fun me(): User?
-    suspend fun sendMessage(conversationId: String, body: String, replyToId: String?): Result<Message>
+    suspend fun sendMessage(
+        conversationId: String,
+        body: String,
+        replyToId: String? = null,
+        /** Thread reply: the THREAD ROOT id — never conflated with replyToId (spec §1.1). */
+        parentId: String? = null,
+    ): Result<Message>
     suspend fun markRead(conversationId: String): Result<Unit>
     suspend fun setTyping(conversationId: String, userName: String, typing: Boolean)
     suspend fun react(messageId: String, emoji: String): Result<Unit>
@@ -161,4 +167,42 @@ interface PulseRepository {
 
     /** Live draft text for the composer restore (null when none). */
     fun observeDraft(conversationId: String): Flow<String?>
+
+    // ── Wave 1 messaging surface (spec WAVE1 §1.1 — all routes exist on the wire) ──
+
+    /** PATCH /api/messages/{id} {userId, content} — sender-only edit → fresh row (editedAt set). */
+    suspend fun editMessage(messageId: String, content: String): Result<Message>
+
+    /** POST /api/messages/{id}/pin {userId} — toggle → fresh row (pinnedAt/pinnedBy). */
+    suspend fun toggleMessagePin(messageId: String): Result<Message>
+
+    /** POST /api/messages/{id}/save {userId} — toggle → the new saved state. */
+    suspend fun toggleMessageSave(messageId: String): Result<Boolean>
+
+    /** GET /api/conversations/{id}/pinned?userId= — pinned rows, pinnedAt asc (also upserts Room). */
+    suspend fun pinnedMessages(conversationId: String): List<Message>
+
+    /** GET /api/messages/{id}/thread?userId= → (parent, replies asc) — also upserts Room. */
+    suspend fun loadThread(rootId: String): Pair<Message, List<Message>>
+
+    /**
+     * GET /api/conversations/{id}/messages?limit=&before= → (rows asc, hasMore).
+     * Older page of the timeline; rows are upserted into Room (pagination merge).
+     */
+    suspend fun messagesPage(conversationId: String, before: String?, limit: Int = 40): Pair<List<Message>, Boolean>
+
+    /** GET /api/conversations/{id}/messages?limit=100&q= — in-conversation search (hits upserted). */
+    suspend fun searchInConversation(conversationId: String, query: String): List<Message>
+
+    /** POST /api/uploads {dataUrl} → the stored filePath (media send URLs ride it). */
+    suspend fun uploadMedia(dataUrl: String): Result<String>
+
+    /** Forward = re-POST the source's content + media fields into the target conversation. */
+    suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message>
+
+    /** PATCH /api/conversations/{id}/draft {userId, draft} — server mirror, fire-and-forget silent fail. */
+    suspend fun setServerDraft(conversationId: String, draft: String)
+
+    /** GET /api/conversations/{id}?userId= — detail incl. members (read watermarks); upserts Room. */
+    suspend fun conversationDetail(conversationId: String): Result<Conversation>
 }

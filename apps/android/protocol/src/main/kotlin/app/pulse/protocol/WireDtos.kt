@@ -79,6 +79,33 @@ data class MessagesPageDto(
     val total: Int = 0,
 )
 
+/** GET /api/messages/{id}/thread?userId= → { parent, replies } (replies ascending). */
+@Serializable
+data class ThreadPageDto(
+    val parent: ChatMessageDto? = null,
+    val replies: List<ChatMessageDto> = emptyList(),
+)
+
+/** GET /api/conversations/{id}/pinned?userId= → { messages } (pinnedAt ascending). */
+@Serializable
+data class PinnedPageDto(
+    val messages: List<ChatMessageDto> = emptyList(),
+)
+
+/** POST /api/messages/{id}/save { userId } → { saved } (per-user toggle). */
+@Serializable
+data class SavedToggleDto(
+    val saved: Boolean = false,
+)
+
+/** POST /api/uploads { dataUrl } → 201 { filePath, imagePath } — NOT multipart. */
+@Serializable
+data class UploadResultDto(
+    val filePath: String? = null,
+    /** Legacy alias the image flow uses — same value as filePath for images. */
+    val imagePath: String? = null,
+)
+
 @Serializable
 data class ConversationMemberDto(
     val id: String,

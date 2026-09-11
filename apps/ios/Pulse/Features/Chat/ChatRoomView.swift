@@ -512,9 +512,11 @@ final class RoomViewModel: ObservableObject {
                           let message = PulseSession.decodeMessage(from: raw) else { return }
                     upsert(message)
                     try? session.store?.upsert(messages: [message])
-                case .messageRead(let convId, let userId):
+                case .messageRead(let convId, let userId, let lastReadAt):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
-                    partnerLastReadAt = Date()
+                    // W1-DATA-B — trust the relayed watermark when present;
+                    // fall back to "now" (older relays / clock-safety).
+                    partnerLastReadAt = lastReadAt.flatMap { PulseFormat.date($0) } ?? Date()
                 case .typing(let convId, let userId, let userName, let isTyping):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
                     var bucket = typers.filter { $0.userId != userId }
@@ -715,6 +717,7 @@ final class RoomViewModel: ObservableObject {
             durationMs: nil,
             filePath: nil,
             fileName: nil,
+            fileSize: nil,
             pinnedAt: nil,
             viewOnce: nil,
             anon: nil,

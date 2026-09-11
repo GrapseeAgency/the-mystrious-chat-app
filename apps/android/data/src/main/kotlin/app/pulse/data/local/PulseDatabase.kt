@@ -1,5 +1,6 @@
 package app.pulse.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -12,6 +13,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.Message
 import kotlinx.coroutines.flow.Flow
 
@@ -23,6 +25,10 @@ import kotlinx.coroutines.flow.Flow
  * v4 (Wave 0) adds the offline core WITHOUT touching v3 rows: the FIFO
  * `outbox` (queued sends) and the per-conversation `draft` table — migrated
  * non-destructively (MIGRATION_3_4).
+ * v5 (Wave 1) adds the messaging-surface columns: message media
+ * (imagePath/audioPath/filePath/fileName/fileSize/viewOnce) and the
+ * conversation `membersJson` (id/name/color/lastReadAt/role per member —
+ * powers read ticks + the info sheet) — all additive (MIGRATION_4_5).
  */
 @Entity(tableName = "conversations")
 data class ConversationEntity(
@@ -56,6 +62,7 @@ data class ConversationEntity(
     val mutedUntilEpoch: Long,
     val otherUserId: String?,
     val isChannel: Boolean,
+    @ColumnInfo(defaultValue = "[]") val membersJson: String = "[]",
 ) {
     fun toDomain() = Conversation(
         id = id,
@@ -71,6 +78,7 @@ data class ConversationEntity(
         isArchived = isArchived,
         memberIds = memberIdsCsv.split(',').filter { it.isNotBlank() },
         memberNames = memberNamesCsv.split(',').filter { it.isNotBlank() },
+        members = membersOf(membersJson),
         accentColor = accentColor,
         streakCount = streakCount,
         myDraft = myDraft,
@@ -118,9 +126,21 @@ data class ConversationEntity(
             mutedUntilEpoch = m.mutedUntilEpoch,
             otherUserId = m.otherUserId,
             isChannel = m.isChannel,
+            membersJson = app.pulse.protocol.PulseJson.encodeToString(
+                kotlinx.serialization.builtins.ListSerializer(ConversationMember.serializer()),
+                m.members,
+            ),
         )
     }
 }
+
+/** membersJson ⇄ domain members (tolerant: corrupt JSON degrades to empty). */
+private fun membersOf(json: String): List<ConversationMember> = runCatching {
+    app.pulse.protocol.PulseJson.decodeFromString(
+        kotlinx.serialization.builtins.ListSerializer(ConversationMember.serializer()),
+        json,
+    )
+}.getOrDefault(emptyList())
 
 @Entity(tableName = "messages")
 data class MessageEntity(
@@ -142,6 +162,13 @@ data class MessageEntity(
     val senderColor: String?,
     val viaAutomation: Boolean,
     val durationMs: Long?,
+    // Wave 1 media columns (v5) — nullable TEXT / INTEGER, viewOnce render gate.
+    val imagePath: String?,
+    val audioPath: String?,
+    val filePath: String?,
+    val fileName: String?,
+    val fileSize: Long?,
+    @ColumnInfo(defaultValue = "0") val viewOnce: Boolean = false,
 ) {
     fun toDomain(): Message {
         val reactionDtos = reactionsJson?.let { json ->
@@ -161,6 +188,8 @@ data class MessageEntity(
             replyToId = replyToId, threadRootId = threadRootId, pinnedAt = pinnedAt,
             reactions = reactions, replyToBody = replyToBody, replyToAuthor = replyToAuthor,
             senderColor = senderColor, viaAutomation = viaAutomation, durationMs = durationMs,
+            imagePath = imagePath, audioPath = audioPath, filePath = filePath,
+            fileName = fileName, fileSize = fileSize, viewOnce = viewOnce,
         )
     }
 
@@ -173,6 +202,8 @@ data class MessageEntity(
             reactionsJson = reactionsJson, replyToBody = m.replyToBody,
             replyToAuthor = m.replyToAuthor, senderColor = m.senderColor,
             viaAutomation = m.viaAutomation, durationMs = m.durationMs,
+            imagePath = m.imagePath, audioPath = m.audioPath, filePath = m.filePath,
+            fileName = m.fileName, fileSize = m.fileSize, viewOnce = m.viewOnce,
         )
     }
 }
@@ -249,6 +280,13 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
+    /** Thread screen rehydration — replies asc from the Room cache. */
+    @Query("SELECT * FROM messages WHERE threadRootId = :rootId ORDER BY createdAt ASC")
+    fun observeThread(rootId: String): Flow<List<MessageEntity>>
+
+    @Query("SELECT COUNT(*) FROM messages WHERE threadRootId = :rootId")
+    suspend fun countByThread(rootId: String): Int
+
     @Query("SELECT * FROM messages WHERE id = :id")
     suspend fun byId(id: String): MessageEntity?
 
@@ -316,7 +354,7 @@ interface DraftDao {
         OutboxEntity::class,
         DraftEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -346,6 +384,24 @@ abstract class PulseDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `draft` (`conversationId` TEXT NOT NULL, `text` TEXT NOT NULL, " +
                         "`updatedAt` TEXT NOT NULL, PRIMARY KEY(`conversationId`))",
                 )
+            }
+        }
+
+        /**
+         * v4 → v5 (Wave 1): message media columns + conversation membersJson.
+         * All ADD COLUMNs — every v4 row survives; NOT NULL columns carry
+         * defaults so old rows backfill (viewOnce=0, members='[]').
+         * DDL mirrors Room's generated schema exactly (see schemas/5.json).
+         */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `imagePath` TEXT")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `audioPath` TEXT")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `filePath` TEXT")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `fileName` TEXT")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `fileSize` INTEGER")
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `viewOnce` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `conversations` ADD COLUMN `membersJson` TEXT NOT NULL DEFAULT '[]'")
             }
         }
     }

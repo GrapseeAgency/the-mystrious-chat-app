@@ -8,6 +8,11 @@ import GRDB
 /// (per-conversation composer state), mirroring Android Room v4 and the web
 /// outbox/drafts stores. v1 stays untouched (non-destructive GRDB migrator
 /// applies v1 → v2 in order on any database).
+/// W1-DATA-B v3 — full-fidelity message cache (mirrors Android Room v5 / spec
+/// §3): the message table gains parentId (THREAD ROOT — replyToId keeps the
+/// inline-quote id), the media columns, editedAt/deletedAt, reactionsJson
+/// (grouped [{emoji,userIds}] parity) and senderColor. `upsert(messages:)`
+/// persists ALL of them — the lossy v2 cache is over.
 public final class PulseStore: Sendable {
     private let dbQueue: DatabaseQueue
 
@@ -68,6 +73,23 @@ public final class PulseStore: Sendable {
                 t.column("updatedAt", .text).notNull()
             }
         }
+        m.registerMigration("v3") { db in
+            // W1-DATA-B — additive ALTERs only (spec §3): threads, media,
+            // edit/delete tombstones, grouped reactions, sender color.
+            try db.alter(table: "message") { t in
+                t.add(column: "parentId", .text)
+                t.add(column: "imagePath", .text)
+                t.add(column: "audioPath", .text)
+                t.add(column: "durationMs", .real)
+                t.add(column: "filePath", .text)
+                t.add(column: "fileName", .text)
+                t.add(column: "fileSize", .integer)
+                t.add(column: "editedAt", .text)
+                t.add(column: "deletedAt", .text)
+                t.add(column: "reactionsJson", .text).notNull().defaults(to: "[]")
+                t.add(column: "senderColor", .text)
+            }
+        }
         return m
     }
 
@@ -110,25 +132,38 @@ public final class PulseStore: Sendable {
         }
     }
 
-    // ── message cache (N3-b — room offline-first seed) ──────
+    // ── message cache (N3-b — room offline-first seed; v3 full fidelity) ──
     public func upsert(messages: [WireChatMessage]) throws {
         try dbQueue.write { db in
             for m in messages {
                 try db.execute(
                     sql: """
                     INSERT INTO message (id, conversationId, authorId, authorName, kind, body,
-                                         createdAt, replyToId, pinnedAt)
+                                         createdAt, replyToId, pinnedAt, parentId, imagePath,
+                                         audioPath, durationMs, filePath, fileName, fileSize,
+                                         editedAt, deletedAt, reactionsJson, senderColor)
                     VALUES (:id, :conversationId, :authorId, :authorName, :kind, :body,
-                            :createdAt, :replyToId, :pinnedAt)
+                            :createdAt, :replyToId, :pinnedAt, :parentId, :imagePath,
+                            :audioPath, :durationMs, :filePath, :fileName, :fileSize,
+                            :editedAt, :deletedAt, :reactionsJson, :senderColor)
                     ON CONFLICT(id) DO UPDATE SET
-                      authorName=:authorName, kind=:kind, body=:body,
-                      pinnedAt=:pinnedAt
+                      authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt,
+                      parentId=:parentId, imagePath=:imagePath, audioPath=:audioPath,
+                      durationMs=:durationMs, filePath=:filePath, fileName=:fileName,
+                      fileSize=:fileSize, editedAt=:editedAt, deletedAt=:deletedAt,
+                      reactionsJson=:reactionsJson, senderColor=:senderColor
                     """,
                     arguments: [
                         "id": m.id, "conversationId": m.conversationId, "authorId": m.senderId,
                         "authorName": m.sender?.name ?? "", "kind": m.kind, "body": m.content,
-                        "createdAt": m.createdAt, "replyToId": m.replyTo?.id ?? m.parentId,
-                        "pinnedAt": m.pinnedAt,
+                        "createdAt": m.createdAt, "replyToId": m.replyTo?.id,
+                        "pinnedAt": m.pinnedAt, "parentId": m.parentId,
+                        "imagePath": m.imagePath, "audioPath": m.audioPath,
+                        "durationMs": m.durationMs, "filePath": m.filePath,
+                        "fileName": m.fileName, "fileSize": m.fileSize,
+                        "editedAt": m.editedAt, "deletedAt": m.deletedAt,
+                        "reactionsJson": Self.reactionsJsonData(m.reactions),
+                        "senderColor": m.sender?.color,
                     ],
                 )
             }
@@ -152,8 +187,41 @@ public final class PulseStore: Sendable {
         return rows.compactMap(Self.messageRow(from:))
     }
 
-    /// Rehydrate a wire-ish message from a cached row (sender/reactions are
-    /// not cached; bubbles fall back to authorName + member color).
+    /// Thread replies for one root, oldest → newest (v3 parentId column —
+    /// replyToId keeps the inline-quote id and is never mixed in).
+    public func messages(threadRootId: String, limit: Int = 300) throws -> [WireChatMessage] {
+        let rows = try dbQueue.read { db in
+            try Row.fetchAll(
+                db,
+                sql: "SELECT * FROM message WHERE parentId = :root ORDER BY createdAt ASC LIMIT :limit",
+                arguments: ["root": threadRootId, "limit": limit],
+            )
+        }
+        return rows.compactMap(Self.messageRow(from:))
+    }
+
+    /// Reply counts per cached thread root — one query powers every river
+    /// "N replies" chip (no per-thread COUNT round-trips).
+    public func threadReplyCounts() throws -> [String: Int] {
+        try dbQueue.read { db in
+            var counts: [String: Int] = [:]
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT parentId, COUNT(*) AS replyCount FROM message WHERE parentId IS NOT NULL GROUP BY parentId",
+            )
+            for row in rows {
+                if let root: String = row["parentId"] {
+                    let count: Int = row["replyCount"] ?? 0
+                    counts[root] = count
+                }
+            }
+            return counts
+        }
+    }
+
+    /// Rehydrate a wire-ish message from a cached row (v3 full fidelity:
+    /// thread root, media, edit/delete stamps and grouped reactions all
+    /// round-trip; only the sender OBJECT is reduced to name + color).
     private static func messageRow(from row: Row) -> WireChatMessage? {
         guard let id: String = row["id"],
               let conversationId: String = row["conversationId"],
@@ -162,18 +230,47 @@ public final class PulseStore: Sendable {
               let body: String = row["body"],
               let createdAt: String = row["createdAt"] else { return nil }
         let authorName: String? = row["authorName"]
-        let replyToId: String? = row["replyToId"]
         let pinnedAt: String? = row["pinnedAt"]
+        let parentId: String? = row["parentId"]
+        let imagePath: String? = row["imagePath"]
+        let audioPath: String? = row["audioPath"]
+        let durationMs: Double? = row["durationMs"]
+        let filePath: String? = row["filePath"]
+        let fileName: String? = row["fileName"]
+        let fileSize: Int? = row["fileSize"]
+        let editedAt: String? = row["editedAt"]
+        let deletedAt: String? = row["deletedAt"]
+        let senderColor: String? = row["senderColor"]
+        let decodedReactions = Self.reactions(fromJson: row["reactionsJson"])
         return WireChatMessage(
             id: id, conversationId: conversationId, senderId: authorId,
             content: body, kind: kind, createdAt: createdAt,
-            editedAt: nil, deletedAt: nil,
-            sender: authorName.map { WireSender(id: authorId, name: $0, username: nil, color: nil, avatar: nil) },
-            reactions: nil, replyTo: nil, parentId: replyToId,
-            imagePath: nil, audioPath: nil, durationMs: nil,
-            filePath: nil, fileName: nil, pinnedAt: pinnedAt,
-            viewOnce: nil, anon: nil, anonAlias: nil,
+            editedAt: editedAt, deletedAt: deletedAt,
+            sender: authorName.map {
+                WireSender(id: authorId, name: $0, username: nil, color: senderColor, avatar: nil)
+            },
+            reactions: decodedReactions.isEmpty ? nil : decodedReactions, replyTo: nil, parentId: parentId,
+            imagePath: imagePath, audioPath: audioPath, durationMs: durationMs,
+            filePath: filePath, fileName: fileName, fileSize: fileSize,
+            pinnedAt: pinnedAt, viewOnce: nil, anon: nil, anonAlias: nil,
         )
+    }
+
+    // ── reactionsJson codec (v3 cache column ⇄ grouped wire reactions) ──
+
+    /// [WireReactionGroup] → column text ("[]" for nil/empty — the v3 column
+    /// default keeps NOT NULL satisfied for rows written before a reaction).
+    static func reactionsJsonData(_ groups: [WireReactionGroup]?) -> String {
+        guard let groups, !groups.isEmpty,
+              let data = try? JSONEncoder().encode(groups) else { return "[]" }
+        return String(data: data, encoding: .utf8) ?? "[]"
+    }
+
+    /// Column text → [WireReactionGroup]; anything unreadable is an empty
+    /// list (a corrupt cache row must never crash the read path).
+    static func reactions(fromJson json: String?) -> [WireReactionGroup] {
+        guard let json, !json.isEmpty, let data = json.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([WireReactionGroup].self, from: data)) ?? []
     }
 
     // ── outbox (Wave 0 — queued sends, web pulse-outbox parity) ──

@@ -57,9 +57,10 @@ object DataModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): PulseDatabase =
         Room.databaseBuilder(context, PulseDatabase::class.java, PulseDatabase.NAME)
-            // Wave 0: destructive migration is GONE — v3 → v4 is additive
-            // (outbox + draft tables) and deployed v3 rows must survive.
-            .addMigrations(PulseDatabase.MIGRATION_3_4)
+            // Destructive migration is GONE — v3→v4 (outbox + draft) and
+            // v4→v5 (message media + membersJson) are additive ALTER/CREATEs;
+            // every deployed row must survive.
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5)
             .build()
 
     @Provides
