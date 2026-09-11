@@ -2377,3 +2377,22 @@ Work Log:
 
 Stage Summary:
 - Both platforms' Wave 1 UI complete. Android: locally compile+test+assemble verified. iOS: compile gate = CI (careful self-review done). E2E 27/27 live. Next: push → CI fix loop → release + report.
+
+---
+Task ID: W1-CI (orchestrator)
+Agent: orchestrator (Z.ai Code)
+Task: Push → CI fix loop → both platforms green on Wave 1 tree.
+
+Work Log:
+- Pushed Wave 1 (bd9267c → … → 46f449c). CI fix loop, every round root-caused from runner logs:
+  - R1 (197572d): iOS `PhotosPickerItem` unresolved → PhotosUI import missing in ChatRoomView.
+  - R2 (2332ee5): iOS WireChatMessage not Identifiable (sheet(item:)) → conformance added; type-check timeout → RoomMessageRow extraction; TempMessages @MainActor (PulseOutboxEngine.tempMessageId is MainActor-static); jumpTo weak-session unwrap. Android :app:mergeExtDexRelease D8 OutOfMemoryError (GC overhead) — Coil pushed ext-dex merge over 1200m → gradle.properties heap 2048m.
+  - R3 (fd8c0f7): RoomMigrationTest v3 case "A migration from 3 to 5 was required but not found" — compiled schema is v5 now → test builder needs MIGRATION_3_4 + MIGRATION_4_5 (real user path). iOS openLightbox URL? unwrap.
+  - R4/R5 (f077940, 5b2ff1e): Section generic-V — chased twice (hoisted title, header closure) — RED HERRINGS.
+  - R6 (46f449c): REAL root cause — PulseAvatar init is (name:color:photoURL:online:size:), MessageInfoSheet used nonexistent colorHex: label → Section content poisoned → generic-V. Fixed to PulseTheme.color(named:). LESSON: generic-parameter inference errors in SwiftUI point at a poisoned child expression — find the wrong SIGNATURE, not the Section.
+- ANDROID CI GREEN @fd8c0f7: build (JVM tests incl. real relay round-trip + signed release APK v11/0.3.0-native) + instrumented (emulator: launch smoke + Room v3→v4→v5 migration + outbox/draft DAO round-trips).
+- IOS CI GREEN @46f449c: build-test (33 tests, 0 failures, 3 skipped: 2 keychain = sandbox-by-design; 1 SocketRoundTrip = honest XCTSkip — fixture WAS healthy on the runner, probe skipped; same test passed on Wave 0 tree; realtime covered by Android relay test + 27/27 live E2E) + launch smoke + unsigned archive.
+- Live E2E gate 27/27 (previous entry).
+
+Stage Summary:
+- Both platforms CI-green on the Wave 1 tree. Next: tag v0.3.0-native → tag CI → auto-release + forensic + CDN + report.
