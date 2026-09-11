@@ -707,7 +707,8 @@ private struct MessageInfoSheet: View {
                         }
                     }
                 }
-                Section("\(seenBy.count) seen") {
+                let seenTitle = "\(seenBy.count) seen"
+                Section(seenTitle) {
                     if seenBy.isEmpty {
                         Text("Nobody has seen this message yet")
                             .font(.footnote)
@@ -1694,7 +1695,7 @@ final class RoomViewModel: ObservableObject {
     /// surface an honest inline error and keep the staged card for retry.
     func sendStaged(session: PulseSession) {
         guard let media = staged, !uploading else { return }
-        guard let viewer = session.viewer else {
+        guard session.viewer != nil else {
             errorText = "The gateway is unreachable."
             return
         }
