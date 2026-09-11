@@ -53,6 +53,116 @@ struct ChatRoomView: View {
     }
 }
 
+/// One river row — day chip + bubble + context menu + pagination trigger.
+/// Extracted from RoomContent so the Swift type-checker sees a bounded
+/// expression (Wave 1 row carries media/thread/flash wiring).
+private struct RoomMessageRow: View {
+    let index: Int
+    let previous: WireChatMessage?
+    let message: WireChatMessage
+    @ObservedObject var session: PulseSession
+    let conversation: WireConversationSummary
+    @ObservedObject var viewModel: RoomViewModel
+    let colorOf: (String) -> Color
+    let onOpenImage: (WireChatMessage) -> Void
+    let onOpenFile: (WireChatMessage) -> Void
+    let onOpenThread: (WireChatMessage) -> Void
+    let onForward: (WireChatMessage) -> Void
+    let onInfo: (WireChatMessage) -> Void
+
+    var body: some View {
+        Group {
+            // Day chip when the calendar day changes between rows.
+            if index == 0 || PulseFormat.dayLabel(previous?.createdAt) != PulseFormat.dayLabel(message.createdAt) {
+                CapsuleLabel(PulseFormat.dayLabel(message.createdAt))
+                    .padding(.vertical, 4)
+            }
+            BubbleView(
+                message: message,
+                mine: message.senderId == session.viewer?.id,
+                groupChat: conversation.isGroup,
+                viewerColor: { colorOf(message.senderId) },
+                seen: viewModel.isSeen(message),
+                flashing: viewModel.flashMessageId == message.id,
+                replyCount: viewModel.replyCount(for: message),
+                onOpenImage: onOpenImage,
+                onOpenFile: onOpenFile,
+                onOpenThread: onOpenThread,
+            )
+            .contextMenu { contextMenu }
+            .onAppear {
+                // Oldest rendered row reaching the viewport = page older
+                // history (the VM gates reentrancy/hasMore).
+                if index == 0 {
+                    viewModel.loadOlder(session: session)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var contextMenu: some View {
+        ForEach(ReactionPalette.emojis, id: \.self) { emoji in
+            Button {
+                viewModel.react(message, emoji: emoji, session: session)
+            } label: {
+                Text(emoji)
+            }
+        }
+        Button {
+            viewModel.beginReply(to: message)
+        } label: {
+            Label("Reply", systemImage: "arrowshape.turn.up.left.fill")
+        }
+        if message.parentId == nil {
+            Button {
+                onOpenThread(message)
+            } label: {
+                Label("Reply in thread", systemImage: "bubble.left.and.bubble.right.fill")
+            }
+        }
+        if message.senderId == session.viewer?.id && message.kind == "text" && message.deletedAt == nil {
+            Button {
+                viewModel.beginEdit(message)
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+        }
+        Button {
+            UIPasteboard.general.string = message.content
+        } label: {
+            Label("Copy", systemImage: "doc.on.doc.fill")
+        }
+        Button {
+            viewModel.togglePin(message, session: session)
+        } label: {
+            Label(message.pinnedAt == nil ? "Pin" : "Unpin", systemImage: "pin")
+        }
+        Button {
+            viewModel.toggleSave(message, session: session)
+        } label: {
+            Label("Save", systemImage: "bookmark")
+        }
+        Button {
+            onForward(message)
+        } label: {
+            Label("Forward", systemImage: "arrowshape.turn.up.right.fill")
+        }
+        if message.senderId == session.viewer?.id && message.deletedAt == nil {
+            Button(role: .destructive) {
+                viewModel.delete(message, session: session)
+            } label: {
+                Label("Delete", systemImage: "trash.fill")
+            }
+        }
+        Button {
+            onInfo(message)
+        } label: {
+            Label("Info", systemImage: "info.circle")
+        }
+    }
+}
+
 private struct RoomContent: View {
     let conversation: WireConversationSummary
     @ObservedObject var session: PulseSession
@@ -289,34 +399,22 @@ private struct RoomContent: View {
                             .padding(.top, 40)
                     }
                     ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
-                        // Day chip when the calendar day changes between rows.
-                        if index == 0 || PulseFormat.dayLabel(viewModel.messages[index - 1].createdAt) != PulseFormat.dayLabel(message.createdAt) {
-                            CapsuleLabel(PulseFormat.dayLabel(message.createdAt))
-                                .padding(.vertical, 4)
-                        }
-                        BubbleView(
+                        // Type-check split: each row is its own view (Wave 1
+                        // row carries media/thread/flash wiring).
+                        RoomMessageRow(
+                            index: index,
+                            previous: index == 0 ? nil : viewModel.messages[index - 1],
                             message: message,
-                            mine: message.senderId == session.viewer?.id,
-                            groupChat: conversation.isGroup,
-                            viewerColor: { colorOf(senderId: message.senderId) },
-                            seen: viewModel.isSeen(message),
-                            flashing: viewModel.flashMessageId == message.id,
-                            replyCount: viewModel.replyCount(for: message),
-                            onOpenImage: { lightbox = MediaLightboxTarget(
-                                url: PulseMediaOpener.url(for: message),
-                                caption: message.content,
-                            ) },
-                            onOpenFile: { openFile(message) },
+                            session: session,
+                            conversation: conversation,
+                            viewModel: viewModel,
+                            colorOf: colorOf,
+                            onOpenImage: { openLightbox($0) },
+                            onOpenFile: { openFile($0) },
                             onOpenThread: { threadRoot = $0 },
+                            onForward: { forwardSource = $0 },
+                            onInfo: { infoTarget = $0 },
                         )
-                        .contextMenu { contextMenu(for: message) }
-                        .onAppear {
-                            // Oldest rendered row reaching the viewport = page
-                            // older history (the VM gates reentrancy/hasMore).
-                            if index == 0 {
-                                viewModel.loadOlder(session: session)
-                            }
-                        }
                     }
                     if viewModel.loadingOlder && !viewModel.messages.isEmpty {
                         ProgressView()
@@ -353,6 +451,13 @@ private struct RoomContent: View {
         }
     }
 
+    private func openLightbox(_ message: WireChatMessage) {
+        lightbox = MediaLightboxTarget(
+            url: PulseMediaOpener.url(for: message),
+            caption: message.content,
+        )
+    }
+
     private func openFile(_ message: WireChatMessage) {
         guard let url = PulseMediaOpener.url(for: message) else { return }
         Task {
@@ -362,68 +467,6 @@ private struct RoomContent: View {
             } catch {
                 session.toasts.show("Couldn't download the file")
             }
-        }
-    }
-
-    @ViewBuilder
-    private func contextMenu(for message: WireChatMessage) -> some View {
-        ForEach(ReactionPalette.emojis, id: \.self) { emoji in
-            Button {
-                viewModel.react(message, emoji: emoji, session: session)
-            } label: {
-                Text(emoji)
-            }
-        }
-        Button {
-            viewModel.beginReply(to: message)
-        } label: {
-            Label("Reply", systemImage: "arrowshape.turn.up.left.fill")
-        }
-        if message.parentId == nil {
-            Button {
-                threadRoot = message
-            } label: {
-                Label("Reply in thread", systemImage: "bubble.left.and.bubble.right.fill")
-            }
-        }
-        if message.senderId == session.viewer?.id && message.kind == "text" && message.deletedAt == nil {
-            Button {
-                viewModel.beginEdit(message)
-            } label: {
-                Label("Edit", systemImage: "pencil")
-            }
-        }
-        Button {
-            UIPasteboard.general.string = message.content
-        } label: {
-            Label("Copy", systemImage: "doc.on.doc.fill")
-        }
-        Button {
-            viewModel.togglePin(message, session: session)
-        } label: {
-            Label(message.pinnedAt == nil ? "Pin" : "Unpin", systemImage: "pin")
-        }
-        Button {
-            viewModel.toggleSave(message, session: session)
-        } label: {
-            Label("Save", systemImage: "bookmark")
-        }
-        Button {
-            forwardSource = message
-        } label: {
-            Label("Forward", systemImage: "arrowshape.turn.up.right.fill")
-        }
-        if message.senderId == session.viewer?.id && message.deletedAt == nil {
-            Button(role: .destructive) {
-                viewModel.delete(message, session: session)
-            } label: {
-                Label("Delete", systemImage: "trash.fill")
-            }
-        }
-        Button {
-            infoTarget = message
-        } label: {
-            Label("Info", systemImage: "info.circle")
         }
     }
 
@@ -1237,6 +1280,7 @@ final class RoomViewModel: ObservableObject {
         if messages.contains(where: { $0.id == messageId }) {
             scrollAndFlash(messageId)
         } else {
+            guard let session = session else { return }
             Task { await expandForJump(messageId, session: session, rounds: 0) }
         }
     }
@@ -1701,6 +1745,8 @@ final class RoomViewModel: ObservableObject {
 /// Optimistic temp-row factory shared by the river AND thread sends —
 /// id `local_<clientId>` (Wave 0 convention), viewer sender, quote block,
 /// optional thread parent. Real rows replace it by id + content dedupe.
+/// @MainActor: builds on PulseOutboxEngine.tempMessageId (MainActor-static).
+@MainActor
 enum TempMessages {
     static func make(
         conversationId: String,

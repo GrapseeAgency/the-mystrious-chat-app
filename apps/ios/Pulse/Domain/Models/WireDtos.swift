@@ -125,7 +125,7 @@ public struct WireMessageEnvelope: Codable, Sendable {
     }
 }
 
-public struct WireChatMessage: Codable, Hashable, Sendable {
+public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let conversationId: String
     public let senderId: String
