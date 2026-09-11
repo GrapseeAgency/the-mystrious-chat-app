@@ -424,14 +424,17 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertNil(legacy.linkPreview)
         XCTAssertNil(legacy.poll)
 
-        // Full-fidelity row: every v4 column round-trips through GRDB.
+        // Full-fidelity row: every v4 COLUMN round-trips through GRDB.
+        // viewedAt/transcript/transcribedAt/pollJson/linkPreviewJson/topicId
+        // are real columns; viewedBy + linkUrl are NOT cached (they ride the
+        // next authoritative wire row — v4 store contract, PulseStore.messageRow).
         let rich = try XCTUnwrap(rows.first { $0.id == "v4-poll" })
         XCTAssertEqual(rich.viewedAt, "2026-09-08T12:01:00.000Z")
-        XCTAssertEqual(rich.viewedBy, "u9")
+        XCTAssertNil(rich.viewedBy)
         XCTAssertEqual(rich.transcript, "spoken words")
         XCTAssertEqual(rich.transcribedAt, "2026-09-08T12:02:00.000Z")
         XCTAssertEqual(rich.topicId, "topic-1")
-        XCTAssertEqual(rich.linkUrl, "https://example.com")
+        XCTAssertNil(rich.linkUrl)
         XCTAssertEqual(rich.linkPreview?.url, "https://example.com")
         XCTAssertEqual(rich.linkPreview?.title, "Example Domain")
         XCTAssertEqual(rich.linkPreview?.imageUrl, "https://example.com/og.png")
