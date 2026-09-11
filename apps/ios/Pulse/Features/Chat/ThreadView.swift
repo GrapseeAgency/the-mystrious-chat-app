@@ -19,6 +19,9 @@ struct ThreadView: View {
     @State private var draft = ""
     @State private var sending = false
     @State private var errorText: String?
+    // Wave 2 view-once — threads reuse the same gate/burn bubble; the reveal
+    // opens the lightbox right here (the sheet owns its cover).
+    @State private var lightbox: MediaLightboxTarget?
     @FocusState private var composerFocused: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -62,6 +65,9 @@ struct ThreadView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .fullScreenCover(item: $lightbox) { target in
+            MediaLightboxView(url: target.url, caption: target.caption)
+        }
         .task { await load() }
         .onReceive(session.signals) { handle(signal: $0) }
     }
@@ -98,6 +104,8 @@ struct ThreadView: View {
                 mine: parentMessage.senderId == viewerId,
                 groupChat: conversation.isGroup,
                 viewerColor: { colorOf(senderId: parentMessage.senderId) },
+                viewerId: viewerId,
+                onViewOnceOpen: { message in revealViewOnce(message) },
             )
             .padding(.bottom, 4)
             ForEach(Array(replies.enumerated()), id: \.element.id) { index, reply in
@@ -113,7 +121,31 @@ struct ThreadView: View {
                     mine: reply.senderId == viewerId,
                     groupChat: conversation.isGroup,
                     viewerColor: { colorOf(senderId: reply.senderId) },
+                    viewerId: viewerId,
+                    onViewOnceOpen: { message in revealViewOnce(message) },
                 )
+            }
+        }
+    }
+
+    /// Wave 2 view-once in threads — instant reveal (web parity), then the
+    /// idempotent burn stamp; the relayed envelope reconciles the rest.
+    private func revealViewOnce(_ message: WireChatMessage) {
+        guard message.viewOnce == true,
+              message.senderId != viewerId,
+              message.viewedAt == nil,
+              let url = PulseMediaOpener.url(for: message) else { return }
+        lightbox = MediaLightboxTarget(url: url, caption: message.content)
+        guard let viewer = session.viewer else { return }
+        Task {
+            if let fresh = try? await session.api.markViewed(messageId: message.id, userId: viewer.id) {
+                try? session.store?.upsert(messages: [fresh])
+                if let index = replies.firstIndex(where: { $0.id == fresh.id }) {
+                    replies[index] = fresh
+                }
+                if parent?.id == fresh.id {
+                    parent = fresh
+                }
             }
         }
     }

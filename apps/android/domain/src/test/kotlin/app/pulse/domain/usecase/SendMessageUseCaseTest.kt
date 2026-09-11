@@ -36,6 +36,7 @@ class SendMessageUseCaseTest {
             body: String,
             replyToId: String?,
             parentId: String?,
+            topicId: String?,
         ): Result<Message> {
             val m = Message(
                 id = "m1", conversationId = conversationId, authorId = "a", authorName = "n",
@@ -117,10 +118,14 @@ class SendMessageUseCaseTest {
             conversationId: String,
             body: String,
             imagePath: String?,
+            audioPath: String?,
+            durationMs: Long?,
             filePath: String?,
             fileName: String?,
             fileSize: Long?,
             kind: String?,
+            viewOnce: Boolean?,
+            topicId: String?,
         ): Result<Message> {
             val m = Message(
                 id = "m-media", conversationId = conversationId, authorId = "a", authorName = "n",

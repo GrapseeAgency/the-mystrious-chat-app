@@ -42,6 +42,9 @@ public final class PulseSession: ObservableObject {
     /// Chats tab's NavigationStack (the dock lives above the shell, the stack
     /// lives inside ChatsView — this is the bridge, same pattern as search).
     @Published public private(set) var pendingOpenRoom: WireConversationSummary?
+    /// Wave 2 saved library — jump-to-message handoff consumed by ChatsView
+    /// together with pendingOpenRoom (the SAME path search hits already use).
+    @Published public private(set) var pendingJumpMessageId: String?
     /// Opened on session start (nil before onboarding) — @Published so late
     /// view models can rehydrate the offline cache the moment it exists.
     @Published public private(set) var store: PulseStore?
@@ -201,12 +204,19 @@ public final class PulseSession: ObservableObject {
     /// Dock compose / More → Saved — hand a conversation to the Chats tab to
     /// push onto its NavigationStack. Consumers must call `consumePendingOpenRoom()`
     /// when received (the published value also replays on re-subscription).
-    public func requestOpenRoom(_ conversation: WireConversationSummary) {
+    /// Wave 2 — `jumpMessageId` rides along so the room scrolls to + flashes
+    /// that message (saved-library "open original", spec §1 row 14).
+    public func requestOpenRoom(_ conversation: WireConversationSummary, jumpMessageId: String? = nil) {
+        pendingJumpMessageId = jumpMessageId
         pendingOpenRoom = conversation
     }
 
     public func consumePendingOpenRoom() {
         pendingOpenRoom = nil
+    }
+
+    public func consumePendingJumpMessageId() {
+        pendingJumpMessageId = nil
     }
 
     public func typers(in conversationId: String, excluding userId: String?) -> [Typer] {

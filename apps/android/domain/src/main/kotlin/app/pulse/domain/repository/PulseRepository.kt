@@ -49,6 +49,8 @@ interface PulsePrefsStore {
     val chatsListFilter: Flow<String>
     /** Optional user-set gateway origin ("https://host") — null/empty = offline-first. */
     val serverBase: Flow<String?>
+    /** Voice playback speed (1x/1.5x/2x) — Wave 2 spec §1 row 12, applied live + on (re)start. */
+    val voiceRate: Flow<Float>
 
     suspend fun setViewer(id: String?, name: String?, color: String? = null)
     suspend fun setFxMode(mode: String)
@@ -56,6 +58,7 @@ interface PulsePrefsStore {
     suspend fun setReducedMotion(value: Boolean)
     suspend fun setChatsListFilter(value: String)
     suspend fun setServerBase(value: String?)
+    suspend fun setVoiceRate(value: Float)
 }
 
 /** Contract every Pulse data source (remote-first, Room cache) must honor. */

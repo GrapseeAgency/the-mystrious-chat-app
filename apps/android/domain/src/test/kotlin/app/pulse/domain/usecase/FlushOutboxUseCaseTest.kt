@@ -62,6 +62,7 @@ class FlushOutboxUseCaseTest {
             body: String,
             replyToId: String?,
             parentId: String?,
+            topicId: String?,
         ): Result<Message> =
             Result.failure(UnsupportedOperationException())
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
@@ -151,10 +152,14 @@ class FlushOutboxUseCaseTest {
             conversationId: String,
             body: String,
             imagePath: String?,
+            audioPath: String?,
+            durationMs: Long?,
             filePath: String?,
             fileName: String?,
             fileSize: Long?,
             kind: String?,
+            viewOnce: Boolean?,
+            topicId: String?,
         ) = Result.failure<Message>(UnsupportedOperationException())
         override suspend fun downloadMedia(filePath: String) =
             Result.failure<String>(UnsupportedOperationException())

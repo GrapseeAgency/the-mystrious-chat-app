@@ -1,7 +1,9 @@
 package app.pulse.feature.chat
 
 import android.content.Context
+import android.media.MediaRecorder
 import android.net.Uri
+import android.os.SystemClock
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,12 +12,14 @@ import app.pulse.core.time.PulseTime
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
+import app.pulse.domain.model.Topic
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.usecase.SendMessageUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -42,6 +47,8 @@ data class StagedMedia(
     val uploading: Boolean = false,
     val uploadedPath: String? = null,
     val error: String? = null,
+    /** Wave 2 view-once (IMAGE kind only — wire requires imagePath when true). */
+    val viewOnce: Boolean = false,
 ) {
     enum class Kind { IMAGE, FILE }
 }
@@ -61,6 +68,8 @@ class ChatRoomViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repo: PulseRepository,
     private val sendUseCase: SendMessageUseCase,
+    /** The ONE active voice player — room + thread share the singleton. */
+    val voicePlayer: VoicePlayer,
 ) : ViewModel() {
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
@@ -97,10 +106,47 @@ class ChatRoomViewModel @Inject constructor(
     private val _initialDraft = MutableStateFlow<String?>(null)
     val initialDraft: StateFlow<String?> = _initialDraft.asStateFlow()
 
-    /** MAIN RIVER — thread replies (threadRootId != null) live on the ThreadScreen only. */
-    val messages: StateFlow<List<Message>> = repo.observeMessages(conversationId)
-        .map { rows -> rows.filter { it.threadRootId == null } }
+    // ── Wave 2 topics (spec §1 row 9): null = General = WHOLE room ──────
+    private val _activeTopicId = MutableStateFlow<String?>(null)
+    val activeTopicId: StateFlow<String?> = _activeTopicId.asStateFlow()
+
+    /** Live topic chips (General is NOT a row — the UI prepends it). */
+    val topics: StateFlow<List<Topic>> = repo.observeTopics(conversationId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ── Wave 2 voice recording (spec §1 row 1 + row 11) ─────────────────
+    private var recorder: MediaRecorder? = null
+    private var recordFile: File? = null
+    private var recordStartedAtMs: Long = 0
+    private var recordTicker: Job? = null
+
+    private val _recording = MutableStateFlow(false)
+    val recording: StateFlow<Boolean> = _recording.asStateFlow()
+
+    /** Live record timer — the composer bar renders it as "m:ss". */
+    private val _recordMs = MutableStateFlow(0L)
+    val recordMs: StateFlow<Long> = _recordMs.asStateFlow()
+
+    private val _sendingVoice = MutableStateFlow(false)
+    val sendingVoice: StateFlow<Boolean> = _sendingVoice.asStateFlow()
+
+    /** Voice notes currently awaiting their transcript (pill → spinner). */
+    private val _transcribingIds = MutableStateFlow<Set<String>>(emptySet())
+    val transcribingIds: StateFlow<Set<String>> = _transcribingIds.asStateFlow()
+
+    /** MAIN RIVER — thread replies (threadRootId != null) live on the ThreadScreen only. */
+    val messages: StateFlow<List<Message>> =
+        combine(
+            repo.observeMessages(conversationId),
+            _activeTopicId,
+        ) { rows, topicId ->
+            // Topic views (Wave 2 §1 row 9): null = General = WHOLE room
+            // (unfiltered); non-null filters the client-side Room flow —
+            // incoming message:new rows carry topicId so live views update
+            // without extra fetches.
+            rows.filter { it.threadRootId == null && (topicId == null || it.topicId == topicId) }
+        }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val conversation: StateFlow<Conversation?> = repo.observeConversations()
         .map { list -> list.firstOrNull { it.id == conversationId } }
@@ -161,6 +207,18 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch {
             repo.observeConnected().collect { connected ->
                 _state.value = _state.value.copy(connected = connected)
+            }
+        }
+        viewModelScope.launch {
+            // Wave 2 topics — load the rail on open (UI re-ticks every 15s).
+            runCatching { repo.refreshTopics(conversationId) }
+        }
+        viewModelScope.launch {
+            // Self-heal: a topic that disappeared from the rail (deleted
+            // elsewhere) resets the view to General — messages fall back.
+            topics.collect { list ->
+                val active = _activeTopicId.value ?: return@collect
+                if (list.none { it.id == active }) _activeTopicId.value = null
             }
         }
         viewModelScope.launch {
@@ -254,7 +312,9 @@ class ChatRoomViewModel @Inject constructor(
         val replyId = _state.value.replyTo?.id
         _state.value = _state.value.copy(replyTo = null)
         viewModelScope.launch {
-            sendUseCase(conversationId, body, replyId)
+            // Quote replies DO file to the active topic (only THREAD replies
+            // are excluded — the repo drops topicId on parentId sends).
+            sendUseCase(conversationId, body, replyId, topicId = _activeTopicId.value)
                 .onSuccess { message ->
                     if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         // Network-class failure → queued in the outbox. The
@@ -265,11 +325,29 @@ class ChatRoomViewModel @Inject constructor(
                         app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
                         repo.setTyping(conversationId, viewerName(), false)
                         runCatching { repo.clearDraft(conversationId) }
+                        afterOwnSend(message)
                     }
                 }
                 .onFailure { failure ->
                     _state.value = _state.value.copy(error = failure.message)
                 }
+        }
+    }
+
+    /**
+     * Post-send hooks for a DELIVERED row (Wave 2 §1 rows 8/9):
+     * - link hint in the body → fire-and-forget unfurl (the sender's client
+     *   triggers it, exactly once, only on direct send success — never on the
+     *   outbox flush path, web parity);
+     * - topic rail refresh (+ the active topic window so counts stay warm).
+     */
+    private fun afterOwnSend(message: Message) {
+        if (message.poll == null && app.pulse.core.media.PulseMedia.isUnfurlCandidate(message.body)) {
+            viewModelScope.launch { repo.unfurlMessage(message.id) }
+        }
+        viewModelScope.launch { runCatching { repo.refreshTopics(conversationId) } }
+        _activeTopicId.value?.let { topicId ->
+            viewModelScope.launch { runCatching { repo.refreshMessages(conversationId, topicId) } }
         }
     }
 
@@ -411,6 +489,9 @@ class ChatRoomViewModel @Inject constructor(
      * replace: a new target (or a racing loadOlder) never strands the gate.
      */
     fun expandForJump(messageId: String) {
+        // Jump surfaces (search/pins/quotes/saved) are whole-room — a topic
+        // filter would hide the target. Fall back to General first.
+        _activeTopicId.value = null
         jumpExpansionJob?.cancel()
         jumpExpansionJob = viewModelScope.launch {
             var found = false
@@ -591,11 +672,15 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
+            val topicId = _activeTopicId.value
             val result = when (staged.kind) {
                 StagedMedia.Kind.IMAGE -> repo.sendMediaMessage(
                     conversationId = conversationId,
                     body = caption.trim(),
                     imagePath = path,
+                    // Wire contract: viewOnce===true REQUIRES imagePath — image kind only.
+                    viewOnce = if (staged.viewOnce) true else null,
+                    topicId = topicId,
                 )
                 StagedMedia.Kind.FILE -> repo.sendMediaMessage(
                     conversationId = conversationId,
@@ -604,15 +689,23 @@ class ChatRoomViewModel @Inject constructor(
                     fileName = staged.fileName ?: path.substringAfterLast('/'),
                     fileSize = staged.fileSize,
                     kind = "file",
+                    topicId = topicId,
                 )
             }
             result
                 .onSuccess {
                     _state.value = _state.value.copy(staged = null)
                     app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
+                    afterOwnSend(it)
                 }
                 .onFailure { stageFailed(it.message ?: "Couldn't send — you appear to be offline") }
         }
+    }
+
+    /** The staged photo's view-once switch (image only, Wave 2 §1 row 5). */
+    fun setStagedViewOnce(value: Boolean) {
+        val staged = _state.value.staged ?: return
+        _state.value = _state.value.copy(staged = staged.copy(viewOnce = value))
     }
 
     // ── file download + open/share (FileProvider hand-off) ─────
@@ -644,11 +737,213 @@ class ChatRoomViewModel @Inject constructor(
         if (_state.value.openedFile != null) _state.value = _state.value.copy(openedFile = null)
     }
 
+    // ── Wave 2: voice recording (spec §1 row 1 / row 11) ───────────────
+
+    /**
+     * Tap-to-start (NOT hold, web parity). RECORD_AUDIO is requested at the
+     * UI layer BEFORE this call. MediaRecorder → AAC in MPEG_4, max 10 min,
+     * temp file cacheDir/voice-<uuid>.m4a; a 100ms ticker drives the timer.
+     */
+    fun startRecording() {
+        if (_recording.value || _sendingVoice.value) return
+        val file = File(context.cacheDir, "voice-${java.util.UUID.randomUUID()}.m4a")
+        val mr = MediaRecorder()
+        try {
+            mr.setAudioSource(MediaRecorder.AudioSource.MIC)
+            mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            mr.setAudioSamplingRate(44100)
+            mr.setMaxDuration(600_000)
+            mr.setOutputFile(file.absolutePath)
+            mr.prepare()
+            mr.start()
+        } catch (t: Throwable) {
+            runCatching { mr.release() }
+            file.delete()
+            notify("Couldn't start recording — check microphone access", isError = true)
+            return
+        }
+        recorder = mr
+        recordFile = file
+        recordStartedAtMs = SystemClock.elapsedRealtime()
+        _recordMs.value = 0L
+        _recording.value = true
+        recordTicker?.cancel()
+        recordTicker = viewModelScope.launch {
+            while (isActive) {
+                delay(100)
+                _recordMs.value += 100
+            }
+        }
+    }
+
+    /** Cancel = stop + release + delete, NO minimum-discard toast on cancel (web parity). */
+    fun cancelRecording() {
+        stopRecorderLocked()
+        recordFile?.delete()
+        recordFile = null
+        _recording.value = false
+        _recordMs.value = 0L
+    }
+
+    /**
+     * Stop → elapsed → `durationMs = max(1, round(ms/100)*100)` (web parity).
+     * Under 600ms the note is DISCARDED with a notice. Never queued: upload
+     * dataURL → repo.uploadMedia → sendMediaMessage(kind="audio") — kind MUST
+     * be "audio" so /transcribe works (spec §1 row 1, web kind-omission bug).
+     */
+    fun stopAndSend() {
+        if (!_recording.value) return
+        stopRecorderLocked()
+        val elapsedMs = if (recordStartedAtMs > 0) SystemClock.elapsedRealtime() - recordStartedAtMs else _recordMs.value
+        val file = recordFile
+        recordFile = null
+        _recording.value = false
+        _recordMs.value = 0L
+        if (elapsedMs < app.pulse.core.media.PulseMedia.MIN_VOICE_MS || file == null) {
+            file?.delete()
+            notify("Too short — voice note discarded")
+            return
+        }
+        val durationMs = app.pulse.core.media.PulseMedia.voiceDurationMs(elapsedMs)
+        _sendingVoice.value = true
+        viewModelScope.launch {
+            MediaSupport.audioToDataUrl(context, file, mime = "audio/mp4")
+                .onSuccess { dataUrl ->
+                    repo.uploadMedia(dataUrl)
+                        .onSuccess { path ->
+                            repo.sendMediaMessage(
+                                conversationId = conversationId,
+                                body = "",
+                                audioPath = path,
+                                durationMs = durationMs,
+                                kind = "audio",
+                                topicId = _activeTopicId.value,
+                            )
+                                .onSuccess { sent ->
+                                    app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
+                                    afterOwnSend(sent)
+                                }
+                                .onFailure { notify(it.message ?: "Couldn't send the voice note", isError = true) }
+                        }
+                        .onFailure { notify("Couldn't upload the voice note", isError = true) }
+                }
+                .onFailure { notify("Couldn't prepare the voice note", isError = true) }
+            _sendingVoice.value = false
+            file.delete()
+        }
+    }
+
+    private fun stopRecorderLocked() {
+        recordTicker?.cancel()
+        recordTicker = null
+        val mr = recorder ?: return
+        recorder = null
+        recordStartedAtMs = 0
+        runCatching { mr.stop() }
+        runCatching { mr.release() }
+    }
+
+    // ── Wave 2: transcription strip (spec §1 row 15) ───────────────────
+
+    /** "Transcribe" pill action — 422/502 surface the honest toast. */
+    fun transcribeVoice(messageId: String) {
+        if (messageId.startsWith(TEMP_MESSAGE_PREFIX)) return
+        if (messageId in _transcribingIds.value) return
+        _transcribingIds.value = _transcribingIds.value + messageId
+        viewModelScope.launch {
+            repo.transcribeMessage(messageId)
+                .onFailure { notify("Transcription unavailable", isError = true) }
+                .onSuccess { if (it.cached) Unit } // Room row patched → the flow refreshes the strip
+            _transcribingIds.value = _transcribingIds.value - messageId
+        }
+    }
+
+    // ── Wave 2: view-once consumption (spec §1 rows 6/7) ───────────────
+
+    /** Fire-and-forget POST /viewed — the lightbox opens WITHOUT waiting on it. */
+    fun consumeViewOnce(message: Message) {
+        viewModelScope.launch { repo.markMessageViewed(message.id) }
+    }
+
+    // ── Wave 2: polls (spec §1 rows 2/3/4) ─────────────────────────────
+
+    fun createPoll(question: String, options: List<String>) {
+        viewModelScope.launch {
+            repo.createPoll(conversationId, question.trim(), options)
+                .onSuccess {
+                    app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
+                    afterOwnSend(it)
+                }
+                .onFailure { notify(it.message ?: "Couldn't create the poll", isError = true) }
+        }
+    }
+
+    /** Single-choice, NO revote once picked (web parity, spec §1 row 3). */
+    fun votePoll(pollId: String, optionId: String) {
+        viewModelScope.launch {
+            repo.votePoll(pollId, optionId)
+                .onFailure { notify("Couldn't record your vote", isError = true) }
+        }
+    }
+
+    fun closePoll(pollId: String) {
+        viewModelScope.launch {
+            repo.closePoll(pollId)
+                .onSuccess { notify("Voting closed — results are final") }
+                .onFailure { notify("Couldn't close the poll", isError = true) }
+        }
+    }
+
+    // ── Wave 2: topics (spec §1 row 9) ─────────────────────────────────
+
+    /** Rail re-tick — UI runs this on open + every 15s + after own sends. */
+    fun refreshTopics() {
+        viewModelScope.launch { runCatching { repo.refreshTopics(conversationId) } }
+    }
+
+    /**
+     * null → General (whole room, unfiltered); non-null → also fetch the
+     * server window for that topic (native keeps the client-side filter live
+     * via the Room flow — improvement over the web 3.5s cache poll).
+     */
+    fun setActiveTopic(topicId: String?) {
+        _activeTopicId.value = topicId
+        if (topicId != null) {
+            viewModelScope.launch { runCatching { repo.refreshMessages(conversationId, topicId) } }
+        }
+    }
+
+    fun createTopic(name: String, emoji: String) {
+        viewModelScope.launch {
+            repo.createTopic(conversationId, name.trim(), emoji)
+                .onSuccess { topic ->
+                    runCatching { repo.refreshTopics(conversationId) }
+                    _activeTopicId.value = topic.id
+                    viewModelScope.launch { runCatching { repo.refreshMessages(conversationId, topic.id) } }
+                    notify("Filing to $emoji ${topic.name} — next send lands there")
+                }
+                .onFailure { notify("Couldn't create the topic", isError = true) }
+        }
+    }
+
+    override fun onCleared() {
+        // Recording must never outlive the room — stop + release + delete.
+        stopRecorderLocked()
+        recordFile?.delete()
+        recordFile = null
+        _recording.value = false
+        voicePlayer.release()
+        super.onCleared()
+    }
+
     companion object {
         /** Older-page size — spec §1.1 pagination cursor rhythm. */
         const val PAGE_SIZE = 40
 
         /** Bounded jump-window expansion — web parity (≤14 before= rounds). */
         const val JUMP_MAX_ROUNDS = 14
+
+        /** Web parity unfurl hint moved to PulseMedia.isUnfurlCandidate (JVM-pinned). */
     }
 }

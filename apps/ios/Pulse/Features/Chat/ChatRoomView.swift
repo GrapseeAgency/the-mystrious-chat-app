@@ -69,6 +69,8 @@ private struct RoomMessageRow: View {
     let onOpenThread: (WireChatMessage) -> Void
     let onForward: (WireChatMessage) -> Void
     let onInfo: (WireChatMessage) -> Void
+    /// Wave 2 view-once — instant reveal (lightbox) + POST /viewed burn.
+    let onViewOnce: (WireChatMessage) -> Void
 
     var body: some View {
         Group {
@@ -88,6 +90,21 @@ private struct RoomMessageRow: View {
                 onOpenImage: onOpenImage,
                 onOpenFile: onOpenFile,
                 onOpenThread: onOpenThread,
+                viewerId: session.viewer?.id,
+                voicePlayback: viewModel.playback.state,
+                voiceRate: viewModel.voiceRate,
+                onVoicePlayToggle: { viewModel.toggleVoicePlayback(message, session: session) },
+                onVoiceRateCycle: { viewModel.cycleVoiceRate() },
+                onTranscribe: { viewModel.transcribeVoice(message, session: session) },
+                onPollVote: { optionId in
+                    viewModel.votePoll(pollID: message.poll?.id ?? "", optionID: optionId, session: session)
+                },
+                onPollClose: {
+                    if let pollId = message.poll?.id {
+                        viewModel.closePoll(pollID: pollId, session: session)
+                    }
+                },
+                onViewOnceOpen: onViewOnce,
             )
             .contextMenu { contextMenu }
             .onAppear {
@@ -183,9 +200,22 @@ private struct RoomContent: View {
     @State private var searchQuery = ""
     @State private var photoItem: PhotosPickerItem?
     @State private var showFileImporter = false
+    // Wave 2 — poll builder sheet.
+    @State private var pollBuilderOpen = false
 
     var body: some View {
         VStack(spacing: 0) {
+            // Wave 2 topics — group rooms only (General = whole room, spec §1 row 9).
+            if conversation.isGroup {
+                TopicBar(
+                    topics: viewModel.topics,
+                    activeTopicId: viewModel.activeTopicId,
+                    onSelect: { viewModel.setActiveTopic($0, session: session) },
+                    onCreate: { name, emoji in
+                        viewModel.createTopic(name: name, emoji: emoji, session: session)
+                    },
+                )
+            }
             pinnedBanner
             if searchOpen {
                 roomSearchPanel
@@ -223,12 +253,20 @@ private struct RoomContent: View {
         .sheet(isPresented: $pinsOpen) {
             pinsList
         }
+        .sheet(isPresented: $pollBuilderOpen) {
+            PollBuilderSheet(viewModel: viewModel, session: session)
+        }
         .fullScreenCover(item: $lightbox) { target in
             MediaLightboxView(url: target.url, caption: target.caption)
         }
         .fullScreenCover(item: $quicklook) { target in
             QuickLookView(url: target.url)
                 .ignoresSafeArea()
+        }
+        .onDisappear {
+            // Wave 2 — honest teardown: a recording or playback must never
+            // outlive the room (roomVisible off / conversation change).
+            viewModel.handleRoomDisappeared()
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
         .fileImporter(
@@ -414,6 +452,11 @@ private struct RoomContent: View {
                             onOpenThread: { threadRoot = $0 },
                             onForward: { forwardSource = $0 },
                             onInfo: { infoTarget = $0 },
+                            onViewOnce: { message in
+                                // Instant reveal first (web parity), burn after.
+                                openLightbox(message)
+                                viewModel.revealViewOnce(message, session: session)
+                            },
                         )
                     }
                     if viewModel.loadingOlder && !viewModel.messages.isEmpty {
@@ -498,7 +541,21 @@ private struct RoomContent: View {
     }
 
     // ── composer ─────────────────────────────────────────────
+    @ViewBuilder
     private var composer: some View {
+        if viewModel.isRecording {
+            // Recording bar replaces the composer entirely (spec §1 row 11).
+            VoiceRecordingBar(
+                elapsedText: PulseFormat.duration(viewModel.recordingElapsedMs),
+                onCancel: { viewModel.cancelVoiceRecording() },
+                onSend: { viewModel.finishAndSendVoice(session: session) },
+            )
+        } else {
+            idleComposer
+        }
+    }
+
+    private var idleComposer: some View {
         VStack(spacing: 0) {
             if let editing = viewModel.editingTarget {
                 editBar(editing)
@@ -525,22 +582,37 @@ private struct RoomContent: View {
                 .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
                 .disabled(viewModel.staged != nil)
 
-                Button {
-                    PulseHaptics.tap()
-                    if viewModel.editingTarget != nil {
-                        viewModel.saveEdit(session: session)
-                    } else if viewModel.staged != nil {
-                        viewModel.sendStaged(session: session)
-                    } else {
-                        viewModel.send(session: session)
+                // Wave 2 voice — tap-to-start when the draft is empty and
+                // nothing is staged/editing (web parity).
+                if viewModel.canStartVoiceRecording {
+                    Button {
+                        PulseHaptics.tap()
+                        viewModel.startVoiceRecording(session: session)
+                    } label: {
+                        Image(systemName: "mic.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(PulseTheme.emerald)
                     }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(viewModel.canSend ? AnyShapeStyle(PulseTheme.gradient(named: "emerald")) : AnyShapeStyle(Color.secondary.opacity(0.4)))
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("Record voice note")
+                } else {
+                    Button {
+                        PulseHaptics.tap()
+                        if viewModel.editingTarget != nil {
+                            viewModel.saveEdit(session: session)
+                        } else if viewModel.staged != nil {
+                            viewModel.sendStaged(session: session)
+                        } else {
+                            viewModel.send(session: session)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(viewModel.canSend ? AnyShapeStyle(PulseTheme.gradient(named: "emerald")) : AnyShapeStyle(Color.secondary.opacity(0.4)))
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .disabled(!viewModel.canSend)
                 }
-                .buttonStyle(PulseButtonStyle())
-                .disabled(!viewModel.canSend)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -559,6 +631,11 @@ private struct RoomContent: View {
                 showFileImporter = true
             } label: {
                 Label("Document", systemImage: "folder")
+            }
+            Button {
+                pollBuilderOpen = true
+            } label: {
+                Label("New Poll", systemImage: "chart.bar")
             }
         } label: {
             Image(systemName: viewModel.staged == nil ? "plus.circle.fill" : "minus.circle.fill")
@@ -598,43 +675,58 @@ private struct RoomContent: View {
     }
 
     private func stagedMediaBar(_ staged: RoomViewModel.StagedMedia) -> some View {
-        HStack(spacing: 10) {
-            if viewModel.uploading {
-                ProgressView().controlSize(.small)
-            }
-            switch staged.kind {
-            case .image:
-                AsyncImage(url: staged.previewURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                if viewModel.uploading {
+                    ProgressView().controlSize(.small)
                 }
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            case .file:
-                Image(systemName: "paperclip.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(PulseTheme.emerald)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(staged.kind == .image ? "Photo" : (staged.fileName ?? "Document"))
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                if let size = staged.fileSize {
-                    Text(PulseMediaSupport.humanized(bytes: size))
-                        .font(.caption2)
+                switch staged.kind {
+                case .image:
+                    AsyncImage(url: staged.previewURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                    }
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                case .file:
+                    Image(systemName: "paperclip.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(PulseTheme.emerald)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(staged.kind == .image ? "Photo" : (staged.fileName ?? "Document"))
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    if let size = staged.fileSize {
+                        Text(PulseMediaSupport.humanized(bytes: size))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                TextField("Caption (optional)", text: $viewModel.caption, axis: .vertical)
+                    .lineLimit(1...3)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.subheadline)
+                Button {
+                    viewModel.cancelStaged()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
             }
-            TextField("Caption (optional)", text: $viewModel.caption, axis: .vertical)
-                .lineLimit(1...3)
-                .textFieldStyle(.roundedBorder)
-                .font(.subheadline)
-            Button {
-                viewModel.cancelStaged()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+            // Wave 2 view-once — image sends only (server: viewOnce requires
+            // imagePath, spec §0).
+            if staged.kind == .image {
+                Toggle(
+                    "View once — disappears after opening",
+                    isOn: Binding(
+                        get: { viewModel.staged?.viewOnce ?? false },
+                        set: { viewModel.setStagedViewOnce($0) },
+                    ),
+                )
+                .font(.caption)
+                .tint(PulseTheme.emerald)
             }
         }
         .padding(.horizontal, 14)
@@ -768,6 +860,16 @@ struct BubbleView: View {
     var onOpenImage: ((WireChatMessage) -> Void)? = nil
     var onOpenFile: ((WireChatMessage) -> Void)? = nil
     var onOpenThread: ((WireChatMessage) -> Void)? = nil
+    // Wave 2 — voice playback/transcribe, poll voting/close, view-once reveal.
+    var viewerId: String? = nil
+    var voicePlayback: VoicePlaybackManager.PlaybackState? = nil
+    var voiceRate: Float = 1.0
+    var onVoicePlayToggle: (() -> Void)? = nil
+    var onVoiceRateCycle: (() -> Void)? = nil
+    var onTranscribe: (() -> Void)? = nil
+    var onPollVote: ((String) -> Void)? = nil
+    var onPollClose: (() -> Void)? = nil
+    var onViewOnceOpen: ((WireChatMessage) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -775,6 +877,16 @@ struct BubbleView: View {
     private var isSystem: Bool { message.kind == "system" }
     /// Wave 0 outbox — optimistic queued bubble (id "local_<clientId>").
     private var isPending: Bool { message.id.hasPrefix("local_") }
+
+    // Wave 2 view-once — sender always renders normal; a row the viewer has
+    // ALREADY opened renders NO image at all (anti-replay hardening, spec §1
+    // row 6: no blurred original, no lightbox entry, no preview fetch).
+    private var viewOnceGated: Bool {
+        message.viewOnce == true && !mine && message.viewedAt == nil && message.imagePath != nil
+    }
+    private var viewOnceBurned: Bool {
+        message.viewOnce == true && !mine && message.viewedAt != nil
+    }
 
     private var bubbleShape: UnevenRoundedRectangle {
         mine
@@ -844,6 +956,11 @@ struct BubbleView: View {
                     .foregroundStyle(.secondary)
             } else {
                 content
+                // Wave 2 link preview — under the text, suppressed on poll
+                // rows; nothing renders until the unfurl envelope lands.
+                if message.poll == nil, let preview = message.linkPreview {
+                    LinkPreviewCard(preview: preview)
+                }
             }
 
             HStack(spacing: 5) {
@@ -880,27 +997,79 @@ struct BubbleView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch message.kind {
-        case "image":
-            imageContent
-        case "voice":
-            voiceChip
-        case "file":
-            fileContent
-        case "video":
-            Label("Video", systemImage: "video.fill")
+        // Wave 2 polls — the card replaces the body text entirely.
+        if message.poll != nil || message.kind == "poll" {
+            pollContent
+        } else {
+            switch message.kind {
+            case "image":
+                imageContent
+            case "audio", "voice":
+                voiceContent
+            case "file":
+                fileContent
+            case "video":
+                Label("Video", systemImage: "video.fill")
+                    .font(.subheadline)
+            default:
+                Text(message.content)
+                    .font(.body)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var pollContent: some View {
+        if let poll = message.poll {
+            PollCard(
+                poll: poll,
+                mine: mine,
+                viewerId: viewerId,
+                onVote: { optionId in onPollVote?(optionId) },
+                onClose: { onPollClose?() },
+            )
+        } else {
+            // Poll row whose card payload is missing (degraded cache row).
+            Label("Poll", systemImage: "chart.bar.fill")
                 .font(.subheadline)
-        default:
-            Text(message.content)
-                .font(.body)
-                .textSelection(.enabled)
+        }
+    }
+
+    @ViewBuilder
+    private var voiceContent: some View {
+        if onVoicePlayToggle != nil {
+            VoiceBubble(
+                message: message,
+                mine: mine,
+                playback: voicePlayback,
+                rate: voiceRate,
+                onPlayToggle: onVoicePlayToggle,
+                onRateCycle: onVoiceRateCycle,
+                onTranscribe: onTranscribe,
+            )
+        } else {
+            // Threads / previews without playback wiring keep the decorative chip.
+            voiceChip
         }
     }
 
     /// Stored image render — AsyncImage against the gateway upload URL,
     /// clamped bubble size, tap → lightbox, caption rides `content`.
+    /// Wave 2 view-once (spec §1 rows 5/6/7): gated = blurred + overlay
+    /// + instant-reveal tap; burned = dashed tombstone, NO image render.
     @ViewBuilder
     private var imageContent: some View {
+        if viewOnceBurned {
+            burnedPlaceholder
+        } else if viewOnceGated {
+            gatedImage
+        } else {
+            normalImage
+        }
+    }
+
+    private var normalImage: some View {
         VStack(alignment: .leading, spacing: 5) {
             if let url = PulseEndpoints.mediaURL(message.imagePath) {
                 AsyncImage(url: url) { phase in
@@ -934,6 +1103,66 @@ struct BubbleView: View {
                     .textSelection(.enabled)
             }
         }
+    }
+
+    private var gatedImage: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ZStack {
+                if let url = PulseEndpoints.mediaURL(message.imagePath) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.quaternary)
+                    }
+                    .frame(width: 200, height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    // Blur the IMAGE only (spec) — the overlay stays crisp.
+                    .blur(radius: 24)
+                } else {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.quaternary)
+                        .frame(width: 200, height: 200)
+                }
+                VStack(spacing: 6) {
+                    Image(systemName: "eye.slash.fill")
+                        .font(.title3)
+                    Text("Tap to view once")
+                        .font(.footnote.weight(.semibold))
+                    Text("it disappears after opening")
+                        .font(.caption2)
+                        .opacity(0.8)
+                }
+                .foregroundStyle(.white)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.black.opacity(0.45)))
+            }
+            .frame(width: 200, height: 200)
+            .contentShape(Rectangle())
+            .onTapGesture { onViewOnceOpen?(message) }
+            .accessibilityHint("Opens once, then disappears forever")
+            if !message.content.isEmpty {
+                Text(message.content)
+                    .font(.subheadline)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var burnedPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.4, dash: [5, 4]))
+            .frame(width: 150, height: 200)
+            .overlay(
+                VStack(spacing: 6) {
+                    Image(systemName: "eye.slash")
+                        .font(.title3)
+                    Text("Photo opened · gone forever")
+                        .font(.caption2.weight(.medium))
+                        .multilineTextAlignment(.center)
+                }
+                .foregroundStyle(.secondary)
+                .padding(10)
+            )
     }
 
     /// Document bubble — name + humanized size, tap → download + QuickLook.
@@ -1064,6 +1293,8 @@ final class RoomViewModel: ObservableObject {
         let fileSize: Int?
         /// Local preview for the staged card (images only).
         let previewURL: URL?
+        /// Wave 2 view-once — image sends only (server: viewOnce needs imagePath).
+        let viewOnce: Bool
     }
 
     @Published private(set) var messages: [WireChatMessage] = []
@@ -1088,7 +1319,18 @@ final class RoomViewModel: ObservableObject {
     @Published var caption = ""
     @Published private(set) var uploading = false
 
+    // Wave 2 — voice recording, playback, polls, transcription, topics.
+    @Published private(set) var isRecording = false
+    @Published private(set) var recordingElapsedMs: Double = 0
+    @Published private(set) var sendingVoice = false
+    @Published private(set) var transcriptionBusy: Set<String> = []
+    @Published private(set) var topics: [WireTopic] = []
+    /// nil = General = the WHOLE room unfiltered (spec §1 row 9).
+    @Published var activeTopicId: String?
+    @Published private(set) var voiceRate: Float
+
     private let conversationId: String
+    private let isGroupRoom: Bool
     private weak var session: PulseSession?
     private var cancellables: Set<AnyCancellable> = []
     private var typingStopTask: Task<Void, Never>?
@@ -1097,16 +1339,35 @@ final class RoomViewModel: ObservableObject {
     private var initialJumpMessageId: String?
     /// Member read watermarks (id → lastReadAt) — group-aware "Seen".
     private var memberWatermarks: [String: Date] = [:]
+    // Wave 2 voice plumbing — recorder + single active player + timers.
+    private var voiceRecorder: VoiceRecorder?
+    private var recordingStartedAt: Date?
+    private var recordingTicker: AnyCancellable?
+    private var topicTicker: AnyCancellable?
+    private var voiceLocalFiles: [String: URL] = [:]
+    /// One active voice-note player for the whole room (messageId-keyed).
+    private(set) var playback = VoicePlaybackManager()
 
     var canSend: Bool {
         if staged != nil { return true }
         return !draft.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    /// Mic replaces the send arrow exactly when the web mic shows:
+    /// empty draft, nothing staged, not editing, not already recording.
+    var canStartVoiceRecording: Bool {
+        draft.trimmingCharacters(in: .whitespaces).isEmpty
+            && editingTarget == nil
+            && staged == nil
+            && !isRecording
+    }
+
     init(conversation: WireConversationSummary, session: PulseSession, initialJumpMessageId: String? = nil) {
         self.conversationId = conversation.id
         self.session = session
+        self.isGroupRoom = conversation.isGroup
         self.initialJumpMessageId = initialJumpMessageId
+        self.voiceRate = VoicePlaybackManager.storedRate()
         for member in conversation.members {
             if let stamp = member.lastReadAt {
                 memberWatermarks[member.id] = PulseFormat.date(stamp)
@@ -1115,7 +1376,22 @@ final class RoomViewModel: ObservableObject {
         observe(session: session)
         seedLocalState(conversation: conversation, session: session)
         loadPins(session: session)
+        startTopicTicker()
+        loadTopics(session: session)
         Task { await refresh(session: session) }
+    }
+
+    /// Wave 2 — a recording/playback must never outlive the room. Called
+    /// from ChatRoomView.onDisappear (roomVisible off); a conversation
+    /// change builds a NEW view model, so its deinit covers that path.
+    func handleRoomDisappeared() {
+        cancelVoiceRecording()
+        playback.stop()
+    }
+
+    deinit {
+        // Plain-class teardown only (no actor-isolated state touched).
+        voiceRecorder?.cancel()
     }
 
     /// Wave 0 offline rehydration — runs BEFORE the network fetch:
@@ -1181,9 +1457,30 @@ final class RoomViewModel: ObservableObject {
                         bucket.append(Typer(userId: userId, userName: userName, expiresAt: Date().addingTimeInterval(4)))
                     }
                     typers = bucket
+                case .messageEnvelope(_, let convId, let raw):
+                    // Wave 2 — message:viewed / poll:voted / link:preview carry
+                    // the AUTHORITATIVE row (spec §0): upsert whole → the
+                    // burn stamp, live tally and preview card paint instantly.
+                    guard convId == self.conversationId,
+                          let message = PulseSession.decodeMessage(from: raw) else { return }
+                    try? session.store?.upsert(messages: [message])
+                    upsert(message)
                 default:
                     break
                 }
+            }
+            .store(in: &cancellables)
+
+        // Wave 2 — realtimeRefreshTick bumps on every background mutation
+        // (viewed/poll/link envelopes, outbox deliveries). Recompute the
+        // active topic view so incoming topic-tagged rows land instantly
+        // (the native improvement over web's 3.5 s cache poll, spec §1 row 9).
+        session.$realtimeRefreshTick
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                refilterInPlace()
+                activeTopicId = TopicHeal.healed(activeTopicId, topics: topics)
             }
             .store(in: &cancellables)
 
@@ -1238,8 +1535,26 @@ final class RoomViewModel: ObservableObject {
 
     /// The main river EXCLUDES thread replies (web parity) — they live in
     /// ThreadView and surface as "N replies" chips on the parent bubble.
+    /// Wave 2 topics: activeTopicId == nil → General = the WHOLE room;
+    /// otherwise only rows filed under that topic (spec §1 row 9).
     private func riverRows(from rows: [WireChatMessage]) -> [WireChatMessage] {
-        rows.filter { $0.parentId == nil }
+        rows.filter { row in
+            guard row.parentId == nil else { return false }
+            if let active = activeTopicId {
+                return row.topicId == active
+            }
+            return true
+        }
+    }
+
+    /// Live topic-view hygiene — drops rows that stopped matching the active
+    /// filter (e.g. an envelope re-mapped a row's topic). No-op on General.
+    private func refilterInPlace() {
+        guard let active = activeTopicId else { return }
+        let filtered = messages.filter { $0.topicId == active }
+        if filtered.count != messages.count {
+            messages = filtered
+        }
     }
 
     private func seedReplyCounts(store: PulseStore) {
@@ -1262,10 +1577,15 @@ final class RoomViewModel: ObservableObject {
                     limit: 40,
                     before: oldest.createdAt,
                     query: nil,
+                    topicId: self.activeTopicId,
                 )
                 try? session.store?.upsert(messages: page.messages)
                 let known = Set(self.messages.map(\.id))
-                let fresh = page.messages.filter { $0.parentId == nil && !known.contains($0.id) }
+                let fresh = page.messages.filter { row in
+                    guard row.parentId == nil, !known.contains(row.id) else { return false }
+                    if let active = self.activeTopicId { return row.topicId == active }
+                    return true
+                }
                 self.messages.insert(contentsOf: fresh, at: 0)
                 self.hasMore = page.hasMore && !page.messages.isEmpty
             } catch {
@@ -1308,10 +1628,14 @@ final class RoomViewModel: ObservableObject {
         loadingOlder = true
         defer { loadingOlder = false }
         do {
-            let page = try await session.api.messages(conversationId: conversationId, limit: 40, before: oldest.createdAt, query: nil)
+            let page = try await session.api.messages(conversationId: conversationId, limit: 40, before: oldest.createdAt, query: nil, topicId: activeTopicId)
             try? session.store?.upsert(messages: page.messages)
             let known = Set(messages.map(\.id))
-            let fresh = page.messages.filter { $0.parentId == nil && !known.contains($0.id) }
+            let fresh = page.messages.filter { row in
+                guard row.parentId == nil, !known.contains(row.id) else { return false }
+                if let active = activeTopicId { return row.topicId == active }
+                return true
+            }
             messages.insert(contentsOf: fresh, at: 0)
             hasMore = page.hasMore && !page.messages.isEmpty
             if messages.contains(where: { $0.id == messageId }) {
@@ -1381,6 +1705,9 @@ final class RoomViewModel: ObservableObject {
     func upsert(_ message: WireChatMessage) {
         // Main river only — thread replies render in ThreadView.
         if message.parentId != nil { return }
+        // Wave 2 topics — an active topic view must not surface rows filed
+        // elsewhere (the store keeps them; switching back refetches).
+        if let active = activeTopicId, message.topicId != active { return }
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else {
             messages.append(message)
             messages.sort { PulseFormat.date($0.createdAt) ?? .distantPast < PulseFormat.date($1.createdAt) ?? .distantPast }
@@ -1476,11 +1803,24 @@ final class RoomViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let message = try await session.api.sendMessage(conversationId: conversationId, content: body, replyToId: replyId)
+                let message = try await session.api.sendMessage(
+                    conversationId: conversationId,
+                    content: body,
+                    replyToId: replyId,
+                    topicId: activeTopicId,
+                )
                 self.swapTemp(temp.id, for: message, session: session)
                 self.clearDraft(session: session)
                 session.particles.fire(kind: .burst, count: 22)
                 session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
+                // Wave 2 topics — own send bumps Topic.lastMessageAt server-side.
+                self.loadTopics(session: session)
+                // Wave 2 link previews — spec §1 row 8: the ORIGINAL SENDER's
+                // client triggers /unfurl once, fire-and-forget, ignoring the
+                // result (nil is valid = nothing link-ish / host unreachable).
+                if UnfurlTrigger.matches(body) {
+                    self.triggerUnfurl(for: message, viewerId: viewer.id, session: session)
+                }
             } catch {
                 if PulseOutboxEngine.isDroppable(error) {
                     self.messages.removeAll { $0.id == temp.id }
@@ -1492,6 +1832,19 @@ final class RoomViewModel: ObservableObject {
                     session.toasts.show("Message queued — sends when you're back online")
                 }
             }
+        }
+    }
+
+    /// Wave 2 — fire-and-forget unfurl after OWN link-bearing send (spec §1
+    /// row 8). Detached + swallow-everything: the card arrives either through
+    /// this row or the link:preview relay envelope.
+    private func triggerUnfurl(for message: WireChatMessage, viewerId: String, session: PulseSession) {
+        let api = session.api
+        let store = session.store
+        Task.detached { [weak self] in
+            guard let row = try? await api.unfurl(messageId: message.id, userId: viewerId) else { return }
+            try? store?.upsert(messages: [row])
+            await MainActor.run { self?.upsert(row) }
         }
     }
 
@@ -1657,6 +2010,7 @@ final class RoomViewModel: ObservableObject {
             fileName: nil,
             fileSize: jpeg.count,
             previewURL: URL(dataRepresentation: jpeg, relativeTo: nil),
+            viewOnce: false,
         )
         caption = ""
     }
@@ -1683,8 +2037,22 @@ final class RoomViewModel: ObservableObject {
             fileName: url.lastPathComponent,
             fileSize: data.count,
             previewURL: nil,
+            viewOnce: false,
         )
         caption = ""
+    }
+
+    /// Wave 2 view-once — flips the staged card's burn flag (image sends).
+    func setStagedViewOnce(_ on: Bool) {
+        guard let current = staged else { return }
+        staged = StagedMedia(
+            kind: current.kind,
+            dataUrl: current.dataUrl,
+            fileName: current.fileName,
+            fileSize: current.fileSize,
+            previewURL: current.previewURL,
+            viewOnce: on,
+        )
     }
 
     func cancelStaged() {
@@ -1714,6 +2082,8 @@ final class RoomViewModel: ObservableObject {
                         conversationId: conversationId,
                         content: body,
                         imagePath: filePath,
+                        viewOnce: media.viewOnce ? true : nil,
+                        topicId: activeTopicId,
                     )
                 case .file:
                     message = try await session.api.sendMessage(
@@ -1723,6 +2093,7 @@ final class RoomViewModel: ObservableObject {
                         fileName: media.fileName,
                         fileSize: media.fileSize,
                         kind: "file",
+                        topicId: activeTopicId
                     )
                 }
                 self.uploading = false
@@ -1731,11 +2102,366 @@ final class RoomViewModel: ObservableObject {
                 self.upsert(message)
                 try? session.store?.upsert(messages: [message])
                 session.particles.fire(kind: .burst, count: 22)
+                self.loadTopics(session: session)
             } catch {
                 self.uploading = false
                 self.errorText = Self.describe(error)
             }
         }
+    }
+
+    // ── Wave 2 voice notes (spec §1 rows 1/11/12/15) ─────
+
+    /// Tap-to-start — mic TCC, then the recording bar replaces the composer.
+    func startVoiceRecording(session: PulseSession) {
+        guard !isRecording, voiceRecorder == nil else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let granted = await VoiceRecorder.requestPermission()
+            guard granted else {
+                session.toasts.show("Microphone access is off — enable it in Settings to record voice notes")
+                return
+            }
+            guard !self.isRecording, self.voiceRecorder == nil else { return }
+            let recorder = VoiceRecorder()
+            do {
+                try recorder.start()
+            } catch {
+                session.toasts.show("Couldn't start recording")
+                return
+            }
+            self.voiceRecorder = recorder
+            self.recordingStartedAt = Date()
+            self.recordingElapsedMs = 0
+            self.isRecording = true
+            self.startRecordingTicker()
+        }
+    }
+
+    func cancelVoiceRecording() {
+        guard isRecording else { return }
+        voiceRecorder?.cancel()
+        teardownRecording()
+    }
+
+    /// Send path — stop, round the duration (spec: max(1, round(ms/100)*100)),
+    /// discard <600 ms with the honest toast, else upload + send kind "audio"
+    /// (never queued — media never queues, spec §1.2).
+    func finishAndSendVoice(session: PulseSession) {
+        guard isRecording, !sendingVoice, let startedAt = recordingStartedAt else { return }
+        let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
+        let durationMs = VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs)
+        voiceRecorder?.stop()
+        let fileURL = voiceRecorder?.fileURL
+        teardownRecording()
+        guard !VoiceMath.isTooShort(elapsedMs), let fileURL else {
+            if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
+            session.toasts.show("Too short — voice note discarded")
+            return
+        }
+        guard let viewer = session.viewer else {
+            try? FileManager.default.removeItem(at: fileURL)
+            errorText = "The gateway is unreachable."
+            return
+        }
+        sendingVoice = true
+        Task { [weak self] in
+            defer {
+                self?.sendingVoice = false
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            guard let self else { return }
+            do {
+                let data = try Data(contentsOf: fileURL)
+                let dataUrl = PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data)
+                let filePath = try await session.api.uploadMedia(dataUrl: dataUrl)
+                let message = try await session.api.sendMessage(
+                    conversationId: conversationId,
+                    content: "",
+                    audioPath: filePath,
+                    durationMs: durationMs,
+                    kind: "audio",
+                    topicId: activeTopicId,
+                )
+                self.upsert(message)
+                try? session.store?.upsert(messages: [message])
+                session.particles.fire(kind: .burst, count: 22)
+                self.loadTopics(session: session)
+            } catch {
+                // Media NEVER queues (web parity) — honest toast instead.
+                session.toasts.show(Self.describe(error))
+            }
+        }
+    }
+
+    private func teardownRecording() {
+        stopRecordingTicker()
+        voiceRecorder = nil
+        recordingStartedAt = nil
+        isRecording = false
+        recordingElapsedMs = 0
+    }
+
+    private func startRecordingTicker() {
+        stopRecordingTicker()
+        recordingTicker = Timer.publish(every: 0.25, on: .main, in: .common)
+            .autoconnect()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, let startedAt = self.recordingStartedAt else { return }
+                self.recordingElapsedMs = Date().timeIntervalSince(startedAt) * 1000
+            }
+    }
+
+    private func stopRecordingTicker() {
+        recordingTicker?.cancel()
+        recordingTicker = nil
+    }
+
+    // ── Wave 2 voice playback (spec §1 rows 12/13) ───────
+
+    func toggleVoicePlayback(_ message: WireChatMessage, session: PulseSession) {
+        if let state = playback.state, state.messageId == message.id {
+            if state.playing {
+                playback.pause()
+            } else if state.progress < 0.999 {
+                playback.resume()
+            } else {
+                playback.replay()
+            }
+            return
+        }
+        // Single active player — starting one message stops the previous one.
+        playback.stop()
+        startVoicePlayback(message, session: session)
+    }
+
+    private func startVoicePlayback(_ message: WireChatMessage, session: PulseSession) {
+        guard let path = message.audioPath, let remote = PulseEndpoints.mediaURL(path) else {
+            session.toasts.show("Voice note unavailable")
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let local: URL
+            if let cached = self.voiceLocalFiles[message.id] {
+                local = cached
+            } else {
+                do {
+                    local = try await PulseMediaOpener.downloadForPreview(url: remote, fileName: "voice-\(message.id).m4a")
+                    self.voiceLocalFiles[message.id] = local
+                } catch {
+                    session.toasts.show("Couldn't download the voice note")
+                    return
+                }
+            }
+            self.playback.start(messageId: message.id, localURL: local, rate: self.voiceRate)
+        }
+    }
+
+    /// Speed chip 1x → 1.5x → 2x → 1x — global pref (UserDefaults
+    /// "pulse.voiceRate"), applied live to the active player.
+    func cycleVoiceRate() {
+        let next = VoicePlaybackManager.nextRate(after: voiceRate)
+        voiceRate = next
+        UserDefaults.standard.set(next, forKey: VoicePlaybackManager.rateKey)
+        playback.setRate(next)
+    }
+
+    /// POST /transcribe (kind "audio" rows only) — patches the store row AND
+    /// the river row; 502 surfaces the service wording, everything else the
+    /// honest fallback (spec §1 row 15).
+    func transcribeVoice(_ message: WireChatMessage, session: PulseSession) {
+        guard message.transcript == nil,
+              !message.id.hasPrefix("local_"),
+              !transcriptionBusy.contains(message.id),
+              let viewer = session.viewer else { return }
+        transcriptionBusy.insert(message.id)
+        Task { [weak self] in
+            defer { self?.transcriptionBusy.remove(message.id) }
+            guard let self else { return }
+            do {
+                let result = try await session.api.transcribe(messageId: message.id, requesterId: viewer.id)
+                try? session.store?.updateTranscription(
+                    messageId: message.id,
+                    transcript: result.transcript,
+                    transcribedAt: result.transcribedAt ?? PulseOutboxClock.now(),
+                )
+                self.upsert(message.withTranscript(result.transcript, transcribedAt: result.transcribedAt))
+            } catch {
+                session.toasts.show(Self.transcribeErrorWording(error))
+            }
+        }
+    }
+
+    static func transcribeErrorWording(_ error: Error) -> String {
+        if let failure = error as? PulseAPIClient.Failure {
+            if failure.status == 502 {
+                return "Transcription service is down — try again later"
+            }
+            if let message = failure.message, !message.isEmpty {
+                return message
+            }
+        }
+        return "Transcription unavailable"
+    }
+
+    // ── Wave 2 view-once (spec §1 rows 5/6/7) ────────────
+
+    /// The reveal already happened in the UI (instant lightbox, web parity);
+    /// this stamps the burn server-side and patches the rows. Best-effort —
+    /// the relayed message:viewed envelope reconciles later on failure.
+    func revealViewOnce(_ message: WireChatMessage, session: PulseSession) {
+        guard message.viewOnce == true,
+              message.senderId != session.viewer?.id,
+              message.viewedAt == nil,
+              let viewer = session.viewer else { return }
+        Task { [weak self] in
+            do {
+                let fresh = try await session.api.markViewed(messageId: message.id, userId: viewer.id)
+                try? session.store?.upsert(messages: [fresh])
+                self?.upsert(fresh)
+            } catch {
+                // Instant-open parity: the image is already on screen; the
+                // envelope will re-stamp the row. Nothing honest to add here.
+            }
+        }
+    }
+
+    // ── Wave 2 polls (spec §1 rows 2/3/4) ────────────────
+
+    func createPoll(question: String, options: [String], session: PulseSession) {
+        guard let viewer = session.viewer else { return }
+        let trimmedQuestion = question.trimmingCharacters(in: .whitespaces)
+        guard !trimmedQuestion.isEmpty, options.count >= 2 else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let message = try await session.api.createPoll(
+                    conversationId: conversationId,
+                    senderId: viewer.id,
+                    question: trimmedQuestion,
+                    options: options,
+                )
+                self.upsert(message)
+                try? session.store?.upsert(messages: [message])
+                self.loadTopics(session: session)
+            } catch {
+                session.toasts.show(Self.describe(error))
+            }
+        }
+    }
+
+    func votePoll(pollID: String, optionID: String, session: PulseSession) {
+        guard !pollID.isEmpty, !optionID.isEmpty, let viewer = session.viewer else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let message = try await session.api.votePoll(pollId: pollID, userId: viewer.id, optionId: optionID)
+                withAnimation { self.upsert(message) }
+                try? session.store?.upsert(messages: [message])
+            } catch {
+                session.toasts.show(Self.describe(error))
+            }
+        }
+    }
+
+    func closePoll(pollID: String, session: PulseSession) {
+        guard !pollID.isEmpty, let viewer = session.viewer else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let message = try await session.api.closePoll(pollId: pollID, userId: viewer.id)
+                withAnimation { self.upsert(message) }
+                try? session.store?.upsert(messages: [message])
+                session.toasts.show("Voting closed — results are final")
+            } catch {
+                session.toasts.show(Self.describe(error))
+            }
+        }
+    }
+
+    // ── Wave 2 topics (spec §1 rows 9/10) ────────────────
+
+    /// Open + after own sends + the 15 s ticker — api.topics → store upsert →
+    /// read back (the cached rail renders even when the next fetch fails).
+    func loadTopics(session: PulseSession) {
+        guard isGroupRoom, let viewer = session.viewer else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let fresh = try await session.api.topics(conversationId: conversationId, userId: viewer.id)
+                try? session.store?.upsert(topics: fresh, conversationId: conversationId)
+            } catch {
+                // Offline — the cached rail below still renders.
+            }
+            if let store = session.store {
+                topics = (try? store.topics(conversationId: conversationId)) ?? topics
+            }
+            activeTopicId = TopicHeal.healed(activeTopicId, topics: topics)
+        }
+    }
+
+    /// General (nil) = whole room; a topic refetches the river with topicId=
+    /// and merges through the store (spec §1 row 9).
+    func setActiveTopic(_ id: String?, session: PulseSession) {
+        guard activeTopicId != id else { return }
+        activeTopicId = id
+        PulseHaptics.tap()
+        Task { [weak self] in
+            guard let self else { return }
+            await self.reloadRiver(session: session)
+        }
+    }
+
+    private func reloadRiver(session: PulseSession) async {
+        do {
+            let page = try await session.api.messages(conversationId: conversationId, topicId: activeTopicId)
+            messages = riverRows(from: page.messages)
+            hasMore = page.hasMore
+            phase = .loaded
+            try? session.store?.upsert(messages: page.messages)
+        } catch {
+            // Offline — filter the cache in place instead of failing hard.
+            if let store = session.store {
+                let cached = (try? store.messages(conversationId: conversationId)) ?? []
+                messages = riverRows(from: cached)
+            }
+        }
+    }
+
+    /// Create → refresh rail → auto-activate (web toast parity).
+    func createTopic(name: String, emoji: String, session: PulseSession) {
+        guard isGroupRoom, let viewer = session.viewer else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let topic = try await session.api.createTopic(
+                    conversationId: conversationId,
+                    userId: viewer.id,
+                    name: name,
+                    emoji: emoji,
+                )
+                self.loadTopics(session: session)
+                self.setActiveTopic(topic.id, session: session)
+                session.toasts.show("Filing to \(emoji) \(topic.name) — next send lands there")
+            } catch {
+                session.toasts.show(Self.describe(error))
+            }
+        }
+    }
+
+    /// Every 15 s while the room owns the screen (spec §1 row 9 — counts
+    /// refresh on open + after own send + poll).
+    private func startTopicTicker() {
+        topicTicker?.cancel()
+        topicTicker = Timer.publish(every: 15, on: .main, in: .common)
+            .autoconnect()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, let session = self.session, session.roomVisible else { return }
+                self.loadTopics(session: session)
+            }
     }
 
     static func describe(_ error: Error) -> String {

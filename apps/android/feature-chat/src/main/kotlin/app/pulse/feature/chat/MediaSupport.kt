@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,12 +36,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -49,6 +63,7 @@ import app.pulse.core.media.PulseMedia
 import app.pulse.domain.model.Message
 import app.pulse.ui.PulsePalette
 import java.io.ByteArrayOutputStream
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -110,6 +125,21 @@ object MediaSupport {
         }
     }
 
+    /**
+     * Recorded voice note → data-URL. Voice is already an encoded AAC/MPEG_4
+     * stream (MediaRecorder output) — no bitmap pass, just the same base64
+     * chunking shape as [imageToDataUrl] so the wire regex
+     * `audio/(webm|mpeg|ogg|wav|mp4|aac)` accepts it.
+     */
+    suspend fun audioToDataUrl(context: Context, file: File, mime: String = "audio/mp4"): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val bytes = file.takeIf { it.exists() && it.length() > 0 }?.readBytes()
+                    ?: throw IllegalStateException("Recording file is gone")
+                "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+            }
+        }
+
     data class Document(
         val dataUrl: String,
         val fileName: String,
@@ -158,6 +188,16 @@ object MediaSupport {
     /** Media URL for message paths — {gateway}/api/uploads/{path} (spec §1.1). */
     fun mediaUrl(path: String?): String? =
         path?.takeIf { it.isNotBlank() }?.let { PulseEndpoints.http("/api/uploads/" + it.removePrefix("/")) }
+
+    /**
+     * Absolute-or-relative URL resolver for link-preview thumbnails — the
+     * unfurler stores whatever the OG tags carried (relative paths resolve
+     * against the gateway origin, absolute URLs pass through untouched).
+     */
+    fun anyMediaUrl(url: String?): String? =
+        url?.takeIf { it.isNotBlank() }?.let {
+            if (it.startsWith("http://") || it.startsWith("https://")) it else PulseEndpoints.http(it)
+        }
 
     /** Mime for a downloaded file — extension map with the stored name. */
     fun mimeForFile(fileName: String?): String = PulseMedia.mimeForFileName(fileName)
@@ -225,6 +265,158 @@ internal fun ImageBubble(
                     color = if (mine) Color.White else MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Dashed rounded border (draw-behind) — the view-once tombstone and the topic
+ * "+" chip share the hand-drawn dashed stroke (Compose border() can't dash).
+ */
+internal fun Modifier.pulseDashedBorder(color: Color, width: Dp = 1.5.dp, cornerRadius: Dp = 12.dp): Modifier =
+    drawBehind {
+        val stroke = Stroke(width = width.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(stroke.width / 2, stroke.width / 2),
+            size = Size(size.width - stroke.width, size.height - stroke.width),
+            cornerRadius = CornerRadius(cornerRadius.toPx()),
+            style = stroke,
+        )
+    }
+
+/**
+ * Wave 2 view-once GATE (spec §1 row 6, unopened leg): blurred Coil image +
+ * darkened overlay + EyeOff + "Tap to view once". Tap consumes the photo
+ * (repo.markMessageViewed fire-and-forget) and opens the lightbox instantly —
+ * reveal is NOT gated on the POST (web parity).
+ */
+@Composable
+internal fun ViewOnceGateBubble(
+    imagePath: String?,
+    mine: Boolean,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = if (mine) PulsePalette.EmeraldDeep.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+        modifier = modifier,
+    ) {
+        Box(Modifier.padding(5.dp)) {
+            Box(
+                Modifier
+                    .widthIn(max = 260.dp)
+                    .heightIn(min = 200.dp)
+                    .aspectRatio(4f / 3f)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable(onClick = onOpen),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Anti-leak gate (spec row 6): NO image is fetched/rendered at all
+            // before consumption — a dark scrim + glyph instead of the web
+            // blur (Modifier.blur no-ops below API 31; zero-leak beats parity).
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                PulseEyeOff(tint = Color.White, modifier = Modifier.size(26.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Tap to view once",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color.White.copy(alpha = 0.18f))
+                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "it disappears after opening",
+                        color = Color.White.copy(alpha = 0.75f),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Eye-off glyph drawn natively — material-icons-extended is deliberately off
+ * the classpath (same reason as PulseCheckCheck in MessageSheets.kt).
+ */
+@Composable
+internal fun PulseEyeOff(
+    tint: Color,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    Canvas(modifier.semantics { if (contentDescription != null) this.contentDescription = contentDescription }) {
+        val stroke = Stroke(width = size.width * 0.085f, cap = StrokeCap.Round)
+        val cy = size.height / 2f
+        val eye = Path().apply {
+            moveTo(0f, cy)
+            cubicTo(
+                size.width * 0.25f, cy - size.height * 0.46f,
+                size.width * 0.75f, cy - size.height * 0.46f,
+                size.width, cy,
+            )
+            cubicTo(
+                size.width * 0.75f, cy + size.height * 0.46f,
+                size.width * 0.25f, cy + size.height * 0.46f,
+                0f, cy,
+            )
+            close()
+        }
+        drawPath(eye, tint, style = stroke)
+        drawCircle(tint, radius = size.width * 0.13f, center = Offset(size.width / 2f, cy), style = stroke)
+        drawLine(
+            tint,
+            start = Offset(size.width * 0.12f, size.height * 0.88f),
+            end = Offset(size.width * 0.88f, size.height * 0.12f),
+            strokeWidth = size.width * 0.085f,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+/**
+ * Wave 2 view-once BURN tombstone (spec §1 row 6 anti-replay hardening):
+ * once viewedAt != null the row NEVER renders the image — no blurred original,
+ * no lightbox entry, no preview fetch. Dashed placeholder only.
+ */
+@Composable
+internal fun BurnedPhotoBubble(modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
+        modifier = modifier,
+    ) {
+        Box(
+            Modifier
+                .size(width = 168.dp, height = 190.dp)
+                .pulseDashedBorder(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PulseEyeOff(
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(26.dp),
+                )
+                Text(
+                    "Photo opened",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "gone forever",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                 )
             }
         }

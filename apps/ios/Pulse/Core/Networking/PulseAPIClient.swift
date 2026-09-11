@@ -190,7 +190,9 @@ public struct PulseAPIClient: Sendable {
         filePath: String? = nil,
         fileName: String? = nil,
         fileSize: Int? = nil,
-        kind: String? = nil
+        kind: String? = nil,
+        viewOnce: Bool? = nil,
+        topicId: String? = nil
     ) async throws -> WireChatMessage {
         var body: [String: Any] = ["senderId": userId, "content": content, "kind": kind ?? "text"]
         if let replyToId { body["replyToId"] = replyToId }
@@ -201,6 +203,11 @@ public struct PulseAPIClient: Sendable {
         if let filePath { body["filePath"] = filePath }
         if let fileName { body["fileName"] = fileName }
         if let fileSize { body["fileSize"] = fileSize }
+        // W2-UI-B — view-once enters the body ONLY when true (server contract
+        // spec §0: viewOnce===true REQUIRES imagePath); topicId files the row
+        // under a topic (spec §1 rows 9/10 — thread replies never pass it).
+        if viewOnce == true { body["viewOnce"] = true }
+        if let topicId { body["topicId"] = topicId }
         let data = try await postRaw("/api/conversations/\(conversationId)/messages", body: body)
         return try WireMessageEnvelope.extract(from: data)
     }

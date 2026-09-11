@@ -49,7 +49,9 @@ final class PulseOutboxTests: XCTestCase {
             filePath: String?,
             fileName: String?,
             fileSize: Int?,
-            kind: String?
+            kind: String?,
+            viewOnce: Bool?,
+            topicId: String?
         ) async throws -> WireChatMessage {
             lock.lock()
             attempted.append(content)

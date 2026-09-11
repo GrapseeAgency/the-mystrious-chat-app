@@ -66,6 +66,7 @@ import androidx.lifecycle.viewModelScope
 import app.pulse.core.fx.PulseFx
 import app.pulse.core.media.PulseMedia
 import app.pulse.domain.model.Message
+import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.ui.PulseMotion
@@ -91,6 +92,8 @@ import kotlinx.coroutines.launch
 class ThreadViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repo: PulseRepository,
+    /** The ONE active voice player — room + thread share the singleton. */
+    val voicePlayer: VoicePlayer,
 ) : ViewModel() {
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
@@ -204,6 +207,24 @@ class ThreadViewModel @Inject constructor(
 
     fun consumeOpenedFile() {
         if (_state.value.openedFile != null) _state.value = _state.value.copy(openedFile = null)
+    }
+
+    /** Wave 2 view-once — fire-and-forget POST /viewed (reveal is instant). */
+    fun consumeViewOnce(message: Message) {
+        viewModelScope.launch { repo.markMessageViewed(message.id) }
+    }
+
+    /** Wave 2 transcript pill (thread parity with the room strip). */
+    fun transcribeVoice(messageId: String) {
+        if (messageId.startsWith(TEMP_MESSAGE_PREFIX)) return
+        viewModelScope.launch {
+            repo.transcribeMessage(messageId)
+                .onFailure {
+                    _state.value = _state.value.copy(
+                        notice = RoomNotice("Transcription unavailable", isError = true),
+                    )
+                }
+        }
     }
 }
 
@@ -334,6 +355,12 @@ fun ThreadScreen(
                                 message = root,
                                 viewerId = viewerId,
                                 downloading = false,
+                                voicePlayer = viewModel.voicePlayer,
+                                onConsumeViewOnce = { target ->
+                                    viewModel.consumeViewOnce(target)
+                                    lightboxTarget = target
+                                },
+                                onTranscribe = viewModel::transcribeVoice,
                                 onOpenImage = { lightboxTarget = root },
                                 onOpenFile = { viewModel.openFile(root, share = false) },
                             )
@@ -349,6 +376,12 @@ fun ThreadScreen(
                             message = reply,
                             viewerId = viewerId,
                             downloading = state.downloadingFileId == reply.id,
+                            voicePlayer = viewModel.voicePlayer,
+                            onConsumeViewOnce = { target ->
+                                viewModel.consumeViewOnce(target)
+                                lightboxTarget = target
+                            },
+                            onTranscribe = viewModel::transcribeVoice,
                             onOpenImage = { lightboxTarget = reply },
                             onOpenFile = { viewModel.openFile(reply, share = false) },
                         )
@@ -459,12 +492,32 @@ private fun ThreadContentBubble(
     message: Message,
     viewerId: String?,
     downloading: Boolean,
+    voicePlayer: VoicePlayer,
+    onConsumeViewOnce: (Message) -> Unit,
+    onTranscribe: (String) -> Unit,
     onOpenImage: () -> Unit,
     onOpenFile: () -> Unit,
 ) {
     val mine = message.authorId == viewerId
+    // Wave 2 view-once gating — same state machine as the room river.
+    val viewOncePhoto = message.viewOnce && message.imagePath != null
+    val burned = viewOncePhoto && !mine && message.viewedAt != null
+    val gated = viewOncePhoto && !mine && message.viewedAt == null && !message.isDeleted
     when {
         message.isDeleted -> TombstoneBubble()
+        message.poll != null || message.kind == Message.Kind.POLL -> PollCard(
+            message = message,
+            viewerId = viewerId,
+            mine = mine,
+            onVote = null, // threads render polls read-only; votes live in the river
+            onClose = null,
+        )
+        burned -> BurnedPhotoBubble()
+        gated -> ViewOnceGateBubble(
+            imagePath = message.imagePath,
+            mine = mine,
+            onOpen = { onConsumeViewOnce(message) },
+        )
         message.imagePath != null -> ImageBubble(message = message, mine = mine, onOpen = onOpenImage)
         message.filePath != null || message.kind == Message.Kind.FILE -> FileBubble(
             message = message,
@@ -478,6 +531,8 @@ private fun ThreadContentBubble(
             flashing = false,
             onLongPress = null,
             onQuoteClick = null,
+            voicePlayer = voicePlayer,
+            onTranscribe = onTranscribe,
             modifier = Modifier.widthIn(max = 300.dp),
         )
     }

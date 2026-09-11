@@ -69,4 +69,42 @@ object PulseMedia {
 
     /** True when the bytes fit the client document cap. */
     fun documentFits(bytes: Long): Boolean = bytes in 1..MAX_DOCUMENT_BYTES
+
+    // ── Wave 2 depth helpers (PURE — JVM-pinned by PulseWave2LogicTest) ──
+
+    /** Recording floor — shorter takes are discarded (web MIN_VOICE_MS). */
+    const val MIN_VOICE_MS: Long = 600
+
+    /**
+     * Voice-note duration on the wire: quantize to 100 ms, never send 0 —
+     * `max(1, round(ms/100)*100)`, the exact web rounding (spec §1 row 11).
+     */
+    fun voiceDurationMs(elapsedMs: Long): Long = maxOf(1L, Math.round(elapsedMs / 100.0) * 100)
+
+    /**
+     * Link-unfurl trigger (spec §1 row 8): `https?://` or a bare `www.`
+     * anywhere in the body — the sender's client then calls /unfurl once.
+     */
+    fun isUnfurlCandidate(content: String): Boolean =
+        Regex("(https?://|(^|\\s)www\\.)", RegexOption.IGNORE_CASE).containsMatchIn(content)
+
+    /**
+     * View-once row state (spec §1 rows 5/6): GATED = photo behind the tap
+     * overlay; BURNED = tombstone, NO render path of the image at all.
+     * `myOptionId`-style wire fields never leak in — state derives purely
+     * from (viewOnce flag, viewedAt stamp, viewer relationship).
+     */
+    enum class ViewOnceState { NONE, GATED, BURNED }
+
+    fun viewOnceState(
+        viewOnce: Boolean,
+        viewedAtMs: Long?,
+        mine: Boolean,
+        hasImage: Boolean,
+    ): ViewOnceState = when {
+        !viewOnce || !hasImage -> ViewOnceState.NONE
+        mine -> ViewOnceState.NONE          // sender always sees their own photo
+        viewedAtMs != null -> ViewOnceState.BURNED
+        else -> ViewOnceState.GATED
+    }
 }

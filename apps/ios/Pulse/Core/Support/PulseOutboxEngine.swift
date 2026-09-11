@@ -20,7 +20,9 @@ public protocol PulseOutboxSending: Sendable {
         filePath: String?,
         fileName: String?,
         fileSize: Int?,
-        kind: String?
+        kind: String?,
+        viewOnce: Bool?,
+        topicId: String?
     ) async throws -> WireChatMessage
 }
 
@@ -147,6 +149,8 @@ public final class PulseOutboxEngine: ObservableObject {
                     fileName: nil,
                     fileSize: nil,
                     kind: nil,
+                    viewOnce: nil,
+                    topicId: nil
                 )
                 try? store.upsert(messages: [real])
                 try? store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))

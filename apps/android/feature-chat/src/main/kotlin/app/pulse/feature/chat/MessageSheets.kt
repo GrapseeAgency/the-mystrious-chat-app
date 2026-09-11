@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -33,12 +34,14 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Forward
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -76,6 +79,93 @@ import app.pulse.ui.PulsePalette
 
 /** Wave 1 wire-whitelist palette (spec §1.1 — 🙏 replaced by 🎉 for compliance). */
 internal val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🎉")
+
+/**
+ * Wave 2 poll builder (spec §2.1): question ≤140 chars, 2–6 option rows with
+ * add/remove (remove only when >2), Post disabled until the question is
+ * non-blank AND ≥2 non-blank options. Server is single-choice + manual close.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun PollBuilderSheet(
+    onDismiss: () -> Unit,
+    onCreate: (question: String, options: List<String>) -> Unit,
+) {
+    var question by remember { mutableStateOf("") }
+    var options by remember { mutableStateOf(listOf("", "")) }
+    val ready = question.isNotBlank() && options.count { it.isNotBlank() } >= 2
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Poll, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("New poll", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(
+                    "${question.length}/140",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                "Live votes in this chat",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            Spacer(Modifier.height(10.dp))
+            BasicField(
+                value = question,
+                onValueChange = { if (it.length <= 140) question = it },
+                placeholder = "Ask a question…",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            options.forEachIndexed { index, value ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BasicField(
+                        value = value,
+                        onValueChange = { next ->
+                            if (next.length <= 80) {
+                                options = options.toMutableList().also { it[index] = next }
+                            }
+                        },
+                        placeholder = "Option ${index + 1}",
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (options.size > 2) {
+                        IconButton(onClick = { options = options.filterIndexed { i, _ -> i != index } }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Remove option", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+            if (options.size < 6) {
+                TextButton(onClick = { options = options + "" }) {
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add option", color = PulsePalette.Emerald)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Button(
+                onClick = {
+                    if (ready) {
+                        onCreate(question.trim(), options.map { it.trim() }.filter { it.isNotBlank() })
+                    }
+                },
+                enabled = ready,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Post poll")
+            }
+            Spacer(Modifier.height(28.dp))
+        }
+    }
+}
 
 /**
  * The long-press message sheet — Wave 0's reactions/reply/copy grown into the

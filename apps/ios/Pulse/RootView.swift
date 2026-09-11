@@ -29,7 +29,9 @@ struct RootView: View {
     @State private var newChatOpen = false
     @State private var settingsOpen = false
     @State private var storiesOpen = false
-    @State private var savedInFlight = false
+    // Wave 2 — dock More → Saved opens the real saved library (spec §1 row 14);
+    // the old create-self-chat detour is gone.
+    @State private var savedLibraryOpen = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var systemScheme
@@ -94,7 +96,7 @@ struct RootView: View {
                             onTab: { switchTab($0) },
                             onCompose: { newChatOpen = true },
                             onSettings: { settingsOpen = true },
-                            onSaved: { Task { await openSaved() } },
+                            onSaved: { savedLibraryOpen = true },
                             onStories: { storiesOpen = true },
                         )
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -116,6 +118,13 @@ struct RootView: View {
                 }
                 .sheet(isPresented: $storiesOpen) {
                     StoriesView(session: session)
+                }
+                .sheet(isPresented: $savedLibraryOpen) {
+                    SavedLibraryView(session: session) { conversation, messageId in
+                        savedLibraryOpen = false
+                        switchTab(.chats)
+                        session.requestOpenRoom(conversation, jumpMessageId: messageId)
+                    }
                 }
             } else {
                 // Gate on identity exactly like the web onboarding — the
@@ -155,22 +164,6 @@ struct RootView: View {
         guard target != tab else { return }
         navDirection = target.rawValue > tab.rawValue ? 1 : -1
         tab = target
-    }
-
-    /// More → Saved — the idempotent self-chat (server get-or-creates the
-    /// isSelf conversation), then the Chats tab pushes it. Land on Chats
-    /// first so the NavigationStack exists to receive the room handoff.
-    private func openSaved() async {
-        guard !savedInFlight else { return }
-        savedInFlight = true
-        defer { savedInFlight = false }
-        switchTab(.chats)
-        do {
-            let conv = try await session.api.createSelfChat()
-            session.requestOpenRoom(conv)
-        } catch {
-            session.toasts.show("Could not open Note to Self")
-        }
     }
 
     private var panelTransition: AnyTransition {

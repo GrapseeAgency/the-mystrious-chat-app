@@ -11,11 +11,13 @@ class SendMessageUseCase(private val repo: PulseRepository) {
         replyToId: String? = null,
         /** Thread-root id — sent as the wire `parentId`, NEVER merged with replyToId. */
         parentId: String? = null,
+        /** Wave 2 topic filing — the repo drops it on thread replies (spec §1 row 10). */
+        topicId: String? = null,
     ): Result<Message> {
         val trimmed = body.trim()
         if (trimmed.isEmpty()) return Result.failure(IllegalArgumentException("Message body is empty"))
         if (trimmed.length > MAX_LENGTH) return Result.failure(IllegalArgumentException("Message exceeds $MAX_LENGTH chars"))
-        return repo.sendMessage(conversationId, trimmed, replyToId, parentId)
+        return repo.sendMessage(conversationId, trimmed, replyToId, parentId, topicId)
     }
 
     companion object {

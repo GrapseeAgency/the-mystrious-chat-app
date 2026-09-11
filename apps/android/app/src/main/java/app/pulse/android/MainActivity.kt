@@ -101,6 +101,7 @@ import app.pulse.feature.calls.ContactsScreen
 import app.pulse.feature.chat.ArchivedScreen
 import app.pulse.feature.chat.ChatsScreen
 import app.pulse.feature.chat.ChatRoomScreen
+import app.pulse.feature.chat.SavedLibraryScreen
 import app.pulse.feature.chat.ThreadScreen
 import app.pulse.feature.hub.HubScreen
 import app.pulse.feature.settings.ProfileScreen
@@ -290,8 +291,9 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
     }
 
     // Dock visibility: tabs + the archived sub-page keep the chrome (web keeps
-    // the nav over hash sub-pages); rooms own the whole screen.
-    val showDock = currentRoute in TAB_ROUTES || currentRoute == "archived"
+    // the nav over hash sub-pages); rooms own the whole screen. Wave 2: the
+    // saved library keeps it too (it's a shell page, not a room).
+    val showDock = currentRoute in TAB_ROUTES || currentRoute == "archived" || currentRoute == "saved"
 
     // The system nav bar (gesture pill or 3-button strip) draws over the app —
     // every bottom-anchored surface must clear it.
@@ -379,6 +381,18 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                     onBack = { navController.popBackStack() },
                 )
             }
+            // Wave 2 — the dock "Saved" menu item now lands on the real library
+            // (fetch → Room cache → search → unsave → jump-to-message rows).
+            composable("saved") {
+                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                    SavedLibraryScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenRoom = { id, jump ->
+                            if (jump != null) navController.navigate("room/$id?jump=$jump") else navController.navigate("room/$id")
+                        },
+                    )
+                }
+            }
         }
 
         if (showDock) {
@@ -396,6 +410,10 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     if (currentRoute != "chats") switchTab("chats")
                     shell.requestSearch()
+                },
+                onSaved = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    navController.navigate("saved")
                 },
                 onDeferred = { message -> honest(message) },
                 moreMenuOpen = moreMenuOpen,
@@ -451,6 +469,7 @@ private fun CapsuleDock(
     onSelect: (String) -> Unit,
     onCompose: () -> Unit,
     onSearch: () -> Unit,
+    onSaved: () -> Unit,
     onDeferred: (String) -> Unit,
     moreMenuOpen: Boolean,
     onMoreMenuChange: (Boolean) -> Unit,
@@ -552,6 +571,7 @@ private fun CapsuleDock(
                         open = moreMenuOpen,
                         onOpenChange = onMoreMenuChange,
                         onSearch = onSearch,
+                        onSaved = onSaved,
                         onDeferred = onDeferred,
                     )
                 }
@@ -665,6 +685,7 @@ private fun MoreDockButton(
     open: Boolean,
     onOpenChange: (Boolean) -> Unit,
     onSearch: () -> Unit,
+    onSaved: () -> Unit,
     onDeferred: (String) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -713,7 +734,7 @@ private fun MoreDockButton(
                 leadingIcon = { Icon(Icons.Filled.Bookmark, contentDescription = null, tint = DockEmerald600) },
                 onClick = {
                     onOpenChange(false)
-                    onDeferred("Saved messages aren't available in this native build yet.")
+                    onSaved()
                 },
             )
             DropdownMenuItem(

@@ -129,10 +129,13 @@ struct ChatsView: View {
         .onReceive(session.$pendingOpenRoom) { pending in
             // Dock compose / More → Saved hand a conversation here. The
             // Published value also replays on re-subscription, so consume
-            // immediately (nil re-fire is guarded).
+            // immediately (nil re-fire is guarded). Wave 2 — a saved-library
+            // "open original" rides the SAME path with a jump target.
             guard let conv = pending else { return }
+            let jump = session.pendingJumpMessageId
             session.consumePendingOpenRoom()
-            openRoom(conv)
+            session.consumePendingJumpMessageId()
+            openRoom(conv, jumpMessageId: jump)
         }
     }
 

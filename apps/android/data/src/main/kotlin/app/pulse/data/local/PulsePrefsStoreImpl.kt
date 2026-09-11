@@ -3,6 +3,7 @@ package app.pulse.data.local
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.pulse.domain.repository.PulsePrefsStore
@@ -35,6 +36,7 @@ class PulsePrefsStoreImpl @Inject constructor(
         val REDUCED = booleanPreferencesKey("ui.reducedMotion")
         val CHATS_FILTER = stringPreferencesKey("chats.listFilter")
         val SERVER_BASE = stringPreferencesKey("net.serverBase")
+        val VOICE_RATE = floatPreferencesKey("voice.rate")
     }
 
     override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
@@ -45,6 +47,7 @@ class PulsePrefsStoreImpl @Inject constructor(
     override val reducedMotion: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.REDUCED] ?: false }
     override val chatsListFilter: Flow<String> = context.pulsePrefs.data.map { it[Keys.CHATS_FILTER] ?: "all" }
     override val serverBase: Flow<String?> = context.pulsePrefs.data.map { it[Keys.SERVER_BASE]?.takeIf { v -> v.isNotBlank() } }
+    override val voiceRate: Flow<Float> = context.pulsePrefs.data.map { it[Keys.VOICE_RATE] ?: 1f }
 
     override suspend fun setViewer(id: String?, name: String?, color: String?) {
         context.pulsePrefs.edit { p ->
@@ -74,6 +77,10 @@ class PulsePrefsStoreImpl @Inject constructor(
 
     override suspend fun setChatsListFilter(value: String) {
         context.pulsePrefs.edit { it[Keys.CHATS_FILTER] = value }
+    }
+
+    override suspend fun setVoiceRate(value: Float) {
+        context.pulsePrefs.edit { it[Keys.VOICE_RATE] = value }
     }
 
     override suspend fun setServerBase(value: String?) {
