@@ -1291,10 +1291,13 @@ class PulseRepositoryImpl @Inject constructor(
         if (rows.isEmpty()) return Result.success(0)
         var flushed = 0
         for (row in rows) {
+            // `continue` inside an inline lambda is experimental Kotlin —
+            // the null-check form is semantically identical and stable.
             val payload = runCatching {
                 PulseJson.parseToJsonElement(row.payloadJson).jsonObject
-            }.getOrElse {
-                Log.w(TAG, "call-log queue row ${row.id} unparseable — dropped", it)
+            }.getOrNull()
+            if (payload == null) {
+                Log.w(TAG, "call-log queue row ${row.id} unparseable — dropped")
                 callLogDao.dequeueById(row.id)
                 continue
             }

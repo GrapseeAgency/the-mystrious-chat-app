@@ -220,44 +220,56 @@ class CallEngine @Inject constructor(
                 is CallEffect.CreateAnswer -> createAnswer(effect.remoteSdp)
                 is CallEffect.ApplyRemoteAnswer -> applyRemoteAnswer(effect.sdp)
                 is CallEffect.ApplyRemoteIce -> applyRemoteIce(effect)
-                is CallEffect.SendOffer -> repo.emitCall(
-                    CallSignalOut(
-                        event = "call:offer", callId = effect.callId, conversationId = effect.conversationId,
-                        from = effect.from, to = effect.to, kind = effect.kind, sdp = effect.sdp,
-                        callerName = effect.callerName, callerColor = effect.callerColor, callerAvatar = effect.callerAvatar,
-                    ),
-                )
-                is CallEffect.SendAnswer -> repo.emitCall(
-                    CallSignalOut(
-                        event = "call:answer", callId = effect.callId, conversationId = effect.conversationId,
-                        from = effect.from, to = effect.to, kind = effect.kind, sdp = effect.sdp,
-                    ),
-                )
-                is CallEffect.SendIce -> repo.emitCall(
-                    CallSignalOut(
-                        event = "call:ice", callId = effect.callId, conversationId = effect.conversationId,
-                        from = effect.from, to = effect.to, kind = effect.kind,
-                        candidate = effect.candidate, sdpMid = effect.sdpMid, sdpMLineIndex = effect.sdpMLineIndex,
-                    ),
-                )
-                is CallEffect.SendReject -> repo.emitCall(
-                    CallSignalOut(
-                        event = "call:reject", callId = effect.callId, conversationId = effect.conversationId,
-                        from = effect.from, to = effect.to, kind = effect.kind,
-                    ),
-                )
-                is CallEffect.SendCancel -> repo.emitCall(
-                    CallSignalOut(
-                        event = "call:cancel", callId = effect.callId, conversationId = effect.conversationId,
-                        from = effect.from, to = effect.to, kind = effect.kind,
-                    ),
-                )
-                is CallEffect.SendHangup -> repo.emitCall(
-                    CallSignalOut(
-                        event = "call:hangup", callId = effect.callId, conversationId = effect.conversationId,
-                        from = effect.from, to = effect.to, kind = effect.kind, durationSec = effect.durationSec,
-                    ),
-                )
+                is CallEffect.SendOffer -> scope.launch {
+                    repo.emitCall(
+                        CallSignalOut(
+                            event = "call:offer", callId = effect.callId, conversationId = effect.conversationId,
+                            from = effect.from, to = effect.to, kind = effect.kind, sdp = effect.sdp,
+                            callerName = effect.callerName, callerColor = effect.callerColor, callerAvatar = effect.callerAvatar,
+                        ),
+                    )
+                }
+                is CallEffect.SendAnswer -> scope.launch {
+                    repo.emitCall(
+                        CallSignalOut(
+                            event = "call:answer", callId = effect.callId, conversationId = effect.conversationId,
+                            from = effect.from, to = effect.to, kind = effect.kind, sdp = effect.sdp,
+                        ),
+                    )
+                }
+                is CallEffect.SendIce -> scope.launch {
+                    repo.emitCall(
+                        CallSignalOut(
+                            event = "call:ice", callId = effect.callId, conversationId = effect.conversationId,
+                            from = effect.from, to = effect.to, kind = effect.kind,
+                            candidate = effect.candidate, sdpMid = effect.sdpMid, sdpMLineIndex = effect.sdpMLineIndex,
+                        ),
+                    )
+                }
+                is CallEffect.SendReject -> scope.launch {
+                    repo.emitCall(
+                        CallSignalOut(
+                            event = "call:reject", callId = effect.callId, conversationId = effect.conversationId,
+                            from = effect.from, to = effect.to, kind = effect.kind,
+                        ),
+                    )
+                }
+                is CallEffect.SendCancel -> scope.launch {
+                    repo.emitCall(
+                        CallSignalOut(
+                            event = "call:cancel", callId = effect.callId, conversationId = effect.conversationId,
+                            from = effect.from, to = effect.to, kind = effect.kind,
+                        ),
+                    )
+                }
+                is CallEffect.SendHangup -> scope.launch {
+                    repo.emitCall(
+                        CallSignalOut(
+                            event = "call:hangup", callId = effect.callId, conversationId = effect.conversationId,
+                            from = effect.from, to = effect.to, kind = effect.kind, durationSec = effect.durationSec,
+                        ),
+                    )
+                }
                 is CallEffect.WriteLog -> writeLog(effect.entry)
                 CallEffect.ReleaseMedia -> releaseMedia()
             }
@@ -353,7 +365,11 @@ class CallEngine @Inject constructor(
     }
 
     private fun createOffer() {
-        val connection = ensurePeerConnection() ?: return runPeerFailure()
+        val connection = ensurePeerConnection()
+        if (connection == null) {
+            runPeerFailure()
+            return
+        }
         connection.createOffer(
             observer(
                 onSuccess = { sdp ->
@@ -377,7 +393,11 @@ class CallEngine @Inject constructor(
     }
 
     private fun createAnswer(remoteSdp: String) {
-        val connection = ensurePeerConnection() ?: return runPeerFailure()
+        val connection = ensurePeerConnection()
+        if (connection == null) {
+            runPeerFailure()
+            return
+        }
         if (!remoteDescSet) {
             connection.setRemoteDescription(
                 SimpleObserver(),
@@ -534,7 +554,7 @@ class CallEngine @Inject constructor(
             c.kind == Conversation.Kind.DM && peerId in c.memberIds
         }
         if (cached != null) return cached
-        return runCatching { repo.createDm(peerId) }.getOrNull()
+        return runCatching { repo.createDm(peerId) }.getOrNull()?.getOrNull()
     }
 
     private companion object {

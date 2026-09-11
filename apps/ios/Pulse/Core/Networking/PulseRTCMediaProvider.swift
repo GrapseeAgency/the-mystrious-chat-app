@@ -244,8 +244,9 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     // and must match the ObjC selectors exactly — that mismatch was the
     // first CI round's conformance failure.
 
-    // REQUIRED: peerConnection:didChangeSignalingState:
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeSignalingState stateChanged: RTCSignalingState) {
+    // REQUIRED: peerConnection:didChangeSignalingState: → Swift drops the
+    // RTCSignalingState type suffix from the label.
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
         // Signaling churn is not a state-machine input (offer/answer drive it).
     }
 
@@ -262,23 +263,23 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     }
 
     // REQUIRED: peerConnection:didChangeIceConnectionState:
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeIceConnectionState newState: RTCIceConnectionState) {
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         emitConnectionState(Self.mapIceState(newState))
     }
 
     // REQUIRED: peerConnection:didChangeIceGatheringState:
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeIceGatheringState newState: RTCIceGatheringState) {
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
         // Gathering progress carries no machine input (trickle ICE already
         // streams candidates individually).
     }
 
     // REQUIRED: peerConnection:didGenerateIceCandidate:
-    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerateIceCandidate candidate: RTCIceCandidate) {
+    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         emitLocalCandidate(candidate)
     }
 
     // REQUIRED: peerConnection:didRemoveIceCandidates:
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemoveIceCandidates candidates: [RTCIceCandidate]) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
 
     // REQUIRED: peerConnection:didOpenDataChannel:
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
