@@ -708,7 +708,7 @@ private struct MessageInfoSheet: View {
                     }
                 }
                 let seenTitle = "\(seenBy.count) seen"
-                Section(seenTitle) {
+                Section {
                     if seenBy.isEmpty {
                         Text("Nobody has seen this message yet")
                             .font(.footnote)
@@ -723,6 +723,8 @@ private struct MessageInfoSheet: View {
                                 .foregroundStyle(PulseTheme.emerald)
                         }
                     }
+                } header: {
+                    Text(seenTitle)
                 }
                 if let reactions = message.reactions, !reactions.isEmpty {
                     Section("Reactions") {
