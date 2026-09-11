@@ -1,12 +1,12 @@
 {
-  "versionCode": 12,
-  "versionName": "0.4.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.4.0-native/Pulse-v0.4.0-native.apk",
+  "versionCode": 13,
+  "versionName": "0.5.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.5.0-native/Pulse-v0.5.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "e3676d88b9ac2620333c8522f8111d1a49291470b5ae7398d4f3f38b30794aa4",
-  "notes": "Wave 2 — native messaging depth II: voice notes (record/cancel/send kind:audio, playback with 1x/1.5x/2x persisted rate + progress waveform, ASR transcript strips via /transcribe), view-once photos (native send toggle, tap-to-view burn gate, hard anti-replay: no image render after consumption), polls (create 2-6 options, votedBy-derived own pick — the actor-relative myOptionId bug is avoided, no revote, creator close, live tallies via poll:voted), link previews (post-send unfurl, OpenGraph card, link:preview relay), saved library (100-item mirror, search, jump-to-original, unsave), topics (Zulip-style rail, General = whole room, topic-filed sends, live topic views, counts). Android Room v6 / iOS GRDB v4. Live gate 40/40. Installable APK versionCode 12.",
+  "sha256": "46d296f63498e10e70bd371ce39be3beb0fc00159a74e0efe5d2a9ccbf79cf59",
+  "notes": "Wave 3 \u2014 native calls: full 1:1 WebRTC voice calling on both platforms on the pure call state machine (outgoing/incoming ring, accept/decline/cancel/busy/timeout/offline, connecting, connected with mute + speaker route + duration tick, hangup, 30s server ring timeout, disconnect teardown, stale-state cleanup, duplicate-event idempotency). Signaling = the proven relay call:* family (identity-gated). Call log = single-writer REST /api/calls + offline queue + local cache (Android Room v7, iOS GRDB v5). Android ships stream-webrtc 1.3.10 with mic-type foreground service + audio focus/route manager; iOS ships stasel/WebRTC 125.0.0 with AVAudioSession configure+restore. Live signalling gate 17/17 through the real edge+relay. Android JVM 79 tests + emulator instrumented green; iOS 92 tests (3 env-skipped) + archive green. APK versionCode 13.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-11T13:56:12Z"
+  "updatedAt": "2026-09-11T18:25:30Z"
 }
