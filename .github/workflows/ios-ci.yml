@@ -44,6 +44,25 @@ jobs:
             -destination 'generic/platform=iOS Simulator' build \
             CODE_SIGNING_ALLOWED=NO | xcbeautify
 
+      # SocketRoundTripTests target: the iOS SDK has no Process, so the node
+      # relay must be started runner-side; the simulator reaches it on loopback.
+      - name: Install relay fixture deps (socket.io)
+        run: npm install --no-audit --no-fund --prefix PulseTests/Fixtures
+
+      - name: Start pulse relay fixture on 127.0.0.1:3995
+        run: |
+          node PulseTests/Fixtures/server.js 3995 > /tmp/pulse-relay-fixture.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3995/health > /dev/null; then
+              echo "relay fixture healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "relay fixture failed to become healthy" >&2
+          cat /tmp/pulse-relay-fixture.log >&2
+          exit 1
+
       - name: Unit tests (incl. GRDB v2 migration, outbox engine, socket round-trip vs node relay)
         if: steps.sim.outputs.device != ''
         run: |

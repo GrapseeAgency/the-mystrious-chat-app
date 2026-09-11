@@ -118,12 +118,12 @@ class RoomMigrationTest {
 
         // ── v3 rows intact ─────────────────────────────────────
         val conversation = db.conversationDao().byId("c1")
-        assertNotNull(conversation, "v3 conversation row was destroyed by the migration")
+        assertNotNull("v3 conversation row was destroyed by the migration", conversation)
         assertEquals("Alice", conversation!!.title)
         assertEquals(3, conversation.streakCount)
 
         val message = db.messageDao().byId("m1")
-        assertNotNull(message, "v3 message row was destroyed by the migration")
+        assertNotNull("v3 message row was destroyed by the migration", message)
         assertEquals("pre-migration hello", message!!.body)
 
         // ── outbox DAO round-trip ──────────────────────────────

@@ -62,3 +62,10 @@ schemes:
         PulseTests: [test]
     test:
       targets: [PulseTests]
+      # SocketRoundTripTests connects to the node relay that CI starts as a
+      # runner-side step on 127.0.0.1:3995 (the simulator shares host loopback;
+      # the iOS SDK has no Process, so the test cannot spawn it itself).
+      environmentVariables:
+        - variable: PULSE_RELAY_URL
+          value: http://127.0.0.1:3995
+          isEnabled: true
