@@ -92,6 +92,11 @@ dependencies {
     implementation(project(":feature-hub"))
     implementation(project(":feature-settings"))
 
+    // SessionViewModel/OnboardingViewModel encode/decode the persisted endpoint
+    // overrides directly — :protocol exposes serialization as `implementation`,
+    // so :app needs the runtime on its own classpath (same coordinate).
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)

@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import Pulse
 
 /// Wave 0 — REAL Socket.IO round trip. Spawns the committed node fixture
