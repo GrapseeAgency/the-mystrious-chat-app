@@ -27,7 +27,7 @@ struct CallsHistoryView: View {
                     ContentUnavailableCompat(
                         title: "No calls yet",
                         systemImage: "phone.badge.clock",
-                        note: loadError,
+                        note: loadError ?? "Calls you make and take will show up here.",
                     )
                 } else {
                     List(rows) { row in
