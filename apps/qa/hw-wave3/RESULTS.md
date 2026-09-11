@@ -81,9 +81,13 @@ this directory makes every gate executable by an operator with two devices.
 | Item | Result |
 |------|--------|
 | TURN ICE plumbing (manifest `ice` → engines), Android | core/data/feature-calls compile ✅; core+protocol+domain tests 95/95 ✅ (local, Temurin 21) |
-| TURN ICE plumbing, iOS | PulseIceOverrideTests added; CI (macOS) result recorded in the W3-HW push |
+| TURN ICE plumbing, iOS | 5× PulseIceOverrideTests ✅ in CI |
+| Android CI (main `6a8a88e` + tag `v0.5.1-native`) | build ✅ + instrumented (emulator) ✅ |
+| iOS CI (tag `v0.5.1-native`) | build-test ✅ (97 tests incl. 5 new ICE) + xcarchive ✅ — NOTE: first tag run FAILED on the known relay-fixture flake (`testJoinPresenceTypingAndNotifyRoundTrip`, "joined ack" 10 s timeout — a Wave-3-documented race, unrelated to ICE plumbing; failed-job re-run passed). Both facts recorded. |
+| Release | GitHub Release `v0.5.1-native` published — `Pulse-v0.5.1-native.apk` (versionCode 14, contains the TURN plumbing + kit) |
 | Manifest schema doc | `ice` documented in 01-infrastructure §4 |
 | Kit executability | capture script syntax-checked (`bash -n`) |
 
+CI-commits: `b9da249` (plumbing + kit) → `71757ee` (test-fix) → `6a8a88e`/tag `v0.5.1-native` (release).
 Update this file only with real device evidence; every "NOT TESTED — BLOCKED"
 stays until a physical run replaces it.
