@@ -675,7 +675,7 @@ class RoomMigrationTest {
             createdAt = "2026-02-02T10:01:00.000Z",
         )
         assertTrue("first enqueue must succeed", db.callLogDao().enqueue(payload) != -1L)
-        assertEquals(-1L, db.callLogDao().enqueue(payload), "duplicate payloadJson must IGNORE")
+        assertEquals("duplicate payloadJson must IGNORE", -1L, db.callLogDao().enqueue(payload))
         assertEquals(1, db.callLogDao().queueCount())
         val queued = db.callLogDao().queued().first()
         db.callLogDao().bumpAttempts(queued.id)

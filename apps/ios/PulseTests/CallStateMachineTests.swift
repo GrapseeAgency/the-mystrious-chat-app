@@ -171,10 +171,13 @@ final class CallStateMachineTests: XCTestCase {
         // Within the grace window nothing fires.
         XCTAssertNil(machine.checkTimeouts(now: Date()))
         // After it, the machine drops the call (answered → completed).
-        guard let fired = machine.checkTimeouts(now: Date().addingTimeInterval(0.2)) else {
+        let after = Date().addingTimeInterval(0.2)
+        guard let fired = machine.checkTimeouts(now: after) else {
             return XCTFail("disconnect grace must fire")
         }
-        let end = machine.apply(fired, now: Date())
+        // Apply with the SAME timestamp the check used — the reducer re-verifies
+        // now >= graceDeadline and an already-passed "now" would be a no-op.
+        let end = machine.apply(fired, now: after)
         XCTAssertEqual(end.end?.outcome, .completed)
     }
 
