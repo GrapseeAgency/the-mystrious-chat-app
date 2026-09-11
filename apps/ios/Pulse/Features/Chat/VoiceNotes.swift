@@ -188,7 +188,7 @@ final class VoicePlaybackManager: ObservableObject {
         guard let player, let activeId else { return }
         player.currentTime = 0
         player.play()
-        state = PlaybackState(messageId: activeId, progress: 0, playing: true, rate: state?.rate ?? defaultRate)
+        state = PlaybackState(messageId: activeId, progress: 0, playing: true, rate: state?.rate ?? Self.defaultRate)
         startTicker()
     }
 
@@ -226,10 +226,10 @@ final class VoicePlaybackManager: ObservableObject {
         let progress = min(1, max(0, player.currentTime / duration))
         let playing = player.isPlaying
         if !playing && progress >= 0.999 {
-            state = PlaybackState(messageId: activeId, progress: 1, playing: false, rate: state?.rate ?? defaultRate)
+            state = PlaybackState(messageId: activeId, progress: 1, playing: false, rate: state?.rate ?? Self.defaultRate)
             stopTicker()
         } else {
-            state = PlaybackState(messageId: activeId, progress: progress, playing: playing, rate: state?.rate ?? defaultRate)
+            state = PlaybackState(messageId: activeId, progress: progress, playing: playing, rate: state?.rate ?? Self.defaultRate)
         }
     }
 
