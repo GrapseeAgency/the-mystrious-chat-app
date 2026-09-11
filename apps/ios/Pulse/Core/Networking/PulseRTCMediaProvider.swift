@@ -216,7 +216,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         // ObjC import order: sdp → sdpMLineIndex → sdpMid.
         let ice = RTCIceCandidate(
             sdp: candidate,
-            sdpMLineIndex: Int(sdpMLineIndex ?? 0),
+            sdpMLineIndex: Int32(sdpMLineIndex ?? 0),
             sdpMid: sdpMid,
         )
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
