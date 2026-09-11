@@ -5,8 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import app.pulse.domain.call.CallClock
-import app.pulse.domain.call.CallEvent
-import app.pulse.domain.call.CallEffect
+import app.pulse.domain.call.CallStateMachine.CallEffect
+import app.pulse.domain.call.CallStateMachine.CallEvent
 import app.pulse.domain.call.CallLogMapper
 import app.pulse.domain.call.CallSnapshot
 import app.pulse.domain.call.CallStateMachine
@@ -22,8 +22,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.IceCandidate
-import org.webrtc.IceServer
-import org.webrtc.JavaAudioDeviceModule
+import org.webrtc.audio.JavaAudioDeviceModule
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
@@ -308,8 +307,8 @@ class CallEngine @Inject constructor(
         if (factory == null) return null
         val rtcConfig = PeerConnection.RTCConfiguration(
             listOf(
-                IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-                IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+                PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
             ),
         ).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN

@@ -8,6 +8,7 @@ import app.pulse.protocol.CallHangupDto
 import app.pulse.protocol.CallIceDto
 import app.pulse.protocol.CallOfferDto
 import app.pulse.protocol.CallRejectDto
+import app.pulse.protocol.toJsonObject
 import app.pulse.protocol.CallSignalDto
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.ConversationUpdatedPayload
@@ -73,7 +74,12 @@ class PulseSocketClient(
         data class StageState(val conversationId: String, val state: kotlinx.serialization.json.JsonElement?) : Signal
         data class StageEnded(val conversationId: String) : Signal
         data class SpaceState(val conversationId: String, val state: kotlinx.serialization.json.JsonElement?) : Signal
-        data class CallSignal(val signal: CallSignal) : Signal
+        /**
+         * Typed call:* envelope — the payload type is the OUTER-level union
+         * (fully qualified: inside this nested class the bare name
+         * `CallSignal` would resolve to the nested class itself).
+         */
+        data class CallSignal(val signal: app.pulse.data.remote.PulseSocketClient.CallSignal) : Signal
     }
 
     /**
@@ -218,17 +224,26 @@ class PulseSocketClient(
         sock.on(SocketEvents.SPACE_STATE) { args ->
             decode<SpaceStatePayload>(args)?.let { _signals.tryEmit(Signal.SpaceState(it.conversationId, it.state)) }
         }
-        for (pair in listOf(
-            SocketEvents.CALL_OFFER to CallSignalDecoder.offer,
-            SocketEvents.CALL_ANSWER to CallSignalDecoder.answer,
-            SocketEvents.CALL_ICE to CallSignalDecoder.ice,
-            SocketEvents.CALL_REJECT to CallSignalDecoder.reject,
-            SocketEvents.CALL_CANCEL to CallSignalDecoder.cancel,
-            SocketEvents.CALL_HANGUP to CallSignalDecoder.hangup,
-        )) {
-            sock.on(pair.first) { args ->
-                pair.second(args)?.let { _signals.tryEmit(Signal.CallSignal(it)) }
-            }
+        // Typed call:* handlers — decode into the EXACT per-event DTO, wrap
+        // into the outer-level union, emit. Inline (the decoder needs the
+        // instance `decode` helper — a nested object cannot reach it).
+        sock.on(SocketEvents.CALL_OFFER) { args ->
+            decode<CallOfferDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Offer(it))) }
+        }
+        sock.on(SocketEvents.CALL_ANSWER) { args ->
+            decode<CallAnswerDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Answer(it))) }
+        }
+        sock.on(SocketEvents.CALL_ICE) { args ->
+            decode<CallIceDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Ice(it))) }
+        }
+        sock.on(SocketEvents.CALL_REJECT) { args ->
+            decode<CallRejectDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Reject(it))) }
+        }
+        sock.on(SocketEvents.CALL_CANCEL) { args ->
+            decode<CallCancelDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Cancel(it))) }
+        }
+        sock.on(SocketEvents.CALL_HANGUP) { args ->
+            decode<CallHangupDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Hangup(it))) }
         }
 
         socket = sock
@@ -291,28 +306,6 @@ class PulseSocketClient(
     private fun emitCall(event: String, payload: kotlinx.serialization.json.JsonObject) {
         val sock = socket ?: return
         sock.emit(event, JSONObject(payload.toString()))
-    }
-
-    /** Per-event decode table for the six S→C call:* payloads. */
-    private object CallSignalDecoder {
-        val offer: (Array<out Any?>) -> CallSignal? = { args ->
-            decode<CallOfferDto>(args)?.let { CallSignal.Offer(it) }
-        }
-        val answer: (Array<out Any?>) -> CallSignal? = { args ->
-            decode<CallAnswerDto>(args)?.let { CallSignal.Answer(it) }
-        }
-        val ice: (Array<out Any?>) -> CallSignal? = { args ->
-            decode<CallIceDto>(args)?.let { CallSignal.Ice(it) }
-        }
-        val reject: (Array<out Any?>) -> CallSignal? = { args ->
-            decode<CallRejectDto>(args)?.let { CallSignal.Reject(it) }
-        }
-        val cancel: (Array<out Any?>) -> CallSignal? = { args ->
-            decode<CallCancelDto>(args)?.let { CallSignal.Cancel(it) }
-        }
-        val hangup: (Array<out Any?>) -> CallSignal? = { args ->
-            decode<CallHangupDto>(args)?.let { CallSignal.Hangup(it) }
-        }
     }
 
     fun disconnect() {

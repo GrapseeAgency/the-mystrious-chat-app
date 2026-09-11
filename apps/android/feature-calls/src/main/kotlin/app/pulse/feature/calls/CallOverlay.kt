@@ -177,8 +177,11 @@ fun CallOverlay(vm: CallViewModel) {
 }
 
 private fun statusLine(snapshot: CallSnapshot, micMuted: Boolean): String {
-    if (!snapshot.error.isNullOrBlank()) return snapshot.error
-    if (!snapshot.summary.isNullOrBlank() && snapshot.state == CallState.ENDED) return snapshot.summary
+    // Local vals — smart casts across module boundaries are not allowed.
+    val error = snapshot.error
+    if (!error.isNullOrBlank()) return error
+    val summary = snapshot.summary
+    if (!summary.isNullOrBlank() && snapshot.state == CallState.ENDED) return summary
     return when (snapshot.state) {
         CallState.OUTGOING_RINGING -> "Ringing…"
         CallState.INCOMING_RINGING -> "Incoming voice call"

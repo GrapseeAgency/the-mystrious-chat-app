@@ -58,7 +58,7 @@ class CallAudioManager(context: Context) {
     /** Loud-speaker toggle — true once applied. */
     fun setSpeakerOn(on: Boolean): Boolean = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val target = am.availableCommunicationDevices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_SPEAKER }
+            val target = am.availableCommunicationDevices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
             if (target != null) am.setCommunicationDevice(target) else false
         } else {
             @Suppress("DEPRECATION")
@@ -70,7 +70,7 @@ class CallAudioManager(context: Context) {
     /** Current loud-speaker state (UI toggle mirror). */
     fun isSpeakerOn(): Boolean = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            am.communicationDevice?.type == android.media.AudioDeviceInfo.TYPE_SPEAKER
+            am.communicationDevice?.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
         } else {
             @Suppress("DEPRECATION")
             am.isSpeakerphoneOn

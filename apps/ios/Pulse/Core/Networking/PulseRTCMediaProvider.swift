@@ -239,28 +239,66 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     }
 
     // ── RTCPeerConnectionDelegate (off-main; hop with plain values) ──
+    // Signatures verified against the PINNED binary's headers
+    // (stasel/WebRTC 125.0.0): the nine pre-@optional methods are REQUIRED
+    // and must match the ObjC selectors exactly — that mismatch was the
+    // first CI round's conformance failure.
 
+    // REQUIRED: peerConnection:didChangeSignalingState:
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeSignalingState stateChanged: RTCSignalingState) {
+        // Signaling churn is not a state-machine input (offer/answer drive it).
+    }
+
+    // REQUIRED: peerConnection:didAddStream: (UnifiedPlan — inert)
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
+
+    // REQUIRED: peerConnection:didRemoveStream: (UnifiedPlan — inert)
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
+
+    // REQUIRED: peerConnectionShouldNegotiate:
+    func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
+        // Renegotiation is not part of the Wave 3 flow; the machine's stale
+        // timer is the honest backstop if the peer expects a renegotiation.
+    }
+
+    // REQUIRED: peerConnection:didChangeIceConnectionState:
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeIceConnectionState newState: RTCIceConnectionState) {
+        emitConnectionState(Self.mapIceState(newState))
+    }
+
+    // REQUIRED: peerConnection:didChangeIceGatheringState:
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeIceGatheringState newState: RTCIceGatheringState) {
+        // Gathering progress carries no machine input (trickle ICE already
+        // streams candidates individually).
+    }
+
+    // REQUIRED: peerConnection:didGenerateIceCandidate:
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerateIceCandidate candidate: RTCIceCandidate) {
         emitLocalCandidate(candidate)
     }
 
-    /// Legacy selector spelling — inert if the pinned build uses the modern
-    /// one (exactly one of the two fires at runtime).
-    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        emitLocalCandidate(candidate)
-    }
+    // REQUIRED: peerConnection:didRemoveIceCandidates:
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemoveIceCandidates candidates: [RTCIceCandidate]) {}
 
-    /// WebRTC M125 selector spelling — didChangeIceConnectionState was
-    /// renamed to didChange state: (RTCIceConnectionState).
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange state: RTCIceConnectionState) {
-        emitConnectionState(Self.mapIceState(state))
-    }
+    // REQUIRED: peerConnection:didOpenDataChannel:
+    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
 
-    /// Modern peer-connection-state spelling — same mapping, idempotent at
-    /// the state machine (ready-after-ready is a no-op).
+    // ── @optional — the richer UNIFIED_PLAN peer-connection state ──
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
+        // Same truth as the ICE mapping, idempotent at the state machine
+        // (ready-after-ready is a no-op).
         emitConnectionState(Self.mapPcState(newState))
     }
+
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChangeStandardizedIceConnectionState newState: RTCIceConnectionState) {
+        // Covered by didChangeIceConnectionState — ignore to stay idempotent.
+    }
+
+    func peerConnection(_ peerConnection: RTCPeerConnection, didStartReceivingOn transceiver: RTCRtpTransceiver) {}
+
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove receiver: RTCRtpReceiver) {}
+
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange local: RTCIceCandidate, remoteCandidate remote: RTCIceCandidate) {}
 
     private func emitLocalCandidate(_ candidate: RTCIceCandidate) {
         let candidateString = candidate.sdp

@@ -1,7 +1,6 @@
 package app.pulse.feature.calls
 
 import androidx.lifecycle.ViewModel
-import app.pulse.domain.call.CallEffect
 import app.pulse.domain.call.CallSnapshot
 import app.pulse.domain.model.CallPeer
 import app.pulse.domain.repository.PulseRepository
@@ -56,11 +55,6 @@ class CallViewModel @Inject constructor(
         callerName: String? = null,
         callerColor: String? = null,
     ) = startOutgoing(peerId, name, color, avatar, callerName, callerColor)
-
-    companion object {
-        /** Reserved for future effect-level UI hooks (the engine consumes effects). */
-        val NoEffects: List<CallEffect> = emptyList()
-    }
 }
 
 /** Small extension so history rows can render without leaking domain internals. */
