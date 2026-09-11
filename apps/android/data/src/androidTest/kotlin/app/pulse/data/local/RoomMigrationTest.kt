@@ -185,7 +185,10 @@ class RoomMigrationTest {
     fun migration3To4PreservesRowsAndAddsOutboxDraft() = runBlocking {
         createV3DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_3_4)
+            // Wave 1: the compiled schema is now v5, so the REAL open path is
+            // 3 → 4 → 5 — both migrations must be present (v5 columns are
+            // additive; every assertion below still holds on the v5 state).
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
 

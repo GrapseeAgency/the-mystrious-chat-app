@@ -452,10 +452,11 @@ private struct RoomContent: View {
     }
 
     private func openLightbox(_ message: WireChatMessage) {
-        lightbox = MediaLightboxTarget(
-            url: PulseMediaOpener.url(for: message),
-            caption: message.content,
-        )
+        guard let url = PulseMediaOpener.url(for: message) else {
+            session.toasts.show("Media unavailable")
+            return
+        }
+        lightbox = MediaLightboxTarget(url: url, caption: message.content)
     }
 
     private func openFile(_ message: WireChatMessage) {
