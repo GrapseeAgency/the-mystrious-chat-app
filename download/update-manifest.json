@@ -1,12 +1,12 @@
 {
-  "versionCode": 10,
-  "versionName": "0.2.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.2.0-native/Pulse-v0.2.0-native.apk",
+  "versionCode": 11,
+  "versionName": "0.3.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.3.0-native/Pulse-v0.3.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "4dadcd91e1aca6f8db2e7f12a0a906dede9e4756a1bd84ae57615d12db0e7d84",
-  "notes": "Wave 0 — native foundation: one authoritative typed contract (22 client / 27 server / 11 notify socket events), Android Room v4 offline core (outbox + drafts, non-destructive v3→v4 migration) with Keystore-backed secure session, iOS GRDB v2 offline core with Keychain session store, full socket registries with reconnect re-join on both platforms, outbox retry/sync engines (WorkManager / BGTask), automation-tested CI including real Socket.IO round-trips on both platforms and emulator/simulator launch gates.",
+  "sha256": "bebf37b7b42999d9a24a5736f50da0caa98df110f933df41c91f058b8a2f21dc",
+  "notes": "Wave 1 \u2014 native messaging surface parity: conversation list (unread/timestamps/drafts/archive/mute/mark-unread/pin), chat room with cursor pagination + optimistic sends + sent/seen ticks + day separators, full realtime (Socket.IO reconnect/re-join, typing, presence, read receipts, unread updates), message actions (reply/react/edit/delete/pin/save/forward/info), threads with correct parentId behavior (one-level rule enforced server-side), drafts with server mirror, offline outbox (FIFO 50, retry/backoff, temp\u2192server reconciliation), search (global + in-room + jump-to-message), media messaging (image/file upload base64 \u2192 /api/uploads, captions, AsyncImage/Coil rendering, lightbox + QuickLook). Android Room v5 / iOS GRDB v3 full-fidelity caches. Installable APK versionCode 11.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-11T03:06:39Z"
+  "updatedAt": "2026-09-11T09:54:15Z"
 }
