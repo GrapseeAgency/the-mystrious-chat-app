@@ -4,9 +4,16 @@ import Combine
 /// Navigation payload pushed onto any tab's NavigationStack.
 struct RoomRoute: Hashable {
     let conversation: WireConversationSummary
+    /// Wave 1 — global-search jump target (scroll + flash after load).
+    var jumpMessageId: String? = nil
 
-    static func == (lhs: RoomRoute, rhs: RoomRoute) -> Bool { lhs.conversation.id == rhs.conversation.id }
-    func hash(into hasher: inout Hasher) { hasher.combine(conversation.id) }
+    static func == (lhs: RoomRoute, rhs: RoomRoute) -> Bool {
+        lhs.conversation.id == rhs.conversation.id && lhs.jumpMessageId == rhs.jumpMessageId
+    }
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(conversation.id)
+        hasher.combine(jumpMessageId)
+    }
 }
 
 /// Identifiable wrapper so `.sheet(item:)` can drive the row action sheet.
@@ -85,7 +92,7 @@ struct ChatsView: View {
             .safeAreaInset(edge: .top, spacing: 0) { topChrome }
             .navigationBarHidden(true)
             .navigationDestination(for: RoomRoute.self) { route in
-                ChatRoomView(conversation: route.conversation, session: session)
+                ChatRoomView(conversation: route.conversation, session: session, jumpMessageId: route.jumpMessageId)
             }
             .sheet(item: $viewModel.sheet) { target in
                 ChatActionSheet(
@@ -143,8 +150,8 @@ struct ChatsView: View {
         viewModel.closeSearch()
     }
 
-    private func openRoom(_ conv: WireConversationSummary) {
-        path.append(RoomRoute(conversation: conv))
+    private func openRoom(_ conv: WireConversationSummary, jumpMessageId: String? = nil) {
+        path.append(RoomRoute(conversation: conv, jumpMessageId: jumpMessageId))
     }
 
     // ── fixed top chrome (header · chips · stories · folders) ──
@@ -444,7 +451,7 @@ struct ChatsView: View {
                         ForEach(hits, id: \.id) { hit in
                             SearchMessageRowView(hit: hit, query: viewModel.deferredQuery) {
                                 if let conv = viewModel.summaries.first(where: { $0.id == hit.conversationId }) {
-                                    openRoom(conv)
+                                    openRoom(conv, jumpMessageId: hit.id)
                                 }
                             }
                         }
@@ -1554,7 +1561,9 @@ private struct SearchMessageRowView: View {
 }
 
 /// ≤64-char clip window with the match highlighted (emerald mark).
-private struct HighlightedSnippet: View {
+/// Highlighted message snippet shared by the chats search AND the Wave 1
+/// in-room search panel (internal so ChatRoomView can reuse the rhythm).
+struct HighlightedSnippet: View {
     let content: String
     let query: String
 

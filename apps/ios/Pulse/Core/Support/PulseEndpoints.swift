@@ -82,6 +82,22 @@ public enum PulseEndpoints {
         return url
     }
 
+    /// Wave 1 — message media URL ({gateway}/api/uploads/{filePath|imagePath},
+    /// spec §1.1 "Serve"). Same resolution the web <img src> applies
+    /// (mirrors PulseTheme.photoURL): absolute URLs pass through, "/"-rooted
+    /// paths resolve against the gateway, bare stored paths hang off
+    /// /api/uploads/. nil = nothing usable (offline placeholder gateway).
+    public static func mediaURL(_ filePath: String?) -> URL? {
+        guard let filePath, !filePath.isEmpty else { return nil }
+        if filePath.hasPrefix("http://") || filePath.hasPrefix("https://") {
+            return URL(string: filePath)
+        }
+        if filePath.hasPrefix("/") {
+            return URL(string: filePath, relativeTo: gatewayURL)?.absoluteURL
+        }
+        return URL(string: "\(gatewayURL.absoluteString)/api/uploads/\(filePath)")
+    }
+
     /// Trims whitespace and drops empty results.
     private static func clean(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),

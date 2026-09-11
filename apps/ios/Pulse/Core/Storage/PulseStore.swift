@@ -187,6 +187,19 @@ public final class PulseStore: Sendable {
         return rows.compactMap(Self.messageRow(from:))
     }
 
+    /// One cached row by id (jump anchoring: a search hit that lands on a
+    /// thread reply needs its parentId to target the river). nil = not cached.
+    public func message(id: String) throws -> WireChatMessage? {
+        try dbQueue.read { db in
+            try Row.fetchOne(
+                db,
+                sql: "SELECT * FROM message WHERE id = :id",
+                arguments: ["id": id],
+            )
+            .flatMap(Self.messageRow(from:))
+        }
+    }
+
     /// Thread replies for one root, oldest → newest (v3 parentId column —
     /// replyToId keeps the inline-quote id and is never mixed in).
     public func messages(threadRootId: String, limit: Int = 300) throws -> [WireChatMessage] {

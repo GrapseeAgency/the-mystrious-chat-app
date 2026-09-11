@@ -10,6 +10,9 @@ import Combine
 struct ChatRoomView: View {
     let conversation: WireConversationSummary
     @ObservedObject var session: PulseSession
+    /// Global-search jump — the room scrolls to + flashes this message after
+    /// its initial load (bounded history expansion if it sits out of window).
+    var jumpMessageId: String? = nil
 
     @State private var viewModel: RoomViewModel?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -31,7 +34,7 @@ struct ChatRoomView: View {
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .onAppear {
             if viewModel == nil {
-                viewModel = RoomViewModel(conversation: conversation, session: session)
+                viewModel = RoomViewModel(conversation: conversation, session: session, initialJumpMessageId: jumpMessageId)
             }
             // The dock hides itself while a room owns the screen (web §12).
             session.roomVisible = true
@@ -57,14 +60,222 @@ private struct RoomContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
 
+    // Wave 1 surfaces — threads, forward, info, pins, lightbox, QuickLook,
+    // room search, and the media attach flow (photo picker + document).
+    @State private var threadRoot: WireChatMessage?
+    @State private var forwardSource: WireChatMessage?
+    @State private var infoTarget: WireChatMessage?
+    @State private var pinsOpen = false
+    @State private var lightbox: MediaLightboxTarget?
+    @State private var quicklook: QuickLookTarget?
+    @State private var searchOpen = false
+    @State private var searchQuery = ""
+    @State private var photoItem: PhotosPickerItem?
+    @State private var showFileImporter = false
+
     var body: some View {
         VStack(spacing: 0) {
+            pinnedBanner
+            if searchOpen {
+                roomSearchPanel
+            }
             messagesList
+            if !session.connected {
+                offlineStrip
+            }
             if let error = viewModel.errorText {
                 errorStrip(error)
             }
             composer
         }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    searchOpen.toggle()
+                    if !searchOpen { searchQuery = "" }
+                } label: {
+                    Image(systemName: searchOpen ? "xmark.circle.fill" : "magnifyingglass")
+                }
+                .buttonStyle(PulseButtonStyle())
+                .accessibilityLabel("Search messages")
+            }
+        }
+        .sheet(item: $threadRoot) { root in
+            ThreadView(conversation: conversation, root: root, session: session)
+        }
+        .sheet(item: $forwardSource) { source in
+            ForwardSheet(source: source, session: session)
+        }
+        .sheet(item: $infoTarget) { message in
+            MessageInfoSheet(message: message, conversation: conversation)
+        }
+        .sheet(isPresented: $pinsOpen) {
+            pinsList
+        }
+        .fullScreenCover(item: $lightbox) { target in
+            MediaLightboxView(url: target.url, caption: target.caption)
+        }
+        .fullScreenCover(item: $quicklook) { target in
+            QuickLookView(url: target.url)
+                .ignoresSafeArea()
+        }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+        .fileImporter(
+            isPresented: $showFileImporter,
+            allowedContentTypes: PulseMediaSupport.documentTypes,
+            allowsMultipleSelection: false,
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                viewModel.stageDocument(url: url)
+            }
+        }
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            photoItem = nil
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    viewModel.stageImage(data)
+                }
+            }
+        }
+    }
+
+    @State private var showPhotoPicker = false
+
+    // ── room search (server q= + local window filter, jump on tap) ──
+    private var roomSearchPanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search this chat", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .onSubmit { viewModel.searchInRoom(searchQuery, session: session) }
+                    .onChange(of: searchQuery) { _, value in
+                        viewModel.searchInRoom(value, session: session)
+                    }
+                if viewModel.searching {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.thinMaterial)
+            Divider()
+            if !viewModel.searchResults.isEmpty {
+                List(viewModel.searchResults, id: \.id) { hit in
+                    Button {
+                        searchOpen = false
+                        searchQuery = ""
+                        viewModel.jumpTo(hit.id)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(hit.sender?.name ?? "Message")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(PulseTheme.emerald)
+                            HighlightedSnippet(content: hit.content, query: searchQuery)
+                                .lineLimit(2)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .frame(maxHeight: 220)
+            }
+        }
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    // ── pinned banner (newest pin; tap jumps, pin icon opens the list) ──
+    @ViewBuilder
+    private var pinnedBanner: some View {
+        if let newest = viewModel.pins.last {
+            Button {
+                viewModel.jumpTo(newest.id)
+                PulseHaptics.tap()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "pin.fill")
+                        .font(.caption)
+                        .foregroundStyle(PulseTheme.amber)
+                    Text(newest.content.isEmpty ? "Pinned message" : newest.content)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(.thinMaterial)
+            }
+            .buttonStyle(PulseButtonStyle())
+            .simultaneousGesture(TapGesture())
+            .overlay(alignment: .trailing) {
+                Button {
+                    pinsOpen = true
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("All pinned messages")
+                .padding(.trailing, 6)
+            }
+        }
+    }
+
+    private var pinsList: some View {
+        NavigationStack {
+            List(viewModel.pins, id: \.id) { pin in
+                Button {
+                    pinsOpen = false
+                    viewModel.jumpTo(pin.id)
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(pin.sender?.name ?? "Pinned")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(PulseTheme.emerald)
+                        Text(pin.content.isEmpty ? "Media message" : pin.content)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Pinned messages")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { pinsOpen = false }
+                }
+            }
+            .overlay {
+                if viewModel.pins.isEmpty {
+                    ContentUnavailableCompat(title: "Nothing pinned", systemImage: "pin", note: "Pin important messages to find them fast")
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var offlineStrip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "wifi.slash")
+            Text("Offline — messages will queue")
+        }
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 5)
+        .background(PulseTheme.amber.opacity(0.12))
     }
 
     // ── messages ─────────────────────────────────────────────
@@ -88,9 +299,27 @@ private struct RoomContent: View {
                             groupChat: conversation.isGroup,
                             viewerColor: { colorOf(senderId: message.senderId) },
                             seen: viewModel.isSeen(message),
-                            onLongPressActions: true,
+                            flashing: viewModel.flashMessageId == message.id,
+                            replyCount: viewModel.replyCount(for: message),
+                            onOpenImage: { lightbox = MediaLightboxTarget(
+                                url: PulseMediaOpener.url(for: message),
+                                caption: message.content,
+                            ) },
+                            onOpenFile: { openFile(message) },
+                            onOpenThread: { threadRoot = $0 },
                         )
                         .contextMenu { contextMenu(for: message) }
+                        .onAppear {
+                            // Oldest rendered row reaching the viewport = page
+                            // older history (the VM gates reentrancy/hasMore).
+                            if index == 0 {
+                                viewModel.loadOlder(session: session)
+                            }
+                        }
+                    }
+                    if viewModel.loadingOlder && !viewModel.messages.isEmpty {
+                        ProgressView()
+                            .padding(.vertical, 6)
                     }
                     if !viewModel.typers.isEmpty {
                         HStack(spacing: 6) {
@@ -113,8 +342,24 @@ private struct RoomContent: View {
                     proxy.scrollTo("tail", anchor: .bottom)
                 }
             }
+            .onChange(of: viewModel.jumpTargetId) { _, target in
+                guard let target else { return }
+                proxy.scrollTo(target, anchor: .center)
+            }
             .onAppear {
                 proxy.scrollTo("tail", anchor: .bottom)
+            }
+        }
+    }
+
+    private func openFile(_ message: WireChatMessage) {
+        guard let url = PulseMediaOpener.url(for: message) else { return }
+        Task {
+            do {
+                let local = try await PulseMediaOpener.downloadForPreview(url: url, fileName: message.fileName)
+                quicklook = QuickLookTarget(url: local)
+            } catch {
+                session.toasts.show("Couldn't download the file")
             }
         }
     }
@@ -133,10 +378,51 @@ private struct RoomContent: View {
         } label: {
             Label("Reply", systemImage: "arrowshape.turn.up.left.fill")
         }
+        if message.parentId == nil {
+            Button {
+                threadRoot = message
+            } label: {
+                Label("Reply in thread", systemImage: "bubble.left.and.bubble.right.fill")
+            }
+        }
+        if message.senderId == session.viewer?.id && message.kind == "text" && message.deletedAt == nil {
+            Button {
+                viewModel.beginEdit(message)
+            } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+        }
         Button {
             UIPasteboard.general.string = message.content
         } label: {
             Label("Copy", systemImage: "doc.on.doc.fill")
+        }
+        Button {
+            viewModel.togglePin(message, session: session)
+        } label: {
+            Label(message.pinnedAt == nil ? "Pin" : "Unpin", systemImage: "pin")
+        }
+        Button {
+            viewModel.toggleSave(message, session: session)
+        } label: {
+            Label("Save", systemImage: "bookmark")
+        }
+        Button {
+            forwardSource = message
+        } label: {
+            Label("Forward", systemImage: "arrowshape.turn.up.right.fill")
+        }
+        if message.senderId == session.viewer?.id && message.deletedAt == nil {
+            Button(role: .destructive) {
+                viewModel.delete(message, session: session)
+            } label: {
+                Label("Delete", systemImage: "trash.fill")
+            }
+        }
+        Button {
+            infoTarget = message
+        } label: {
+            Label("Info", systemImage: "info.circle")
         }
     }
 
@@ -169,30 +455,40 @@ private struct RoomContent: View {
     // ── composer ─────────────────────────────────────────────
     private var composer: some View {
         VStack(spacing: 0) {
+            if let editing = viewModel.editingTarget {
+                editBar(editing)
+            }
             if let reply = viewModel.replyTarget {
                 replyBar(reply)
             }
+            if let staged = viewModel.staged {
+                stagedMediaBar(staged)
+            }
             HStack(alignment: .bottom, spacing: 10) {
-                Button {
-                    // Attachments land in the next native wave (photo/voice/file).
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 26))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(PulseButtonStyle())
+                attachMenu
 
-                TextField("Message", text: $viewModel.draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(Capsule().fill(Color(.secondarySystemBackground)))
-                    .focused($composerFocused)
-                    .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
+                TextField(
+                    viewModel.editingTarget != nil ? "Edit message" : "Message",
+                    text: $viewModel.draft,
+                    axis: .vertical,
+                )
+                .lineLimit(1...5)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(Capsule().fill(Color(.secondarySystemBackground)))
+                .focused($composerFocused)
+                .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
+                .disabled(viewModel.staged != nil)
 
                 Button {
-                    viewModel.send(session: session)
                     PulseHaptics.tap()
+                    if viewModel.editingTarget != nil {
+                        viewModel.saveEdit(session: session)
+                    } else if viewModel.staged != nil {
+                        viewModel.sendStaged(session: session)
+                    } else {
+                        viewModel.send(session: session)
+                    }
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 32))
@@ -205,6 +501,101 @@ private struct RoomContent: View {
             .padding(.vertical, 8)
             .background(.ultraThinMaterial)
         }
+    }
+
+    private var attachMenu: some View {
+        Menu {
+            Button {
+                showPhotoPicker = true
+            } label: {
+                Label("Photo Library", systemImage: "photo")
+            }
+            Button {
+                showFileImporter = true
+            } label: {
+                Label("Document", systemImage: "folder")
+            }
+        } label: {
+            Image(systemName: viewModel.staged == nil ? "plus.circle.fill" : "minus.circle.fill")
+                .font(.system(size: 26))
+                .foregroundStyle(.secondary)
+        }
+        .disabled(viewModel.editingTarget != nil)
+        .accessibilityLabel("Attach")
+    }
+
+    private func editBar(_ editing: WireChatMessage) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pencil")
+                .font(.footnote)
+                .foregroundStyle(PulseTheme.amber)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Editing message")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(PulseTheme.amber)
+                Text(editing.content)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Button {
+                viewModel.cancelEdit()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.thinMaterial)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func stagedMediaBar(_ staged: RoomViewModel.StagedMedia) -> some View {
+        HStack(spacing: 10) {
+            if viewModel.uploading {
+                ProgressView().controlSize(.small)
+            }
+            switch staged.kind {
+            case .image:
+                AsyncImage(url: staged.previewURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                }
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            case .file:
+                Image(systemName: "paperclip.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(PulseTheme.emerald)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(staged.kind == .image ? "Photo" : (staged.fileName ?? "Document"))
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                if let size = staged.fileSize {
+                    Text(PulseMediaSupport.humanized(bytes: size))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            TextField("Caption (optional)", text: $viewModel.caption, axis: .vertical)
+                .lineLimit(1...3)
+                .textFieldStyle(.roundedBorder)
+                .font(.subheadline)
+            Button {
+                viewModel.cancelStaged()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.thinMaterial)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     private func replyBar(_ reply: WireChatMessage) -> some View {
@@ -236,6 +627,83 @@ private struct RoomContent: View {
     }
 }
 
+/// Wave 1 message info — seen-by watermarks (conversation members) + the
+/// reaction groups with member names. Read-only, native sheet.
+private struct MessageInfoSheet: View {
+    let message: WireChatMessage
+    let conversation: WireConversationSummary
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var createdAt: Date { PulseFormat.date(message.createdAt) ?? .distantPast }
+
+    private var seenBy: [WireConversationMember] {
+        conversation.members.filter { member in
+            guard let stamp = member.lastReadAt, let date = PulseFormat.date(stamp) else { return false }
+            return date >= createdAt
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Message") {
+                    Text(message.content.isEmpty ? "Media message" : message.content)
+                        .font(.subheadline)
+                    LabeledContent("Sent", value: PulseFormat.listStamp(message.createdAt))
+                    if message.editedAt != nil {
+                        HStack {
+                            Text("Edited")
+                                .font(.subheadline)
+                            Spacer()
+                            Image(systemName: "pencil")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Section("\(seenBy.count) seen") {
+                    if seenBy.isEmpty {
+                        Text("Nobody has seen this message yet")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(seenBy, id: \.id) { member in
+                        HStack(spacing: 10) {
+                            PulseAvatar(name: member.name, colorHex: member.color, size: 30)
+                            Text(member.name).font(.subheadline)
+                            Spacer()
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(PulseTheme.emerald)
+                        }
+                    }
+                }
+                if let reactions = message.reactions, !reactions.isEmpty {
+                    Section("Reactions") {
+                        ForEach(reactions, id: \.emoji) { group in
+                            HStack(spacing: 8) {
+                                Text(group.emoji).font(.body)
+                                Text("\(group.count)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Message info")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
 /// One message bubble — the web outcome with an iOS accent: asymmetric
 /// corner radius, gradient fill for the viewer, quote block, reaction chips,
 /// voice/image/file/system renderings, "Seen" under the viewer's tail.
@@ -244,8 +712,14 @@ struct BubbleView: View {
     let mine: Bool
     let groupChat: Bool
     let viewerColor: () -> Color
-    let seen: Bool
+    var seen: Bool = false
     var onLongPressActions: Bool = true
+    /// Wave 1 — jump flash ring, live thread-reply chip, media surfaces.
+    var flashing: Bool = false
+    var replyCount: Int = 0
+    var onOpenImage: ((WireChatMessage) -> Void)? = nil
+    var onOpenFile: ((WireChatMessage) -> Void)? = nil
+    var onOpenThread: ((WireChatMessage) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -282,10 +756,28 @@ struct BubbleView: View {
                     if !mine { Spacer(minLength: 44) }
                 }
 
+                // Wave 1 — "N replies ↳" chip opens the thread sheet.
+                if replyCount > 0 && message.parentId == nil && onOpenThread != nil {
+                    Button {
+                        onOpenThread?(message)
+                    } label: {
+                        Label("\(replyCount) \(replyCount == 1 ? "reply" : "replies")", systemImage: "arrow.turn.down.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(PulseTheme.emerald)
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .padding(.trailing, 6)
+                }
+
                 if mine && seen {
                     Text("Seen")
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(PulseTheme.emerald)
+                        .padding(.trailing, 6)
+                } else if mine && !isPending && onLongPressActions {
+                    Text("Sent")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.tertiary)
                         .padding(.trailing, 6)
                 }
             }
@@ -328,19 +820,25 @@ struct BubbleView: View {
         .background(bubbleShape.fill(bubbleFill))
         .overlay(reactionChips, alignment: .bottom)
         .padding(.bottom, reactionChipsHeight())
+        .overlay(
+            // Jump-to-message flash ring (amber pulse, ~1.5s — web parity).
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(PulseTheme.amber, lineWidth: 2.5)
+                .opacity(flashing ? 1 : 0)
+                .animation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true), value: flashing)
+                .allowsHitTesting(false),
+        )
     }
 
     @ViewBuilder
     private var content: some View {
         switch message.kind {
         case "image":
-            Label("Photo", systemImage: "photo.fill")
-                .font(.subheadline)
+            imageContent
         case "voice":
             voiceChip
         case "file":
-            Label(message.fileName ?? "File", systemImage: "paperclip.fill")
-                .font(.subheadline)
+            fileContent
         case "video":
             Label("Video", systemImage: "video.fill")
                 .font(.subheadline)
@@ -349,6 +847,71 @@ struct BubbleView: View {
                 .font(.body)
                 .textSelection(.enabled)
         }
+    }
+
+    /// Stored image render — AsyncImage against the gateway upload URL,
+    /// clamped bubble size, tap → lightbox, caption rides `content`.
+    @ViewBuilder
+    private var imageContent: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if let url = PulseEndpoints.mediaURL(message.imagePath) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: 240, maxHeight: 240)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    case .empty:
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(.quaternary)
+                            .frame(width: 200, height: 140)
+                            .overlay(ProgressView())
+                    case .failure:
+                        Label("Image unavailable", systemImage: "photo.badge.exclamationmark")
+                            .font(.footnote)
+                    @unknown default:
+                        ProgressView()
+                    }
+                }
+                .onTapGesture { onOpenImage?(message) }
+            } else {
+                Label("Photo", systemImage: "photo.fill")
+                    .font(.subheadline)
+            }
+            if !message.content.isEmpty {
+                Text(message.content)
+                    .font(.subheadline)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    /// Document bubble — name + humanized size, tap → download + QuickLook.
+    private var fileContent: some View {
+        Button {
+            onOpenFile?(message)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "document.fill")
+                    .font(.title3)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(message.fileName ?? "Document")
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    if let size = message.fileSize {
+                        Text(PulseMediaSupport.humanized(bytes: size))
+                            .font(.caption2)
+                            .opacity(0.75)
+                    }
+                }
+                Image(systemName: "arrow.down.circle")
+                    .font(.footnote)
+                    .opacity(0.8)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var voiceChip: some View {
@@ -444,6 +1007,17 @@ final class RoomViewModel: ObservableObject {
         let expiresAt: Date
     }
 
+    /// Wave 1 attach flow — a staged photo/document awaiting upload + send.
+    struct StagedMedia: Equatable {
+        enum Kind { case image, file }
+        let kind: Kind
+        let dataUrl: String
+        let fileName: String?
+        let fileSize: Int?
+        /// Local preview for the staged card (images only).
+        let previewURL: URL?
+    }
+
     @Published private(set) var messages: [WireChatMessage] = []
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var errorText: String?
@@ -452,19 +1026,47 @@ final class RoomViewModel: ObservableObject {
     @Published var draft = ""
     @Published var replyTarget: WireChatMessage?
 
+    // Wave 1 — pagination, threads, actions, search, jump, media.
+    @Published private(set) var hasMore = false
+    @Published private(set) var loadingOlder = false
+    @Published private(set) var replyCounts: [String: Int] = [:]
+    @Published private(set) var pins: [WireChatMessage] = []
+    @Published private(set) var flashMessageId: String?
+    @Published private(set) var jumpTargetId: String?
+    @Published private(set) var searchResults: [WireChatMessage] = []
+    @Published private(set) var searching = false
+    @Published var editingTarget: WireChatMessage?
+    @Published var staged: StagedMedia?
+    @Published var caption = ""
+    @Published private(set) var uploading = false
+
     private let conversationId: String
     private weak var session: PulseSession?
     private var cancellables: Set<AnyCancellable> = []
     private var typingStopTask: Task<Void, Never>?
     private var draftSaveTask: Task<Void, Never>?
+    private var flashClearTask: Task<Void, Never>?
+    private var initialJumpMessageId: String?
+    /// Member read watermarks (id → lastReadAt) — group-aware "Seen".
+    private var memberWatermarks: [String: Date] = [:]
 
-    var canSend: Bool { !draft.trimmingCharacters(in: .whitespaces).isEmpty }
+    var canSend: Bool {
+        if staged != nil { return true }
+        return !draft.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
-    init(conversation: WireConversationSummary, session: PulseSession) {
+    init(conversation: WireConversationSummary, session: PulseSession, initialJumpMessageId: String? = nil) {
         self.conversationId = conversation.id
         self.session = session
+        self.initialJumpMessageId = initialJumpMessageId
+        for member in conversation.members {
+            if let stamp = member.lastReadAt {
+                memberWatermarks[member.id] = PulseFormat.date(stamp)
+            }
+        }
         observe(session: session)
         seedLocalState(conversation: conversation, session: session)
+        loadPins(session: session)
         Task { await refresh(session: session) }
     }
 
@@ -495,8 +1097,15 @@ final class RoomViewModel: ObservableObject {
                 case .messageNew(let convId, let raw):
                     guard convId == self.conversationId,
                           let message = PulseSession.decodeMessage(from: raw) else { return }
-                    upsert(message)
                     try? session.store?.upsert(messages: [message])
+                    if message.parentId != nil {
+                        // Thread reply — river keeps it out; the parent's
+                        // "N replies" chip bumps live (web threadCounts parity).
+                        let root = message.parentId ?? ""
+                        replyCounts[root, default: 0] += 1
+                        if message.senderId == session.viewer?.id { return }
+                    }
+                    upsert(message)
                     if message.senderId != session.viewer?.id {
                         Task { try? await session.api.markRead(conversationId: self.conversationId) }
                     }
@@ -558,21 +1167,160 @@ final class RoomViewModel: ObservableObject {
         if messages.isEmpty, let store = session.store {
             let cached = (try? store.messages(conversationId: conversationId)) ?? []
             if !cached.isEmpty {
-                messages = cached
+                messages = riverRows(from: cached)
                 phase = .loaded
             }
+            seedReplyCounts(store: store)
         }
         phase = messages.isEmpty ? .loading : phase
         do {
             let page = try await session.api.messages(conversationId: conversationId)
-            messages = page.messages
+            messages = riverRows(from: page.messages)
+            hasMore = page.hasMore
             phase = .loaded
             errorText = nil
             try? session.store?.upsert(messages: page.messages)
             try? await session.api.markRead(conversationId: conversationId)
+            resolveInitialJump()
         } catch {
             phase = .failed(RoomViewModel.describe(error))
             if messages.isEmpty { errorText = RoomViewModel.describe(error) }
+        }
+    }
+
+    /// The main river EXCLUDES thread replies (web parity) — they live in
+    /// ThreadView and surface as "N replies" chips on the parent bubble.
+    private func riverRows(from rows: [WireChatMessage]) -> [WireChatMessage] {
+        rows.filter { $0.parentId == nil }
+    }
+
+    private func seedReplyCounts(store: PulseStore) {
+        if let counts = try? store.threadReplyCounts() {
+            replyCounts = counts
+        }
+    }
+
+    /// Wave 1 pagination — older history page (`before` cursor), 40 rows,
+    /// merged id-dedupe ascending. The view triggers from the oldest row.
+    func loadOlder(session: PulseSession) {
+        guard hasMore, !loadingOlder, let oldest = messages.first(where: { !$0.id.hasPrefix("local_") }) else { return }
+        loadingOlder = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.loadingOlder = false }
+            do {
+                let page = try await session.api.messages(
+                    conversationId: self.conversationId,
+                    limit: 40,
+                    before: oldest.createdAt,
+                    query: nil,
+                )
+                try? session.store?.upsert(messages: page.messages)
+                let known = Set(self.messages.map(\.id))
+                let fresh = page.messages.filter { $0.parentId == nil && !known.contains($0.id) }
+                self.messages.insert(contentsOf: fresh, at: 0)
+                self.hasMore = page.hasMore && !page.messages.isEmpty
+            } catch {
+                // Older history is best-effort — the current window stays usable.
+            }
+        }
+    }
+
+    // ── jump + flash (search hits, quote taps, pinned banner) ──
+
+    func replyCount(for message: WireChatMessage) -> Int {
+        replyCounts[message.id] ?? 0
+    }
+
+    func jumpTo(_ messageId: String) {
+        if messages.contains(where: { $0.id == messageId }) {
+            scrollAndFlash(messageId)
+        } else {
+            Task { await expandForJump(messageId, session: session, rounds: 0) }
+        }
+    }
+
+    private func resolveInitialJump() {
+        guard let target = initialJumpMessageId else { return }
+        initialJumpMessageId = nil
+        jumpTo(target)
+    }
+
+    /// Bounded expansion for out-of-window targets (web ≤14 rounds parity).
+    private func expandForJump(_ messageId: String, session: PulseSession, rounds: Int) async {
+        guard rounds < 14 else {
+            session.toasts.show("Couldn't reach that message in this chat's history")
+            return
+        }
+        guard hasMore, let oldest = messages.first(where: { !$0.id.hasPrefix("local_") }) else {
+            session.toasts.show("Couldn't reach that message in this chat's history")
+            return
+        }
+        loadingOlder = true
+        defer { loadingOlder = false }
+        do {
+            let page = try await session.api.messages(conversationId: conversationId, limit: 40, before: oldest.createdAt, query: nil)
+            try? session.store?.upsert(messages: page.messages)
+            let known = Set(messages.map(\.id))
+            let fresh = page.messages.filter { $0.parentId == nil && !known.contains($0.id) }
+            messages.insert(contentsOf: fresh, at: 0)
+            hasMore = page.hasMore && !page.messages.isEmpty
+            if messages.contains(where: { $0.id == messageId }) {
+                scrollAndFlash(messageId)
+            } else if page.messages.isEmpty {
+                session.toasts.show("Couldn't reach that message in this chat's history")
+            } else {
+                await expandForJump(messageId, session: session, rounds: rounds + 1)
+            }
+        } catch {
+            session.toasts.show("Couldn't reach that message in this chat's history")
+        }
+    }
+
+    private func scrollAndFlash(_ messageId: String) {
+        jumpTargetId = messageId
+        flashMessageId = messageId
+        flashClearTask?.cancel()
+        flashClearTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.flashMessageId = nil
+            self.jumpTargetId = nil
+        }
+    }
+
+    // ── room search (server q= + local window filter) ───────
+
+    private var searchTask: Task<Void, Never>?
+
+    func searchInRoom(_ query: String, session: PulseSession) {
+        searchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 2 else {
+            searchResults = []
+            searching = false
+            return
+        }
+        searching = true
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let self, !Task.isCancelled else { return }
+            var hits: [WireChatMessage] = []
+            if let page = try? await session.api.messages(conversationId: self.conversationId, limit: 100, before: nil, query: trimmed) {
+                hits = page.messages
+            }
+            if Task.isCancelled { return }
+            // Merge the live loaded window (covers rows newer than the
+            // server's scan window and the offline case).
+            let local = self.messages.filter { $0.content.lowercased().contains(trimmed.lowercased()) }
+            var seenIds = Set<String>()
+            var merged: [WireChatMessage] = []
+            for row in hits + local {
+                if seenIds.insert(row.id).inserted { merged.append(row) }
+            }
+            merged.sort { (PulseFormat.date($0.createdAt) ?? .distantPast) < (PulseFormat.date($1.createdAt) ?? .distantPast) }
+            self.searchResults = Array(merged.prefix(30))
+            self.searching = false
         }
     }
 
@@ -582,6 +1330,8 @@ final class RoomViewModel: ObservableObject {
     }
 
     func upsert(_ message: WireChatMessage) {
+        // Main river only — thread replies render in ThreadView.
+        if message.parentId != nil { return }
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else {
             messages.append(message)
             messages.sort { PulseFormat.date($0.createdAt) ?? .distantPast < PulseFormat.date($1.createdAt) ?? .distantPast }
@@ -626,6 +1376,17 @@ final class RoomViewModel: ObservableObject {
         } else {
             try? store.saveDraft(conversationId: conversationId, text: text)
         }
+        // Wave 1 server mirror (web pulse-drafts parity) — fire-and-forget,
+        // silent-fail; the local draft stays authoritative for this device.
+        if let viewer = session.viewer {
+            Task {
+                try? await session.api.setDraft(
+                    conversationId: conversationId,
+                    userId: viewer.id,
+                    draft: text.trimmingCharacters(in: .whitespaces).isEmpty ? "" : text,
+                )
+            }
+        }
     }
 
     /// Called on the successful-send path — the composer is clean, so the
@@ -638,96 +1399,67 @@ final class RoomViewModel: ObservableObject {
 
     func send(session: PulseSession) {
         let body = draft.trimmingCharacters(in: .whitespaces)
-        let replyId = replyTarget?.id
         let replySource = replyTarget
-        guard !body.isEmpty else { return }
+        let replyId = replySource?.id
+        guard !body.isEmpty, staged == nil, editingTarget == nil else { return }
         draft = ""
         replyTarget = nil
         typingStopTask?.cancel()
         typingStopTask = nil
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let message = try await session.api.sendMessage(conversationId: conversationId, content: body, replyToId: replyId)
-                upsert(message)
-                try? session.store?.upsert(messages: [message])
-                clearDraft(session: session)
-                session.particles.fire(kind: .burst, count: 22)
-                session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
-            } catch {
-                await handleSendFailure(
-                    error,
-                    body: body,
-                    replyId: replyId,
-                    replySource: replySource,
-                    session: session,
-                )
-            }
-        }
-    }
-
-    /// Wave 0 outbox send-path: 4xx = honest in-room error (retrying could
-    /// never succeed); network-class failure = optimistic queued bubble +
-    /// outbox entry, flushed by the engine on the next trigger.
-    private func handleSendFailure(_ error: Error, body: String, replyId: String?, replySource: WireChatMessage?, session: PulseSession) async {
-        if PulseOutboxEngine.isDroppable(error) {
-            errorText = Self.describe(error)
-            return
-        }
-        enqueueTempMessage(body: body, replyId: replyId, replySource: replySource, session: session)
-        session.toasts.show("Message queued — sends when you're back online")
-    }
-
-    private func enqueueTempMessage(body: String, replyId: String?, replySource: WireChatMessage?, session: PulseSession) {
+        // Wave 1 optimistic send — the temp bubble paints immediately and
+        // swaps for the server row (web onMutate parity). Network-class
+        // failure keeps the temp + queues the outbox (Wave 0 semantics).
         guard let viewer = session.viewer else {
             errorText = "The gateway is unreachable."
             return
         }
         let clientId = UUID().uuidString
-        let sender = WireSender(
-            id: viewer.id,
-            name: viewer.name,
-            username: viewer.username,
-            color: viewer.color,
-            avatar: viewer.avatar,
-        )
-        let quoted = replySource.map { source in
-            WireReplySnippet(
-                id: source.id,
-                content: source.content,
-                senderName: source.sender?.name ?? "",
-                deleted: source.deletedAt != nil,
-            )
-        }
-        let temp = WireChatMessage(
-            id: PulseOutboxEngine.tempMessageId(clientId: clientId),
+        let temp = TempMessages.make(
             conversationId: conversationId,
-            senderId: viewer.id,
+            viewer: viewer,
+            clientId: clientId,
             content: body,
-            kind: "text",
-            createdAt: PulseOutboxClock.now(),
-            editedAt: nil,
-            deletedAt: nil,
-            sender: sender,
-            reactions: nil,
-            replyTo: quoted,
-            parentId: replyId,
-            imagePath: nil,
-            audioPath: nil,
-            durationMs: nil,
-            filePath: nil,
-            fileName: nil,
-            fileSize: nil,
-            pinnedAt: nil,
-            viewOnce: nil,
-            anon: nil,
-            anonAlias: nil,
+            parentId: nil,
+            replyTo: replySource,
         )
         upsert(temp)
         try? session.store?.upsert(messages: [temp])
-        session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let message = try await session.api.sendMessage(conversationId: conversationId, content: body, replyToId: replyId)
+                self.swapTemp(temp.id, for: message, session: session)
+                self.clearDraft(session: session)
+                session.particles.fire(kind: .burst, count: 22)
+                session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
+            } catch {
+                if PulseOutboxEngine.isDroppable(error) {
+                    self.messages.removeAll { $0.id == temp.id }
+                    try? session.store?.deleteMessage(id: temp.id)
+                    self.errorText = Self.describe(error)
+                } else {
+                    // Temp row stays (queued clock) — outbox flush reconciles.
+                    session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
+                    session.toasts.show("Message queued — sends when you're back online")
+                }
+            }
+        }
     }
 
+    /// Temp → real reconciliation: swap by id AND dedupe any optimistic row
+    /// with the same sender + content (web sendMessage.onSuccess parity).
+    private func swapTemp(_ tempId: String, for message: WireChatMessage, session: PulseSession) {
+        messages.removeAll {
+            $0.id == tempId
+                || ($0.id.hasPrefix("local_") && $0.content == message.content && $0.senderId == message.senderId)
+        }
+        upsert(message)
+        try? session.store?.upsert(messages: [message])
+        try? session.store?.deleteMessage(id: tempId)
+    }
+
+    /// Wave 0 outbox reconciliation — the engine swapped/removed a queued
+    /// placeholder (text sends only; spec §1.2).
     private func handleOutboxEvent(_ event: PulseOutboxEvent) {
         switch event {
         case .delivered(let message, let conversationId):
@@ -770,7 +1502,191 @@ final class RoomViewModel: ObservableObject {
     func isSeen(_ message: WireChatMessage) -> Bool {
         guard message.senderId == session?.viewer?.id,
               let last = messages.last(where: { $0.senderId == session?.viewer?.id }) else { return false }
-        return last.id == message.id && partnerLastReadAt != nil
+        guard last.id == message.id else { return false }
+        // Wave 1 — group-aware watermarks: any OTHER member's lastReadAt
+        // covering this message counts as seen (DM keeps the partner path).
+        var stamps = Array(memberWatermarks.values)
+        if let partner = partnerLastReadAt { stamps.append(partner) }
+        guard let seen = stamps.max() else { return false }
+        return seen >= (PulseFormat.date(message.createdAt) ?? .distantFuture)
+    }
+
+    // ── Wave 1 message actions ─────────────────────────────
+
+    func loadPins(session: PulseSession) {
+        guard let viewer = session.viewer else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            self.pins = (try? await session.api.pinnedMessages(conversationId: self.conversationId, userId: viewer.id)) ?? []
+        }
+    }
+
+    func beginEdit(_ message: WireChatMessage) {
+        replyTarget = nil
+        draft = message.content
+        editingTarget = message
+    }
+
+    func cancelEdit() {
+        editingTarget = nil
+        draft = ""
+    }
+
+    func saveEdit(session: PulseSession) {
+        guard let target = editingTarget else { return }
+        let body = draft.trimmingCharacters(in: .whitespaces)
+        guard !body.isEmpty else { return }
+        editingTarget = nil
+        draft = ""
+        // Edits never queue (spec §1.2) — an honest error covers offline.
+        Task { [weak self] in
+            guard let self, let viewer = session.viewer else { return }
+            do {
+                let fresh = try await session.api.editMessage(id: target.id, userId: viewer.id, content: body)
+                self.upsert(fresh)
+                try? session.store?.upsert(messages: [fresh])
+            } catch {
+                self.errorText = Self.describe(error)
+            }
+        }
+    }
+
+    func delete(_ message: WireChatMessage, session: PulseSession) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await session.api.deleteOwnMessage(id: message.id)
+                let tombstone = message.deletedCopy()
+                self.upsert(tombstone)
+                try? session.store?.upsert(messages: [tombstone])
+                PulseHaptics.tap()
+            } catch {
+                self.errorText = Self.describe(error)
+            }
+        }
+    }
+
+    func togglePin(_ message: WireChatMessage, session: PulseSession) {
+        PulseHaptics.tap()
+        Task { [weak self] in
+            guard let self, let viewer = session.viewer else { return }
+            do {
+                let fresh = try await session.api.toggleMessagePin(id: message.id, userId: viewer.id)
+                self.upsert(fresh)
+                try? session.store?.upsert(messages: [fresh])
+                self.loadPins(session: session)
+                session.toasts.show(fresh.pinnedAt == nil ? "Unpinned" : "Pinned")
+            } catch {
+                self.errorText = Self.describe(error)
+            }
+        }
+    }
+
+    func toggleSave(_ message: WireChatMessage, session: PulseSession) {
+        PulseHaptics.tap()
+        Task { [weak self] in
+            guard let self, let viewer = session.viewer else { return }
+            do {
+                let saved = try await session.api.toggleMessageSave(id: message.id, userId: viewer.id)
+                session.toasts.show(saved ? "Saved to your library" : "Removed from your library")
+            } catch {
+                self.errorText = Self.describe(error)
+            }
+        }
+    }
+
+    // ── Wave 1 media staging + upload (spec §1.1) ────────
+
+    func stageImage(_ data: Data) {
+        guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: data) else {
+            errorText = "Couldn't read that image"
+            return
+        }
+        staged = StagedMedia(
+            kind: .image,
+            dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg),
+            fileName: nil,
+            fileSize: jpeg.count,
+            previewURL: URL(dataRepresentation: jpeg, relativeTo: nil),
+        )
+        caption = ""
+    }
+
+    func stageDocument(url: URL) {
+        let secured = url.startAccessingSecurityScopedResource()
+        defer { if secured { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            errorText = "Couldn't read that document"
+            return
+        }
+        if data.count > PulseMediaSupport.maxDocumentBytes {
+            errorText = "Documents are limited to 10 MB"
+            return
+        }
+        let ext = url.pathExtension
+        guard let mime = PulseMediaSupport.mime(forExtension: ext) else {
+            errorText = "That file type isn't supported (pdf, zip, txt, csv)"
+            return
+        }
+        staged = StagedMedia(
+            kind: .file,
+            dataUrl: PulseMediaSupport.dataUrl(mime: mime, data: data),
+            fileName: url.lastPathComponent,
+            fileSize: data.count,
+            previewURL: nil,
+        )
+        caption = ""
+    }
+
+    func cancelStaged() {
+        staged = nil
+        caption = ""
+        uploading = false
+    }
+
+    /// Upload → send. Media NEVER queues offline (spec §1.2) — failures
+    /// surface an honest inline error and keep the staged card for retry.
+    func sendStaged(session: PulseSession) {
+        guard let media = staged, !uploading else { return }
+        guard let viewer = session.viewer else {
+            errorText = "The gateway is unreachable."
+            return
+        }
+        uploading = true
+        let body = caption.trimmingCharacters(in: .whitespaces)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let filePath = try await session.api.uploadMedia(dataUrl: media.dataUrl)
+                let message: WireChatMessage
+                switch media.kind {
+                case .image:
+                    message = try await session.api.sendMessage(
+                        conversationId: conversationId,
+                        content: body,
+                        imagePath: filePath,
+                    )
+                case .file:
+                    message = try await session.api.sendMessage(
+                        conversationId: conversationId,
+                        content: body,
+                        filePath: filePath,
+                        fileName: media.fileName,
+                        fileSize: media.fileSize,
+                        kind: "file",
+                    )
+                }
+                self.uploading = false
+                self.staged = nil
+                self.caption = ""
+                self.upsert(message)
+                try? session.store?.upsert(messages: [message])
+                session.particles.fire(kind: .burst, count: 22)
+            } catch {
+                self.uploading = false
+                self.errorText = Self.describe(error)
+            }
+        }
     }
 
     static func describe(_ error: Error) -> String {
@@ -778,5 +1694,59 @@ final class RoomViewModel: ObservableObject {
             return message
         }
         return "The gateway is unreachable."
+    }
+}
+
+/// Optimistic temp-row factory shared by the river AND thread sends —
+/// id `local_<clientId>` (Wave 0 convention), viewer sender, quote block,
+/// optional thread parent. Real rows replace it by id + content dedupe.
+enum TempMessages {
+    static func make(
+        conversationId: String,
+        viewer: PulseViewer,
+        clientId: String,
+        content: String,
+        parentId: String?,
+        replyTo: WireChatMessage? = nil,
+    ) -> WireChatMessage {
+        let sender = WireSender(
+            id: viewer.id,
+            name: viewer.name,
+            username: viewer.username,
+            color: viewer.color,
+            avatar: viewer.avatar,
+        )
+        let quoted = replyTo.map { source in
+            WireReplySnippet(
+                id: source.id,
+                content: source.content,
+                senderName: source.sender?.name ?? "",
+                deleted: source.deletedAt != nil,
+            )
+        }
+        return WireChatMessage(
+            id: PulseOutboxEngine.tempMessageId(clientId: clientId),
+            conversationId: conversationId,
+            senderId: viewer.id,
+            content: content,
+            kind: "text",
+            createdAt: PulseOutboxClock.now(),
+            editedAt: nil,
+            deletedAt: nil,
+            sender: sender,
+            reactions: nil,
+            replyTo: quoted,
+            parentId: parentId,
+            imagePath: nil,
+            audioPath: nil,
+            durationMs: nil,
+            filePath: nil,
+            fileName: nil,
+            fileSize: nil,
+            pinnedAt: nil,
+            viewOnce: nil,
+            anon: nil,
+            anonAlias: nil,
+        )
     }
 }
