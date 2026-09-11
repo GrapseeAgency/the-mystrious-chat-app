@@ -130,8 +130,12 @@ public struct WireMessageEnvelope: Codable, Sendable {
     /// through to the bare-object decode and THROW on that body; this variant
     /// tolerates "nothing happened" by returning nil. Never throws.
     public static func extractOptional(from data: Data) -> WireChatMessage? {
-        if let wrapped = try? JSONDecoder().decode(WireMessageEnvelope.self, from: data) {
-            return wrapped.message
+        // Fall through when the message is MISSING (bare-object bodies decode
+        // into an all-optional envelope with message = nil): the bare decode
+        // then succeeds for bare rows, fails for true `{message: null}` → nil.
+        if let wrapped = try? JSONDecoder().decode(WireMessageEnvelope.self, from: data),
+           let message = wrapped.message {
+            return message
         }
         return try? JSONDecoder().decode(WireChatMessage.self, from: data)
     }
