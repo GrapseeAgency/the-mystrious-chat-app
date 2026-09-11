@@ -12,7 +12,7 @@ final class PulseStoreCallLogTests: XCTestCase {
         status: String = "completed",
         outgoing: Bool = true,
         duration: Int = 42,
-        startedAt: String = "2026-01-01T00:0\(id.count % 10):00.000Z",
+        startedAt: String = "2026-01-01T00:00:00.000Z",
     ) -> CallLogEntry {
         CallLogEntry(
             id: id,
