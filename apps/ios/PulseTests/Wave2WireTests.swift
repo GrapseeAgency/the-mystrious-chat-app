@@ -135,11 +135,11 @@ final class Wave2WireTests: XCTestCase {
 
         // POST …/topics answers { topic } on both 200-dedupe and 201-create;
         // the envelope unwraps it (bare-object fallback stays defensive).
-        let wrapped = WireTopicEnvelope.extract(
+        let wrapped = try WireTopicEnvelope.extract(
             from: Data(#"{"topic":{"id":"t2","name":"QA","emoji":"💬","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}}"#.utf8),
         )
         XCTAssertEqual(wrapped.id, "t2")
-        let bare = WireTopicEnvelope.extract(
+        let bare = try WireTopicEnvelope.extract(
             from: Data(#"{"id":"t2","name":"QA","emoji":"💬","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}"#.utf8),
         )
         XCTAssertEqual(bare.name, "QA")
