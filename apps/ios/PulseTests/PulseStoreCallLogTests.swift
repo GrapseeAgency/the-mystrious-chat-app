@@ -42,7 +42,7 @@ final class PulseStoreCallLogTests: XCTestCase {
         let rows = try store.callLog()
         XCTAssertEqual(rows.map(\.id), ["r2", "r1"], "history must read newest-first")
         XCTAssertEqual(rows.first?.peerName, "Ada Lovelace")
-        XCTAssertEqual(rows.first?.peer.username, "ada")
+        XCTAssertEqual(rows.first?.peerUsername, "ada")
     }
 
     func testServerPruneDropsRowsTheEndpointNoLongerLists() throws {
@@ -99,7 +99,7 @@ final class PulseStoreCallLogTests: XCTestCase {
         let store = try makeStore()
         try store.appendCallLogQueue(payload: ["userId": "a"])
         try store.appendCallLogQueue(payload: ["userId": "b"])
-        let queue = try store.callLogQueueAll()
+        var queue = try store.callLogQueueAll()
         XCTAssertEqual(queue.count, 2)
         // FIFO: the first row is the oldest.
         XCTAssertTrue((queue.first?.payloadJson ?? "").contains("\"a\""))

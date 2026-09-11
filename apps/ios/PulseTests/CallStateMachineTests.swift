@@ -36,7 +36,7 @@ final class CallStateMachineTests: XCTestCase {
         XCTAssertEqual(machine.apply(.answerArrived, now: Date()).to, .connecting)
         XCTAssertEqual(machine.apply(.peerConnectionReady, now: Date()).to, .connected)
         let end = machine.apply(.hangupRequested, now: Date())
-        XCTAssertTrue(end.to.isTerminal)
+        if case .ended = end.to {} else { return XCTFail("expected .ended") }
         XCTAssertEqual(end.end?.outcome, .completed)
         XCTAssertGreaterThanOrEqual(end.end?.durationSec ?? -1, 0)
     }
@@ -47,7 +47,7 @@ final class CallStateMachineTests: XCTestCase {
         XCTAssertEqual(machine.apply(.acceptRequested, now: Date()).to, .connecting)
         XCTAssertEqual(machine.apply(.peerConnectionReady, now: Date()).to, .connected)
         let end = machine.apply(.hangupReceived, now: Date())
-        XCTAssertTrue(end.to.isTerminal)
+        if case .ended = end.to {} else { return XCTFail("expected .ended") }
         XCTAssertEqual(end.end?.outcome, .completed)
     }
 
