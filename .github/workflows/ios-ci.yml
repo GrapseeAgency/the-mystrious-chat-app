@@ -3,6 +3,7 @@ name: Pulse iOS CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
     paths: ['apps/ios/**', 'packages/**', '.github/workflows/ios-ci.yml']
   pull_request:
     paths: ['apps/ios/**', '.github/workflows/ios-ci.yml']

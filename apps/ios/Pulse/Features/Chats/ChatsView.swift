@@ -2540,6 +2540,9 @@ final class ChatsViewModel: ObservableObject {
         storeAttached = true
         store.observeConversations()
             .receive(on: DispatchQueue.main)
+            // GRDB observation failure degrades to "no cached rows yet"; the
+            // network answer below stays authoritative (summaries.isEmpty guard).
+            .replaceError(with: [])
             .sink { [weak self] rows in
                 guard let self, self.summaries.isEmpty else { return }
                 let session = self.observedSession ?? PulseSession()

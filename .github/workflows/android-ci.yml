@@ -3,6 +3,7 @@ name: Pulse Android CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
     paths: ['apps/android/**', 'packages/**', '.github/workflows/android-ci.yml']
   pull_request:
     paths: ['apps/android/**', '.github/workflows/android-ci.yml']
@@ -31,6 +32,10 @@ jobs:
       - name: Assemble signed release APK (committed LiveUpdate keystore)
         run: ./gradlew :app:assembleRelease
 
+      - name: Rename APK with release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/Pulse-${{ github.ref_name }}.apk"
+
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -41,7 +46,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: apps/android/app/build/outputs/apk/release/*.apk
+          files: apps/android/app/build/outputs/apk/release/Pulse-*.apk
 
   # Wave 0 quality gate: the app must actually LAUNCH and the Room v3→v4
   # migration must be proven non-destructive on a real Android system image.

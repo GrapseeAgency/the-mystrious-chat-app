@@ -378,8 +378,8 @@
             "name": "index_outbox_conversationId",
             "unique": false,
             "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_conversationId` ON `${TABLE_NAME}` (`conversationId`)",
-            "orders": {},
-            "fieldPaths": [
+            "orders": [],
+            "columnNames": [
               "conversationId"
             ]
           },
@@ -387,8 +387,8 @@
             "name": "index_outbox_clientId",
             "unique": true,
             "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_outbox_clientId` ON `${TABLE_NAME}` (`clientId`)",
-            "orders": {},
-            "fieldPaths": [
+            "orders": [],
+            "columnNames": [
               "clientId"
             ]
           }
