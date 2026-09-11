@@ -106,6 +106,8 @@ interface PulseRepository {
         replyToId: String? = null,
         /** Thread reply: the THREAD ROOT id — never conflated with replyToId (spec §1.1). */
         parentId: String? = null,
+        /** Wave 2 topic filing — dropped on thread replies (spec §1 row 10). */
+        topicId: String? = null,
     ): Result<Message>
     suspend fun markRead(conversationId: String): Result<Unit>
     suspend fun setTyping(conversationId: String, userName: String, typing: Boolean)
@@ -235,10 +237,14 @@ interface PulseRepository {
         conversationId: String,
         body: String,
         imagePath: String? = null,
+        audioPath: String? = null,
+        durationMs: Long? = null,
         filePath: String? = null,
         fileName: String? = null,
         fileSize: Long? = null,
         kind: String? = null,
+        viewOnce: Boolean? = null,
+        topicId: String? = null,
     ): Result<Message>
 
     /** GET /api/uploads/{file} → bytes saved under cacheDir/downloads — returns the absolute path. */

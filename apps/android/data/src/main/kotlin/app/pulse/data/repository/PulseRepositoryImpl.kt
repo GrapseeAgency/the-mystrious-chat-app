@@ -390,6 +390,7 @@ class PulseRepositoryImpl @Inject constructor(
         body: String,
         replyToId: String?,
         parentId: String?,
+        topicId: String?,
     ): Result<Message> {
         // Optimistic echo FIRST (spec §2 row 2): the bubble appears on the very
         // keystroke-to-send beat, not after the round-trip. The same clientId
@@ -408,6 +409,7 @@ class PulseRepositoryImpl @Inject constructor(
             createdAt = nowIso,
             replyToId = replyToId,
             threadRootId = parentId,
+            topicId = topicId,
         )
         if (!viewerId.isNullOrBlank()) {
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
@@ -419,6 +421,8 @@ class PulseRepositoryImpl @Inject constructor(
             replyToId = replyToId,
             // THREAD REPLY rides `parentId` — NEVER conflated with replyToId (spec §1.1).
             parentId = parentId,
+            // Wave 2 topic filing (spec §1 row 10): never on thread replies.
+            topicId = if (parentId == null) topicId else null,
         )) {
             is PulseResult.Success -> {
                 val message = r.value.toDomain()
@@ -462,10 +466,14 @@ class PulseRepositoryImpl @Inject constructor(
         conversationId: String,
         body: String,
         imagePath: String?,
+        audioPath: String?,
+        durationMs: Long?,
         filePath: String?,
         fileName: String?,
         fileSize: Long?,
         kind: String?,
+        viewOnce: Boolean?,
+        topicId: String?,
     ): Result<Message> =
         when (
             val r = api.sendMessage(
@@ -473,10 +481,14 @@ class PulseRepositoryImpl @Inject constructor(
                 senderId = viewerId ?: "",
                 content = body,
                 imagePath = imagePath,
+                audioPath = audioPath,
+                durationMs = durationMs,
                 filePath = filePath,
                 fileName = fileName,
                 fileSize = fileSize,
                 kind = kind,
+                viewOnce = viewOnce,
+                topicId = topicId,
             )
         ) {
             is PulseResult.Success -> {

@@ -167,6 +167,8 @@ class PulseApi(private val http: HttpClient) {
         fileName: String? = null,
         fileSize: Long? = null,
         kind: String? = null,
+        viewOnce: Boolean? = null,
+        topicId: String? = null,
     ): PulseResult<ChatMessageDto> =
         post(
             "/api/conversations/$conversationId/messages",
@@ -182,6 +184,8 @@ class PulseApi(private val http: HttpClient) {
                 if (filePath != null) put("filePath", filePath)
                 if (fileName != null) put("fileName", fileName)
                 if (fileSize != null) put("fileSize", fileSize)
+                if (viewOnce == true) put("viewOnce", true)
+                if (topicId != null) put("topicId", topicId)
             },
         ) { PulseJson.decodeFromString(ChatMessageDto.serializer(), it) }
 
