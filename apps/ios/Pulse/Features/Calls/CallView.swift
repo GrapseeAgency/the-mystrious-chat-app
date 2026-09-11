@@ -133,9 +133,9 @@ struct CallView: View {
         VStack(spacing: 12) {
             Image(systemName: "mic.slash.fill")
                 .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(.rose)
+                .foregroundStyle(PulseTheme.rose500)
                 .frame(width: 40, height: 40)
-                .background(Circle().fill(Color.rose.opacity(0.16)))
+                .background(Circle().fill(PulseTheme.rose500.opacity(0.16)))
             Text(text)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.9))
@@ -165,7 +165,7 @@ struct CallView: View {
         HStack(spacing: 10) {
             Image(systemName: text.hasPrefix("Call ended") ? "phone.down.fill" : "phone.badge.xmark")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(text.hasPrefix("Call ended") ? PulseTheme.emerald500 : .rose)
+                .foregroundStyle(text.hasPrefix("Call ended") ? PulseTheme.emerald500 : PulseTheme.rose500)
             Text(text)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.92))
@@ -355,8 +355,8 @@ private struct CallActionButton: View {
     private var fill: Color {
         switch tone {
         case .neutral: return Color.white.opacity(0.14)
-        case .danger: return Color.rose.opacity(0.92)
-        case .dangerSoft: return Color.rose.opacity(0.30)
+        case .danger: return PulseTheme.rose500.opacity(0.92)
+        case .dangerSoft: return PulseTheme.rose500.opacity(0.30)
         case .accept: return PulseTheme.emerald.opacity(0.92)
         }
     }
@@ -364,15 +364,15 @@ private struct CallActionButton: View {
     private var border: Color {
         switch tone {
         case .neutral: return Color.white.opacity(0.16)
-        case .danger: return Color.rose.opacity(0.4)
-        case .dangerSoft: return Color.rose.opacity(0.4)
+        case .danger: return PulseTheme.rose500.opacity(0.4)
+        case .dangerSoft: return PulseTheme.rose500.opacity(0.4)
         case .accept: return PulseTheme.emerald500.opacity(0.4)
         }
     }
 
     private var shadowColor: Color {
         switch tone {
-        case .danger: return Color.rose.opacity(0.45)
+        case .danger: return PulseTheme.rose500.opacity(0.45)
         case .accept: return PulseTheme.emerald500.opacity(0.5)
         default: return .black.opacity(0.3)
         }
