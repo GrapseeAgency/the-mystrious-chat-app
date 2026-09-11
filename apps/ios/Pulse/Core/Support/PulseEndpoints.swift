@@ -1,5 +1,36 @@
 import Foundation
 
+/// One TURN/STUN relay from the deployment manifest `ice` array (Wave 3-HW).
+/// `urls` accepts a single string or an array (both wire forms decode).
+public struct PulseIceServer: Codable, Equatable {
+    public var urls: [String]
+    public var username: String?
+    public var credential: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case urls, username, credential
+    }
+
+    public init(urls: [String], username: String? = nil, credential: String? = nil) {
+        self.urls = urls
+        self.username = username
+        self.credential = credential
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let list = try? container.decode([String].self, forKey: .urls) {
+            urls = list
+        } else if let single = try? container.decode(String.self, forKey: .urls) {
+            urls = [single]
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .urls, in: container, debugDescription: "urls must be a string or array")
+        }
+        username = try? container.decodeIfPresent(String.self, forKey: .username)
+        credential = try? container.decodeIfPresent(String.self, forKey: .credential)
+    }
+}
+
 /// Gateway endpoints — iOS mirror of Android `PulseEndpoints`.
 ///
 /// NO fake host is baked: a static CDN (raw.githubusercontent) cannot execute
@@ -10,6 +41,8 @@ import Foundation
 ///      non-empty `gateway`/`socket` fields; when adopted they persist in the
 ///      Keychain ("endpoints.override") and re-apply on every launch, so an
 ///      offline start still retargets (Android parity).
+///      Wave 3-HW: an optional `ice` array (TURN/STUN + credentials) is
+///      adopted the same way and consumed by the call engines.
 ///   3. Nothing configured → the client is honestly offline (fast-failing
 ///      placeholder, never a misleading CDN 404).
 ///
@@ -56,6 +89,10 @@ public enum PulseEndpoints {
     /// Manifest-adopted overrides (in-memory mirror of the Keychain copy).
     static var manifestGateway: String?
     static var manifestSocket: String?
+
+    /// Manifest-adopted TURN/STUN JSON (Wave 3-HW) — raw `ice` array exactly
+    /// as served; nil = engines keep their built-in Google STUN defaults.
+    static var manifestIceJSON: String?
 
     /// Effective REST base: user field > manifest override > nil (offline).
     static var gatewayBase: String? {
@@ -113,15 +150,28 @@ public enum PulseEndpoints {
         if let socket = clean(socket) { manifestSocket = withoutTrailingSlashes(socket) }
     }
 
+    /// Applies the manifest `ice` override (Wave 3-HW). The JSON is validated
+    /// by decoding it as `[PulseIceServer]` — invalid or empty arrays are
+    /// ignored so a broken manifest can never strip a working STUN set.
+    public static func applyIceOverride(_ json: String?) {
+        guard let json = clean(json),
+              let data = json.data(using: .utf8),
+              let servers = try? JSONDecoder().decode([PulseIceServer].self, from: data),
+              !servers.isEmpty else { return }
+        manifestIceJSON = json
+    }
+
     /// Re-applies the override persisted by a previous launch (best effort).
     public static func loadPersistedOverride() {
         guard let data = PulseKeychain.shared.load(account: PulseKeychain.endpointsAccount) else { return }
         struct StoredOverride: Decodable {
             let gateway: String?
             let socket: String?
+            let iceJson: String?
         }
         guard let stored = try? JSONDecoder().decode(StoredOverride.self, from: data) else { return }
         applyOverride(gateway: stored.gateway, socket: stored.socket)
+        applyIceOverride(stored.iceJson)
     }
 
     /// Fetches `{base}/update-manifest.json` (6s timeout) and, when it carries
@@ -140,18 +190,26 @@ public enum PulseEndpoints {
         struct UpdateManifest: Decodable {
             let gateway: String?
             let socket: String?
+            let ice: [PulseIceServer]?
         }
         guard let manifest = try? JSONDecoder().decode(UpdateManifest.self, from: data) else { return }
         let gateway = clean(manifest.gateway)
         let socket = clean(manifest.socket)
-        guard gateway != nil || socket != nil else { return }
+        let iceJSON: String? = manifest.ice.flatMap { servers in
+            guard !servers.isEmpty,
+                  let encoded = try? JSONEncoder().encode(servers) else { return nil }
+            return String(data: encoded, encoding: .utf8)
+        }
+        guard gateway != nil || socket != nil || iceJSON != nil else { return }
 
         applyOverride(gateway: gateway, socket: socket ?? gateway)
+        applyIceOverride(iceJSON)
 
         // Persist for offline relaunches (blank = field not overridden yet).
         let payload: [String: String] = [
             "gateway": gateway ?? "",
             "socket": socket ?? "",
+            "iceJson": iceJSON ?? "",
         ]
         if let encoded = try? JSONSerialization.data(withJSONObject: payload) {
             _ = PulseKeychain.shared.save(encoded, account: PulseKeychain.endpointsAccount)

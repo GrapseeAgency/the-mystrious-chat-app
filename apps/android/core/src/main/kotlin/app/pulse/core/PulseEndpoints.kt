@@ -27,6 +27,15 @@ object PulseEndpoints {
     /** Socket.IO relay base — blank = realtime disabled (offline-first client). */
     @Volatile var socketUrl: String = ""
 
+    /**
+     * Optional TURN/STUN override (Wave 3-HW) — raw JSON array of
+     * `{urls: string|string[], username?, credential?}` exactly as it appeared
+     * in the deployment manifest `ice` field. Blank = the engine keeps its
+     * built-in Google STUN defaults. Parsed at engine init (org.webrtc),
+     * kept as a string here so `core` stays dependency-free.
+     */
+    @Volatile var iceServersJson: String = ""
+
     /** True once a real origin is configured — drives honest connection UI. */
     val isConfigured: Boolean get() = gatewayHttpUrl.isNotBlank()
 
@@ -49,5 +58,14 @@ object PulseEndpoints {
     fun applyOverride(gateway: String?, socket: String?) {
         if (!gateway.isNullOrBlank()) gatewayHttpUrl = gateway.trim()
         if (!socket.isNullOrBlank()) socketUrl = socket.trim()
+    }
+
+    /**
+     * Manifest-driven ICE override — a non-blank JSON array replaces the
+     * built-in STUN set the next time a peer connection is created. Blank or
+     * invalid JSON never clobbers a working value (same rule as the bases).
+     */
+    fun applyIceOverride(json: String?) {
+        if (!json.isNullOrBlank()) iceServersJson = json.trim()
     }
 }

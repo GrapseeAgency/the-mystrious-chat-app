@@ -31,6 +31,7 @@ data class SessionVault(
     val viewerColor: String? = null,
     val gatewayOverride: String? = null,
     val socketOverride: String? = null,
+    val iceOverride: String? = null,
 )
 
 /**

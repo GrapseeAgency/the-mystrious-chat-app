@@ -38,6 +38,7 @@ class ManifestEndpoints @Inject constructor(
         val vault = runCatching { PulseJson.decodeFromString(SessionVault.serializer(), json) }
             .getOrElse { Log.w(TAG, "vault decode failed", it); return }
         PulseEndpoints.applyOverride(vault.gatewayOverride, vault.socketOverride)
+        PulseEndpoints.applyIceOverride(vault.iceOverride)
     }
 
     /**
@@ -53,21 +54,24 @@ class ManifestEndpoints @Inject constructor(
             }
         }
         for (url in urls) {
-            val (gateway, socket) = fetchOverrides(url)
-            if (gateway != null || socket != null) {
+            val (gateway, socket, ice) = fetchOverrides(url)
+            if (gateway != null || socket != null || ice != null) {
                 // v0.1.8 semantics: a manifest `gateway` drives BOTH rest and
                 // realtime (the edge serves both); an explicit `socket` field
                 // overrides the relay separately when deployments split them.
+                // Wave 3-HW: an `ice` array (TURN/STUN with credentials) is
+                // adopted as raw JSON and consumed by the call engines.
                 val effectiveSocket = socket ?: gateway
                 PulseEndpoints.applyOverride(gateway, effectiveSocket)
-                persistOverrides(gateway, effectiveSocket)
-                Log.i(TAG, "endpoint override adopted — gateway=$gateway socket=$effectiveSocket")
+                PulseEndpoints.applyIceOverride(ice)
+                persistOverrides(gateway, effectiveSocket, ice)
+                Log.i(TAG, "endpoint override adopted — gateway=$gateway socket=$effectiveSocket ice=${ice != null}")
                 return@withContext
             }
         }
     }
 
-    private suspend fun persistOverrides(gateway: String?, socket: String?) {
+    private suspend fun persistOverrides(gateway: String?, socket: String?, ice: String?) {
         runCatching {
             val current = secureSessionStore.load()
                 ?.let { runCatching { PulseJson.decodeFromString(SessionVault.serializer(), it) }.getOrNull() }
@@ -78,32 +82,36 @@ class ManifestEndpoints @Inject constructor(
                     current.copy(
                         gatewayOverride = gateway ?: current.gatewayOverride,
                         socketOverride = socket ?: current.socketOverride,
+                        iceOverride = ice ?: current.iceOverride,
                     ),
                 ),
             )
         }
     }
 
-    /** 3s-timeout GET — returns (gateway?, socket?) with nulls on any failure. */
-    private fun fetchOverrides(url: String): Pair<String?, String?> = try {
+    /** 3s-timeout GET — returns (gateway?, socket?, ice?) with nulls on any failure. */
+    private fun fetchOverrides(url: String): Triple<String?, String?, String?> = try {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 3_000
         conn.readTimeout = 3_000
         conn.instanceFollowRedirects = true
         try {
             if (conn.responseCode !in 200..299) {
-                null to null
+                Triple(null, null, null)
             } else {
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 val obj = JSONObject(body)
-                obj.optString("gateway", "").takeIf { it.isNotBlank() } to
-                    obj.optString("socket", "").takeIf { it.isNotBlank() }
+                Triple(
+                    obj.optString("gateway", "").takeIf { it.isNotBlank() },
+                    obj.optString("socket", "").takeIf { it.isNotBlank() },
+                    obj.optJSONArray("ice")?.takeIf { it.length() > 0 }?.toString(),
+                )
             }
         } finally {
             conn.disconnect()
         }
     } catch (_: Exception) {
-        null to null
+        Triple(null, null, null)
     }
 
     private companion object {

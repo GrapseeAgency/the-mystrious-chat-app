@@ -131,10 +131,24 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         box = PulseRTCDelegateBox(delegate)
 
         let config = RTCConfiguration()
-        // Web STUN parity (call-overlay.tsx STUN_SERVERS).
-        config.iceServers = [
-            RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]),
-        ]
+        // ICE: deployment-manifest TURN override (Wave 3-HW) when adopted;
+        // otherwise Web STUN parity (call-overlay.tsx STUN_SERVERS).
+        if let raw = PulseEndpoints.manifestIceJSON,
+           let data = raw.data(using: .utf8),
+           let parsed = try? JSONDecoder().decode([PulseIceServer].self, from: data),
+           !parsed.isEmpty {
+            config.iceServers = parsed.map { ice in
+                RTCIceServer(
+                    urlStrings: ice.urls,
+                    username: ice.username ?? "",
+                    credential: ice.credential ?? "",
+                )
+            }
+        } else {
+            config.iceServers = [
+                RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]),
+            ]
+        }
         config.sdpSemantics = .unifiedPlan
 
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)

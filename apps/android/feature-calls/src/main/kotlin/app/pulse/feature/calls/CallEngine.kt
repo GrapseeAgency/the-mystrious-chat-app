@@ -18,6 +18,7 @@ import app.pulse.domain.model.CallSignalOut
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.core.PulseEndpoints
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
@@ -28,6 +29,7 @@ import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import org.json.JSONArray
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -296,6 +298,41 @@ class CallEngine @Inject constructor(
 
     // ── WebRTC plumbing ─────────────────────────────────────────
 
+    /**
+     * ICE servers (Wave 3-HW): the deployment manifest `ice` array (TURN with
+     * credentials) wins when adopted via [PulseEndpoints.applyIceOverride];
+     * otherwise the built-in Google STUN pair stays (permissive networks).
+     * Invalid manifest JSON degrades to the defaults — never a crash.
+     */
+    private fun iceServers(): List<PeerConnection.IceServer> {
+        val raw = PulseEndpoints.iceServersJson
+        if (raw.isNotBlank()) {
+            runCatching {
+                val arr = JSONArray(raw)
+                val servers = (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val urls: List<String> = when (val u = o.opt("urls")) {
+                        is JSONArray -> (0 until u.length()).mapNotNull { j ->
+                            u.optString(j).takeIf { it.isNotBlank() }
+                        }
+                        is String -> listOfNotNull(u.takeIf { it.isNotBlank() })
+                        else -> return@mapNotNull null
+                    }
+                    if (urls.isEmpty()) return@mapNotNull null
+                    val builder = PeerConnection.IceServer.builder(urls)
+                    if (o.has("username") && !o.isNull("username")) builder.setUsername(o.getString("username"))
+                    if (o.has("credential") && !o.isNull("credential")) builder.setPassword(o.getString("credential"))
+                    builder.createIceServer()
+                }
+                if (servers.isNotEmpty()) return servers
+            }.onFailure { Log.w(TAG, "manifest ice parse failed; keeping built-in STUN", it) }
+        }
+        return listOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+        )
+    }
+
     private fun ensureFactory() {
         if (factory != null) return
         PeerConnectionFactory.initialize(
@@ -317,12 +354,7 @@ class CallEngine @Inject constructor(
         if (pc != null) return pc
         ensureFactory()
         if (factory == null) return null
-        val rtcConfig = PeerConnection.RTCConfiguration(
-            listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
-            ),
-        ).apply {
+        val rtcConfig = PeerConnection.RTCConfiguration(iceServers()).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
