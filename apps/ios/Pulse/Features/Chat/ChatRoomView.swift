@@ -716,7 +716,7 @@ private struct MessageInfoSheet: View {
                     }
                     ForEach(seenBy, id: \.id) { member in
                         HStack(spacing: 10) {
-                            PulseAvatar(name: member.name, colorHex: member.color, size: 30)
+                            PulseAvatar(name: member.name, color: PulseTheme.color(named: member.color), size: 30)
                             Text(member.name).font(.subheadline)
                             Spacer()
                             Image(systemName: "checkmark.circle.fill")
