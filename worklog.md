@@ -2396,3 +2396,18 @@ Work Log:
 
 Stage Summary:
 - Both platforms CI-green on the Wave 1 tree. Next: tag v0.3.0-native → tag CI → auto-release + forensic + CDN + report.
+
+---
+Task ID: W1-RELEASE (orchestrator)
+Agent: orchestrator (Z.ai Code)
+Task: Tag CI + release + forensic + CDN + four-source hash + Wave 1 Completion Report.
+
+Work Log:
+- Tag v0.3.0-native pushed → tag CI BOTH GREEN: Android 34585146573 (build+instrumented+auto-publish), iOS 34585146610 (build-test 33 tests + launch smoke + archive). Automated release path (contents:write) exercised for the first time — Release v0.3.0-native + Pulse-v0.3.0-native.apk (14,436,988 bytes) published by the workflow itself.
+- Forensic gate on release bytes: CRC clean, v2+v3 signing block + v1 META-INF, arsc STORED+aligned, package app.pulse.chat versionCode 11 versionName 0.3.0-native minSdk 21 targetSdk 35. sha256 bebf37b7b42999d9a24a5736f50da0caa98df110f933df41c91f058b8a2f21dc.
+- CDN commit f354606: download/Pulse.apk (release bytes) + update-manifest.json (versionCode 11, notes, gateway/socket keys stay dormant).
+- FOUR-SOURCE HASH RULE: ALL EQUAL bebf37b7… (tag-CI bytes / release asset / live raw CDN / live manifest field).
+- docs/WAVE-1-COMPLETION-REPORT.md written (13 sections: features matrix, both platform file inventories, zero backend changes, tests, Android+iOS CI evidence with run IDs, artifact forensics, honest device-verification statement, limitations, parity gaps, exact Wave 2 recommendation).
+
+Stage Summary:
+- WAVE 1 COMPLETE. Gate passed: installable APK released + CDN-live; both platforms CI-green (main + tag); 27/27 live E2E gate (TEXT→REALTIME→PERSISTENCE→RECONNECT→OFFLINE→FLUSH + threads/media/pagination/search/receipts/actions/draft). Wave 2 NOT started (user gate).
