@@ -2509,3 +2509,66 @@ Work Log:
 
 Stage Summary:
 - WAVE 2 COMPLETE. Gate passed: voice notes / view-once / polls / link previews / saved library / topics demonstrably functional on BOTH platforms; installable versionCode-12 APK released + CDN-live; both platforms CI-green (main + tag); live E2E 40/40. Wave 3 NOT started (user gate). HARD STOP per directive.
+
+---
+Task ID: W3-PLAN
+Agent: orchestrator (Z.ai Code)
+Task: Wave 3 (Native Calls) ground truth + shared design, pre-crew.
+
+Work Log:
+- Session resumed with local tree STALE (Wave 0-era, push-blocked). Fetched origin with user PAT: origin/main 37 commits ahead — Wave 1 (v0.3.0) + Wave 2 (v0.4.0-native, versionCode 12) were completed, CI-gated, released and pushed from a prior sandbox. Fast-forwarded local main to origin ea6f4a0. Nothing local was lost (0 unique local commits).
+- GROUND TRUTH (all verified on the synced tree):
+  - packages/protocol/src/contracts.ts: full call:* family (22 C→S include call:offer/answer/ice/reject/cancel/hangup; payloads CallOffer/Answer/Ice/Reject/Cancel/Hangup). Known contracts.ts drift: CallHangupPayload says durationMs, actual wire = durationSec (relay + Web call-types.ts agree) — native clients follow the WIRE.
+  - mini-services/pulse-socket/index.ts (R33-a): COMPLETE call relay — identity-gated handlers, 30s ring timeout (server-armed), busy map callByUser (one live call per user), offline→caller gets call:cancel reason 'offline', busy→reason 'busy', reject→caller gets call:reject + callee gets call:cancel 'cancel', disconnect tears session down (ring→cancel to both, answered→hangup to survivor with durationSec). Backend contract gap: NONE PROVEN → NO backend changes in Wave 3.
+  - Web behavioral spec: src/lib/call-types.ts (wire + REST shapes) + src/components/chat/call-overlay.tsx (1030 lines). Call log is SERVER-side via REST /api/calls (route.ts GET+POST): single-writer rule (CALLER's client writes every row), wire statuses completed|missed|declined, outgoing flag + peer resolved server-side, MAX_DURATION_SEC 24h.
+  - Native readiness: Android :feature-calls module exists (ContactsScreen lives there), no WebRTC dep yet; iOS Features/Calls dir empty; iOS PulseSocketClient already emits .callSignal for all 6 events; Android PulseSocketClient has typed call DTOs in :protocol SocketContracts.kt. Manifest gateway/socket keys present but EMPTY (production relay URL unset — hardware-gate implication, documented).
+- SHARED DESIGN (both platforms implement identical semantics):
+  - States: idle → outgoingRinging → connecting → connected → ended; idle → incomingRinging → connecting → connected → ended. Terminal outcomes drive UI + log: answered-then-ended=completed(durationSec); reject received=declined; cancel received while ringing (reason timeout/offline/busy) or self-cancel=missed (row semantics per Web overlay; native renders outgoing+missed as "Cancelled").
+  - Timeouts: server 30s ring (authoritative), client defensive 40s; PC connect 15s after answer; disconnected grace 10s; stale-state cleanup 45s with no signaling.
+  - ICE: trickle; queue candidates until remote description set, then drain (relay explicitly supports early candidates).
+  - Mute = track enabled toggle. Speaker = Android AudioManager (MODE_IN_COMMUNICATION, API-aware speaker toggle, audio focus) / iOS AVAudioSession (.playAndRecord + .voiceChat + defaultToSpeaker, save & RESTORE prior session on end).
+  - Call log: caller-side POST /api/calls on terminal (network-fail → local queue → flush on reconnect), history = GET /api/calls + local cache table (Room v7 / GRDB v5).
+  - Duplicate/idempotency: every signal handler guarded by callId + current state; terminal events ignored after cleanup.
+  - Scope: kind='voice' fully implemented natively; kind='video' accepted on wire but native UI is audio-call UI (video capture NOT in the 22-item Wave 3 scope — documented limitation, not simplification of scope items).
+
+Stage Summary:
+- Wave 3 = pure native-client work on a complete, proven backend contract. Crews: W3-a (Android), W3-b (iOS) launched in parallel with this design pinned. Orchestrator owns git (crews do not run git), integration, push, CI loop, report.
+
+---
+Task ID: W3-b
+Agent: iOS Wave 3 crew (W3-b) + orchestrator completion
+Task: Wave 3 iOS native calls
+
+Work Log:
+- CREW (report channel died at context deadline; code landed and was verified/completed by the orchestrator):
+  - project.yml: SPM WebRTC (stasel distribution) pinned from the real stable tag 125.0.0 (tags verified via git ls-remote; product "WebRTC"); version 0.5.0-native.
+  - Domain — CallModels.swift (CallKind/CallOutcome/CallDirection/CallPeer/CallInfo/CallFormat/CallLogEntry domain shape), CallStateMachine.swift (pure value-type reducer: apply(input, now)→CallMachineTransition, checkTimeouts, owns(callId), CallTimers w/ 30s-server-authoritative + 40s defensive ring/15s connect/10s grace/45s stale), CallLogMapper.swift (single-writer guard, restBody parity, wire-tolerant entry mapping, presentation).
+  - Core — PulseCallEngine.swift (646 lines: real WebRTC via PulseRTCMediaProvider protocol seam, identity-gated signal intake, single-writer log write + offline queue flush on start/reconnect, mic permission owned by the engine — honest denied state); PulseRTCMediaProvider.swift; PulseCallAudioSession.swift (AVAudioSession .playAndRecord+.voiceChat, save & RESTORE prior session, route change observation); PulseAPIClient callHistory()/createCallLogRow(); PulseSocketClient.emitCallSignal(); PulseStore v4→v5 (callLogCache + callLogQueue GRDB tables); PulseSession: callEngine lifecycle + .callSignal dispatch + emitCallSignal funnel + reconnect flush trigger; CallView.swift (overlay host + full call UI).
+- ORCHESTRATOR COMPLETION:
+  - PulseStore.syncCallLog(from: [WireCallLogItem]) — wire→cache reconcile (denormalized peer, nil-kind→voice, nil-duration→0) reusing upsert(callLog:) prune.
+  - Features/Calls/CallsHistoryView.swift — history screen (cache-first paint → GET /api/calls → store sync+prune; all 8 directive cases; empty/error states; a11y labels) + formatCallDuration.
+  - RootView — CallOverlayHostView hosted at the outer ZStack (owns the whole screen when engine not idle).
+  - ContactsView — toolbar "phone.badge.clock" history sheet + leading swipe CALL action (DM resolved server-side first — createConversation dedupe — then engine.startOutgoing; engine owns the permission prompt).
+  - Tests — CallStateMachineTests.swift (full happy paths, all 8 cancel/reject/timeout mappings incl. answered-then-failed=completed, duplicate/terminal idempotency, defensive timers), CallLogMapperTests.swift (single-writer guard matrix, wire status mapping, POST body shape, 8 presentation cases, wire tolerance), PulseStoreCallLogTests.swift (cache round-trip+ordering, server prune, wire sync mapping, queue UNIQUE dedupe + FIFO + attempts), CallSignalingRoundTripTests.swift (REAL socket round trip vs fixture relay: offer identity decoration → answer SDP → flat ICE triple → hangup durationSec → SPOOFED from REJECTED by the identity gate), Fixtures/server.js extended with the identity-gated call:* relay (existing CI step on :3995 picks it up unchanged).
+
+Stage Summary:
+- iOS Wave 3 scope complete at code level, mirroring Android semantics 1:1 (same machine, same single-writer REST rule, same cache/queue design). Compile/test execution = CI gate (no macOS in sandbox). HARDWARE-DEPENDENT (physical iPhone REQUIRED for final acceptance): AVAudioSession configure/restore under real routes (earpiece/speaker/Bluetooth), real mic capture + remote audio, interruption/route-change behaviour, background ring limits (no CallKit this wave — documented), CallKit absence.
+
+---
+Task ID: W3-a
+Agent: Android Wave 3 crew (W3-a) + orchestrator completion
+Task: Wave 3 Android native calls
+
+Work Log:
+- CREW (report channel died at context deadline; code landed and was verified/completed by the orchestrator):
+  - :protocol — SocketContracts.kt: full-fidelity per-event call DTOs (CallOfferDto w/ caller identity decoration, CallAnswerDto, CallIceDto FLAT candidate triple, CallRejectDto, CallCancelDto reason, CallHangupDto durationSec — the contracts.ts durationMs drift is documented and the WIRE wins) + pure-kotlinx wire-perfect JSON builders; WireDtos.kt: CallPeerInfoDto/CallLogItemDto/CallLogsPageDto/CallLogCreatedDto (GET/POST /api/calls parity with src/lib/call-types.ts); SocketContractsTest extended.
+  - :data — PulseApi.callLogs()/createCallLog(); PulseSocketClient: typed per-event CallSignal union (Signal.CallSignal(signal)) + emitCall* for all 6 events (JSONObject emit path).
+  - :domain — model/Call.kt (CallKind/CallStatus/CallCancelReason/CallPeer/CallDirection/CallState/CallOutcome/CallLogEntry/CallSignalData/CallSignalOut), call/CallStateMachine.kt (pure MVI reducer: dispatch(event)→List<CallEffect>, poll() deadlines — 40s defensive ring / 15s connect / 10s disconnect grace / 45s stale, per-callId+state idempotency, pinned terminal mapping), call/CallLogMapper.kt (single-writer guard enforced twice), 591-line CallStateMachineTest (fake clock).
+- ORCHESTRATOR COMPLETION (the crew died before the data/graph/UI half):
+  - :data — Room v6→v7: callLogCache (offline mirror of GET /api/calls, denormalized peer, startedAt index) + callLogQueue (UNIQUE payloadJson dedupe, attempts, FIFO) entities + CallLogDao + MIGRATION_6_7 (DDL mirrors generated schema, columns 1:1 with the iOS crew's GRDB v5) + schema export; DataModule: migration + DAO provider.
+  - :data — PulseRepositoryImpl: callLogDao injected; Signal.CallSignal → domain CallSignalData → PulseEvent.CallSignal (typed per-event mapper); observeCallLog/refreshCallLog (server-truth prune)/writeCallLog (instant local row + POST; NETWORK-failure → enqueue exact payload)/flushCallLogQueue (FIFO, stop-at-first-network-failure, 4xx drop — outbox parity)/emitCall (CallSignalOut → per-event DTO); flush triggers added at start() AND reconnect alongside the outbox; MAX_CALL_LOG_QUEUE=50.
+  - :feature-calls — CallEngine.kt (@Singleton: effect executor — org.webrtc via io.getstream:stream-webrtc-android 1.3.10, UNIFIED_PLAN + GATHER_CONTINUALLY, 2× Google STUN, JavaAudioDeviceModule w/ HW AEC/NS, trickle ICE + early-candidate queue drained after remote desc, onIceConnectionChange+onConnectionChange → machine, mute=track.setEnabled, DM resolution via observeConversations/createDm, single-writer WriteLog via CallLogMapper + refreshCallLog reconcile); CallAudioManager.kt (AUDIOFOCUS_GAIN, MODE_IN_COMMUNICATION, API-31+ setCommunicationDevice / legacy setSpeakerphoneOn); CallForegroundService.kt (microphone-type FGS + ongoing call notification); CallViewModel.kt (thin activity-scoped bridge); CallOverlay.kt (full-screen Compose surface: incoming accept/decline w/ RECORD_AUDIO gate, outgoing ring, connecting, connected mute/speaker/duration, ended card, a11y descriptions); CallsView.kt (history: cache-first list, 8 directive cases, empty/error states); ContactsScreen call button per row (permission launcher) + wire-up.
+  - :app — MainActivity: "calls" route, root-level CallOverlay above dock/tabs, activity-scoped CallViewModel, ContactsScreen call wiring; AndroidManifest: FOREGROUND_SERVICE + FOREGROUND_SERVICE_MICROPHONE + service declaration (microphone type); versionCode 13 / 0.5.0-native.
+
+Stage Summary:
+- Android Wave 3 scope complete at code level: outgoing/incoming/accept/decline/cancel/busy/timeout/missed/connected/mute/speaker/duration/hangup/reconnect/stale cleanup + call history (REST single-writer + Room v7 cache + offline queue). JVM-verified: :protocol/:domain/:core (see W3-CI entry for verbatim results). :app/:data/:feature-calls compile = CI gate (no Android SDK in sandbox). HARDWARE-DEPENDENT (physical device REQUIRED for final acceptance): real mic capture + remote audio, AEC behaviour, audio-focus arbitration vs other apps, speaker/Bluetooth route switching, FGS mic type on-device, notification surfaces, deep permission-denied UX.
