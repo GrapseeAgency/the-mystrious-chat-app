@@ -1,10 +1,12 @@
 {
-  "versionCode": 9,
-  "versionName": "0.1.8-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.1.8-native/Pulse-v0.1.8-native.apk",
+  "versionCode": 10,
+  "versionName": "0.2.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.2.0-native/Pulse-v0.2.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "a8cc43ade616b070b37e5d87ff1e5e8a4064883908e83fdc6da14a0e89eabd2a",
-  "notes": "Gateway truth wave: the app no longer pretends a static CDN is a chat backend. Open Profile → Connection, paste your Pulse server origin, Test it, Save — REST and realtime both use it. If the in-app installer ever refuses the package again, the update banner now offers BROWSER (one tap, hands the same verified file to your browser — the install path that works on every device).",
+  "sha256": "4dadcd91e1aca6f8db2e7f12a0a906dede9e4756a1bd84ae57615d12db0e7d84",
+  "notes": "Wave 0 — native foundation: one authoritative typed contract (22 client / 27 server / 11 notify socket events), Android Room v4 offline core (outbox + drafts, non-destructive v3→v4 migration) with Keystore-backed secure session, iOS GRDB v2 offline core with Keychain session store, full socket registries with reconnect re-join on both platforms, outbox retry/sync engines (WorkManager / BGTask), automation-tested CI including real Socket.IO round-trips on both platforms and emulator/simulator launch gates.",
+  "gateway": "",
+  "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-10T09:00:00Z"
+  "updatedAt": "2026-09-11T03:06:39Z"
 }

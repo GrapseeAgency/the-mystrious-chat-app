@@ -11,6 +11,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Tag builds publish the Release themselves (softprops/action-gh-release)
+    # — the default GITHUB_TOKEN is read-scoped without this grant.
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: apps/android
