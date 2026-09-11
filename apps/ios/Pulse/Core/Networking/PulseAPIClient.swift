@@ -499,6 +499,27 @@ public struct PulseAPIClient: Sendable {
         _ = try await send(request)
     }
 
+    // ── calls (W3-b — Wave 3 native calls) ───────────────────
+
+    /// GET /api/calls?userId=X — the viewer's call log, newest first, server
+    /// cap 50. Rows where the viewer was caller OR callee are merged
+    /// server-side; each resolves the PEER + an `outgoing` flag.
+    public func callHistory(userId: String) async throws -> [WireCallLogItem] {
+        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        let page: WireCallLogPage = try await get("/api/calls?userId=\(query)")
+        return page.items ?? []
+    }
+
+    /// POST /api/calls { userId, conversationId, peerId, kind, status,
+    /// durationSec? } → 201 { item }. Single-writer rule: the CALLER's client
+    /// writes every terminal row (completed | missed | declined) exactly once;
+    /// the callee never writes. Offline failures queue in PulseStore
+    /// (callLogQueue) and flush on socket reconnect / app start.
+    public func createCallLogRow(_ body: [String: Any]) async throws -> WireCallLogItem {
+        let data = try await postRaw("/api/calls", body: body)
+        return try WireCallLogEnvelope.extract(from: data)
+    }
+
     // ── plumbing ─────────────────────────────────────────────
     /// URL builder that keeps query strings intact (appendingPathComponent
     /// would percent-encode "?", breaking every ?userId= route).

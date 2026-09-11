@@ -11,6 +11,8 @@ struct ContactsView: View {
     @State private var reportReason = ""
     @State private var reportDetails = ""
     @State private var reportPending = false
+    // Wave 3 — call history surface.
+    @State private var callsHistoryOpen = false
 
     var body: some View {
         NavigationStack {
@@ -29,11 +31,24 @@ struct ContactsView: View {
             }
             .navigationTitle("Contacts")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        callsHistoryOpen = true
+                    } label: {
+                        Image(systemName: "phone.badge.clock")
+                    }
+                    .accessibilityLabel("Call history")
+                }
+            }
             .searchable(text: $viewModel.query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Find people")
             .refreshable { await viewModel.load(api: session.api) }
             .task { await viewModel.load(api: session.api) }
         }
         .onAppear { viewModel.observe(session: session) }
+        .sheet(isPresented: $callsHistoryOpen) {
+            CallsHistoryView(session: session)
+        }
         .sheet(item: $reportTarget) { target in
             ReportSheet(
                 user: target,
@@ -88,6 +103,14 @@ struct ContactsView: View {
                         isViewer: user.id == session.viewer?.id,
                     ) {
                         viewModel.openDM(user, session: session)
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button {
+                            viewModel.call(user, session: session)
+                        } label: {
+                            Label("Call", systemImage: "phone.fill")
+                        }
+                        .tint(PulseTheme.emerald)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
@@ -268,6 +291,29 @@ final class ContactsViewModel: ObservableObject {
                 _ = conversation
                 session.noteInboxChanged() // Chats tab re-fetches and shows the row
                 PulseHaptics.success()
+            } catch {
+                PulseHaptics.warning()
+                errorText = ChatsViewModel.describe(error)
+            }
+            self?.loading = false
+        }
+    }
+
+    /// Wave 3 — one-tap voice call. The DM is resolved first (server dedupes
+    /// pairs), then the engine opens the ring; the engine owns the mic
+    /// permission prompt + the honest denied state itself.
+    func call(_ user: WireUser, session: PulseSession) {
+        guard user.id != session.viewer?.id else { return }
+        guard let engine = session.callEngine else {
+            errorText = "Calls aren't ready yet — try again in a moment."
+            return
+        }
+        PulseHaptics.tap()
+        Task { [weak self] in
+            do {
+                let conversation = try await session.api.createConversation(memberIds: [user.id], isGroup: false)
+                let peer = CallPeer(id: user.id, name: user.name, color: user.color, avatar: user.avatar)
+                engine.startOutgoing(to: peer, conversationId: conversation.id)
             } catch {
                 PulseHaptics.warning()
                 errorText = ChatsViewModel.describe(error)

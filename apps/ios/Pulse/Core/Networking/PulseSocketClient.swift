@@ -220,6 +220,15 @@ public final class PulseSocketClient {
         ])
     }
 
+    /// W3-b — emit one C→S call signaling event (call:offer / call:answer /
+    /// call:ice / call:reject / call:cancel / call:hangup). The payload shape
+    /// is built by CallWire (unit-tested against the relay's validation).
+    /// Emits made while disconnected are buffered by socket.io and flushed on
+    /// the next reconnect (same semantics the join re-emit relies on).
+    public func emitCallSignal(event: String, payload: [String: Any]) {
+        socket.emit(event, payload)
+    }
+
     public func disconnect() {
         lastUserId = nil
         socket.disconnect()

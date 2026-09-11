@@ -132,6 +132,13 @@ struct RootView: View {
                 OnboardingView(session: session, prefs: prefs, onPicked: { didBootstrap = true })
             }
 
+            // Wave 3 — the native call surface owns the WHOLE screen whenever
+            // the engine is not idle (ringing/connecting/connected/ended).
+            if let engine = session.callEngine {
+                CallOverlayHostView(engine: engine)
+                    .ignoresSafeArea()
+            }
+
             ParticleOverlayView(bus: session.particles)
         }
         .tint(PulseTheme.emerald)

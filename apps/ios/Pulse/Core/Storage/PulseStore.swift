@@ -19,6 +19,10 @@ import GRDB
 /// objects and topicId; NEW tables topics (Zulip-style sub-streams) and
 /// savedMessages (saved-library mirror). All additive, same non-destructive
 /// migrator — v1 stays untouched.
+/// W3-b v5 — Wave 3 native calls: `callLogCache` (GET /api/calls mirror,
+/// server-capped at 50 rows) and `callLogQueue` (offline queue for the
+/// single-writer POST /api/calls — network-failed rows flush on socket
+/// reconnect / app start, mirroring the PulseOutboxEngine trigger style).
 public final class PulseStore: Sendable {
     private let dbQueue: DatabaseQueue
 
@@ -126,6 +130,36 @@ public final class PulseStore: Sendable {
                 t.column("savedAt", .text).notNull()
             }
             try db.create(indexOn: "savedMessages", columns: ["conversationId"])
+        }
+        m.registerMigration("v5") { db in
+            // W3-b — Wave 3 call history cache. Peer identity is denormalized
+            // (the server resolves the OTHER party per viewer; the cache must
+            // render offline exactly what GET /api/calls renders online).
+            try db.create(table: "callLogCache") { t in
+                t.column("id", .text).primaryKey()
+                t.column("conversationId", .text).notNull()
+                t.column("callerId", .text).notNull()
+                t.column("calleeId", .text).notNull()
+                t.column("kind", .text).notNull().defaults(to: "voice")
+                t.column("status", .text).notNull()
+                t.column("durationSec", .integer).notNull().defaults(to: 0)
+                t.column("startedAt", .text).notNull()
+                t.column("outgoing", .boolean).notNull().defaults(to: false)
+                t.column("peerId", .text).notNull().defaults(to: "")
+                t.column("peerName", .text).notNull().defaults(to: "Unknown")
+                t.column("peerUsername", .text)
+                t.column("peerColor", .text)
+                t.column("peerAvatar", .text)
+            }
+            try db.create(indexOn: "callLogCache", columns: ["startedAt"])
+            // Offline queue for the single-writer POST /api/calls (payloadJson
+            // UNIQUE dedupes double-enqueues exactly like outbox.clientId).
+            try db.create(table: "callLogQueue") { t in
+                t.column("id", .integer).primaryKey(autoincrement: true)
+                t.column("payloadJson", .text).notNull().unique()
+                t.column("attempts", .integer).notNull().defaults(to: 0)
+                t.column("createdAt", .text).notNull()
+            }
         }
         return m
     }
@@ -604,6 +638,122 @@ public final class PulseStore: Sendable {
             try db.execute(sql: "DELETE FROM draft WHERE conversationId = :cid", arguments: ["cid": conversationId])
         }
     }
+
+    // ── call log (W3-b — Wave 3 native calls) ─────────────
+
+    /// GET /api/calls page → cache, one atomic transaction: full overwrite
+    /// per row (the server row is authoritative) + prune beyond the server's
+    /// own HISTORY_CAP of 50 so the cache can never outgrow the wire.
+    public func upsert(callLog rows: [CallLogEntry]) throws {
+        try dbQueue.write { db in
+            for row in rows {
+                // save = INSERT … ON CONFLICT DO UPDATE: a repeated GET must
+                // refresh rows in place, never abort the transaction.
+                try row.save(db)
+            }
+            let keep = Array(
+                try String.fetchAll(
+                    db,
+                    sql: "SELECT id FROM callLogCache ORDER BY startedAt DESC LIMIT 50"
+                )
+            )
+            let keepSet = Set(keep)
+            let stale = try String.fetchAll(db, sql: "SELECT id FROM callLogCache")
+            for id in stale where !keepSet.contains(id) {
+                try db.execute(sql: "DELETE FROM callLogCache WHERE id = :id", arguments: ["id": id])
+            }
+        }
+    }
+
+    /// GET /api/calls reconcile — maps the wire rows (peer identity already
+    /// resolved per-viewer server-side) into the cache and prunes everything
+    /// the server no longer lists.
+    public func syncCallLog(from items: [WireCallLogItem]) throws {
+        let rows = items.map { item in
+            CallLogEntry(
+                id: item.id,
+                conversationId: item.conversationId,
+                callerId: item.callerId,
+                calleeId: item.calleeId,
+                kind: item.kind ?? "voice",
+                status: item.status,
+                durationSec: item.durationSec ?? 0,
+                startedAt: item.startedAt,
+                outgoing: item.outgoing,
+                peerId: item.peer?.id ?? "",
+                peerName: item.peer?.name ?? "Unknown",
+                peerUsername: item.peer?.username,
+                peerColor: item.peer?.color,
+                peerAvatar: item.peer?.avatar,
+            )
+        }
+        try upsert(callLog: rows)
+    }
+
+    /// Cached history, newest first (mirrors the server's startedAt DESC).
+    public func callLog() throws -> [CallLogEntry] {
+        try dbQueue.read { db in
+            try CallLogEntry.fetchAll(
+                db,
+                sql: "SELECT * FROM callLogCache ORDER BY startedAt DESC"
+            )
+        }
+    }
+
+    public func clearCallLog() throws {
+        // Wipes the visible history cache only — queued single-writer rows
+        // stay queued (they still owe the server a POST).
+        _ = try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM callLogCache")
+        }
+    }
+
+    /// Enqueues one terminal POST /api/calls body for the offline flush
+    /// (payload dedupe via the UNIQUE payloadJson column — double-enqueue is
+    /// a no-op, mirroring the outbox clientId rule).
+    public func appendCallLogQueue(payload: [String: Any]) throws {
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        guard !json.isEmpty else { return }
+        let row = CallLogQueueRow(
+            id: nil,
+            payloadJson: json,
+            attempts: 0,
+            createdAt: PulseOutboxClock.now()
+        )
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO callLogQueue (payloadJson, attempts, createdAt)
+                VALUES (:payload, 0, :createdAt)
+                ON CONFLICT(payloadJson) DO NOTHING
+                """,
+                arguments: ["payload": json, "createdAt": row.createdAt]
+            )
+        }
+    }
+
+    /// Queue snapshot — FIFO drain order (oldest first).
+    public func callLogQueueAll() throws -> [CallLogQueueRow] {
+        try dbQueue.read { db in
+            try CallLogQueueRow.fetchAll(db, sql: "SELECT * FROM callLogQueue ORDER BY id ASC")
+        }
+    }
+
+    public func deleteCallLogQueue(id: Int64) throws {
+        _ = try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM callLogQueue WHERE id = :id", arguments: ["id": id])
+        }
+    }
+
+    public func bumpCallLogQueueAttempts(id: Int64) throws {
+        _ = try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE callLogQueue SET attempts = attempts + 1 WHERE id = :id",
+                arguments: ["id": id]
+            )
+        }
+    }
 }
 
 /// GRDB row record for the conversation cache.
@@ -672,6 +822,96 @@ public struct DraftRow: Codable, FetchableRecord, PersistableRecord, Equatable, 
         self.conversationId = conversationId
         self.text = text
         self.updatedAt = updatedAt
+    }
+}
+
+/// One call-history row (W3-b — mirror of the server CallLogItem with the
+/// peer denormalized so the offline list renders exactly the online one).
+public struct CallLogEntry: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable, Identifiable {
+    public static let databaseTableName = "callLogCache"
+
+    public var id: String
+    public var conversationId: String
+    public var callerId: String
+    public var calleeId: String
+    /// "voice" | "video" (wire CallKind).
+    public var kind: String
+    /// "completed" | "missed" | "declined" (wire CallStatus).
+    public var status: String
+    public var durationSec: Int
+    /// ISO-8601 (wire startedAt).
+    public var startedAt: String
+    /// true when the listing viewer was the caller of this row.
+    public var outgoing: Bool
+    // Denormalized peer (the OTHER party relative to the viewer).
+    public var peerId: String
+    public var peerName: String
+    public var peerUsername: String?
+    public var peerColor: String?
+    public var peerAvatar: String?
+
+    public init(
+        id: String,
+        conversationId: String,
+        callerId: String,
+        calleeId: String,
+        kind: String,
+        status: String,
+        durationSec: Int,
+        startedAt: String,
+        outgoing: Bool,
+        peerId: String,
+        peerName: String,
+        peerUsername: String? = nil,
+        peerColor: String? = nil,
+        peerAvatar: String? = nil
+    ) {
+        self.id = id
+        self.conversationId = conversationId
+        self.callerId = callerId
+        self.calleeId = calleeId
+        self.kind = kind
+        self.status = status
+        self.durationSec = durationSec
+        self.startedAt = startedAt
+        self.outgoing = outgoing
+        self.peerId = peerId
+        self.peerName = peerName
+        self.peerUsername = peerUsername
+        self.peerColor = peerColor
+        self.peerAvatar = peerAvatar
+    }
+
+    /// The peer as a domain CallPeer (avatar/name UI rendering).
+    public var peer: CallPeer {
+        CallPeer(id: peerId, name: peerName, color: peerColor, avatar: peerAvatar)
+    }
+}
+
+/// One queued POST /api/calls body (offline flush — PulseOutboxEngine parity).
+public struct CallLogQueueRow: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {
+    public static let databaseTableName = "callLogQueue"
+
+    public var id: Int64?
+    /// The serialized POST body ({ userId, conversationId, peerId, kind,
+    /// status, durationSec }) — UNIQUE, so a retry storm can't double-write.
+    public var payloadJson: String
+    public var attempts: Int
+    public var createdAt: String
+
+    public init(id: Int64?, payloadJson: String, attempts: Int, createdAt: String) {
+        self.id = id
+        self.payloadJson = payloadJson
+        self.attempts = attempts
+        self.createdAt = createdAt
+    }
+
+    /// Decoded POST body; corrupt rows are skipped by the flusher.
+    public func payload() -> [String: Any]? {
+        guard let data = payloadJson.data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: data),
+              JSONSerialization.isValidJSONObject(payload) else { return nil }
+        return payload as? [String: Any]
     }
 }
 

@@ -657,3 +657,53 @@ extension WireChatMessage {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────
+// W3-b — Wave 3 call history (GET/POST /api/calls, src/lib/call-types.ts).
+// ─────────────────────────────────────────────────────────────
+
+/// Peer info resolved server-side for history rows (wire CallPeerInfo).
+public struct WireCallPeerInfo: Codable, Hashable, Sendable {
+    public let id: String
+    public let name: String
+    public let username: String?
+    public let color: String?
+    public let avatar: String?
+}
+
+/// One call-history row as returned by GET /api/calls (wire CallLogItem).
+/// `outgoing` is relative to the LISTING viewer; `peer` is the OTHER party.
+public struct WireCallLogItem: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let conversationId: String
+    public let callerId: String
+    public let calleeId: String
+    /// "voice" | "video" (optional on the wire — server toItem always sends it,
+    /// tolerant for older relays).
+    public let kind: String?
+    /// "completed" | "missed" | "declined".
+    public let status: String
+    public let durationSec: Int?
+    public let startedAt: String
+    public let outgoing: Bool
+    public let peer: WireCallPeerInfo?
+}
+
+/// GET /api/calls → { items: [...] } (tolerant items for older relays).
+public struct WireCallLogPage: Codable, Hashable, Sendable {
+    public let items: [WireCallLogItem]?
+}
+
+/// POST /api/calls → 201 { item } — tolerant wrapper that falls back to the
+/// bare row object defensively (older-relay pattern, mirrors WireTopicEnvelope).
+public struct WireCallLogEnvelope: Codable, Hashable, Sendable {
+    public let item: WireCallLogItem?
+
+    public static func extract(from data: Data) throws -> WireCallLogItem {
+        if let wrapped = try? JSONDecoder().decode(WireCallLogEnvelope.self, from: data),
+           let item = wrapped.item {
+            return item
+        }
+        return try JSONDecoder().decode(WireCallLogItem.self, from: data)
+    }
+}

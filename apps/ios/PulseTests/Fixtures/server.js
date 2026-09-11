@@ -100,6 +100,21 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Wave 3: call signaling relay (mini-services/pulse-socket parity,
+  // simplified: identity gate via the LAST joined id, no session bookkeeping)
+  // ── every call:* payload is relayed verbatim to the `to` user's room.
+  const CALL_EVENTS = ['call:offer', 'call:answer', 'call:ice', 'call:reject', 'call:cancel', 'call:hangup'];
+  for (const event of CALL_EVENTS) {
+    socket.on(event, (raw) => {
+      const data = raw || {};
+      const from = typeof data.from === 'string' ? data.from.trim() : '';
+      const to = typeof data.to === 'string' ? data.to.trim() : '';
+      const joinedAs = online.get(socket.id);
+      if (!from || !to || from === to || joinedAs !== from) return;
+      io.to('user:' + to).emit(event, data);
+    });
+  }
+
   socket.on('disconnect', () => {
     online.delete(socket.id);
     io.emit('presence:snapshot', { onlineUserIds: snapshot() });

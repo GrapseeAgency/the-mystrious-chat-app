@@ -50,6 +50,9 @@ public final class PulseSession: ObservableObject {
     @Published public private(set) var store: PulseStore?
     /// Outbox engine (nil before identity exists).
     @Published public private(set) var outbox: PulseOutboxEngine?
+    /// W3-b — Wave 3 call engine (nil before identity exists). RootView hosts
+    /// the full-screen overlay; surfaces call startOutgoing/accept/decline.
+    @Published public private(set) var callEngine: PulseCallEngine?
 
     /// Honest-toast center shared by every surface (not-yet-built features).
     public let toasts = ToastCenter()
@@ -84,6 +87,7 @@ public final class PulseSession: ObservableObject {
         api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id)
         store = Self.openStore()
         startOutbox()
+        startCalls(viewer: viewer)
 
         // Realtime bootstraps asynchronously: the manifest override must land
         // BEFORE the socket (and API rebinding) — non-blocking for first paint.
@@ -122,6 +126,30 @@ public final class PulseSession: ObservableObject {
             return store
         }
         return try? PulseStore() // in-memory fallback
+    }
+
+    // ── calls (W3-b — Wave 3 native calls) ───────────────
+
+    /// Builds the call engine (real WebRTC provider + session-bound signaling)
+    /// and drains any queued single-writer call-log rows from a previous
+    /// offline session (app-start flush trigger).
+    private func startCalls(viewer: PulseViewer) {
+        guard let store else { return }
+        let engine = PulseCallEngine(
+            store: store,
+            viewer: viewer,
+            signaling: PulseSessionCallSignaling(session: self),
+            media: PulseRTCMediaProvider(),
+            apiProvider: { [weak self] in self?.api },
+            toasts: toasts,
+        )
+        callEngine = engine
+        Task { await engine.flushCallLogQueue() }
+    }
+
+    /// The engine's signaling sender funnels here (the socket is session-owned).
+    public func emitCallSignal(event: String, payload: [String: Any]) {
+        socket?.emitCallSignal(event: event, payload: payload)
     }
 
     // ── outbox ───────────────────────────────────────────────
@@ -233,7 +261,11 @@ public final class PulseSession: ObservableObject {
         case .connectionState(let isOn):
             connected = isOn
             // Flush trigger: socket connect / reconnect.
-            if isOn { flushOutbox() }
+            if isOn {
+                flushOutbox()
+                // W3-b — same trigger for the queued single-writer call rows.
+                callEngine?.flushCallLogQueueOnReconnect()
+            }
         case .typing(let conversationId, let userId, let userName, let isTyping):
             registerTyping(conversationId: conversationId, userId: userId, userName: userName, isTyping: isTyping)
         case .messageNew(_, let raw), .messageDeleted(_, let raw), .messageReact(_, let raw):
@@ -245,6 +277,11 @@ public final class PulseSession: ObservableObject {
             cacheMessage(from: raw)
         case .conversationUpdated:
             realtimeRefreshTick += 1
+        case .callSignal(let event, let raw):
+            // W3-b — offer/answer/ice/reject/cancel/hangup → the call engine
+            // (machine + WebRTC + single-writer log). Also relayed to feature
+            // subscribers below.
+            callEngine?.handleCallSignal(event: event, raw: raw)
         default:
             break
         }
@@ -294,5 +331,20 @@ public final class PulseSession: ObservableObject {
         guard JSONSerialization.isValidJSONObject(payload),
               let data = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
         return try? WireMessageEnvelope.extract(from: data)
+    }
+}
+
+/// Real call-signaling sender — the engine emits through the session-owned
+/// socket (PulseSocketClient.emitCallSignal). @MainActor to match the engine.
+@MainActor
+private final class PulseSessionCallSignaling: PulseCallSignalingSending {
+    private weak var session: PulseSession?
+
+    init(session: PulseSession) {
+        self.session = session
+    }
+
+    func send(event: String, payload: [String: Any]) {
+        session?.emitCallSignal(event: event, payload: payload)
     }
 }
