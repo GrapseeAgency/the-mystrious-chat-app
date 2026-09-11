@@ -2475,3 +2475,37 @@ Work Log:
 
 Stage Summary:
 - Wave 2 backend contract proven end-to-end live; zero backend changes. Chain TEXT→REALTIME→PERSISTENCE holds from Wave 1; every Wave 2 envelope family (message:viewed/poll:voted/link:preview) relayed and verified. Next: push → CI fix loop → tag v0.4.0-native.
+
+---
+Task ID: W2-CI
+Agent: orchestrator (Z.ai Code)
+Task: Push → CI fix loop → both platforms green on Wave 2 tree.
+
+Work Log:
+- Pushed Wave 2 (09aeac7 → … → d0abaf5). Every round root-caused from runner logs:
+  - R1 (9ac5288): iOS VoicePlaybackManager instance methods used bare `defaultRate` — static member via instance = compile error ×3 → Self.defaultRate.
+  - R1b (eecefd1): ANDROID instrumented — RoomMigrationTest v3→v4 case "migration not found": compiled schema is v6 now → migration builders must chain 3→4→5→6 and 4→5→6 (Wave 1 R3 lesson, second verse).
+  - R2 (4733f02): iOS Wave2WireTests — WireTopicEnvelope.extract is throwing → try ×2.
+  - R4 (a32a62b): v4 round-trip test overstepped the store contract — viewedBy/linkUrl are NOT cached columns (deliberate: they ride every authoritative wire row) → test now pins the real contract; first 14-test run had compiled everything and passed 12/14.
+  - R5 (d0abaf5): extractOptional returned envelope-nil for BARE message bodies (all-optional envelope fields decode bare rows "successfully") → fall through on missing message; runtime test testMessageEnvelopeHandlesNullMessage caught it.
+- ANDROID CI SUCCESS @eecefd1 (34601512605): build (JVM tests incl. PulseWave2LogicTest 6/6, Wave2DtoTest 5/5, PollPickTest + signed release APK versionCode 12 / 0.4.0-native) + instrumented (emulator: launch smoke + Room v3→v4→v5→v6 migrations + outbox/draft DAOs).
+- IOS CI SUCCESS @d0abaf5 (34604304550): build-test (all suites incl. Wave2WireTests, Wave2UITests 5/5, PulseStoreMigrationTests v4 round-trips, socket round-trip) + launch smoke + archive.
+- Local live E2E: wave2-depth-gate.js 40/40 PASSED (W2-E2E entry).
+
+Stage Summary:
+- Both platforms CI-green on the complete Wave 2 tree. Next: tag v0.4.0-native → tag CI → auto-release → forensic → CDN → four-source hash → Wave 2 Completion Report → HARD STOP.
+
+---
+Task ID: W2-RELEASE
+Agent: orchestrator (Z.ai Code)
+Task: Tag CI + release + forensic + CDN + four-source hash + Wave 2 Completion Report.
+
+Work Log:
+- Tag v0.4.0-native pushed → tag CI BOTH GREEN: Android 34606142877 (build + instrumented), iOS 34606142702 (build-test + archive). Automated release path exercised again — Release v0.4.0-native + Pulse-v0.4.0-native.apk (14,553,944 bytes) published by the workflow.
+- Forensic gate on release bytes: ZIP clean, arsc STORED+aligned, signing v2+v3+v1, package app.pulse.chat, versionCode 12, versionName 0.4.0-native, minSdk 21, targetSdk 35. (forensic.mjs's two hardcoded Wave-0 version expectations are stale — the expected Wave 2 values 12/0.4.0-native matched.)
+- CDN commit ad97c44: download/Pulse.apk (release bytes) + update-manifest.json (versionCode 12, Wave 2 notes).
+- FOUR-SOURCE HASH RULE: ALL EQUAL e3676d88b9ac2620333c8522f8111d1a49291470b5ae7398d4f3f38b30794aa4 (tag-CI bytes / release asset / live raw CDN / live manifest field) — verified live after push.
+- docs/WAVE2-COMPLETION-REPORT.md written (11 sections: parity matrix with persistence/offline/acceptance columns, both platform file inventories, zero backend/protocol changes, tests, CI evidence with run IDs, live E2E 40/40, artifact forensics, honest hardware limitations, remaining gaps, exact Wave 3 recommendation).
+
+Stage Summary:
+- WAVE 2 COMPLETE. Gate passed: voice notes / view-once / polls / link previews / saved library / topics demonstrably functional on BOTH platforms; installable versionCode-12 APK released + CDN-live; both platforms CI-green (main + tag); live E2E 40/40. Wave 3 NOT started (user gate). HARD STOP per directive.
