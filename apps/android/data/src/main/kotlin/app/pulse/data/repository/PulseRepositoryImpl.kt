@@ -85,6 +85,13 @@ class PulseRepositoryImpl @Inject constructor(
     )
     private val onlineIds = MutableStateFlow<Set<String>>(emptySet())
 
+    /**
+     * Relay connection truth for the room offline banner. Seeded from the
+     * configured-endpoint state (offline-first deployments ARE offline) and
+     * corrected by every socket CONNECT/DISCONNECT/ERROR signal.
+     */
+    private val connectedFlow = MutableStateFlow(app.pulse.core.PulseEndpoints.isConfigured)
+
     /** Backoff so a dead network doesn't re-pay the timeout on every keystroke. */
     @Volatile private var offlineUntil: Long = 0L
 
@@ -117,12 +124,15 @@ class PulseRepositoryImpl @Inject constructor(
         scope.launch {
             socket.signals.collect { signal ->
                 when (signal) {
-                    is PulseSocketClient.Signal.Connection -> if (signal.connected) {
-                        // Flush trigger: the relay came back — drain the outbox first
-                        // so queued sends overtake anything new.
-                        scope.launch {
-                            runCatching { flushOutbox() }
-                                .onFailure { Log.w(TAG, "reconnect flush failed", it) }
+                    is PulseSocketClient.Signal.Connection -> {
+                        connectedFlow.value = signal.connected
+                        if (signal.connected) {
+                            // Flush trigger: the relay came back — drain the outbox first
+                            // so queued sends overtake anything new.
+                            scope.launch {
+                                runCatching { flushOutbox() }
+                                    .onFailure { Log.w(TAG, "reconnect flush failed", it) }
+                            }
                         }
                     }
                     is PulseSocketClient.Signal.Joined -> onlineIds.value = signal.onlineUserIds.toSet()
@@ -161,9 +171,26 @@ class PulseRepositoryImpl @Inject constructor(
             )
         } else {
             messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+            dedupeTempEchoes(message)
             eventsBus.tryEmit(PulseEvent.MessageReceived(signal.conversationId, message))
         }
         scheduleConversationsRefresh()
+    }
+
+    /**
+     * Optimistic dedupe (spec §1.2): when a REAL row lands, every still-queued
+     * `local_` echo of the same sender+body that predates it is retired — the
+     * flush engine's own clientId swap stays the primary reconcile path.
+     */
+    private suspend fun dedupeTempEchoes(real: Message) {
+        if (real.body.isBlank() || real.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) return
+        val realAt = PulseTime.epochMs(real.createdAt)
+        if (realAt <= 0L) return
+        val echoes = runCatching {
+            messageDao.tempEchoes(real.conversationId, real.authorId, real.body, real.id)
+        }.getOrDefault(emptyList())
+        val stale = echoes.filter { PulseTime.epochMs(it.createdAt) <= realAt }.map { it.id }
+        if (stale.isNotEmpty()) messageDao.deleteByIds(stale)
     }
 
     private var refreshScheduled = false
@@ -189,7 +216,16 @@ class PulseRepositoryImpl @Inject constructor(
     override fun observeMessages(conversationId: String): Flow<List<Message>> =
         messageDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }
 
+    override fun observeThreadMessages(rootId: String): Flow<List<Message>> =
+        messageDao.observeThread(rootId).map { rows -> rows.map { it.toDomain() } }
+
+    override fun observeDrafts(): Flow<Map<String, String>> = draftDao.observeAll().map { rows ->
+        rows.filter { it.text.isNotBlank() }.associate { it.conversationId to it.text }
+    }
+
     override fun observePresence(): Flow<Set<String>> = onlineIds.asStateFlow()
+
+    override fun observeConnected(): Flow<Boolean> = connectedFlow.asStateFlow()
 
     override fun events(): Flow<PulseEvent> = eventsBus.asSharedFlow()
 
@@ -328,8 +364,29 @@ class PulseRepositoryImpl @Inject constructor(
         body: String,
         replyToId: String?,
         parentId: String?,
-    ): Result<Message> =
-        when (val r = api.sendMessage(
+    ): Result<Message> {
+        // Optimistic echo FIRST (spec §2 row 2): the bubble appears on the very
+        // keystroke-to-send beat, not after the round-trip. The same clientId
+        // then either reconciles with the real row, rides the outbox, or is
+        // retracted on a definitive failure.
+        val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
+        val nowIso = java.time.OffsetDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+        val temp = Message(
+            id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
+            conversationId = conversationId,
+            authorId = viewerId ?: "",
+            authorName = viewerId ?: "",
+            kind = Message.Kind.TEXT,
+            body = body,
+            createdAt = nowIso,
+            replyToId = replyToId,
+            threadRootId = parentId,
+        )
+        if (!viewerId.isNullOrBlank()) {
+            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+        }
+        return when (val r = api.sendMessage(
             conversationId = conversationId,
             senderId = viewerId ?: "",
             content = body,
@@ -340,29 +397,16 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Success -> {
                 val message = r.value.toDomain()
                 messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                dedupeTempEchoes(message)
                 scheduleConversationsRefresh()
                 Result.success(message)
             }
             is PulseResult.Failure ->
-                // Network-class failure → the optimistic offline core: temp
-                // `local_<clientId>` bubble + outbox row; the flush engine
-                // delivers it on the next trigger. 4xx verdicts surface as-is.
-                // Text-only outbox (spec §1.2): thread replies and inline
-                // quotes fail with an honest error — never queued.
+                // Network-class failure → the optimistic offline core: the temp
+                // bubble STAYS + an outbox row waits for the flush engine.
+                // 4xx verdicts and non-queueable sends (threads/quotes, spec
+                // §1.2) retract the echo and surface the honest error.
                 if (r.kind == PulseResult.Failure.Kind.NETWORK && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
-                    val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
-                    val nowIso = java.time.OffsetDateTime.now()
-                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                    val temp = Message(
-                        id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
-                        conversationId = conversationId,
-                        authorId = viewerId ?: "",
-                        authorName = viewerId ?: "",
-                        kind = Message.Kind.TEXT,
-                        body = body,
-                        createdAt = nowIso,
-                    )
-                    messageDao.upsertAll(listOf(MessageEntity.from(temp)))
                     outboxDao.insert(
                         OutboxEntity(
                             conversationId = conversationId,
@@ -375,11 +419,71 @@ class PulseRepositoryImpl @Inject constructor(
                     eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
                     Result.success(temp)
                 } else {
+                    messageDao.deleteById(temp.id)
                     Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
                 }
         }
+    }
 
     // ── Wave 1 messaging surface (spec §1.1 — every route exists today) ──
+
+    /**
+     * MEDIA send — the online-only leg (spec §1.2: media is NEVER queued).
+     * No optimistic echo: the staged card in the composer is the progress UI;
+     * failures surface on it with a retry, never an outbox row.
+     */
+    override suspend fun sendMediaMessage(
+        conversationId: String,
+        body: String,
+        imagePath: String?,
+        filePath: String?,
+        fileName: String?,
+        fileSize: Long?,
+        kind: String?,
+    ): Result<Message> =
+        when (
+            val r = api.sendMessage(
+                conversationId = conversationId,
+                senderId = viewerId ?: "",
+                content = body,
+                imagePath = imagePath,
+                filePath = filePath,
+                fileName = fileName,
+                fileSize = fileSize,
+                kind = kind,
+            )
+        ) {
+            is PulseResult.Success -> {
+                val message = r.value.toDomain()
+                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                scheduleConversationsRefresh()
+                Result.success(message)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    /** GET /api/uploads/{file} → bytes written under cacheDir/downloads. */
+    override suspend fun downloadMedia(filePath: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val bytes = when (val r = api.downloadMedia(filePath)) {
+                is PulseResult.Success -> r.value
+                is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+            }
+            val safeName = filePath.substringAfterLast('/').ifBlank {
+                "pulse-${java.util.UUID.randomUUID()}"
+            }
+            val dir = File(context.cacheDir, "downloads").apply { mkdirs() }
+            File(dir, safeName).apply { writeBytes(bytes) }.absolutePath
+        }
+    }
+
+    /** Batched "N replies ↳" counts for the river — one grouped Room query. */
+    override suspend fun threadReplyCounts(rootIds: List<String>): Map<String, Int> {
+        if (rootIds.isEmpty()) return emptyMap()
+        return runCatching {
+            messageDao.countsByThread(rootIds).associate { it.rootId to it.cnt }
+        }.getOrDefault(emptyMap())
+    }
 
     /** The outbox queues PURE TEXT only — thread/quote sends are online-only. */
     private fun queueableSend(replyToId: String?, parentId: String?): Boolean =
@@ -567,6 +671,7 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun resolveOutboxDelivery(entry: OutboxEntry, real: Message) {
         messageDao.upsertAll(listOf(MessageEntity.from(real, reactionsJsonOf(real))))
         messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+        dedupeTempEchoes(real)
         outboxDao.deleteByClientId(entry.clientId)
         scheduleConversationsRefresh()
         eventsBus.tryEmit(PulseEvent.OutboxFlushed(entry.clientId, real))

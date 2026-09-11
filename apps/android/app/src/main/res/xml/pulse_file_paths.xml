@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wave 1 media hand-off (spec §2 row 9): downloaded message files live under
+  cacheDir/downloads and are shared with the system viewer / share sheet via
+  the FileProvider authority "${applicationId}.files" (MediaSupport.fileUri).
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path
+        name="downloads"
+        path="downloads/" />
+    <files-path
+        name="files"
+        path="." />
+</paths>

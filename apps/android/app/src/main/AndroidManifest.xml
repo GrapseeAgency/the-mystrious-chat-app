@@ -44,5 +44,16 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/liveupdate_paths" />
         </provider>
+
+        <!-- Wave 1 media: read-only URIs for downloaded message files (open/share). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/pulse_file_paths" />
+        </provider>
     </application>
 </manifest>

@@ -25,6 +25,9 @@ class SendMessageUseCaseTest {
         override fun observeMessages(conversationId: String) = MutableStateFlow(emptyList<Message>())
         override fun observePresence() = MutableStateFlow(emptySet<String>())
         override fun events() = MutableSharedFlow<PulseEvent>()
+        override fun observeConnected() = MutableStateFlow(false)
+        override fun observeThreadMessages(rootId: String) = MutableStateFlow(emptyList<Message>())
+        override fun observeDrafts() = MutableStateFlow(emptyMap<String, String>())
         override suspend fun refreshConversations(): Result<Unit> = Result.success(Unit)
         override suspend fun refreshMessages(conversationId: String, limit: Int): Result<Unit> = Result.success(Unit)
         override suspend fun me() = app.pulse.domain.model.User(id = "a", name = "n", handle = "n")
@@ -110,6 +113,26 @@ class SendMessageUseCaseTest {
         override suspend fun setServerDraft(conversationId: String, draft: String) {}
         override suspend fun conversationDetail(conversationId: String) =
             Result.failure<app.pulse.domain.model.Conversation>(UnsupportedOperationException())
+        override suspend fun sendMediaMessage(
+            conversationId: String,
+            body: String,
+            imagePath: String?,
+            filePath: String?,
+            fileName: String?,
+            fileSize: Long?,
+            kind: String?,
+        ): Result<Message> {
+            val m = Message(
+                id = "m-media", conversationId = conversationId, authorId = "a", authorName = "n",
+                kind = if (kind == "file") Message.Kind.FILE else Message.Kind.IMAGE,
+                body = body, createdAt = "t", imagePath = imagePath, filePath = filePath,
+                fileName = fileName, fileSize = fileSize,
+            )
+            sent += m
+            return Result.success(m)
+        }
+        override suspend fun downloadMedia(filePath: String) = Result.success("/tmp/$filePath")
+        override suspend fun threadReplyCounts(rootIds: List<String>) = emptyMap<String, Int>()
     }
 
     @Test

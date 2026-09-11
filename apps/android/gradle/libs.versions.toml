@@ -15,6 +15,7 @@ workManager = "2.9.1"
 socketIo = "2.1.0"
 datastore = "1.1.1"
 coreKtx = "1.15.0"
+coil = "2.7.0"
 junitJupiter = "5.11.4"
 desugar = "2.1.5"
 turbine = "1.2.0"
@@ -67,6 +68,8 @@ room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 
 socketio-client = { module = "io.socket:socket.io-client", version.ref = "socketIo" }
+
+coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junitJupiter" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }

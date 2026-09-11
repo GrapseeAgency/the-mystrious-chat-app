@@ -43,6 +43,9 @@ class FlushOutboxUseCaseTest {
         override fun observeMessages(conversationId: String) = MutableStateFlow(emptyList<Message>())
         override fun observePresence() = MutableStateFlow(emptySet<String>())
         override fun events() = MutableSharedFlow<PulseEvent>()
+        override fun observeConnected() = MutableStateFlow(false)
+        override fun observeThreadMessages(rootId: String) = MutableStateFlow(emptyList<Message>())
+        override fun observeDrafts() = MutableStateFlow(emptyMap<String, String>())
         override suspend fun refreshConversations(): Result<Unit> = Result.success(Unit)
         override suspend fun refreshMessages(conversationId: String, limit: Int): Result<Unit> = Result.success(Unit)
         override suspend fun users(query: String) = Result.success(emptyList<app.pulse.domain.model.User>())
@@ -144,6 +147,18 @@ class FlushOutboxUseCaseTest {
         override suspend fun setServerDraft(conversationId: String, draft: String) {}
         override suspend fun conversationDetail(conversationId: String) =
             Result.failure<app.pulse.domain.model.Conversation>(UnsupportedOperationException())
+        override suspend fun sendMediaMessage(
+            conversationId: String,
+            body: String,
+            imagePath: String?,
+            filePath: String?,
+            fileName: String?,
+            fileSize: Long?,
+            kind: String?,
+        ) = Result.failure<Message>(UnsupportedOperationException())
+        override suspend fun downloadMedia(filePath: String) =
+            Result.failure<String>(UnsupportedOperationException())
+        override suspend fun threadReplyCounts(rootIds: List<String>) = emptyMap<String, Int>()
 
         private fun realMessage(id: String, entry: OutboxEntry) = Message(
             id = id,

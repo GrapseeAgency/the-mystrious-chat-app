@@ -298,7 +298,27 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<String>)
+
+    /**
+     * One batched "N replies ↳" lookup for the river — Room expands the IN
+     * list; empty root list returns an empty sheet (Room requires non-empty).
+     */
+    @Query(
+        "SELECT threadRootId AS rootId, COUNT(*) AS cnt FROM messages " +
+            "WHERE threadRootId IN (:rootIds) GROUP BY threadRootId",
+    )
+    suspend fun countsByThread(rootIds: List<String>): List<ThreadCountRow>
+
+    /** Optimistic-dedupe candidates: MY queued echoes with the same body (never the keeper). */
+    @Query(
+        "SELECT * FROM messages WHERE conversationId = :conversationId AND authorId = :authorId " +
+            "AND body = :body AND id LIKE 'local_%' AND id != :keepId",
+    )
+    suspend fun tempEchoes(conversationId: String, authorId: String, body: String, keepId: String): List<MessageEntity>
 }
+
+/** Projection row for the batched thread-count query (river reply chips). */
+data class ThreadCountRow(val rootId: String, val cnt: Int)
 
 @Dao
 interface OutboxDao {
@@ -336,6 +356,10 @@ interface DraftDao {
 
     @Query("SELECT * FROM draft WHERE conversationId = :conversationId")
     fun observe(conversationId: String): Flow<DraftEntity?>
+
+    /** All drafts at once — the chats-list "Draft:" preview merge (local wins). */
+    @Query("SELECT * FROM draft")
+    fun observeAll(): Flow<List<DraftEntity>>
 
     @Query("SELECT * FROM draft WHERE conversationId = :conversationId")
     suspend fun get(conversationId: String): DraftEntity?

@@ -101,6 +101,7 @@ import app.pulse.feature.calls.ContactsScreen
 import app.pulse.feature.chat.ArchivedScreen
 import app.pulse.feature.chat.ChatsScreen
 import app.pulse.feature.chat.ChatRoomScreen
+import app.pulse.feature.chat.ThreadScreen
 import app.pulse.feature.hub.HubScreen
 import app.pulse.feature.settings.ProfileScreen
 import app.pulse.ui.PulseMotion
@@ -312,7 +313,9 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                     viewerId = viewerId,
                     viewerName = viewerName,
                     viewerColor = viewerColor,
-                    onOpenRoom = { id -> navController.navigate("room/$id") },
+                    onOpenRoom = { id, jump ->
+                        if (jump != null) navController.navigate("room/$id?jump=$jump") else navController.navigate("room/$id")
+                    },
                     onNeedIdentity = { navController.navigate("profile") { launchSingleTop = true } },
                     onSwitchTab = { route -> switchTab(route) },
                     onOpenArchived = { navController.navigate("archived") },
@@ -336,12 +339,33 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                 }
             }
             composable(
-                "room/{conversationId}",
-                arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
+                "room/{conversationId}?jump={jump}",
+                arguments = listOf(
+                    navArgument("conversationId") { type = NavType.StringType },
+                    navArgument("jump") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
             ) { entry ->
                 val conversationId = entry.arguments?.getString("conversationId").orEmpty()
                 ChatRoomScreen(
                     conversationId = conversationId,
+                    viewerId = viewerId,
+                    jumpMessageId = entry.arguments?.getString("jump"),
+                    onBack = { navController.popBackStack() },
+                    onOpenThread = { id, rootId -> navController.navigate("room/$id/thread/$rootId") },
+                )
+            }
+            composable(
+                "room/{conversationId}/thread/{rootId}",
+                arguments = listOf(
+                    navArgument("conversationId") { type = NavType.StringType },
+                    navArgument("rootId") { type = NavType.StringType },
+                ),
+            ) {
+                ThreadScreen(
                     viewerId = viewerId,
                     onBack = { navController.popBackStack() },
                 )
@@ -349,7 +373,9 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
             composable("archived") {
                 ArchivedScreen(
                     viewerId = viewerId,
-                    onOpenRoom = { id -> navController.navigate("room/$id") },
+                    onOpenRoom = { id, jump ->
+                        if (jump != null) navController.navigate("room/$id?jump=$jump") else navController.navigate("room/$id")
+                    },
                     onBack = { navController.popBackStack() },
                 )
             }

@@ -182,7 +182,8 @@ fun ChatsScreen(
     viewerId: String?,
     viewerName: String?,
     viewerColor: String?,
-    onOpenRoom: (String) -> Unit,
+    /** Opens a room; `messageId` (when non-null) jumps + flashes that message. */
+    onOpenRoom: (String, String?) -> Unit,
     onNeedIdentity: () -> Unit,
     onSwitchTab: (String) -> Unit,
     onOpenArchived: () -> Unit,
@@ -191,7 +192,8 @@ fun ChatsScreen(
     searchRequest: Int = 0,
     viewModel: ChatsViewModel = hiltViewModel(),
 ) {
-    val chats by viewModel.chats.collectAsStateWithLifecycle()
+    val rawChats by viewModel.chats.collectAsStateWithLifecycle()
+    val drafts by viewModel.drafts.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val presence by viewModel.presence.collectAsStateWithLifecycle()
     val typing by viewModel.typing.collectAsStateWithLifecycle()
@@ -244,6 +246,9 @@ fun ChatsScreen(
     }
 
     val dark = isPulseDarkTheme()
+    // "Local wins" draft merge (spec row 1): the local DraftDao row shadows
+    // the server myDraft on every list surface (rows, sheets, search).
+    val chats = remember(rawChats, drafts) { rawChats.map { it.withLocalDraft(drafts[it.id]) } }
     val all = chats
     val activeRows = all.filter { !it.isArchived && !it.isSelf }
     val archivedRows = all.filter { it.isArchived }
@@ -368,7 +373,7 @@ fun ChatsScreen(
                         typing = typing,
                         presence = presence,
                         onPress = { conv -> openConversation(viewModel, conv, onOpenRoom) },
-                        onOpenHit = { hit -> onOpenRoom(hit.conversationId) },
+                        onOpenHit = { hit -> onOpenRoom(hit.conversationId, hit.id) },
                     )
                     all.isEmpty() -> EmptyStateCard(
                         title = "No conversations yet",
@@ -386,7 +391,7 @@ fun ChatsScreen(
                             NoteToSelfCard(
                                 exists = selfConv != null,
                                 onOpen = { selfConv?.let { openConversation(viewModel, it, onOpenRoom) } },
-                                onCreate = { viewModel.createSelfChat(onOpenRoom) },
+                                onCreate = { viewModel.createSelfChat { id -> onOpenRoom(id, null) } },
                             )
                         }
                         item(key = "pill-mentions") {
@@ -580,10 +585,14 @@ fun ChatsScreen(
 }
 
 /** Freeze "where was I" semantics live in the room; the list just marks read + opens. */
-private fun openConversation(viewModel: ChatsViewModel, conv: Conversation, onOpenRoom: (String) -> Unit) {
+private fun openConversation(viewModel: ChatsViewModel, conv: Conversation, onOpenRoom: (String, String?) -> Unit) {
     viewModel.markRead(conv.id)
-    onOpenRoom(conv.id)
+    onOpenRoom(conv.id, null)
 }
+
+/** Local DraftDao row wins over the server-mirrored myDraft (spec row 1). */
+private fun Conversation.withLocalDraft(local: String?): Conversation =
+    if (local.isNullOrBlank()) this else copy(myDraft = local)
 
 /**
  * Archived sub-page (spec §9) — same rows, same swipe/sheet actions, the
@@ -593,11 +602,12 @@ private fun openConversation(viewModel: ChatsViewModel, conv: Conversation, onOp
 @Composable
 fun ArchivedScreen(
     viewerId: String?,
-    onOpenRoom: (String) -> Unit,
+    onOpenRoom: (String, String?) -> Unit,
     onBack: () -> Unit,
     viewModel: ChatsViewModel = hiltViewModel(),
 ) {
-    val chats by viewModel.chats.collectAsStateWithLifecycle()
+    val rawChats by viewModel.chats.collectAsStateWithLifecycle()
+    val drafts by viewModel.drafts.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val presence by viewModel.presence.collectAsStateWithLifecycle()
     val typing by viewModel.typing.collectAsStateWithLifecycle()
@@ -618,6 +628,8 @@ fun ArchivedScreen(
         viewModel.consumeNotice()
     }
 
+    // Same "local wins" merge as the main tab (spec row 1).
+    val chats = remember(rawChats, drafts) { rawChats.map { it.withLocalDraft(drafts[it.id]) } }
     val archived = chats.filter { it.isArchived }
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -2052,27 +2064,6 @@ private fun SearchHitRow(hit: MessageHit, query: String, onOpen: () -> Unit) {
                 )
             }
         }
-    }
-}
-
-/** Snippet with the first match highlighted — emerald mark (web SearchSnippet). */
-private fun snippetAnnotated(content: String, query: String): androidx.compose.ui.text.AnnotatedString {
-    val q = query.trim()
-    if (q.isEmpty()) return buildAnnotatedString { append(content) }
-    val idx = content.lowercase().indexOf(q.lowercase())
-    if (idx < 0) return buildAnnotatedString { append(content) }
-    return buildAnnotatedString {
-        append(content.substring(0, idx))
-        pushStyle(
-            SpanStyle(
-                background = Emerald500.copy(alpha = 0.25f),
-                color = Emerald600,
-                fontWeight = FontWeight.SemiBold,
-            ),
-        )
-        append(content.substring(idx, (idx + q.length).coerceAtMost(content.length)))
-        pop()
-        append(content.substring((idx + q.length).coerceAtMost(content.length)))
     }
 }
 

@@ -67,6 +67,15 @@ interface PulseRepository {
     fun observePresence(): Flow<Set<String>>
     fun events(): Flow<PulseEvent>
 
+    /** Live relay connection truth — false = the offline banner tells the truth. */
+    fun observeConnected(): Flow<Boolean>
+
+    /** Thread replies for one root (replies asc) — the ThreadScreen rehydration flow. */
+    fun observeThreadMessages(rootId: String): Flow<List<Message>>
+
+    /** Live per-conversation drafts (chats-list "Draft:" preview merge — local wins). */
+    fun observeDrafts(): Flow<Map<String, String>>
+
     /** Pull the latest lists from the gateway into the local cache. */
     suspend fun refreshConversations(): Result<Unit>
     suspend fun refreshMessages(conversationId: String, limit: Int = 200): Result<Unit>
@@ -205,4 +214,26 @@ interface PulseRepository {
 
     /** GET /api/conversations/{id}?userId= — detail incl. members (read watermarks); upserts Room. */
     suspend fun conversationDetail(conversationId: String): Result<Conversation>
+
+    /**
+     * Send a MEDIA message (image/file) — online-only, NEVER queued (spec §1.2:
+     * media sends that fail surface an error, never an outbox row).
+     * `kind` rides the wire whitelist ("file" for documents; null → server
+     * default for images where `imagePath` presence is the signal).
+     */
+    suspend fun sendMediaMessage(
+        conversationId: String,
+        body: String,
+        imagePath: String? = null,
+        filePath: String? = null,
+        fileName: String? = null,
+        fileSize: Long? = null,
+        kind: String? = null,
+    ): Result<Message>
+
+    /** GET /api/uploads/{file} → bytes saved under cacheDir/downloads — returns the absolute path. */
+    suspend fun downloadMedia(filePath: String): Result<String>
+
+    /** Reply counts for river parent bubbles ("N replies ↳") — one batched Room query. */
+    suspend fun threadReplyCounts(rootIds: List<String>): Map<String, Int>
 }

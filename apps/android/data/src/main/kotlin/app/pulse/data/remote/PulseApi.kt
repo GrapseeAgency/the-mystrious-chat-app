@@ -26,6 +26,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.readBytes
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
@@ -289,6 +290,21 @@ class PulseApi(private val http: HttpClient) {
         post("/api/uploads", jsonOf("dataUrl" to dataUrl)) {
             PulseJson.decodeFromString(UploadResultDto.serializer(), it)
         }
+
+    /**
+     * GET /api/uploads/{file} → raw bytes — the media-download leg of Wave 1
+     * (file bubbles save to cacheDir/downloads and open through FileProvider).
+     */
+    suspend fun downloadMedia(filePath: String): PulseResult<ByteArray> = try {
+        val res = http.get(PulseEndpoints.http("/api/uploads/$filePath"))
+        if (res.status.isSuccess()) {
+            PulseResult.Success(res.readBytes())
+        } else {
+            failureOf(res.status.value, res.bodyAsText())
+        }
+    } catch (e: Exception) {
+        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+    }
 
     /** PATCH /api/conversations/{id}/draft { userId, draft } → { ok, draft } ('' clears). */
     suspend fun setDraft(conversationId: String, userId: String, draft: String): PulseResult<Unit> =

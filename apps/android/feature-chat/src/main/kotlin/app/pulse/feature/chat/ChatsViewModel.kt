@@ -85,6 +85,10 @@ class ChatsViewModel @Inject constructor(
     val chats: StateFlow<List<Conversation>> = repo.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Local DraftDao drafts keyed by conversation — the "local wins" merge over myDraft. */
+    val drafts: StateFlow<Map<String, String>> = repo.observeDrafts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     val presence: StateFlow<Set<String>> = repo.observePresence()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
@@ -328,161 +332,6 @@ class ChatsViewModel @Inject constructor(
                     }
                 }
                 .onFailure { notify("Could not clear this chat", isError = true) }
-        }
-    }
-}
-
-/** Chat room state holder — messages, live typing/presence, sends + reactions. */
-@HiltViewModel
-class ChatRoomViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
-    private val repo: PulseRepository,
-    private val sendUseCase: SendMessageUseCase,
-) : ViewModel() {
-
-    val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
-
-    data class UiState(
-        val loading: Boolean = false,
-        val error: String? = null,
-        val replyTo: Message? = null,
-        val partnerTypingName: String? = null,
-        val partnerLastReadAt: Long? = null,
-    )
-
-    private val _state = MutableStateFlow(UiState())
-    val state: StateFlow<UiState> = _state.asStateFlow()
-
-    /** Composer restore seed — local draft table first, server myDraft fallback. */
-    private val _initialDraft = MutableStateFlow<String?>(null)
-    val initialDraft: StateFlow<String?> = _initialDraft.asStateFlow()
-
-    val messages: StateFlow<List<Message>> = repo.observeMessages(conversationId)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    val conversation: StateFlow<Conversation?> = repo.observeConversations()
-        .map { list -> list.firstOrNull { it.id == conversationId } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    init {
-        viewModelScope.launch {
-            // Wave 0 draft restore: the local draft table wins; when it is
-            // empty fall back to the server-mirrored myDraft on the summary.
-            val local = runCatching { repo.observeDraft(conversationId).firstOrNull() }.getOrNull()
-            if (!local.isNullOrBlank()) {
-                _initialDraft.value = local
-            } else {
-                val server = runCatching {
-                    repo.observeConversations()
-                        .map { list -> list.firstOrNull { it.id == conversationId }?.myDraft }
-                        .firstOrNull { !it.isNullOrBlank() }
-                }.getOrNull()
-                if (!server.isNullOrBlank()) _initialDraft.value = server
-            }
-        }
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true)
-            repo.refreshMessages(conversationId).fold(
-                onSuccess = { _state.value = _state.value.copy(loading = false) },
-                onFailure = { _state.value = _state.value.copy(loading = false, error = it.message) },
-            )
-            repo.markRead(conversationId)
-        }
-        viewModelScope.launch {
-            repo.events().collect { event ->
-                when (event) {
-                    is PulseEvent.Typing -> if (event.conversationId == conversationId && event.userId != repo.viewerId) {
-                        _state.value = if (event.isTyping) {
-                            _state.value.copy(partnerTypingName = event.userName.ifBlank { "Someone" })
-                        } else {
-                            _state.value.copy(partnerTypingName = null)
-                        }
-                    }
-                    is PulseEvent.MessageRead -> if (event.conversationId == conversationId) {
-                        val at = app.pulse.core.time.PulseTime.parse(event.at)?.toInstant()?.toEpochMilli()
-                        if (at != null) {
-                            _state.value = _state.value.copy(
-                                partnerLastReadAt = maxOf(_state.value.partnerLastReadAt ?: 0, at),
-                            )
-                        }
-                    }
-                    is PulseEvent.MessageReceived -> if (event.conversationId == conversationId) {
-                        repo.markRead(conversationId)
-                    }
-                    else -> Unit
-                }
-            }
-        }
-    }
-
-    private var typingJob: Job? = null
-    private var draftSaveJob: Job? = null
-
-    fun onDraftChanged(text: String) {
-        // Debounced typing signal — emit start now, stop after 1.2s idle (web parity).
-        val userName = viewerName()
-        if (typingJob?.isActive != true) {
-            viewModelScope.launch { repo.setTyping(conversationId, userName, true) }
-        }
-        typingJob?.cancel()
-        typingJob = viewModelScope.launch {
-            delay(1_200)
-            repo.setTyping(conversationId, userName, false)
-            typingJob = null
-        }
-        // Wave 0 draft persistence — 600ms debounce (web pulse-drafts parity).
-        draftSaveJob?.cancel()
-        draftSaveJob = viewModelScope.launch {
-            delay(600)
-            runCatching { repo.saveDraft(conversationId, text) }
-                .onFailure { _state.value = _state.value.copy(error = it.message) }
-        }
-    }
-
-    private fun viewerName(): String {
-        val conv = conversation.value ?: return repo.viewerId ?: ""
-        val idx = conv.memberIds.indexOf(repo.viewerId)
-        return conv.memberNames.getOrNull(idx) ?: repo.viewerId ?: ""
-    }
-
-    fun setReplyTo(message: Message?) {
-        _state.value = _state.value.copy(replyTo = message)
-    }
-
-    fun send(body: String) {
-        val replyId = _state.value.replyTo?.id
-        _state.value = _state.value.copy(replyTo = null)
-        viewModelScope.launch {
-            sendUseCase(conversationId, body, replyId)
-                .onSuccess { message ->
-                    if (message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) {
-                        // Network-class failure → queued in the outbox. The
-                        // composer text has left for the queue — clear the
-                        // draft and let the pending bubble + banner tell it.
-                        runCatching { repo.clearDraft(conversationId) }
-                    } else {
-                        PulseFx.fire(PulseFx.BurstKind.BURST, count = 26)
-                        repo.setTyping(conversationId, viewerName(), false)
-                        runCatching { repo.clearDraft(conversationId) }
-                    }
-                }
-                .onFailure { failure ->
-                    _state.value = _state.value.copy(error = failure.message)
-                }
-        }
-    }
-
-    fun react(messageId: String, emoji: String) {
-        viewModelScope.launch { repo.react(messageId, emoji) }
-    }
-
-    fun retry() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            repo.refreshMessages(conversationId).fold(
-                onSuccess = { _state.value = _state.value.copy(loading = false) },
-                onFailure = { _state.value = _state.value.copy(loading = false, error = it.message) },
-            )
         }
     }
 }
