@@ -3,7 +3,7 @@
   "versionName": "0.5.2-native",
   "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.5.2-native/Pulse-v0.5.2-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "94b142af8526476f3b3fc1a93ab5ff24bd711f1dcd4a2864feaee5fa1da52f03",
+  "sha256": "09b039da827a0009fb314aa0be52c7119bca02f9bda799abcc11e551e3a18e36",
   "notes": "Home connectivity fix — root cause: with no gateway configured (honest offline-first), the REST layer still fired requests and Ktor's URLBuilder resolved the relative path against its implicit http://localhost default, so Android's network security policy (correctly) blocked the cleartext call — Home showed 'Could not reach gateway — CLEARTEXT communication to localhost not permitted'. Fix: a gateway guard at every REST entry (zero requests fire while unconfigured, honest actionable copy instead) + the deployment manifest is now bootstrapped from the HTTPS repo CDN when offline, so a gateway published into update-manifest.json is adopted with zero rebuild. No network-security weakening (cleartext stays blocked). Tests: data-module JVM 7/7 (MockEngine + real OkHttp engine against a loopback origin). Also ships the Wave 3-HW TURN ICE plumbing. APK versionCode 15.",
   "gateway": "",
   "socket": "",
