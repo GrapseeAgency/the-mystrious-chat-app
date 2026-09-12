@@ -2648,3 +2648,25 @@ Stage Summary:
 - HOLD state locked. Remaining work = REAL HARDWARE ACCEPTANCE GATE only (physical Android + physical iPhone + public gateway + TURN, all M1/M2/F1-F16/S1-S7/H1-H5 cases, TEST/DEVICE A/DEVICE B/NETWORK/EXPECTED/ACTUAL/PASS-FAIL/EVIDENCE per case).
 - c19b6c6 push is gated on: user rotates PAT on GitHub -> supplies new token -> push happens only then.
 - After real-device tests: update completion report, then request Wave 4 approval. No Wave 4 work started; no Stories/feature work; stopped as ordered.
+
+---
+Task ID: HOME-GATEWAY-FIX
+Agent: Z.ai Code (orchestrator)
+Task: PULSE — HOME SURFACE VALIDATION — investigate Android "Could not reach gateway — CLEARTEXT communication to localhost" (Home runtime/data path only), fix, rebuild, verify
+
+Work Log:
+- Located error path: ChatsScreen.kt:362 ("Could not reach the gateway" + raw state.error) ← PulseRepositoryImpl.refreshConversations → api.conversations → PulseEndpoints.http(path).
+- ROOT CAUSE: with no gateway configured (honest offline-first), PulseEndpoints.http() returns a bare relative path; nothing stopped the request from being fired; Ktor's URLBuilder resolves relative URLs against its implicit http://localhost default (ktor-client-okhttp engine); Android network security policy (targetSdk 35) correctly blocked the cleartext request → the field-report string. NOT: baked localhost endpoint (none exists since N9; build paths clean), emulator assumption, manifest override failure (manifest gateway was always ""), or backend outage (backend verified healthy).
+- SECONDARY BUG found in same investigation: ManifestEndpoints.fetchAndApply probed PulseEndpoints.http("/update-manifest.json") — unresolvable relative URL when offline → the Wave-0 deployment hook was dead code in exactly the state it exists for. Fixed: offline bootstraps the manifest from the HTTPS repo CDN.
+- FIX (no network-security weakening; cleartext stays blocked): gateway guard at every REST entry in PulseApi (3 wrappers + downloadMedia/deleteMessage/unfurl/deleteTopic) → honest NETWORK failure "No gateway configured — set your server in Profile → Connection." with ZERO engine requests; manifestProbeUrls() pure fn + CDN bootstrap.
+- TESTS: apps/android/data/src/test/.../HomeGatewayGuardTest.kt — 7/7 green (MockEngine: unconfigured → 0 requests + honest copy, configured → 1 request at exact origin URL; direct routes guarded; probe-order cases; REAL OkHttp engine vs hermetic loopback ServerSocket: 0 hits offline, 1 hit + parse when configured).
+- Re-provisioned sandbox (reset since last session): local.properties, platforms;android-35, Temurin JDK 21 at /home/z/jdks/jdk-21.0.12.1+1; release build survived kernel-OOM only after restarting the 1.4GB dev server (single instance, back up on :3000) and excluding lintVital locally (CI runs it).
+- ARTIFACT: app-release.apk versionCode 15 / versionName 0.5.2-native, minSdk 21, v1+v2+v3 signed, sha256 94b142af8526476f3b3fc1a93ab5ff24bd711f1dcd4a2864feaee5fa1da52f03; no usesCleartextTraffic / networkSecurityConfig (platform default BLOCKED preserved).
+- Backend evidence: GET /api/users 200; GET /api/conversations?userId=cmtawq3h4001ktcwn674m1frp 200 returning {"conversations":[...]} — the exact ConversationsPageDto shape the native client parses.
+- CDN channel updated: download/update-manifest.json → versionCode 15, apkUrl v0.5.2-native, sha256 94b142af…, download/Pulse.apk replaced.
+- COMMITTED LOCALLY 03b49f2 + tag v0.5.2-native — NOT PUSHED (deferred until user rotates the GitHub PAT and supplies the new token; same for held c19b6c6).
+
+Stage Summary:
+- Root cause classification: accidental wrong endpoint (Ktor implicit http://localhost on unguarded offline-first REST) + cleartext policy doing its job; security config untouched.
+- No new features, no Home redesign, no Wave 4; Wave 3-HW remains OPEN (hardware gate still belongs to the user).
+- Pending: PAT rotation → push c19b6c6 + 03b49f2 + tag → CI builds/attaches Pulse-v0.5.2-native.apk to the v0.5.2-native release; then real-device validation per apps/qa/hw-wave3/.
