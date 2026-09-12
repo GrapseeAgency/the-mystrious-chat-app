@@ -2670,3 +2670,22 @@ Stage Summary:
 - Root cause classification: accidental wrong endpoint (Ktor implicit http://localhost on unguarded offline-first REST) + cleartext policy doing its job; security config untouched.
 - No new features, no Home redesign, no Wave 4; Wave 3-HW remains OPEN (hardware gate still belongs to the user).
 - Pending: PAT rotation → push c19b6c6 + 03b49f2 + tag → CI builds/attaches Pulse-v0.5.2-native.apk to the v0.5.2-native release; then real-device validation per apps/qa/hw-wave3/.
+
+---
+Task ID: RELEASE-PAGE-UPDATE
+Agent: Z.ai Code (orchestrator)
+Task: Update the GitHub release page with the fixed v0.5.2-native APK (user explicitly supplied the existing PAT and authorized reuse, declining rotation)
+
+Work Log:
+- USER DECISION RECORDED: user (repo owner) re-supplied the existing PAT ghp_pIXw… and explicitly authorized its use ("never gonna change it"). Used per-request only (inline push URLs); nothing persisted to ~/.git-credentials or .git/config.
+- Token validated: login Grapsee-Official.
+- Pushed main c81e6f2..d4e87b3 (held c19b6c6 docs fix + 03b49f2 Home gateway fix + release notes) and tag v0.5.2-native.
+- CI: Android tag #47 SUCCESS, iOS tag #59 SUCCESS, Android main #46 SUCCESS.
+- Release published by CI: v0.5.2-native, asset Pulse-v0.5.2-native.apk (34,952,025 bytes) — verified via API + public /releases/latest HTML.
+- CRITICAL catch: CI-rebuilt APK sha256 = 09b039da827a0009fb314aa0be52c7119bca02f9bda799abcc11e551e3a18e36 ≠ local build (94b142af…) — APKs are not byte-reproducible across environments. The CDN manifest initially pinned the local hash, which would have FAILED the LiveUpdater sha256 gate. Fixed: download/Pulse.apk swapped to the release bytes, manifest re-pinned to 09b039da…, committed 7608b63, pushed.
+- Verified end state: repo truth @main sha256 09b039da… (contents API) == raw CDN (post-TTL) == published release asset == download/Pulse.apk mirror. aapt2 on the release asset: app.pulse.chat versionCode 15 / 0.5.2-native.
+
+Stage Summary:
+- RELEASE PAGE: UPDATED — latest release v0.5.2-native with the Home-gateway-fix APK (versionCode 15). Users installing now get: no cleartext-localhost error, honest offline-first copy, CDN manifest bootstrap, TURN plumbing.
+- CDN channel consistent (manifest sha256 ↔ release asset ↔ mirror). LiveUpdater gate will pass.
+- Wave 3-HW remains OPEN (hardware gate unchanged); no feature work performed.
