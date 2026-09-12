@@ -2817,3 +2817,18 @@ Stage Summary:
 - WAVE 5 COMPLETE at the agreed verification levels: CODE VERIFIED (both platforms) + RELAY RUNTIME VERIFIED (20/20 E2E) + CI GREEN (main + tag, both platforms) + release artifact/CDN consistent.
 - PHYSICAL DEVICE audio: PENDING — joins the open hardware gate; Wave 3-HW remains OPEN; no hardware claims made.
 - STOPPED after the report. Wave 6 NOT started.
+
+---
+Task ID: 5-HW
+Agent: Z.ai Code (orchestrator)
+Task: PULSE — WAVE 5-HW — real-device voice validation ONLY (prepare + enable the hardware run; no features, no redesign, no refactor)
+
+Work Log:
+- Verified entry state: Wave 5 accepted (v0.7.0-native, versionCode 17); re-checked the release asset via GitHub API — latest tag v0.7.0-native, Pulse-v0.7.0-native.apk 35,164,554 bytes, asset digest sha256 28067e88…82f5 == CDN pin; worklog 5-a…5-i/j records CODE/CI + RELAY (20/20 E2E) already claimed.
+- Fresh sandbox capability probe (2026-09-12) for the honest ledger: no adb/xcodebuild/simctl/arecord, no USB subsystem (/sys/bus/usb absent), no /dev/snd, egress-only NAT — 0 of 36 device cases claimable; recorded in RESULTS.md §0.
+- Authored apps/qa/hw-wave5/ kit (hw-wave3 house style): README (code-under-test v0.7.0-native, execution order, T1/T2/T3 topologies, 13-item acceptance gate, mandatory four-tier vocabulary CODE/CI / RELAY / HARDWARE VERIFIED / HARDWARE BLOCKED), 01-infrastructure (public gateway REST+WSS preflight commands, manifest gateway/socket adoption, TURN DETERMINATION: W5 room media is relay-fanout PCM over sockets — coturn NOT on the W5 path, stays a W3-HW-only dependency), 02-android-device (install/badging, hw-wave3 capture-script reuse, AudioRecord/FGS/privacy-dot/dumpsys mic-release proofs, permission + voice drills), 03-ios-device (Console capture, AVAudioSession route/restoration proofs, orange-dot evidence, documented no-UIBackgroundModes-audio limitation to record as ACTUAL), 04-voice-rooms VR-1…9, 05-stage ST-1…9, 06-space SP-1…6, 07-captions CAP-1…5, 08-environment ENV-1…7 — 36 cases, every one in the directive's record format (TEST → Android device → iPhone → topology → expected → actual → PASS/FAIL → evidence) with EXPECTED pre-filled from the shipped implementation; 09-report-template (per-area tables + four-tier final status + defects + gate verdict).
+- RESULTS.md honest ledger: §0 sandbox proof, §I infrastructure (all NOT TESTED), §VR/§ST/§SP/§CAP/§ENV all 36 rows NOT TESTED — BLOCKED: NO HARDWARE, plus the code-side table (Android 65 JVM tests, iOS 46 XCTest, CI main+tag green, release digest re-verified, 20/20 relay E2E = RELAY VERIFIED, TURN determination).
+
+Stage Summary:
+- W5-HW kit shipped; execution requires the operator's physical Android + physical iPhone + public gateway (sandbox has zero hardware capability — proven, not assumed).
+- Status: CODE/CI VERIFIED (both platforms) + RELAY VERIFIED (20/20) + HARDWARE BLOCKED (36/36 device cases NOT TESTED). Wave 5 NOT COMPLETE until the physical run passes the gate. Wave 3-HW remains OPEN. No Wave 6 — STOPPED per directive.
