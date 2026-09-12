@@ -206,8 +206,8 @@ public struct VoiceRoomModel: Equatable, Sendable {
     public var statusLine: String {
         if status == .error { return errorText ?? "Voice room unavailable" }
         if status == .idle { return "Standby" }
-        if !connected { return "Reconnecting…" }
-        if status == .joining { return "Connecting…" }
+        if status == .joining { return "Connecting…" } // first dial, not a drop
+        if !connected { return "Reconnecting…" } // joined but the relay link is down
         if roster.isEmpty { return "Syncing roster…" }
         return "Connected"
     }
@@ -276,7 +276,11 @@ public struct StageModel: Equatable, Sendable {
         joined && state?.host == nil
     }
 
-    public var canRaiseHand: Bool { joined && myRole == .listener }
+    public var canRaiseHand: Bool {
+        guard joined else { return false }
+        guard let state else { return true } // a fresh joiner IS a listener until the first stage:state
+        return myRole == .listener
+    }
     /// Host + speakers arm the mic on PTT (ST-6).
     public var canSpeak: Bool { myRole == .host || myRole == .speaker }
     public var canEnd: Bool { myRole == .host }

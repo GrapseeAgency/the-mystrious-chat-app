@@ -494,7 +494,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertNil(acc.feed(Array(repeating: Int16(1), count: 63_999)))
         let window = acc.feed(Array(repeating: Int16(2), count: 1))
         XCTAssertEqual(window?.count, 64_000) // 4 s @ 16 kHz
-        XCTAssertEqual(window?.first, Int16(2))
+        XCTAssertEqual(window?.last, Int16(2)) // the newest sample closes the window
         XCTAssertTrue(acc.isBusy)
 
         // Single-flight: while the ASR call is out, samples KEEP accumulating.

@@ -429,12 +429,14 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit, modifier: Modifier 
     }
 }
 
-/** Honest connection line (VR-8): connected / connecting / reconnecting / standby. */
+/** Honest connection line (VR-8): connected / connecting / reconnecting / standby.
+ *  Precedence parity with iOS: the FIRST dial says "Connecting…", only an
+ *  established seat with a dropped relay says "Reconnecting…". */
 internal fun connectionLine(state: VoiceRoomStateMachine.State, relayConnected: Boolean): String = when {
     state.status == VoiceRoomStateMachine.Status.ERROR -> "Connection problem"
+    state.status == VoiceRoomStateMachine.Status.JOINING -> "Connecting…"
     !relayConnected && state.joined -> "Reconnecting…"
     !relayConnected -> "Standby"
-    state.status == VoiceRoomStateMachine.Status.JOINING -> "Connecting…"
     state.status == VoiceRoomStateMachine.Status.JOINED -> "Connected"
     else -> "Standby"
 }

@@ -791,9 +791,7 @@ public struct WireVoicePtt: Codable, Hashable, Sendable {
 
     public var active: Bool { on ?? false }
 
-    // NOTE: `active` is a computed accessor only — it must NOT appear in
-    // CodingKeys (a computed property cannot be synthesized-encoded).
-    private enum CodingKeys: String, CodingKey { case conversationId, userId, on }
+    private enum CodingKeys: String, CodingKey { case conversationId, userId, on, active }
 
     public init(conversationId: String?, userId: String?, on: Bool?) {
         self.conversationId = conversationId
@@ -805,9 +803,19 @@ public struct WireVoicePtt: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         conversationId = try? container.decodeIfPresent(String.self, forKey: .conversationId)
         userId = try? container.decodeIfPresent(String.self, forKey: .userId)
-        // The relay emits `on`; the socket handler additionally tolerates
-        // legacy `active` at the decode site.
-        on = (try? container.decodeIfPresent(Bool.self, forKey: .on)) ?? nil
+        // `on` is the wire truth; a legacy `active` alone still decodes.
+        let decodedOn = (try? container.decodeIfPresent(Bool.self, forKey: .on)) ?? nil
+        let decodedActive = (try? container.decodeIfPresent(Bool.self, forKey: .active)) ?? nil
+        on = decodedOn ?? decodedActive
+    }
+
+    /// Custom encode — `active` is a computed accessor and must never be
+    /// synthesized-encoded; the wire only ever carries `on`.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(conversationId, forKey: .conversationId)
+        try container.encodeIfPresent(userId, forKey: .userId)
+        try container.encodeIfPresent(on, forKey: .on)
     }
 }
 
