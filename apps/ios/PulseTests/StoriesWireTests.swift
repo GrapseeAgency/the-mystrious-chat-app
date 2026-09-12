@@ -106,6 +106,11 @@ final class StoriesWireTests: XCTestCase {
 final class StoryViewerMachineTests: XCTestCase {
     private let now: Int64 = 1_700_000_000_000
 
+    /// ISO-8601 stamp at epoch ms (keeps wire-shaped stamps consistent with `now`).
+    private func iso(_ ms: Int64) -> String {
+        ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(ms) / 1000))
+    }
+
     private func story(
         id: String,
         mine: Bool = false,
@@ -208,10 +213,10 @@ final class StoryViewerMachineTests: XCTestCase {
     }
 
     func testD2ExpiredStoriesFilteredOffline() {
-        let m = makeMachine([group(userId: "alice", [story(id: "a0", expiresAt: "2026-09-12T05:00:30.000Z"), story(id: "a1")])])
+        let m = makeMachine([group(userId: "alice", [story(id: "a0", expiresAt: iso(now + 30_000)), story(id: "a1")])])
         // 10 minutes later: a0's expiry (now+30s) has passed.
         m.groupsUpdated(
-            [group(userId: "alice", [story(id: "a0", expiresAt: "2026-09-12T05:00:30.000Z"), story(id: "a1")])],
+            [group(userId: "alice", [story(id: "a0", expiresAt: iso(now + 30_000)), story(id: "a1")])],
             nowMs: now + 600_000,
         )
         XCTAssertEqual(m.state.flat.map(\.id), ["a1"])
