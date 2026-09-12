@@ -1,12 +1,12 @@
 {
-  "versionCode": 16,
-  "versionName": "0.6.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.6.0-native/Pulse-v0.6.0-native.apk",
+  "versionCode": 17,
+  "versionName": "0.7.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.7.0-native/Pulse-v0.7.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "2331b98823f8fb0731467b5757ea301881876ae2beadc79e33b53a36f612137e",
-  "notes": "Wave 4 — native Stories + Social Presence on both platforms: full 24h status feature set on the wire (GET/POST /api/stories, POST view, GET viewers, DELETE story; REST + 60s poll parity — zero socket events, same as web). Android: feature-stories module with pure viewer state machine (5000ms stories, per-group progress bars, left-32%-prev tap zones, 240ms hold-to-pause, drag-down dismiss, cross-group advance, auto-close), Text/Photo composer (280-char cap, 8 gradient palette keys, photo picker -> <=1280px JPEG q0.82 -> /api/uploads), owner viewers sheet (5s poll) + delete with confirm, unseen/seen animated rings on the Home rail, Room v8 story_cache offline snapshot, Room migration chain extended + instrumented test. Web defects fixed natively: D1 composer always reachable, D2 client-side expiry filter, D3 vanish auto-advance, D5 error!=empty, D6 optimistic seen + single retry, D7 live viewers poll. iOS: SwiftUI full-screen viewer + composer on the same machine semantics (StoryViewerMachine), GRDB v6 storyCache, session-owned feed model, dock sheet + tray wiring. JVM tests: Android 41 stories-related green (protocol 7 + data 8 + feature 26); iOS 25 new tests green (123 total). APK versionCode 16.",
+  "sha256": "28067e88705daface172ef1d973b189eb0fc2aa483752b918ada66c7de8282f5",
+  "notes": "Wave 5 \u2014 native Voice Rooms / Stage / Space on both platforms (Kotlin+Compose, Swift+SwiftUI): walkie-talkie PTT (hold>=260ms / tap-latch), 16kHz mono Int16 250ms chunks, per-peer 85ms jitter playhead + stale-seq drop, mute with software-gate truth, live ASR captions (4s WAV windows -> /api/voice/transcribe -> voice:transcript, 7s TTL, persisted toggle), stage hierarchy (host/speakers/hands/listeners, raise hand, approve, mute with real voice-seat enforcement, two-tap end, claim host, resync), spatial space (0..1 map, tap+drag with 80ms server-matched throttle, optimistic target + idle reconcile, proximity 0.18, honest error states). Web defects fixed natively: dead transmit path proven emitting (chunker tests), rejoin seq blackhole reset, stage audience voice seat for ALL roles, throttle mismatch + optimistic reconcile, space error state. Android: new :feature-voice module + AudioRecord/AudioTrack engine + mic FGS; iOS: Features/VoiceRooms + AVAudioEngine tap + per-peer AVAudioPlayerNode. Tests: Android 65 new JVM (feature-voice) green; iOS 46 new XCTest green. Relay runtime E2E 20/20 PASS (voice/stage/space flows vs live pulse-socket). PHYSICAL DEVICE audio: PENDING (hardware gate). APK versionCode 17.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-12T13:10:00Z"
+  "updatedAt": "2026-09-12T18:47:33Z"
 }
