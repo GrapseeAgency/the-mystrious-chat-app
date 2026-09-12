@@ -64,5 +64,13 @@
             android:name="app.pulse.feature.calls.CallForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Wave 5 voice rooms: keep mic capture alive in an ongoing-room
+             foreground service (same idiom: ALL services live in the app
+             manifest; feature modules carry no manifests). -->
+        <service
+            android:name="app.pulse.feature.voice.VoiceForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 </manifest>

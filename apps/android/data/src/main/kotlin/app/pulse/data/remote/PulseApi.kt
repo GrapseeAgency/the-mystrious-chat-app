@@ -29,8 +29,11 @@ import app.pulse.protocol.UploadResultDto
 import app.pulse.protocol.UserDto
 import app.pulse.protocol.UsernameCheckDto
 import app.pulse.protocol.UsersPageDto
+import app.pulse.protocol.VoiceTranscriptResultDto
 import app.pulse.protocol.unwrapOrRoot
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
@@ -83,12 +86,19 @@ class PulseApi(private val http: HttpClient) {
         }
     }
 
-    private suspend fun <T> post(path: String, body: JsonObject?, parse: ((String) -> T)? = null): PulseResult<T> {
+    private suspend fun <T> post(
+        path: String,
+        body: JsonObject?,
+        /** Per-request requestTimeout override (Ktor 2 `timeout {}` extension) — null = plugin default. */
+        timeoutMillis: Long? = null,
+        parse: ((String) -> T)? = null,
+    ): PulseResult<T> {
         if (!PulseEndpoints.isConfigured) return offlineFailure
         return try {
             val res = http.post(PulseEndpoints.http(path)) {
                 contentType(ContentType.Application.Json)
                 if (body != null) setBody(body.toString())
+                if (timeoutMillis != null) timeout { requestTimeoutMillis = timeoutMillis }
             }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {
@@ -637,7 +647,35 @@ class PulseApi(private val http: HttpClient) {
             },
         ) { PulseJson.decodeFromString(CallLogCreatedDto.serializer(), it) }
 
+    // ── Wave 5 voice rooms — live-caption transcription ─────────
+
+    /**
+     * POST /api/voice/transcribe {conversationId, requesterId, audioBase64} →
+     * { transcript } (≤280 chars). Server: 400 missing fields, 403
+     * non-participant, 413 >512K b64, 422 empty, 502 service failure.
+     * ASR is slow by nature — this ONE route carries a 60s per-request
+     * timeout (Ktor 2 `timeout {}` request extension); every other call keeps
+     * the plugin defaults untouched.
+     */
+    suspend fun transcribeVoice(
+        conversationId: String,
+        requesterId: String,
+        audioBase64: String,
+    ): PulseResult<VoiceTranscriptResultDto> =
+        post(
+            "/api/voice/transcribe",
+            buildJsonObject {
+                put("conversationId", conversationId)
+                put("requesterId", requesterId)
+                put("audioBase64", audioBase64)
+            },
+            timeoutMillis = TRANSCRIBE_TIMEOUT_MS,
+        ) { PulseJson.decodeFromString(VoiceTranscriptResultDto.serializer(), it) }
+
     companion object {
+        /** Per-request cap for the slow voice-caption ASR round-trip. */
+        private const val TRANSCRIBE_TIMEOUT_MS = 60_000L
+
         fun jsonOf(vararg pairs: Pair<String, Any?>): JsonObject = buildJsonObject {
             pairs.forEach { (k, v) ->
                 when (v) {

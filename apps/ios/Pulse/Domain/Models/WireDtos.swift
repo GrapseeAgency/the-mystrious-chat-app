@@ -695,6 +695,276 @@ extension WireChatMessage {
 }
 
 // ─────────────────────────────────────────────────────────────
+// W5-f — Wave 5 voice rooms / stage / space (parity spec
+// docs/WAVE5-VOICE-SPACES-PARITY-SPEC.md §0). Relay events are
+// [String: Any] dictionaries; the tolerant decode helpers below
+// mirror PulseSession.decodeMessage (JSONSerialization →
+// JSONDecoder) so older/mutated payloads degrade to nil fields,
+// never crashes. All rooms are EPHEMERAL — nothing here is stored.
+// ─────────────────────────────────────────────────────────────
+
+/// The 21 wire event names (14 C→S + 7 S→C) of the rooms relay,
+/// mirroring mini-services/pulse-socket/index.ts handlers and
+/// packages/protocol/src/contracts.ts. Shared names (voice:ptt,
+/// voice:chunk, voice:transcript) appear once — direction is clear
+/// from the emit/receive site.
+public enum PulseSocketEvents: String, CaseIterable, Sendable {
+    // C→S — voice room (walkie-talkie PTT)
+    case voiceJoin = "voice:join"
+    case voiceLeave = "voice:leave"
+    case voicePtt = "voice:ptt"
+    case voiceChunk = "voice:chunk"
+    case voiceTranscript = "voice:transcript"
+    // C→S — stage room (Clubhouse hierarchy)
+    case stageJoin = "stage:join"
+    case stageHand = "stage:hand"
+    case stageApprove = "stage:approve"
+    case stageMute = "stage:mute"
+    case stageEnd = "stage:end"
+    case stageLeave = "stage:leave"
+    // C→S — spatial presence
+    case spaceJoin = "space:join"
+    case spaceMove = "space:move"
+    case spaceLeave = "space:leave"
+    // S→C
+    case voiceRoster = "voice:roster"
+    case stageState = "stage:state"
+    case stageEnded = "stage:ended"
+    case spaceState = "space:state"
+
+    /// Exactly the 14 client→server events.
+    public static let clientToServer: [PulseSocketEvents] = [
+        .voiceJoin, .voiceLeave, .voicePtt, .voiceChunk, .voiceTranscript,
+        .stageJoin, .stageHand, .stageApprove, .stageMute, .stageEnd, .stageLeave,
+        .spaceJoin, .spaceMove, .spaceLeave,
+    ]
+
+    /// Exactly the 7 server→client events.
+    public static let serverToClient: [PulseSocketEvents] = [
+        .voiceRoster, .voicePtt, .voiceChunk, .voiceTranscript,
+        .stageState, .stageEnded, .spaceState,
+    ]
+}
+
+/// One `voice:roster` peer — the public-safe shape the relay emits
+/// ({ id, name, username, color }; joinedAt is NOT on the wire but
+/// the roster ORDER is by it — tolerated here for forward drift).
+public struct WireVoicePeer: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let name: String?
+    public let username: String?
+    public let color: String?
+    public let joinedAt: Double?
+}
+
+/// `voice:roster` payload — the roster REPLACES any previous one
+/// wholesale (web parity: roster state = server truth).
+public struct WireVoiceRoster: Codable, Sendable {
+    public let conversationId: String?
+    public let peers: [WireVoicePeer]?
+
+    public init(conversationId: String?, peers: [WireVoicePeer]?) {
+        self.conversationId = conversationId
+        self.peers = peers
+    }
+
+    /// Tolerant decode from the raw relay dictionary (the Signal carries
+    /// the peers array as [[String: Any]]). Each entry decodes
+    /// INDIVIDUALLY — a malformed entry (missing id, wrong shape) is
+    /// dropped, never poisoning the whole roster.
+    public static func decode(conversationId: String, rawPeers: [[String: Any]]) -> WireVoiceRoster? {
+        let peers = rawPeers.compactMap { entry -> WireVoicePeer? in
+            guard JSONSerialization.isValidJSONObject(entry),
+                  let data = try? JSONSerialization.data(withJSONObject: entry) else { return nil }
+            return try? JSONDecoder().decode(WireVoicePeer.self, from: data)
+        }
+        return WireVoiceRoster(conversationId: conversationId, peers: peers)
+    }
+}
+
+/// `voice:ptt` — the relay echoes to the SENDER too (self ring glows).
+/// The server emits `on`; the tolerant decode also accepts `active`.
+public struct WireVoicePtt: Codable, Hashable, Sendable {
+    public let conversationId: String?
+    public let userId: String?
+    public let on: Bool?
+
+    public var active: Bool { on ?? false }
+
+    private enum CodingKeys: String, CodingKey { case conversationId, userId, on, active }
+
+    public init(conversationId: String?, userId: String?, on: Bool?) {
+        self.conversationId = conversationId
+        self.userId = userId
+        self.on = on
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        conversationId = try? container.decodeIfPresent(String.self, forKey: .conversationId)
+        userId = try? container.decodeIfPresent(String.self, forKey: .userId)
+        // `on` is the wire truth; `active` accepted for tolerance. Both
+        // decode paths flatten to Bool? (SE-0230 try? flattening).
+        let decodedOn = (try? container.decodeIfPresent(Bool.self, forKey: .on)) ?? nil
+        let decodedActive = (try? container.decodeIfPresent(Bool.self, forKey: .active)) ?? nil
+        on = decodedOn ?? decodedActive
+    }
+}
+
+/// `voice:chunk` — base64 of Int16LE PCM 16 kHz mono, 250 ms = 4000
+/// samples per full chunk; seq starts at 1 (server floor()s, relays
+/// to the room EXCEPT the sender).
+public struct WireVoiceChunk: Codable, Sendable {
+    public let conversationId: String?
+    public let userId: String?
+    public let seq: Int?
+    public let data: String?
+}
+
+/// `voice:transcript` — the server stamps name/color/at (the emitter
+/// only sends conversationId/userId/text).
+public struct WireVoiceTranscriptEvent: Codable, Hashable, Sendable {
+    public let conversationId: String?
+    public let userId: String?
+    public let name: String?
+    public let color: String?
+    public let text: String?
+    /// Server epoch ms stamp (tolerated — the client sweeps with its own clock).
+    public let at: Double?
+}
+
+/// POST /api/voice/transcribe verdict (≤280 chars).
+public struct WireVoiceTranscriptResult: Codable, Hashable, Sendable {
+    public let transcript: String
+}
+
+/// One person on a stage roster ({ id, name, color } — public-safe).
+public struct WireStagePerson: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let name: String?
+    public let color: String?
+}
+
+/// `stage:state` — host (null = seat empty, NO auto-promotion),
+/// speakers (host first), hands (FIFO by raisedAt), listeners and the
+/// additive listenerCount (fallback = listeners.count on old relays).
+public struct WireStageState: Codable, Sendable {
+    public let conversationId: String?
+    public let host: WireStagePerson?
+    public let speakers: [WireStagePerson]?
+    public let hands: [WireStagePerson]?
+    public let listeners: [WireStagePerson]?
+    public let listenerCount: Int?
+
+    public var speakerList: [WireStagePerson] { speakers ?? [] }
+    public var handList: [WireStagePerson] { hands ?? [] }
+    public var listenerList: [WireStagePerson] { listeners ?? [] }
+    /// The header chip count — the wire field when present, else the row count.
+    public var listenerTotal: Int { listenerCount ?? listenerList.count }
+}
+
+/// `space:state` player — normalized 0..1 coords, rounded 4dp by the server.
+public struct WireSpacePlayer: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let name: String?
+    public let color: String?
+    public let x: Double?
+    public let y: Double?
+}
+
+/// `space:state` — FULL state replace (stale players self-heal; the
+/// server prunes 5-minute idlers).
+public struct WireSpaceState: Codable, Sendable {
+    public let conversationId: String?
+    public let players: [WireSpacePlayer]?
+}
+
+/// Pure C→S payload builders for the 14 rooms events (W5-f) — the EXACT
+/// shapes mini-services/pulse-socket/index.ts validates. Single source of
+/// truth for both PulseSocketClient's typed emit helpers and the session
+/// model's emit funnel; unit-tested in VoiceRoomWireTests.
+public enum VoiceRoomWire {
+    /// Public-safe user dict — { id, name, username, color }.
+    public static func user(id: String, name: String, username: String?, color: String?) -> [String: Any] {
+        [
+            "id": id,
+            "name": name,
+            "username": username ?? "",
+            "color": color ?? "emerald",
+        ]
+    }
+
+    // ── voice room ───────────────────────────────────────
+    public static func voiceJoin(conversationId: String, userId: String, name: String, username: String?, color: String?) -> [String: Any] {
+        [
+            "conversationId": conversationId,
+            "user": user(id: userId, name: name, username: username, color: color),
+        ]
+    }
+
+    public static func voiceLeave(conversationId: String) -> [String: Any] {
+        ["conversationId": conversationId]
+    }
+
+    public static func voicePtt(conversationId: String, userId: String, on: Bool) -> [String: Any] {
+        ["conversationId": conversationId, "userId": userId, "on": on]
+    }
+
+    public static func voiceChunk(conversationId: String, userId: String, seq: Int, data: String) -> [String: Any] {
+        ["conversationId": conversationId, "userId": userId, "seq": seq, "data": data]
+    }
+
+    public static func voiceTranscript(conversationId: String, userId: String, text: String) -> [String: Any] {
+        ["conversationId": conversationId, "userId": userId, "text": text]
+    }
+
+    // ── stage room ───────────────────────────────────────
+    public static func stageJoin(conversationId: String, userId: String, name: String, username: String?, color: String?, asHost: Bool) -> [String: Any] {
+        [
+            "conversationId": conversationId,
+            "user": user(id: userId, name: name, username: username, color: color),
+            "asHost": asHost,
+        ]
+    }
+
+    public static func stageHand(conversationId: String, userId: String, raised: Bool) -> [String: Any] {
+        ["conversationId": conversationId, "user": ["id": userId], "raised": raised]
+    }
+
+    public static func stageApprove(conversationId: String, byUserId: String, targetUserId: String) -> [String: Any] {
+        ["conversationId": conversationId, "byUserId": byUserId, "targetUserId": targetUserId]
+    }
+
+    public static func stageMute(conversationId: String, byUserId: String, targetUserId: String) -> [String: Any] {
+        ["conversationId": conversationId, "byUserId": byUserId, "targetUserId": targetUserId]
+    }
+
+    public static func stageEnd(conversationId: String, byUserId: String) -> [String: Any] {
+        ["conversationId": conversationId, "byUserId": byUserId]
+    }
+
+    public static func stageLeave(conversationId: String) -> [String: Any] {
+        ["conversationId": conversationId]
+    }
+
+    // ── spatial presence ─────────────────────────────────
+    public static func spaceJoin(conversationId: String, userId: String, name: String, username: String?, color: String?) -> [String: Any] {
+        [
+            "conversationId": conversationId,
+            "user": user(id: userId, name: name, username: username, color: color),
+        ]
+    }
+
+    public static func spaceMove(conversationId: String, x: Double, y: Double) -> [String: Any] {
+        ["conversationId": conversationId, "x": x, "y": y]
+    }
+
+    public static func spaceLeave(conversationId: String) -> [String: Any] {
+        ["conversationId": conversationId]
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // W3-b — Wave 3 call history (GET/POST /api/calls, src/lib/call-types.ts).
 // ─────────────────────────────────────────────────────────────
 

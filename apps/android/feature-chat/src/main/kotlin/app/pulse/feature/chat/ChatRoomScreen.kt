@@ -100,6 +100,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -140,6 +143,14 @@ fun ChatRoomScreen(
     onBack: () -> Unit,
     onOpenThread: (conversationId: String, rootId: String) -> Unit,
     viewModel: ChatRoomViewModel = hiltViewModel(),
+    // Wave 5 voice rooms (authorized shared plumbing only — the same
+    // MainActivity-level trigger idiom the calls surface uses):
+    /** True while this conversation has a joined voice room (header tint). */
+    voiceJoined: Boolean = false,
+    /** Live roster count for the "Voice · N live" pill (joined room). */
+    voiceLiveCount: Int = 0,
+    /** Opens the voice-rooms overlay for this conversation. */
+    onOpenVoiceRoom: () -> Unit = {},
 ) {
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
@@ -312,6 +323,9 @@ fun ChatRoomScreen(
             conversation = conversation,
             partnerTypingName = state.partnerTypingName,
             searchOpen = state.searchOpen,
+            voiceJoined = voiceJoined,
+            voiceLiveCount = voiceLiveCount,
+            onOpenVoiceRoom = onOpenVoiceRoom,
             onBack = {
                 if (state.searchOpen) viewModel.setSearchOpen(false) else onBack()
             },
@@ -1238,6 +1252,9 @@ private fun RoomHeader(
     conversation: Conversation?,
     partnerTypingName: String?,
     searchOpen: Boolean,
+    voiceJoined: Boolean,
+    voiceLiveCount: Int,
+    onOpenVoiceRoom: () -> Unit,
     onBack: () -> Unit,
     onToggleSearch: () -> Unit,
 ) {
@@ -1290,6 +1307,39 @@ private fun RoomHeader(
                         )
                     }
                 }
+            }
+            // Wave 5 voice room entry — tints live while this room has a
+            // joined voice seat; the pill shows the live roster size.
+            if (voiceJoined) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = PulsePalette.Emerald.copy(alpha = 0.14f),
+                    contentColor = PulsePalette.Emerald,
+                    modifier = Modifier.semantics { contentDescription = "Voice room live with $voiceLiveCount people" },
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Filled.GraphicEq, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Voice · $voiceLiveCount live", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+                Spacer(Modifier.width(2.dp))
+            }
+            IconButton(
+                onClick = onOpenVoiceRoom,
+                modifier = Modifier.semantics {
+                    contentDescription = if (voiceJoined) "Open the live voice room" else "Open voice room"
+                    stateDescription = if (voiceJoined) "In voice room" else "Not in voice room"
+                },
+            ) {
+                Icon(
+                    Icons.Filled.GraphicEq,
+                    contentDescription = null,
+                    tint = if (voiceJoined) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             IconButton(onClick = onToggleSearch) {
                 Icon(

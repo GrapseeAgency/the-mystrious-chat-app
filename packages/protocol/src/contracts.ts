@@ -132,7 +132,7 @@ export interface VoicePttEvent {
   active: boolean
 }
 
-/** voice:chunk — 16 kHz PCM base64 frames (~4 s), relayed to the room. */
+/** voice:chunk — 16 kHz PCM base64 frames (250 ms / 4000 samples), relayed to the room. */
 export interface VoiceChunkEvent {
   conversationId: string
   userId: string

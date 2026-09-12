@@ -161,10 +161,14 @@ public final class PulseSocketClient {
         }
         socket.on("voice:ptt") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any] else { return }
+            // W5-f — the relay emits `on` (voice:ptt { conversationId, userId,
+            // on }, mini-services/pulse-socket/index.ts L922-926); the legacy
+            // `active` key stays a tolerant fallback so the speaking ring
+            // never silently dies on either shape.
             self?.signals?(.voicePtt(
                 conversationId: obj["conversationId"] as? String ?? "",
                 userId: obj["userId"] as? String ?? "",
-                active: obj["active"] as? Bool ?? false,
+                active: (obj["on"] as? Bool) ?? (obj["active"] as? Bool) ?? false,
             ))
         }
         socket.on("voice:chunk") { [weak self] data, _ in
@@ -226,6 +230,99 @@ public final class PulseSocketClient {
     /// Emits made while disconnected are buffered by socket.io and flushed on
     /// the next reconnect (same semantics the join re-emit relies on).
     public func emitCallSignal(event: String, payload: [String: Any]) {
+        socket.emit(event, payload)
+    }
+
+    // ── W5-f — voice rooms / stage / space (typed emit helpers) ──
+    //
+    // All 14 C→S rooms events. Payloads come from VoiceRoomWire (pure,
+    // unit-tested in VoiceRoomWireTests — the EXACT shapes the relay
+    // validates). Best-effort like emitTyping: never throws, emits made
+    // while disconnected are buffered by socket.io and flushed on the
+    // next reconnect.
+
+    public func emitVoiceJoin(conversationId: String, userId: String, name: String, username: String?, color: String?) {
+        socket.emit(PulseSocketEvents.voiceJoin.rawValue, VoiceRoomWire.voiceJoin(
+            conversationId: conversationId, userId: userId, name: name, username: username, color: color,
+        ))
+    }
+
+    public func emitVoiceLeave(conversationId: String) {
+        socket.emit(PulseSocketEvents.voiceLeave.rawValue, VoiceRoomWire.voiceLeave(conversationId: conversationId))
+    }
+
+    public func emitVoicePtt(conversationId: String, userId: String, on: Bool) {
+        socket.emit(PulseSocketEvents.voicePtt.rawValue, VoiceRoomWire.voicePtt(
+            conversationId: conversationId, userId: userId, on: on,
+        ))
+    }
+
+    public func emitVoiceChunk(conversationId: String, userId: String, seq: Int, data: String) {
+        socket.emit(PulseSocketEvents.voiceChunk.rawValue, VoiceRoomWire.voiceChunk(
+            conversationId: conversationId, userId: userId, seq: seq, data: data,
+        ))
+    }
+
+    public func emitVoiceTranscript(conversationId: String, userId: String, text: String) {
+        socket.emit(PulseSocketEvents.voiceTranscript.rawValue, VoiceRoomWire.voiceTranscript(
+            conversationId: conversationId, userId: userId, text: text,
+        ))
+    }
+
+    public func emitStageJoin(conversationId: String, userId: String, name: String, username: String?, color: String?, asHost: Bool) {
+        socket.emit(PulseSocketEvents.stageJoin.rawValue, VoiceRoomWire.stageJoin(
+            conversationId: conversationId, userId: userId, name: name, username: username, color: color, asHost: asHost,
+        ))
+    }
+
+    public func emitStageHand(conversationId: String, userId: String, raised: Bool) {
+        socket.emit(PulseSocketEvents.stageHand.rawValue, VoiceRoomWire.stageHand(
+            conversationId: conversationId, userId: userId, raised: raised,
+        ))
+    }
+
+    public func emitStageApprove(conversationId: String, byUserId: String, targetUserId: String) {
+        socket.emit(PulseSocketEvents.stageApprove.rawValue, VoiceRoomWire.stageApprove(
+            conversationId: conversationId, byUserId: byUserId, targetUserId: targetUserId,
+        ))
+    }
+
+    public func emitStageMute(conversationId: String, byUserId: String, targetUserId: String) {
+        socket.emit(PulseSocketEvents.stageMute.rawValue, VoiceRoomWire.stageMute(
+            conversationId: conversationId, byUserId: byUserId, targetUserId: targetUserId,
+        ))
+    }
+
+    public func emitStageEnd(conversationId: String, byUserId: String) {
+        socket.emit(PulseSocketEvents.stageEnd.rawValue, VoiceRoomWire.stageEnd(
+            conversationId: conversationId, byUserId: byUserId,
+        ))
+    }
+
+    public func emitStageLeave(conversationId: String) {
+        socket.emit(PulseSocketEvents.stageLeave.rawValue, VoiceRoomWire.stageLeave(conversationId: conversationId))
+    }
+
+    public func emitSpaceJoin(conversationId: String, userId: String, name: String, username: String?, color: String?) {
+        socket.emit(PulseSocketEvents.spaceJoin.rawValue, VoiceRoomWire.spaceJoin(
+            conversationId: conversationId, userId: userId, name: name, username: username, color: color,
+        ))
+    }
+
+    public func emitSpaceMove(conversationId: String, x: Double, y: Double) {
+        socket.emit(PulseSocketEvents.spaceMove.rawValue, VoiceRoomWire.spaceMove(
+            conversationId: conversationId, x: x, y: y,
+        ))
+    }
+
+    public func emitSpaceLeave(conversationId: String) {
+        socket.emit(PulseSocketEvents.spaceLeave.rawValue, VoiceRoomWire.spaceLeave(conversationId: conversationId))
+    }
+
+    /// W5-f — generic rooms-event funnel for the session model (the socket
+    /// is session-owned; mirrors emitCallSignal). Payloads are built by the
+    /// pure VoiceRoomWire builders so the shape stays unit-tested.
+    public func emitRoomSignal(event: String, payload: [String: Any]) {
         socket.emit(event, payload)
     }
 

@@ -18,8 +18,23 @@ import app.pulse.protocol.PulseJson
 import app.pulse.protocol.ReadEventPayload
 import app.pulse.protocol.SocketEvents
 import app.pulse.protocol.SocketMessageEnvelope
+import app.pulse.protocol.PulseVoiceUser
 import app.pulse.protocol.SpaceStatePayload
 import app.pulse.protocol.TypingPayload
+import app.pulse.protocol.spaceJoinPayload
+import app.pulse.protocol.spaceLeavePayload
+import app.pulse.protocol.spaceMovePayload
+import app.pulse.protocol.stageApprovePayload
+import app.pulse.protocol.stageEndPayload
+import app.pulse.protocol.stageHandPayload
+import app.pulse.protocol.stageJoinPayload
+import app.pulse.protocol.stageLeavePayload
+import app.pulse.protocol.stageMutePayload
+import app.pulse.protocol.voiceChunkPayload
+import app.pulse.protocol.voiceJoinPayload
+import app.pulse.protocol.voiceLeavePayload
+import app.pulse.protocol.voicePttPayload
+import app.pulse.protocol.voiceTranscriptPayload
 import app.pulse.protocol.StageEndedPayload
 import app.pulse.protocol.StageStatePayload
 import app.pulse.protocol.VoiceChunkPayload
@@ -215,14 +230,22 @@ class PulseSocketClient(
         sock.on(SocketEvents.VOICE_TRANSCRIPT) { args ->
             decode<VoiceTranscriptPayload>(args)?.let { _signals.tryEmit(Signal.VoiceTranscript(it.conversationId, it.userId, it.text)) }
         }
+        // Wave 5: stage:state / space:state carry the room object at TOP level
+        // (verified against the relay), so the passthrough `state` field of the
+        // DTO always decodes null. The Signal therefore carries the WHOLE raw
+        // element — parseStageRoomState/parseSpaceBoardState handle both shapes.
         sock.on(SocketEvents.STAGE_STATE) { args ->
-            decode<StageStatePayload>(args)?.let { _signals.tryEmit(Signal.StageState(it.conversationId, it.state)) }
+            decode<StageStatePayload>(args)?.let {
+                _signals.tryEmit(Signal.StageState(it.conversationId, rawElement(args)))
+            }
         }
         sock.on(SocketEvents.STAGE_ENDED) { args ->
             decode<StageEndedPayload>(args)?.let { _signals.tryEmit(Signal.StageEnded(it.conversationId)) }
         }
         sock.on(SocketEvents.SPACE_STATE) { args ->
-            decode<SpaceStatePayload>(args)?.let { _signals.tryEmit(Signal.SpaceState(it.conversationId, it.state)) }
+            decode<SpaceStatePayload>(args)?.let {
+                _signals.tryEmit(Signal.SpaceState(it.conversationId, rawElement(args)))
+            }
         }
         // Typed call:* handlers — decode into the EXACT per-event DTO, wrap
         // into the outer-level union, emit. Inline (the decoder needs the
@@ -307,6 +330,80 @@ class PulseSocketClient(
         val sock = socket ?: return
         sock.emit(event, JSONObject(payload.toString()))
     }
+
+    // ── Wave-5 voice/stage/space emission (wire-perfect payloads) ─────
+    // Best-effort like every emit: a disconnected socket is a no-op (the
+    // engines re-join on the next connect), never a throw.
+
+    private fun emitRoomEvent(event: String, payload: kotlinx.serialization.json.JsonObject) {
+        val sock = socket ?: return
+        runCatching { sock.emit(event, JSONObject(payload.toString())) }
+            .onFailure { Log.w(TAG, "emit $event failed", it) }
+    }
+
+    /** voice:join — registers this socket's seat; re-emitted on reconnect (VR-8). */
+    fun emitVoiceJoin(conversationId: String, user: PulseVoiceUser) {
+        emitRoomEvent(SocketEvents.VOICE_JOIN, voiceJoinPayload(conversationId, user))
+    }
+
+    fun emitVoiceLeave(conversationId: String) {
+        emitRoomEvent(SocketEvents.VOICE_LEAVE, voiceLeavePayload(conversationId))
+    }
+
+    fun emitVoicePtt(conversationId: String, userId: String, on: Boolean) {
+        emitRoomEvent(SocketEvents.VOICE_PTT, voicePttPayload(conversationId, userId, on))
+    }
+
+    fun emitVoiceChunk(conversationId: String, userId: String, seq: Long, data: String) {
+        emitRoomEvent(SocketEvents.VOICE_CHUNK, voiceChunkPayload(conversationId, userId, seq, data))
+    }
+
+    fun emitVoiceTranscript(conversationId: String, userId: String, text: String) {
+        emitRoomEvent(SocketEvents.VOICE_TRANSCRIPT, voiceTranscriptPayload(conversationId, userId, text))
+    }
+
+    /** stage:join — asHost:true is ONLY the claim-host path (ST-7). */
+    fun emitStageJoin(conversationId: String, user: PulseVoiceUser, asHost: Boolean) {
+        emitRoomEvent(SocketEvents.STAGE_JOIN, stageJoinPayload(conversationId, user, asHost))
+    }
+
+    fun emitStageHand(conversationId: String, userId: String, raised: Boolean) {
+        emitRoomEvent(SocketEvents.STAGE_HAND, stageHandPayload(conversationId, userId, raised))
+    }
+
+    fun emitStageApprove(conversationId: String, byUserId: String, targetUserId: String) {
+        emitRoomEvent(SocketEvents.STAGE_APPROVE, stageApprovePayload(conversationId, byUserId, targetUserId))
+    }
+
+    fun emitStageMute(conversationId: String, byUserId: String, targetUserId: String) {
+        emitRoomEvent(SocketEvents.STAGE_MUTE, stageMutePayload(conversationId, byUserId, targetUserId))
+    }
+
+    fun emitStageEnd(conversationId: String, byUserId: String) {
+        emitRoomEvent(SocketEvents.STAGE_END, stageEndPayload(conversationId, byUserId))
+    }
+
+    fun emitStageLeave(conversationId: String) {
+        emitRoomEvent(SocketEvents.STAGE_LEAVE, stageLeavePayload(conversationId))
+    }
+
+    fun emitSpaceJoin(conversationId: String, user: PulseVoiceUser) {
+        emitRoomEvent(SocketEvents.SPACE_JOIN, spaceJoinPayload(conversationId, user))
+    }
+
+    fun emitSpaceMove(conversationId: String, x: Double, y: Double) {
+        emitRoomEvent(SocketEvents.SPACE_MOVE, spaceMovePayload(conversationId, x, y))
+    }
+
+    fun emitSpaceLeave(conversationId: String) {
+        emitRoomEvent(SocketEvents.SPACE_LEAVE, spaceLeavePayload(conversationId))
+    }
+
+    /** Tolerant raw decode of the first event arg (stage/space room passthroughs). */
+    private fun rawElement(args: Array<out Any?>): kotlinx.serialization.json.JsonElement? = runCatching {
+        val raw = args.firstOrNull() ?: return@runCatching null
+        PulseJson.parseToJsonElement(raw.toString())
+    }.getOrNull()
 
     fun disconnect() {
         disconnectSocket()

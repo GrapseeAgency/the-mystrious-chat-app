@@ -18,6 +18,15 @@ import app.pulse.domain.model.StoryViewer
 import app.pulse.domain.model.Topic
 import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
+import app.pulse.protocol.PulseVoiceUser
+import app.pulse.protocol.SpaceStatePayload
+import app.pulse.protocol.StageEndedPayload
+import app.pulse.protocol.StageStatePayload
+import app.pulse.protocol.VoiceChunkPayload
+import app.pulse.protocol.VoicePttPayload
+import app.pulse.protocol.VoiceRosterPayload
+import app.pulse.protocol.VoiceTranscriptPayload
+import app.pulse.protocol.VoiceTranscriptResultDto
 import kotlinx.coroutines.flow.Flow
 
 /** Live events pushed by the relay — the UDF event side of the repository. */
@@ -43,6 +52,22 @@ sealed interface PulseEvent {
     // ── native 1:1 calls (Wave 3) ──────────────────────────────
     /** A call:* relay signal reached this device (offer/answer/ice/reject/cancel/hangup). */
     data class CallSignal(val signal: CallSignalData) : PulseEvent
+
+    // ── voice rooms / stage / space (Wave 5) ──────────────────
+    /** S→C voice:roster — wholesale roster replace (joiners + leavers). */
+    data class VoiceRoster(val payload: VoiceRosterPayload) : PulseEvent
+    /** S→C voice:ptt — push-to-talk latch (echoed to the sender too). */
+    data class VoicePtt(val payload: VoicePttPayload) : PulseEvent
+    /** S→C voice:chunk — one 250ms PCM frame from a peer (never from self). */
+    data class VoiceChunk(val payload: VoiceChunkPayload) : PulseEvent
+    /** S→C voice:transcript — an ephemeral live caption. */
+    data class VoiceTranscript(val payload: VoiceTranscriptPayload) : PulseEvent
+    /** S→C stage:state — full stage roster (room object rides as JsonElement). */
+    data class StageState(val payload: StageStatePayload) : PulseEvent
+    /** S→C stage:ended — the host closed the stage. */
+    data class StageEnded(val payload: StageEndedPayload) : PulseEvent
+    /** S→C space:state — full spatial board (room object rides as JsonElement). */
+    data class SpaceState(val payload: SpaceStatePayload) : PulseEvent
 }
 
 /** Device-side preferences (DataStore on Android, UserDefaults on iOS). */
@@ -60,6 +85,8 @@ interface PulsePrefsStore {
     val serverBase: Flow<String?>
     /** Voice playback speed (1x/1.5x/2x) — Wave 2 spec §1 row 12, applied live + on (re)start. */
     val voiceRate: Flow<Float>
+    /** Live-caption toggle for voice rooms (web parity key pulse-voice-captions). */
+    val voiceCaptions: Flow<Boolean>
 
     suspend fun setViewer(id: String?, name: String?, color: String? = null)
     suspend fun setFxMode(mode: String)
@@ -68,6 +95,7 @@ interface PulsePrefsStore {
     suspend fun setChatsListFilter(value: String)
     suspend fun setServerBase(value: String?)
     suspend fun setVoiceRate(value: Float)
+    suspend fun setVoiceCaptions(value: Boolean)
 }
 
 /** Contract every Pulse data source (remote-first, Room cache) must honor. */
@@ -360,4 +388,30 @@ interface PulseRepository {
 
     /** Emit one call:* signaling payload (offer/answer/ice/reject/cancel/hangup). */
     suspend fun emitCall(signal: CallSignalOut)
+
+    // ── Wave 5 voice rooms / stage / space (all best-effort emits) ─────
+    /** voice:join — registers this device's voice seat; re-emitted on reconnect. */
+    suspend fun emitVoiceJoin(conversationId: String, user: PulseVoiceUser)
+    suspend fun emitVoiceLeave(conversationId: String)
+    suspend fun emitVoicePtt(conversationId: String, userId: String, on: Boolean)
+    /** voice:chunk — 16kHz Int16LE base64, 4000-sample 250ms blocks, seq starts at 1. */
+    suspend fun emitVoiceChunk(conversationId: String, userId: String, seq: Long, data: String)
+    suspend fun emitVoiceTranscript(conversationId: String, userId: String, text: String)
+    /** stage:join — asHost:true ONLY for the claim-host path (first joiner is server-assigned). */
+    suspend fun emitStageJoin(conversationId: String, user: PulseVoiceUser, asHost: Boolean)
+    suspend fun emitStageHand(conversationId: String, userId: String, raised: Boolean)
+    suspend fun emitStageApprove(conversationId: String, byUserId: String, targetUserId: String)
+    suspend fun emitStageMute(conversationId: String, byUserId: String, targetUserId: String)
+    suspend fun emitStageEnd(conversationId: String, byUserId: String)
+    suspend fun emitStageLeave(conversationId: String)
+    suspend fun emitSpaceJoin(conversationId: String, user: PulseVoiceUser)
+    suspend fun emitSpaceMove(conversationId: String, x: Double, y: Double)
+    suspend fun emitSpaceLeave(conversationId: String)
+
+    /**
+     * POST /api/voice/transcribe {conversationId, requesterId, audioBase64} →
+     * { transcript } — 4s WAV windows of the LOCAL transmit stream; 60s
+     * per-request timeout; failures are honest silence (no retry).
+     */
+    suspend fun transcribeVoice(conversationId: String, requesterId: String, audioBase64: String): Result<VoiceTranscriptResultDto>
 }

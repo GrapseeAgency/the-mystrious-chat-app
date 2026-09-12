@@ -111,6 +111,8 @@ import app.pulse.feature.settings.ProfileScreen
 import app.pulse.feature.stories.StoriesViewModel
 import app.pulse.feature.stories.StoryComposerScreen
 import app.pulse.feature.stories.StoryViewerScreen
+import app.pulse.feature.voice.ui.VoiceRoomsOverlay
+import app.pulse.feature.voice.vm.VoiceRoomsViewModel
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.PulseTheme
@@ -275,10 +277,20 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
     // Wave 3 — activity-scoped call surface. The engine is a @Singleton; this
     // VM just exposes it to every screen + the root overlay.
     val callVm: CallViewModel = hiltViewModel()
+    // Wave 5 — the voice-rooms overlay rides the exact same pattern: the
+    // engine is a @Singleton (rooms outlive surfaces), the VM is the bridge.
+    val voiceVm: VoiceRoomsViewModel = hiltViewModel()
     val unread by shell.unread.collectAsStateWithLifecycle()
     val searchTick by shell.searchTick.collectAsStateWithLifecycle()
     val viewerName by session.viewerName.collectAsStateWithLifecycle()
     val viewerColor by session.viewerColor.collectAsStateWithLifecycle()
+    val voiceState by voiceVm.voiceState.collectAsStateWithLifecycle()
+
+    // Identity adoption for the voice/stage/space wire payloads (the calls
+    // surface receives the same values through callPeer's caller args).
+    LaunchedEffect(viewerId, viewerName, viewerColor) {
+        voiceVm.setIdentity(viewerId, viewerName, viewerColor)
+    }
 
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -403,6 +415,11 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                     jumpMessageId = entry.arguments?.getString("jump"),
                     onBack = { navController.popBackStack() },
                     onOpenThread = { id, rootId -> navController.navigate("room/$id/thread/$rootId") },
+                    // Wave 5 voice room entry — header mic + "Voice · N live"
+                    // pill, opening the overlay the same way calls open.
+                    voiceJoined = voiceState.joined && voiceState.conversationId == conversationId,
+                    voiceLiveCount = voiceState.roster.size,
+                    onOpenVoiceRoom = { voiceVm.openVoice(conversationId) },
                 )
             }
             composable(
@@ -519,6 +536,10 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
         // is not idle (ringing/connecting/connected/ended). Renders above the
         // dock and every tab — one call, one surface.
         CallOverlay(callVm)
+
+        // Wave 5 — the voice rooms overlay (voice room / stage / space) sits
+        // next to the call overlay; one room surface at a time, engine-owned.
+        VoiceRoomsOverlay(voiceVm)
     }
 }
 

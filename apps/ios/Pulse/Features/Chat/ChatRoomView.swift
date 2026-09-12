@@ -231,6 +231,14 @@ private struct RoomContent: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                // W5-f — the voice room entry (VR-1): mic tints active while
+                // any room of THIS conversation is joined; the "Voice · N
+                // live" pill shows when joined + surface closed.
+                if let rooms = session.voiceRooms {
+                    VoiceRoomChatEntry(model: rooms, conversationId: conversation.id)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     searchOpen.toggle()
                     if !searchOpen { searchQuery = "" }

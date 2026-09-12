@@ -139,6 +139,14 @@ struct RootView: View {
                     .ignoresSafeArea()
             }
 
+            // W5-f — the rooms surfaces (voice/stage/space) present through
+            // ONE fullScreenCover driven by the session model's surface
+            // state; hosted at the root so room membership survives chat
+            // navigation (VR-1) exactly like the call overlay does.
+            if let rooms = session.voiceRooms {
+                VoiceRoomsSurfaceHost(model: rooms)
+            }
+
             ParticleOverlayView(bus: session.particles)
         }
         .tint(PulseTheme.emerald)

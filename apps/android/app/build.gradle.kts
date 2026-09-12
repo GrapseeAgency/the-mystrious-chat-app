@@ -90,6 +90,7 @@ dependencies {
     implementation(project(":feature-chat"))
     implementation(project(":feature-stories"))
     implementation(project(":feature-calls"))
+    implementation(project(":feature-voice"))
     implementation(project(":feature-hub"))
     implementation(project(":feature-settings"))
 

@@ -454,6 +454,24 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireTranscribeResult.self, from: data)
     }
 
+    /// W5-f — POST /api/voice/transcribe { conversationId, requesterId,
+    /// audioBase64 } → { transcript } (≤280 chars). Live-caption ASR for
+    /// PTT voice rooms (web parity, voice-room-sheet.tsx). The request
+    /// carries up to a 4 s WAV window (~512 KB base64), so THIS call alone
+    /// gets a 60 s timeout — every other route keeps the ≤6 s house cap
+    /// (additive `timeoutCap` on the private transport, default unchanged).
+    /// Error mapping rides the shared send() kinds: 403 → .forbidden,
+    /// 422 → .validation, 502 → .server, 413 (window too large) → status
+    /// preserved on Failure for honest copy.
+    public func transcribeVoice(conversationId: String, requesterId: String, audioBase64: String) async throws -> WireVoiceTranscriptResult {
+        let data = try await postRaw(
+            "/api/voice/transcribe",
+            body: ["conversationId": conversationId, "requesterId": requesterId, "audioBase64": audioBase64],
+            timeoutCap: 60,
+        )
+        return try decoder.decode(WireVoiceTranscriptResult.self, from: data)
+    }
+
     /// POST /api/messages/{id}/viewed {userId} — consume a view-once
     /// attachment. Idempotent: the FIRST non-sender open stamps
     /// viewedAt/viewedBy forever; the {message} back is authoritative.
@@ -584,12 +602,12 @@ public struct PulseAPIClient: Sendable {
         return try await run(request)
     }
 
-    private func postRaw(_ path: String, body: [String: Any]) async throws -> Data {
+    private func postRaw(_ path: String, body: [String: Any], timeoutCap: TimeInterval = 6) async throws -> Data {
         var request = URLRequest(url: url(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        return try await send(request)
+        return try await send(request, timeoutCap: timeoutCap)
     }
 
     private func patchRaw(_ path: String, body: [String: Any]) async throws -> Data {
@@ -630,10 +648,12 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// Shared transport: status check + tolerant error-body enrichment.
-    private func send(_ request: URLRequest) async throws -> Data {
+    /// `timeoutCap` caps the request timeout (default 6 s — the house
+    /// fail-fast rule); ONLY the voice-transcribe call raises it to 60 s.
+    private func send(_ request: URLRequest, timeoutCap: TimeInterval = 6) async throws -> Data {
         var request = request
         // Fail fast — an unreachable gateway must never spin for a minute.
-        request.timeoutInterval = min(request.timeoutInterval, 6)
+        request.timeoutInterval = min(request.timeoutInterval, timeoutCap)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure(kind: .network, message: nil) }
         guard (200..<300).contains(http.statusCode) else {

@@ -56,6 +56,10 @@ public final class PulseSession: ObservableObject {
     /// W4 — Wave 4 stories feed owner (nil before identity exists). Tray,
     /// dock sheet, viewer and composer share this one instance.
     @Published public private(set) var stories: StoriesSessionModel?
+    /// W5-f — Wave 5 voice rooms / stage / space owner (nil before identity
+    /// exists). Room MEMBERSHIP SURVIVES surface close (VR-1); the
+    /// ChatRoomView mic entry + fullScreenCover host share this instance.
+    @Published public private(set) var voiceRooms: VoiceRoomSessionModel?
 
     /// Honest-toast center shared by every surface (not-yet-built features).
     public let toasts = ToastCenter()
@@ -92,6 +96,7 @@ public final class PulseSession: ObservableObject {
         startOutbox()
         startCalls(viewer: viewer)
         startStories(viewer: viewer)
+        startVoiceRooms(viewer: viewer)
 
         // Realtime bootstraps asynchronously: the manifest override must land
         // BEFORE the socket (and API rebinding) — non-blocking for first paint.
@@ -157,6 +162,21 @@ public final class PulseSession: ObservableObject {
     /// cache) once identity exists.
     private func startStories(viewer: PulseViewer) {
         stories = StoriesSessionModel(session: self)
+    }
+
+    // ── voice rooms / stage / space (W5-f) ───────────────
+
+    /// Builds the rooms owner once identity exists — pure models + the
+    /// audio engine live here; the socket stays session-owned.
+    private func startVoiceRooms(viewer: PulseViewer) {
+        voiceRooms = VoiceRoomSessionModel(session: self)
+    }
+
+    /// The rooms owner's emit funnel — the socket is session-owned
+    /// (mirrors emitCallSignal). Payloads come from the pure
+    /// VoiceRoomWire builders (unit-tested).
+    public func emitRoomSignal(event: String, payload: [String: Any]) {
+        socket?.emitRoomSignal(event: event, payload: payload)
     }
 
     /// The engine's signaling sender funnels here (the socket is session-owned).
@@ -278,6 +298,9 @@ public final class PulseSession: ObservableObject {
                 // W3-b — same trigger for the queued single-writer call rows.
                 callEngine?.flushCallLogQueueOnReconnect()
             }
+            // W5-f — the rooms owner consumes connect/reconnect too (voice
+            // re-join VR-8, stage resync ST-8, space attempts FIX #5).
+            voiceRooms?.handle(signal)
         case .typing(let conversationId, let userId, let userName, let isTyping):
             registerTyping(conversationId: conversationId, userId: userId, userName: userName, isTyping: isTyping)
         case .messageNew(_, let raw), .messageDeleted(_, let raw), .messageReact(_, let raw):
@@ -294,6 +317,11 @@ public final class PulseSession: ObservableObject {
             // (machine + WebRTC + single-writer log). Also relayed to feature
             // subscribers below.
             callEngine?.handleCallSignal(event: event, raw: raw)
+        case .voiceRoster, .voicePtt, .voiceChunk, .voiceTranscript,
+             .stageState, .stageEnded, .spaceState:
+            // W5-f — the rooms owner consumes the 7 rooms signals (they
+            // still reach every other subscriber via signals.send below).
+            voiceRooms?.handle(signal)
         default:
             break
         }

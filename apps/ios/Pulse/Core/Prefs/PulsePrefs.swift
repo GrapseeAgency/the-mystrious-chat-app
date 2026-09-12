@@ -32,6 +32,11 @@ public final class PulsePrefs: ObservableObject {
     public static let ambientModeKey = "fx.ambientMode"
     public static let appearanceKey = "appearance"
     public static let chatsFilterKey = "chats.listFilter"
+    /// W5-f — live-caption toggle for PTT voice rooms (web parity key
+    /// "pulse-voice-captions"; house prefix "voice.captions"). The ONLY
+    /// persisted artefact of the rooms feature — rooms themselves are
+    /// ephemeral (spec §1.4).
+    public static let voiceCaptionsKey = "voice.captions"
     private static let viewerKey = "pulse.viewer"
 
     public enum ChatsFilter: String, CaseIterable {
@@ -44,12 +49,15 @@ public final class PulsePrefs: ObservableObject {
         ambientMode = AmbientMode.parse(defaults.string(forKey: Self.ambientModeKey) ?? "aurora")
         appearance = defaults.string(forKey: Self.appearanceKey) ?? "system"
         chatsFilter = ChatsFilter(rawValue: defaults.string(forKey: Self.chatsFilterKey) ?? "") ?? .all
+        voiceCaptions = defaults.bool(forKey: Self.voiceCaptionsKey)
     }
 
     @Published public private(set) var viewer: PulseViewer?
     @Published public private(set) var ambientMode: AmbientMode
     @Published public private(set) var appearance: String
     @Published public private(set) var chatsFilter: ChatsFilter
+    /// W5-f — voice-room live captions (default off, setChatsFilter pattern).
+    @Published public private(set) var voiceCaptions: Bool
 
     public var hasIdentity: Bool { viewer != nil }
 
@@ -89,6 +97,12 @@ public final class PulsePrefs: ObservableObject {
     public func setChatsFilter(_ filter: ChatsFilter) {
         chatsFilter = filter
         defaults.set(filter.rawValue, forKey: Self.chatsFilterKey)
+    }
+
+    /// W5-f — persist the voice captions toggle (L89-92 pattern).
+    public func setVoiceCaptions(_ enabled: Bool) {
+        voiceCaptions = enabled
+        defaults.set(enabled, forKey: Self.voiceCaptionsKey)
     }
 
     private static func readViewer(_ defaults: UserDefaults) -> PulseViewer? {

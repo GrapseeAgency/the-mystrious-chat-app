@@ -63,11 +63,20 @@ import app.pulse.protocol.CallOfferDto
 import app.pulse.protocol.CallRejectDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.PulseJson
+import app.pulse.protocol.PulseVoiceUser
 import app.pulse.protocol.SavedItemDto
+import app.pulse.protocol.SpaceStatePayload
+import app.pulse.protocol.StageEndedPayload
+import app.pulse.protocol.StageStatePayload
 import app.pulse.protocol.StoriesPageDto
 import app.pulse.protocol.StoryItemDto
 import app.pulse.protocol.TopicDto
 import app.pulse.protocol.UserDto
+import app.pulse.protocol.VoiceChunkPayload
+import app.pulse.protocol.VoicePttPayload
+import app.pulse.protocol.VoiceRosterPayload
+import app.pulse.protocol.VoiceTranscriptPayload
+import app.pulse.protocol.VoiceTranscriptResultDto
 import app.pulse.protocol.decodeLinkPreviewDto
 import app.pulse.protocol.decodePollDto
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -200,13 +209,35 @@ class PulseRepositoryImpl @Inject constructor(
                         PulseEvent.Typing(signal.conversationId, signal.userId, signal.userName, signal.isTyping),
                     )
                     is PulseSocketClient.Signal.ConversationUpdated -> scheduleConversationsRefresh()
-                    is PulseSocketClient.Signal.VoiceRoster -> Unit
-                    is PulseSocketClient.Signal.VoicePtt -> Unit
-                    is PulseSocketClient.Signal.VoiceChunk -> Unit
-                    is PulseSocketClient.Signal.VoiceTranscript -> Unit
-                    is PulseSocketClient.Signal.StageState -> Unit
-                    is PulseSocketClient.Signal.StageEnded -> Unit
-                    is PulseSocketClient.Signal.SpaceState -> Unit
+                    is PulseSocketClient.Signal.VoiceRoster -> eventsBus.tryEmit(
+                        PulseEvent.VoiceRoster(
+                            VoiceRosterPayload(conversationId = signal.conversationId, roster = signal.roster),
+                        ),
+                    )
+                    is PulseSocketClient.Signal.VoicePtt -> eventsBus.tryEmit(
+                        PulseEvent.VoicePtt(
+                            VoicePttPayload(signal.conversationId, signal.userId, signal.active),
+                        ),
+                    )
+                    is PulseSocketClient.Signal.VoiceChunk -> eventsBus.tryEmit(
+                        PulseEvent.VoiceChunk(
+                            VoiceChunkPayload(signal.conversationId, signal.userId, signal.seq, signal.data),
+                        ),
+                    )
+                    is PulseSocketClient.Signal.VoiceTranscript -> eventsBus.tryEmit(
+                        PulseEvent.VoiceTranscript(
+                            VoiceTranscriptPayload(signal.conversationId, signal.speakerId, signal.text),
+                        ),
+                    )
+                    is PulseSocketClient.Signal.StageState -> eventsBus.tryEmit(
+                        PulseEvent.StageState(StageStatePayload(signal.conversationId, signal.state)),
+                    )
+                    is PulseSocketClient.Signal.StageEnded -> eventsBus.tryEmit(
+                        PulseEvent.StageEnded(StageEndedPayload(signal.conversationId)),
+                    )
+                    is PulseSocketClient.Signal.SpaceState -> eventsBus.tryEmit(
+                        PulseEvent.SpaceState(SpaceStatePayload(signal.conversationId, signal.state)),
+                    )
                     is PulseSocketClient.Signal.CallSignal -> eventsBus.tryEmit(
                         PulseEvent.CallSignal(callSignalToDomain(signal.signal)),
                     )
@@ -1477,6 +1508,76 @@ class PulseRepositoryImpl @Inject constructor(
             )
         }
     }
+
+    // ── Wave 5 voice rooms / stage / space — best-effort socket emits ──
+    // Same contract as emitCall: disconnected/offline = silent no-op (the
+    // engines re-join on the next connect); these NEVER throw.
+
+    override suspend fun emitVoiceJoin(conversationId: String, user: PulseVoiceUser) {
+        socket.emitVoiceJoin(conversationId, user)
+    }
+
+    override suspend fun emitVoiceLeave(conversationId: String) {
+        socket.emitVoiceLeave(conversationId)
+    }
+
+    override suspend fun emitVoicePtt(conversationId: String, userId: String, on: Boolean) {
+        socket.emitVoicePtt(conversationId, userId, on)
+    }
+
+    override suspend fun emitVoiceChunk(conversationId: String, userId: String, seq: Long, data: String) {
+        socket.emitVoiceChunk(conversationId, userId, seq, data)
+    }
+
+    override suspend fun emitVoiceTranscript(conversationId: String, userId: String, text: String) {
+        socket.emitVoiceTranscript(conversationId, userId, text)
+    }
+
+    override suspend fun emitStageJoin(conversationId: String, user: PulseVoiceUser, asHost: Boolean) {
+        socket.emitStageJoin(conversationId, user, asHost)
+    }
+
+    override suspend fun emitStageHand(conversationId: String, userId: String, raised: Boolean) {
+        socket.emitStageHand(conversationId, userId, raised)
+    }
+
+    override suspend fun emitStageApprove(conversationId: String, byUserId: String, targetUserId: String) {
+        socket.emitStageApprove(conversationId, byUserId, targetUserId)
+    }
+
+    override suspend fun emitStageMute(conversationId: String, byUserId: String, targetUserId: String) {
+        socket.emitStageMute(conversationId, byUserId, targetUserId)
+    }
+
+    override suspend fun emitStageEnd(conversationId: String, byUserId: String) {
+        socket.emitStageEnd(conversationId, byUserId)
+    }
+
+    override suspend fun emitStageLeave(conversationId: String) {
+        socket.emitStageLeave(conversationId)
+    }
+
+    override suspend fun emitSpaceJoin(conversationId: String, user: PulseVoiceUser) {
+        socket.emitSpaceJoin(conversationId, user)
+    }
+
+    override suspend fun emitSpaceMove(conversationId: String, x: Double, y: Double) {
+        socket.emitSpaceMove(conversationId, x, y)
+    }
+
+    override suspend fun emitSpaceLeave(conversationId: String) {
+        socket.emitSpaceLeave(conversationId)
+    }
+
+    override suspend fun transcribeVoice(
+        conversationId: String,
+        requesterId: String,
+        audioBase64: String,
+    ): Result<VoiceTranscriptResultDto> =
+        when (val r = api.transcribeVoice(conversationId, requesterId, audioBase64)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
 
     /** POST one terminal call-log row; network-class failures enqueue the EXACT payload. */
     private suspend fun postCallLog(payload: kotlinx.serialization.json.JsonObject): Result<Unit> =

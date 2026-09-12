@@ -37,6 +37,8 @@ class PulsePrefsStoreImpl @Inject constructor(
         val CHATS_FILTER = stringPreferencesKey("chats.listFilter")
         val SERVER_BASE = stringPreferencesKey("net.serverBase")
         val VOICE_RATE = floatPreferencesKey("voice.rate")
+        /** Web parity key: pulse-voice-captions (live-caption toggle for voice rooms). */
+        val VOICE_CAPTIONS = booleanPreferencesKey("voice.captions")
     }
 
     override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
@@ -48,6 +50,7 @@ class PulsePrefsStoreImpl @Inject constructor(
     override val chatsListFilter: Flow<String> = context.pulsePrefs.data.map { it[Keys.CHATS_FILTER] ?: "all" }
     override val serverBase: Flow<String?> = context.pulsePrefs.data.map { it[Keys.SERVER_BASE]?.takeIf { v -> v.isNotBlank() } }
     override val voiceRate: Flow<Float> = context.pulsePrefs.data.map { it[Keys.VOICE_RATE] ?: 1f }
+    override val voiceCaptions: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.VOICE_CAPTIONS] ?: false }
 
     override suspend fun setViewer(id: String?, name: String?, color: String?) {
         context.pulsePrefs.edit { p ->
@@ -81,6 +84,10 @@ class PulsePrefsStoreImpl @Inject constructor(
 
     override suspend fun setVoiceRate(value: Float) {
         context.pulsePrefs.edit { it[Keys.VOICE_RATE] = value }
+    }
+
+    override suspend fun setVoiceCaptions(value: Boolean) {
+        context.pulsePrefs.edit { it[Keys.VOICE_CAPTIONS] = value }
     }
 
     override suspend fun setServerBase(value: String?) {
