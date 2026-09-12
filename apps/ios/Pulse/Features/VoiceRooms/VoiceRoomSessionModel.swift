@@ -131,7 +131,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
             guard conversationId == stage.conversationId else { return }
             finishStageTeardown(toast: "The stage ended")
         case .spaceState(let conversationId, let raw):
-            guard conversationId == space.conversationId else { return }
+            guard conversationId == spaceConversationId else { return }
             if let state = Self.decode(WireSpaceState.self, from: raw) {
                 _ = space.apply(state: state, nowMs: nowMs())
             }
@@ -288,7 +288,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
             nowMs: now,
             chunkDurationMs: durationMs,
         ) else { return }
-        engine.play(userId: userId, samples: samples, atMs: atMs, nowMs: now)
+        engine.play(userId: userId, base64: data, atMs: atMs, nowMs: now)
     }
 
     private func handleLocalChunk(_ chunk: VoicePcmChunkOut) {

@@ -253,23 +253,15 @@ final class VoiceRoomAudioEngine {
     }
 
     /// AVAudioConverter → 16 kHz mono Int16 samples (linear resample
-    /// handled by the converter).
+    /// handled by the converter). The input block is passed per
+    /// `convert(to:error:withInputFrom:)` call — AVAudioConverter has no
+    /// settable inputBlock property.
     private func convertTo16kMono(_ input: AVAudioPCMBuffer) -> [Int16]? {
         guard let converter else { return nil }
         guard input.frameLength > 0 else { return nil }
 
         var collected: [Int16] = []
         var source: AVAudioPCMBuffer? = input
-        converter.inputBlock = { _, status in
-            if let current = source {
-                source = nil
-                status.pointee = .haveData
-                return current
-            }
-            status.pointee = .noDataNow
-            return nil
-        }
-        defer { converter.inputBlock = nil }
 
         let ratio = Self.sampleRate / max(input.format.sampleRate, 1)
         let capacity = max(AVAudioFrameCount((Double(input.frameLength) * ratio).rounded(.up)) + 64, 64)
@@ -277,7 +269,15 @@ final class VoiceRoomAudioEngine {
         while true {
             guard let out = AVAudioPCMBuffer(pcmFormat: converter.outputFormat, frameCapacity: capacity) else { break }
             var conversionError: NSError?
-            let result = converter.convert(to: out, error: &conversionError)
+            let result = converter.convert(to: out, error: &conversionError) { _, status in
+                if let current = source {
+                    source = nil
+                    status.pointee = .haveData
+                    return current
+                }
+                status.pointee = .noDataNow
+                return nil
+            }
             if result == .haveData, out.frameLength > 0, let channel = out.int16ChannelData?[0] {
                 collected.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(out.frameLength)))
             }

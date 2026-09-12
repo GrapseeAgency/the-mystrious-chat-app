@@ -383,7 +383,7 @@ public struct StageEndConfirm: Equatable, Sendable {
     /// tap inside the window fires the end (returns true); past the window
     /// the arm resets.
     public mutating func tap(nowMs: Double) -> Bool {
-        if let firstTapMs, nowMs - firstTapMs <= Self.resetMs {
+        if let armedAt = firstTapMs, nowMs - armedAt <= Self.resetMs {
             firstTapMs = nil
             return true
         }
