@@ -169,7 +169,7 @@ struct StoryViewerView: View {
                     Button {
                         confirmDelete = false
                         let id = current.id
-                        stories.deleteStory(id: id)
+                        Task { _ = await stories.deleteStory(id: id) }
                     } label: {
                         Image(systemName: "trash.fill")
                             .font(.system(size: 15, weight: .semibold))

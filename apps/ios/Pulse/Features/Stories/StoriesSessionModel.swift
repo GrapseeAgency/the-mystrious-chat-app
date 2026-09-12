@@ -100,18 +100,13 @@ public final class StoriesSessionModel: ObservableObject {
     /// on the next fetch.
     public func markViewedLocally(storyId: String, viewCount: Int?) {
         groups = groups.map { g in
-            var group = g
-            let stories = group.stories?.map { s in
+            let stories = (g.stories ?? []).map { s in
                 s.id == storyId
                     ? WireStoryItemCopy(s, viewedByMe: true, viewCount: viewCount ?? (s.viewCount ?? 0))
                     : s
             }
-            group.stories = stories
-            if group.mine != true {
-                let all = (stories ?? []).allSatisfy { $0.viewedByMe == true }
-                group.allSeen = all
-            }
-            return group
+            let allSeen = g.mine == true ? g.allSeen : stories.allSatisfy { $0.viewedByMe == true }
+            return WireStoryGroupCopy(g, allSeen: allSeen, stories: stories)
         }
     }
 
@@ -149,10 +144,9 @@ public final class StoriesSessionModel: ObservableObject {
 
     private func removeLocal(_ storyId: String) {
         groups = groups.compactMap { g in
-            var group = g
-            group.stories = group.stories?.filter { $0.id != storyId }
-            if (group.stories ?? []).isEmpty { return nil }
-            return group
+            let stories = (g.stories ?? []).filter { $0.id != storyId }
+            if stories.isEmpty { return nil }
+            return WireStoryGroupCopy(g, stories: stories)
         }
     }
 
@@ -169,10 +163,9 @@ public final class StoriesSessionModel: ObservableObject {
     /// grouping — no network probes; a group left empty disappears entirely.
     public static func liveGroups(_ groups: [WireStoryGroup], nowMs: Int64) -> [WireStoryGroup] {
         groups.compactMap { g in
-            var group = g
-            group.stories = (g.stories ?? []).filter { (storyEpochMs($0.expiresAt)) > nowMs }
-            guard !(group.stories ?? []).isEmpty else { return nil }
-            return group
+            let stories = (g.stories ?? []).filter { (storyEpochMs($0.expiresAt)) > nowMs }
+            guard !stories.isEmpty else { return nil }
+            return WireStoryGroupCopy(g, stories: stories)
         }
     }
 }

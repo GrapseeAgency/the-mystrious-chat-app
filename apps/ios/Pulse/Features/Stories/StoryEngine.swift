@@ -174,7 +174,7 @@ final class StoryViewerMachine: ObservableObject {
 
         var current: FlatStory? { flat.indices.contains(index) ? flat[index] : nil }
         /// 0...1 of the CURRENT story's progress bar.
-        var progress: Double { min(1, max(0, Double(elapsedMs) / Double(Self.durationMs))) }
+        var progress: Double { min(1, max(0, Double(elapsedMs) / Double(StoryViewerMachine.durationMs))) }
     }
 
     static let durationMs: Int64 = 5_000
@@ -347,6 +347,20 @@ final class StoryViewerMachine: ObservableObject {
         }
         return PendingMark(storyId: id, attempt: 0)
     }
+}
+
+/// Wire groups are structs with let fields — build the mutated copy.
+func WireStoryGroupCopy(
+    _ group: WireStoryGroup,
+    allSeen: Bool?? = nil,
+    stories: [WireStoryItem]? = nil,
+) -> WireStoryGroup {
+    WireStoryGroup(
+        user: group.user,
+        mine: group.mine,
+        allSeen: allSeen ?? group.allSeen,
+        stories: stories ?? group.stories,
+    )
 }
 
 /// Wire items are structs with let fields — build the seen/count-updated copy.
