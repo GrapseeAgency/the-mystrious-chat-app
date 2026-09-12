@@ -30,8 +30,8 @@ jobs:
       - name: Set up Gradle (caching)
         uses: gradle/actions/setup-gradle@v4
 
-      - name: JVM tests (pure Kotlin — domain + live-protocol + socket round-trip)
-        run: ./gradlew :domain:test :protocol:test :core:build
+      - name: JVM tests (pure Kotlin — domain + live-protocol + socket round-trip + W4 stories)
+        run: ./gradlew :domain:test :protocol:test :core:build :data:testDebugUnitTest :feature-stories:testDebugUnitTest
 
       - name: Assemble signed release APK (committed LiveUpdate keystore)
         run: ./gradlew :app:assembleRelease
