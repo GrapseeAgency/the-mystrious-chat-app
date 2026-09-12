@@ -270,7 +270,7 @@ final class VoiceRoomMachineTests: XCTestCase {
 
         // Raised again, server confirms → FIFO queue position visible.
         stage.setHandRaised(true)
-        stage.apply(state: stageState(listeners: [person("me")], hands: [person("other"), person("me")]))
+        stage.apply(state: stageState(hands: [person("other"), person("me")], listeners: [person("me")]))
         XCTAssertTrue(stage.handRaised)
         XCTAssertEqual(stage.handQueue.map(\.id), ["other", "me"])
         XCTAssertEqual(stage.listenerTotal, 1)
