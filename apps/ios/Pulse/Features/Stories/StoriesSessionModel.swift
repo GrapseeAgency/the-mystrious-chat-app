@@ -11,25 +11,25 @@ import Foundation
 /// persistence = the GRDB v6 storyCache snapshot: the tray renders instantly
 /// on cold start/offline and the next successful fetch overwrites it.
 @MainActor
-final class StoriesSessionModel: ObservableObject {
+public final class StoriesSessionModel: ObservableObject {
     /// D5 (web defect fixed): error ≠ empty — `lastError != nil` with no
     /// groups means the transport failed (retry offered); nil means an
     /// honestly empty feed.
-    struct Flags: Equatable {
-        var loading = false
-        var loadedOnce = false
-        var lastError: String?
+    public struct Flags: Equatable {
+        public var loading = false
+        public var loadedOnce = false
+        public var lastError: String?
     }
 
-    @Published private(set) var groups: [WireStoryGroup] = []
-    @Published private(set) var flags = Flags()
-    @Published private(set) var viewers: [WireStoryViewer] = []
-    @Published private(set) var viewersLoading = false
+    @Published public private(set) var groups: [WireStoryGroup] = []
+    @Published public private(set) var flags = Flags()
+    @Published public private(set) var viewers: [WireStoryViewer] = []
+    @Published public private(set) var viewersLoading = false
 
     private unowned let session: PulseSession
     private var cacheKey: String { "stories:\(session.viewer?.id ?? "")" }
 
-    init(session: PulseSession) {
+    public init(session: PulseSession) {
         self.session = session
         // Cold-start rehydrate — instant tray from the last good snapshot.
         if let store = session.store,
@@ -42,7 +42,7 @@ final class StoriesSessionModel: ObservableObject {
     }
 
     /// Pull the feed. quiet=false flips the loading flag (first load).
-    func refresh(quiet: Bool = false) async {
+    public func refresh(quiet: Bool = false) async {
         guard session.viewer != nil else { return }
         if !quiet { flags.loading = true; flags.lastError = nil }
         if let page = await session.api.stories() {
@@ -63,7 +63,7 @@ final class StoriesSessionModel: ObservableObject {
 
     /// 60s poll while a surface is active (web refetchInterval parity).
     private var pollTask: Task<Void, Never>?
-    func startPolling() {
+    public func startPolling() {
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -72,7 +72,7 @@ final class StoriesSessionModel: ObservableObject {
             }
         }
     }
-    func stopPolling() {
+    public func stopPolling() {
         pollTask?.cancel()
         pollTask = nil
     }
@@ -81,7 +81,7 @@ final class StoriesSessionModel: ObservableObject {
 
     /// POST /api/stories → refresh. Returns the server's error copy on failure.
     @discardableResult
-    func publish(caption: String, background: String?, imagePath: String?) async -> String? {
+    public func publish(caption: String, background: String?, imagePath: String?) async -> String? {
         do {
             _ = try await session.api.postStory(caption: caption, background: background, imagePath: imagePath)
             await refresh(quiet: true)
@@ -98,7 +98,7 @@ final class StoriesSessionModel: ObservableObject {
     /// Optimistic seen-flip (D6) — the POST result lands here; local update
     /// happens immediately so rings react instantly, server truth reconciles
     /// on the next fetch.
-    func markViewedLocally(storyId: String, viewCount: Int?) {
+    public func markViewedLocally(storyId: String, viewCount: Int?) {
         groups = groups.map { g in
             var group = g
             let stories = group.stories?.map { s in
@@ -117,7 +117,7 @@ final class StoriesSessionModel: ObservableObject {
 
     /// Optimistic removal; the viewer's machine auto-advances (D3) when the
     /// refreshed feed reports the story gone.
-    func deleteStory(id: String) async -> Bool {
+    public func deleteStory(id: String) async -> Bool {
         removeLocal(id)
         do {
             try await session.api.deleteStory(id: id)
@@ -132,7 +132,7 @@ final class StoriesSessionModel: ObservableObject {
     // ── owner viewers sheet (D7) ────────────────────────────
 
     /// One fetch — the sheet re-issues it every ≤5s while open.
-    func loadViewers(storyId: String) async {
+    public func loadViewers(storyId: String) async {
         viewersLoading = true
         if let list = try? await session.api.storyViewers(id: storyId) {
             viewers = list
@@ -140,7 +140,7 @@ final class StoriesSessionModel: ObservableObject {
         viewersLoading = false
     }
 
-    func resetViewers() {
+    public func resetViewers() {
         viewers = []
         viewersLoading = false
     }
@@ -167,7 +167,7 @@ final class StoriesSessionModel: ObservableObject {
 
     /// D2 (web defect fixed): expired stories are dropped OFFLINE before any
     /// grouping — no network probes; a group left empty disappears entirely.
-    static func liveGroups(_ groups: [WireStoryGroup], nowMs: Int64) -> [WireStoryGroup] {
+    public static func liveGroups(_ groups: [WireStoryGroup], nowMs: Int64) -> [WireStoryGroup] {
         groups.compactMap { g in
             var group = g
             group.stories = (g.stories ?? []).filter { (storyEpochMs($0.expiresAt)) > nowMs }
