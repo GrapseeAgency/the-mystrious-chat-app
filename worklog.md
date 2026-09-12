@@ -2632,3 +2632,19 @@ Work Log:
 Stage Summary:
 - All 7 readiness items verified; hardware-validation process is execution-ready. Wave 3-HW remains OPEN — NOT complete (0 device cases run, per directive).
 - Pending: (1) user rotates the exposed PAT; (2) 1 unpushed docs commit (c19b6c6) goes up with the fresh credential; (3) operator runs apps/qa/hw-wave3/README.md on physical Android + iPhone + public gateway + TURN.
+
+---
+Task ID: GATE-HOLD
+Agent: Z.ai Code (orchestrator)
+Task: PULSE — WAVE 3-HW REMAINS OPEN — acknowledge directive, hold state, defer c19b6c6 push until new PAT supplied
+
+Work Log:
+- Verified local repo state: c19b6c6 (docs fix: kit points at v0.5.1-native, versionCode 14, CDN-channel refresh step; 3 files, +16/-5) exists locally, is UNPUSHED — held per order.
+- Verified tag v0.5.1-native = 6a8a88e (release build, versionCode 14, TURN ICE plumbing).
+- Security sweep: remote.origin.url is token-free; credential.helper=store but ~/.git-credentials contains 0 occurrences of the old PAT. No stored credential can authenticate with the old token. No git network auth performed this round.
+- Status re-confirmed without any new claims: CODE/CI VERIFIED, INFRASTRUCTURE READY, HARDWARE NOT TESTED, WAVE 3-HW OPEN. All device cases in apps/qa/hw-wave3/RESULTS.md remain "NOT TESTED — BLOCKED: NO HARDWARE". No simulation, no PASS conversion.
+
+Stage Summary:
+- HOLD state locked. Remaining work = REAL HARDWARE ACCEPTANCE GATE only (physical Android + physical iPhone + public gateway + TURN, all M1/M2/F1-F16/S1-S7/H1-H5 cases, TEST/DEVICE A/DEVICE B/NETWORK/EXPECTED/ACTUAL/PASS-FAIL/EVIDENCE per case).
+- c19b6c6 push is gated on: user rotates PAT on GitHub -> supplies new token -> push happens only then.
+- After real-device tests: update completion report, then request Wave 4 approval. No Wave 4 work started; no Stories/feature work; stopped as ordered.
