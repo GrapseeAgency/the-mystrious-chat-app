@@ -10,6 +10,7 @@ import app.pulse.data.local.MessageDao
 import app.pulse.data.local.OutboxDao
 import app.pulse.data.local.PulseDatabase
 import app.pulse.data.local.SavedDao
+import app.pulse.data.local.StoryDao
 import app.pulse.data.local.TopicDao
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
@@ -62,14 +63,16 @@ object DataModule {
         Room.databaseBuilder(context, PulseDatabase::class.java, PulseDatabase.NAME)
             // Destructive migration is GONE — v3→v4 (outbox + draft),
             // v4→v5 (message media + membersJson), v5→v6 (Wave 2 depth
-            // columns + topics + savedMessages) and v6→v7 (Wave 3 call
-            // history cache + call-log offline queue) are additive
-            // ALTER/CREATEs; every deployed row must survive.
+            // columns + topics + savedMessages), v6→v7 (Wave 3 call
+            // history cache + call-log offline queue) and v7→v8 (Wave 4
+            // stories snapshot cache) are additive ALTER/CREATEs; every
+            // deployed row must survive.
             .addMigrations(
                 PulseDatabase.MIGRATION_3_4,
                 PulseDatabase.MIGRATION_4_5,
                 PulseDatabase.MIGRATION_5_6,
                 PulseDatabase.MIGRATION_6_7,
+                PulseDatabase.MIGRATION_7_8,
             )
             .build()
 
@@ -97,6 +100,9 @@ object DataModule {
 
     @Provides
     fun provideCallLogDao(db: PulseDatabase): CallLogDao = db.callLogDao()
+
+    @Provides
+    fun provideStoryDao(db: PulseDatabase): StoryDao = db.storyDao()
 
     /** Domain stays pure Kotlin (no javax.inject) — the graph provides use cases here. */
     @Provides

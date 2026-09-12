@@ -40,6 +40,11 @@ import kotlinx.coroutines.flow.Flow
  * transcribedAt/pollJson/linkPreviewJson/topicId on messages, plus the NEW
  * `topics` rail and `savedMessages` library tables — all additive
  * (MIGRATION_5_6).
+ * v7 (Wave 3) adds the call-history cache `callLogCache` and the single-writer
+ * offline queue `callLogQueue` (MIGRATION_6_7).
+ * v8 (Wave 4) adds the stories snapshot cache `story_cache` (one canonical
+ * JSON blob per key mirroring the GET /api/stories DTO page) — additive
+ * (MIGRATION_7_8).
  */
 @Entity(tableName = "conversations")
 data class ConversationEntity(
@@ -698,6 +703,38 @@ interface SavedDao {
     suspend fun count(): Int
 }
 
+/**
+ * Stories offline cache (Wave 4 v8) — ONE canonical JSON blob per key
+ * ("stories:<viewerId>") mirroring the exact GET /api/stories DTO page the
+ * network returned. Stories are ephemeral 24h rows (no per-row Room table —
+ * the whole page is replaced atomically on every refresh), so the cache is a
+ * snapshot store: network success overwrites it, network failure serves it.
+ */
+@Entity(tableName = "story_cache")
+data class StoryCacheEntity(
+    @PrimaryKey val key: String,
+    val groupsJson: String,
+    val updatedAt: Long,
+)
+
+@Dao
+interface StoryDao {
+    @Upsert
+    suspend fun upsert(item: StoryCacheEntity)
+
+    @Query("SELECT * FROM story_cache WHERE `key` = :key")
+    suspend fun get(key: String): StoryCacheEntity?
+
+    @Query("SELECT COUNT(*) FROM story_cache")
+    suspend fun allCount(): Int
+
+    @Query("DELETE FROM story_cache WHERE `key` = :key")
+    suspend fun delete(key: String)
+
+    @Query("DELETE FROM story_cache")
+    suspend fun clearAll()
+}
+
 @Database(
     entities = [
         ConversationEntity::class,
@@ -708,8 +745,9 @@ interface SavedDao {
         SavedMessageEntity::class,
         CallLogCacheEntity::class,
         CallLogQueueEntity::class,
+        StoryCacheEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -720,6 +758,7 @@ abstract class PulseDatabase : RoomDatabase() {
     abstract fun topicDao(): TopicDao
     abstract fun savedDao(): SavedDao
     abstract fun callLogDao(): CallLogDao
+    abstract fun storyDao(): StoryDao
 
     companion object {
         const val NAME = "pulse.db"
@@ -814,6 +853,20 @@ abstract class PulseDatabase : RoomDatabase() {
                         "`payloadJson` TEXT NOT NULL, `attempts` INTEGER NOT NULL DEFAULT 0, `createdAt` TEXT NOT NULL)",
                 )
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_callLogQueue_payloadJson` ON `callLogQueue` (`payloadJson`)")
+            }
+        }
+
+        /**
+         * v7 → v8 (Wave 4): add the stories snapshot cache (one JSON blob per
+         * key mirroring the GET /api/stories DTO page). Additive CREATE — every
+         * deployed row survives untouched.
+         */
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `story_cache` (`key` TEXT NOT NULL PRIMARY KEY, " +
+                        "`groupsJson` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL)",
+                )
             }
         }
     }

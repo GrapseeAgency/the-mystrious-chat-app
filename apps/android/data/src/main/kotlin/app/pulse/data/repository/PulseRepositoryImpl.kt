@@ -16,6 +16,8 @@ import app.pulse.data.local.MessageEntity
 import app.pulse.data.local.OutboxDao
 import app.pulse.data.local.OutboxEntity
 import app.pulse.data.local.SavedDao
+import app.pulse.data.local.StoryCacheEntity
+import app.pulse.data.local.StoryDao
 import app.pulse.data.local.SavedMessageEntity
 import app.pulse.data.local.TopicDao
 import app.pulse.data.local.TopicEntity
@@ -40,7 +42,10 @@ import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.OutboxFailureClass
 import app.pulse.domain.model.Reaction
 import app.pulse.domain.model.SavedItem
-import app.pulse.domain.model.StoryCell
+import app.pulse.domain.model.StoryGroup
+import app.pulse.domain.model.StoryItem
+import app.pulse.domain.model.StoryUser
+import app.pulse.domain.model.StoryViewer
 import app.pulse.domain.model.Topic
 import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
@@ -59,6 +64,8 @@ import app.pulse.protocol.CallRejectDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.SavedItemDto
+import app.pulse.protocol.StoriesPageDto
+import app.pulse.protocol.StoryItemDto
 import app.pulse.protocol.TopicDto
 import app.pulse.protocol.UserDto
 import app.pulse.protocol.decodeLinkPreviewDto
@@ -93,6 +100,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
+/** Stories live exactly 24h — the same TTL the gateway stamps (route.ts STORY_TTL_MS). */
+private const val STORY_TTL_MS: Long = 24L * 60 * 60 * 1000
+
 /**
  * REAL remote-first, Room-cached repository (N3 UI-era surface).
  * Reads flow from Room; refreshes pull the gateway and upsert; writes POST
@@ -109,6 +119,7 @@ class PulseRepositoryImpl @Inject constructor(
     private val topicDao: TopicDao,
     private val savedDao: SavedDao,
     private val callLogDao: CallLogDao,
+    private val storyDao: StoryDao,
     private val socket: PulseSocketClient,
     @ApplicationContext private val context: Context,
 ) : PulseRepository {
@@ -981,21 +992,124 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun stories(): Result<List<StoryCell>> = when (val r = api.stories(viewerId ?: "")) {
-        is PulseResult.Success -> Result.success(
-            r.value.groups.mapNotNull { group ->
-                val user = group.user ?: return@mapNotNull null
-                if (group.stories.isEmpty()) return@mapNotNull null
-                StoryCell(
-                    userId = user.id,
-                    name = user.name,
-                    color = user.color,
-                    mine = group.mine,
-                    unseen = !group.allSeen,
-                )
-            },
+    private fun isoToEpochMs(iso: String?): Long? = iso?.takeIf { it.isNotBlank() }?.let {
+        runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
+    }
+
+    override suspend fun stories(): Result<List<StoryGroup>> {
+        val key = "stories:" + (viewerId ?: "")
+        val nowMs = System.currentTimeMillis()
+        return when (val r = api.stories(viewerId ?: "")) {
+            is PulseResult.Success -> {
+                // Offline cache: persist the CANONICAL wire page (pre-mapping)
+                // so a cached replay walks the exact same mapper — including
+                // the D2 expiry filter — as a live fetch.
+                runCatching {
+                    storyDao.upsert(
+                        StoryCacheEntity(
+                            key = key,
+                            groupsJson = PulseJson.encodeToString(StoriesPageDto.serializer(), r.value),
+                            updatedAt = nowMs,
+                        ),
+                    )
+                }
+                Result.success(r.value.toDomainGroups(nowMs))
+            }
+            is PulseResult.Failure -> {
+                val cached = runCatching { storyDao.get(key) }.getOrNull()
+                val page = cached?.let {
+                    runCatching {
+                        PulseJson.decodeFromString(StoriesPageDto.serializer(), it.groupsJson)
+                    }.getOrNull()
+                }
+                if (page != null) {
+                    Result.success(page.toDomainGroups(nowMs))
+                } else {
+                    // Honest error only when there is nothing cached to serve.
+                    Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+                }
+            }
+        }
+    }
+
+    override suspend fun createStory(caption: String, background: String?, imagePath: String?): Result<StoryItem> =
+        when (val r = api.postStory(viewerId ?: "", caption, background, imagePath)) {
+            is PulseResult.Success -> {
+                val dto = r.value.story
+                val item = dto?.let { it.toStoryItem() }
+                if (item == null) {
+                    Result.failure(IllegalStateException("VALIDATION: story missing in 201 body"))
+                } else {
+                    Result.success(item)
+                }
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun markStoryViewed(storyId: String): Result<Int> =
+        when (val r = api.markStoryViewed(storyId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.viewCount)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun storyViewers(storyId: String): Result<List<StoryViewer>> =
+        when (val r = api.storyViewers(storyId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(
+                r.value.viewers.map {
+                    StoryViewer(
+                        userId = it.userId,
+                        name = it.name,
+                        username = it.username,
+                        color = it.color,
+                        viewedAtIso = it.viewedAt,
+                    )
+                },
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun deleteStory(storyId: String): Result<Unit> =
+        when (val r = api.deleteStory(storyId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    /** Wire DTO → domain story (NO expiry filtering here — filter lives in [toDomainGroups]/the machine). */
+    private fun StoryItemDto.toStoryItem(): StoryItem? {
+        if (id.isBlank()) return null
+        val created = isoToEpochMs(createdAt) ?: 0L
+        return StoryItem(
+            id = id,
+            kind = if (imagePath != null) "image" else (kind ?: "text"),
+            imagePath = imagePath,
+            caption = caption,
+            background = if (imagePath != null) "emerald" else background.ifBlank { "emerald" },
+            createdAtEpochMs = created,
+            expiresAtEpochMs = isoToEpochMs(expiresAt) ?: (created + STORY_TTL_MS),
+            viewCount = viewCount,
+            viewedByMe = viewedByMe,
+            createdAtIso = createdAt,
+            expiresAtIso = expiresAt,
         )
-        is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    }
+
+    /**
+     * DTO page → domain groups. WEB DEFECT D2 (client-side expiry): stories
+     * with expiresAt <= now are dropped HERE, offline, before any grouping —
+     * no network probes. `allSeen` is recomputed over the survivors so a
+     * group whose only unseen story expired reads as seen. Group order is
+     * kept AS RETURNED BY THE SERVER (mine first, others by newest story).
+     */
+    private fun StoriesPageDto.toDomainGroups(nowMs: Long): List<StoryGroup> = groups.mapNotNull { g ->
+        val user = g.user ?: return@mapNotNull null
+        val stories = g.stories.mapNotNull { it.toStoryItem() }.filter { it.expiresAtEpochMs > nowMs }
+        if (stories.isEmpty()) return@mapNotNull null
+        StoryGroup(
+            user = StoryUser(id = user.id, name = user.name, username = user.username, color = user.color),
+            mine = g.mine,
+            allSeen = stories.all { it.viewedByMe },
+            stories = stories,
+        )
     }
 
     override suspend fun folders(): Result<List<FolderSummary>> = when (val r = api.folders(viewerId ?: "")) {

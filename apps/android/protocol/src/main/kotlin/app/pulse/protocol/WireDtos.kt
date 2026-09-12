@@ -242,10 +242,27 @@ data class MentionsPageDto(
     val items: List<MentionDto> = emptyList(),
 )
 
-/** GET /api/stories — 24h status rail (tolerant subset: ring/name/mine/allSeen only). */
+/**
+ * GET /api/stories — 24h status rail. Tolerant: every field defaulted so a
+ * shape drift can never crash the whole feed (house rule).
+ *
+ * StoryItem wire shape (web src/app/api/stories/route.ts mapStory):
+ *   { id, kind: "image"|"text", imagePath, caption, background,
+ *     createdAt: ISO, expiresAt: ISO (createdAt+24h), viewCount, viewedByMe }
+ * `imagePath != null` ⇒ kind is "image" — the wire kind is advisory.
+ */
 @Serializable
 data class StoryItemDto(
     val id: String = "",
+    val kind: String? = null,
+    val imagePath: String? = null,
+    val caption: String = "",
+    /** Palette key (emerald/rose/amber/violet/teal/orange/pink/cyan) — image stories are forced "emerald". */
+    val background: String = "emerald",
+    val createdAt: String? = null,
+    val expiresAt: String? = null,
+    val viewCount: Int = 0,
+    val viewedByMe: Boolean = false,
 )
 
 @Serializable
@@ -259,6 +276,34 @@ data class StoryGroupDto(
 @Serializable
 data class StoriesPageDto(
     val groups: List<StoryGroupDto> = emptyList(),
+)
+
+/** POST /api/stories → 201 { story } (viewCount 0, viewedByMe false). */
+@Serializable
+data class StoryCreatedDto(
+    val story: StoryItemDto? = null,
+)
+
+/** POST /api/stories/{id}/view { requesterId } → { viewCount, owner? } (owner short-circuits). */
+@Serializable
+data class StoryViewAckDto(
+    val viewCount: Int = 0,
+    val owner: Boolean? = null,
+)
+
+/** GET /api/stories/{id}/view?requesterId= (owner-only 403) → { viewers } oldest-first. */
+@Serializable
+data class StoryViewerDto(
+    val userId: String = "",
+    val name: String = "",
+    val username: String? = null,
+    val color: String? = null,
+    val viewedAt: String = "",
+)
+
+@Serializable
+data class StoryViewersDto(
+    val viewers: List<StoryViewerDto> = emptyList(),
 )
 
 // ── Wave 2 messaging depth — polls / link previews / saved / topics / ASR ──

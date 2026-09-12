@@ -68,7 +68,12 @@ class SendMessageUseCaseTest {
         override suspend fun setMutedUntil(conversationId: String, until: String?) = Result.success(Unit)
         override suspend fun createSelfChat() =
             Result.success(app.pulse.domain.model.Conversation(id = "c", kind = app.pulse.domain.model.Conversation.Kind.DM, title = "Note to Self"))
-        override suspend fun stories() = Result.success(emptyList<app.pulse.domain.model.StoryCell>())
+        override suspend fun stories() = Result.success(emptyList<app.pulse.domain.model.StoryGroup>())
+        override suspend fun createStory(caption: String, background: String?, imagePath: String?) =
+            Result.success(app.pulse.domain.model.StoryItem(id = "s-new", kind = if (imagePath != null) "image" else "text"))
+        override suspend fun markStoryViewed(storyId: String) = Result.success(1)
+        override suspend fun storyViewers(storyId: String) = Result.success(emptyList<app.pulse.domain.model.StoryViewer>())
+        override suspend fun deleteStory(storyId: String) = Result.success(Unit)
         override suspend fun folders() = Result.success(emptyList<app.pulse.domain.model.FolderSummary>())
         override suspend fun mentions() = Result.success(emptyList<app.pulse.domain.model.MentionItem>())
         override suspend fun searchMessages(query: String) = Result.success(emptyList<app.pulse.domain.model.MessageHit>())

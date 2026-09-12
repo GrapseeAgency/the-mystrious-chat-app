@@ -12,7 +12,9 @@ import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.MentionItem
 import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.SavedItem
-import app.pulse.domain.model.StoryCell
+import app.pulse.domain.model.StoryGroup
+import app.pulse.domain.model.StoryItem
+import app.pulse.domain.model.StoryViewer
 import app.pulse.domain.model.Topic
 import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
@@ -140,8 +142,20 @@ interface PulseRepository {
     /** POST /api/conversations/self {userId} — the viewer's Note to Self chat. */
     suspend fun createSelfChat(): Result<Conversation>
 
-    /** GET /api/stories?requesterId= — null-safe: failure degrades to the honest empty rail. */
-    suspend fun stories(): Result<List<StoryCell>>
+    /** GET /api/stories?requesterId= — full story groups (D2 expiry-filtered client-side; v8 cache offline). */
+    suspend fun stories(): Result<List<StoryGroup>>
+
+    /** POST /api/stories {requesterId, caption?, background?, imagePath?} → 201 fresh story (viewCount 0). */
+    suspend fun createStory(caption: String, background: String?, imagePath: String?): Result<StoryItem>
+
+    /** POST /api/stories/{id}/view {requesterId} → fresh viewCount (idempotent; owner short-circuits). */
+    suspend fun markStoryViewed(storyId: String): Result<Int>
+
+    /** GET /api/stories/{id}/view?requesterId= — owner-only viewers list, oldest first (403 otherwise). */
+    suspend fun storyViewers(storyId: String): Result<List<StoryViewer>>
+
+    /** DELETE /api/stories/{id}?requesterId= — owner-only removal ({ok:true} / 403 / 404). */
+    suspend fun deleteStory(storyId: String): Result<Unit>
 
     /** GET /api/folders?userId= — failure degrades to All-only rail. */
     suspend fun folders(): Result<List<FolderSummary>>

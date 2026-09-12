@@ -18,6 +18,9 @@ import app.pulse.protocol.SavedPageDto
 import app.pulse.protocol.SavedToggleDto
 import app.pulse.protocol.SearchPageDto
 import app.pulse.protocol.StoriesPageDto
+import app.pulse.protocol.StoryCreatedDto
+import app.pulse.protocol.StoryViewAckDto
+import app.pulse.protocol.StoryViewersDto
 import app.pulse.protocol.ThreadPageDto
 import app.pulse.protocol.TopicDto
 import app.pulse.protocol.TopicsPageDto
@@ -389,6 +392,70 @@ class PulseApi(private val http: HttpClient) {
         get("/api/stories?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")) {
             PulseJson.decodeFromString(StoriesPageDto.serializer(), it)
         }
+
+    // ── Wave 4 stories — full native status surface (REST only, no sockets) ──
+
+    /**
+     * POST /api/stories { requesterId, caption?, background?, imagePath? } → 201 { story }.
+     * Text mode sends caption + background (palette key), photo mode sends
+     * imagePath (+ optional caption) — background is NEVER sent for photos
+     * (the server forces "emerald" there and 400s on the combo).
+     */
+    suspend fun postStory(
+        requesterId: String,
+        caption: String? = null,
+        background: String? = null,
+        imagePath: String? = null,
+    ): PulseResult<StoryCreatedDto> =
+        post(
+            "/api/stories",
+            buildJsonObject {
+                put("requesterId", requesterId)
+                if (!caption.isNullOrBlank()) put("caption", caption)
+                if (background != null && imagePath == null) put("background", background)
+                if (imagePath != null) put("imagePath", imagePath)
+            },
+        ) {
+            PulseJson.decodeFromString(StoryCreatedDto.serializer(), it)
+        }
+
+    /** POST /api/stories/{id}/view { requesterId } → { viewCount, owner? } (idempotent; owner short-circuits). */
+    suspend fun markStoryViewed(storyId: String, requesterId: String): PulseResult<StoryViewAckDto> =
+        post(
+            "/api/stories/$storyId/view",
+            jsonOf("requesterId" to requesterId),
+        ) {
+            PulseJson.decodeFromString(StoryViewAckDto.serializer(), it)
+        }
+
+    /** GET /api/stories/{id}/view?requesterId= — owner-only (403 otherwise), oldest first. */
+    suspend fun storyViewers(storyId: String, requesterId: String): PulseResult<StoryViewersDto> =
+        get(
+            "/api/stories/$storyId/view?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
+        ) {
+            PulseJson.decodeFromString(StoryViewersDto.serializer(), it)
+        }
+
+    /** DELETE /api/stories/{id}?requesterId= → { ok: true } (owner-only 403, unknown 404). */
+    suspend fun deleteStory(storyId: String, requesterId: String): PulseResult<OkDto> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.delete(
+                PulseEndpoints.http("/api/stories/$storyId?requesterId=" +
+                    java.net.URLEncoder.encode(requesterId, "UTF-8")),
+            )
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) {
+                PulseResult.Success(
+                    runCatching { PulseJson.decodeFromString(OkDto.serializer(), text) }.getOrDefault(OkDto(ok = true)),
+                )
+            } else {
+                failureOf(res.status.value, text)
+            }
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+        }
+    }
 
     /** GET /api/folders?userId= — Signal-style folder rail. */
     suspend fun folders(userId: String): PulseResult<FoldersPageDto> =

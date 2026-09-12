@@ -199,6 +199,58 @@ data class StoryCell(
     val unseen: Boolean,
 )
 
+/** One story author group header (GET /api/stories groups[].user). */
+data class StoryUser(
+    val id: String,
+    val name: String,
+    val username: String? = null,
+    val color: String? = null,
+)
+
+/**
+ * One 24h status story (GET /api/stories stories[]).
+ * Wire ISO-8601 UTC stamps are parsed to epoch-ms AT MAPPING TIME so every
+ * consumer (expiry filter D2, relative labels) works on plain longs.
+ */
+data class StoryItem(
+    val id: String,
+    /** "image" | "text" — imagePath != null ⇒ image (wire kind is advisory). */
+    val kind: String,
+    val imagePath: String? = null,
+    val caption: String = "",
+    /** Palette key (emerald/rose/amber/violet/teal/orange/pink/cyan). */
+    val background: String = "emerald",
+    val createdAtEpochMs: Long = 0L,
+    /** createdAt + 24h — stories with expiresAt <= now are dropped client-side (web-defect D2). */
+    val expiresAtEpochMs: Long = 0L,
+    val viewCount: Int = 0,
+    val viewedByMe: Boolean = false,
+    /** Raw wire stamps kept for the owner viewers sheet / future surfaces. */
+    val createdAtIso: String? = null,
+    val expiresAtIso: String? = null,
+) {
+    val isImage: Boolean get() = imagePath != null
+}
+
+/** One author's story stack (mine first per server order, stories oldest-first). */
+data class StoryGroup(
+    val user: StoryUser?,
+    /** this group belongs to the requesting viewer */
+    val mine: Boolean,
+    /** every surviving story already viewed by the requester (recomputed after D2 expiry filtering) */
+    val allSeen: Boolean,
+    val stories: List<StoryItem>,
+)
+
+/** One row of the owner-only viewers list (GET /api/stories/{id}/view — oldest first). */
+data class StoryViewer(
+    val userId: String,
+    val name: String,
+    val username: String? = null,
+    val color: String? = null,
+    val viewedAtIso: String = "",
+)
+
 /** Signal/Beeper-style chat folder (GET /api/folders — fails offline → empty rail). */
 data class FolderSummary(
     val id: String,

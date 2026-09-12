@@ -88,6 +88,7 @@ dependencies {
     implementation(project(":domain"))
     implementation(project(":data"))
     implementation(project(":feature-chat"))
+    implementation(project(":feature-stories"))
     implementation(project(":feature-calls"))
     implementation(project(":feature-hub"))
     implementation(project(":feature-settings"))

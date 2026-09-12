@@ -273,7 +273,7 @@ class RoomMigrationTest {
             // Wave 1: the compiled schema is now v5, so the REAL open path is
             // 3 → 4 → 5 — both migrations must be present (v5 columns are
             // additive; every assertion below still holds on the v5 state).
-            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7)
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
 
@@ -348,7 +348,7 @@ class RoomMigrationTest {
     fun migration4To5PreservesRowsAndAddsMediaAndMembers() = runBlocking {
         createV4DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7)
+            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
 
@@ -443,7 +443,7 @@ class RoomMigrationTest {
     fun migration5To6PreservesRowsAndAddsDepthColumnsAndTables() = runBlocking {
         createV5DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8)
             .allowMainThreadQueries()
             .build()
 
@@ -630,6 +630,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_4_5,
                 PulseDatabase.MIGRATION_5_6,
                 PulseDatabase.MIGRATION_6_7,
+                PulseDatabase.MIGRATION_7_8,
             )
             .allowMainThreadQueries()
             .build()
@@ -642,6 +643,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_4_5,
                 PulseDatabase.MIGRATION_5_6,
                 PulseDatabase.MIGRATION_6_7,
+                PulseDatabase.MIGRATION_7_8,
             )
             .allowMainThreadQueries()
             .build()
@@ -689,5 +691,38 @@ class RoomMigrationTest {
         assertEquals(1, db.callLogDao().queued().first().attempts)
         db.callLogDao().dequeueById(queued.id)
         assertEquals(0, db.callLogDao().queueCount())
+    }
+
+    @Test
+    fun migration7To8AddsStoryCacheAndRoundTrips() = runBlocking {
+        // v5 raw seed → real deployed device path through v7 → v8 (Wave 4).
+        createV5DatabaseWithSeedRows()
+        db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
+            .addMigrations(
+                PulseDatabase.MIGRATION_3_4,
+                PulseDatabase.MIGRATION_4_5,
+                PulseDatabase.MIGRATION_5_6,
+                PulseDatabase.MIGRATION_6_7,
+                PulseDatabase.MIGRATION_7_8,
+            )
+            .allowMainThreadQueries()
+            .build()
+        // every earlier surface survives the v8 hop
+        assertEquals("pre-v6 text row", db.messageDao().byId("m-v5")!!.body)
+        // ── story_cache round-trip (Wave-4 v8) ─────────────────
+        assertEquals(0, db.storyDao().allCount())
+        val snap = StoryCacheEntity(
+            key = "stories:me",
+            groupsJson = "{\"groups\":[]}",
+            updatedAt = 1_700_000_000_000L,
+        )
+        db.storyDao().upsert(snap)
+        assertEquals("{\"groups\":[]}", db.storyDao().get("stories:me")?.groupsJson)
+        val fresher = snap.copy(groupsJson = "{\"groups\":[{\"mine\":true}]}", updatedAt = 1_700_000_060_000L)
+        db.storyDao().upsert(fresher)
+        assertEquals("upsert must replace, not duplicate", 1, db.storyDao().allCount())
+        assertEquals("{\"groups\":[{\"mine\":true}]}", db.storyDao().get("stories:me")?.groupsJson)
+        db.storyDao().clearAll()
+        assertEquals(0, db.storyDao().allCount())
     }
 }

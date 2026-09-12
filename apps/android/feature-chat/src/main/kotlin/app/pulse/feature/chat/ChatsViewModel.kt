@@ -9,6 +9,7 @@ import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.StoryCell
+import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
@@ -161,13 +162,39 @@ class ChatsViewModel @Inject constructor(
         pollJob = null
     }
 
-    /** Stories rail + folders + mention count — honest empty on transport failure. */
+    /**
+     * Stories rail + folders + mention count — honest empty on transport failure.
+     *
+     * Wave 4 polling decision (documented): the RAIL feed stays owned by this
+     * VM and is refetched by the EXISTING 6s poll loop below (startPolling →
+     * loadChrome(quiet = true)) — stricter than the web's 60s refetchInterval,
+     * zero new machinery. The full-screen viewer/composer instead boot their
+     * own StoriesViewModel (nav-entry scoped) with a fresh fetch + 60s poll on
+     * entry; optimistic seen/delete/publish reconcile onto this rail within
+     * one poll beat.
+     */
     fun loadChrome(quiet: Boolean = false) {
         val viewer = repo.viewerId ?: return
         if (!quiet && chromeLoadedFor == viewer) return
         chromeLoadedFor = viewer
         viewModelScope.launch {
-            _stories.value = repo.stories().getOrDefault(emptyList())
+            // repo.stories() returns full StoryGroups (D2 expiry-filtered);
+            // the rail only needs one StoryCell per author (viewer machine
+            // semantics: allSeen drives the animated ring).
+            _stories.value = repo.stories().getOrDefault(emptyList()).mapNotNull { g ->
+                val user = g.user
+                if (user == null) {
+                    null
+                } else {
+                    StoryCell(
+                        userId = user.id,
+                        name = user.name,
+                        color = user.color,
+                        mine = g.mine,
+                        unseen = !g.allSeen,
+                    )
+                }
+            }
             _folders.value = repo.folders().getOrDefault(emptyList())
             _mentionCount.value = repo.mentions().getOrDefault(emptyList()).size
         }

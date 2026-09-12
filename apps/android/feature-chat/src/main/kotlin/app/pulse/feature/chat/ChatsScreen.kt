@@ -188,6 +188,10 @@ fun ChatsScreen(
     onSwitchTab: (String) -> Unit,
     onOpenArchived: () -> Unit,
     onCycleTheme: () -> Unit,
+    /** Wave 4 — ring tap on a cell with a live story; arg = author id (viewer start group). */
+    onOpenStoriesViewer: (String?) -> Unit = {},
+    /** Wave 4 — the own-cell "+" affordance (or empty "My status" cell) → composer. */
+    onOpenStoriesComposer: () -> Unit = {},
     /** Incremented by the dock's More → Search action to open search mode. */
     searchRequest: Int = 0,
     viewModel: ChatsViewModel = hiltViewModel(),
@@ -329,7 +333,10 @@ fun ChatsScreen(
                     viewerName = viewerName ?: "Me",
                     viewerColor = viewerColor,
                     cells = stories,
-                    onPress = { honest("Stories aren't available in this native build yet.") },
+                    // Wave 4 D1: ring = viewer (seeded at the tapped author),
+                    // "+" = composer, empty own cell = composer.
+                    onOpenViewer = onOpenStoriesViewer,
+                    onOpenComposer = onOpenStoriesComposer,
                 )
                 FolderRail(
                     folders = folders,
@@ -983,7 +990,10 @@ private fun StoriesRail(
     viewerName: String,
     viewerColor: String?,
     cells: List<StoryCell>,
-    onPress: () -> Unit,
+    /** Ring tap on a cell with a live story — arg = author userId (viewer start). */
+    onOpenViewer: (String?) -> Unit,
+    /** The "+" affordance / empty own cell — opens the composer (D1). */
+    onOpenComposer: () -> Unit,
 ) {
     val dark = isPulseDarkTheme()
     val mine = cells.firstOrNull { it.mine }
@@ -1001,13 +1011,20 @@ private fun StoriesRail(
                 .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // D1: the own cell carries BOTH affordances when a live story
+            // exists — ring tap = viewer seeded at my group, "+" tap =
+            // composer; with NO live story the whole cell is the composer
+            // entry (web "My status" parity).
             StoryRingCell(
                 name = viewerName,
                 color = viewerColor,
                 ring = if (mine != null && mine.unseen) "unseen" else "none",
-                plus = mine == null,
+                plus = true,
                 label = "My status",
-                onPress = onPress,
+                onPress = {
+                    if (mine != null) onOpenViewer(mine.userId) else onOpenComposer()
+                },
+                onPlus = if (mine != null) ({ onOpenComposer() }) else null,
             )
             others.forEach { cell ->
                 StoryRingCell(
@@ -1016,7 +1033,7 @@ private fun StoriesRail(
                     ring = if (cell.unseen) "unseen" else "seen",
                     plus = false,
                     label = cell.name,
-                    onPress = onPress,
+                    onPress = { onOpenViewer(cell.userId) },
                 )
             }
         }
@@ -1031,6 +1048,8 @@ private fun StoryRingCell(
     plus: Boolean,
     label: String,
     onPress: () -> Unit,
+    /** Non-null ⇒ the "+" badge is its own tap target (D1: "+" = composer while the ring = viewer). */
+    onPlus: (() -> Unit)? = null,
 ) {
     val spin = rememberInfiniteTransition(label = "storySpin")
     val angle by spin.animateFloat(
@@ -1077,7 +1096,11 @@ private fun StoryRingCell(
                         .size(20.dp)
                         .clip(CircleShape)
                         .background(Emerald500)
-                        .border(2.dp, MaterialTheme.colorScheme.background, CircleShape),
+                        .border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
+                        // D1: when onPlus is wired the badge is its own tap
+                        // target; without it the badge click falls through to
+                        // the whole-cell handler (empty own cell = composer).
+                        .clickable(enabled = onPlus != null) { onPlus?.invoke() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("+", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)

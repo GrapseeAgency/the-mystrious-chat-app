@@ -108,6 +108,9 @@ import app.pulse.feature.chat.SavedLibraryScreen
 import app.pulse.feature.chat.ThreadScreen
 import app.pulse.feature.hub.HubScreen
 import app.pulse.feature.settings.ProfileScreen
+import app.pulse.feature.stories.StoriesViewModel
+import app.pulse.feature.stories.StoryComposerScreen
+import app.pulse.feature.stories.StoryViewerScreen
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.PulseTheme
@@ -328,6 +331,21 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                     onSwitchTab = { route -> switchTab(route) },
                     onOpenArchived = { navController.navigate("archived") },
                     onCycleTheme = { session.cycleDarkOverride() },
+                    // Wave 4 stories — the rail is the ONLY stories entry point
+                    // (web parity): ring tap = viewer seeded at that author,
+                    // "+" tap = composer.
+                    onOpenStoriesViewer = { start ->
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        if (start != null) {
+                            navController.navigate("stories/viewer?start=$start")
+                        } else {
+                            navController.navigate("stories/viewer")
+                        }
+                    },
+                    onOpenStoriesComposer = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        navController.navigate("stories/compose")
+                    },
                     searchRequest = searchTick,
                 )
             }
@@ -420,6 +438,36 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                     )
                 }
             }
+            // Wave 4 — full-screen stories. The viewer/composer are ROOM-class
+            // surfaces (no dock). The nav-entry-scoped StoriesViewModel boots on
+            // entry: one fresh REST fetch (REST only — zero socket for stories)
+            // + 60s poll while open, so D2 expiry and D3 vanishing reconcile.
+            composable(
+                "stories/viewer?start={start}",
+                arguments = listOf(
+                    navArgument("start") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
+                val storiesVm: StoriesViewModel = hiltViewModel()
+                LaunchedEffect(Unit) { storiesVm.boot() }
+                StoryViewerScreen(
+                    startUserId = entry.arguments?.getString("start"),
+                    onClose = { navController.popBackStack() },
+                    storiesVm = storiesVm,
+                )
+            }
+            composable("stories/compose") {
+                val storiesVm: StoriesViewModel = hiltViewModel()
+                StoryComposerScreen(
+                    onPublished = { navController.popBackStack() },
+                    onClose = { navController.popBackStack() },
+                    storiesVm = storiesVm,
+                )
+            }
         }
 
         if (showDock) {
@@ -441,6 +489,12 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                 onSaved = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     navController.navigate("saved")
+                },
+                // Web parity: the dock More → Stories item is a NAV item — it
+                // merely switches to the Chats tab where the stories rail lives.
+                onStories = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    switchTab("chats")
                 },
                 onDeferred = { message -> honest(message) },
                 moreMenuOpen = moreMenuOpen,
@@ -502,6 +556,7 @@ private fun CapsuleDock(
     onCompose: () -> Unit,
     onSearch: () -> Unit,
     onSaved: () -> Unit,
+    onStories: () -> Unit,
     onDeferred: (String) -> Unit,
     moreMenuOpen: Boolean,
     onMoreMenuChange: (Boolean) -> Unit,
@@ -604,6 +659,7 @@ private fun CapsuleDock(
                         onOpenChange = onMoreMenuChange,
                         onSearch = onSearch,
                         onSaved = onSaved,
+                        onStories = onStories,
                         onDeferred = onDeferred,
                     )
                 }
@@ -718,6 +774,7 @@ private fun MoreDockButton(
     onOpenChange: (Boolean) -> Unit,
     onSearch: () -> Unit,
     onSaved: () -> Unit,
+    onStories: () -> Unit,
     onDeferred: (String) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -774,7 +831,7 @@ private fun MoreDockButton(
                 leadingIcon = { Icon(Icons.Filled.AutoStories, contentDescription = null, tint = DockEmerald600) },
                 onClick = {
                     onOpenChange(false)
-                    onDeferred("Stories aren't available in this native build yet.")
+                    onStories()
                 },
             )
         }
