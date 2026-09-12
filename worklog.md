@@ -2787,3 +2787,33 @@ Work Log:
 Stage Summary:
 - Android Wave 5 CODE VERIFIED (JVM): wire builders, chunker (WEB DEFECT FIX #1 proof), playback scheduler + roster-drop reset (FIX #2), stage voice-seat re-arm (FIX #3), space throttle/reconcile/error (FIX #4/#5), captions windowing, WAV codec, proximity.
 - SIMULATOR/EMULATOR: relay round-trip covered by protocol SocketRoundTripTest infra; full two-device audio = PHYSICAL DEVICE: PENDING (joins the hardware gate; no hardware claims made).
+
+---
+Task ID: 5-g/5-h (tests + CI)
+Agent: Z.ai Code (orchestrator)
+Task: Wave 5 verification — Android JVM gate, iOS CI rounds, both main CIs green
+
+Work Log:
+- Android local: re-provisioned JDK 21 (/home/z/jdks/jdk-21.0.12.1+1) + SDK platforms;android-35 + local.properties (sandbox reset again). ./gradlew :protocol:test :data:testDebugUnitTest :feature-voice:testDebugUnitTest → BUILD SUCCESSFUL, feature-voice 65 tests 0 failed; :app:compileDebugKotlin + :feature-chat:compileDebugKotlin SUCCESS.
+- Orchestrator compile fixes after the 5-e agent deadline: CaptionWindowAccumulator tail window (partial-size, not padded 64000), StagePersonDto import, AudioRecord.stop(), kotlinx-serialization-json dep, PulseApi.post param order (parse stays last for trailing lambdas) + Ktor-2 `timeout {}` extension (HttpTimeout.RequestTimeoutAttribute verified NOT to exist in 2.3.12 via javap), missing ui/PttGesture.kt written (hold ≥260ms/latch; bare-extension call sites fixed), JUnit4→5 imports, backtick test-name dots, three wrong test expectations corrected (approver stays HOST; reconnect restore needs roster-confirmed JOINED; WAV b64 round trip includes header), domain test fakes (+15 PulseRepository members).
+- iOS CI rounds: r1 WireVoicePtt Encodable (computed `active` in CodingKeys) + StageModel Equatable (Hashable on wire types) + domain fakes → r2 AVAudioConverter inputBlock (property doesn't exist → convert(to:error:withInputFrom:)), StageEndConfirm if-let shadow, space:state guard spaceConversationId, engine.play(base64:) → r3 WireStageState arg order in a test → r4 statusLine precedence (joining before disconnected; Android connectionLine parity included), fresh-joiner canRaiseHand, WireVoicePtt legacy-active tolerance restored w/ custom encode, caption window .last assertion → r5 GREEN. Archive job green from r3.
+- Final: main Android CI SUCCESS, main iOS CI SUCCESS.
+
+Stage Summary:
+- Android CODE VERIFIED (65 JVM tests) + iOS CODE VERIFIED (46 XCTest in CI). All audio-perceptual items remain PHYSICAL DEVICE: PENDING (hardware gate; Wave 3-HW untouched and OPEN).
+
+---
+Task ID: 5-i/5-j (release + report)
+Agent: Z.ai Code (orchestrator)
+Task: Wave 5 runtime E2E, tagged release v0.7.0-native, artifact/CDN verification, completion report
+
+Work Log:
+- RUNTIME E2E: apps/qa/wave5-runtime-e2e.js (3 socket.io clients vs live pulse-socket :3003) → 20 PASS / 0 FAIL across voice (join/roster/ptt-echo/chunk-not-to-sender/spoof-gate/transcript/leave+ptt-off), stage (first-joiner host, listener, raise FIFO, listener-approve rejected, host approve, mute demote + voice-seat enforcement roster + forced ptt-off, stage:ended), space (join@center, clamp, 80ms throttle swallow, accepted move, leave prune). Server-behaviour re-confirmed: empty-after-removal voice room skips roster broadcast by design (only ptt-off) — E2E uses an observer seat.
+- RELEASE: versionCode 17 / 0.7.0-native bump (commit 6aa3db6), tag v0.7.0-native → tag CI Android SUCCESS + iOS SUCCESS; release page latest = v0.7.0-native with Pulse-v0.7.0-native.apk (35,164,554 bytes); asset sha256 28067e88705daface172ef1d973b189eb0fc2aa483752b918ada66c7de8282f5 verified by download; aapt2 badging app.pulse.chat versionCode 17 / 0.7.0-native; apksigner v1+v2+v3 with the committed Pulse Live Update cert.
+- CDN: download/update-manifest.json re-pinned (commit caf2733) to the CI asset hash; download/Pulse.apk mirror swapped to release bytes; raw CDN propagation verified (17 / 0.7.0-native / 28067e88…). Post-push main CI SUCCESS.
+- docs/WAVE-5-COMPLETION-REPORT.md written (Android impl, iOS impl, realtime verification, hardware limitations, tests, CI, artifacts, remaining gaps).
+
+Stage Summary:
+- WAVE 5 COMPLETE at the agreed verification levels: CODE VERIFIED (both platforms) + RELAY RUNTIME VERIFIED (20/20 E2E) + CI GREEN (main + tag, both platforms) + release artifact/CDN consistent.
+- PHYSICAL DEVICE audio: PENDING — joins the open hardware gate; Wave 3-HW remains OPEN; no hardware claims made.
+- STOPPED after the report. Wave 6 NOT started.
