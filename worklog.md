@@ -2689,3 +2689,42 @@ Stage Summary:
 - RELEASE PAGE: UPDATED — latest release v0.5.2-native with the Home-gateway-fix APK (versionCode 15). Users installing now get: no cleartext-localhost error, honest offline-first copy, CDN manifest bootstrap, TURN plumbing.
 - CDN channel consistent (manifest sha256 ↔ release asset ↔ mirror). LiveUpdater gate will pass.
 - Wave 3-HW remains OPEN (hardware gate unchanged); no feature work performed.
+
+---
+Task ID: 4-b
+Agent: Z.ai Code (orchestrator, direct)
+Task: Wave 4 iOS — native Stories (SwiftUI): wire widening, 4 REST client paths, GRDB v6 cache, pure viewer machine + composer state, full-screen viewer/composer, tray + dock-sheet wiring, tests
+
+Work Log:
+- WireDtos.swift: WireStoryItem widened to the full wire shape (kind/imagePath/caption/background/createdAt/expiresAt/viewCount/viewedByMe, all-optional tolerant); added WireStoryCreated, WireStoryViewCount, WireStoryViewer, WireStoryViewersPage.
+- PulseAPIClient.swift: postStory (conditional body — background only for text, imagePath only for photo, server-validated), markStoryViewed, storyViewers, deleteStory beside stories().
+- PulseStore.swift: v6 migration storyCache(key PK, groupsJson, updatedAt) + save/load accessors (mirrors Android Room v8).
+- StoryEngine.swift (NEW, pure): StoryViewerMachine (5000ms, pause-resumes-from-elapsed, cross-group advance, close-at-end, prev no-op, D2 offline expiry filter, D3 vanish auto-advance, D6 optimistic seen with single retry), StoryComposerState (280 cap, canPost mirror, 8 palette keys), StoryPalette (Tailwind 400/600 hex pairs), storyRelativeTime, storyEpochMs.
+- StoriesSessionModel.swift (NEW): session-owned feed model (like PulseCallEngine) — refresh + 60s poll, GRDB snapshot rehydrate/persist, optimistic mark/remove, viewers poll channel, honest error-vs-empty flags.
+- PulseSession.swift: stories model created at identity adoption (startStories).
+- StoryViewerView.swift (NEW): full-screen viewer over the machine — per-group bars, left-32%-prev tap zones, ≥240ms hold-pause ("Paused" pill), drag-down dismiss (>110px or >550px/s avg), image stage (AsyncImage via PulseEndpoints.mediaURL) + caption pill, gradient text stage, header with eye-count chip/trash confirm strip/close, viewers sheet polling 5s (D7), optimistic view mark (D6).
+- StoryComposerView.swift (NEW): Text/Photo pills (Photo auto-opens picker — web parity), PhotosPicker → PulseMediaSupport.downscaledJPEGData (≤1280 q0.82) → uploadMedia → preview + Change, 280 counter, 8 swatches, explicit Post, visible error banner.
+- StoriesView.swift: real feed (shared model), distinct loading/error/empty states, rows open viewer, "Add status" row always reachable (D1), own-empty row opens composer.
+- ChatsView.swift: StoriesRowView onPress now routes ring→viewer / "+"/own-empty→composer (D1); fullScreenCovers for viewer+composer; ring re-sync via refreshQuiet on close. No Home redesign.
+- Tests: PulseTests/StoriesWireTests.swift — wire decode parity + tolerant unknown keys + envelopes + relative time + ISO parsing (7) + StoryViewerMachineTests (13) + StoryComposerStateTests (5) + StoryStoreCacheTests (GRDB v6 round-trip) = 25 new tests.
+- NOTE: no Swift toolchain on Linux — compile/test validation happens in iOS CI (macOS); code written strictly against existing house APIs (RowAvatar, PulseTheme tokens, PulseHaptics, ContentUnavailableCompat, PulseMediaSupport verified by grep before use).
+
+Stage Summary:
+- iOS Stories complete at code level; realtime dependency: NONE (REST+poll parity, documented). Known risk: first CI round may surface compile nits (blind-written against grepped APIs) — fix forward.
+
+---
+Task ID: W4-RELEASE
+Agent: Z.ai Code (orchestrator)
+Task: Wave 4 release — versionCode 16 / v0.6.0-native tagged release + artifact verification
+
+Work Log:
+- CI wiring: android-ci JVM gate extended to :data:testDebugUnitTest + :feature-stories:testDebugUnitTest (W4 + HomeGatewayGuard regressions now enforced).
+- main pushed: Android CI ✅ first round; iOS CI took 5 rounds (r1 public-visibility of StoriesSessionModel; r2 let-field wire structs rebuilt via WireStoryGroupCopy + nested-static durationMs + async delete in Task; r3 memberwise arg order in a test; r4 D2 test used epoch-consistent stamps; r5 = documented Wave-3 relay-fixture flake → failed-job re-run → SUCCESS attempt 2). All 25 new iOS Stories tests passed in the failing attempt too.
+- Release chain hiccup caught: first bump commit changed only versionName (python replace mismatch) — versionCode would have stayed 15. Fixed to 16, stale tag deleted/re-pushed at f014f13, stale CI run #50 cancelled, run #52 built the real artifact.
+- Verified the published asset byte-truth: Pulse-v0.6.0-native.apk sha256 2331b98823f8fb0731467b5757ea301881876ae2beadc79e33b53a36f612137e, aapt2 badging versionCode=16 versionName=0.6.0-native app.pulse.chat.
+- CDN re-pinned to the CI asset hash + mirror swapped (commit 8037715); raw CDN propagates versionCode 16 / sha 2331b988….
+
+Stage Summary:
+- RELEASE v0.6.0-native LIVE: Android tag CI ✅, iOS tag CI ✅ (build-test 123 tests, 2 skipped + xcarchive ✅), CDN manifest ↔ release asset ↔ mirror all byte-consistent.
+- Wave 4 scope delivered (Stories only); no Hub/Games/Voice Rooms work; Home layout untouched.
+- Wave 3-HW remains OPEN (hardware gate unchanged, belongs to the user).
