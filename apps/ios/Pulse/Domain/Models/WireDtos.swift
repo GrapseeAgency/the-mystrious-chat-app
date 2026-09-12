@@ -759,7 +759,7 @@ public struct WireVoicePeer: Codable, Hashable, Sendable, Identifiable {
 
 /// `voice:roster` payload — the roster REPLACES any previous one
 /// wholesale (web parity: roster state = server truth).
-public struct WireVoiceRoster: Codable, Sendable {
+public struct WireVoiceRoster: Codable, Hashable, Sendable {
     public let conversationId: String?
     public let peers: [WireVoicePeer]?
 
@@ -791,7 +791,9 @@ public struct WireVoicePtt: Codable, Hashable, Sendable {
 
     public var active: Bool { on ?? false }
 
-    private enum CodingKeys: String, CodingKey { case conversationId, userId, on, active }
+    // NOTE: `active` is a computed accessor only — it must NOT appear in
+    // CodingKeys (a computed property cannot be synthesized-encoded).
+    private enum CodingKeys: String, CodingKey { case conversationId, userId, on }
 
     public init(conversationId: String?, userId: String?, on: Bool?) {
         self.conversationId = conversationId
@@ -803,18 +805,16 @@ public struct WireVoicePtt: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         conversationId = try? container.decodeIfPresent(String.self, forKey: .conversationId)
         userId = try? container.decodeIfPresent(String.self, forKey: .userId)
-        // `on` is the wire truth; `active` accepted for tolerance. Both
-        // decode paths flatten to Bool? (SE-0230 try? flattening).
-        let decodedOn = (try? container.decodeIfPresent(Bool.self, forKey: .on)) ?? nil
-        let decodedActive = (try? container.decodeIfPresent(Bool.self, forKey: .active)) ?? nil
-        on = decodedOn ?? decodedActive
+        // The relay emits `on`; the socket handler additionally tolerates
+        // legacy `active` at the decode site.
+        on = (try? container.decodeIfPresent(Bool.self, forKey: .on)) ?? nil
     }
 }
 
 /// `voice:chunk` — base64 of Int16LE PCM 16 kHz mono, 250 ms = 4000
 /// samples per full chunk; seq starts at 1 (server floor()s, relays
 /// to the room EXCEPT the sender).
-public struct WireVoiceChunk: Codable, Sendable {
+public struct WireVoiceChunk: Codable, Hashable, Sendable {
     public let conversationId: String?
     public let userId: String?
     public let seq: Int?
@@ -848,7 +848,7 @@ public struct WireStagePerson: Codable, Hashable, Sendable, Identifiable {
 /// `stage:state` — host (null = seat empty, NO auto-promotion),
 /// speakers (host first), hands (FIFO by raisedAt), listeners and the
 /// additive listenerCount (fallback = listeners.count on old relays).
-public struct WireStageState: Codable, Sendable {
+public struct WireStageState: Codable, Hashable, Sendable {
     public let conversationId: String?
     public let host: WireStagePerson?
     public let speakers: [WireStagePerson]?
@@ -874,7 +874,7 @@ public struct WireSpacePlayer: Codable, Hashable, Sendable, Identifiable {
 
 /// `space:state` — FULL state replace (stale players self-heal; the
 /// server prunes 5-minute idlers).
-public struct WireSpaceState: Codable, Sendable {
+public struct WireSpaceState: Codable, Hashable, Sendable {
     public let conversationId: String?
     public let players: [WireSpacePlayer]?
 }

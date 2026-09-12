@@ -203,6 +203,23 @@ class FlushOutboxUseCaseTest {
         override suspend fun writeCallLog(entry: app.pulse.domain.model.CallLogEntry) = Result.success(Unit)
         override suspend fun flushCallLogQueue(): Result<Int> = Result.success(0)
         override suspend fun emitCall(signal: app.pulse.domain.model.CallSignalOut) {}
+        // Wave 5 voice rooms / stage / space — the fakes never emit; recorded only where a test needs it.
+        override suspend fun emitVoiceJoin(conversationId: String, user: app.pulse.protocol.PulseVoiceUser) {}
+        override suspend fun emitVoiceLeave(conversationId: String) {}
+        override suspend fun emitVoicePtt(conversationId: String, userId: String, on: Boolean) {}
+        override suspend fun emitVoiceChunk(conversationId: String, userId: String, seq: Long, data: String) {}
+        override suspend fun emitVoiceTranscript(conversationId: String, userId: String, text: String) {}
+        override suspend fun emitStageJoin(conversationId: String, user: app.pulse.protocol.PulseVoiceUser, asHost: Boolean) {}
+        override suspend fun emitStageHand(conversationId: String, userId: String, raised: Boolean) {}
+        override suspend fun emitStageApprove(conversationId: String, byUserId: String, targetUserId: String) {}
+        override suspend fun emitStageMute(conversationId: String, byUserId: String, targetUserId: String) {}
+        override suspend fun emitStageEnd(conversationId: String, byUserId: String) {}
+        override suspend fun emitStageLeave(conversationId: String) {}
+        override suspend fun emitSpaceJoin(conversationId: String, user: app.pulse.protocol.PulseVoiceUser) {}
+        override suspend fun emitSpaceMove(conversationId: String, x: Double, y: Double) {}
+        override suspend fun emitSpaceLeave(conversationId: String) {}
+        override suspend fun transcribeVoice(conversationId: String, requesterId: String, audioBase64: String): Result<app.pulse.protocol.VoiceTranscriptResultDto> =
+            Result.failure(IllegalStateException("fake repo never transcribes"))
 
         private fun realMessage(id: String, entry: OutboxEntry) = Message(
             id = id,
