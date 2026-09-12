@@ -303,7 +303,7 @@ final class StoryComposerStateTests: XCTestCase {
     }
 
     func testBackgroundIsTextOnlyAndValidated() {
-        let photo = StoryComposerState(mode: .photo, imagePath: "a.jpg", background: "emerald")
+        let photo = StoryComposerState(mode: .photo, background: "emerald", imagePath: "a.jpg")
         XCTAssertEqual(photo.withBackground("rose"), photo)
         let text = StoryComposerState().withBackground("violet")
         XCTAssertEqual(text.background, "violet")
