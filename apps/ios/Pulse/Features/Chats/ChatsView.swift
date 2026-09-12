@@ -81,6 +81,10 @@ struct ChatsView: View {
     @StateObject private var viewModel = ChatsViewModel()
     @State private var path = NavigationPath()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Wave 4 — full-screen stories surfaces (rail is the entry point).
+    @State private var storiesViewerPresent = false
+    @State private var storiesViewerStart: String?
+    @State private var composerPresent = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -100,6 +104,22 @@ struct ChatsView: View {
                     session: session,
                     onChanged: { Task { await viewModel.refreshQuiet(session: session) } },
                 )
+            }
+            .fullScreenCover(isPresented: $storiesViewerPresent) {
+                if let model = session.stories {
+                    StoryViewerView(session: session, stories: model, startUserId: storiesViewerStart) {
+                        storiesViewerPresent = false
+                        Task { await viewModel.refreshQuiet(session: session) } // rings re-sync on close
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $composerPresent) {
+                if let model = session.stories {
+                    StoryComposerView(session: session, stories: model, onPublished: {
+                        composerPresent = false
+                        Task { await viewModel.refreshQuiet(session: session) }
+                    }, onClose: { composerPresent = false })
+                }
             }
             .fullScreenCover(isPresented: $viewModel.archivedOpen) {
                 ArchivedPageView(
@@ -203,9 +223,20 @@ struct ChatsView: View {
                 StoriesRowView(
                     viewer: session.viewer,
                     groups: viewModel.storyGroups,
-                    onPress: {
+                    // Wave 4: ring = viewer (seeded at the tapped author),
+                    // "+"/empty own cell = composer (web-defect D1 fixed).
+                    onPress: { startUserId in
                         PulseHaptics.tap()
-                        session.toasts.show("Stories aren't available in this native build yet.")
+                        guard session.stories != nil else {
+                            session.toasts.show("Pick who you are on this device first.")
+                            return
+                        }
+                        if let startUserId {
+                            storiesViewerStart = startUserId
+                            storiesViewerPresent = true
+                        } else {
+                            composerPresent = true
+                        }
                     },
                 )
                 FolderRailView(
@@ -747,7 +778,8 @@ private struct FilterChipsRow: View {
 private struct StoriesRowView: View {
     let viewer: PulseViewer?
     let groups: [WireStoryGroup]
-    let onPress: () -> Void
+    /// arg = author userId to seed the viewer, nil = open the composer (own cell without a live story)
+    let onPress: (String?) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -757,9 +789,11 @@ private struct StoriesRowView: View {
                         name: viewer?.name ?? "You",
                         color: viewer?.color,
                         ring: myStoryGroup != nil ? .unseen : .none,
-                        plus: myStoryGroup == nil,
+                        plus: true, // D1: "+" stays reachable even while a story is live
                         label: "My status",
-                        onPress: onPress,
+                        onPress: {
+                            onPress(myStoryGroup?.user?.id) // live → viewer; none → composer
+                        },
                     )
                     ForEach(otherGroups, id: \.user?.id) { group in
                         if let user = group.user {
@@ -769,7 +803,7 @@ private struct StoriesRowView: View {
                                 ring: group.allSeen == true ? .seen : .unseen,
                                 plus: false,
                                 label: user.name,
-                                onPress: onPress,
+                                onPress: { onPress(user.id) },
                             )
                         }
                     }

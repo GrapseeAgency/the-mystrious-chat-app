@@ -53,6 +53,9 @@ public final class PulseSession: ObservableObject {
     /// W3-b — Wave 3 call engine (nil before identity exists). RootView hosts
     /// the full-screen overlay; surfaces call startOutgoing/accept/decline.
     @Published public private(set) var callEngine: PulseCallEngine?
+    /// W4 — Wave 4 stories feed owner (nil before identity exists). Tray,
+    /// dock sheet, viewer and composer share this one instance.
+    @Published public private(set) var stories: StoriesSessionModel?
 
     /// Honest-toast center shared by every surface (not-yet-built features).
     public let toasts = ToastCenter()
@@ -88,6 +91,7 @@ public final class PulseSession: ObservableObject {
         store = Self.openStore()
         startOutbox()
         startCalls(viewer: viewer)
+        startStories(viewer: viewer)
 
         // Realtime bootstraps asynchronously: the manifest override must land
         // BEFORE the socket (and API rebinding) — non-blocking for first paint.
@@ -145,6 +149,14 @@ public final class PulseSession: ObservableObject {
         )
         callEngine = engine
         Task { await engine.flushCallLogQueue() }
+    }
+
+    // ── stories (W4 — Wave 4 native stories) ─────────────────
+
+    /// Builds the shared feed owner (REST + 60s poll parity; GRDB snapshot
+    /// cache) once identity exists.
+    private func startStories(viewer: PulseViewer) {
+        stories = StoriesSessionModel(session: self)
     }
 
     /// The engine's signaling sender funnels here (the socket is session-owned).

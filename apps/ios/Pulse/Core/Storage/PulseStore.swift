@@ -161,7 +161,42 @@ public final class PulseStore: Sendable {
                 t.column("createdAt", .text).notNull()
             }
         }
+        m.registerMigration("v6") { db in
+            // W4 — stories snapshot cache. One canonical JSON blob per key
+            // ("stories:<viewerId>"), mirroring Android's Room v8 story_cache:
+            // the tray renders instantly on cold start and offline, and the
+            // next successful fetch overwrites it. Pure cache — server truth
+            // (viewedByMe/viewCount/expiresAt) always wins on reconcile.
+            try db.create(table: "storyCache") { t in
+                t.column("key", .text).primaryKey()
+                t.column("groupsJson", .text).notNull()
+                t.column("updatedAt", .integer).notNull()
+            }
+        }
         return m
+    }
+
+    // ── stories cache (Wave 4) ───────────────────────────────
+    public func saveStoryCache(key: String, groupsJson: String, updatedAt: Int64) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "INSERT INTO storyCache (key, groupsJson, updatedAt) VALUES (:key, :json, :updatedAt) " +
+                    "ON CONFLICT(key) DO UPDATE SET groupsJson = :json, updatedAt = :updatedAt",
+                arguments: ["key": key, "json": groupsJson, "updatedAt": updatedAt],
+            )
+        }
+    }
+
+    public func loadStoryCache(key: String) throws -> (groupsJson: String, updatedAt: Int64)? {
+        try dbQueue.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT groupsJson, updatedAt FROM storyCache WHERE key = :key",
+                arguments: ["key": key],
+            )
+            guard let row else { return nil }
+            return (groupsJson: row["groupsJson"] as String, updatedAt: row["updatedAt"] as Int64)
+        }
     }
 
     // ── conversation cache ───────────────────────────────────

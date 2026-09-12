@@ -356,6 +356,49 @@ public struct PulseAPIClient: Sendable {
         try? await get("/api/stories?requesterId=\(userId)", as: WireStoriesPage.self)
     }
 
+    // ── Wave 4 — stories write/owner paths (REST only; zero socket) ──
+
+    /// POST /api/stories { requesterId, caption?, background?, imagePath? }
+    /// → 201 { story }. Text stories carry `background` (one of the 8 palette
+    /// keys); photo stories carry `imagePath` (from /api/uploads) — the server
+    /// forces "emerald" for image stories, so it is never sent.
+    public func postStory(caption: String, background: String?, imagePath: String?) async throws -> WireStoryItem {
+        var body: [String: Any] = ["requesterId": userId]
+        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { body["caption"] = trimmed }
+        if let background { body["background"] = background }
+        if let imagePath { body["imagePath"] = imagePath }
+        let data = try await postRaw("/api/stories", body: body)
+        let created = try decoder.decode(WireStoryCreated.self, from: data)
+        guard let story = created.story, let id = story.id, !id.isEmpty else {
+            throw Failure(kind: .validation, message: "Story response missing the created story")
+        }
+        return story
+    }
+
+    /// POST /api/stories/{id}/view { requesterId } — idempotent view mark
+    /// (owner short-circuits server-side without recording a self-view).
+    public func markStoryViewed(id: String) async throws -> Int {
+        let data = try await postRaw("/api/stories/\(id)/view", body: ["requesterId": userId])
+        let result = try decoder.decode(WireStoryViewCount.self, from: data)
+        return result.viewCount ?? 0
+    }
+
+    /// GET /api/stories/{id}/view?requesterId= — owner-only viewers list
+    /// (403 otherwise; oldest viewer first). Empty list on a missing key.
+    public func storyViewers(id: String) async throws -> [WireStoryViewer] {
+        let page: WireStoryViewersPage = try await get(
+            "/api/stories/\(id)/view?requesterId=\(userId)",
+            as: WireStoryViewersPage.self,
+        )
+        return page.viewers ?? []
+    }
+
+    /// DELETE /api/stories/{id} { requesterId } — owner-only (403 / 404 wire).
+    public func deleteStory(id: String) async throws {
+        try await deleteEmpty("/api/stories/\(id)", body: ["requesterId": userId])
+    }
+
     /// GET /api/folders?userId= — chat folders (nil = unreachable → All only).
     public func folders() async -> [WireFolder]? {
         guard let page: WireFoldersPage = try? await get("/api/folders?userId=\(userId)", as: WireFoldersPage.self) else { return nil }

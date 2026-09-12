@@ -459,9 +459,9 @@ public struct WireConversationsPage: Codable, Sendable {
 
 // ── N10-b home-page wire shapes (tolerant: unreachable features degrade) ──
 
-/// GET /api/stories?requesterId= — 24h status groups. The static CDN gateway
-/// has no such route today → decode failures surface as nil, and the UI
-/// degrades to the honest My-status-only row.
+/// GET /api/stories?requesterId= — 24h status groups (mine first, others by
+/// newest story DESC). Fields are tolerant/optional: unknown keys are ignored
+/// and a missing field decodes as nil so older builds never crash on drift.
 public struct WireStoryGroup: Codable, Hashable, Sendable {
     public let user: WireSender?
     public let mine: Bool?
@@ -469,13 +469,49 @@ public struct WireStoryGroup: Codable, Hashable, Sendable {
     public let stories: [WireStoryItem]?
 }
 
+/// One story (Wave 4 widening — the full GET /api/stories item shape).
 public struct WireStoryItem: Codable, Hashable, Sendable {
     public let id: String?
+    /// "image" | "text" — imagePath != nil ⇒ image (the wire kind is advisory).
+    public let kind: String?
+    public let imagePath: String?
+    public let caption: String?
+    /// Gradient palette key (emerald/rose/amber/violet/teal/orange/pink/cyan).
+    public let background: String?
+    /// ISO-8601 UTC stamps (server truth; expiresAt = createdAt + 24h).
     public let createdAt: String?
+    public let expiresAt: String?
+    public let viewCount: Int?
+    public let viewedByMe: Bool?
 }
 
 public struct WireStoriesPage: Codable, Sendable {
     public let groups: [WireStoryGroup]?
+}
+
+/// 201 POST /api/stories response — { story: StoryItem }.
+public struct WireStoryCreated: Codable, Sendable {
+    public let story: WireStoryItem?
+}
+
+/// POST /api/stories/{id}/view response — { viewCount, owner? }.
+public struct WireStoryViewCount: Codable, Sendable {
+    public let viewCount: Int?
+    public let owner: Bool?
+}
+
+/// One row of the owner-only viewers list (oldest viewer first).
+public struct WireStoryViewer: Codable, Hashable, Sendable {
+    public let userId: String?
+    public let name: String?
+    public let username: String?
+    public let color: String?
+    public let viewedAt: String?
+}
+
+/// GET /api/stories/{id}/view response — { viewers: [...] }.
+public struct WireStoryViewersPage: Codable, Sendable {
+    public let viewers: [WireStoryViewer]?
 }
 
 /// GET /api/folders?userId= — Signal/Beeper chat folders.
