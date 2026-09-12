@@ -1,12 +1,12 @@
 {
-  "versionCode": 13,
-  "versionName": "0.5.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.5.0-native/Pulse-v0.5.0-native.apk",
+  "versionCode": 15,
+  "versionName": "0.5.2-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.5.2-native/Pulse-v0.5.2-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "46d296f63498e10e70bd371ce39be3beb0fc00159a74e0efe5d2a9ccbf79cf59",
-  "notes": "Wave 3 \u2014 native calls: full 1:1 WebRTC voice calling on both platforms on the pure call state machine (outgoing/incoming ring, accept/decline/cancel/busy/timeout/offline, connecting, connected with mute + speaker route + duration tick, hangup, 30s server ring timeout, disconnect teardown, stale-state cleanup, duplicate-event idempotency). Signaling = the proven relay call:* family (identity-gated). Call log = single-writer REST /api/calls + offline queue + local cache (Android Room v7, iOS GRDB v5). Android ships stream-webrtc 1.3.10 with mic-type foreground service + audio focus/route manager; iOS ships stasel/WebRTC 125.0.0 with AVAudioSession configure+restore. Live signalling gate 17/17 through the real edge+relay. Android JVM 79 tests + emulator instrumented green; iOS 92 tests (3 env-skipped) + archive green. APK versionCode 13.",
+  "sha256": "94b142af8526476f3b3fc1a93ab5ff24bd711f1dcd4a2864feaee5fa1da52f03",
+  "notes": "Home connectivity fix — root cause: with no gateway configured (honest offline-first), the REST layer still fired requests and Ktor's URLBuilder resolved the relative path against its implicit http://localhost default, so Android's network security policy (correctly) blocked the cleartext call — Home showed 'Could not reach gateway — CLEARTEXT communication to localhost not permitted'. Fix: a gateway guard at every REST entry (zero requests fire while unconfigured, honest actionable copy instead) + the deployment manifest is now bootstrapped from the HTTPS repo CDN when offline, so a gateway published into update-manifest.json is adopted with zero rebuild. No network-security weakening (cleartext stays blocked). Tests: data-module JVM 7/7 (MockEngine + real OkHttp engine against a loopback origin). Also ships the Wave 3-HW TURN ICE plumbing. APK versionCode 15.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-11T18:25:30Z"
+  "updatedAt": "2026-09-12T05:40:00Z"
 }

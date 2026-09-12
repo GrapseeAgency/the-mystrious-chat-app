@@ -54,4 +54,10 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.junit4)
     androidTestImplementation(libs.kotlinx.coroutines.test)
+
+    // JVM unit tests — Home gateway guard + manifest probe order (pure JVM,
+    // no Robolectric: PulseApi/PulseEndpoints/manifestProbeUrls touch no android.*).
+    testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.ktor.client.mock)
 }

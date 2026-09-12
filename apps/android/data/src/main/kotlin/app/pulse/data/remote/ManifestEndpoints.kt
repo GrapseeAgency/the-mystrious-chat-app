@@ -23,9 +23,10 @@ import org.json.JSONObject
  *
  * Cold start order (beats any network): [applyPersisted] re-applies the
  * vault overrides first; only then does [fetchAndApply] hit the network.
- * Today's manifest carries neither key — the client stays offline-first
- * on the baked CDN until a real host is deployed; the hook simply works
- * the day they appear. Every failure is silent (3s timeout) by design.
+ * The manifest lives on the repo CDN (raw.githubusercontent, HTTPS) — that
+ * origin is probed FIRST when no gateway is configured, so ops can publish a
+ * live origin with zero rebuild even from the offline-first state. Every
+ * failure is silent (3s timeout) by design.
  */
 @Singleton
 class ManifestEndpoints @Inject constructor(
@@ -47,12 +48,7 @@ class ManifestEndpoints @Inject constructor(
      * download/ — both layouts are probed, quietly.
      */
     suspend fun fetchAndApply() = withContext(Dispatchers.IO) {
-        val urls = buildList {
-            add(PulseEndpoints.http("/update-manifest.json"))
-            if (PulseEndpoints.gatewayHttpUrl.contains("raw.githubusercontent.com")) {
-                add(PulseEndpoints.http("/download/update-manifest.json"))
-            }
-        }
+        val urls = manifestProbeUrls(PulseEndpoints.gatewayHttpUrl, CDN_MANIFEST_URL)
         for (url in urls) {
             val (gateway, socket, ice) = fetchOverrides(url)
             if (gateway != null || socket != null || ice != null) {
@@ -118,3 +114,30 @@ class ManifestEndpoints @Inject constructor(
         const val TAG = "ManifestEndpoints"
     }
 }
+
+/** The repo CDN — the one HTTPS origin hosting download/update-manifest.json
+ *  without a deployed gateway (raw.githubusercontent serves static files only). */
+private const val CDN_MANIFEST_URL =
+    "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/update-manifest.json"
+
+/**
+ * Pure probe-order builder — unit-testable without Android.
+ *
+ * Offline-first (blank base): ONLY the baked CDN manifest is probed. The old
+ * code probed `PulseEndpoints.http("/update-manifest.json")` — a bare relative
+ * path that `URL(...)` can never resolve, which silently disabled the Wave-0
+ * deployment hook in exactly the state it was built for (a fresh install could
+ * never bootstrap a gateway published into the manifest). Configured: probe
+ * the configured origin first (ops mirror), plus the /download/ layout when
+ * the origin is the raw CDN itself.
+ */
+internal fun manifestProbeUrls(currentBase: String, cdnManifestUrl: String = CDN_MANIFEST_URL): List<String> =
+    if (currentBase.isBlank()) {
+        listOf(cdnManifestUrl)
+    } else {
+        val base = currentBase.trimEnd('/')
+        buildList {
+            add("$base/update-manifest.json")
+            if (base.contains("raw.githubusercontent.com")) add("$base/download/update-manifest.json")
+        }
+    }

@@ -47,21 +47,42 @@ import kotlinx.serialization.json.put
  * The API identifies the caller with `userId` params (same as the web client);
  * every method maps failures onto PulseResult kinds identical to iOS.
  */
+private const val OFFLINE_COPY =
+    "No gateway configured — set your server in Profile → Connection."
+
 class PulseApi(private val http: HttpClient) {
 
-    private suspend fun <T> get(path: String, parse: (String) -> T): PulseResult<T> = try {
-        val res = http.get(PulseEndpoints.http(path))
-        val text = res.bodyAsText()
-        if (res.status.isSuccess()) PulseResult.Success(parse(text))
-        else failureOf(res.status.value, text)
-    } catch (e: kotlinx.serialization.SerializationException) {
-        PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
-    } catch (e: Exception) {
-        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+    /**
+     * Honest offline-first gate. With NO configured gateway, `PulseEndpoints.http`
+     * returns a bare relative path — and Ktor's URLBuilder resolves that against
+     * its implicit `http://localhost` default (ktor-http URLBuilder host default),
+     * so OkHttp fires a cleartext request at the PHONE ITSELF and Android's
+     * network security policy blocks it: the "CLEARTEXT communication to
+     * localhost not permitted" field report on the Home inbox. The request is
+     * never fired now — users get actionable copy instead of a policy dump.
+     * The security policy is untouched (cleartext stays blocked); the accidental
+     * request is what's removed.
+     */
+    private val offlineFailure: PulseResult.Failure =
+        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, OFFLINE_COPY)
+
+    private suspend fun <T> get(path: String, parse: (String) -> T): PulseResult<T> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.get(PulseEndpoints.http(path))
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) PulseResult.Success(parse(text))
+            else failureOf(res.status.value, text)
+        } catch (e: kotlinx.serialization.SerializationException) {
+            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+        }
     }
 
-    private suspend fun <T> post(path: String, body: JsonObject?, parse: ((String) -> T)? = null): PulseResult<T> =
-        try {
+    private suspend fun <T> post(path: String, body: JsonObject?, parse: ((String) -> T)? = null): PulseResult<T> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
             val res = http.post(PulseEndpoints.http(path)) {
                 contentType(ContentType.Application.Json)
                 if (body != null) setBody(body.toString())
@@ -78,13 +99,15 @@ class PulseApi(private val http: HttpClient) {
         } catch (e: Exception) {
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
+    }
 
     /**
      * PATCH verb — the conversation flag routes (pin/mute/archive/mark-unread) are
      * PATCH on the wire; POST was the N3-era wrong verb (spec §14 transport fixes).
      */
-    private suspend fun <T> patch(path: String, body: JsonObject?, parse: ((String) -> T)? = null): PulseResult<T> =
-        try {
+    private suspend fun <T> patch(path: String, body: JsonObject?, parse: ((String) -> T)? = null): PulseResult<T> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
             val res = http.patch(PulseEndpoints.http(path)) {
                 contentType(ContentType.Application.Json)
                 if (body != null) setBody(body.toString())
@@ -101,6 +124,7 @@ class PulseApi(private val http: HttpClient) {
         } catch (e: Exception) {
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
+    }
 
     /**
      * HTTP failure → Failure with the body's error/code/suggestion intact —
@@ -312,15 +336,18 @@ class PulseApi(private val http: HttpClient) {
      * GET /api/uploads/{file} → raw bytes — the media-download leg of Wave 1
      * (file bubbles save to cacheDir/downloads and open through FileProvider).
      */
-    suspend fun downloadMedia(filePath: String): PulseResult<ByteArray> = try {
-        val res = http.get(PulseEndpoints.http("/api/uploads/$filePath"))
-        if (res.status.isSuccess()) {
-            PulseResult.Success(res.readBytes())
-        } else {
-            failureOf(res.status.value, res.bodyAsText())
+    suspend fun downloadMedia(filePath: String): PulseResult<ByteArray> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.get(PulseEndpoints.http("/api/uploads/$filePath"))
+            if (res.status.isSuccess()) {
+                PulseResult.Success(res.readBytes())
+            } else {
+                failureOf(res.status.value, res.bodyAsText())
+            }
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
-    } catch (e: Exception) {
-        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
     }
 
     /** PATCH /api/conversations/{id}/draft { userId, draft } → { ok, draft } ('' clears). */
@@ -378,15 +405,18 @@ class PulseApi(private val http: HttpClient) {
         }
 
     /** DELETE /api/messages/{id} {requesterId} — sender-gated soft delete (clear chat). */
-    suspend fun deleteMessage(messageId: String, requesterId: String): PulseResult<Unit> = try {
-        val res = http.delete(PulseEndpoints.http("/api/messages/$messageId")) {
-            contentType(ContentType.Application.Json)
-            setBody(jsonOf("requesterId" to requesterId).toString())
+    suspend fun deleteMessage(messageId: String, requesterId: String): PulseResult<Unit> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.delete(PulseEndpoints.http("/api/messages/$messageId")) {
+                contentType(ContentType.Application.Json)
+                setBody(jsonOf("requesterId" to requesterId).toString())
+            }
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) PulseResult.Success(Unit) else failureOf(res.status.value, text)
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
-        val text = res.bodyAsText()
-        if (res.status.isSuccess()) PulseResult.Success(Unit) else failureOf(res.status.value, text)
-    } catch (e: Exception) {
-        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
     }
 
     // ── Wave 2 messaging depth (spec §0 — every route exists on the wire) ──
@@ -433,23 +463,26 @@ class PulseApi(private val http: HttpClient) {
      * null is a VALID result (nothing unfurled) — decoded tolerantly. Own
      * runner (the shared `post` helper cannot carry a null parse result).
      */
-    suspend fun unfurl(messageId: String, userId: String): PulseResult<ChatMessageDto?> = try {
-        val res = http.post(PulseEndpoints.http("/api/messages/$messageId/unfurl")) {
-            contentType(ContentType.Application.Json)
-            setBody(jsonOf("userId" to userId).toString())
+    suspend fun unfurl(messageId: String, userId: String): PulseResult<ChatMessageDto?> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.post(PulseEndpoints.http("/api/messages/$messageId/unfurl")) {
+                contentType(ContentType.Application.Json)
+                setBody(jsonOf("userId" to userId).toString())
+            }
+            val text = res.bodyAsText()
+            if (!res.status.isSuccess()) {
+                failureOf(res.status.value, text)
+            } else {
+                val root = PulseJson.parseToJsonElement(text)
+                val inner = (root as? JsonObject)?.get("message") as? JsonObject
+                PulseResult.Success(inner?.let { PulseJson.decodeFromJsonElement(ChatMessageDto.serializer(), it) })
+            }
+        } catch (e: kotlinx.serialization.SerializationException) {
+            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
-        val text = res.bodyAsText()
-        if (!res.status.isSuccess()) {
-            failureOf(res.status.value, text)
-        } else {
-            val root = PulseJson.parseToJsonElement(text)
-            val inner = (root as? JsonObject)?.get("message") as? JsonObject
-            PulseResult.Success(inner?.let { PulseJson.decodeFromJsonElement(ChatMessageDto.serializer(), it) })
-        }
-    } catch (e: kotlinx.serialization.SerializationException) {
-        PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
-    } catch (e: Exception) {
-        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
     }
 
     /** GET /api/users/{id}/saved → { items: [{savedAt, conversation, message}] } (newest first, cap 100). */
@@ -487,18 +520,21 @@ class PulseApi(private val http: HttpClient) {
         }
 
     /** DELETE /api/topics/{id}?userId= → { ok: true } (creator/admin only — query-param identity). */
-    suspend fun deleteTopic(topicId: String, userId: String): PulseResult<OkDto> = try {
-        val res = http.delete(
-            PulseEndpoints.http("/api/topics/$topicId?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
-        )
-        val text = res.bodyAsText()
-        if (res.status.isSuccess()) {
-            PulseResult.Success(runCatching { PulseJson.decodeFromString(OkDto.serializer(), text) }.getOrDefault(OkDto(ok = true)))
-        } else {
-            failureOf(res.status.value, text)
+    suspend fun deleteTopic(topicId: String, userId: String): PulseResult<OkDto> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.delete(
+                PulseEndpoints.http("/api/topics/$topicId?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
+            )
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) {
+                PulseResult.Success(runCatching { PulseJson.decodeFromString(OkDto.serializer(), text) }.getOrDefault(OkDto(ok = true)))
+            } else {
+                failureOf(res.status.value, text)
+            }
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
-    } catch (e: Exception) {
-        PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
     }
 
     // ── Wave 3 native calls — REST /api/calls (call-types.ts parity) ──
