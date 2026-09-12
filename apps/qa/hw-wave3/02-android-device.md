@@ -1,7 +1,8 @@
 # 02 — PHYSICAL ANDROID DEVICE RUNBOOK
 
-App: release APK from the GitHub Release (`Pulse-v0.5.0-native.apk`,
-versionCode 13) or the fresher W3-HW release build. Debug suffix
+App: release APK from the GitHub Release (`Pulse-v0.5.1-native.apk`,
+versionCode 14 — the W3-HW build with TURN ICE plumbing; verified
+`apksigner verify` + badging). Debug suffix
 (`app.pulse.chat.debug`) is acceptable if consistent for the whole phase —
 label it in evidence.
 
@@ -10,7 +11,7 @@ label it in evidence.
 ```bash
 # Physical device: enable Developer options → USB debugging. NO emulator.
 adb devices -l                       # exactly one device, state: device
-adb install -r Pulse-v0.5.0-native.apk
+adb install -r Pulse-v0.5.1-native.apk
 adb shell settings put global window_animation_scale 0   # optional, stability
 ```
 

@@ -88,6 +88,14 @@ probe — Android `ManifestEndpoints.kt`, iOS `PulseEndpoints.fetchManifestOverr
   `-PpulseGateway=https://pulse.example.com -PpulseSocket=https://pulse.example.com`
   (BuildConfig `PULSE_GATEWAY`/`PULSE_SOCKET`). iOS: Settings → Connection,
   or the manifest path above.
+- **CDN channel consistency (do together with the manifest commit):** the
+  manifest still advertises versionCode 13 / `Pulse-v0.5.0-native.apk` —
+  update `versionCode` → 14, `apkUrl` → the `v0.5.1-native` release asset,
+  and refresh `download/Pulse.apk` with the v0.5.1 APK so devices updating
+  through the CDN channel get the TURN-capable build, not just devices
+  side-loaded from the GitHub Release. Keep `gateway`/`socket`/`ice` EMPTY
+  until the real host is live — empty preserves offline-first; a placeholder
+  host would be adopted and break connectivity.
 - Devices adopt overrides within one launch (3–6 s probe, persisted in
   vault/Keychain). Cold-start the apps after committing the manifest.
 

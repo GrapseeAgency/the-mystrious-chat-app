@@ -4,8 +4,10 @@
 `NOT TESTED — BLOCKED: NO HARDWARE`. Nothing becomes PASS without device
 evidence. An untested case is never converted to PASS (directive rule).
 
-Code under test: Wave 3 CODE/CI (`v0.5.0-native` lineage + the W3-HW TURN
-plumbing commit). No feature work happens in this phase — hardware proof only.
+Code under test: **`v0.5.1-native` (versionCode 14)** — the W3-HW release
+with the TURN ICE plumbing in both call engines (badging + `apksigner verify`
+checked against the published release asset). No feature work happens in
+this phase — hardware proof only.
 
 ## Why this kit exists
 
