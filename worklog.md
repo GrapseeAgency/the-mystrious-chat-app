@@ -2613,3 +2613,22 @@ Stage Summary:
 - Wave 3-HW device gates: 0 of 11 claimable from this sandbox — every M/F/S/H case remains NOT TESTED — BLOCKED: NO HARDWARE; verdict unchanged: CODE/CI VERIFIED + HARDWARE VERIFICATION REQUIRED. Wave 3 is NOT complete.
 - The blocker is now ONLY operational: the kit at apps/qa/hw-wave3/ makes every gate executable by an operator with a physical Android + physical iPhone; infrastructure artifacts (compose, coturn, manifest ice JSON) are copy-paste ready; Release v0.5.1-native APK is device-installable.
 - One code change shipped this phase (TURN ICE plumbing, call-path only, both platforms, tests green) — required by the directive's TURN mandate; no features, no refactors, no Wave 4 started. HARD STOP honored.
+
+---
+Task ID: 3-HW-R
+Agent: Z.ai Code (main)
+Task: WAVE 3-HW READINESS VERIFICATION (read-only; no features; no release-state changes)
+
+Work Log:
+- v0.5.1-native confirmed as THE hardware-test build: tag → 6a8a88e (contains TURN plumbing + kit, local `git ls-tree`); remote tag confirmed via unauthenticated ls-remote; remote main = c81e6f2; only c19b6c6 (docs fix) intentionally unpushed.
+- APK installability proven without a device: downloaded the release asset unauthenticated (web endpoint), `aapt dump badging` → app.pulse.chat / versionCode 14 / versionName 0.5.1-native / minSdk 21 / targetSdk 35; `apksigner verify` → signature VALID (CN=Pulse Live Update); WebRTC JNI libs present; sha256 9b010563…778f1.
+- iOS archive: tag CI `archive` job = success + `build-test` = success (97 tests incl. 5 ICE) — session-recorded conclusions; byte-level artifact inspection deferred (artifact download requires auth; old PAT must not be used per rotation order).
+- Gateway/socket override: release-state runtime exercised LIVE — wave3-call-gate.js 17/17 PASSED against the real edge (:81) + relay (:3003) + REST (offer/answer/ICE/hangup, reject/cancel/busy/offline/timeout, identity-gate anti-spoof, single-writer /api/calls).
+- TURN consumption: Android CallEngine.iceServers() ← PulseEndpoints.iceServersJson (in tag tree, 3 refs); iOS PulseRTCMediaProvider ← PulseEndpoints.manifestIceJSON; 5× PulseIceOverrideTests green in CI; kit manifest JSON uses the array `urls` form both parsers accept.
+- Kit consistency: found + fixed 2 real gaps (02-android-device.md stale v0.5.0/13 refs → v0.5.1/14; 01-infrastructure.md now mandates the CDN-channel refresh to 14 alongside the manifest commit, with gateway/socket/ice kept EMPTY until the real host is live). Committed locally as c19b6c6 — NOT pushed (PAT rotation first).
+- Evidence locations: android-capture.sh → logs/ (+dumpsys mic-release proof), iOS log stream → pulse-ios-*.log, RESULTS.md ledger (28 NOT TESTED rows), 08-report-template.md final report skeleton; log tags CallEngine/ManifestEndpoints confirmed present in the tag tree.
+- PAT: ZERO authenticated API/git calls this pass (API rate limit hit → switched to unauthenticated endpoints; the old token was NOT used at all). Sweep: no token in .git/config, origin URL, committed tree, worktree, or worklog. Rotation itself is an owner-only action I cannot perform.
+
+Stage Summary:
+- All 7 readiness items verified; hardware-validation process is execution-ready. Wave 3-HW remains OPEN — NOT complete (0 device cases run, per directive).
+- Pending: (1) user rotates the exposed PAT; (2) 1 unpushed docs commit (c19b6c6) goes up with the fresh credential; (3) operator runs apps/qa/hw-wave3/README.md on physical Android + iPhone + public gateway + TURN.
