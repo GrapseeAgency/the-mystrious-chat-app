@@ -2728,3 +2728,19 @@ Stage Summary:
 - RELEASE v0.6.0-native LIVE: Android tag CI ✅, iOS tag CI ✅ (build-test 123 tests, 2 skipped + xcarchive ✅), CDN manifest ↔ release asset ↔ mirror all byte-consistent.
 - Wave 4 scope delivered (Stories only); no Hub/Games/Voice Rooms work; Home layout untouched.
 - Wave 3-HW remains OPEN (hardware gate unchanged, belongs to the user).
+
+---
+Task ID: 5-a/5-b/5-c/5-d
+Agent: Z.ai Code (orchestrator, direct)
+Task: Wave 5 audits — Web voice/stage/space forensic spec + native readiness; parity spec authored
+
+Work Log:
+- Read relay handlers verbatim (mini-services/pulse-socket/index.ts L190-485, 852-1284): exact voice/stage/space event semantics, payload shapes, identity gates, throttles (voice chunk 96KB cap, transcript 700ms/280ch, space move 80ms + clamp01 + 5min idle prune, stage host gating + removeVoicePeerByUser enforcement).
+- Explore audit 1 (Web voice-room-sheet.tsx 1247L): full useVoiceRoom spec — PTT 260ms hold/latch threshold, 16kHz/250ms/4000-sample Int16 chunks seq-from-1, jitter playhead max(now+85ms,nextAt), captions 4s WAV windows → POST /api/voice/transcribe (participant-gated, 512KB cap) → voice:transcript (TTL 7s, keep 3, pref pulse-voice-captions), reconnect re-join + 2s resync clamp, teardown map, permission-error copy, WEB DEFECTS: (1) CRITICAL transmit path dead — blockRef.buf never armed so no voice:chunk ever emitted; (2) rejoin seq blackhole — receiver lastSeq never resets; (3) no auto-stop; (4) caption id collision; (5) fixed 85ms jitter no adaptivity.
+- Explore audit 2 (stage-room-sheet.tsx 1659L + space-sheet.tsx 487L): stage join-as-listener/first-joiner-host trust model, stage:state shape {host,speakers,hands,listeners,listenerCount}, hand FIFO, approve/mute/end (two-tap 2600ms confirm), host auto voice:join for speakers, STAGE DEFECT: listeners never voice:join → audience receives NO audio/glow; space: space:state players 0..1 4dp, tap+drag map, client throttle 90 vs server 80 mismatch, NEARBY_RADIUS 0.18, SPACE DEFECTS: optimistic dot never reconciles, lazy idle prune, no error state after reconnect attempts exhausted.
+- Explore audit 3 (native readiness): Android — SocketEvents constants + S→C DTOs exist; PulseSocketClient has ZERO emit methods for the 14 C→S events; PulseRepositoryImpl L203-209 drops all 7 S→C signals (-> Unit); no AudioRecord/AudioTrack raw path (WebRTC only); prefs/API/patterns mapped. iOS — Signal cases exist but raw [String:Any]; no typed DTOs; no AVAudioEngine path; NSMicrophoneUsageDescription already present; PulseSession engine pattern + GRDB v6 + PulsePrefs mapped; relay fixture reusable for tests.
+- Authored docs/WAVE5-VOICE-SPACES-PARITY-SPEC.md: wire contract (unchanged), 10 voice + 8 stage + 5 space capability rows with WEB→ANDROID→iOS→SOCKET→API→LOCAL→OFFLINE→PERMISSIONS→TEST, 5 native defect-fixes (#1 chunker proof-tested, #2 roster-drop seq reset, #3 voice seat for ALL stage roles incl. re-join after demote, #4 80ms throttle + 300ms idle reconcile, #5 honest space error state), platform implementation map, verification claim levels (CODE/SIMULATOR/PHYSICAL), acceptance ledger.
+
+Stage Summary:
+- Behavioural truth locked. Native builds additive: protocol builders, socket emits, event forwarding, 2 audio engines, 3 state machines, 3 surfaces each, captions client+pref. No calling code modified; no Room/GRDB migration (rooms ephemeral); Wave 3-HW untouched.
+- Next: dispatch Android (5-e) + iOS (5-f) implementation agents in parallel with this spec.
