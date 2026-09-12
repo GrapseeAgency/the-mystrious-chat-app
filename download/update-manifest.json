@@ -1,12 +1,12 @@
 {
-  "versionCode": 15,
-  "versionName": "0.5.2-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.5.2-native/Pulse-v0.5.2-native.apk",
+  "versionCode": 16,
+  "versionName": "0.6.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.6.0-native/Pulse-v0.6.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "09b039da827a0009fb314aa0be52c7119bca02f9bda799abcc11e551e3a18e36",
-  "notes": "Home connectivity fix — root cause: with no gateway configured (honest offline-first), the REST layer still fired requests and Ktor's URLBuilder resolved the relative path against its implicit http://localhost default, so Android's network security policy (correctly) blocked the cleartext call — Home showed 'Could not reach gateway — CLEARTEXT communication to localhost not permitted'. Fix: a gateway guard at every REST entry (zero requests fire while unconfigured, honest actionable copy instead) + the deployment manifest is now bootstrapped from the HTTPS repo CDN when offline, so a gateway published into update-manifest.json is adopted with zero rebuild. No network-security weakening (cleartext stays blocked). Tests: data-module JVM 7/7 (MockEngine + real OkHttp engine against a loopback origin). Also ships the Wave 3-HW TURN ICE plumbing. APK versionCode 15.",
+  "sha256": "2331b98823f8fb0731467b5757ea301881876ae2beadc79e33b53a36f612137e",
+  "notes": "Wave 4 — native Stories + Social Presence on both platforms: full 24h status feature set on the wire (GET/POST /api/stories, POST view, GET viewers, DELETE story; REST + 60s poll parity — zero socket events, same as web). Android: feature-stories module with pure viewer state machine (5000ms stories, per-group progress bars, left-32%-prev tap zones, 240ms hold-to-pause, drag-down dismiss, cross-group advance, auto-close), Text/Photo composer (280-char cap, 8 gradient palette keys, photo picker -> <=1280px JPEG q0.82 -> /api/uploads), owner viewers sheet (5s poll) + delete with confirm, unseen/seen animated rings on the Home rail, Room v8 story_cache offline snapshot, Room migration chain extended + instrumented test. Web defects fixed natively: D1 composer always reachable, D2 client-side expiry filter, D3 vanish auto-advance, D5 error!=empty, D6 optimistic seen + single retry, D7 live viewers poll. iOS: SwiftUI full-screen viewer + composer on the same machine semantics (StoryViewerMachine), GRDB v6 storyCache, session-owned feed model, dock sheet + tray wiring. JVM tests: Android 41 stories-related green (protocol 7 + data 8 + feature 26); iOS 25 new tests green (123 total). APK versionCode 16.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-12T05:40:00Z"
+  "updatedAt": "2026-09-12T13:10:00Z"
 }
