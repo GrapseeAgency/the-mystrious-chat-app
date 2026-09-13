@@ -26,7 +26,7 @@ public enum PulseBadgeCap {
 public enum PulseMentions {
     /// The mention the composer should complete right now, if any:
     /// `(token, startIndexOfTheAtSign)`.
-    public static func activeToken(in text: String) -> (token: String, atStartIndex: Int)? {
+    public static func activeToken(in text: String) -> (token: String, atIndex: Int)? {
         guard let pattern = try? NSRegularExpression(pattern: "(?:^|\\s)@([^@\\s]*)$") else { return nil }
         let range = NSRange(text.startIndex..., in: text)
         guard let match = pattern.firstMatch(in: text, range: range),
