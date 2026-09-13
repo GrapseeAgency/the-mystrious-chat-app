@@ -61,6 +61,9 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Poll
@@ -164,6 +167,8 @@ fun ChatRoomScreen(
     val recordMs by viewModel.recordMs.collectAsStateWithLifecycle()
     val sendingVoice by viewModel.sendingVoice.collectAsStateWithLifecycle()
     val transcribingIds by viewModel.transcribingIds.collectAsStateWithLifecycle()
+    val channelRole by viewModel.channelRole.collectAsStateWithLifecycle()
+    val safety by viewModel.safety.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -185,6 +190,17 @@ fun ChatRoomScreen(
     var wasEditing by remember { mutableStateOf(false) }
     var expandedFor by remember { mutableStateOf<String?>(null) }
     var scrolledFlash by remember { mutableStateOf<String?>(null) }
+
+    // Wave 6 — broadcast channel lock (role from the server detail).
+    val isChannel = conversation?.kind == Conversation.Kind.CHANNEL
+    LaunchedEffect(isChannel, conversationId) {
+        if (isChannel) viewModel.loadComposerLock()
+    }
+    val composerLocked = isChannel && channelRole != "admin"
+    // Wave 6 — DM safety entry: the only non-viewer member of a DM.
+    val dmPeerId = conversation
+        ?.takeIf { it.kind == Conversation.Kind.DM }
+        ?.memberIds?.firstOrNull { it != viewerId }
 
     // Timeline rows (asc) with day separators, then reversed for the
     // reverseLayout list — index 0 is the newest row, the anchor for tails.
@@ -332,6 +348,9 @@ fun ChatRoomScreen(
             onToggleSearch = {
                 if (state.searchOpen) viewModel.setSearchOpen(false) else viewModel.setSearchOpen(true)
             },
+            onOpenSafety = if (dmPeerId != null) {
+                { viewModel.loadSafety(dmPeerId) }
+            } else null,
         )
 
         // Wave 2 topic rail — GROUP rooms only (DMs have nothing to file into).
@@ -590,8 +609,54 @@ fun ChatRoomScreen(
             }
         }
 
+        // Wave 6 — @mention suggester above the composer (roster-filtered).
+        val memberNames = conversation?.memberNames.orEmpty()
+        val activeToken = draft.substringAfterLast(' ', "")
+        val mentionQuery = activeToken.takeIf { it.startsWith("@") }?.drop(1)?.lowercase().orEmpty()
+        val mentionSuggestions = if (mentionQuery.isEmpty() || state.editing != null) {
+            emptyList()
+        } else {
+            memberNames.filter { it.lowercase().contains(mentionQuery) }.take(5)
+        }
+        if (mentionSuggestions.isNotEmpty()) {
+            Surface(tonalElevation = 3.dp, color = MaterialTheme.colorScheme.surface) {
+                Column(Modifier.fillMaxWidth()) {
+                    mentionSuggestions.forEach { name ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val prefix = draft.dropLast(activeToken.length)
+                                    draft = prefix + "@" + name.trim() + " "
+                                    viewModel.onDraftChanged(draft)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            PulseAvatar(name = name, colorHex = null, size = 24.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("@" + name.trim(), style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        }
+
         // Composer — REPLACED wholesale by the record bar while recording.
-        Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+        // Wave 6 — broadcast channel lock: non-admins get the glass notice
+        // (web parity); the server still 403s every non-admin post.
+        if (composerLocked) {
+            Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(10.dp))
+                    Text("Only admins can post", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
             if (recording) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
@@ -878,6 +943,11 @@ fun ChatRoomScreen(
             },
             onDismiss = { pinsOpen = false },
         )
+    }
+
+    // Wave 6 — DM safety-number sheet (12×5 digits, settle-confirmed verify).
+    safety?.let { current ->
+        SafetyNumberSheetHost(safety = current, onDismiss = viewModel::closeSafety, onVerify = viewModel::verifySafety, onReset = viewModel::unverifySafety)
     }
 }
 
@@ -1257,6 +1327,7 @@ private fun RoomHeader(
     onOpenVoiceRoom: () -> Unit,
     onBack: () -> Unit,
     onToggleSearch: () -> Unit,
+    onOpenSafety: (() -> Unit)? = null,
 ) {
     Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
         Row(
@@ -1304,6 +1375,17 @@ private fun RoomHeader(
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                // Wave 6 — DM safety-number entry (web chat-room ShieldCheck).
+                if (onOpenSafety != null) {
+                    IconButton(onClick = onOpenSafety) {
+                        Icon(
+                            Icons.Filled.Shield,
+                            contentDescription = "Safety number",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
@@ -2417,6 +2499,104 @@ private fun TopicChip(
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = if (active) PulsePalette.EmeraldDeep else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+            }
+        }
+    }
+}
+
+// ── Wave 6 — DM safety-number sheet (web safety-sheet parity) ───────────
+
+private fun safetyStamp(iso: String): String = runCatching {
+    java.time.format.DateTimeFormatter.ofPattern("MMM d, HH:mm")
+        .withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.parse(iso))
+}.getOrDefault("")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SafetyNumberSheetHost(
+    safety: ChatRoomViewModel.SafetyUi,
+    onDismiss: () -> Unit,
+    onVerify: () -> Unit,
+    onReset: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 30.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Shield,
+                    contentDescription = null,
+                    tint = if (safety.state?.verified == true) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text("Encryption", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(
+                        if (safety.state?.verified == true) "Verified" else "Not verified",
+                        fontSize = 12.sp,
+                        color = if (safety.state?.verified == true) PulsePalette.Emerald else MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            when {
+                safety.busy && safety.state == null -> Row(Modifier.padding(vertical = 12.dp)) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+                safety.state != null -> {
+                    val digits = safety.state.safetyNumber.split(' ').filter { it.isNotBlank() }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        digits.chunked(4).forEach { rowDigits ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                rowDigits.forEach { group ->
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Text(
+                                            group,
+                                            Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                }
+                                if (rowDigits.size == 1) Spacer(Modifier.weight(1f))
+                                if (rowDigits.size == 2) Spacer(Modifier.weight(1f))
+                                if (rowDigits.size == 3) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Compare these 60 digits with your contact in person. If they match, mark this contact as verified.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    if (safety.state.verified) {
+                        Text(
+                            "Verified · " + (safety.state.verifiedAtIso?.let { safetyStamp(it) } ?: ""),
+                            color = PulsePalette.Emerald,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = onReset, enabled = !safety.busy) { Text("Reset verification") }
+                    } else {
+                        Button(
+                            onClick = onVerify,
+                            enabled = !safety.busy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Mark as verified") }
+                    }
+                }
+                else -> Text(
+                    "Could not load the safety number — try again.",
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
                 )
             }
         }

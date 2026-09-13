@@ -97,7 +97,7 @@ class ContactsViewModel @Inject constructor(
         viewModelScope.launch { repo.block(user.id) }
     }
 
-    fun report(user: User, reason: String) {
-        viewModelScope.launch { repo.report(user.id, reason, null) }
+    fun report(user: User, reason: String, details: String?) {
+        viewModelScope.launch { repo.report(user.id, reason, details) }
     }
 }

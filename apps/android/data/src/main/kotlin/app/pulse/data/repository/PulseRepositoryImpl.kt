@@ -24,24 +24,30 @@ import app.pulse.data.local.TopicEntity
 import app.pulse.data.local.toInfo
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
+import app.pulse.domain.model.BlockedAccount
 import app.pulse.domain.model.CallKind
 import app.pulse.domain.model.CallLogEntry
 import app.pulse.domain.model.CallPeer
 import app.pulse.domain.model.CallSignalOut
 import app.pulse.domain.model.CallStatus
+import app.pulse.domain.model.Channel
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.FlushReport
 import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.HandleCheck
+import app.pulse.domain.model.InviteJoinOutcome
+import app.pulse.domain.model.InvitePreview
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.MentionItem
 import app.pulse.domain.model.OutboxDeliveryException
 import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.OutboxFailureClass
+import app.pulse.domain.model.ProfilePatch
 import app.pulse.domain.model.Reaction
 import app.pulse.domain.model.SavedItem
+import app.pulse.domain.model.SafetyState
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.model.StoryItem
 import app.pulse.domain.model.StoryUser
@@ -49,6 +55,8 @@ import app.pulse.domain.model.StoryViewer
 import app.pulse.domain.model.Topic
 import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
+import app.pulse.domain.model.UserProfile
+import app.pulse.domain.model.UserStats
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.usecase.FlushOutboxUseCase
@@ -61,7 +69,10 @@ import app.pulse.protocol.CallLogCreatedDto
 import app.pulse.protocol.CallLogItemDto
 import app.pulse.protocol.CallOfferDto
 import app.pulse.protocol.CallRejectDto
+import app.pulse.protocol.ChannelDto
 import app.pulse.protocol.ConversationSummaryDto
+import app.pulse.protocol.FolderDto
+import app.pulse.protocol.FullUserDto
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.PulseVoiceUser
 import app.pulse.protocol.SavedItemDto
@@ -778,6 +789,14 @@ class PulseRepositoryImpl @Inject constructor(
         // cross-device restore — failures are silently ignored.
     }
 
+    override suspend fun myRole(conversationId: String): Result<String?> =
+        when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(
+                r.value.members.firstOrNull { it.id == viewerId }?.role,
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
     override suspend fun conversationDetail(conversationId: String): Result<Conversation> =
         when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
             is PulseResult.Success -> {
@@ -1006,10 +1025,26 @@ class PulseRepositoryImpl @Inject constructor(
         return result
     }
 
-    override suspend fun block(userId: String): Result<Unit> = api.postAction("/api/users/$userId/block").toResult()
-    override suspend fun unblock(userId: String): Result<Unit> = api.postAction("/api/users/$userId/unblock").toResult()
+    // Wave 6 route fixes (audit A): block carries the ACTOR in the body, and
+    // unblock is DELETE /block?userId= — POST /unblock does NOT exist on the
+    // wire (the same defect iOS shipped; both platforms converge now).
+    override suspend fun block(userId: String): Result<Unit> =
+        when (val r = api.blockUser(userId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun unblock(userId: String): Result<Unit> =
+        when (val r = api.unblockUser(userId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
     override suspend fun report(userId: String, reason: String, details: String?): Result<Unit> =
-        api.postAction("/api/users/$userId/report", PulseApi.jsonOf("reason" to reason, "details" to details)).toResult()
+        when (val r = api.reportUser(userId, viewerId ?: "", reason, details)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
 
     // ── N10 home-page era ──────────────────────────────────────
 
@@ -1579,6 +1614,192 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
+    // ── Wave 6 — social graph & discovery ──────────────────────
+
+    override suspend fun userProfile(userId: String): Result<UserProfile> =
+        when (val r = api.fullUser(userId)) {
+            is PulseResult.Success -> Result.success(r.value.toUserProfile())
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun patchProfile(patch: ProfilePatch): Result<UserProfile> {
+        val body = buildJsonObject {
+            patch.name?.let { put("name", it) }
+            patch.about?.let { put("about", it) }
+            patch.color?.let { put("color", it) }
+            patch.avatar?.let { put("avatar", it) }
+            patch.statusEmoji?.let { put("statusEmoji", it) }
+            patch.statusText?.let { put("statusText", it) }
+            // username is "explicit key" on the wire: null = untouched, "" = clear.
+            patch.username?.let { put("username", it) }
+        }
+        return when (val r = api.patchUser(viewerId ?: "", body)) {
+            is PulseResult.Success -> Result.success(r.value.toUserProfile())
+            is PulseResult.Failure -> Result.failure(
+                OnboardingError.of(r).takeIf { r.status == 400 || r.status == 409 }
+                    ?: IllegalStateException("${r.kind}: ${r.message}"),
+            )
+        }
+    }
+
+    override suspend fun userStats(userId: String): Result<UserStats> =
+        when (val r = api.userStats(userId)) {
+            is PulseResult.Success -> Result.success(
+                UserStats(
+                    messages = r.value.messages,
+                    reactions = r.value.reactions,
+                    photos = r.value.photos,
+                    voiceNotes = r.value.voiceNotes,
+                    chats = r.value.chats,
+                    groups = r.value.groups,
+                    days = r.value.days,
+                    joinedAtIso = r.value.joinedAt,
+                    lastSeenIso = r.value.lastSeenAt,
+                ),
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun safetyState(peerId: String): Result<SafetyState> =
+        when (val r = api.safetyState(peerId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(
+                SafetyState(r.value.peerId, r.value.safetyNumber, r.value.verified, r.value.verifiedAt),
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun verifyPeer(peerId: String): Result<SafetyState> =
+        when (val r = api.safetyVerify(peerId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(
+                // Settle-confirmed: the state is ONLY what the server answered.
+                SafetyState(peerId = peerId, verified = r.value.verified, verifiedAtIso = r.value.verifiedAt),
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun unverifyPeer(peerId: String): Result<SafetyState> =
+        when (val r = api.safetyUnverify(peerId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(
+                SafetyState(peerId = peerId, verified = r.value.verified, verifiedAtIso = null),
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun blockState(userId: String): Result<Boolean> =
+        when (val r = api.blockState(userId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.blocked)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun blockedAccounts(): Result<List<BlockedAccount>> =
+        when (val r = api.blockedAccounts(viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(
+                r.value.blocks.map {
+                    BlockedAccount(
+                        id = it.id,
+                        name = it.name,
+                        handle = it.username,
+                        avatar = it.avatar,
+                        color = it.color,
+                        blockedAtIso = it.blockedAt,
+                    )
+                },
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun myReportReasons(userId: String): Result<List<String>> =
+        when (val r = api.reportReasons(userId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.reasons.map { it.reason })
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun invitePreview(code: String): Result<InvitePreview> =
+        when (val r = api.invitePreview(code, viewerId)) {
+            is PulseResult.Success -> Result.success(
+                InvitePreview(
+                    code = r.value.code,
+                    conversationId = r.value.conversationId,
+                    name = r.value.name,
+                    memberCount = r.value.memberCount,
+                    alreadyMember = r.value.alreadyMember,
+                ),
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun joinInvite(code: String): Result<InviteJoinOutcome> =
+        when (val r = api.inviteJoin(code, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                // The relay bumps every participant's list — refresh ours now.
+                runCatching { refreshConversations() }
+                Result.success(InviteJoinOutcome(r.value.conversationId, r.value.alreadyMember))
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun channels(mineOnly: Boolean): Result<List<Channel>> =
+        when (val r = api.channels(viewerId ?: "", mineOnly)) {
+            is PulseResult.Success -> Result.success(r.value.channels.map { it.toChannel() })
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun createChannel(name: String, description: String?, photo: String?): Result<Channel> =
+        when (val r = api.createChannel(viewerId ?: "", name, description, photo)) {
+            is PulseResult.Success -> {
+                val channel = r.value.channel?.toChannel()
+                if (channel == null) {
+                    Result.failure(IllegalStateException("VALIDATION: channel missing in 201 body"))
+                } else {
+                    runCatching { refreshConversations() }
+                    Result.success(channel)
+                }
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun subscribeChannel(channelId: String): Result<Boolean> =
+        when (val r = api.subscribeChannel(channelId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                runCatching { refreshConversations() }
+                Result.success(r.value.already)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun unsubscribeChannel(channelId: String): Result<Unit> =
+        when (val r = api.unsubscribeChannel(channelId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                runCatching { refreshConversations() }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun createFolder(name: String, emoji: String): Result<FolderSummary> =
+        when (val r = api.createFolder(viewerId ?: "", name, emoji)) {
+            is PulseResult.Success -> Result.success(r.value.toFolderSummary())
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun updateFolder(folderId: String, name: String?, emoji: String?, position: Int?): Result<Unit> =
+        when (val r = api.patchFolder(folderId, name, emoji, position)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun deleteFolder(folderId: String): Result<Unit> =
+        when (val r = api.deleteFolder(folderId)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun setFolderConversations(folderId: String, conversationIds: List<String>): Result<Unit> =
+        when (val r = api.setFolderConversations(folderId, conversationIds)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
     /** POST one terminal call-log row; network-class failures enqueue the EXACT payload. */
     private suspend fun postCallLog(payload: kotlinx.serialization.json.JsonObject): Result<Unit> =
         when (val r = postCallLogRaw(payload)) {
@@ -1719,6 +1940,40 @@ fun UserDto.toDomain(): User = User(
     color = color,
     statusEmoji = statusEmoji,
     statusText = statusText,
+)
+
+/** Full AppUser row (GET/PATCH /api/users/{id}) → the profile-page model. */
+fun FullUserDto.toUserProfile(): UserProfile = UserProfile(
+    id = id,
+    name = name,
+    handle = username,
+    about = about,
+    color = color,
+    avatar = avatar,
+    statusEmoji = statusEmoji,
+    statusText = statusText,
+    createdAtIso = createdAt,
+    lastSeenIso = lastSeenAt,
+)
+
+/** One directory row (GET /api/channels) → the channels-page model. */
+fun ChannelDto.toChannel(): Channel = Channel(
+    id = id,
+    name = name?.ifBlank { "Channel" } ?: "Channel",
+    description = description,
+    memberCount = memberCount,
+    isSubscribed = isSubscribed,
+    unread = unread,
+    preview = preview,
+    photo = photo,
+)
+
+/** Wire folder row → the rail model (POST/PATCH /api/folders bodies). */
+fun FolderDto.toFolderSummary(): FolderSummary = FolderSummary(
+    id = id,
+    name = name,
+    emoji = emoji,
+    conversationIds = conversationIds,
 )
 
 fun ChatMessageDto.toDomain(): Message = Message(

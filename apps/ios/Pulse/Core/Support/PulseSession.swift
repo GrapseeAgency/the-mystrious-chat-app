@@ -45,6 +45,10 @@ public final class PulseSession: ObservableObject {
     /// Wave 2 saved library — jump-to-message handoff consumed by ChatsView
     /// together with pendingOpenRoom (the SAME path search hits already use).
     @Published public private(set) var pendingJumpMessageId: String?
+    /// Wave 6 deep links — user-route handoff consumed by the Contacts tab's
+    /// NavigationStack (same bridge pattern as pendingOpenRoom). Consumers
+    /// call `consumePendingUserRoute()` when received.
+    @Published public private(set) var pendingUserRoute: UserRoute?
     /// Opened on session start (nil before onboarding) — @Published so late
     /// view models can rehydrate the offline cache the moment it exists.
     @Published public private(set) var store: PulseStore?
@@ -277,6 +281,17 @@ public final class PulseSession: ObservableObject {
 
     public func consumePendingJumpMessageId() {
         pendingJumpMessageId = nil
+    }
+
+    /// Deep links / avatars — hand a user id to the Contacts tab so it pushes
+    /// the full user page (F-CP-03). `name` seeds the nav title while the
+    /// page fetches (nil-safe).
+    public func requestOpenUser(_ userId: String, name: String?) {
+        pendingUserRoute = UserRoute(userId: userId, name: name ?? "Profile")
+    }
+
+    public func consumePendingUserRoute() {
+        pendingUserRoute = nil
     }
 
     public func typers(in conversationId: String, excluding userId: String?) -> [Typer] {

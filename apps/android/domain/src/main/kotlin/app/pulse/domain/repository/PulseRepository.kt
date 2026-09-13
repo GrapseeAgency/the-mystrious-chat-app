@@ -1,23 +1,31 @@
 package app.pulse.domain.repository
 
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.BlockedAccount
 import app.pulse.domain.model.CallLogEntry
 import app.pulse.domain.model.CallSignalData
 import app.pulse.domain.model.CallSignalOut
+import app.pulse.domain.model.Channel
 import app.pulse.domain.model.FlushReport
 import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.HandleCheck
+import app.pulse.domain.model.InviteJoinOutcome
+import app.pulse.domain.model.InvitePreview
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.MentionItem
 import app.pulse.domain.model.OutboxEntry
+import app.pulse.domain.model.ProfilePatch
 import app.pulse.domain.model.SavedItem
+import app.pulse.domain.model.SafetyState
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.model.StoryItem
 import app.pulse.domain.model.StoryViewer
 import app.pulse.domain.model.Topic
 import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
+import app.pulse.domain.model.UserProfile
+import app.pulse.domain.model.UserStats
 import app.pulse.protocol.PulseVoiceUser
 import app.pulse.protocol.SpaceStatePayload
 import app.pulse.protocol.StageEndedPayload
@@ -407,6 +415,68 @@ interface PulseRepository {
     suspend fun emitSpaceJoin(conversationId: String, user: PulseVoiceUser)
     suspend fun emitSpaceMove(conversationId: String, x: Double, y: Double)
     suspend fun emitSpaceLeave(conversationId: String)
+
+    // ── Wave 6 — social graph & discovery (users / safety / blocks / invites / channels / folders) ──
+
+    /** GET /api/users/{id} — the full profile row (scrubbed lastSeen honoured). */
+    suspend fun userProfile(userId: String): Result<UserProfile>
+
+    /** PATCH /api/users/{id} — only touched fields ride the body ('' clears where the wire allows). */
+    suspend fun patchProfile(patch: ProfilePatch): Result<UserProfile>
+
+    /** GET /api/users/{id}/stats — messages/reactions/photos/voiceNotes/chats/groups. */
+    suspend fun userStats(userId: String): Result<UserStats>
+
+    /** GET /api/users/{id}/safety?userId= — 12×5 digits + this viewer's verify stamp. */
+    suspend fun safetyState(peerId: String): Result<SafetyState>
+
+    /** POST /api/users/{id}/safety { userId } — settle-confirmed (NO optimistic lies). */
+    suspend fun verifyPeer(peerId: String): Result<SafetyState>
+
+    /** DELETE /api/users/{id}/safety?userId= — settle-confirmed reset. */
+    suspend fun unverifyPeer(peerId: String): Result<SafetyState>
+
+    /** GET /api/users/{id}/block?userId= — pair state (Block/Unblock label truth). */
+    suspend fun blockState(userId: String): Result<Boolean>
+
+    /** GET /api/users/{id}/blocks?userId= — the viewer's own list (newest first). */
+    suspend fun blockedAccounts(): Result<List<BlockedAccount>>
+
+    /** GET /api/users/{id}/report?userId= — THIS viewer's prior reason keys (hint). */
+    suspend fun myReportReasons(userId: String): Result<List<String>>
+
+    /** GET /api/invite/{code}?userId= — public preview (name + member count only). */
+    suspend fun invitePreview(code: String): Result<InvitePreview>
+
+    /** POST /api/invite/{code}/join { userId } — idempotent join. */
+    suspend fun joinInvite(code: String): Result<InviteJoinOutcome>
+
+    /** GET /api/channels?userId=[&mine=1] — broadcast channel directory. */
+    suspend fun channels(mineOnly: Boolean): Result<List<Channel>>
+
+    /** POST /api/channels { userId, name, description?, photo? } — creator becomes admin. */
+    suspend fun createChannel(name: String, description: String?, photo: String?): Result<Channel>
+
+    /** POST /api/channels/{id}/subscribe { userId } — returns already=true on a no-op. */
+    suspend fun subscribeChannel(channelId: String): Result<Boolean>
+
+    /** DELETE /api/channels/{id}/subscribe { userId } — last-admin leave is a 403. */
+    suspend fun unsubscribeChannel(channelId: String): Result<Unit>
+
+    /** POST /api/folders { userId, name, emoji? } → the fresh folder (position max+1). */
+    suspend fun createFolder(name: String, emoji: String): Result<FolderSummary>
+
+    /** PATCH /api/folders/{id} { name?, emoji?, position? } — only provided fields change. */
+    suspend fun updateFolder(folderId: String, name: String?, emoji: String?, position: Int?): Result<Unit>
+
+    /** DELETE /api/folders/{id} — membership rows cascade, chats stay in the list. */
+    suspend fun deleteFolder(folderId: String): Result<Unit>
+
+    /** GET /api/conversations/{id} — THIS viewer's participant role ('admin'/'member'/null). */
+    suspend fun myRole(conversationId: String): Result<String?>
+
+    /** PUT /api/folders/{id}/conversations { conversationIds[] } — FULL ordered replace. */
+    suspend fun setFolderConversations(folderId: String, conversationIds: List<String>): Result<Unit>
 
     /**
      * POST /api/voice/transcribe {conversationId, requesterId, audioBase64} →

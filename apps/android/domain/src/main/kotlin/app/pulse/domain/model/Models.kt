@@ -269,6 +269,102 @@ data class MentionItem(
     val createdAt: String = "",
 )
 
+// ── Wave 6 — social graph & discovery domain models ─────────────────
+
+/**
+ * The FULL profile row behind a user page / edit form (GET+PATCH
+ * /api/users/{id}). `lastSeenIso` is null when the owner scrubs it —
+ * surfaces render "Last seen hidden", never a guess.
+ */
+data class UserProfile(
+    val id: String,
+    val name: String,
+    val handle: String? = null,
+    val about: String? = null,
+    val color: String? = null,
+    val avatar: String? = null,
+    val statusEmoji: String? = null,
+    val statusText: String? = null,
+    val createdAtIso: String? = null,
+    val lastSeenIso: String? = null,
+) {
+    val firstName: String get() = name.trim().split(Regex("\\s+")).firstOrNull().orEmpty().ifBlank { name }
+}
+
+/** Live profile statistics (GET /api/users/{id}/stats). */
+data class UserStats(
+    val messages: Long = 0,
+    val reactions: Long = 0,
+    val photos: Long = 0,
+    val voiceNotes: Long = 0,
+    val chats: Long = 0,
+    val groups: Long = 0,
+    val days: Long = 0,
+    val joinedAtIso: String? = null,
+    val lastSeenIso: String? = null,
+)
+
+/** Safety-number pair state (GET /api/users/{id}/safety?userId=). */
+data class SafetyState(
+    val peerId: String,
+    /** 60 digits, server-formatted as 12×5 space-joined. */
+    val safetyNumber: String = "",
+    val verified: Boolean = false,
+    val verifiedAtIso: String? = null,
+)
+
+/** One row of the viewer's blocked-accounts list. */
+data class BlockedAccount(
+    val id: String,
+    val name: String,
+    val handle: String? = null,
+    val avatar: String? = null,
+    val color: String? = null,
+    val blockedAtIso: String? = null,
+)
+
+/** Public invite preview (GET /api/invite/{code}?userId=). */
+data class InvitePreview(
+    val code: String,
+    val conversationId: String,
+    val name: String?,
+    val memberCount: Int,
+    val alreadyMember: Boolean,
+)
+
+/** POST /api/invite/{code}/join outcome — idempotent (alreadyMember=true is a no-op join). */
+data class InviteJoinOutcome(
+    val conversationId: String,
+    val alreadyMember: Boolean,
+)
+
+/** One broadcast channel row (GET /api/channels). */
+data class Channel(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val memberCount: Int = 0,
+    val isSubscribed: Boolean = false,
+    val unread: Boolean = false,
+    /** ≤60-char server snippet of the last post (null when none). */
+    val preview: String? = null,
+    val photo: String? = null,
+)
+
+/**
+ * A PATCH /api/users/{id} payload — only fields the user touched ride the
+ * body; `username` null = leave alone, "" = clear (wire contract).
+ */
+data class ProfilePatch(
+    val name: String? = null,
+    val about: String? = null,
+    val color: String? = null,
+    val avatar: String? = null,
+    val statusEmoji: String? = null,
+    val statusText: String? = null,
+    val username: String? = null,
+)
+
 /** A message — mirrors web `MessageDTO`. */
 @Serializable
 data class Message(

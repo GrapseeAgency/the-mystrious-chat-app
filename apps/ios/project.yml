@@ -48,6 +48,10 @@ targets:
       NSCameraUsageDescription: Pulse uses the camera for photos, video notes and calls.
       # Wave 0 — outbox background refresh (matches PulseApp.outboxTaskID).
       BGTaskSchedulerPermittedIdentifiers: ["app.pulse.chat.outbox"]
+      # Wave 6 — pulse:// deep links (invite / user / room), F-DL.
+      CFBundleURLTypes:
+        - CFBundleURLName: app.pulse.chat
+          CFBundleURLSchemes: ["pulse"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.pulse.chat

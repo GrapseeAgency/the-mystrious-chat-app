@@ -202,6 +202,40 @@ private struct RoomContent: View {
     @State private var showFileImporter = false
     // Wave 2 — poll builder sheet.
     @State private var pollBuilderOpen = false
+    // Wave 6 — DM safety-number sheet (F-CP-07/08) + the @-suggester (F-SM-04).
+    @StateObject private var safetyBadges = PulseSafetyBadgeCache.shared
+    @State private var safetyOpen = false
+
+    /// F-CH-04 — broadcast composer lock: broadcastMode on + the viewer is
+    /// NOT an admin (server 403s the post; the web hides the composer too).
+    private var broadcastLocked: Bool {
+        guard conversation.broadcastMode == true else { return false }
+        let role = conversation.members.first(where: { $0.id == session.viewer?.id })?.role
+        return role != "admin"
+    }
+
+    /// F-SM-04 — the @-token active right now (draft tail), if any.
+    private var mentionSuggestion: (token: String, atIndex: Int)? {
+        broadcastLocked ? nil : PulseMentions.activeToken(in: viewModel.draft)
+    }
+
+    private var mentionCandidates: [WireConversationMember] {
+        guard let suggestion = mentionSuggestion else { return [] }
+        let names = conversation.members.map(\.name)
+        let allowed = Set(PulseMentions.matches(for: suggestion.token, in: names))
+        return conversation.members.filter { allowed.contains($0.name) }
+    }
+
+    private func pickMention(_ member: WireConversationMember) {
+        guard let suggestion = mentionSuggestion else { return }
+        let insertion = PulseMentions.insertion(for: member.name)
+        let draft = viewModel.draft
+        // The token is anchored at the draft tail — replace from the @ to end.
+        let prefix = draft.prefix(suggestion.atIndex)
+        PulseHaptics.tap()
+        viewModel.draft = prefix + insertion
+        composerFocused = true
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -221,6 +255,10 @@ private struct RoomContent: View {
                 roomSearchPanel
             }
             messagesList
+            // F-SM-04 — @-suggester popover (roster, top-5 prefix match).
+            if !mentionCandidates.isEmpty {
+                mentionPopover()
+            }
             if !session.connected {
                 offlineStrip
             }
@@ -247,6 +285,34 @@ private struct RoomContent: View {
                 }
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Search messages")
+            }
+            // Wave 6 — DM-only safety entry (F-CP-07): ShieldCheck opens the
+            // 60-digit sheet; the emerald badge shows while verified (F-CP-08).
+            if let partner = dmPartner {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        PulseHaptics.tap()
+                        safetyOpen = true
+                    } label: {
+                        Image(systemName: safetyBadges.isVerified(partner.id) ? "checkmark.shield.fill" : "shield.lefthalf.filled")
+                            .foregroundStyle(safetyBadges.isVerified(partner.id) ? PulseTheme.emerald : PulseTheme.textSecondary)
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified — open safety number" : "Open safety number")
+                }
+            }
+        }
+        .sheet(isPresented: $safetyOpen) {
+            if let partner = dmPartner {
+                SafetySheetView(session: session, peer: partner)
+            }
+        }
+        .task {
+            // Wave 6 — populate the verified-badge cache for this DM (one
+            // quiet GET on room open; the header badge reads the cache).
+            guard let partner = dmPartner else { return }
+            if let state = try? await session.api.safetyState(peerId: partner.id) {
+                safetyBadges.mark(partner.id, verified: state.verified)
             }
         }
         .sheet(item: $threadRoot) { root in
@@ -298,6 +364,56 @@ private struct RoomContent: View {
     }
 
     @State private var showPhotoPicker = false
+
+    /// Wave 6 — the DM partner (safety entry + verified badge are DM-only,
+    /// web parity: group rooms carry no safety number).
+    private var dmPartner: WireConversationMember? {
+        guard !conversation.isGroup else { return nil }
+        return conversation.members.first(where: { $0.id != session.viewer?.id })
+            ?? conversation.members.first
+    }
+
+    // ── F-SM-04 — the @-suggester popover (roster, top-5 prefix match) ──
+    private func mentionPopover() -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(mentionCandidates.enumerated()), id: \.element.id) { index, member in
+                Button {
+                    pickMention(member)
+                } label: {
+                    HStack(spacing: 10) {
+                        RowAvatar(
+                            name: member.name,
+                            colorName: member.color,
+                            photoPath: member.avatar,
+                            size: 26,
+                        )
+                        Text(member.name)
+                            .font(.system(size: 13.5, weight: .medium))
+                            .foregroundStyle(PulseTheme.titleOnPanel)
+                            .lineLimit(1)
+                        if member.id == session.viewer?.id {
+                            Text("(you)")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(PulseTheme.textTertiary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(index == 0 ? PulseTheme.emerald500.opacity(0.10) : Color.clear)
+                .accessibilityLabel("Mention \(member.name)")
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.regularMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
+        .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+        .accessibilityLabel("Mention suggestions")
+    }
 
     // ── room search (server q= + local window filter, jump on tap) ──
     private var roomSearchPanel: some View {
@@ -565,6 +681,29 @@ private struct RoomContent: View {
 
     private var idleComposer: some View {
         VStack(spacing: 0) {
+            if broadcastLocked {
+                // F-CH-04 — the broadcast lock replaces the composer row for
+                // non-admins (verbatim web copy; input is gone, not disabled).
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(PulseTheme.emerald)
+                    Text("Only admins can post")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(PulseTheme.textSecondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial)
+                .accessibilityElement(children: .combine)
+            } else {
+                composerRows
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var composerRows: some View {
             if let editing = viewModel.editingTarget {
                 editBar(editing)
             }
@@ -625,7 +764,6 @@ private struct RoomContent: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(.ultraThinMaterial)
-        }
     }
 
     private var attachMenu: some View {
@@ -1684,7 +1822,9 @@ final class RoomViewModel: ObservableObject {
         }
         searching = true
         searchTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            // 220 ms debounce — the room-search rhythm (web room-search-page;
+            // the GLOBAL chats search keeps its own 250 ms).
+            try? await Task.sleep(nanoseconds: 220_000_000)
             guard let self, !Task.isCancelled else { return }
             var hits: [WireChatMessage] = []
             if let page = try? await session.api.messages(conversationId: self.conversationId, limit: 100, before: nil, query: trimmed) {

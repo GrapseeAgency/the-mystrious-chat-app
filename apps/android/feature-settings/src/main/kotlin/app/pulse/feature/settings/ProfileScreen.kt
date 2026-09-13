@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
@@ -86,7 +88,11 @@ private val SWATCHES = listOf("#10B981", "#14B8A6", "#8B5CF6", "#F59E0B", "#FB71
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfileScreen(viewModel: ProfileViewModel = hiltViewModel()) {
+fun ProfileScreen(
+    onEditProfile: () -> Unit = {},
+    onOpenBlocked: () -> Unit = {},
+    viewModel: ProfileViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val viewerId by viewModel.viewerId.collectAsStateWithLifecycle()
     val viewerName by viewModel.viewerName.collectAsStateWithLifecycle()
@@ -139,6 +145,44 @@ fun ProfileScreen(viewModel: ProfileViewModel = hiltViewModel()) {
                     Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp), tint = PulsePalette.Emerald)
                     Spacer(Modifier.width(6.dp))
                     Text(if (viewerId == null) "Choose" else "Switch", color = PulsePalette.Emerald)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // Wave 6 — edit profile + blocked accounts (web #/profile-edit + settings parity)
+        SettingCard {
+            Column {
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = onEditProfile).padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = PulsePalette.Emerald)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Edit profile", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Name, bio, status, colour, handle and avatar",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = onOpenBlocked).padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Block, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Blocked accounts", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Blocked accounts cannot message you in direct chats",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }

@@ -333,13 +333,185 @@ public struct PulseAPIClient: Sendable {
     public func block(userId target: String) async throws {
         try await postEmpty("/api/users/\(target)/block", body: ["userId": userId])
     }
+    /// WAVE-6 DEFECT FIX — the old body POSTed /api/users/{target}/unblock,
+    /// a route that does NOT exist server-side (every unblock failed). The
+    /// R47 contract is DELETE /api/users/{id}/block?userId={actor} (query
+    /// param, not body — mirrors the safety route's pair convention).
     public func unblock(userId target: String) async throws {
-        try await postEmpty("/api/users/\(target)/unblock", body: ["userId": userId])
+        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        try await deleteEmpty("/api/users/\(target)/block?userId=\(query)", body: ["userId": userId])
     }
-    public func report(userId target: String, reason: String, details: String?) async throws {
+    /// POST /api/users/{id}/report { userId, reason, details? } — repeat with
+    /// the same reason refreshes the row → { reported, updated: true }.
+    public func report(userId target: String, reason: String, details: String?) async throws -> WireReportVerdict {
         var body: [String: Any] = ["userId": userId, "reason": reason]
         if let details { body["details"] = details }
-        try await postEmpty("/api/users/\(target)/report", body: body)
+        let data = try await postRaw("/api/users/\(target)/report", body: body)
+        return try decoder.decode(WireReportVerdict.self, from: data)
+    }
+
+    // ── Wave 6 — social graph & discovery (F-CP/F-SM/F-FD/F-CH) ──
+
+    /// GET /api/users/{id} → { user } (AppUser mirror; 404 = gone).
+    public func user(_ id: String) async throws -> WireUser {
+        let envelope: WireUserEnvelope = try await get("/api/users/\(id)")
+        return envelope.user
+    }
+
+    /// GET /api/users/{id}/stats → { stats } (real activity stamps;
+    /// lastSeenAt is scrubbed server-side when the user hides it).
+    public func userStats(_ id: String) async throws -> WireUserStats {
+        let page: WireUserStatsPage = try await get("/api/users/\(id)/stats")
+        return page.stats
+    }
+
+    /// GET /api/users/{id}/safety?userId={viewer} → { peerId, safetyNumber,
+    /// verified, verifiedAt } — the server-computed 12×5 number + MY state.
+    public func safetyState(peerId: String) async throws -> WireSafetyState {
+        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        return try await get("/api/users/\(peerId)/safety?userId=\(query)")
+    }
+
+    /// POST /api/users/{id}/safety { userId } — upsert the verification
+    /// (re-verifying refreshes verifiedAt). No optimistic lies: callers
+    /// refetch the state on settle.
+    public func verifySafety(peerId: String) async throws -> WireSafetyVerdict {
+        let data = try await postRaw("/api/users/\(peerId)/safety", body: ["userId": userId])
+        return try decoder.decode(WireSafetyVerdict.self, from: data)
+    }
+
+    /// DELETE /api/users/{id}/safety?userId={viewer} — unverify (deleteMany).
+    public func resetSafety(peerId: String) async throws {
+        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        try await deleteEmpty("/api/users/\(peerId)/safety?userId=\(query)", body: ["userId": userId])
+    }
+
+    /// GET /api/users/{id}/block?userId={actor} — pair block state.
+    public func blockState(target: String) async throws -> Bool {
+        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        let state: WireBlockState = try await get("/api/users/\(target)/block?userId=\(query)")
+        return state.blocked
+    }
+
+    /// GET /api/users/{id}/blocks?userId={self} — MY block list, newest first
+    /// (self-service only; the server 403s any other viewer).
+    public func blockedAccounts() async throws -> [WireBlockedAccount] {
+        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        let page: WireBlocksPage = try await get("/api/users/\(userId)/blocks?userId=\(query)")
+        return page.blocks
+    }
+
+    /// GET /api/users/{id}/report?userId={viewer} — MY prior submissions
+    /// about this account (private "already reported" hint).
+    public func reportHistory(reportedId: String) async -> [WireReportReasonRow] {
+        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
+        guard let page: WireReportHistory = try? await get(
+            "/api/users/\(reportedId)/report?userId=\(query)",
+            as: WireReportHistory.self,
+        ) else { return [] }
+        return page.reasons
+    }
+
+    /// PATCH /api/users/{id} { name?, about?, color?, statusEmoji?,
+    /// statusText?, username?, avatar? } → { user }. Explicit keys only —
+    /// the server validates limits (name 1-32, about 1-140, statusEmoji ≤8,
+    /// statusText ≤48, username 3-20 [a-z0-9_], avatar "/api/uploads/<file>").
+    public func updateProfile(userId: String, body: [String: Any]) async throws -> WireUser {
+        let data = try await patchRaw("/api/users/\(userId)", body: body)
+        return try decoder.decode(WireUserEnvelope.self, from: data).user
+    }
+
+    /// GET /api/mentions?userId=&limit= — the FULL 14-day mention feed
+    /// (entries, not just the pill count; tolerant → [] when unreachable).
+    public func mentions(limit: Int = 50) async -> [WireMentionEntry] {
+        guard let page: WireMentionEntriesPage = try? await get(
+            "/api/mentions?userId=\(userId)&limit=\(limit)",
+            as: WireMentionEntriesPage.self,
+        ) else { return [] }
+        return page.items ?? []
+    }
+
+    /// GET /api/channels?userId=[&mine=1] — the broadcast directory
+    /// (memberCount desc, createdAt desc; viewer-aware isSubscribed/unread).
+    public func channels(mineOnly: Bool = false) async throws -> [WireChannelSummary] {
+        var path = "/api/channels?userId=\(userId)"
+        if mineOnly { path += "&mine=1" }
+        let page: WireChannelsPage = try await get(path)
+        return page.channels
+    }
+
+    /// POST /api/channels { userId, name(2-40), description?(≤200), photo? }
+    /// → 201 { channel } — creator lands as admin + the first post is real.
+    public func createChannel(name: String, description: String, photoPath: String?) async throws -> WireChannelSummary {
+        var body: [String: Any] = ["userId": userId, "name": name, "description": description]
+        if let photoPath, !photoPath.isEmpty { body["photo"] = photoPath }
+        let data = try await postRaw("/api/channels", body: body)
+        let created = try decoder.decode(WireChannelCreated.self, from: data)
+        guard let channel = created.channel else {
+            throw Failure(kind: .validation, message: "Channel response missing the created channel")
+        }
+        return channel
+    }
+
+    /// POST /api/channels/{id}/subscribe { userId } → { already, memberCount }.
+    public func subscribeChannel(_ id: String) async throws -> WireSubscribeResult {
+        let data = try await postRaw("/api/channels/\(id)/subscribe", body: ["userId": userId])
+        return try decoder.decode(WireSubscribeResult.self, from: data)
+    }
+
+    /// DELETE /api/channels/{id}/subscribe { userId } → { ok, memberCount }.
+    /// Last-admin leave is blocked server-side with the honest 403 copy.
+    public func unsubscribeChannel(_ id: String) async throws -> WireUnsubscribeResult {
+        let data = try await deleteRaw("/api/channels/\(id)/subscribe", body: ["userId": userId])
+        return try decoder.decode(WireUnsubscribeResult.self, from: data)
+    }
+
+    /// GET /api/invite/{code}?userId= → { invite } (404 = no longer valid).
+    public func invitePreview(code: String) async throws -> WireInvitePreview {
+        let encoded = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? code
+        let page: WireInvitePage = try await get("/api/invite/\(encoded)?userId=\(userId)")
+        return page.invite
+    }
+
+    /// POST /api/invite/{code}/join { userId } → { conversationId,
+    /// alreadyMember } (idempotent — already a member joins nothing).
+    public func joinInvite(code: String) async throws -> WireInviteJoinResult {
+        let encoded = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? code
+        let data = try await postRaw("/api/invite/\(encoded)/join", body: ["userId": userId])
+        return try decoder.decode(WireInviteJoinResult.self, from: data)
+    }
+
+    /// POST /api/folders { userId, name(1-24), emoji?(≤16, default 📂) }
+    /// → 201 { folder } (position = max+1).
+    public func createFolder(name: String, emoji: String?) async throws -> WireFolder {
+        var body: [String: Any] = ["userId": userId, "name": name]
+        if let emoji, !emoji.isEmpty { body["emoji"] = emoji }
+        let data = try await postRaw("/api/folders", body: body)
+        return try decoder.decode(WireFolderEnvelope.self, from: data).folder
+    }
+
+    /// PATCH /api/folders/{id} { name?, emoji?, position? } → { folder }.
+    public func updateFolder(id: String, name: String?, emoji: String?, position: Int?) async throws -> WireFolder {
+        var body: [String: Any] = [:]
+        if let name { body["name"] = name }
+        if let emoji { body["emoji"] = emoji }
+        if let position { body["position"] = position }
+        let data = try await patchRaw("/api/folders/\(id)", body: body)
+        return try decoder.decode(WireFolderEnvelope.self, from: data).folder
+    }
+
+    /// DELETE /api/folders/{id} — cascades membership rows only; the chats
+    /// stay in the list. → { ok: true } (status is the contract).
+    public func deleteFolder(id: String) async throws {
+        try await deleteEmpty("/api/folders/\(id)", body: ["userId": userId])
+    }
+
+    /// PUT /api/folders/{id}/conversations { conversationIds[] } — FULL
+    /// ordered replace in one transaction (dups collapsed server-side,
+    /// empty clears). → { folder } with the fresh membership.
+    public func saveFolderMembership(folderId: String, conversationIds: [String]) async throws -> WireFolder {
+        let data = try await putRaw("/api/folders/\(folderId)/conversations", body: ["conversationIds": conversationIds])
+        return try decoder.decode(WireFolderEnvelope.self, from: data).folder
     }
 
     // ── N10-b home-page endpoints (all degrade to nil on failure) ──
@@ -613,6 +785,24 @@ public struct PulseAPIClient: Sendable {
     private func patchRaw(_ path: String, body: [String: Any]) async throws -> Data {
         var request = URLRequest(url: url(path))
         request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try await send(request)
+    }
+
+    /// Wave 6 — PUT with a JSON body (folder membership full-replace).
+    private func putRaw(_ path: String, body: [String: Any]) async throws -> Data {
+        var request = URLRequest(url: url(path))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try await send(request)
+    }
+
+    /// Wave 6 — DELETE with a JSON body + decoded verdict (channel leave).
+    private func deleteRaw(_ path: String, body: [String: Any]) async throws -> Data {
+        var request = URLRequest(url: url(path))
+        request.httpMethod = "DELETE"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return try await send(request)

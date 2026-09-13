@@ -8,11 +8,14 @@ struct ProfileView: View {
     @ObservedObject var prefs: PulsePrefs
 
     @State private var identitySheet = false
+    // Wave 6 — the full profile editor (F-CP-04/09) via the real PATCH.
+    @State private var editProfileOpen = false
 
     var body: some View {
         NavigationStack {
             List {
                 identitySection
+                statusSection
                 appearanceSection
                 motionSection
                 aboutSection
@@ -23,11 +26,14 @@ struct ProfileView: View {
         .sheet(isPresented: $identitySheet) {
             IdentityPickerSheet(mode: .switcher, session: session, prefs: prefs) {}
         }
+        .sheet(isPresented: $editProfileOpen) {
+            ProfileEditView(session: session, prefs: prefs)
+        }
     }
 
     // ── sections ─────────────────────────────────────────────
     private var identitySection: some View {
-        Section("Identity") {
+        Section {
             HStack(spacing: 12) {
                 PulseAvatar(
                     name: prefs.viewer?.name ?? "You",
@@ -44,6 +50,14 @@ struct ProfileView: View {
                 }
                 Spacer()
                 Button {
+                    editProfileOpen = true
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                        .font(.footnote.weight(.semibold))
+                }
+                .tint(PulseTheme.emerald)
+                .buttonStyle(.bordered)
+                Button {
                     identitySheet = true
                 } label: {
                     Label("Switch", systemImage: "arrow.left.arrow.right")
@@ -53,6 +67,32 @@ struct ProfileView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.vertical, 2)
+        } footer: {
+            Text("Edit opens name, bio, avatar, color, @handle and status — saved to the server instantly.")
+        }
+    }
+
+    /// F-CP-09 — the viewer's status emoji + text, live from prefs.
+    private var statusSection: some View {
+        Section("Status") {
+            if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
+                HStack(spacing: 8) {
+                    Text(UserPageView.statusGlyphDisplay(emoji))
+                        .font(.system(size: 20))
+                    Text(prefs.viewerStatusText ?? "")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            } else if let text = prefs.viewerStatusText, !text.isEmpty {
+                Text(text)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("No status set")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 

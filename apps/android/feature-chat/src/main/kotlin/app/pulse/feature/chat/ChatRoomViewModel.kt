@@ -12,6 +12,7 @@ import app.pulse.core.time.PulseTime
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
+import app.pulse.domain.model.SafetyState
 import app.pulse.domain.model.Topic
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulsePrefsStore
@@ -151,6 +152,52 @@ class ChatRoomViewModel @Inject constructor(
     val conversation: StateFlow<Conversation?> = repo.observeConversations()
         .map { list -> list.firstOrNull { it.id == conversationId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    // Wave 6 — broadcast channel lock: THIS viewer's role from the server
+    // detail (ConversationMemberDto.role); non-admins get the glass notice.
+    private val _channelRole = MutableStateFlow<String?>(null)
+    val channelRole: StateFlow<String?> = _channelRole.asStateFlow()
+
+    fun loadComposerLock() {
+        viewModelScope.launch {
+            _channelRole.value = runCatching { repo.myRole(conversationId).getOrNull() }.getOrNull()
+        }
+    }
+
+    // Wave 6 — DM safety-number sheet (settle-confirmed; NO optimistic lies).
+    data class SafetyUi(val peerId: String, val state: SafetyState?, val busy: Boolean = false)
+
+    private val _safety = MutableStateFlow<SafetyUi?>(null)
+    val safety: StateFlow<SafetyUi?> = _safety.asStateFlow()
+
+    fun loadSafety(peerId: String) {
+        viewModelScope.launch {
+            _safety.value = SafetyUi(peerId, null, busy = true)
+            _safety.value = SafetyUi(peerId, repo.safetyState(peerId).getOrNull())
+        }
+    }
+
+    fun verifySafety() {
+        val current = _safety.value ?: return
+        viewModelScope.launch {
+            _safety.value = current.copy(busy = true)
+            val result = runCatching { repo.verifyPeer(current.peerId).getOrNull() }
+            _safety.value = SafetyUi(current.peerId, result.getOrNull() ?: current.state)
+        }
+    }
+
+    fun unverifySafety() {
+        val current = _safety.value ?: return
+        viewModelScope.launch {
+            _safety.value = current.copy(busy = true)
+            val result = runCatching { repo.unverifyPeer(current.peerId).getOrNull() }
+            _safety.value = SafetyUi(current.peerId, result.getOrNull() ?: current.state)
+        }
+    }
+
+    fun closeSafety() {
+        _safety.value = null
+    }
 
     /** Every chat — the ForwardSheet target list (spec §1.1 forward = client re-POST). */
     val conversations: StateFlow<List<Conversation>> = repo.observeConversations()

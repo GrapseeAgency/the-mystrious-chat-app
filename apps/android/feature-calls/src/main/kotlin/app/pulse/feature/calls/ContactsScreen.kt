@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +71,8 @@ fun ContactsScreen(
     onOpenRoom: (String) -> Unit,
     onCallUser: (User) -> Unit = {},
     onOpenCalls: () -> Unit = {},
+    onOpenUser: (String) -> Unit = {},
+    onOpenAdd: () -> Unit = {},
     viewModel: ContactsViewModel = hiltViewModel(),
 ) {
     val users by viewModel.users.collectAsStateWithLifecycle()
@@ -82,7 +83,6 @@ fun ContactsScreen(
     var filter by remember { mutableStateOf("") }
     var safetyTarget by remember { mutableStateOf<User?>(null) }
     var reportTarget by remember { mutableStateOf<User?>(null) }
-    var reportReason by remember { mutableStateOf("") }
     // Wave 3 — outgoing calls start here. RECORD_AUDIO must be live before
     // the engine touches the mic; denial keeps the call unstarted (honest).
     var callTarget by remember { mutableStateOf<User?>(null) }
@@ -125,6 +125,14 @@ fun ContactsScreen(
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth(),
             )
+            Spacer(Modifier.height(8.dp))
+            Row {
+                TextButton(onClick = onOpenAdd) {
+                    Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(15.dp), tint = PulsePalette.Emerald)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add contact", color = PulsePalette.Emerald)
+                }
+            }
         }
 
         when {
@@ -156,6 +164,7 @@ fun ContactsScreen(
                         onMessage = { viewModel.openDm(user) },
                         onCall = { callTarget = user; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
                         onSafety = { safetyTarget = user },
+                        onOpenProfile = { onOpenUser(user.id) },
                     )
                 }
                 item { Spacer(Modifier.height(20.dp)) }
@@ -175,6 +184,10 @@ fun ContactsScreen(
                 safetyTarget = null
                 viewModel.openDm(target)
             }
+            SheetRow(icon = Icons.Filled.Person, label = "View profile") {
+                safetyTarget = null
+                onOpenUser(target.id)
+            }
             SheetRow(icon = Icons.Filled.Block, label = "Block", tint = MaterialTheme.colorScheme.error) {
                 safetyTarget = null
                 viewModel.block(target)
@@ -188,27 +201,16 @@ fun ContactsScreen(
     }
 
     reportTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { reportTarget = null },
-            title = { Text("Report ${target.name}") },
-            text = {
-                OutlinedTextField(
-                    value = reportReason,
-                    onValueChange = { reportReason = it },
-                    placeholder = { Text("What happened?") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+        // Wave 6 — the six-reason private report panel (server enum contract).
+        ReportPanel(
+            firstName = target.name.trim().split(" ").first(),
+            priorReasons = emptyList(),
+            busy = false,
+            onDismiss = { reportTarget = null },
+            onSubmit = { reason, details ->
+                viewModel.report(target, reason, details.ifBlank { null })
+                reportTarget = null
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.report(target, reportReason.ifBlank { "unspecified" })
-                        reportReason = ""
-                        reportTarget = null
-                    },
-                ) { Text("Send report", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { reportTarget = null }) { Text("Cancel") } },
         )
     }
 }
@@ -235,6 +237,7 @@ private fun ContactRow(
     onMessage: () -> Unit,
     onCall: () -> Unit = {},
     onSafety: () -> Unit,
+    onOpenProfile: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
@@ -248,7 +251,9 @@ private fun ContactRow(
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             PulseAvatar(name = user.name, colorHex = user.color, size = 44.dp, online = online)
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
+            Column(
+                Modifier.weight(1f).clickable(onClick = onOpenProfile),
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(user.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     if (user.verified) {
@@ -281,6 +286,7 @@ private fun ContactRow(
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("Open chat") }, onClick = { menuOpen = false; onMessage() })
+                    DropdownMenuItem(text = { Text("View profile") }, onClick = { menuOpen = false; onOpenProfile() })
                     DropdownMenuItem(text = { Text("Block / report") }, onClick = { menuOpen = false; onSafety() })
                 }
             }

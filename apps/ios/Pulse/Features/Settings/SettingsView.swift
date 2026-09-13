@@ -15,6 +15,8 @@ struct SettingsView: View {
     @State private var probing = false
     @State private var probeResult: ProbeResult?
     @State private var serverField = PulseEndpoints.configuredBase ?? ""
+    // Wave 6 — blocked accounts (F-CP-05, P-SE-05).
+    @State private var blockedOpen = false
 
     private enum ProbeResult: Equatable {
         case ok(String)
@@ -45,6 +47,7 @@ struct SettingsView: View {
                     VStack(spacing: 14) {
                         aboutCard
                         connectionCard
+                        privacyCard
                         chatsCard
                         updatesCard
                     }
@@ -65,6 +68,9 @@ struct SettingsView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .sheet(isPresented: $blockedOpen) {
+            BlockedListView(session: session)
+        }
     }
 
     // ── cards ────────────────────────────────────────────────
@@ -171,6 +177,38 @@ struct SettingsView: View {
         case .ok(let detail): return detail
         case .fail(let detail): return detail
         case nil: return ""
+        }
+    }
+
+    /// Wave 6 — Safety group (web settings-screen.tsx): the blocked-accounts
+    /// surface with the verbatim empty copy + "Account unblocked" toast.
+    private var privacyCard: some View {
+        settingsCard(title: "Safety", icon: "hand.raised.fill") {
+            Button {
+                PulseHaptics.tap()
+                blockedOpen = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.badge.minus")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22)
+                    Text("Blocked accounts")
+                        .font(.system(size: 14.5, weight: .medium))
+                        .foregroundStyle(PulseTheme.titleOnPanel)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Blocked accounts — open the blocked list")
+            Text("Blocked accounts cannot message you in direct chats — the server enforces the boundary.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
         }
     }
 

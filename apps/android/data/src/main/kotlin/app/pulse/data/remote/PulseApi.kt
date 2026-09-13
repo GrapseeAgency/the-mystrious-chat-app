@@ -2,33 +2,51 @@ package app.pulse.data.remote
 
 import app.pulse.core.PulseEndpoints
 import app.pulse.core.result.PulseResult
+import app.pulse.protocol.BlockedPageDto
+import app.pulse.protocol.BlockStateDto
 import app.pulse.protocol.CallLogCreatedDto
 import app.pulse.protocol.CallLogsPageDto
+import app.pulse.protocol.ChannelCreatedDto
+import app.pulse.protocol.ChannelsPageDto
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.ConversationsPageDto
+import app.pulse.protocol.FolderDto
 import app.pulse.protocol.FoldersPageDto
+import app.pulse.protocol.FullUserDto
 import app.pulse.protocol.HandleRegistryDto
+import app.pulse.protocol.InviteEnvelopeDto
+import app.pulse.protocol.InviteJoinResultDto
+import app.pulse.protocol.InvitePreviewDto
 import app.pulse.protocol.MentionsPageDto
 import app.pulse.protocol.MessagesPageDto
 import app.pulse.protocol.OkDto
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.PinnedPageDto
+import app.pulse.protocol.ReportAckDto
+import app.pulse.protocol.ReportReasonsPageDto
 import app.pulse.protocol.SavedPageDto
 import app.pulse.protocol.SavedToggleDto
+import app.pulse.protocol.SafetyStateDto
 import app.pulse.protocol.SearchPageDto
+import app.pulse.protocol.StatsEnvelopeDto
 import app.pulse.protocol.StoriesPageDto
 import app.pulse.protocol.StoryCreatedDto
 import app.pulse.protocol.StoryViewAckDto
 import app.pulse.protocol.StoryViewersDto
+import app.pulse.protocol.SubscribeAckDto
 import app.pulse.protocol.ThreadPageDto
 import app.pulse.protocol.TopicDto
 import app.pulse.protocol.TopicsPageDto
 import app.pulse.protocol.TranscribeResultDto
+import app.pulse.protocol.UnsubscribeAckDto
 import app.pulse.protocol.UploadResultDto
 import app.pulse.protocol.UserDto
+import app.pulse.protocol.UserEnvelopeDto
 import app.pulse.protocol.UsernameCheckDto
 import app.pulse.protocol.UsersPageDto
+import app.pulse.protocol.UserStatsDto
+import app.pulse.protocol.VerifyAckDto
 import app.pulse.protocol.VoiceTranscriptResultDto
 import app.pulse.protocol.unwrapOrRoot
 import io.ktor.client.HttpClient
@@ -38,6 +56,7 @@ import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.readBytes
 import io.ktor.client.statement.bodyAsText
@@ -671,6 +690,263 @@ class PulseApi(private val http: HttpClient) {
             },
             timeoutMillis = TRANSCRIBE_TIMEOUT_MS,
         ) { PulseJson.decodeFromString(VoiceTranscriptResultDto.serializer(), it) }
+
+    // ── Wave 6 — social graph & discovery (users / safety / blocks / reports / invites / channels / folders) ──
+
+    /** PUT helper — the folder membership full-replace is the one PUT on the wire. */
+    private suspend fun <T> put(path: String, body: JsonObject, parse: ((String) -> T)? = null): PulseResult<T> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.put(PulseEndpoints.http(path)) {
+                contentType(ContentType.Application.Json)
+                setBody(body.toString())
+            }
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) {
+                @Suppress("UNCHECKED_CAST")
+                PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
+            } else {
+                failureOf(res.status.value, text)
+            }
+        } catch (e: kotlinx.serialization.SerializationException) {
+            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+        }
+    }
+
+    /** DELETE helper with a `userId` query param (safety unverify / unblock). */
+    private suspend fun <T> deleteWithQuery(path: String, userId: String, parse: ((String) -> T)? = null): PulseResult<T> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.delete(
+                PulseEndpoints.http("$path?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
+            )
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) {
+                @Suppress("UNCHECKED_CAST")
+                PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
+            } else {
+                failureOf(res.status.value, text)
+            }
+        } catch (e: kotlinx.serialization.SerializationException) {
+            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+        }
+    }
+
+    /** DELETE helper with a JSON body { userId } (channel unsubscribe). */
+    private suspend fun <T> deleteWithBody(path: String, userId: String, parse: ((String) -> T)? = null): PulseResult<T> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.delete(PulseEndpoints.http(path)) {
+                contentType(ContentType.Application.Json)
+                setBody(jsonOf("userId" to userId).toString())
+            }
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) {
+                @Suppress("UNCHECKED_CAST")
+                PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
+            } else {
+                failureOf(res.status.value, text)
+            }
+        } catch (e: kotlinx.serialization.SerializationException) {
+            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+        }
+    }
+
+    /** GET /api/users/{id} → { user: AppUser } (the full profile page payload). */
+    suspend fun fullUser(userId: String): PulseResult<FullUserDto> =
+        get("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(UserEnvelopeDto.serializer(), it).user ?: FullUserDto()
+        }
+
+    /** PATCH /api/users/{id} — only non-null fields ride the body ('' clears where the wire allows). */
+    suspend fun patchUser(userId: String, body: JsonObject): PulseResult<FullUserDto> =
+        patch("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8"), body) {
+            PulseJson.decodeFromString(UserEnvelopeDto.serializer(), it).user ?: FullUserDto()
+        }
+
+    /** GET /api/users/{id}/stats → { stats } (messages/reactions/photos/voiceNotes/chats/groups). */
+    suspend fun userStats(userId: String): PulseResult<UserStatsDto> =
+        get("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/stats") {
+            PulseJson.decodeFromString(StatsEnvelopeDto.serializer(), it).stats ?: UserStatsDto()
+        }
+
+    /** GET /api/users/{id}/safety?userId= → 12×5 digits + this viewer's verify stamp. */
+    suspend fun safetyState(peerId: String, viewerId: String): PulseResult<SafetyStateDto> =
+        get(
+            "/api/users/" + java.net.URLEncoder.encode(peerId, "UTF-8") + "/safety?userId=" +
+                java.net.URLEncoder.encode(viewerId, "UTF-8"),
+        ) {
+            PulseJson.decodeFromString(SafetyStateDto.serializer(), it)
+        }
+
+    /** POST /api/users/{id}/safety { userId } → upsert verification. */
+    suspend fun safetyVerify(peerId: String, viewerId: String): PulseResult<VerifyAckDto> =
+        post(
+            "/api/users/" + java.net.URLEncoder.encode(peerId, "UTF-8") + "/safety",
+            jsonOf("userId" to viewerId),
+        ) { PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
+
+    /** DELETE /api/users/{id}/safety?userId= → reset verification (idempotent). */
+    suspend fun safetyUnverify(peerId: String, viewerId: String): PulseResult<VerifyAckDto> =
+        deleteWithQuery(
+            "/api/users/" + java.net.URLEncoder.encode(peerId, "UTF-8") + "/safety",
+            viewerId,
+        ) { PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
+
+    /** GET /api/users/{id}/block?userId= → pair state (drives Block/Unblock label). */
+    suspend fun blockState(targetId: String, actorId: String): PulseResult<BlockStateDto> =
+        get(
+            "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block?userId=" +
+                java.net.URLEncoder.encode(actorId, "UTF-8"),
+        ) {
+            PulseJson.decodeFromString(BlockStateDto.serializer(), it)
+        }
+
+    /** POST /api/users/{id}/block { userId } — idempotent (actor in the BODY). */
+    suspend fun blockUser(targetId: String, actorId: String): PulseResult<BlockStateDto> =
+        post(
+            "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
+            jsonOf("userId" to actorId),
+        ) { PulseJson.decodeFromString(BlockStateDto.serializer(), it) }
+
+    /** DELETE /api/users/{id}/block?userId= — idempotent unblock (POST /unblock does NOT exist). */
+    suspend fun unblockUser(targetId: String, actorId: String): PulseResult<BlockStateDto> =
+        deleteWithQuery(
+            "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
+            actorId,
+        ) { PulseJson.decodeFromString(BlockStateDto.serializer(), it) }
+
+    /** GET /api/users/{id}/blocks?userId= — self-service list (403 otherwise). */
+    suspend fun blockedAccounts(ownerId: String): PulseResult<BlockedPageDto> =
+        get(
+            "/api/users/" + java.net.URLEncoder.encode(ownerId, "UTF-8") + "/blocks?userId=" +
+                java.net.URLEncoder.encode(ownerId, "UTF-8"),
+        ) {
+            PulseJson.decodeFromString(BlockedPageDto.serializer(), it)
+        }
+
+    /** POST /api/users/{id}/report { userId, reason, details? } → 201/200 { reported }. */
+    suspend fun reportUser(targetId: String, reporterId: String, reason: String, details: String?): PulseResult<ReportAckDto> =
+        post(
+            "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/report",
+            buildJsonObject {
+                put("userId", reporterId)
+                put("reason", reason)
+                if (!details.isNullOrBlank()) put("details", details)
+            },
+        ) { PulseJson.decodeFromString(ReportAckDto.serializer(), it) }
+
+    /** GET /api/users/{id}/report?userId= — the reporter's OWN prior reasons (hint). */
+    suspend fun reportReasons(targetId: String, reporterId: String): PulseResult<ReportReasonsPageDto> =
+        get(
+            "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/report?userId=" +
+                java.net.URLEncoder.encode(reporterId, "UTF-8"),
+        ) {
+            PulseJson.decodeFromString(ReportReasonsPageDto.serializer(), it)
+        }
+
+    /** GET /api/invite/[code]?userId= → public preview (404 unknown code). */
+    suspend fun invitePreview(code: String, userId: String?): PulseResult<InvitePreviewDto> =
+        get(
+            "/api/invite/" + java.net.URLEncoder.encode(code, "UTF-8") +
+                (userId?.let { "?userId=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""),
+        ) {
+            PulseJson.decodeFromString(InviteEnvelopeDto.serializer(), it).invite ?: InvitePreviewDto()
+        }
+
+    /** POST /api/invite/[code]/join { userId } → { conversationId, alreadyMember }. */
+    suspend fun inviteJoin(code: String, userId: String): PulseResult<InviteJoinResultDto> =
+        post(
+            "/api/invite/" + java.net.URLEncoder.encode(code, "UTF-8") + "/join",
+            jsonOf("userId" to userId),
+        ) { PulseJson.decodeFromString(InviteJoinResultDto.serializer(), it) }
+
+    /** GET /api/channels?userId=[&mine=1] — directory with viewer-aware flags. */
+    suspend fun channels(userId: String, mineOnly: Boolean): PulseResult<ChannelsPageDto> =
+        get(
+            "/api/channels?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
+                if (mineOnly) "&mine=1" else "",
+        ) {
+            PulseJson.decodeFromString(ChannelsPageDto.serializer(), it)
+        }
+
+    /** POST /api/channels { userId, name, description?, photo? } → 201 { channel }. */
+    suspend fun createChannel(userId: String, name: String, description: String?, photo: String?): PulseResult<ChannelCreatedDto> =
+        post(
+            "/api/channels",
+            buildJsonObject {
+                put("userId", userId)
+                put("name", name)
+                if (!description.isNullOrBlank()) put("description", description)
+                if (!photo.isNullOrBlank()) put("photo", photo)
+            },
+        ) { PulseJson.decodeFromString(ChannelCreatedDto.serializer(), it) }
+
+    /** POST /api/channels/[id]/subscribe { userId } → { already, memberCount }. */
+    suspend fun subscribeChannel(channelId: String, userId: String): PulseResult<SubscribeAckDto> =
+        post(
+            "/api/channels/" + java.net.URLEncoder.encode(channelId, "UTF-8") + "/subscribe",
+            jsonOf("userId" to userId),
+        ) { PulseJson.decodeFromString(SubscribeAckDto.serializer(), it) }
+
+    /** DELETE /api/channels/[id]/subscribe { userId } → last-admin leave is a 403. */
+    suspend fun unsubscribeChannel(channelId: String, userId: String): PulseResult<UnsubscribeAckDto> =
+        deleteWithBody(
+            "/api/channels/" + java.net.URLEncoder.encode(channelId, "UTF-8") + "/subscribe",
+            userId,
+        ) { PulseJson.decodeFromString(UnsubscribeAckDto.serializer(), it) }
+
+    /** POST /api/folders { userId, name, emoji? } → 201 { folder }. */
+    suspend fun createFolder(userId: String, name: String, emoji: String): PulseResult<FolderDto> =
+        post(
+            "/api/folders",
+            buildJsonObject {
+                put("userId", userId)
+                put("name", name)
+                if (emoji.isNotBlank()) put("emoji", emoji)
+            },
+        ) {
+            PulseJson.decodeFromString(FolderDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("folder").toString())
+        }
+
+    /** PATCH /api/folders/[id] { name?, emoji?, position? } → { folder }. */
+    suspend fun patchFolder(folderId: String, name: String?, emoji: String?, position: Int?): PulseResult<FolderDto> =
+        patch(
+            "/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8"),
+            buildJsonObject {
+                if (name != null) put("name", name)
+                if (emoji != null) put("emoji", emoji)
+                if (position != null) put("position", position)
+            },
+        ) {
+            PulseJson.decodeFromString(FolderDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("folder").toString())
+        }
+
+    /** DELETE /api/folders/[id] → { ok } — membership rows cascade, chats stay. */
+    suspend fun deleteFolder(folderId: String): PulseResult<OkDto> =
+        deleteWithQuery("/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8"), "") {
+            PulseJson.decodeFromString(OkDto.serializer(), it)
+        }
+
+    /** PUT /api/folders/[id]/conversations { conversationIds[] } — FULL ordered replace. */
+    suspend fun setFolderConversations(folderId: String, conversationIds: List<String>): PulseResult<OkDto> =
+        put(
+            "/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8") + "/conversations",
+            buildJsonObject {
+                put(
+                    "conversationIds",
+                    kotlinx.serialization.json.JsonArray(conversationIds.map { kotlinx.serialization.json.JsonPrimitive(it) }),
+                )
+            },
+        ) {
+            PulseJson.decodeFromString(OkDto.serializer(), it)
+        }
 
     companion object {
         /** Per-request cap for the slow voice-caption ASR round-trip. */

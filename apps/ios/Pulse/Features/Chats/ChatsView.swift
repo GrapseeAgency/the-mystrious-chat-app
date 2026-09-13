@@ -105,6 +105,26 @@ struct ChatsView: View {
                     onChanged: { Task { await viewModel.refreshQuiet(session: session) } },
                 )
             }
+            // Wave 6 — the three real discovery surfaces (stub toasts retired).
+            .sheet(isPresented: $viewModel.mentionsOpen) {
+                MentionsView(session: session) { conversation in
+                    openRoom(conversation)
+                }
+            }
+            .sheet(isPresented: $viewModel.channelsOpen) {
+                ChannelsView(session: session) { conversation in
+                    openRoom(conversation)
+                }
+            }
+            .sheet(isPresented: $viewModel.foldersManageOpen) {
+                FoldersManageSheet(
+                    session: session,
+                    conversations: viewModel.activeRows.map(\.conv),
+                    onChanged: {
+                        Task { await viewModel.reloadFolders(session: session) }
+                    },
+                )
+            }
             .fullScreenCover(isPresented: $storiesViewerPresent) {
                 if let model = session.stories {
                     StoryViewerView(session: session, stories: model, startUserId: storiesViewerStart) {
@@ -249,7 +269,8 @@ struct ChatsView: View {
                     },
                     onManage: {
                         PulseHaptics.tap()
-                        session.toasts.show("Chat folders aren't available in this native build yet.")
+                        // Wave 6 — the real folder manager (F-FD-01…03).
+                        viewModel.foldersManageOpen = true
                     },
                 )
             }
@@ -339,7 +360,9 @@ struct ChatsView: View {
                     badgeCount: viewModel.mentionCount ?? 0,
                     onPress: {
                         PulseHaptics.tap()
-                        session.toasts.show("Mentions aren't available in this native build yet.")
+                        // Wave 6 — the REAL mentions feed (no clear-on-open:
+                        // the pill count is feed length, web parity).
+                        viewModel.mentionsOpen = true
                     },
                 )
                 EntryPill(
@@ -349,7 +372,8 @@ struct ChatsView: View {
                     badgeCount: 0,
                     onPress: {
                         PulseHaptics.tap()
-                        session.toasts.show("Channels aren't available in this native build yet.")
+                        // Wave 6 — the broadcast directory (F-CH-01…03).
+                        viewModel.channelsOpen = true
                     },
                 )
                 EntryPill(
@@ -1638,14 +1662,15 @@ struct HighlightedSnippet: View {
         .animation(nil, value: idx)
     }
 
-    private struct Window {
+    struct Window {
         var body: Substring
         var matchRange: Range<Substring.Index>?
         var clippedHead = false
         var clippedTail = false
     }
 
-    private static func window(content: String, query: String) -> Window {
+    /// Internal (not private) so PulseTests can pin the ≤64-window math.
+    static func window(content: String, query: String) -> Window {
         let lower = content.lowercased()
         guard let found = lower.range(of: query), !query.isEmpty else {
             // No highlightable hit — show a plain head clip.
@@ -2345,6 +2370,11 @@ final class ChatsViewModel: ObservableObject {
     // overlays
     @Published var sheet: SheetTarget?
     @Published var archivedOpen = false
+    // Wave 6 — discovery surfaces replace the honest stub toasts (F-SM-03 /
+    // F-CH-01 / F-FD-01): mentions feed, channel directory, folder manager.
+    @Published var mentionsOpen = false
+    @Published var channelsOpen = false
+    @Published var foldersManageOpen = false
 
     // pending flags
     @Published private(set) var selfCreating = false
@@ -2688,6 +2718,16 @@ final class ChatsViewModel: ObservableObject {
         folders = await session.api.folders()
         // Mentions — nil → pill shows 0.
         mentionCount = await session.api.mentionsCount() ?? 0
+    }
+
+    /// Wave 6 — refetch JUST the folder rail (folder-manager mutations call
+    /// this through onChanged) and clear a dead selection honestly.
+    func reloadFolders(session: PulseSession) async {
+        folders = await session.api.folders()
+        if let active = activeFolderId,
+           folders?.contains(where: { $0.id == active }) != true {
+            activeFolderId = nil
+        }
     }
 
     func selectFolder(_ id: String?) {

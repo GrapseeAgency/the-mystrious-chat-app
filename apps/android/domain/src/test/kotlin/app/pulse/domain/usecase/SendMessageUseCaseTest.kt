@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test
 class SendMessageUseCaseTest {
 
     private class FakeRepo : PulseRepository {
+    override suspend fun myRole(conversationId: String): Result<String?> = Result.success(null)
         val sent = mutableListOf<Message>()
         var lastReplyToId: String? = null
         var lastParentId: String? = null
@@ -84,6 +85,36 @@ class SendMessageUseCaseTest {
         override suspend fun block(userId: String) = Result.success(Unit)
         override suspend fun unblock(userId: String) = Result.success(Unit)
         override suspend fun report(userId: String, reason: String, details: String?) = Result.success(Unit)
+
+        // ── Wave 6 social graph stubs (unused by these use-case tests) ──
+        override suspend fun userProfile(userId: String) =
+            Result.success(app.pulse.domain.model.UserProfile(id = userId, name = "n"))
+        override suspend fun patchProfile(patch: app.pulse.domain.model.ProfilePatch) =
+            Result.success(app.pulse.domain.model.UserProfile(id = "a", name = "n"))
+        override suspend fun userStats(userId: String) = Result.success(app.pulse.domain.model.UserStats())
+        override suspend fun safetyState(peerId: String) =
+            Result.success(app.pulse.domain.model.SafetyState(peerId = peerId))
+        override suspend fun verifyPeer(peerId: String) =
+            Result.success(app.pulse.domain.model.SafetyState(peerId = peerId, verified = true))
+        override suspend fun unverifyPeer(peerId: String) =
+            Result.success(app.pulse.domain.model.SafetyState(peerId = peerId))
+        override suspend fun blockState(userId: String) = Result.success(false)
+        override suspend fun blockedAccounts() = Result.success(emptyList<app.pulse.domain.model.BlockedAccount>())
+        override suspend fun myReportReasons(userId: String) = Result.success(emptyList<String>())
+        override suspend fun invitePreview(code: String) =
+            Result.success(app.pulse.domain.model.InvitePreview(code = code, conversationId = "c", name = "g", memberCount = 1, alreadyMember = false))
+        override suspend fun joinInvite(code: String) =
+            Result.success(app.pulse.domain.model.InviteJoinOutcome(conversationId = "c", alreadyMember = false))
+        override suspend fun channels(mineOnly: Boolean) = Result.success(emptyList<app.pulse.domain.model.Channel>())
+        override suspend fun createChannel(name: String, description: String?, photo: String?) =
+            Result.success(app.pulse.domain.model.Channel(id = "c", name = name, isSubscribed = true))
+        override suspend fun subscribeChannel(channelId: String) = Result.success(false)
+        override suspend fun unsubscribeChannel(channelId: String) = Result.success(Unit)
+        override suspend fun createFolder(name: String, emoji: String) =
+            Result.success(app.pulse.domain.model.FolderSummary(id = "f", name = name, emoji = emoji))
+        override suspend fun updateFolder(folderId: String, name: String?, emoji: String?, position: Int?) = Result.success(Unit)
+        override suspend fun deleteFolder(folderId: String) = Result.success(Unit)
+        override suspend fun setFolderConversations(folderId: String, conversationIds: List<String>) = Result.success(Unit)
         override suspend fun enqueueOutbox(entry: app.pulse.domain.model.OutboxEntry) = Result.success(Unit)
         override fun observeOutbox() = MutableStateFlow(emptyList<app.pulse.domain.model.OutboxEntry>())
         override suspend fun outboxPending() = emptyList<app.pulse.domain.model.OutboxEntry>()

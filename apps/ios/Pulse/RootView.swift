@@ -32,6 +32,9 @@ struct RootView: View {
     // Wave 2 — dock More → Saved opens the real saved library (spec §1 row 14);
     // the old create-self-chat detour is gone.
     @State private var savedLibraryOpen = false
+    // Wave 6 — pulse:// deep links (F-DL): invite previews join, user opens
+    // the full user page (Contacts tab), room opens the conversation.
+    @State private var pendingInvite: InviteLinkTarget?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var systemScheme
@@ -126,6 +129,16 @@ struct RootView: View {
                         session.requestOpenRoom(conversation, jumpMessageId: messageId)
                     }
                 }
+                .sheet(item: $pendingInvite) { target in
+                    JoinInviteSheet(session: session, code: target.code) { conversation in
+                        pendingInvite = nil
+                        switchTab(.chats)
+                        session.requestOpenRoom(conversation)
+                    }
+                }
+                .onOpenURL { url in
+                    handleDeepLink(url)
+                }
             } else {
                 // Gate on identity exactly like the web onboarding — the
                 // two-step screen replaces the shell (not a modal sheet).
@@ -179,6 +192,38 @@ struct RootView: View {
         guard target != tab else { return }
         navDirection = target.rawValue > tab.rawValue ? 1 : -1
         tab = target
+    }
+
+    // ── Wave 6 deep links (F-DL) ─────────────────────────────
+
+    /// pulse://invite/{code} → JoinGroupSheet parity · pulse://user/{id} →
+    /// UserPage via the Contacts tab · pulse://room/{id} → open conversation.
+    /// Links arriving before identity exist are IGNORED (the web requires
+    /// login too — no half-onboarded limbo).
+    private func handleDeepLink(_ url: URL) {
+        guard prefs.viewer != nil, let link = PulseDeepLink.parse(url) else { return }
+        switch link {
+        case .invite(let code):
+            PulseHaptics.tap()
+            pendingInvite = InviteLinkTarget(code: code)
+        case .user(let userId):
+            PulseHaptics.tap()
+            switchTab(.contacts)
+            session.requestOpenUser(userId, name: nil)
+        case .room(let conversationId):
+            openLinkedRoom(conversationId)
+        }
+    }
+
+    private func openLinkedRoom(_ conversationId: String) {
+        Task {
+            if let conversation = try? await session.api.conversationDetail(id: conversationId, userId: session.api.userId) {
+                switchTab(.chats)
+                session.requestOpenRoom(conversation)
+            } else {
+                session.toasts.show("That chat isn't available right now")
+            }
+        }
     }
 
     private var panelTransition: AnyTransition {
@@ -417,6 +462,12 @@ private struct CapsuleDock: View {
             )
             .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
     }
+}
+
+/// Identifiable wrapper so the invite join sheet can ride .sheet(item:).
+private struct InviteLinkTarget: Identifiable {
+    let code: String
+    var id: String { code }
 }
 
 /// Dock press feedback — scale .88 spring on every dock button.

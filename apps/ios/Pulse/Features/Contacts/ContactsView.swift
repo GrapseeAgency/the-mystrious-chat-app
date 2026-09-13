@@ -8,14 +8,16 @@ struct ContactsView: View {
 
     @State private var viewModel = ContactsViewModel()
     @State private var reportTarget: WireUser?
-    @State private var reportReason = ""
-    @State private var reportDetails = ""
-    @State private var reportPending = false
     // Wave 3 — call history surface.
     @State private var callsHistoryOpen = false
+    // Wave 6 — user-page push (F-CP-03) + the explicit add-contact page
+    // (F-CP-02) + the safety-verified badge cache (F-CP-08).
+    @State private var path = NavigationPath()
+    @State private var addContactOpen = false
+    @StateObject private var safetyBadges = PulseSafetyBadgeCache.shared
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if viewModel.loading && viewModel.users.isEmpty {
                     ProgressView("Loading contacts…")
@@ -33,55 +35,61 @@ struct ContactsView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        callsHistoryOpen = true
-                    } label: {
-                        Image(systemName: "phone.badge.clock")
+                    HStack(spacing: 2) {
+                        Button {
+                            addContactOpen = true
+                        } label: {
+                            Image(systemName: "person.badge.plus")
+                        }
+                        .accessibilityLabel("Add contact")
+                        Button {
+                            callsHistoryOpen = true
+                        } label: {
+                            Image(systemName: "phone.badge.clock")
+                        }
+                        .accessibilityLabel("Call history")
                     }
-                    .accessibilityLabel("Call history")
                 }
             }
             .searchable(text: $viewModel.query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Find people")
             .refreshable { await viewModel.load(api: session.api) }
             .task { await viewModel.load(api: session.api) }
+            .navigationDestination(for: UserRoute.self) { route in
+                UserPageView(
+                    initial: viewModel.users.first(where: { $0.id == route.userId }),
+                    userId: route.userId,
+                    session: session,
+                )
+            }
+            // Wave 6 deep links — the session hands a user id over (same
+            // bridge as pendingOpenRoom); consume on arrival.
+            .onReceive(session.$pendingUserRoute) { route in
+                guard let route else { return }
+                session.consumePendingUserRoute()
+                path.append(route)
+            }
         }
         .onAppear { viewModel.observe(session: session) }
         .sheet(isPresented: $callsHistoryOpen) {
             CallsHistoryView(session: session)
         }
+        .sheet(isPresented: $addContactOpen) {
+            NavigationStack {
+                AddContactView(session: session) { user in
+                    addContactOpen = false
+                    path.append(UserRoute(userId: user.id, name: user.name))
+                } onOpenRoom: { conversation in
+                    addContactOpen = false
+                    session.requestOpenRoom(conversation)
+                }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        // Wave 6 — the full report panel (verbatim intro/reasons/hint) replaces
+        // the Wave-0 form; the verdict toasts live in the panel itself.
         .sheet(item: $reportTarget) { target in
-            ReportSheet(
-                user: target,
-                reason: $reportReason,
-                details: $reportDetails,
-                pending: reportPending,
-                onSubmit: { Task { await submitReport(target) } },
-            )
-        }
-    }
-
-    /// Wave 0 — the report dialog is now WIRED to the real endpoint
-    /// (POST /api/users/{id}/report via PulseAPIClient.report) with an
-    /// honest success/failure toast.
-    private func submitReport(_ user: WireUser) async {
-        guard !reportPending else { return }
-        let reason = reportReason.trimmingCharacters(in: .whitespaces)
-        guard !reason.isEmpty else {
-            session.toasts.show("Pick a reason first")
-            return
-        }
-        reportPending = true
-        defer { reportPending = false }
-        let details = reportDetails.trimmingCharacters(in: .whitespaces)
-        do {
-            try await session.api.report(userId: user.id, reason: reason, details: details.isEmpty ? nil : details)
-            PulseHaptics.success()
-            session.toasts.show("Report sent — our team will review")
-            reportTarget = nil
-            reportReason = ""
-            reportDetails = ""
-        } catch {
-            session.toasts.show(ChatsViewModel.describe(error))
+            ReportPanelView(reported: target, session: session) {}
         }
     }
 
@@ -101,9 +109,16 @@ struct ContactsView: View {
                         user: user,
                         online: session.isOnline(user.id),
                         isViewer: user.id == session.viewer?.id,
-                    ) {
-                        viewModel.openDM(user, session: session)
-                    }
+                        safetyVerified: safetyBadges.isVerified(user.id),
+                        onOpenProfile: {
+                            // Wave 6 — rows push the FULL user page (stats,
+                            // block/unblock, report, safety). Chat stays a button.
+                            path.append(UserRoute(userId: user.id, name: user.name))
+                        },
+                        onMessage: {
+                            viewModel.openDM(user, session: session)
+                        },
+                    )
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         Button {
                             viewModel.call(user, session: session)
@@ -129,7 +144,7 @@ struct ContactsView: View {
             } header: {
                 Text("\(session.onlineUserIds.count) online · \(filtered.count) people")
             } footer: {
-                Text("Swipe for safety actions. Opening a chat reuses the existing DM — the server dedupes pairs.")
+                Text("Tap a row for the full profile — stats, safety number, block and report live there.")
             }
         }
         .listStyle(.insetGrouped)
@@ -137,70 +152,13 @@ struct ContactsView: View {
     }
 }
 
-private struct ReportSheet: View {
-    let user: WireUser
-    @Binding var reason: String
-    @Binding var details: String
-    let pending: Bool
-    let onSubmit: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    /// Wire reasons — the exact values POST /api/users/[id]/report accepts.
-    private static let options: [(label: String, wire: String)] = [
-        ("Spam or scam", "spam"),
-        ("Harassment", "harassment"),
-        ("Inappropriate content", "inappropriate"),
-        ("Impersonation", "impersonation"),
-        ("Other", "other"),
-    ]
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Reporting @\(user.username ?? user.name)") {
-                    Picker("Reason", selection: $reason) {
-                        Text("Select a reason").tag("")
-                        ForEach(Self.options, id: \.wire) { option in
-                            Text(option.label).tag(option.wire)
-                        }
-                    }
-                    TextField("Details (optional)", text: $details, axis: .vertical)
-                        .lineLimit(2...5)
-                }
-                Section {
-                    Button {
-                        onSubmit()
-                    } label: {
-                        if pending {
-                            ProgressView().frame(maxWidth: .infinity)
-                        } else {
-                            Text("Send report")
-                                .frame(maxWidth: .infinity)
-                                .font(.body.weight(.semibold))
-                        }
-                    }
-                    .disabled(reason.isEmpty || pending)
-                } footer: {
-                    Text("Reports go to the moderation team. Blocking stays separate — use the red swipe action.")
-                }
-            }
-            .navigationTitle("Report")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-            .interactiveDismissDisabled(pending)
-        }
-    }
-}
-
 private struct ContactRow: View {
     let user: WireUser
     let online: Bool
     let isViewer: Bool
+    /// Wave 6 — the pair's safety number is verified (F-CP-08 badge).
+    var safetyVerified: Bool = false
+    var onOpenProfile: () -> Void = {}
     let onMessage: () -> Void
 
     @State private var opening = false
@@ -217,10 +175,13 @@ private struct ContactRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(user.name).font(.body.weight(.semibold))
-                    if user.verified == true {
+                    if user.verified == true || safetyVerified {
+                        // F-CP-08 — verified sparkle (account badge OR the
+                        // pair's safety number is marked verified).
                         Image(systemName: "checkmark.seal.fill")
                             .font(.caption)
                             .foregroundStyle(PulseTheme.emerald)
+                            .accessibilityLabel("Verified")
                     }
                     if isViewer {
                         Text("You")
@@ -231,12 +192,17 @@ private struct ContactRow: View {
                             .background(Capsule().fill(PulseTheme.emerald.opacity(0.14)))
                     }
                 }
-                Text(user.statusText ?? user.username.map { "@\($0)" } ?? "On Pulse")
+                Text(subtitle)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                PulseHaptics.tap()
+                onOpenProfile()
+            }
             Button {
                 opening = true
                 onMessage()
@@ -253,6 +219,22 @@ private struct ContactRow: View {
             .disabled(isViewer)
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(user.name), double-tap Chat to message, or open the profile from the row")
+    }
+
+    /// F-CP-09 — status emoji + text rows: the status line wins (glyph +
+    /// text), otherwise the @handle, else the neutral stamp.
+    private var subtitle: String {
+        if let emoji = user.statusEmoji, !emoji.isEmpty {
+            let glyph = UserPageView.statusGlyphDisplay(emoji)
+            if let text = user.statusText, !text.isEmpty {
+                return "\(glyph) \(text)"
+            }
+            return glyph
+        }
+        if let text = user.statusText, !text.isEmpty { return text }
+        return user.username.map { "@\($0)" } ?? "On Pulse"
     }
 }
 
@@ -326,8 +308,10 @@ final class ContactsViewModel: ObservableObject {
         do {
             try await session.api.block(userId: user.id)
             PulseHaptics.success()
+            // Wave 6 — verbatim pair-toast (UserPage parity).
+            session.toasts.show("Blocked \(user.name)")
         } catch {
-            errorText = ChatsViewModel.describe(error)
+            session.toasts.show(ChatsViewModel.describe(error))
         }
     }
 }

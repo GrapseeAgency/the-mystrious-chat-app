@@ -104,9 +104,16 @@ import app.pulse.feature.calls.ContactsScreen
 import app.pulse.feature.chat.ArchivedScreen
 import app.pulse.feature.chat.ChatsScreen
 import app.pulse.feature.chat.ChatRoomScreen
+import app.pulse.feature.chat.ChannelsScreen
+import app.pulse.feature.chat.JoinInviteSheet
+import app.pulse.feature.chat.MentionsScreen
 import app.pulse.feature.chat.SavedLibraryScreen
 import app.pulse.feature.chat.ThreadScreen
 import app.pulse.feature.hub.HubScreen
+import app.pulse.feature.calls.AddContactScreen
+import app.pulse.feature.calls.UserPageScreen
+import app.pulse.feature.settings.BlockedListScreen
+import app.pulse.feature.settings.ProfileEditScreen
 import app.pulse.feature.settings.ProfileScreen
 import app.pulse.feature.stories.StoriesViewModel
 import app.pulse.feature.stories.StoryComposerScreen
@@ -170,12 +177,28 @@ class ShellViewModel @Inject constructor(
     fun requestSearch() {
         _searchTick.value += 1
     }
+
+    // Wave 6 — a pulse://invite code lands here and the chats surface raises
+    // the JoinInviteSheet (web ?join= parity).
+    private val _pendingInvite = MutableStateFlow<String?>(null)
+    val pendingInvite: StateFlow<String?> = _pendingInvite.asStateFlow()
+
+    fun postInvite(code: String) {
+        _pendingInvite.value = code
+    }
+
+    fun consumeInvite() {
+        _pendingInvite.value = null
+    }
 }
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var repository: app.pulse.domain.repository.PulseRepository
+
+    /** Wave 6 — pulse:// deep links (invite/user/room); consumed by the shell. */
+    private val deepLinks = MutableStateFlow<app.pulse.core.link.PulseDeepLink?>(null)
 
     override fun onStart() {
         super.onStart()
@@ -186,6 +209,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        deepLinks.value = app.pulse.core.link.PulseDeepLink.parse(intent?.dataString)
         // True edge-to-edge with NO system scrims: the app surface (ambient field)
         // shows behind the status bar AND the navigation bar — the default
         // enableEdgeToEdge() nav scrim is what painted a gray band over the dock.
@@ -200,13 +224,23 @@ class MainActivity : ComponentActivity() {
             ),
         )
         setContent {
-            PulseRoot()
+            PulseRoot(deepLink = deepLinks.collectAsStateWithLifecycle().value, onConsumeDeepLink = { deepLinks.value = null })
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        deepLinks.value = app.pulse.core.link.PulseDeepLink.parse(intent.dataString)
     }
 }
 
 @Composable
-fun PulseRoot(session: SessionViewModel = hiltViewModel()) {
+fun PulseRoot(
+    deepLink: app.pulse.core.link.PulseDeepLink? = null,
+    onConsumeDeepLink: () -> Unit = {},
+    session: SessionViewModel = hiltViewModel(),
+) {
     val viewerId by session.viewerId.collectAsStateWithLifecycle()
     val hydrated by session.hydrated.collectAsStateWithLifecycle()
     val fxRaw by session.fxMode.collectAsStateWithLifecycle()
@@ -252,7 +286,7 @@ fun PulseRoot(session: SessionViewModel = hiltViewModel()) {
                 if (onboarding) {
                     OnboardingScreen()
                 } else {
-                    PulseShell(viewerId = viewerId, session = session)
+                    PulseShell(viewerId = viewerId, session = session, deepLink = deepLink, onConsumeDeepLink = onConsumeDeepLink)
                 }
 
                 ParticleBurstHost(
@@ -269,7 +303,12 @@ fun PulseRoot(session: SessionViewModel = hiltViewModel()) {
  * direction-aware tab transitions + the floating glass Capsule dock.
  */
 @Composable
-private fun PulseShell(viewerId: String?, session: SessionViewModel) {
+private fun PulseShell(
+    viewerId: String?,
+    session: SessionViewModel,
+    deepLink: app.pulse.core.link.PulseDeepLink? = null,
+    onConsumeDeepLink: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
@@ -305,6 +344,23 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
             launchSingleTop = true
             restoreState = true
         }
+    }
+
+    // Wave 6 — pulse:// deep links: room/user open directly, invites land on
+    // the chats tab and surface the JoinInviteSheet there (web ?join= parity).
+    LaunchedEffect(deepLink, viewerId) {
+        if (viewerId == null || deepLink == null) return@LaunchedEffect
+        when (deepLink) {
+            is app.pulse.core.link.PulseDeepLink.Room ->
+                navController.navigate("room/${deepLink.conversationId}")
+            is app.pulse.core.link.PulseDeepLink.User ->
+                navController.navigate("user/${deepLink.userId}")
+            is app.pulse.core.link.PulseDeepLink.Invite -> {
+                shell.postInvite(deepLink.code)
+                switchTab("chats")
+            }
+        }
+        onConsumeDeepLink()
     }
 
     fun honest(message: String) {
@@ -358,8 +414,37 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         navController.navigate("stories/compose")
                     },
+                    onOpenMentions = { navController.navigate("mentions") },
+                    onOpenChannels = { navController.navigate("channels") },
                     searchRequest = searchTick,
                 )
+
+                // Wave 6 — pulse://invite/<code> lands here as the JoinInviteSheet
+                // (web ?join= parity: preview → already-member jump or join → open room).
+                val pendingInvite by shell.pendingInvite.collectAsStateWithLifecycle()
+                pendingInvite?.let { code ->
+                    JoinInviteSheet(
+                        code = code,
+                        onDismiss = { shell.consumeInvite() },
+                        onOpenRoom = { id -> navController.navigate("room/$id") },
+                    )
+                }
+            }
+            composable("mentions") {
+                Box(Modifier.fillMaxSize()) {
+                    MentionsScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenRoom = { id -> navController.navigate("room/$id") },
+                    )
+                }
+            }
+            composable("channels") {
+                Box(Modifier.fillMaxSize()) {
+                    ChannelsScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenRoom = { id -> navController.navigate("room/$id") },
+                    )
+                }
             }
             composable("hub") {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
@@ -370,6 +455,8 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
                     ContactsScreen(
                         onOpenRoom = { id -> navController.navigate("room/$id") },
+                        onOpenUser = { id -> navController.navigate("user/$id") },
+                        onOpenAdd = { navController.navigate("contacts/add") },
                         onCallUser = { user ->
                             callVm.callPeer(
                                 peerId = user.id,
@@ -394,7 +481,41 @@ private fun PulseShell(viewerId: String?, session: SessionViewModel) {
             }
             composable("profile") {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
-                    ProfileScreen()
+                    ProfileScreen(
+                        onEditProfile = { navController.navigate("profile/edit") },
+                        onOpenBlocked = { navController.navigate("settings/blocked") },
+                    )
+                }
+            }
+            // Wave 6 — social graph: user page, add contact, profile edit, blocked list.
+            composable(
+                "user/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            ) { entry ->
+                Box(Modifier.fillMaxSize()) {
+                    UserPageScreen(
+                        userId = entry.arguments?.getString("id").orEmpty(),
+                        onBack = { navController.popBackStack() },
+                        onOpenRoom = { id -> navController.navigate("room/$id") },
+                    )
+                }
+            }
+            composable("contacts/add") {
+                Box(Modifier.fillMaxSize()) {
+                    AddContactScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenRoom = { id -> navController.navigate("room/$id") },
+                    )
+                }
+            }
+            composable("profile/edit") {
+                Box(Modifier.fillMaxSize()) {
+                    ProfileEditScreen(onBack = { navController.popBackStack() })
+                }
+            }
+            composable("settings/blocked") {
+                Box(Modifier.fillMaxSize()) {
+                    BlockedListScreen(onBack = { navController.popBackStack() })
                 }
             }
             composable(

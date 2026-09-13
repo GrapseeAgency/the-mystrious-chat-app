@@ -192,6 +192,9 @@ fun ChatsScreen(
     onOpenStoriesViewer: (String?) -> Unit = {},
     /** Wave 4 — the own-cell "+" affordance (or empty "My status" cell) → composer. */
     onOpenStoriesComposer: () -> Unit = {},
+    /** Wave 6 — mentions / channels surfaces + the folders manage sheet. */
+    onOpenMentions: () -> Unit = {},
+    onOpenChannels: () -> Unit = {},
     /** Incremented by the dock's More → Search action to open search mode. */
     searchRequest: Int = 0,
     viewModel: ChatsViewModel = hiltViewModel(),
@@ -216,6 +219,7 @@ fun ChatsScreen(
     var selectedIds by remember { mutableStateOf(emptySet<String>()) }
     var actionTarget by remember { mutableStateOf<Conversation?>(null) }
     var activeFolderId by remember { mutableStateOf<String?>(null) }
+    var foldersSheet by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -349,8 +353,13 @@ fun ChatsScreen(
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         activeFolderId = if (activeFolderId == next) null else next
                     },
-                    onManage = { honest("Chat folders aren't available in this native build yet.") },
+                    onManage = { foldersSheet = true },
                 )
+            }
+
+            // Wave 6 — the folders manage sheet (create/rename/emoji/membership/delete).
+            if (foldersSheet) {
+                FoldersManageSheet(onDismiss = { foldersSheet = false })
             }
 
             PullToRefreshBox(
@@ -408,7 +417,7 @@ fun ChatsScreen(
                                 badge = mentionCount.takeIf { it > 0 },
                                 trailing = if (mentionCount == 1) "1 mention" else "$mentionCount mentions",
                                 dark = dark,
-                                onClick = { honest("Mentions aren't available in this native build yet.") },
+                                onClick = onOpenMentions,
                             )
                         }
                         item(key = "pill-channels") {
@@ -418,7 +427,7 @@ fun ChatsScreen(
                                 badge = null,
                                 trailing = if (channelCount == 1) "1 channel" else "$channelCount channels",
                                 dark = dark,
-                                onClick = { honest("Channels aren't available in this native build yet.") },
+                                onClick = onOpenChannels,
                             )
                         }
                         item(key = "pill-archived") {
