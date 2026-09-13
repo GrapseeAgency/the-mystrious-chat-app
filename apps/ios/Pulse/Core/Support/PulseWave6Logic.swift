@@ -123,3 +123,9 @@ public enum PulseTwoTap {
 func pulseStatusGlyphDisplay(_ value: String) -> String {
     value == "vacation" ? "✈️" : value
 }
+
+/// Web handle contract: 3-20 chars of [a-z0-9_] (users/[id] route.ts +
+/// serializers.ts:35-40). Pure so nonisolated code can call it freely.
+func pulseValidHandle(_ handle: String) -> Bool {
+    handle.range(of: "^[a-z0-9_]{3,20}$", options: .regularExpression) != nil
+}

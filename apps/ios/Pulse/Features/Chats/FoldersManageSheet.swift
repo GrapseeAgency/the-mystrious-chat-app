@@ -284,8 +284,12 @@ struct FoldersManageSheet: View {
 
     // ── create mode ──────────────────────────────────────────
 
-    private var createForm: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private var createFill: AnyShapeStyle {
+        PulseFolderDraft.isValidName(newName) ? AnyShapeStyle(PulseTheme.brandGradient) : AnyShapeStyle(PulseTheme.zinc(300))
+    }
+
+    private var createEmojiRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Pick an icon")
                 .font(.system(size: 11, weight: .semibold))
                 .textCase(.uppercase)
@@ -293,24 +297,35 @@ struct FoldersManageSheet: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(Self.emojiPresets, id: \.self) { glyph in
-                        Button {
-                            PulseHaptics.tap()
-                            newEmoji = glyph
-                        } label: {
-                            Text(glyph)
-                                .font(.system(size: 18))
-                                .frame(width: 46, height: 46)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(newEmoji == glyph ? PulseTheme.emerald500.opacity(0.2) : PulseTheme.chipFill))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .strokeBorder(newEmoji == glyph ? PulseTheme.accent : Color.clear, lineWidth: 2),
-                                )
-                        }
-                        .buttonStyle(PulseButtonStyle())
-                        .accessibilityLabel("Icon \(glyph)\(newEmoji == glyph ? ", selected" : "")")
+                        emojiButton(glyph)
                     }
                 }
             }
+        }
+    }
+
+    private func emojiButton(_ glyph: String) -> some View {
+        let selected = newEmoji == glyph
+        return Button {
+            PulseHaptics.tap()
+            newEmoji = glyph
+        } label: {
+            Text(glyph)
+                .font(.system(size: 18))
+                .frame(width: 46, height: 46)
+                .background(RoundedRectangle(cornerRadius: 12).fill(selected ? PulseTheme.emerald500.opacity(0.2) : PulseTheme.chipFill))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(selected ? PulseTheme.accent : Color.clear, lineWidth: 2),
+                )
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel("Icon \(glyph)\(selected ? ", selected" : "")")
+    }
+
+    private var createForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            createEmojiRow
             Text("Name")
                 .font(.system(size: 11, weight: .semibold))
                 .textCase(.uppercase)
@@ -341,7 +356,7 @@ struct FoldersManageSheet: View {
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 46)
-                .background(RoundedRectangle(cornerRadius: 14).fill(PulseFolderDraft.isValidName(newName) ? PulseTheme.brandGradient : AnyShapeStyle(PulseTheme.zinc(300))))
+                .background(RoundedRectangle(cornerRadius: 14).fill(createFill))
                 .foregroundStyle(.white)
             }
             .buttonStyle(PulseButtonStyle())

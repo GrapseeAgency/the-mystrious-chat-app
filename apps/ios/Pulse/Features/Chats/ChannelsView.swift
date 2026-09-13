@@ -214,7 +214,7 @@ struct ChannelsView: View {
                 } label: {
                     Text("Open")
                         .font(.system(size: 12, weight: .bold))
-                        .frame(width: 64, minHeight: 32)
+                        .frame(width: 64).frame(minHeight: 32)
                         .background(Capsule().fill(PulseTheme.glassFill))
                         .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
                         .foregroundStyle(PulseTheme.accent)
@@ -376,9 +376,7 @@ struct ChannelsView: View {
         guard busyId == nil else { return }
         busyId = channel.id
         let snapshot = optimistic[channel.id] ?? channel
-        var optimisticCopy = snapshot
-        optimisticCopy.isSubscribed = true
-        optimisticCopy.memberCount = (optimisticCopy.memberCount ?? 0) + 1
+        let optimisticCopy = snapshot.with(subscribed: true, memberCount: (snapshot.memberCount ?? 0) + 1)
         optimistic[channel.id] = optimisticCopy
         defer { busyId = nil }
         do {
@@ -386,9 +384,7 @@ struct ChannelsView: View {
             PulseHaptics.success()
             session.toasts.show(result.already == true ? "Already subscribed" : "Subscribed")
             if let count = result.memberCount {
-                var settled = optimisticCopy
-                settled.memberCount = count
-                optimistic[channel.id] = settled
+                optimistic[channel.id] = optimisticCopy.with(memberCount: count)
             }
             await reload()
         } catch {
@@ -478,5 +474,24 @@ struct ChannelsView: View {
         } catch {
             session.toasts.show(ChatsViewModel.describe(error))
         }
+    }
+}
+
+/// Memberwise re-clone — the wire struct keeps `let` storage (Codable+Sendable
+/// house style), so the optimistic flip builds a copy instead of mutating.
+private extension WireChannelSummary {
+    func with(subscribed: Bool? = nil, memberCount: Int? = nil) -> WireChannelSummary {
+        WireChannelSummary(
+            id: id,
+            conversationId: conversationId,
+            name: name,
+            description: description,
+            createdAt: createdAt,
+            memberCount: memberCount ?? self.memberCount,
+            isSubscribed: subscribed ?? self.isSubscribed,
+            unread: unread,
+            preview: preview,
+            photo: photo,
+        )
     }
 }

@@ -38,7 +38,7 @@ struct HandleCheckState: Equatable {
     func verdict(currentHandle: String) -> Verdict {
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return .empty }
-        guard OnboardingViewModel.isValidHandle(trimmed) else { return .invalid }
+        guard pulseValidHandle(trimmed) else { return .invalid }
         if clashSuggestion != nil { return .clash(trimmed, suggestion: clashSuggestion) }
         if checking || checkedValue != trimmed { return .checking }
         if trimmed == currentHandle { return .current }
@@ -152,14 +152,14 @@ struct ProfileEditView: View {
                 .tint(PulseTheme.accent)
             }
             TextField("Display name", text: $name)
-                .maxLength(name, max: Self.nameMax)
+                .maxLength($name, max: Self.nameMax)
             TextField(
                 "Bio",
                 text: $about,
                 prompt: Text("Hey there! I'm using Pulse."),
                 axis: .vertical,
             )
-            .maxLength(about, max: Self.aboutMax)
+            .maxLength($about, max: Self.aboutMax)
             .lineLimit(2...4)
         }
     }
@@ -179,7 +179,7 @@ struct ProfileEditView: View {
                 text: $statusText,
                 prompt: Text("What's happening? (optional)"),
             )
-            .maxLength(statusText, max: Self.statusMax)
+            .maxLength($statusText, max: Self.statusMax)
         }
     }
 
@@ -360,7 +360,7 @@ struct ProfileEditView: View {
         guard !trimmedName.isEmpty, trimmedName.count <= Self.nameMax else { return false }
         if handleDirty {
             let handle = handleState.value.trimmingCharacters(in: .whitespaces)
-            if !handle.isEmpty && !OnboardingViewModel.isValidHandle(handle) { return false }
+            if !handle.isEmpty && !pulseValidHandle(handle) { return false }
         }
         return nameDirty || aboutDirty || statusDirty || colorDirty || handleDirty
     }
@@ -383,7 +383,7 @@ struct ProfileEditView: View {
     private func scheduleHandleCheck() {
         handleCheckTask?.cancel()
         let candidate = handleState.value.trimmingCharacters(in: .whitespaces)
-        guard !candidate.isEmpty, OnboardingViewModel.isValidHandle(candidate) else {
+        guard !candidate.isEmpty, pulseValidHandle(candidate) else {
             handleState.checking = false
             return
         }
@@ -515,7 +515,7 @@ extension PulsePrefs {
     var viewerStatusText: String? { extraProfile["statusText"] }
 
     private var extraProfile: [String: String] {
-        guard let data = defaults.data(forKey: "pulse.viewer.profile"),
+        guard let data = UserDefaults.standard.data(forKey: "pulse.viewer.profile"),
               let map = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
         return map
     }
@@ -526,7 +526,7 @@ extension PulsePrefs {
         if let statusEmoji { map["statusEmoji"] = statusEmoji }
         if let statusText { map["statusText"] = statusText }
         if let data = try? JSONEncoder().encode(map) {
-            defaults.set(data, forKey: "pulse.viewer.profile")
+            UserDefaults.standard.set(data, forKey: "pulse.viewer.profile")
         }
         objectWillChange.send()
     }
