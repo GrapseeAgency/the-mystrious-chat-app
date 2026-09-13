@@ -150,7 +150,7 @@ struct UserPageView: View {
     /// The 11 fixed stored values are emoji glyphs + the literal "vacation"
     /// (web renders Lucide icons; the native picker shows the emoji set and
     /// maps the vacation token to its plane glyph for display only).
-    static func statusGlyphDisplay(_ value: String) -> String {
+    private func statusGlyphDisplay(_ value: String) -> String {
         value == "vacation" ? "✈️" : value
     }
 
@@ -214,7 +214,7 @@ struct UserPageView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .textCase(.uppercase)
                     .foregroundStyle(PulseTheme.textSecondary)
-                ForEach(model.sharedRooms.prefix(3)) { room in
+                ForEach(Array(model.sharedRooms.prefix(3)), id: \.id) { room in
                     Button {
                         PulseHaptics.tap()
                         model.openRoom(room)
