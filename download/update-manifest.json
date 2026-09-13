@@ -1,9 +1,9 @@
 {
-  "versionCode": 17,
-  "versionName": "0.7.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.7.0-native/Pulse-v0.7.0-native.apk",
+  "versionCode": 18,
+  "versionName": "0.8.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.8.0-native/Pulse-v0.8.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "28067e88705daface172ef1d973b189eb0fc2aa483752b918ada66c7de8282f5",
+  "sha256": "e30119d519acb9bd66c911af7307766d085ceb4f0ca18d6f4a1aa45e4be96542",
   "notes": "Wave 5 \u2014 native Voice Rooms / Stage / Space on both platforms (Kotlin+Compose, Swift+SwiftUI): walkie-talkie PTT (hold>=260ms / tap-latch), 16kHz mono Int16 250ms chunks, per-peer 85ms jitter playhead + stale-seq drop, mute with software-gate truth, live ASR captions (4s WAV windows -> /api/voice/transcribe -> voice:transcript, 7s TTL, persisted toggle), stage hierarchy (host/speakers/hands/listeners, raise hand, approve, mute with real voice-seat enforcement, two-tap end, claim host, resync), spatial space (0..1 map, tap+drag with 80ms server-matched throttle, optimistic target + idle reconcile, proximity 0.18, honest error states). Web defects fixed natively: dead transmit path proven emitting (chunker tests), rejoin seq blackhole reset, stage audience voice seat for ALL roles, throttle mismatch + optimistic reconcile, space error state. Android: new :feature-voice module + AudioRecord/AudioTrack engine + mic FGS; iOS: Features/VoiceRooms + AVAudioEngine tap + per-peer AVAudioPlayerNode. Tests: Android 65 new JVM (feature-voice) green; iOS 46 new XCTest green. Relay runtime E2E 20/20 PASS (voice/stage/space flows vs live pulse-socket). PHYSICAL DEVICE audio: PENDING (hardware gate). APK versionCode 17.",
   "gateway": "",
   "socket": "",
