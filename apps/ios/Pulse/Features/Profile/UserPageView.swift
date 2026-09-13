@@ -5,9 +5,14 @@ import SwiftUI
 /// glyph+text, bio, REAL stats grid (GET /api/users/{id}/stats), rooms in
 /// common (max 3 + "+N more"), member-since/last-seen stamps, and the
 /// Message / Block|Unblock / Report actions.
-struct UserRoute: Hashable {
-    let userId: String
-    let name: String
+public struct UserRoute: Hashable {
+    public let userId: String
+    public let name: String
+
+    public init(userId: String, name: String) {
+        self.userId = userId
+        self.name = name
+    }
 }
 
 struct UserPageView: View {
