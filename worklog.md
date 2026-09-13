@@ -2895,3 +2895,12 @@ Agent: Z.ai Code (orchestrator, direct)
 - Fixes during gate: mentionTokenRange regex bug (`\$` compiled to a LITERAL dollar, breaking the $ lookahead anchor) → lookahead spliced as char; two crew-authored range expectations corrected to the true @+name span; one crew assertion stricter than the web canonical regex (no pre-@ boundary, route.ts:113) removed in favour of parity.
 - Gate: :protocol:test + :data:testDebugUnitTest + :domain:test + :feature-chat/calls/settings testDebugUnitTest + :app:compileDebugKotlin → BUILD SUCCESSFUL, 175 JVM tests / 0 failed (one daemon OOM recovered with lower heap).
 - Remaining for the wave: iOS wiring verification, CI rounds, release build + artifact verify, live E2E, report.
+
+---
+Task ID: 6-e (Wave 6 gates — CI rounds, release build, artifact, E2E)
+Agent: Z.ai Code (orchestrator)
+- Subagent crews were unavailable (context-deadline infra) — 6-c/6-d completed directly by the orchestrator; iOS files landed in the wave commit.
+- LIVE E2E: apps/qa/wave6-runtime-e2e.js vs localhost:3000 — 40 PASS / 0 FAIL (profile PATCH validation incl. 400s; stats; safety 12×5 determinism + symmetry + verify/reset; block → server-enforced DM boundary + self-service blocks list 403 + unblock; report enum + idempotency; folders CRUD + PUT full-replace reorder + rename/position; mentions 14d feed; search; channels create/subscribe/idempotent/last-admin 403 verbatim/member leave/directory shape; invite create{requesterId}/preview/join idempotent). Two web-contract notes encoded: blocked re-DM dedupes to the EXISTING conversation (200, existing-DM stays openable); invite create body is {requesterId} → 200 {inviteCode}.
+- Android release artifact: ./gradlew :app:assembleRelease (house flags; dev server paused for RAM) → app-release.apk 35,361,317 B; aapt2 badging app.pulse.chat versionCode 18 / 0.8.0-native; apksigner v1+v2+v3 cert CN=Pulse Live Update; local sha256 f4dbfb62… (local build — CI asset hash will be pinned to the release asset per the non-reproducibility rule if the CDN channel is cut).
+- CI: Android main SUCCESS (7fed702); iOS rounds r1 UserRoute public → r2 statusGlyph static→instance + ForEach id-pin → r3 hoist pulseStatusGlyphDisplay shared helper (4 call sites) → r4 let-struct re-clone/maxLength bindings/pure handle validator/UserDefaults.standard/frame split/createForm split → r5 PulseMentions tuple label atIndex → r6 test labels → r7 SUCCESS (build-test + xcarchive) at 19c9a3d.
+- Release: tag v0.8.0-native pushed → tag CI builds + publishes.
