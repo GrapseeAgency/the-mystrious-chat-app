@@ -76,7 +76,7 @@ final class Wave6LogicTests: XCTestCase {
         let token = PulseMentions.activeToken(in: draft)
         XCTAssertNotNil(token)
         // The character AT the reported index is the "@" itself.
-        let index = draft.index(draft.startIndex, offsetBy: token!.atStartIndex)
+        let index = draft.index(draft.startIndex, offsetBy: token!.atIndex)
         XCTAssertEqual(draft[index], "@")
         // And the token runs from the @ to the tail.
         XCTAssertEqual(draft[index...], "@Ada")
@@ -283,8 +283,8 @@ final class Wave6LogicTests: XCTestCase {
     // ── status glyph display (F-CP-09) ───────────────────────
 
     func testVacationTokenMapsToAPlaneGlyphForDisplayOnly() {
-        XCTAssertEqual(UserPageView.statusGlyphDisplay("vacation"), "✈️")
-        XCTAssertEqual(UserPageView.statusGlyphDisplay("🔥"), "🔥")
+        XCTAssertEqual(pulseStatusGlyphDisplay("vacation"), "✈️")
+        XCTAssertEqual(pulseStatusGlyphDisplay("🔥"), "🔥")
     }
 
     func testProfileEditGlyphSetMatchesTheElevenStoredValues() {
