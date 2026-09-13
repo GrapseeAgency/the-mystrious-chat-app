@@ -184,7 +184,7 @@ struct ProfileEditView: View {
     }
 
     private func glyphButton(_ glyph: String) -> some View {
-        let display = UserPageView.statusGlyphDisplay(glyph)
+        let display = pulseStatusGlyphDisplay(glyph)
         let selected = statusEmoji == glyph
         return Button {
             PulseHaptics.tap()

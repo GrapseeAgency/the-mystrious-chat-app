@@ -117,3 +117,9 @@ public enum PulseTwoTap {
         return nowMs - armedAtMs <= windowMs && nowMs - armedAtMs >= 0
     }
 }
+
+/// The 11 fixed status-glyph values are emoji + the literal "vacation"
+/// (web renders Lucide icons; natives display "✈️" for that token only).
+func pulseStatusGlyphDisplay(_ value: String) -> String {
+    value == "vacation" ? "✈️" : value
+}

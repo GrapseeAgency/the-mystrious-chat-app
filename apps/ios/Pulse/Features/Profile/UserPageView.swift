@@ -126,7 +126,7 @@ struct UserPageView: View {
             if user.statusEmoji != nil || (user.statusText ?? "").isEmpty == false {
                 HStack(spacing: 6) {
                     if let emoji = user.statusEmoji {
-                        Text(statusGlyphDisplay(emoji))
+                        Text(pulseStatusGlyphDisplay(emoji))
                     }
                     if let text = user.statusText {
                         Text(text)
@@ -150,10 +150,6 @@ struct UserPageView: View {
     /// The 11 fixed stored values are emoji glyphs + the literal "vacation"
     /// (web renders Lucide icons; the native picker shows the emoji set and
     /// maps the vacation token to its plane glyph for display only).
-    private func statusGlyphDisplay(_ value: String) -> String {
-        value == "vacation" ? "✈️" : value
-    }
-
     // ── stats (real GET /stats numbers) ──────────────────────
 
     @ViewBuilder

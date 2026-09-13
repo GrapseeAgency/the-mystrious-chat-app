@@ -227,7 +227,7 @@ private struct ContactRow: View {
     /// text), otherwise the @handle, else the neutral stamp.
     private var subtitle: String {
         if let emoji = user.statusEmoji, !emoji.isEmpty {
-            let glyph = UserPageView.statusGlyphDisplay(emoji)
+            let glyph = pulseStatusGlyphDisplay(emoji)
             if let text = user.statusText, !text.isEmpty {
                 return "\(glyph) \(text)"
             }

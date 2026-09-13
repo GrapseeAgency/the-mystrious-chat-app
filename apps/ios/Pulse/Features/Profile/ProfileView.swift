@@ -77,7 +77,7 @@ struct ProfileView: View {
         Section("Status") {
             if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
                 HStack(spacing: 8) {
-                    Text(UserPageView.statusGlyphDisplay(emoji))
+                    Text(pulseStatusGlyphDisplay(emoji))
                         .font(.system(size: 20))
                     Text(prefs.viewerStatusText ?? "")
                         .font(.subheadline)
