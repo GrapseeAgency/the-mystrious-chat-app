@@ -179,7 +179,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(page.wallet?.coins, 500)
         XCTAssertEqual(page.ledger?.count, 1)
         let empty = try decode(WireWalletPage.self, "{}")
-        XCTAssertNil(empty.wallet?.coins)
+        XCTAssertNil(empty.wallet.coins)
     }
 
     func testCheckinTransferSwapMarketResults() throws {
