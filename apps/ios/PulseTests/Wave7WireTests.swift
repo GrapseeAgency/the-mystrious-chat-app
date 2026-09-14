@@ -176,7 +176,7 @@ final class Wave7WireTests: XCTestCase {
             WireWalletPage.self,
             #"{"wallet":{"userId":"u1","coins":500,"gems":2,"streak":3,"checkedInToday":false},"ledger":[{"id":"l1","kind":"checkin","asset":"PC","amount":27,"note":"Daily check-in · 3-day streak (+4 bonus)"}]}"#,
         )
-        XCTAssertEqual(page.wallet?.coins, 500)
+        XCTAssertEqual(page.wallet.coins, 500)
         XCTAssertEqual(page.ledger?.count, 1)
         let empty = try decode(WireWalletPage.self, "{}")
         XCTAssertNil(empty.wallet.coins)
