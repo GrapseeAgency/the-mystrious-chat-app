@@ -330,15 +330,6 @@ public struct WireLeaderboardPage: Codable, Sendable {
 
 // MARK: - Hub economy (F-HB-01…10)
 
-public struct WireHubWallet: Codable, Hashable, Sendable {
-    public let userId: String?
-    public let coins: Int?
-    public let gems: Int?
-    public let streak: Int?
-    public let lastCheckIn: String?
-    public let checkedInToday: Bool?
-}
-
 public struct WireLedgerEntry: Codable, Hashable, Sendable {
     public let id: String?
     public let kind: String?
@@ -349,13 +340,8 @@ public struct WireLedgerEntry: Codable, Hashable, Sendable {
     public let createdAt: String?
 }
 
-public struct WireWalletPage: Codable, Sendable {
-    public let wallet: WireHubWallet?
-    public let ledger: [WireLedgerEntry]?
-}
-
 public struct WireCheckinWalletResult: Codable, Sendable {
-    public let wallet: WireHubWallet?
+    public let wallet: WireWallet?
     public let reward: Int?
     public let streak: Int?
 }
@@ -367,7 +353,7 @@ public struct WireTransferTo: Codable, Hashable, Sendable {
 }
 
 public struct WireTransferResult: Codable, Sendable {
-    public let wallet: WireHubWallet?
+    public let wallet: WireWallet?
     public let to: WireTransferTo?
 }
 
@@ -390,7 +376,7 @@ public struct WireSwapPage: Codable, Sendable {
 }
 
 public struct WireSwapResult: Codable, Sendable {
-    public let wallet: WireHubWallet?
+    public let wallet: WireWallet?
     public let note: String?
 }
 
@@ -440,7 +426,7 @@ public struct WireMarketListingEnvelope: Codable, Sendable {
 
 public struct WireMarketBuyResult: Codable, Sendable {
     public let ok: Bool?
-    public let wallet: WireHubWallet?
+    public let wallet: WireWallet?
 }
 
 public struct WireHubLogUser: Codable, Hashable, Sendable {
