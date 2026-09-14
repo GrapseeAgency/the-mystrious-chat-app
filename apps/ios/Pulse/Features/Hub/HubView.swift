@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // ─────────────────────────────────────────────────────────────
 // Wave 7 — the LIVE hub (F-HB-01…10). Replaces the static tile
