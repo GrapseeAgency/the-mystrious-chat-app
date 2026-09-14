@@ -9,6 +9,46 @@ import app.pulse.protocol.CallLogsPageDto
 import app.pulse.protocol.ChannelCreatedDto
 import app.pulse.protocol.ChannelsPageDto
 import app.pulse.protocol.ChatMessageDto
+import app.pulse.protocol.AppCommunityDto
+import app.pulse.protocol.AppInstallResultDto
+import app.pulse.protocol.AppInstallStateDto
+import app.pulse.protocol.CheckinResultDto
+import app.pulse.protocol.CheckinWalletResultDto
+import app.pulse.protocol.EventsPageDto
+import app.pulse.protocol.GameDetailDto
+import app.pulse.protocol.GameMatchCreateResultDto
+import app.pulse.protocol.GamesPageDto
+import app.pulse.protocol.GroupEventDto
+import app.pulse.protocol.HubLogsPageDto
+import app.pulse.protocol.HubTaskDto
+import app.pulse.protocol.HubTasksPageDto
+import app.pulse.protocol.KanbanCardDto
+import app.pulse.protocol.KanbanPageDto
+import app.pulse.protocol.LeaderboardPageDto
+import app.pulse.protocol.MarketBuyResultDto
+import app.pulse.protocol.MarketListingDto
+import app.pulse.protocol.MarketPageDto
+import app.pulse.protocol.ReminderItemDto
+import app.pulse.protocol.ReminderResolveDto
+import app.pulse.protocol.RemindersPageDto
+import app.pulse.protocol.RedPacketCreateResultDto
+import app.pulse.protocol.RedPacketDetailDto
+import app.pulse.protocol.RedPacketGrabResultDto
+import app.pulse.protocol.RedPacketStubDto
+import app.pulse.protocol.RsvpResultDto
+import app.pulse.protocol.SwapPageDto
+import app.pulse.protocol.SwapResultDto
+import app.pulse.protocol.TournamentCreateResultDto
+import app.pulse.protocol.TournamentJoinResultDto
+import app.pulse.protocol.TournamentSummaryDto
+import app.pulse.protocol.TournamentsPageDto
+import app.pulse.protocol.TransferResultDto
+import app.pulse.protocol.WalletPageDto
+import app.pulse.protocol.WhiteboardClearResultDto
+import app.pulse.protocol.WhiteboardPageDto
+import app.pulse.protocol.WhiteboardPostResultDto
+import app.pulse.protocol.WhiteboardStrokePostDto
+import app.pulse.protocol.WhiteboardUndoResultDto
 import app.pulse.protocol.ConversationSummaryDto
 import app.pulse.protocol.ConversationsPageDto
 import app.pulse.protocol.FolderDto
@@ -946,6 +986,467 @@ class PulseApi(private val http: HttpClient) {
             },
         ) {
             PulseJson.decodeFromString(OkDto.serializer(), it)
+        }
+
+    // ── Wave 7 — collaboration & hub (red packets / whiteboard / kanban / events / reminders / games / tournaments / leaderboard / hub economy) ──
+
+    private fun redPacketStubOf(json: String): RedPacketStubDto =
+        PulseJson.decodeFromString(
+            RedPacketStubDto.serializer(),
+            PulseJson.parseToJsonElement(json).unwrapOrRoot("packet").toString(),
+        )
+
+    private fun cardOf(json: String): KanbanCardDto =
+        PulseJson.decodeFromString(
+            KanbanCardDto.serializer(),
+            PulseJson.parseToJsonElement(json).unwrapOrRoot("card").toString(),
+        )
+
+    private fun eventOf(json: String): GroupEventDto =
+        PulseJson.decodeFromString(
+            GroupEventDto.serializer(),
+            PulseJson.parseToJsonElement(json).unwrapOrRoot("event").toString(),
+        )
+
+    private fun taskOf(json: String): HubTaskDto =
+        PulseJson.decodeFromString(
+            HubTaskDto.serializer(),
+            PulseJson.parseToJsonElement(json).unwrapOrRoot("task").toString(),
+        )
+
+    private fun listingOf(json: String): MarketListingDto =
+        PulseJson.decodeFromString(
+            MarketListingDto.serializer(),
+            PulseJson.parseToJsonElement(json).unwrapOrRoot("listing").toString(),
+        )
+
+    private fun matchOf(json: String): GameDetailDto =
+        PulseJson.decodeFromString(GameDetailDto.serializer(), json)
+
+    private fun tournamentOf(json: String): TournamentSummaryDto =
+        PulseJson.decodeFromString(
+            TournamentSummaryDto.serializer(),
+            PulseJson.parseToJsonElement(json).unwrapOrRoot("tournament").toString(),
+        )
+
+    /** POST /api/redpackets { userId, conversationId, total, count, note? } → { message, packet }. */
+    suspend fun createRedPacket(
+        userId: String,
+        conversationId: String,
+        total: Long,
+        count: Int,
+        note: String?,
+    ): PulseResult<RedPacketCreateResultDto> =
+        post(
+            "/api/redpackets",
+            buildJsonObject {
+                put("userId", userId)
+                put("conversationId", conversationId)
+                put("total", total)
+                put("count", count)
+                if (!note.isNullOrBlank()) put("note", note)
+            },
+        ) { PulseJson.decodeFromString(RedPacketCreateResultDto.serializer(), it) }
+
+    /** GET /api/redpackets/{id}?userId= — lazy refund settles on first read after expiry. */
+    suspend fun redPacket(packetId: String, userId: String): PulseResult<RedPacketDetailDto> =
+        get("/api/redpackets/" + java.net.URLEncoder.encode(packetId, "UTF-8") + "?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(RedPacketDetailDto.serializer(), it)
+        }
+
+    /** POST /api/redpackets/{id}/grab { userId } — atomic; 409 copy verbatim from the server. */
+    suspend fun grabRedPacket(packetId: String, userId: String): PulseResult<RedPacketGrabResultDto> =
+        post("/api/redpackets/" + java.net.URLEncoder.encode(packetId, "UTF-8") + "/grab", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(RedPacketGrabResultDto.serializer(), it)
+        }
+
+    /** GET /api/conversations/{id}/whiteboard?requesterId=&since= (since = epoch ms | null = full). */
+    suspend fun whiteboard(conversationId: String, requesterId: String, since: Long?): PulseResult<WhiteboardPageDto> {
+        val sinceQ = since?.let { "&since=$it" } ?: ""
+        return get("/api/conversations/$conversationId/whiteboard?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8") + sinceQ) {
+            PulseJson.decodeFromString(WhiteboardPageDto.serializer(), it)
+        }
+    }
+
+    /** POST /api/conversations/{id}/whiteboard — strokes: 1..40 per call, 2..500 points each, 0..1 coords. */
+    suspend fun postWhiteboardStrokes(
+        conversationId: String,
+        requesterId: String,
+        strokes: List<WhiteboardStrokePostDto>,
+    ): PulseResult<WhiteboardPostResultDto> =
+        post(
+            "/api/conversations/$conversationId/whiteboard",
+            buildJsonObject {
+                put("requesterId", requesterId)
+                put("strokes", kotlinx.serialization.json.JsonArray(strokes.map { s ->
+                    buildJsonObject {
+                        put("color", s.color)
+                        put("width", s.width)
+                        put("points", kotlinx.serialization.json.JsonArray(s.points.map { pt ->
+                            kotlinx.serialization.json.JsonArray(pt.map { kotlinx.serialization.json.JsonPrimitive(it) })
+                        }))
+                    }
+                }))
+            },
+        ) { PulseJson.decodeFromString(WhiteboardPostResultDto.serializer(), it) }
+
+    /** POST /api/conversations/{id}/whiteboard {action:'undo'} — deletes only the caller's latest stroke. */
+    suspend fun undoWhiteboardStroke(conversationId: String, requesterId: String): PulseResult<WhiteboardUndoResultDto> =
+        post("/api/conversations/$conversationId/whiteboard", jsonOf("action" to "undo", "requesterId" to requesterId)) {
+            PulseJson.decodeFromString(WhiteboardUndoResultDto.serializer(), it)
+        }
+
+    /** DELETE /api/conversations/{id}/whiteboard?requesterId= — clear all + resetAt watermark. */
+    suspend fun clearWhiteboard(conversationId: String, requesterId: String): PulseResult<WhiteboardClearResultDto> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.delete(
+                PulseEndpoints.http("/api/conversations/$conversationId/whiteboard?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")),
+            )
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) PulseResult.Success(PulseJson.decodeFromString(WhiteboardClearResultDto.serializer(), text))
+            else failureOf(res.status.value, text)
+        } catch (e: kotlinx.serialization.SerializationException) {
+            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+        }
+    }
+
+    /** GET /api/conversations/{id}/kanban?userId= → { cards } ordered column → position → createdAt. */
+    suspend fun kanbanBoard(conversationId: String, userId: String): PulseResult<KanbanPageDto> =
+        get("/api/conversations/$conversationId/kanban?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(KanbanPageDto.serializer(), it)
+        }
+
+    /** POST /api/conversations/{id}/kanban { userId, title?, column?, assigneeId?, messageId? }. */
+    suspend fun createKanbanCard(
+        conversationId: String,
+        userId: String,
+        title: String?,
+        column: String?,
+        assigneeId: String?,
+        messageId: String?,
+    ): PulseResult<KanbanCardDto> =
+        post(
+            "/api/conversations/$conversationId/kanban",
+            buildJsonObject {
+                put("userId", userId)
+                if (!title.isNullOrBlank()) put("title", title)
+                if (!column.isNullOrBlank()) put("column", column)
+                if (!assigneeId.isNullOrBlank()) put("assigneeId", assigneeId)
+                if (!messageId.isNullOrBlank()) put("messageId", messageId)
+            },
+        ) { cardOf(it) }
+
+    /** PATCH /api/kanban/{cardId} { userId, title?, column?, assigneeId?, position? }. */
+    suspend fun updateKanbanCard(
+        cardId: String,
+        userId: String,
+        title: String? = null,
+        column: String? = null,
+        assigneeId: String? = null,
+        clearAssignee: Boolean = false,
+        position: Long? = null,
+    ): PulseResult<KanbanCardDto> =
+        patch(
+            "/api/kanban/" + java.net.URLEncoder.encode(cardId, "UTF-8"),
+            buildJsonObject {
+                put("userId", userId)
+                if (title != null) put("title", title)
+                if (column != null) put("column", column)
+                if (clearAssignee) put("assigneeId", null as String?)
+                else if (!assigneeId.isNullOrBlank()) put("assigneeId", assigneeId)
+                if (position != null) put("position", position)
+            },
+        ) { cardOf(it) }
+
+    /** DELETE /api/kanban/{cardId}?userId= — creator OR group admin (403 copy verbatim). */
+    suspend fun deleteKanbanCard(cardId: String, userId: String): PulseResult<OkDto> =
+        deleteWithQuery("/api/kanban/" + java.net.URLEncoder.encode(cardId, "UTF-8"), userId) {
+            PulseJson.decodeFromString(OkDto.serializer(), it)
+        }
+
+    /** GET /api/conversations/{id}/events?userId= — upcoming asc then past desc, merged ≤50. */
+    suspend fun events(conversationId: String, userId: String): PulseResult<EventsPageDto> =
+        get("/api/conversations/$conversationId/events?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(EventsPageDto.serializer(), it)
+        }
+
+    /** POST /api/conversations/{id}/events { userId, title, startsAt, description?, location? }. */
+    suspend fun createEvent(
+        conversationId: String,
+        userId: String,
+        title: String,
+        startsAtIso: String,
+        description: String?,
+        location: String?,
+    ): PulseResult<GroupEventDto> =
+        post(
+            "/api/conversations/$conversationId/events",
+            buildJsonObject {
+                put("userId", userId)
+                put("title", title)
+                put("startsAt", startsAtIso)
+                if (!description.isNullOrBlank()) put("description", description)
+                if (!location.isNullOrBlank()) put("location", location)
+            },
+        ) { eventOf(it) }
+
+    /** DELETE /api/events/{id}?userId= — creator OR group admin. */
+    suspend fun deleteEvent(eventId: String, userId: String): PulseResult<OkDto> =
+        deleteWithQuery("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8"), userId) {
+            PulseJson.decodeFromString(OkDto.serializer(), it)
+        }
+
+    /** POST /api/events/{id}/rsvp { userId, status: going|maybe|no } → { rsvp, counts }. */
+    suspend fun rsvpEvent(eventId: String, userId: String, status: String): PulseResult<RsvpResultDto> =
+        post("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8") + "/rsvp", jsonOf("userId" to userId, "status" to status)) {
+            PulseJson.decodeFromString(RsvpResultDto.serializer(), it)
+        }
+
+    /** POST /api/events/{id}/checkin { userId } — window +15 XP; 409 outside window is a real failure. */
+    suspend fun checkinEvent(eventId: String, userId: String): PulseResult<CheckinResultDto> =
+        post("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8") + "/checkin", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(CheckinResultDto.serializer(), it)
+        }
+
+    /** GET /api/reminders?userId=[&due=1] — due = remindAt ≤ now && firedAt null. */
+    suspend fun reminders(userId: String, dueOnly: Boolean): PulseResult<RemindersPageDto> =
+        get("/api/reminders?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + if (dueOnly) "&due=1" else "") {
+            PulseJson.decodeFromString(RemindersPageDto.serializer(), it)
+        }
+
+    /** POST /api/reminders { userId, conversationId, messageId?, note?, remindAt } → { item }. */
+    suspend fun createReminder(
+        userId: String,
+        conversationId: String,
+        messageId: String?,
+        note: String?,
+        remindAtIso: String,
+    ): PulseResult<ReminderItemDto> =
+        post(
+            "/api/reminders",
+            buildJsonObject {
+                put("userId", userId)
+                put("conversationId", conversationId)
+                if (!messageId.isNullOrBlank()) put("messageId", messageId)
+                if (!note.isNullOrBlank()) put("note", note)
+                put("remindAt", remindAtIso)
+            },
+        ) {
+            PulseJson.decodeFromString(
+                ReminderItemDto.serializer(),
+                PulseJson.parseToJsonElement(it).unwrapOrRoot("item").toString(),
+            )
+        }
+
+    /** PATCH /api/reminders/{id} { userId } — owner-only resolve; the due loop calls this after the nudge. */
+    suspend fun resolveReminder(reminderId: String, userId: String): PulseResult<ReminderResolveDto> =
+        patch("/api/reminders/" + java.net.URLEncoder.encode(reminderId, "UTF-8"), jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(ReminderResolveDto.serializer(), it)
+        }
+
+    /** DELETE /api/reminders/{id} { userId } — owner-only cancel. */
+    suspend fun deleteReminder(reminderId: String, userId: String): PulseResult<OkDto> =
+        deleteWithBody("/api/reminders/" + java.net.URLEncoder.encode(reminderId, "UTF-8"), userId) {
+            PulseJson.decodeFromString(OkDto.serializer(), it)
+        }
+
+    /** POST /api/games { userId, conversationId, game?='tictactoe', opponentId? } → { match, message }. */
+    suspend fun createGame(userId: String, conversationId: String, opponentId: String?): PulseResult<GameMatchCreateResultDto> =
+        post(
+            "/api/games",
+            buildJsonObject {
+                put("userId", userId)
+                put("conversationId", conversationId)
+                put("game", "tictactoe")
+                if (!opponentId.isNullOrBlank()) put("opponentId", opponentId)
+            },
+        ) { PulseJson.decodeFromString(GameMatchCreateResultDto.serializer(), it) }
+
+    /** GET /api/games?conversationId= → { matches } newest 25 (list page for the room games view). */
+    suspend fun games(conversationId: String): PulseResult<GamesPageDto> =
+        get("/api/games?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8")) {
+            PulseJson.decodeFromString(GamesPageDto.serializer(), it)
+        }
+
+    /** GET /api/games/{id} → { match, playerX, playerO }. */
+    suspend fun game(matchId: String): PulseResult<GameDetailDto> =
+        get("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8")) { matchOf(it) }
+
+    /** POST /api/games/{id}/move { userId, cell 0..8 } — 409s for turn/occupied/race surface verbatim. */
+    suspend fun gameMove(matchId: String, userId: String, cell: Int): PulseResult<GameDetailDto> =
+        post("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8") + "/move", jsonOf("userId" to userId, "cell" to cell)) {
+            matchOf(it)
+        }
+
+    /** POST /api/games/{id}/join { userId } — first-come O seat; 409 when taken. */
+    suspend fun joinGame(matchId: String, userId: String): PulseResult<GameDetailDto> =
+        post("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8") + "/join", jsonOf("userId" to userId)) {
+            matchOf(it)
+        }
+
+    /** POST /api/tournaments { userId, conversationId, name ≤40 } → { tournament, message }. */
+    suspend fun createTournament(userId: String, conversationId: String, name: String): PulseResult<TournamentCreateResultDto> =
+        post("/api/tournaments", jsonOf("userId" to userId, "conversationId" to conversationId, "name" to name, "game" to "tictactoe")) {
+            PulseJson.decodeFromString(TournamentCreateResultDto.serializer(), it)
+        }
+
+    /** GET /api/tournaments?conversationId= → { tournaments } newest 5 with playerCount. */
+    suspend fun tournaments(conversationId: String): PulseResult<TournamentsPageDto> =
+        get("/api/tournaments?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8")) {
+            PulseJson.decodeFromString(TournamentsPageDto.serializer(), it)
+        }
+
+    /** GET /api/tournaments/{id} → { tournament } standings (points → wins → joinedAt). */
+    suspend fun tournament(tournamentId: String): PulseResult<TournamentSummaryDto> =
+        get("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8")) { tournamentOf(it) }
+
+    /** PATCH /api/tournaments/{id} { userId, status:'finished' } — creator/admin, idempotent. */
+    suspend fun finishTournament(tournamentId: String, userId: String): PulseResult<TournamentSummaryDto> =
+        patch("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8"), jsonOf("userId" to userId, "status" to "finished")) {
+            tournamentOf(it)
+        }
+
+    /** POST /api/tournaments/{id}/join { userId } — idempotent upsert. */
+    suspend fun joinTournament(tournamentId: String, userId: String): PulseResult<TournamentJoinResultDto> =
+        post("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8") + "/join", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(TournamentJoinResultDto.serializer(), it)
+        }
+
+    /** GET /api/leaderboard?conversationId=&userId= (room) or bare (global top 50). */
+    suspend fun leaderboard(conversationId: String?, userId: String?): PulseResult<LeaderboardPageDto> {
+        val q = StringBuilder()
+        if (conversationId != null) {
+            q.append("?conversationId=").append(java.net.URLEncoder.encode(conversationId, "UTF-8"))
+            q.append("&userId=").append(java.net.URLEncoder.encode(userId ?: "", "UTF-8"))
+        }
+        return get("/api/leaderboard$q") { PulseJson.decodeFromString(LeaderboardPageDto.serializer(), it) }
+    }
+
+    /** GET /api/hub/wallet?userId=[&ledger=30] — upserts a zero wallet; ledger desc. */
+    suspend fun wallet(userId: String, ledger: Int = 30): PulseResult<WalletPageDto> =
+        get("/api/hub/wallet?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&ledger=$ledger") {
+            PulseJson.decodeFromString(WalletPageDto.serializer(), it)
+        }
+
+    /** POST /api/hub/wallet/checkin { userId } — 409 body carries { error, wallet }. */
+    suspend fun checkinWallet(userId: String): PulseResult<CheckinWalletResultDto> =
+        post("/api/hub/wallet/checkin", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(CheckinWalletResultDto.serializer(), it)
+        }
+
+    /** POST /api/hub/wallet/transfer { userId, toUsername, amount, note? } — handle lowercased/@-stripped client-side too. */
+    suspend fun transferCoins(userId: String, toUsername: String, amount: Long, note: String?): PulseResult<TransferResultDto> =
+        post(
+            "/api/hub/wallet/transfer",
+            buildJsonObject {
+                put("userId", userId)
+                put("toUsername", toUsername.trim().removePrefix("@").lowercase())
+                put("amount", amount)
+                if (!note.isNullOrBlank()) put("note", note)
+            },
+        ) { PulseJson.decodeFromString(TransferResultDto.serializer(), it) }
+
+    /** GET /api/hub/swap → { rates, stats }. */
+    suspend fun swapRates(): PulseResult<SwapPageDto> =
+        get("/api/hub/swap") { PulseJson.decodeFromString(SwapPageDto.serializer(), it) }
+
+    /** POST /api/hub/swap { userId, direction: pc2gem|gem2pc, amount }. */
+    suspend fun swap(userId: String, direction: String, amount: Long): PulseResult<SwapResultDto> =
+        post("/api/hub/swap", jsonOf("userId" to userId, "direction" to direction, "amount" to amount)) {
+            PulseJson.decodeFromString(SwapResultDto.serializer(), it)
+        }
+
+    /** GET /api/hub/tasks?userId= → { tasks } ordered doing → todo → done. */
+    suspend fun hubTasks(userId: String): PulseResult<HubTasksPageDto> =
+        get("/api/hub/tasks?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(HubTasksPageDto.serializer(), it)
+        }
+
+    /** POST /api/hub/tasks { userId, title 1..120, status? } → { task }. */
+    suspend fun createHubTask(userId: String, title: String, status: String? = null): PulseResult<HubTaskDto> =
+        post("/api/hub/tasks", jsonOf("userId" to userId, "title" to title, "status" to (status ?: "todo"))) {
+            taskOf(it)
+        }
+
+    /** PATCH /api/hub/tasks/{id} { userId, title?, status? } — owner-only. */
+    suspend fun updateHubTask(taskId: String, userId: String, title: String?, status: String?): PulseResult<HubTaskDto> =
+        patch(
+            "/api/hub/tasks/" + java.net.URLEncoder.encode(taskId, "UTF-8"),
+            buildJsonObject {
+                put("userId", userId)
+                if (title != null) put("title", title)
+                if (status != null) put("status", status)
+            },
+        ) { taskOf(it) }
+
+    /** DELETE /api/hub/tasks/{id}?userId= — owner-only. */
+    suspend fun deleteHubTask(taskId: String, userId: String): PulseResult<OkDto> =
+        deleteWithQuery("/api/hub/tasks/" + java.net.URLEncoder.encode(taskId, "UTF-8"), userId) {
+            PulseJson.decodeFromString(OkDto.serializer(), it)
+        }
+
+    /** GET /api/hub/market?userId= — open listings + viewer's own (any status), ≤60. */
+    suspend fun market(userId: String): PulseResult<MarketPageDto> =
+        get("/api/hub/market?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(MarketPageDto.serializer(), it)
+        }
+
+    /** POST /api/hub/market { userId, title 1..80, description?, price 1..100000 } → { listing }. */
+    suspend fun createListing(userId: String, title: String, description: String?, price: Long): PulseResult<MarketListingDto> =
+        post(
+            "/api/hub/market",
+            buildJsonObject {
+                put("userId", userId)
+                put("title", title)
+                if (!description.isNullOrBlank()) put("description", description)
+                put("price", price)
+            },
+        ) { listingOf(it) }
+
+    /** POST /api/hub/market/{id}/buy { userId } → { ok, wallet } (atomic escrow-less debit/credit). */
+    suspend fun buyListing(listingId: String, userId: String): PulseResult<MarketBuyResultDto> =
+        post("/api/hub/market/" + java.net.URLEncoder.encode(listingId, "UTF-8") + "/buy", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(MarketBuyResultDto.serializer(), it)
+        }
+
+    /** GET /api/hub/logs?limit=&kind= → { logs } desc; `meta` stays a raw JSON string. */
+    suspend fun hubLogs(limit: Int = 60, kind: String? = null): PulseResult<HubLogsPageDto> {
+        val q = StringBuilder("?limit=$limit")
+        if (!kind.isNullOrBlank()) q.append("&kind=").append(java.net.URLEncoder.encode(kind, "UTF-8"))
+        return get("/api/hub/logs$q") { PulseJson.decodeFromString(HubLogsPageDto.serializer(), it) }
+    }
+
+    /** GET /api/hub/apps/{appId}/install?userId= — appId is the numeric matrix id as a string. */
+    suspend fun appInstallState(appId: String, userId: String): PulseResult<AppInstallStateDto> =
+        get("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(AppInstallStateDto.serializer(), it)
+        }
+
+    /** POST /api/hub/apps/{appId}/install { userId } — idempotent connect. */
+    suspend fun installApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
+        post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it)
+        }
+
+    /** DELETE /api/hub/apps/{appId}/install { userId } — hard remove. */
+    suspend fun uninstallApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
+        deleteWithBody("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", userId) {
+            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it)
+        }
+
+    /** GET /api/hub/apps/{appId}/community?userId= → { conversation|null, memberCount, joined }. */
+    suspend fun appCommunity(appId: String, userId: String): PulseResult<AppCommunityDto> =
+        get("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/community?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(AppCommunityDto.serializer(), it)
+        }
+
+    /** POST /api/hub/apps/{appId}/community { userId } — auto-provisions the group; founder = admin. */
+    suspend fun joinAppCommunity(appId: String, userId: String): PulseResult<AppCommunityDto> =
+        post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/community", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(AppCommunityDto.serializer(), it)
         }
 
     companion object {

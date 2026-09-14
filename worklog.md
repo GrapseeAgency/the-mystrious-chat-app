@@ -2904,3 +2904,16 @@ Agent: Z.ai Code (orchestrator)
 - Android release artifact: ./gradlew :app:assembleRelease (house flags; dev server paused for RAM) → app-release.apk 35,361,317 B; aapt2 badging app.pulse.chat versionCode 18 / 0.8.0-native; apksigner v1+v2+v3 cert CN=Pulse Live Update; local sha256 f4dbfb62… (local build — CI asset hash will be pinned to the release asset per the non-reproducibility rule if the CDN channel is cut).
 - CI: Android main SUCCESS (7fed702); iOS rounds r1 UserRoute public → r2 statusGlyph static→instance + ForEach id-pin → r3 hoist pulseStatusGlyphDisplay shared helper (4 call sites) → r4 let-struct re-clone/maxLength bindings/pure handle validator/UserDefaults.standard/frame split/createForm split → r5 PulseMentions tuple label atIndex → r6 test labels → r7 SUCCESS (build-test + xcarchive) at 19c9a3d.
 - Release: tag v0.8.0-native pushed → tag CI builds + publishes.
+
+---
+Task ID: 7-a (audit + spec)
+Agent: Z.ai Code (orchestrator)
+Task: Resolve canonical next family for Wave 7 + targeted implementation-readiness audit
+
+Work Log:
+- Resolved numbering conflict: implementation Wave 7 = master-spec §7 "Wave 6 — Collaboration & Hub" (F-RO-01…10 + F-HB-01…10). Wave 6 (Social Graph) closed; prior report's "Remaining — Spec Wave 6" refers to the SPEC's numbering.
+- Three parallel readiness audits (web contracts / Android state / iOS state), full contracts with file:line citations in agent reports; distilled into docs/WAVE7-COLLAB-HUB-PARITY-SPEC.md (binding gotchas: poll create is /api/conversations/[id]/poll; kanban /api/conversations/[id]/kanban + /api/kanban/[cardId]; events /api/conversations/[id]/events + /api/events/[id] DELETE-only; whiteboard /api/conversations/[id]/whiteboard since-poll 900ms; kanban poll 1500ms; game card poll 1500ms while active; red packet bubble poll 20s; reminders due-loop 30s; market buy returns {ok,wallet}; NO catalog GET (bundle hub-catalog.ts as JSON); NO batch installs (fan-out); no game abandonment server-side; checkin 409 body includes wallet; auth = userId in body/query only).
+- Existing state verified: Android polls fully wired (PulseApi.kt:531-561 + PollCard/PollBuilderSheet); Android Hub = static stub (feature-hub HubScreen.kt, no :data dep, dead-end sheet copy); iOS polls wired (PulseAPIClient.swift:665-682); iOS Hub = wallet GET only + dead tiles; iOS notifications = zero infra; Room v8 / GRDB v6 with non-destructive migration discipline; outbox patterns established both platforms.
+
+Stage Summary:
+- Next: 7-b Android data layer (Wave7Dtos + PulseApi + repo + Room v9 + scheduler), 7-c iOS data layer, then parallel room/hub UI crews. No backend or relay changes; transports = parity polling.

@@ -11,6 +11,7 @@ import app.pulse.data.local.OutboxDao
 import app.pulse.data.local.PulseDatabase
 import app.pulse.data.local.SavedDao
 import app.pulse.data.local.StoryDao
+import app.pulse.data.local.Wave7Dao
 import app.pulse.data.local.TopicDao
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
@@ -73,12 +74,16 @@ object DataModule {
                 PulseDatabase.MIGRATION_5_6,
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
+                PulseDatabase.MIGRATION_8_9,
             )
             .build()
 
     @Provides
     @Singleton
     fun providePrefsStore(impl: app.pulse.data.local.PulsePrefsStoreImpl): app.pulse.domain.repository.PulsePrefsStore = impl
+
+    @Provides
+    fun provideWave7Dao(db: PulseDatabase): Wave7Dao = db.wave7Dao()
 
     @Provides
     fun provideConversationDao(db: PulseDatabase): ConversationDao = db.conversationDao()

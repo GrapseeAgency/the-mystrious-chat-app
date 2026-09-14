@@ -735,6 +735,36 @@ interface StoryDao {
     suspend fun clearAll()
 }
 
+/**
+ * Wave 7 collaboration & hub offline cache (v9) — ONE canonical JSON blob per
+ * key (story_cache precedent): `hub:wallet:<viewerId>`, `kanban:<convId>`,
+ * `events:<convId>`, `whiteboard:<convId>`, `games:<convId>`, `tournaments:<convId>`,
+ * `leaderboard:<scope>`, `hub:tasks:<viewerId>`, `hub:market`, `hub:logs`,
+ * `hub:app:<appId>:<viewerId>`, `reminders:<viewerId>`. Network success
+ * overwrites, network failure serves stale (surfaces stale-mark offline).
+ */
+@Entity(tableName = "wave7_cache")
+data class Wave7CacheEntity(
+    @PrimaryKey val key: String,
+    val json: String,
+    val updatedAt: Long,
+)
+
+@Dao
+interface Wave7Dao {
+    @Upsert
+    suspend fun upsert(item: Wave7CacheEntity)
+
+    @Query("SELECT * FROM wave7_cache WHERE `key` = :key")
+    suspend fun get(key: String): Wave7CacheEntity?
+
+    @Query("DELETE FROM wave7_cache WHERE `key` = :key")
+    suspend fun delete(key: String)
+
+    @Query("DELETE FROM wave7_cache")
+    suspend fun clearAll()
+}
+
 @Database(
     entities = [
         ConversationEntity::class,
@@ -746,8 +776,9 @@ interface StoryDao {
         CallLogCacheEntity::class,
         CallLogQueueEntity::class,
         StoryCacheEntity::class,
+        Wave7CacheEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -759,6 +790,7 @@ abstract class PulseDatabase : RoomDatabase() {
     abstract fun savedDao(): SavedDao
     abstract fun callLogDao(): CallLogDao
     abstract fun storyDao(): StoryDao
+    abstract fun wave7Dao(): Wave7Dao
 
     companion object {
         const val NAME = "pulse.db"
@@ -866,6 +898,19 @@ abstract class PulseDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `story_cache` (`key` TEXT NOT NULL PRIMARY KEY, " +
                         "`groupsJson` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL)",
+                )
+            }
+        }
+
+        /**
+         * v8 → v9 (Wave 7): add the collaboration & hub snapshot cache.
+         * Non-destructive — every deployed v8 row survives untouched.
+         */
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wave7_cache` (`key` TEXT NOT NULL PRIMARY KEY, " +
+                        "`json` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL)",
                 )
             }
         }

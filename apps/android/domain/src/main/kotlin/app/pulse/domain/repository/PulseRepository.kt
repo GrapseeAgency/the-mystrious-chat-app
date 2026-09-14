@@ -27,14 +27,53 @@ import app.pulse.domain.model.User
 import app.pulse.domain.model.UserProfile
 import app.pulse.domain.model.UserStats
 import app.pulse.protocol.PulseVoiceUser
+import app.pulse.protocol.AppCommunityDto
+import app.pulse.protocol.AppInstallResultDto
+import app.pulse.protocol.AppInstallStateDto
+import app.pulse.protocol.CheckinResultDto
+import app.pulse.protocol.CheckinWalletResultDto
+import app.pulse.protocol.EventsPageDto
+import app.pulse.protocol.GameDetailDto
+import app.pulse.protocol.GameMatchCreateResultDto
+import app.pulse.protocol.GamesPageDto
+import app.pulse.protocol.GroupEventDto
+import app.pulse.protocol.HubLogsPageDto
+import app.pulse.protocol.HubTaskDto
+import app.pulse.protocol.HubTasksPageDto
+import app.pulse.protocol.KanbanCardDto
+import app.pulse.protocol.KanbanPageDto
+import app.pulse.protocol.LeaderboardPageDto
+import app.pulse.protocol.MarketBuyResultDto
+import app.pulse.protocol.MarketListingDto
+import app.pulse.protocol.MarketPageDto
+import app.pulse.protocol.ReminderItemDto
+import app.pulse.protocol.ReminderResolveDto
+import app.pulse.protocol.RemindersPageDto
+import app.pulse.protocol.RedPacketCreateResultDto
+import app.pulse.protocol.RedPacketDetailDto
+import app.pulse.protocol.RedPacketGrabResultDto
+import app.pulse.protocol.RsvpResultDto
 import app.pulse.protocol.SpaceStatePayload
+import app.pulse.protocol.SwapPageDto
+import app.pulse.protocol.SwapResultDto
 import app.pulse.protocol.StageEndedPayload
 import app.pulse.protocol.StageStatePayload
+import app.pulse.protocol.TournamentCreateResultDto
+import app.pulse.protocol.TournamentJoinResultDto
+import app.pulse.protocol.TournamentSummaryDto
+import app.pulse.protocol.TournamentsPageDto
+import app.pulse.protocol.TransferResultDto
 import app.pulse.protocol.VoiceChunkPayload
 import app.pulse.protocol.VoicePttPayload
 import app.pulse.protocol.VoiceRosterPayload
 import app.pulse.protocol.VoiceTranscriptPayload
 import app.pulse.protocol.VoiceTranscriptResultDto
+import app.pulse.protocol.WalletPageDto
+import app.pulse.protocol.WhiteboardClearResultDto
+import app.pulse.protocol.WhiteboardPageDto
+import app.pulse.protocol.WhiteboardPostResultDto
+import app.pulse.protocol.WhiteboardStrokePostDto
+import app.pulse.protocol.WhiteboardUndoResultDto
 import kotlinx.coroutines.flow.Flow
 
 /** Live events pushed by the relay — the UDF event side of the repository. */
@@ -484,4 +523,164 @@ interface PulseRepository {
      * per-request timeout; failures are honest silence (no retry).
      */
     suspend fun transcribeVoice(conversationId: String, requesterId: String, audioBase64: String): Result<VoiceTranscriptResultDto>
+
+    // ── Wave 7 — collaboration & hub ─────────────────────────────
+
+    /** POST /api/redpackets — atomic debit; the carrier message is upserted locally. */
+    suspend fun createRedPacket(conversationId: String, total: Long, count: Int, note: String?): Result<RedPacketCreateResultDto>
+
+    /** GET /api/redpackets/{id}?userId= — lazy refund on first read after expiry. */
+    suspend fun redPacket(packetId: String): Result<RedPacketDetailDto>
+
+    /** POST /api/redpackets/{id}/grab — atomic; grab requires network (honest fail offline). */
+    suspend fun grabRedPacket(packetId: String): Result<RedPacketGrabResultDto>
+
+    /** GET /api/conversations/{id}/whiteboard?since= — since=null → full snapshot. */
+    suspend fun whiteboard(conversationId: String, since: Long?): Result<WhiteboardPageDto>
+
+    /** POST strokes (≤40/call, 2..500 pts, 0..1 coords). */
+    suspend fun postWhiteboardStrokes(conversationId: String, strokes: List<WhiteboardStrokePostDto>): Result<WhiteboardPostResultDto>
+
+    /** Undo the caller's latest stroke. */
+    suspend fun undoWhiteboardStroke(conversationId: String): Result<WhiteboardUndoResultDto>
+
+    /** Clear the board (resetAt watermark). */
+    suspend fun clearWhiteboard(conversationId: String): Result<WhiteboardClearResultDto>
+
+    /** GET board — cards ordered column → position → createdAt. */
+    suspend fun kanbanBoard(conversationId: String): Result<KanbanPageDto>
+
+    /** POST card (or message→card when messageId is set). */
+    suspend fun createKanbanCard(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?): Result<KanbanCardDto>
+
+    /** PATCH card — move/rename/reassign (position null on column change = move-to-end). */
+    suspend fun updateKanbanCard(cardId: String, title: String?, column: String?, assigneeId: String?, clearAssignee: Boolean, position: Long?): Result<KanbanCardDto>
+
+    /** DELETE card — creator OR group admin. */
+    suspend fun deleteKanbanCard(cardId: String): Result<Unit>
+
+    /** GET events — upcoming asc then past desc, ≤50. */
+    suspend fun events(conversationId: String): Result<EventsPageDto>
+
+    /** POST event (creator does NOT auto-RSVP). */
+    suspend fun createEvent(conversationId: String, title: String, startsAtIso: String, description: String?, location: String?): Result<GroupEventDto>
+
+    /** DELETE event — creator OR group admin. */
+    suspend fun deleteEvent(eventId: String): Result<Unit>
+
+    /** RSVP going|maybe|no — upsert-move, no socket. */
+    suspend fun rsvpEvent(eventId: String, status: String): Result<RsvpResultDto>
+
+    /** Check-in — window startsAt−15 min…+2 h, +15 XP, idempotent. */
+    suspend fun checkinEvent(eventId: String): Result<CheckinResultDto>
+
+    /** GET /api/reminders[?due=1]. */
+    suspend fun reminders(dueOnly: Boolean): Result<RemindersPageDto>
+
+    /** POST reminder — remindAt ISO future ≤90 d; schedules the local notification. */
+    suspend fun createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String): Result<ReminderItemDto>
+
+    /** PATCH reminder — owner-only resolve (due loop calls after the nudge). */
+    suspend fun resolveReminder(reminderId: String): Result<ReminderResolveDto>
+
+    /** DELETE reminder — owner-only cancel (also unschedules the local notification). */
+    suspend fun deleteReminder(reminderId: String): Result<Unit>
+
+    /** POST /api/games — carrier message `kind=game` is upserted locally. */
+    suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto>
+
+    /** GET /api/games?conversationId= — newest 25. */
+    suspend fun games(conversationId: String): Result<GamesPageDto>
+
+    /** GET /api/games/{id}. */
+    suspend fun game(matchId: String): Result<GameDetailDto>
+
+    /** POST move {cell 0..8} — 409s surface verbatim. */
+    suspend fun gameMove(matchId: String, cell: Int): Result<GameDetailDto>
+
+    /** POST join — first-come O seat. */
+    suspend fun joinGame(matchId: String): Result<GameDetailDto>
+
+    /** POST /api/tournaments — carrier message `kind=tournament` is upserted locally. */
+    suspend fun createTournament(conversationId: String, name: String): Result<TournamentCreateResultDto>
+
+    /** GET /api/tournaments?conversationId= — newest 5. */
+    suspend fun tournaments(conversationId: String): Result<TournamentsPageDto>
+
+    /** GET /api/tournaments/{id} — standings. */
+    suspend fun tournament(tournamentId: String): Result<TournamentSummaryDto>
+
+    /** PATCH finish — creator/admin, idempotent. */
+    suspend fun finishTournament(tournamentId: String): Result<TournamentSummaryDto>
+
+    /** POST join — idempotent upsert. */
+    suspend fun joinTournament(tournamentId: String): Result<TournamentJoinResultDto>
+
+    /** GET /api/leaderboard — room-scoped when conversationId set, else global top 50. */
+    suspend fun leaderboard(conversationId: String?): Result<LeaderboardPageDto>
+
+    /** GET /api/hub/wallet — wallet + ledger (≤30). */
+    suspend fun wallet(): Result<WalletPageDto>
+
+    /** POST check-in — 409 'Already checked in today.' surfaces verbatim. */
+    suspend fun checkinWallet(): Result<CheckinWalletResultDto>
+
+    /** POST transfer — @handle, integer PC. */
+    suspend fun transferCoins(toUsername: String, amount: Long, note: String?): Result<TransferResultDto>
+
+    /** GET swap rates + real stats. */
+    suspend fun swapRates(): Result<SwapPageDto>
+
+    /** POST swap pc2gem|gem2pc. */
+    suspend fun swap(direction: String, amount: Long): Result<SwapResultDto>
+
+    /** GET personal tasks (doing → todo → done). */
+    suspend fun hubTasks(): Result<HubTasksPageDto>
+
+    /** POST task. */
+    suspend fun createHubTask(title: String, status: String?): Result<HubTaskDto>
+
+    /** PATCH task (owner-only). */
+    suspend fun updateHubTask(taskId: String, title: String?, status: String?): Result<HubTaskDto>
+
+    /** DELETE task (owner-only). */
+    suspend fun deleteHubTask(taskId: String): Result<Unit>
+
+    /** GET market (open + own listings ≤60). */
+    suspend fun market(): Result<MarketPageDto>
+
+    /** POST listing. */
+    suspend fun createListing(title: String, description: String?, price: Long): Result<MarketListingDto>
+
+    /** POST buy — atomic debit/credit; returns the fresh wallet. */
+    suspend fun buyListing(listingId: String): Result<MarketBuyResultDto>
+
+    /** GET /api/hub/logs — ≤80, optional kind filter. */
+    suspend fun hubLogs(limit: Int, kind: String?): Result<HubLogsPageDto>
+
+    /** GET install state for one app (fan-out drives My apps). */
+    suspend fun appInstallState(appId: String): Result<AppInstallStateDto>
+
+    /** POST install/connect — idempotent. */
+    suspend fun installApp(appId: String): Result<AppInstallResultDto>
+
+    /** DELETE install — hard remove. */
+    suspend fun uninstallApp(appId: String): Result<AppInstallResultDto>
+
+    /** GET app community — null conversation when none exists yet. */
+    suspend fun appCommunity(appId: String): Result<AppCommunityDto>
+
+    /** POST join community — auto-provisions the group; founder = admin. */
+    suspend fun joinAppCommunity(appId: String): Result<AppCommunityDto>
+
+    // ── Wave 7 offline caches (story_cache precedent) ────────────
+
+    /** Last good wallet page from the local snapshot cache, or null. */
+    suspend fun cachedWallet(): WalletPageDto?
+
+    /** Last good hub tasks page from the local snapshot cache, or null. */
+    suspend fun cachedHubTasks(): HubTasksPageDto?
+
+    /** Last good reminders page from the local snapshot cache, or null. */
+    suspend fun cachedReminders(): RemindersPageDto?
 }

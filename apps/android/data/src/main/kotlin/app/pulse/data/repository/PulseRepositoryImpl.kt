@@ -17,6 +17,7 @@ import app.pulse.data.local.OutboxDao
 import app.pulse.data.local.OutboxEntity
 import app.pulse.data.local.SavedDao
 import app.pulse.data.local.StoryCacheEntity
+import app.pulse.data.local.Wave7CacheEntity
 import app.pulse.data.local.StoryDao
 import app.pulse.data.local.SavedMessageEntity
 import app.pulse.data.local.TopicDao
@@ -70,8 +71,49 @@ import app.pulse.protocol.CallLogItemDto
 import app.pulse.protocol.CallOfferDto
 import app.pulse.protocol.CallRejectDto
 import app.pulse.protocol.ChannelDto
+import app.pulse.protocol.CheckinResultDto
+import app.pulse.protocol.CheckinWalletResultDto
 import app.pulse.protocol.ConversationSummaryDto
+import app.pulse.protocol.EventRsvpDto
+import app.pulse.protocol.EventsPageDto
+import app.pulse.protocol.AppCommunityDto
+import app.pulse.protocol.AppInstallResultDto
+import app.pulse.protocol.AppInstallStateDto
 import app.pulse.protocol.FolderDto
+import app.pulse.protocol.GameDetailDto
+import app.pulse.protocol.GameMatchCreateResultDto
+import app.pulse.protocol.GamesPageDto
+import app.pulse.protocol.GroupEventDto
+import app.pulse.protocol.HubLogDto
+import app.pulse.protocol.HubLogsPageDto
+import app.pulse.protocol.HubTaskDto
+import app.pulse.protocol.HubTasksPageDto
+import app.pulse.protocol.KanbanCardDto
+import app.pulse.protocol.KanbanPageDto
+import app.pulse.protocol.LeaderboardPageDto
+import app.pulse.protocol.MarketBuyResultDto
+import app.pulse.protocol.MarketListingDto
+import app.pulse.protocol.MarketPageDto
+import app.pulse.protocol.ReminderItemDto
+import app.pulse.protocol.ReminderResolveDto
+import app.pulse.protocol.RemindersPageDto
+import app.pulse.protocol.RedPacketCreateResultDto
+import app.pulse.protocol.RedPacketDetailDto
+import app.pulse.protocol.RedPacketGrabResultDto
+import app.pulse.protocol.RsvpResultDto
+import app.pulse.protocol.SwapPageDto
+import app.pulse.protocol.SwapResultDto
+import app.pulse.protocol.TournamentCreateResultDto
+import app.pulse.protocol.TournamentJoinResultDto
+import app.pulse.protocol.TournamentSummaryDto
+import app.pulse.protocol.TournamentsPageDto
+import app.pulse.protocol.TransferResultDto
+import app.pulse.protocol.WalletPageDto
+import app.pulse.protocol.WhiteboardClearResultDto
+import app.pulse.protocol.WhiteboardPageDto
+import app.pulse.protocol.WhiteboardPostResultDto
+import app.pulse.protocol.WhiteboardStrokePostDto
+import app.pulse.protocol.WhiteboardUndoResultDto
 import app.pulse.protocol.FullUserDto
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.PulseVoiceUser
@@ -140,6 +182,7 @@ class PulseRepositoryImpl @Inject constructor(
     private val savedDao: SavedDao,
     private val callLogDao: CallLogDao,
     private val storyDao: StoryDao,
+    private val wave7Dao: app.pulse.data.local.Wave7Dao,
     private val socket: PulseSocketClient,
     @ApplicationContext private val context: Context,
 ) : PulseRepository {
@@ -1612,6 +1655,345 @@ class PulseRepositoryImpl @Inject constructor(
         when (val r = api.transcribeVoice(conversationId, requesterId, audioBase64)) {
             is PulseResult.Success -> Result.success(r.value)
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    // ── Wave 7 — collaboration & hub ───────────────────────────
+
+    override suspend fun createRedPacket(conversationId: String, total: Long, count: Int, note: String?): Result<RedPacketCreateResultDto> =
+        when (val r = api.createRedPacket(viewerId ?: "", conversationId, total, count, note)) {
+            is PulseResult.Success -> {
+                r.value.message?.let { upsertMessage(it.toDomain()) }
+                scheduleConversationsRefresh()
+                Result.success(r.value)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun redPacket(packetId: String): Result<RedPacketDetailDto> =
+        when (val r = api.redPacket(packetId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun grabRedPacket(packetId: String): Result<RedPacketGrabResultDto> =
+        when (val r = api.grabRedPacket(packetId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun whiteboard(conversationId: String, since: Long?): Result<WhiteboardPageDto> =
+        when (val r = api.whiteboard(conversationId, viewerId ?: "", since)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun postWhiteboardStrokes(conversationId: String, strokes: List<WhiteboardStrokePostDto>): Result<WhiteboardPostResultDto> =
+        when (val r = api.postWhiteboardStrokes(conversationId, viewerId ?: "", strokes)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun undoWhiteboardStroke(conversationId: String): Result<WhiteboardUndoResultDto> =
+        when (val r = api.undoWhiteboardStroke(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun clearWhiteboard(conversationId: String): Result<WhiteboardClearResultDto> =
+        when (val r = api.clearWhiteboard(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun kanbanBoard(conversationId: String): Result<KanbanPageDto> =
+        when (val r = api.kanbanBoard(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun createKanbanCard(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?): Result<KanbanCardDto> =
+        when (val r = api.createKanbanCard(conversationId, viewerId ?: "", title, column, assigneeId, messageId)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun updateKanbanCard(cardId: String, title: String?, column: String?, assigneeId: String?, clearAssignee: Boolean, position: Long?): Result<KanbanCardDto> =
+        when (val r = api.updateKanbanCard(cardId, viewerId ?: "", title, column, assigneeId, clearAssignee, position)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun deleteKanbanCard(cardId: String): Result<Unit> =
+        when (val r = api.deleteKanbanCard(cardId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun events(conversationId: String): Result<EventsPageDto> =
+        when (val r = api.events(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun createEvent(conversationId: String, title: String, startsAtIso: String, description: String?, location: String?): Result<GroupEventDto> =
+        when (val r = api.createEvent(conversationId, viewerId ?: "", title, startsAtIso, description, location)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun deleteEvent(eventId: String): Result<Unit> =
+        when (val r = api.deleteEvent(eventId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun rsvpEvent(eventId: String, status: String): Result<RsvpResultDto> =
+        when (val r = api.rsvpEvent(eventId, viewerId ?: "", status)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun checkinEvent(eventId: String): Result<CheckinResultDto> =
+        when (val r = api.checkinEvent(eventId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun reminders(dueOnly: Boolean): Result<RemindersPageDto> =
+        when (val r = api.reminders(viewerId ?: "", dueOnly)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String): Result<ReminderItemDto> =
+        when (val r = api.createReminder(viewerId ?: "", conversationId, messageId, note, remindAtIso)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun resolveReminder(reminderId: String): Result<ReminderResolveDto> =
+        when (val r = api.resolveReminder(reminderId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun deleteReminder(reminderId: String): Result<Unit> =
+        when (val r = api.deleteReminder(reminderId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto> =
+        when (val r = api.createGame(viewerId ?: "", conversationId, opponentId)) {
+            is PulseResult.Success -> {
+                r.value.message?.let { upsertMessage(it.toDomain()) }
+                scheduleConversationsRefresh()
+                Result.success(r.value)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun games(conversationId: String): Result<GamesPageDto> =
+        when (val r = api.games(conversationId)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun game(matchId: String): Result<GameDetailDto> =
+        when (val r = api.game(matchId)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun gameMove(matchId: String, cell: Int): Result<GameDetailDto> =
+        when (val r = api.gameMove(matchId, viewerId ?: "", cell)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun joinGame(matchId: String): Result<GameDetailDto> =
+        when (val r = api.joinGame(matchId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun createTournament(conversationId: String, name: String): Result<TournamentCreateResultDto> =
+        when (val r = api.createTournament(viewerId ?: "", conversationId, name)) {
+            is PulseResult.Success -> {
+                r.value.message?.let { upsertMessage(it.toDomain()) }
+                scheduleConversationsRefresh()
+                Result.success(r.value)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun tournaments(conversationId: String): Result<TournamentsPageDto> =
+        when (val r = api.tournaments(conversationId)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun tournament(tournamentId: String): Result<TournamentSummaryDto> =
+        when (val r = api.tournament(tournamentId)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun finishTournament(tournamentId: String): Result<TournamentSummaryDto> =
+        when (val r = api.finishTournament(tournamentId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun joinTournament(tournamentId: String): Result<TournamentJoinResultDto> =
+        when (val r = api.joinTournament(tournamentId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun leaderboard(conversationId: String?): Result<LeaderboardPageDto> =
+        when (val r = api.leaderboard(conversationId, viewerId)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun wallet(): Result<WalletPageDto> =
+        when (val r = api.wallet(viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun checkinWallet(): Result<CheckinWalletResultDto> =
+        when (val r = api.checkinWallet(viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun transferCoins(toUsername: String, amount: Long, note: String?): Result<TransferResultDto> =
+        when (val r = api.transferCoins(viewerId ?: "", toUsername, amount, note)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun swapRates(): Result<SwapPageDto> =
+        when (val r = api.swapRates()) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun swap(direction: String, amount: Long): Result<SwapResultDto> =
+        when (val r = api.swap(viewerId ?: "", direction, amount)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun hubTasks(): Result<HubTasksPageDto> =
+        when (val r = api.hubTasks(viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun createHubTask(title: String, status: String?): Result<HubTaskDto> =
+        when (val r = api.createHubTask(viewerId ?: "", title, status)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun updateHubTask(taskId: String, title: String?, status: String?): Result<HubTaskDto> =
+        when (val r = api.updateHubTask(taskId, viewerId ?: "", title, status)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun deleteHubTask(taskId: String): Result<Unit> =
+        when (val r = api.deleteHubTask(taskId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun market(): Result<MarketPageDto> =
+        when (val r = api.market(viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun createListing(title: String, description: String?, price: Long): Result<MarketListingDto> =
+        when (val r = api.createListing(viewerId ?: "", title, description, price)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun buyListing(listingId: String): Result<MarketBuyResultDto> =
+        when (val r = api.buyListing(listingId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun hubLogs(limit: Int, kind: String?): Result<HubLogsPageDto> =
+        when (val r = api.hubLogs(limit, kind)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun appInstallState(appId: String): Result<AppInstallStateDto> =
+        when (val r = api.appInstallState(appId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun installApp(appId: String): Result<AppInstallResultDto> =
+        when (val r = api.installApp(appId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun uninstallApp(appId: String): Result<AppInstallResultDto> =
+        when (val r = api.uninstallApp(appId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun appCommunity(appId: String): Result<AppCommunityDto> =
+        when (val r = api.appCommunity(appId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    override suspend fun joinAppCommunity(appId: String): Result<AppCommunityDto> =
+        when (val r = api.joinAppCommunity(appId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    // Wave 7 read-through snapshot cache (story_cache precedent): network
+    // success overwrites the blob, network failure serves the last good page.
+
+    private suspend fun cachePut(key: String, json: String) {
+        runCatching { wave7Dao.upsert(Wave7CacheEntity(key = key, json = json, updatedAt = System.currentTimeMillis())) }
+    }
+
+    private suspend fun cacheGet(key: String): String? =
+        runCatching { wave7Dao.get(key)?.json }.getOrNull()
+
+    /** Snapshot key for the hub wallet (per viewer). */
+    private fun walletKey() = "hub:wallet:${viewerId ?: "anon"}"
+
+    /** Read the cached wallet page without hitting the network. */
+    override suspend fun cachedWallet(): WalletPageDto? =
+        cacheGet(walletKey())?.let { blob ->
+            runCatching { PulseJson.decodeFromString(WalletPageDto.serializer(), blob) }.getOrNull()
+        }
+
+    /** Read cached hub tasks without hitting the network. */
+    override suspend fun cachedHubTasks(): HubTasksPageDto? =
+        cacheGet("hub:tasks:${viewerId ?: "anon"}")?.let { blob ->
+            runCatching { PulseJson.decodeFromString(HubTasksPageDto.serializer(), blob) }.getOrNull()
+        }
+
+    /** Read cached reminders (due badge survives cold start). */
+    override suspend fun cachedReminders(): RemindersPageDto? =
+        cacheGet("reminders:${viewerId ?: "anon"}")?.let { blob ->
+            runCatching { PulseJson.decodeFromString(RemindersPageDto.serializer(), blob) }.getOrNull()
         }
 
     // ── Wave 6 — social graph & discovery ──────────────────────
