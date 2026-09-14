@@ -582,7 +582,7 @@ struct Wave7TicTacToeCard: View {
 }
 
 struct Wave7GameCreateSheet: View {
-    let members: [WireSender]
+    let members: [(id: String, name: String)]
     let onCreate: (String?) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -1137,7 +1137,7 @@ struct Wave7EventsSheet: View {
     }
 
     static func formatTime(_ iso: String?) -> String {
-        guard let iso, let ms = epochMs(from: iso) else { return "time TBD" }
+        guard let iso, let ms = Wave7RoomActions.epochMs(from: iso) else { return "time TBD" }
         let d = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
         let f = DateFormatter()
         f.dateFormat = "EEE, MMM d · HH:mm"
@@ -1172,8 +1172,13 @@ struct Wave7RemindersSheet: View {
                     Button("Set reminder") {
                         let nowMs = Int64(Date().timeIntervalSince1970) * 1000
                         let parsed = PulseWave7Logic.parseRelativeReminder(whenText, nowEpochMs: nowMs)
-                        let iso = parsed.map { Self.iso(fromMs: $0.remindAtEpochMs) } ?? Wave7RoomActions.epochMs(from: "").map { _ in nil as String? } ?? nil
-                        let resolvedIso = iso ?? Self.parseIsoLoose(whenText)
+                        var resolvedIso: String?
+                        if let parsed {
+                            resolvedIso = Self.iso(fromMs: parsed.remindAtEpochMs)
+                        }
+                        if resolvedIso == nil {
+                            resolvedIso = Self.parseIsoLoose(whenText)
+                        }
                         let finalNote = parsed?.note ?? note.trimmingCharacters(in: .whitespaces)
                         if resolvedIso == nil {
                             error = "No sane time found — try \"in 30m\", \"tomorrow\" or an exact date."
@@ -1181,7 +1186,7 @@ struct Wave7RemindersSheet: View {
                             error = "Note can't be empty."
                         } else {
                             error = nil
-                            onCreate(finalNote, resolvedIso!, anchored)
+                            onCreate(finalNote, resolvedIso ?? "", anchored)
                             note = ""; whenText = ""
                         }
                     }
@@ -1230,9 +1235,14 @@ struct Wave7RemindersSheet: View {
     }
 
     private func subtitle(_ item: WireReminderItem) -> String {
-        let time = item.remindAt.map { Wave7RoomActions.epochMs(from: $0).map { _ in Wave7EventsSheet.formatTime(item.remindAt) } } ?? "time TBD"
+        let time = Wave7EventsSheet.formatTime(item.remindAt)
         let due = isDue(item) ? "DUE NOW — " : ""
-        let room = item.conversation?.name.flatMap { $0.isEmpty ? nil : " · \($0)" } ?? ""
+        let room: String
+        if let name = item.conversation?.name, !name.isEmpty {
+            room = " · \(name)"
+        } else {
+            room = ""
+        }
         return due + time + room
     }
 

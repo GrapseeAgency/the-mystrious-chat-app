@@ -334,7 +334,9 @@ struct HubView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(vm.toastIsError ? Color.red.opacity(0.92) : Color.black.opacity(0.85), in: Capsule())
+                    .background {
+                        Capsule().fill(vm.toastIsError ? Color.red.opacity(0.92) : Color.black.opacity(0.85))
+                    }
                     .padding(.bottom, 110)
                     .transition(.opacity)
             }

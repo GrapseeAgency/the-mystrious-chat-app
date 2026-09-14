@@ -951,9 +951,11 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireTournamentCreateResult.self, from: data)
     }
 
-    /// GET /api/tournaments/{id} → { tournament } standings.
+    /// GET /api/tournaments/{id} → { tournament } standings (tolerant envelope OR bare).
     public func tournamentDetail(_ tournamentId: String) async throws -> WireTournamentSummary {
-        let data = try await get("/api/tournaments/\(q(tournamentId))")
+        var request = URLRequest(url: url("/api/tournaments/\(q(tournamentId))"))
+        request.httpMethod = "GET"
+        let data = try await send(request)
         if let page = try? envelope(WireTournamentEnvelope.self, from: data), let t = page.tournament { return t }
         return try envelope(WireTournamentSummary.self, from: data)
     }

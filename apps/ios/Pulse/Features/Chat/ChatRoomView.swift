@@ -371,7 +371,9 @@ private struct RoomContent: View {
         }
         .sheet(isPresented: $wave7.gameCreateOpen) {
             Wave7GameCreateSheet(
-                members: conversation.members.filter { $0.id != session.viewer?.id },
+                members: conversation.members
+                    .filter { $0.id != session.viewer?.id }
+                    .map { (id: $0.id, name: $0.name) },
                 onCreate: { opponentId in
                     wave7.createGame(api: session.api, conversationId: conversation.id, opponentId: opponentId)
                 },
@@ -456,7 +458,9 @@ private struct RoomContent: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(wave7.toastIsError ? Color.red.opacity(0.92) : Color.black.opacity(0.85), in: Capsule())
+                    .background {
+                        Capsule().fill(wave7.toastIsError ? Color.red.opacity(0.92) : Color.black.opacity(0.85))
+                    }
                     .padding(.bottom, 96)
                     .transition(.opacity)
             }
@@ -1364,7 +1368,7 @@ struct BubbleView: View {
                 note: rp.note,
                 isMine: mine,
                 viewerId: viewerId ?? "",
-                load: { wave7.cardRedPacketLoad($0) },
+                load: { id in await wave7.cardRedPacketLoad(id) },
                 onGrab: { wave7.cardGrab(rp.packetId) },
                 onOpenDetail: { wave7.cardOpenDetail(rp.packetId) },
             )
@@ -1378,7 +1382,7 @@ struct BubbleView: View {
             Wave7TicTacToeCard(
                 matchId: gp.matchId,
                 viewerId: viewerId ?? "",
-                load: { wave7.cardGameLoad($0) },
+                load: { id in await wave7.cardGameLoad(id) },
                 onMove: { cell in wave7.cardMove(gp.matchId, cell) },
                 onJoin: { wave7.cardJoinGame(gp.matchId) },
             )
@@ -1394,7 +1398,7 @@ struct BubbleView: View {
                 name: tp.name ?? "",
                 viewerId: viewerId ?? "",
                 isAdmin: message.senderId == viewerId,
-                load: { wave7.cardTournamentLoad($0) },
+                load: { id in await wave7.cardTournamentLoad(id) },
                 onJoin: { wave7.cardJoinTournament(tp.tournamentId) },
                 onFinish: { wave7.cardFinishTournament(tp.tournamentId) },
             )
