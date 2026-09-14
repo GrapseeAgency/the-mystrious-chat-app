@@ -1761,7 +1761,12 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun reminders(dueOnly: Boolean): Result<RemindersPageDto> =
         when (val r = api.reminders(viewerId ?: "", dueOnly)) {
-            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Success -> {
+                if (!dueOnly) runCatching {
+                    cachePut("reminders:${viewerId ?: "anon"}", PulseJson.encodeToString(RemindersPageDto.serializer(), r.value))
+                }
+                Result.success(r.value)
+            }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
@@ -1859,7 +1864,12 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun wallet(): Result<WalletPageDto> =
         when (val r = api.wallet(viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Success -> {
+                runCatching {
+                    cachePut(walletKey(), PulseJson.encodeToString(WalletPageDto.serializer(), r.value))
+                }
+                Result.success(r.value)
+            }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
@@ -1889,7 +1899,12 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun hubTasks(): Result<HubTasksPageDto> =
         when (val r = api.hubTasks(viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Success -> {
+                runCatching {
+                    cachePut("hub:tasks:${viewerId ?: "anon"}", PulseJson.encodeToString(HubTasksPageDto.serializer(), r.value))
+                }
+                Result.success(r.value)
+            }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 

@@ -493,7 +493,10 @@ private fun PulseShell(
             }
             composable("hub") {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
-                    HubScreen(viewerName = viewerName ?: "")
+                    app.pulse.feature.hub.HubScreen(
+                        viewerName = viewerName ?: "",
+                        onOpenConversation = { id -> navController.navigate("room/$id") },
+                    )
                 }
             }
             composable("contacts") {
