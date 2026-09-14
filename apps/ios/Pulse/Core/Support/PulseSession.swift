@@ -118,7 +118,8 @@ public final class PulseSession: ObservableObject {
         reminderDueTask?.cancel()
         reminderDueTask = Task { [weak self] in
             while !Task.isCancelled {
-                guard let self, let api = self.api else { break }
+                guard let self else { break }
+                let api = self.api
                 if let due = try? await api.reminders(dueOnly: true).items, !due.isEmpty {
                     for item in due {
                         let note = (item.note?.isEmpty == false) ? item.note! : "Reminder"
