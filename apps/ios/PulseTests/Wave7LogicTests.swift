@@ -39,14 +39,13 @@ final class Wave7LogicTests: XCTestCase {
 
     func testTomorrowShiftsTo9am() throws {
         let cal = Calendar.current
-        let now = cal.date(from: DateComponents(year: 2026, month: 1, hour: 10))!
+        let nowComps = DateComponents(year: 2026, month: 5, day: 14, hour: 10)
+        let now = cal.date(from: nowComps)!
         let nowMs = Int64(now.timeIntervalSince1970) * 1000
         let parsed = PulseWave7Logic.parseRelativeReminder("Call mom tomorrow", nowEpochMs: nowMs)
         XCTAssertEqual(parsed?.note, "Call mom")
-        let expected = cal.date(from: DateComponents(year: 2026, month: 1, day: 3, hour: 9))! // day = now.day+1
-        let expectedMs = Int64(cal.date(byAdding: .day, value: 1, to: cal.date(from: DateComponents(year: 2026, month: 1, day: now.day, hour: 9)))!.timeIntervalSince1970) * 1000
-        XCTAssertEqual(parsed?.remindAtEpochMs, expectedMs)
-        _ = expected // silence unused when timezone shifts the fixture day
+        let expectedDate = cal.date(from: DateComponents(year: 2026, month: 5, day: 15, hour: 9))!
+        XCTAssertEqual(parsed?.remindAtEpochMs, Int64(expectedDate.timeIntervalSince1970) * 1000)
     }
 
     func testTonightShiftsTo8pmOrTomorrow() throws {
@@ -119,19 +118,26 @@ final class Wave7LogicTests: XCTestCase {
         XCTAssertEqual(PulseWave7Logic.cellAt("short", 0), " ")
     }
 
+    private func makeMatch(
+        turn: String = "X",
+        status: String = "active",
+        playerOId: String? = nil,
+    ) -> WireGameMatch {
+        WireGameMatch(
+            id: "m", conversationId: nil, game: nil, playerXId: "u1", playerOId: playerOId,
+            board: "         ", turn: turn, status: status, winnerId: nil, winLine: nil,
+            moveCount: 0, createdAt: nil, updatedAt: nil,
+        )
+    }
+
     func testSideOfAndTurnGate() {
-        let match = WireGameMatch(id: "m", conversationId: nil, game: nil, playerXId: "u1", playerOId: nil, board: "         ", turn: "X", status: "active", winnerId: nil, winLine: nil, moveCount: 0, createdAt: nil, updatedAt: nil)
+        let match = makeMatch()
         XCTAssertEqual(PulseWave7Logic.sideOf(match, "u1"), "X")
         XCTAssertNil(PulseWave7Logic.sideOf(match, "u2"))
         XCTAssertTrue(PulseWave7Logic.isMyTurn(match, "u1"))
         XCTAssertFalse(PulseWave7Logic.isMyTurn(match, "u2"))
-        var done = match
-        done.status = "x_won"
-        XCTAssertFalse(PulseWave7Logic.isMyTurn(done, "u1"))
-        var theirs = match
-        theirs.turn = "O"
-        theirs.playerOId = "u2"
-        XCTAssertTrue(PulseWave7Logic.isMyTurn(theirs, "u2"))
+        XCTAssertFalse(PulseWave7Logic.isMyTurn(makeMatch(status: "x_won"), "u1"))
+        XCTAssertTrue(PulseWave7Logic.isMyTurn(makeMatch(turn: "O", playerOId: "u2"), "u2"))
     }
 
     // ── check-in window + wallet rules ───────────────────────────
