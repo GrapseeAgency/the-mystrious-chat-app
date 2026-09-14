@@ -48,7 +48,7 @@ final class Wave7WireTests: XCTestCase {
     func testWhiteboardPageDecodes() throws {
         let page = try decode(
             WireWhiteboardPage.self,
-            #"{"strokes":[{"id":"s1","userId":"u1","color":"#22c55e","width":3.0,"points":[[0.1,0.2],[0.4,0.5]]}],"serverTime":1700,"resetAt":null}"#,
+            ##"{"strokes":[{"id":"s1","userId":"u1","color":"#22c55e","width":3.0,"points":[[0.1,0.2],[0.4,0.5]]}],"serverTime":1700,"resetAt":null}"##,
         )
         XCTAssertEqual(page.strokes?.count, 1)
         XCTAssertEqual(page.strokes?.first?.points?.count, 2)
