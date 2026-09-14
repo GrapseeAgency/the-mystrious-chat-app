@@ -391,7 +391,7 @@ struct HubView: View {
             HStack {
                 hubStat("PC", vm.wallet.page?.wallet?.coins)
                 hubStat("GEM", vm.wallet.page?.wallet?.gems)
-                hubStat("Streak", vm.wallet.page?.wallet?.streak.map(Int64.init))
+                hubStat("Streak", vm.wallet.page?.wallet?.streak)
             }
             let checkedIn = vm.wallet.page?.wallet?.checkedInToday == true
             Button {
@@ -484,7 +484,7 @@ private struct HubAppTarget: Identifiable {
 }
 
 @ViewBuilder
-private func hubStat(_ label: String, _ value: Int64?) -> some View {
+private func hubStat(_ label: String, _ value: Int?) -> some View {
     VStack(alignment: .leading, spacing: 2) {
         Text(value == nil ? "…" : "\(value!)")
             .font(.title2.weight(.bold))
