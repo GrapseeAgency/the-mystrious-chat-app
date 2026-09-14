@@ -170,7 +170,7 @@ public struct PulseAPIClient: Sendable {
     /// N3-b — Hub wallet (real coins / gems / streak numbers).
     public func wallet() async throws -> WireWallet {
         let page: WireWalletPage = try await get("/api/hub/wallet?userId=\(userId)")
-        return page.wallet
+        return page.wallet ?? WireWallet(userId: nil, coins: nil, gems: nil, streak: nil, lastCheckIn: nil, checkedInToday: nil)
     }
 
     // ── writes ───────────────────────────────────────────────
