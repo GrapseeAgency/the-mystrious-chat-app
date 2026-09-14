@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Forward
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.ViewKanban
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
@@ -192,6 +194,9 @@ internal fun MessageActionSheet(
     onShare: (() -> Unit)?,
     onDelete: (() -> Unit)?,
     onInfo: (() -> Unit)?,
+    // ── Wave 7 ──
+    onAddToBoard: (() -> Unit)? = null,
+    onRemindMe: (() -> Unit)? = null,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Row(
@@ -230,6 +235,11 @@ internal fun MessageActionSheet(
         SheetAction(Icons.Filled.Forward, "Forward", onForward)
         onShare?.let { SheetAction(Icons.Filled.Share, "Share", it) }
         onInfo?.let { SheetAction(Icons.Filled.Info, "Info", it) }
+        // ── Wave 7: message→kanban card + per-message reminder (web parity) ──
+        if (message.kind == Message.Kind.TEXT && !message.isDeleted) {
+            onAddToBoard?.let { SheetAction(Icons.Filled.ViewKanban, "Add to board", it) }
+        }
+        onRemindMe?.let { SheetAction(Icons.Filled.Alarm, "Remind me…", it) }
         onDelete?.let {
             SheetAction(Icons.Filled.Delete, "Delete", it, tint = PulsePalette.Rose)
         }

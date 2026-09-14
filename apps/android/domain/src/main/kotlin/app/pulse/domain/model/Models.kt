@@ -410,8 +410,10 @@ data class Message(
     val linkPreview: LinkPreviewInfo? = null,
     /** Zulip-style topic the message is filed under — null = General (whole room). */
     val topicId: String? = null,
+    // ── Wave 7 rich-object payload (raw JSON string from the wire; null on text rows) ──
+    val payload: String? = null,
 ) {
-    enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, SYSTEM }
+    enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, GAME, TOURNAMENT, SYSTEM }
 
     val isDeleted: Boolean get() = deletedAt != null
 }

@@ -2917,3 +2917,22 @@ Work Log:
 
 Stage Summary:
 - Next: 7-b Android data layer (Wave7Dtos + PulseApi + repo + Room v9 + scheduler), 7-c iOS data layer, then parallel room/hub UI crews. No backend or relay changes; transports = parity polling.
+
+---
+Task ID: 7-b (Android data layer) — COMPLETE
+Agent: Z.ai Code (orchestrator, direct)
+
+Work Log:
+- ENV: sandbox was RESET (Android SDK/JDK/gradle caches gone) — re-provisioned JDK 21 (/home/z/jdk-21.0.12.1+1), Android SDK (platforms;android-35, build-tools 35.0.0), local.properties, Gradle deps re-downloaded.
+- protocol/Wave7Dtos.kt: 40+ tolerant DTOs (red packets, whiteboard, kanban, events, reminders, games, tournaments, leaderboard, hub wallet/swap/transfer/tasks/market/logs/apps/community).
+- protocol/Wave7Logic.kt: parseRelativeReminder 1:1 web port (found+fixed 2 porting bugs vs web semantics during tests: missing now-base on relative tokens), board win-scan mirror, checkin window/reward rules, payload decoders.
+- PulseApi.kt +42 endpoints (redpacket create/detail/grab, whiteboard GET/POST/undo/DELETE w/ requesterId contract, kanban board/create/PATCH/DELETE, events CRUD+rsvp+checkin, reminders GET/POST/PATCH/DELETE, games create/list/detail/move/join, tournaments create/list/detail/finish/join, leaderboard, hub wallet/checkin/transfer/swap/tasks/market/logs/apps install/community). Verified contract fixes caught by tests: whiteboard DELETE param is requesterId (not userId).
+- PulseRepository +37 members incl. cachedWallet/cachedHubTasks/cachedReminders read-through.
+- Room v8→v9: wave7_cache key/json/updatedAt (story_cache precedent), MIGRATION_8_9 non-destructive, DataModule wired.
+- ReminderNotifier: channel + POST_NOTIFICATIONS gate + WorkManager one-shot at remindAt (offline-capable) + shell due-loop planned at UI layer.
+- hub_catalog.json asset generated from src/lib/hub-catalog.ts via tools/gen-hub-catalog.mjs (100 apps/10 categories/100 taglines) into Android assets + iOS Resources.
+- Test fakes (FlushOutbox/SendMessage) extended with 50 Wave7 stubs.
+
+Stage Summary:
+- Gate: :protocol:test 19 Wave7 tests green · :data:testDebugUnitTest 21 Wave7 tests green (all pre-existing suites still green) · :app:compileDebugKotlin SUCCESS. Commit 217b9df.
+- Next: 7-d Android room surfaces (cards/sheets/attach rows/polling/notifications loop) then Hub rewrite.

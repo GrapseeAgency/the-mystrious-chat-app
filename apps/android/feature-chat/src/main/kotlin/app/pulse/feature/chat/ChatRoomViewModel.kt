@@ -12,6 +12,17 @@ import app.pulse.core.time.PulseTime
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
+import app.pulse.protocol.GameDetailDto
+import app.pulse.protocol.KanbanPageDto
+import app.pulse.protocol.LeaderboardPageDto
+import app.pulse.protocol.RemindersPageDto
+import app.pulse.protocol.WhiteboardPageDto
+import app.pulse.protocol.WhiteboardStrokePostDto
+import app.pulse.protocol.GroupEventDto
+import app.pulse.protocol.RedPacketDetailDto
+import app.pulse.protocol.TournamentSummaryDto
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import app.pulse.domain.model.SafetyState
 import app.pulse.domain.model.Topic
 import app.pulse.domain.repository.PulseEvent
@@ -973,6 +984,274 @@ class ChatRoomViewModel @Inject constructor(
                 .onFailure { notify("Couldn't create the topic", isError = true) }
         }
     }
+
+    // ── Wave 7 — collaboration & hub (F-RO-02…09) ──────────────────────
+
+    val viewerId: String get() = repo.viewerId ?: ""
+
+    /** True when THIS room is a group/channel (tournaments + leaderboard are group-only). */
+    val isGroup: Boolean get() = conversation.value?.isGroupish == true
+
+    /** Room admin? (channels: role from myRole; groups: creator heuristic on web = admins list) */
+    fun isAdmin(): Boolean = channelRole.value == "admin"
+
+    /** Sheet host bus — one flag per surface, all exclusive. */
+    var redPacketOpen by androidx.compose.runtime.mutableStateOf(false)
+    var gameOpen by androidx.compose.runtime.mutableStateOf(false)
+    var tournamentOpen by androidx.compose.runtime.mutableStateOf(false)
+    var kanbanOpen by androidx.compose.runtime.mutableStateOf(false)
+    var whiteboardOpen by androidx.compose.runtime.mutableStateOf(false)
+    var eventsOpen by androidx.compose.runtime.mutableStateOf(false)
+    var remindersOpen by androidx.compose.runtime.mutableStateOf(false)
+    var leaderboardOpen by androidx.compose.runtime.mutableStateOf(false)
+    var redPacketDetailId by androidx.compose.runtime.mutableStateOf<String?>(null)
+    /** Message→kanban conversion source (set from the message action sheet). */
+    var kanbanSourceMessage by androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    /** Non-surface helper — routes into the room snackbar. */
+    fun notifySticky(message: String) = notify(message, isError = false)
+
+    fun openRedPacket() { redPacketOpen = true }
+    fun openGame() { gameOpen = true }
+    fun openTournament() { tournamentOpen = true }
+    fun openKanban() { kanbanOpen = true }
+    fun openWhiteboard() { whiteboardOpen = true }
+    fun openEvents() { eventsOpen = true }
+    fun openReminders() { remindersOpen = true }
+    fun openLeaderboard() { leaderboardOpen = true }
+    fun openRedPacketDetail(id: String) { redPacketDetailId = id }
+
+    /** POST /api/redpackets — honest 402/400 copy surfaces verbatim. */
+    fun createRedPacket(total: Long, count: Int, note: String?) {
+        viewModelScope.launch {
+            repo.createRedPacket(conversationId, total, count, note)
+                .onSuccess {
+                    redPacketOpen = false
+                    notify("Red packet sent — $total PC in $count grabs")
+                }
+                .onFailure { notify(it.message ?: "Could not send the red packet", isError = true) }
+        }
+    }
+
+    fun createGame(opponentId: String?) {
+        viewModelScope.launch {
+            repo.createGame(conversationId, opponentId)
+                .onSuccess {
+                    gameOpen = false
+                    notify("Tic-tac-toe challenge sent")
+                }
+                .onFailure { notify(it.message ?: "Could not start the game", isError = true) }
+        }
+    }
+
+    fun createTournament(name: String) {
+        viewModelScope.launch {
+            repo.createTournament(conversationId, name.trim())
+                .onSuccess {
+                    tournamentOpen = false
+                    notify("Tournament \"$name\" started")
+                }
+                .onFailure { notify(it.message ?: "Could not start the tournament", isError = true) }
+        }
+    }
+
+    fun createKanbanCard(title: String, column: String, assigneeId: String?) {
+        viewModelScope.launch {
+            repo.createKanbanCard(conversationId, title.trim(), column, assigneeId, kanbanSourceMessage)
+                .onSuccess {
+                    kanbanSourceMessage = null
+                    notify("Task \"${it.title}\" added to the board")
+                }
+                .onFailure { notify(it.message ?: "Could not add the card", isError = true) }
+        }
+    }
+
+    /** Message long-press → "Add to board" (web parity: message→card title cap 80). */
+    fun addMessageToBoard(messageId: String) {
+        kanbanSourceMessage = messageId
+        kanbanOpen = true
+    }
+
+    // suspend fetchers used by the in-bubble cards (polling parity)
+
+    suspend fun gameDetail(matchId: String): GameDetailDto? =
+        runCatching { repo.game(matchId).getOrNull() }.getOrNull()
+
+    fun gameMove(matchId: String, cell: Int) {
+        viewModelScope.launch {
+            repo.gameMove(matchId, cell)
+                .onFailure { notify(it.message ?: "Move rejected", isError = true) }
+        }
+    }
+
+    fun joinGame(matchId: String) {
+        viewModelScope.launch {
+            repo.joinGame(matchId)
+                .onFailure { notify(it.message ?: "Could not join", isError = true) }
+        }
+    }
+
+    suspend fun redPacketDetail(packetId: String): RedPacketDetailDto? =
+        runCatching { repo.redPacket(packetId).getOrNull() }.getOrNull()
+
+    /** Atomic grab — 409 copy (own packet / already grabbed / race) surfaces verbatim. */
+    fun grabRedPacket(packetId: String) {
+        viewModelScope.launch {
+            repo.grabRedPacket(packetId)
+                .onSuccess { notify("You grabbed ${it.amount} PC 🎉") }
+                .onFailure { notify(it.message ?: "Could not grab the red packet", isError = true) }
+        }
+    }
+
+    suspend fun tournamentDetail(tournamentId: String): TournamentSummaryDto? =
+        runCatching { repo.tournament(tournamentId).getOrNull() }.getOrNull()
+
+    fun joinTournament(tournamentId: String) {
+        viewModelScope.launch {
+            repo.joinTournament(tournamentId)
+                .onSuccess { notify("You are in — play tic-tac-toe matches to score points") }
+                .onFailure { notify(it.message ?: "Could not join the tournament", isError = true) }
+        }
+    }
+
+    fun finishTournament(tournamentId: String) {
+        viewModelScope.launch {
+            repo.finishTournament(tournamentId)
+                .onSuccess { notify("Tournament finished") }
+                .onFailure { notify(it.message ?: "Could not finish the tournament", isError = true) }
+        }
+    }
+
+    /** Reminder create via the sheet (absolute picker) — relative parse lives in PulseWave7Logic. */
+    fun createReminder(note: String, remindAtIso: String, anchoredMessageId: String? = null) {
+        viewModelScope.launch {
+            repo.createReminder(conversationId, anchoredMessageId, note, remindAtIso)
+                .onSuccess { remindersOpen = false }
+                .onFailure { notify(it.message ?: "Could not set the reminder", isError = true) }
+        }
+    }
+
+    /** Message long-press → "Remind me…" prefills the anchored message. */
+    fun remindMe(messageId: String) {
+        kanbanSourceMessage = null
+        _reminderAnchor.value = messageId
+        remindersOpen = true
+    }
+
+    private val _reminderAnchor = androidx.compose.runtime.mutableStateOf<String?>(null)
+    val reminderAnchor: androidx.compose.runtime.State<String?> = _reminderAnchor
+
+    // ── Wave 7 sheet-side data fetchers (suspend, called from sheets) ──
+
+    /** Room member (id → name) pairs for the direct-invite game picker. */
+    fun roomMembers(): List<Pair<String, String>> =
+        conversation.value?.members?.map { it.id to it.name } ?: emptyList()
+
+    suspend fun kanbanBoard(conversationId: String): KanbanPageDto? =
+        runCatching { repo.kanbanBoard(conversationId).getOrNull() }.getOrNull()
+
+    fun moveKanbanCard(cardId: String, column: String, position: Long?) {
+        viewModelScope.launch {
+            repo.updateKanbanCard(cardId, null, column, null, false, position)
+                .onFailure { notify(it.message ?: "Couldn't move the card", isError = true) }
+        }
+    }
+
+    fun deleteKanbanCard(cardId: String) {
+        viewModelScope.launch {
+            repo.deleteKanbanCard(cardId)
+                .onFailure { notify(it.message ?: "Couldn't delete the card", isError = true) }
+        }
+    }
+
+    suspend fun whiteboard(conversationId: String, since: Long?): WhiteboardPageDto? =
+        runCatching { repo.whiteboard(conversationId, since).getOrNull() }.getOrNull()
+
+    fun postWhiteboardStrokes(conversationId: String, strokes: List<WhiteboardStrokePostDto>) {
+        viewModelScope.launch {
+            repo.postWhiteboardStrokes(conversationId, strokes)
+                .onFailure { notify(it.message ?: "Stroke upload failed — try again", isError = true) }
+        }
+    }
+
+    fun undoWhiteboard(conversationId: String) {
+        viewModelScope.launch {
+            repo.undoWhiteboardStroke(conversationId).onFailure {
+                notify(it.message ?: "Nothing to undo", isError = true)
+            }
+        }
+    }
+
+    fun clearWhiteboard(conversationId: String) {
+        viewModelScope.launch {
+            repo.clearWhiteboard(conversationId)
+                .onSuccess { notify("Board cleared") }
+                .onFailure { notify(it.message ?: "Couldn't clear the board", isError = true) }
+        }
+    }
+
+    suspend fun events(conversationId: String): List<GroupEventDto>? =
+        runCatching { repo.events(conversationId).getOrNull()?.events }.getOrNull()
+
+    fun createEvent(title: String, startsAtIso: String, description: String?, location: String?) {
+        viewModelScope.launch {
+            repo.createEvent(conversationId, title, startsAtIso, description, location)
+                .onSuccess {
+                    eventsOpen = false
+                    notify("Event scheduled — see you there")
+                }
+                .onFailure { notify(it.message ?: "Could not schedule the event.", isError = true) }
+        }
+    }
+
+    fun rsvp(eventId: String, status: String) {
+        viewModelScope.launch {
+            repo.rsvpEvent(eventId, status)
+                .onFailure { notify(it.message ?: "RSVP failed — try again.", isError = true) }
+        }
+    }
+
+    fun checkin(eventId: String) {
+        viewModelScope.launch {
+            repo.checkinEvent(eventId)
+                .onSuccess {
+                    when {
+                        it.alreadyCheckedIn -> notify("Already checked in.")
+                        it.xpAwarded -> notify("Checked in — see you there · +15 XP")
+                        else -> notify("Checked in — see you there")
+                    }
+                }
+                .onFailure { notify(it.message ?: "Check-in failed — try again.", isError = true) }
+        }
+    }
+
+    fun deleteEvent(eventId: String) {
+        viewModelScope.launch {
+            repo.deleteEvent(eventId)
+                .onSuccess { notify("Event deleted.") }
+                .onFailure { notify(it.message ?: "Could not delete the event.", isError = true) }
+        }
+    }
+
+    suspend fun reminders(): RemindersPageDto? =
+        runCatching { repo.reminders(dueOnly = false).getOrNull() }.getOrNull()
+
+    fun resolveReminder(reminderId: String) {
+        viewModelScope.launch {
+            repo.resolveReminder(reminderId).onFailure { notify(it.message ?: "Couldn't resolve the reminder", isError = true) }
+        }
+    }
+
+    fun deleteReminder(reminderId: String) {
+        viewModelScope.launch {
+            repo.deleteReminder(reminderId)
+                .onSuccess { notify("Reminder canceled") }
+                .onFailure { notify(it.message ?: "Could not cancel the reminder", isError = true) }
+        }
+    }
+
+    suspend fun leaderboard(conversationId: String?): LeaderboardPageDto? =
+        runCatching { repo.leaderboard(conversationId).getOrNull() }.getOrNull()
 
     override fun onCleared() {
         // Recording must never outlive the room — stop + release + delete.

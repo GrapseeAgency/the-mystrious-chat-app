@@ -2400,6 +2400,9 @@ fun ChatMessageDto.toDomain(): Message = Message(
     poll = poll.decodePollDto()?.toInfo(),
     linkPreview = linkPreview.decodeLinkPreviewDto()?.toInfo(),
     topicId = topicId,
+    // Wave 7 rich objects ride payload as a RAW JSON STRING (red packet / game /
+    // tournament carriers) — cards parse tolerantly via PulseWave7Logic.
+    payload = payload?.toString()?.takeIf { it != "null" && it != "{}" },
 )
 
 // ── Wave 2 wire → domain mappers (saved library + topics) ──────
@@ -2434,6 +2437,8 @@ private fun kindOf(wire: String): Message.Kind = when (wire) {
     "file" -> Message.Kind.FILE
     "poll" -> Message.Kind.POLL
     "red_packet" -> Message.Kind.RED_PACKET
+    "game" -> Message.Kind.GAME
+    "tournament" -> Message.Kind.TOURNAMENT
     else -> Message.Kind.SYSTEM
 }
 

@@ -54,6 +54,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Redeem
+import androidx.compose.material.icons.filled.SportsEsports
+import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
@@ -351,6 +357,9 @@ fun ChatRoomScreen(
             onOpenSafety = if (dmPeerId != null) {
                 { viewModel.loadSafety(dmPeerId) }
             } else null,
+            onOpenLeaderboard = if (conversation?.isGroupish == true) {
+                { viewModel.openLeaderboard() }
+            } else null,
         )
 
         // Wave 2 topic rail — GROUP rooms only (DMs have nothing to file into).
@@ -425,6 +434,15 @@ fun ChatRoomScreen(
                                 onTranscribe = viewModel::transcribeVoice,
                                 onVotePoll = viewModel::votePoll,
                                 onClosePoll = viewModel::closePoll,
+                                onGameMove = { matchId, cell -> viewModel.gameMove(matchId, cell) },
+                                onGameJoin = { matchId -> viewModel.joinGame(matchId) },
+                                onGameLoad = { matchId -> viewModel.gameDetail(matchId) },
+                                onRedPacketLoad = { id -> viewModel.redPacketDetail(id) },
+                                onRedPacketGrab = { id -> viewModel.grabRedPacket(id) },
+                                onRedPacketOpen = { id -> viewModel.openRedPacketDetail(id) },
+                                onTournamentLoad = { id -> viewModel.tournamentDetail(id) },
+                                onTournamentJoin = { id -> viewModel.joinTournament(id) },
+                                onTournamentFinish = { id -> viewModel.finishTournament(id) },
                                 onConsumeViewOnce = { target ->
                                     // Reveal is instant — the POST is fire-and-forget (web parity).
                                     viewModel.consumeViewOnce(target)
@@ -829,6 +847,15 @@ fun ChatRoomScreen(
                 attachOpen = false
                 pollBuilderOpen = true
             },
+            onWhiteboard = { attachOpen = false; viewModel.openWhiteboard() },
+            onRedPacket = { attachOpen = false; viewModel.openRedPacket() },
+            onEvents = { attachOpen = false; viewModel.openEvents() },
+            onGame = { attachOpen = false; viewModel.openGame() },
+            onTournament = {
+                attachOpen = false
+                if (viewModel.isGroup) viewModel.openTournament() else viewModel.notifySticky("Tournaments are for groups only")
+            },
+            onKanban = { attachOpen = false; viewModel.openKanban() },
         )
     }
 
@@ -840,6 +867,94 @@ fun ChatRoomScreen(
                 viewModel.createPoll(question, options)
             },
         )
+    }
+
+    // ── Wave 7 sheet hosts ──────────────────────────────────────────
+    if (viewModel.redPacketOpen) {
+        RedPacketSheet(
+            onDismiss = { viewModel.redPacketOpen = false },
+            onSend = { total, count, note -> viewModel.createRedPacket(total, count, note) },
+        )
+    }
+    if (viewModel.gameOpen) {
+        GameSheet(
+            members = viewModel.roomMembers().filter { it.first != viewerId },
+            onDismiss = { viewModel.gameOpen = false },
+            onCreate = { opponentId -> viewModel.createGame(opponentId) },
+        )
+    }
+    if (viewModel.tournamentOpen) {
+        TournamentSheet(
+            onDismiss = { viewModel.tournamentOpen = false },
+            onCreate = { name -> viewModel.createTournament(name) },
+        )
+    }
+    if (viewModel.kanbanOpen) {
+        KanbanSheet(
+            conversationId = viewModel.conversationId,
+            viewerId = viewerId ?: "",
+            isAdmin = viewModel.isAdmin(),
+            prefillTitle = viewModel.kanbanSourceMessage?.let { null },
+            loadBoard = { viewModel.kanbanBoard(viewModel.conversationId) },
+            onAddCard = { title, column, assigneeId -> viewModel.createKanbanCard(title, column, assigneeId) },
+            onMoveCard = { cardId, column, position -> viewModel.moveKanbanCard(cardId, column, position) },
+            onDeleteCard = { cardId -> viewModel.deleteKanbanCard(cardId) },
+            onDismiss = { viewModel.kanbanOpen = false },
+        )
+    }
+    if (viewModel.whiteboardOpen) {
+        WhiteboardSheet(
+            conversationId = viewModel.conversationId,
+            viewerId = viewerId ?: "",
+            load = { since -> viewModel.whiteboard(viewModel.conversationId, since) },
+            onStrokes = { strokes -> viewModel.postWhiteboardStrokes(viewModel.conversationId, strokes) },
+            onUndo = { viewModel.undoWhiteboard(viewModel.conversationId) },
+            onClear = { viewModel.clearWhiteboard(viewModel.conversationId) },
+            onDismiss = { viewModel.whiteboardOpen = false },
+        )
+    }
+    if (viewModel.eventsOpen) {
+        EventsSheet(
+            conversationId = viewModel.conversationId,
+            viewerId = viewerId ?: "",
+            isAdmin = viewModel.isAdmin(),
+            load = { viewModel.events(viewModel.conversationId) },
+            onCreate = { title, iso, desc, loc -> viewModel.createEvent(title, iso, desc, loc) },
+            onRsvp = { eventId, status -> viewModel.rsvp(eventId, status) },
+            onCheckin = { eventId -> viewModel.checkin(eventId) },
+            onDelete = { eventId -> viewModel.deleteEvent(eventId) },
+            onDismiss = { viewModel.eventsOpen = false },
+        )
+    }
+    if (viewModel.remindersOpen) {
+        RemindersSheet(
+            viewerId = viewerId ?: "",
+            load = { viewModel.reminders() },
+            onCreate = { note, iso, anchor -> viewModel.createReminder(note, iso, anchor) },
+            onResolve = { id -> viewModel.resolveReminder(id) },
+            onDelete = { id -> viewModel.deleteReminder(id) },
+            anchoredMessageId = viewModel.reminderAnchor.value,
+            onDismiss = { viewModel.remindersOpen = false },
+        )
+    }
+    if (viewModel.leaderboardOpen) {
+        LeaderboardSheet(
+            loadRoom = { viewModel.leaderboard(viewModel.conversationId) },
+            loadGlobal = { viewModel.leaderboard(null) },
+            onDismiss = { viewModel.leaderboardOpen = false },
+        )
+    }
+    viewModel.redPacketDetailId?.let { packetId ->
+        val detail = remember(packetId) { mutableStateOf<app.pulse.protocol.RedPacketDetailDto?>(null) }
+        LaunchedEffect(packetId) { detail.value = viewModel.redPacketDetail(packetId) }
+        detail.value?.let { d ->
+            ModalBottomSheet(
+                onDismissRequest = { viewModel.redPacketDetailId = null },
+                sheetState = rememberModalBottomSheetState(),
+            ) {
+                RedPacketDetailSheetBody(detail = d)
+            }
+        }
     }
 
     actionTarget?.let { target ->
@@ -895,6 +1010,14 @@ fun ChatRoomScreen(
                 { infoTarget = target; actionTarget = null }
             } else {
                 null
+            },
+            onAddToBoard = {
+                viewModel.addMessageToBoard(target.id)
+                actionTarget = null
+            },
+            onRemindMe = {
+                viewModel.remindMe(target.id)
+                actionTarget = null
             },
         )
     }
@@ -1157,11 +1280,24 @@ private fun AttachSheet(
     onPhoto: () -> Unit,
     onDocument: () -> Unit,
     onPoll: () -> Unit,
+    onWhiteboard: () -> Unit,
+    onRedPacket: () -> Unit,
+    onEvents: () -> Unit,
+    onGame: () -> Unit,
+    onTournament: () -> Unit,
+    onKanban: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         SheetAction(Icons.Filled.Image, "Photo", onPhoto)
         SheetAction(Icons.Filled.InsertDriveFile, "Document", onDocument)
         SheetAction(Icons.Filled.Poll, "Poll", onPoll, tint = PulsePalette.Emerald)
+        // ── Wave 7 palette (web chat-room.tsx:2519-2634 order) ──
+        SheetAction(Icons.Filled.Draw, "Whiteboard", onWhiteboard)
+        SheetAction(Icons.Filled.Redeem, "Red packet", onRedPacket)
+        SheetAction(Icons.Filled.Event, "Events", onEvents)
+        SheetAction(Icons.Filled.SportsEsports, "Game", onGame)
+        SheetAction(Icons.Filled.EmojiEvents, "Tournament", onTournament)
+        SheetAction(Icons.Filled.ViewKanban, "Kanban", onKanban)
         Spacer(Modifier.height(28.dp))
     }
 }
@@ -1328,6 +1464,7 @@ private fun RoomHeader(
     onBack: () -> Unit,
     onToggleSearch: () -> Unit,
     onOpenSafety: (() -> Unit)? = null,
+    onOpenLeaderboard: (() -> Unit)? = null,
 ) {
     Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
         Row(
@@ -1423,6 +1560,15 @@ private fun RoomHeader(
                     tint = if (voiceJoined) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            onOpenLeaderboard?.let {
+                IconButton(onClick = it) {
+                    Icon(
+                        Icons.Filled.EmojiEvents,
+                        contentDescription = "Leaderboard",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             IconButton(onClick = onToggleSearch) {
                 Icon(
                     if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
@@ -1466,6 +1612,16 @@ private fun MessageRow(
     onOpenImage: () -> Unit,
     onOpenFile: () -> Unit,
     onOpenThread: () -> Unit,
+    // ── Wave 7 rich-object hooks ──
+    onGameMove: (String, Int) -> Unit = { _, _ -> },
+    onGameJoin: (String) -> Unit = {},
+    onGameLoad: suspend (String) -> app.pulse.protocol.GameDetailDto? = { null },
+    onRedPacketLoad: suspend (String) -> app.pulse.protocol.RedPacketDetailDto? = { null },
+    onRedPacketGrab: (String) -> Unit = {},
+    onRedPacketOpen: (String) -> Unit = {},
+    onTournamentLoad: suspend (String) -> app.pulse.protocol.TournamentSummaryDto? = { null },
+    onTournamentJoin: (String) -> Unit = {},
+    onTournamentFinish: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val mine = message.authorId == viewerId
@@ -1502,6 +1658,67 @@ private fun MessageRow(
             when {
                 // Tombstone — soft-deleted rows render the honest placeholder.
                 message.isDeleted -> TombstoneBubble()
+                // Wave 7 — red packet carrier (payload {packetId,total,count,note}).
+                message.kind == Message.Kind.RED_PACKET -> MediaWithQuote(
+                    quoteId = message.replyToId,
+                    quoteBody = message.replyToBody,
+                    quoteAuthor = message.replyToAuthor,
+                    mine = mine,
+                    onQuoteClick = onQuoteClick,
+                    content = {
+                        val rp = app.pulse.protocol.PulseWave7Logic.redPacketPayload(message.payload)
+                        RedPacketCard(
+                            packetId = rp?.packetId ?: "",
+                            total = rp?.total ?: 0,
+                            count = rp?.count ?: 0,
+                            note = rp?.note,
+                            isMine = mine,
+                            viewerId = viewerId ?: "",
+                            load = { onRedPacketLoad(rp?.packetId ?: "") },
+                            onGrab = { onRedPacketGrab(rp?.packetId ?: "") },
+                            onOpenDetail = { onRedPacketOpen(rp?.packetId ?: "") },
+                        )
+                    },
+                )
+                // Wave 7 — tic-tac-toe carrier (payload {matchId, game}).
+                message.kind == Message.Kind.GAME -> MediaWithQuote(
+                    quoteId = message.replyToId,
+                    quoteBody = message.replyToBody,
+                    quoteAuthor = message.replyToAuthor,
+                    mine = mine,
+                    onQuoteClick = onQuoteClick,
+                    content = {
+                        val gp = app.pulse.protocol.PulseWave7Logic.gamePayload(message.payload)
+                        TicTacToeCard(
+                            matchId = gp?.matchId ?: "",
+                            viewerId = viewerId ?: "",
+                            initial = null,
+                            load = { onGameLoad(gp?.matchId ?: "") },
+                            onMove = { cell -> onGameMove(gp?.matchId ?: "", cell) },
+                            onJoin = { onGameJoin(gp?.matchId ?: "") },
+                        )
+                    },
+                )
+                // Wave 7 — tournament carrier (payload {tournamentId, name, game}).
+                message.kind == Message.Kind.TOURNAMENT -> MediaWithQuote(
+                    quoteId = message.replyToId,
+                    quoteBody = message.replyToBody,
+                    quoteAuthor = message.replyToAuthor,
+                    mine = mine,
+                    onQuoteClick = onQuoteClick,
+                    content = {
+                        val tp = app.pulse.protocol.PulseWave7Logic.tournamentPayload(message.payload)
+                        TournamentCard(
+                            tournamentId = tp?.tournamentId ?: "",
+                            name = tp?.name ?: "",
+                            viewerId = viewerId ?: "",
+                            isAdmin = message.authorId == viewerId,
+                            load = { onTournamentLoad(tp?.tournamentId ?: "") },
+                            onJoin = { onTournamentJoin(tp?.tournamentId ?: "") },
+                            onFinish = { onTournamentFinish(tp?.tournamentId ?: "") },
+                        )
+                    },
+                )
                 // Live poll — PollCard replaces the body text entirely.
                 message.poll != null || message.kind == Message.Kind.POLL -> MediaWithQuote(
                     quoteId = message.replyToId,

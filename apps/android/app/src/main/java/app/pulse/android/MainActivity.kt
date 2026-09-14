@@ -126,7 +126,14 @@ import app.pulse.ui.PulseTheme
 import app.pulse.ui.isPulseDarkTheme
 import app.pulse.ui.pulseGlass
 import androidx.hilt.navigation.compose.hiltViewModel
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -200,11 +207,49 @@ class MainActivity : ComponentActivity() {
     /** Wave 6 — pulse:// deep links (invite/user/room); consumed by the shell. */
     private val deepLinks = MutableStateFlow<app.pulse.core.link.PulseDeepLink?>(null)
 
+    /** Wave 7 — POST_NOTIFICATIONS launcher (must register before STARTED). */
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            // Honest: denial keeps in-app surfaces live, no reminders as push.
+        }
+
+    /** Wave 7 reminders due-loop request (30 s foreground, web useReminderDueLoop parity). */
+    private var reminderLoopStarted = false
+
     override fun onStart() {
         super.onStart()
         // Foreground outbox trigger (Wave 0): whatever queued while the app
         // was dead/backgrounded drains the moment the surface is up.
         lifecycleScope.launch { runCatching { repository.flushOutbox() } }
+        // Wave 7 — ask for the notifications permission ONCE (API 33+), then
+        // run the due-loop: GET ?due=1 → local notification → PATCH firedAt.
+        app.pulse.android.notify.ReminderNotifier.ensureChannel(this)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (!reminderLoopStarted) {
+            reminderLoopStarted = true
+            lifecycleScope.launch {
+                while (true) {
+                    runCatching {
+                        val due = repository.reminders(dueOnly = true).getOrNull()?.items.orEmpty()
+                        for (item in due) {
+                            app.pulse.android.notify.ReminderNotifier.show(
+                                this@MainActivity,
+                                item.id,
+                                item.note.ifBlank { "Reminder" },
+                                item.snippet ?: item.conversation.name,
+                            )
+                            runCatching { repository.resolveReminder(item.id) }
+                        }
+                    }
+                    delay(30_000)
+                }
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

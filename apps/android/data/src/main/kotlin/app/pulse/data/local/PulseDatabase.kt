@@ -192,6 +192,8 @@ data class MessageEntity(
     val pollJson: String? = null,
     val linkPreviewJson: String? = null,
     val topicId: String? = null,
+    // Wave 7 (v9) — raw rich-object payload JSON (red packet / game / tournament).
+    val payloadJson: String? = null,
 ) {
     fun toDomain(): Message {
         val reactionDtos = reactionsJson?.let { json ->
@@ -227,6 +229,7 @@ data class MessageEntity(
                 }.getOrNull()
             },
             topicId = topicId,
+            payload = payloadJson,
         )
     }
 
@@ -254,6 +257,7 @@ data class MessageEntity(
                 app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.LinkPreviewDto.serializer(), preview.toDto())
             },
             topicId = m.topicId,
+            payloadJson = m.payload,
         )
 
         /** ISO wire timestamp → epoch ms (null when absent/unparseable). */
@@ -912,6 +916,9 @@ abstract class PulseDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `wave7_cache` (`key` TEXT NOT NULL PRIMARY KEY, " +
                         "`json` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL)",
                 )
+                // Wave 7 rich-object carriers (red packet / game / tournament) —
+                // the raw payload JSON must survive offline restarts.
+                db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
             }
         }
     }
