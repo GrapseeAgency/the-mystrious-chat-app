@@ -150,7 +150,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(t.entries?.first?.points, 3)
         let create = try decode(
             WireTournamentCreateResult.self,
-            #"{"tournament":{"id":"t1","name":"S1","status":"running"},"message":{"id":"tm1","kind":"tournament","payload":"{\"tournamentId\":\"t1\",\"name\":\"S1\",\"game\":\"tictactoe\"}"}}"#,
+            #"{"tournament":{"id":"t1","name":"S1","status":"running"},"message":{"id":"tm1","conversationId":"c1","senderId":"u1","content":"🏆 Tournament S1 started","kind":"tournament","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"tournamentId\":\"t1\",\"name\":\"S1\",\"game\":\"tictactoe\"}"}}"#,
         )
         XCTAssertEqual(PulseWave7Logic.tournamentPayload(create.message?.payload)?.name, "S1")
         let join = try decode(WireTournamentJoinResult.self, #"{"entry":{"id":"en1","tournamentId":"t1","userId":"u1","points":0}}"#)
@@ -166,7 +166,7 @@ final class Wave7WireTests: XCTestCase {
         )
         XCTAssertEqual(page.rows.first?.xp, 120)
         let empty = try decode(WireLeaderboardPage.self, "{}")
-        XCTAssertTrue((empty.rows).isEmpty)
+        XCTAssertTrue((empty.rows ?? []).isEmpty)
     }
 
     // ── hub economy ──────────────────────────────────────────────
@@ -179,7 +179,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(page.wallet.coins, 500)
         XCTAssertEqual(page.ledger?.count, 1)
         let empty = try decode(WireWalletPage.self, "{}")
-        XCTAssertNil(empty.wallet.coins)
+        XCTAssertNil(empty.wallet)
     }
 
     func testCheckinTransferSwapMarketResults() throws {
@@ -215,7 +215,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(installResult.status, "connected")
         let community = try decode(
             WireAppCommunity.self,
-            ##"{"conversation":{"id":"cnv1","kind":"group","title":"#011 · Twitch community","isPinned":false,"isMuted":false,"isArchived":false,"unreadCount":0},"memberCount":2,"joined":true}"##,
+            ##"{"conversation":{"id":"cnv1","isGroup":true,"name":"#011 · Twitch community","members":[]},"memberCount":2,"joined":true}"##,
         )
         XCTAssertEqual(community.conversation?.id, "cnv1")
         XCTAssertEqual(community.joined, true)

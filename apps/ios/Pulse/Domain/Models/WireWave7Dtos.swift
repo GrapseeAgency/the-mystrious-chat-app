@@ -325,7 +325,7 @@ public struct WireLeaderboardRow: Codable, Hashable, Sendable {
 }
 
 public struct WireLeaderboardPage: Codable, Sendable {
-    public let rows: [WireLeaderboardRow]
+    public let rows: [WireLeaderboardRow]?
 }
 
 // MARK: - Hub economy (F-HB-01…10)

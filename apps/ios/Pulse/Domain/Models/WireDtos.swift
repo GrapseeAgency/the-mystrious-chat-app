@@ -73,7 +73,7 @@ public struct WireWallet: Codable, Hashable, Sendable {
 }
 
 public struct WireWalletPage: Codable, Sendable {
-    public let wallet: WireWallet
+    public let wallet: WireWallet?
     // W7 — the hub wallet route returns the ledger alongside (≤ N rows, desc).
     public let ledger: [WireLedgerEntry]?
 }
