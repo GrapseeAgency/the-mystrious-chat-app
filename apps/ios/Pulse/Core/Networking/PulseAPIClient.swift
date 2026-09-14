@@ -753,6 +753,350 @@ public struct PulseAPIClient: Sendable {
         return try WireCallLogEnvelope.extract(from: data)
     }
 
+    // ── Wave 7 — collaboration & hub (F-RO / F-HB) ───────────
+
+    private func q(_ id: String) -> String {
+        id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
+    }
+
+    private func envelope<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        try decoder.decode(T.self, from: data)
+    }
+
+    // MARK: red packets
+
+    /// POST /api/redpackets { userId, conversationId, total, count, note? } → { message, packet }.
+    public func createRedPacket(conversationId: String, total: Int, count: Int, note: String?) async throws -> WireRedPacketCreateResult {
+        var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "total": total, "count": count]
+        if let note, !note.isEmpty { body["note"] = note }
+        let data = try await postRaw("/api/redpackets", body: body)
+        return try envelope(WireRedPacketCreateResult.self, from: data)
+    }
+
+    /// GET /api/redpackets/{id}?userId= — lazy refund settles on first read after expiry.
+    public func redPacketDetail(_ packetId: String) async throws -> WireRedPacketDetail {
+        try await get("/api/redpackets/\(q(packetId))?userId=\(q(userId))")
+    }
+
+    /// POST /api/redpackets/{id}/grab { userId } — atomic (409s surface verbatim).
+    public func grabRedPacket(_ packetId: String) async throws -> WireRedPacketGrabResult {
+        let data = try await postRaw("/api/redpackets/\(q(packetId))/grab", body: ["userId": userId])
+        return try envelope(WireRedPacketGrabResult.self, from: data)
+    }
+
+    // MARK: whiteboard
+
+    /// GET /api/conversations/{id}/whiteboard?requesterId=&since= (since = epoch ms; nil = full).
+    public func whiteboard(conversationId: String, since: Int64?) async throws -> WireWhiteboardPage {
+        var path = "/api/conversations/\(q(conversationId))/whiteboard?requesterId=\(q(userId))"
+        if let since { path += "&since=\(since)" }
+        return try await get(path)
+    }
+
+    /// POST /api/conversations/{id}/whiteboard { requesterId, strokes[] } → { ids, created, serverTime }.
+    public func postWhiteboardStrokes(conversationId: String, strokes: [WireWhiteboardStrokePost]) async throws -> WireWhiteboardPostResult {
+        let strokeArrays: [[String: Any]] = strokes.map { s in
+            ["color": s.color, "width": s.width, "points": s.points]
+        }
+        let data = try await postRaw("/api/conversations/\(q(conversationId))/whiteboard", body: ["requesterId": userId, "strokes": strokeArrays])
+        return try envelope(WireWhiteboardPostResult.self, from: data)
+    }
+
+    /// POST { action: 'undo' } — deletes only the caller's latest stroke.
+    public func undoWhiteboardStroke(conversationId: String) async throws -> WireWhiteboardUndoResult {
+        let data = try await postRaw("/api/conversations/\(q(conversationId))/whiteboard", body: ["action": "undo", "requesterId": userId])
+        return try envelope(WireWhiteboardUndoResult.self, from: data)
+    }
+
+    /// DELETE ?requesterId= — clear all + resetAt watermark.
+    public func clearWhiteboard(conversationId: String) async throws -> WireWhiteboardClearResult {
+        var request = URLRequest(url: url("/api/conversations/\(q(conversationId))/whiteboard?requesterId=\(q(userId))"))
+        request.httpMethod = "DELETE"
+        let data = try await send(request)
+        return try envelope(WireWhiteboardClearResult.self, from: data)
+    }
+
+    // MARK: kanban
+
+    /// GET /api/conversations/{id}/kanban?userId= → { cards }.
+    public func kanbanBoard(conversationId: String) async throws -> WireKanbanPage {
+        try await get("/api/conversations/\(q(conversationId))/kanban?userId=\(q(userId))")
+    }
+
+    /// POST /api/conversations/{id}/kanban { userId, title?, column?, assigneeId?, messageId? } → { card }.
+    public func createKanbanCard(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?) async throws -> WireKanbanCard {
+        var body: [String: Any] = ["userId": userId]
+        if let title { body["title"] = title }
+        if let column { body["column"] = column }
+        if let assigneeId { body["assigneeId"] = assigneeId }
+        if let messageId { body["messageId"] = messageId }
+        let data = try await postRaw("/api/conversations/\(q(conversationId))/kanban", body: body)
+        return try envelope(WireKanbanCardEnvelope.self, from: data).card ?? WireKanbanCard(id: "", conversationId: conversationId, title: title, column: column, position: 0, assigneeId: assigneeId, assigneeName: nil, createdById: nil, createdByName: nil, createdAt: nil, updatedAt: nil, sourceMessageId: messageId)
+    }
+
+    /// PATCH /api/kanban/{cardId} { userId, title?, column?, assigneeId?, position? } → { card }.
+    public func updateKanbanCard(_ cardId: String, title: String?, column: String?, assigneeId: String?, clearAssignee: Bool, position: Int?) async throws -> WireKanbanCard {
+        var body: [String: Any] = ["userId": userId]
+        if let title { body["title"] = title }
+        if let column { body["column"] = column }
+        if clearAssignee { body["assigneeId"] = NSNull() }
+        else if let assigneeId { body["assigneeId"] = assigneeId }
+        if let position { body["position"] = position }
+        let data = try await patchRaw("/api/kanban/\(q(cardId))", body: body)
+        return try envelope(WireKanbanCardEnvelope.self, from: data).card ?? WireKanbanCard(id: cardId, conversationId: nil, title: title, column: column, position: position, assigneeId: assigneeId, assigneeName: nil, createdById: nil, createdByName: nil, createdAt: nil, updatedAt: nil, sourceMessageId: nil)
+    }
+
+    /// DELETE /api/kanban/{cardId}?userId= — creator OR group admin.
+    public func deleteKanbanCard(_ cardId: String) async throws {
+        var request = URLRequest(url: url("/api/kanban/\(q(cardId))?userId=\(q(userId))"))
+        request.httpMethod = "DELETE"
+        _ = try await send(request)
+    }
+
+    // MARK: events
+
+    /// GET /api/conversations/{id}/events?userId= — upcoming asc then past desc, ≤50.
+    public func events(conversationId: String) async throws -> WireEventsPage {
+        try await get("/api/conversations/\(q(conversationId))/events?userId=\(q(userId))")
+    }
+
+    /// POST /api/conversations/{id}/events { userId, title, startsAt, description?, location? } → { event }.
+    public func createEvent(conversationId: String, title: String, startsAtIso: String, description: String?, location: String?) async throws -> WireGroupEvent {
+        var body: [String: Any] = ["userId": userId, "title": title, "startsAt": startsAtIso]
+        if let description { body["description"] = description }
+        if let location { body["location"] = location }
+        let data = try await postRaw("/api/conversations/\(q(conversationId))/events", body: body)
+        return try envelope(WireEventEnvelope.self, from: data).event ?? WireGroupEvent(id: "", title: title, description: description, location: location, startsAt: startsAtIso, createdById: userId, createdByName: nil, rsvps: nil, counts: nil, myStatus: nil)
+    }
+
+    /// DELETE /api/events/{id}?userId= — creator OR group admin.
+    public func deleteEvent(_ eventId: String) async throws {
+        var request = URLRequest(url: url("/api/events/\(q(eventId))?userId=\(q(userId))"))
+        request.httpMethod = "DELETE"
+        _ = try await send(request)
+    }
+
+    /// POST /api/events/{id}/rsvp { userId, status: going|maybe|no } → { rsvp, counts }.
+    public func rsvpEvent(_ eventId: String, status: String) async throws -> WireRsvpResult {
+        let data = try await postRaw("/api/events/\(q(eventId))/rsvp", body: ["userId": userId, "status": status])
+        return try envelope(WireRsvpResult.self, from: data)
+    }
+
+    /// POST /api/events/{id}/checkin { userId } — window +15 XP; 409 outside window is a real failure.
+    public func checkinEvent(_ eventId: String) async throws -> WireCheckinResult {
+        let data = try await postRaw("/api/events/\(q(eventId))/checkin", body: ["userId": userId])
+        return try envelope(WireCheckinResult.self, from: data)
+    }
+
+    // MARK: reminders
+
+    /// GET /api/reminders?userId=[&due=1] — due = remindAt ≤ now && firedAt null.
+    public func reminders(dueOnly: Bool) async throws -> WireRemindersPage {
+        try await get("/api/reminders?userId=\(q(userId))" + (dueOnly ? "&due=1" : ""))
+    }
+
+    /// POST /api/reminders { userId, conversationId, messageId?, note?, remindAt } → { item }.
+    public func createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String) async throws -> WireReminderItem {
+        var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "remindAt": remindAtIso]
+        if let messageId { body["messageId"] = messageId }
+        if let note { body["note"] = note }
+        let data = try await postRaw("/api/reminders", body: body)
+        if let page = try? envelope(WireReminderEnvelope.self, from: data), let item = page.item { return item }
+        return try envelope(WireReminderItem.self, from: data)
+    }
+
+    /// PATCH /api/reminders/{id} { userId } — owner-only resolve.
+    public func resolveReminder(_ reminderId: String) async throws -> WireReminderResolve {
+        let data = try await patchRaw("/api/reminders/\(q(reminderId))", body: ["userId": userId])
+        return try envelope(WireReminderResolve.self, from: data)
+    }
+
+    /// DELETE /api/reminders/{id} { userId } — owner-only cancel.
+    public func deleteReminder(_ reminderId: String) async throws {
+        try await deleteRaw("/api/reminders/\(q(reminderId))", body: ["userId": userId])
+    }
+
+    // MARK: games
+
+    /// POST /api/games { userId, conversationId, game, opponentId? } → { match, message }.
+    public func createGame(conversationId: String, opponentId: String?) async throws -> WireGameMatchCreateResult {
+        var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "game": "tictactoe"]
+        if let opponentId { body["opponentId"] = opponentId }
+        let data = try await postRaw("/api/games", body: body)
+        return try envelope(WireGameMatchCreateResult.self, from: data)
+    }
+
+    /// GET /api/games/{id} → { match, playerX, playerO }.
+    public func gameDetail(_ matchId: String) async throws -> WireGameDetail {
+        try await get("/api/games/\(q(matchId))")
+    }
+
+    /// POST /api/games/{id}/move { userId, cell 0..8 } → { match, playerX, playerO }.
+    public func gameMove(_ matchId: String, cell: Int) async throws -> WireGameDetail {
+        let data = try await postRaw("/api/games/\(q(matchId))/move", body: ["userId": userId, "cell": cell])
+        return try envelope(WireGameDetail.self, from: data)
+    }
+
+    /// POST /api/games/{id}/join { userId } — first-come O seat.
+    public func joinGame(_ matchId: String) async throws -> WireGameDetail {
+        let data = try await postRaw("/api/games/\(q(matchId))/join", body: ["userId": userId])
+        return try envelope(WireGameDetail.self, from: data)
+    }
+
+    // MARK: tournaments
+
+    /// POST /api/tournaments { userId, conversationId, name } → { tournament, message }.
+    public func createTournament(conversationId: String, name: String) async throws -> WireTournamentCreateResult {
+        let data = try await postRaw("/api/tournaments", body: ["userId": userId, "conversationId": conversationId, "name": name, "game": "tictactoe"])
+        return try envelope(WireTournamentCreateResult.self, from: data)
+    }
+
+    /// GET /api/tournaments/{id} → { tournament } standings.
+    public func tournamentDetail(_ tournamentId: String) async throws -> WireTournamentSummary {
+        let data = try await get("/api/tournaments/\(q(tournamentId))")
+        if let page = try? envelope(WireTournamentEnvelope.self, from: data), let t = page.tournament { return t }
+        return try envelope(WireTournamentSummary.self, from: data)
+    }
+
+    /// PATCH /api/tournaments/{id} { userId, status: 'finished' } — creator/admin, idempotent.
+    public func finishTournament(_ tournamentId: String) async throws -> WireTournamentSummary {
+        let data = try await patchRaw("/api/tournaments/\(q(tournamentId))", body: ["userId": userId, "status": "finished"])
+        if let page = try? envelope(WireTournamentEnvelope.self, from: data), let t = page.tournament { return t }
+        return try envelope(WireTournamentSummary.self, from: data)
+    }
+
+    /// POST /api/tournaments/{id}/join { userId } — idempotent upsert.
+    public func joinTournament(_ tournamentId: String) async throws -> WireTournamentJoinResult {
+        let data = try await postRaw("/api/tournaments/\(q(tournamentId))/join", body: ["userId": userId])
+        return try envelope(WireTournamentJoinResult.self, from: data)
+    }
+
+    // MARK: leaderboard
+
+    /// GET /api/leaderboard?conversationId=&userId= (room) or bare (global top 50).
+    public func leaderboard(conversationId: String?) async throws -> WireLeaderboardPage {
+        if let conversationId {
+            return try await get("/api/leaderboard?conversationId=\(q(conversationId))&userId=\(q(userId))")
+        }
+        return try await get("/api/leaderboard")
+    }
+
+    // MARK: hub economy (F-HB)
+
+    /// GET /api/hub/wallet?userId=[&ledger=30] — upserts a zero wallet; ledger desc.
+    public func walletPage(ledger: Int = 30) async throws -> WireWalletPage {
+        try await get("/api/hub/wallet?userId=\(q(userId))&ledger=\(ledger)")
+    }
+
+    /// POST /api/hub/wallet/checkin { userId } — 409 body carries { error, wallet }.
+    public func checkinWallet() async throws -> WireCheckinWalletResult {
+        let data = try await postRaw("/api/hub/wallet/checkin", body: ["userId": userId])
+        return try envelope(WireCheckinWalletResult.self, from: data)
+    }
+
+    /// POST /api/hub/wallet/transfer { userId, toUsername, amount, note? } → { wallet, to }.
+    public func transferCoins(toUsername: String, amount: Int, note: String?) async throws -> WireTransferResult {
+        var body: [String: Any] = ["userId": userId, "toUsername": toUsername.trimmingCharacters(in: .whitespaces).hasPrefix("@") ? String(toUsername.dropFirst()).lowercased() : toUsername.lowercased(), "amount": amount]
+        if let note, !note.isEmpty { body["note"] = note }
+        let data = try await postRaw("/api/hub/wallet/transfer", body: body)
+        return try envelope(WireTransferResult.self, from: data)
+    }
+
+    /// GET /api/hub/swap → { rates, stats }.
+    public func swapRates() async throws -> WireSwapPage {
+        try await get("/api/hub/swap")
+    }
+
+    /// POST /api/hub/swap { userId, direction, amount } → { wallet, note }.
+    public func swap(direction: String, amount: Int) async throws -> WireSwapResult {
+        let data = try await postRaw("/api/hub/swap", body: ["userId": userId, "direction": direction, "amount": amount])
+        return try envelope(WireSwapResult.self, from: data)
+    }
+
+    /// GET /api/hub/tasks?userId= → { tasks } ordered doing → todo → done.
+    public func hubTasks() async throws -> WireHubTasksPage {
+        try await get("/api/hub/tasks?userId=\(q(userId))")
+    }
+
+    /// POST /api/hub/tasks { userId, title, status? } → { task }.
+    public func createHubTask(title: String, status: String?) async throws -> WireHubTask {
+        let data = try await postRaw("/api/hub/tasks", body: ["userId": userId, "title": title, "status": status ?? "todo"])
+        if let page = try? envelope(WireHubTaskEnvelope.self, from: data), let t = page.task { return t }
+        return try envelope(WireHubTask.self, from: data)
+    }
+
+    /// PATCH /api/hub/tasks/{id} { userId, title?, status? } — owner-only.
+    public func updateHubTask(_ taskId: String, title: String?, status: String?) async throws -> WireHubTask {
+        var body: [String: Any] = ["userId": userId]
+        if let title { body["title"] = title }
+        if let status { body["status"] = status }
+        let data = try await patchRaw("/api/hub/tasks/\(q(taskId))", body: body)
+        if let page = try? envelope(WireHubTaskEnvelope.self, from: data), let t = page.task { return t }
+        return try envelope(WireHubTask.self, from: data)
+    }
+
+    /// DELETE /api/hub/tasks/{id}?userId= — owner-only.
+    public func deleteHubTask(_ taskId: String) async throws {
+        var request = URLRequest(url: url("/api/hub/tasks/\(q(taskId))?userId=\(q(userId))"))
+        request.httpMethod = "DELETE"
+        _ = try await send(request)
+    }
+
+    /// GET /api/hub/market?userId= → { listings }.
+    public func market() async throws -> WireMarketPage {
+        try await get("/api/hub/market?userId=\(q(userId))")
+    }
+
+    /// POST /api/hub/market { userId, title, description?, price } → { listing }.
+    public func createListing(title: String, description: String?, price: Int) async throws -> WireMarketListing {
+        var body: [String: Any] = ["userId": userId, "title": title, "price": price]
+        if let description { body["description"] = description }
+        let data = try await postRaw("/api/hub/market", body: body)
+        if let page = try? envelope(WireMarketListingEnvelope.self, from: data), let l = page.listing { return l }
+        return try envelope(WireMarketListing.self, from: data)
+    }
+
+    /// POST /api/hub/market/{id}/buy { userId } → { ok, wallet }.
+    public func buyListing(_ listingId: String) async throws -> WireMarketBuyResult {
+        let data = try await postRaw("/api/hub/market/\(q(listingId))/buy", body: ["userId": userId])
+        return try envelope(WireMarketBuyResult.self, from: data)
+    }
+
+    /// GET /api/hub/logs?limit=&kind= → { logs } desc.
+    public func hubLogs(limit: Int, kind: String?) async throws -> WireHubLogsPage {
+        var path = "/api/hub/logs?limit=\(limit)"
+        if let kind, !kind.isEmpty { path += "&kind=\(q(kind))" }
+        return try await get(path)
+    }
+
+    /// GET /api/hub/apps/{appId}/install?userId= — appId is the numeric matrix id as a string.
+    public func appInstallState(appId: String) async throws -> WireAppInstallState {
+        try await get("/api/hub/apps/\(q(appId))/install?userId=\(q(userId))")
+    }
+
+    /// POST /api/hub/apps/{appId}/install { userId } — idempotent connect.
+    public func installApp(appId: String) async throws -> WireAppInstallResult {
+        let data = try await postRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
+        return try envelope(WireAppInstallResult.self, from: data)
+    }
+
+    /// DELETE /api/hub/apps/{appId}/install { userId } — hard remove.
+    public func uninstallApp(appId: String) async throws -> WireAppInstallResult {
+        let data = try await deleteRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
+        return try envelope(WireAppInstallResult.self, from: data)
+    }
+
+    /// GET /api/hub/apps/{appId}/community?userId= → { conversation|null, memberCount, joined }.
+    public func appCommunity(appId: String) async throws -> WireAppCommunity {
+        try await get("/api/hub/apps/\(q(appId))/community?userId=\(q(userId))")
+    }
+
+    /// POST /api/hub/apps/{appId}/community { userId } — auto-provisions the group; founder = admin.
+    public func joinAppCommunity(appId: String) async throws -> WireAppCommunity {
+        let data = try await postRaw("/api/hub/apps/\(q(appId))/community", body: ["userId": userId])
+        return try envelope(WireAppCommunity.self, from: data)
+    }
+
     // ── plumbing ─────────────────────────────────────────────
     /// URL builder that keeps query strings intact (appendingPathComponent
     /// would percent-encode "?", breaking every ?userId= route).

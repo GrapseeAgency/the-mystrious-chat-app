@@ -101,10 +101,35 @@ public final class PulseSession: ObservableObject {
         startCalls(viewer: viewer)
         startStories(viewer: viewer)
         startVoiceRooms(viewer: viewer)
+        startReminderDueLoop(viewer: viewer)
 
         // Realtime bootstraps asynchronously: the manifest override must land
         // BEFORE the socket (and API rebinding) — non-blocking for first paint.
         Task { await startRealtime(as: viewer) }
+    }
+
+    /// Wave 7 F-RO-06 — the reminder due-loop (web useReminderDueLoop parity,
+/// 30 s foreground): GET ?due=1 → local notification → PATCH firedAt so the
+/// web sheet and other devices converge. Failures are honest silence (the
+/// next tick retries); local fires (offline) ride the scheduled triggers.
+    private var reminderDueTask: Task<Void, Never>?
+
+    private func startReminderDueLoop(viewer: PulseViewer) {
+        reminderDueTask?.cancel()
+        reminderDueTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, let api = self.api else { break }
+                if let due = try? await api.reminders(dueOnly: true).items, !due.isEmpty {
+                    for item in due {
+                        let note = (item.note?.isEmpty == false) ? item.note! : "Reminder"
+                        let body = item.snippet ?? item.conversation?.name ?? ""
+                        PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body)
+                        _ = try? await api.resolveReminder(item.id)
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+        }
     }
 
     private func startRealtime(as viewer: PulseViewer) async {

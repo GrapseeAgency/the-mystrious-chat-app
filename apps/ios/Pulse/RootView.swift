@@ -73,8 +73,11 @@ struct RootView: View {
                         )
                         .transition(panelTransition)
                     case .hub:
-                        HubView(session: session)
-                            .transition(panelTransition)
+                        HubView(session: session, onOpenRoom: { conversation in
+                            switchTab(.chats)
+                            session.requestOpenRoom(conversation)
+                        })
+                        .transition(panelTransition)
                     case .contacts:
                         ContactsView(session: session)
                             .transition(panelTransition)

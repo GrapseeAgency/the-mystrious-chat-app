@@ -173,6 +173,19 @@ public final class PulseStore: Sendable {
                 t.column("updatedAt", .integer).notNull()
             }
         }
+        m.registerMigration("v7") { db in
+            // W7 — collaboration & hub snapshot cache (storyCache precedent:
+            // one canonical JSON blob per key) + the raw rich-object carrier
+            // payload column on messages. Non-destructive additive only.
+            try db.create(table: "wave7Cache") { t in
+                t.column("key", .text).primaryKey()
+                t.column("json", .text).notNull()
+                t.column("updatedAt", .integer).notNull()
+            }
+            try db.alter(table: "message") { t in
+                t.add(column: "payloadJson", .text)
+            }
+        }
         return m
     }
 
@@ -196,6 +209,29 @@ public final class PulseStore: Sendable {
             )
             guard let row else { return nil }
             return (groupsJson: row["groupsJson"] as String, updatedAt: row["updatedAt"] as Int64)
+        }
+    }
+
+    // ── wave7 collaboration & hub snapshot cache (v7) ────────
+    public func saveWave7Cache(key: String, json: String, updatedAt: Int64) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "INSERT INTO wave7Cache (key, json, updatedAt) VALUES (:key, :json, :updatedAt) " +
+                    "ON CONFLICT(key) DO UPDATE SET json = :json, updatedAt = :updatedAt",
+                arguments: ["key": key, "json": json, "updatedAt": updatedAt],
+            )
+        }
+    }
+
+    public func loadWave7Cache(key: String) throws -> (json: String, updatedAt: Int64)? {
+        try dbQueue.read { db in
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT json, updatedAt FROM wave7Cache WHERE key = :key",
+                arguments: ["key": key],
+            )
+            guard let row else { return nil }
+            return (json: row["json"] as String, updatedAt: row["updatedAt"] as Int64)
         }
     }
 
@@ -259,13 +295,13 @@ public final class PulseStore: Sendable {
                                  audioPath, durationMs, filePath, fileName, fileSize,
                                  editedAt, deletedAt, reactionsJson, senderColor,
                                  viewedAt, transcript, transcribedAt, pollJson,
-                                 linkPreviewJson, topicId)
+                                 linkPreviewJson, topicId, payloadJson)
             VALUES (:id, :conversationId, :authorId, :authorName, :kind, :body,
                     :createdAt, :replyToId, :pinnedAt, :parentId, :imagePath,
                     :audioPath, :durationMs, :filePath, :fileName, :fileSize,
                     :editedAt, :deletedAt, :reactionsJson, :senderColor,
                     :viewedAt, :transcript, :transcribedAt, :pollJson,
-                    :linkPreviewJson, :topicId)
+                    :linkPreviewJson, :topicId, :payloadJson)
             ON CONFLICT(id) DO UPDATE SET
               authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt,
               parentId=:parentId, imagePath=:imagePath, audioPath=:audioPath,
@@ -273,7 +309,8 @@ public final class PulseStore: Sendable {
               fileSize=:fileSize, editedAt=:editedAt, deletedAt=:deletedAt,
               reactionsJson=:reactionsJson, senderColor=:senderColor,
               viewedAt=:viewedAt, transcript=:transcript, transcribedAt=:transcribedAt,
-              pollJson=:pollJson, linkPreviewJson=:linkPreviewJson, topicId=:topicId
+              pollJson=:pollJson, linkPreviewJson=:linkPreviewJson, topicId=:topicId,
+              payloadJson=:payloadJson
             """,
             arguments: [
                 "id": m.id, "conversationId": m.conversationId, "authorId": m.senderId,
@@ -291,6 +328,7 @@ public final class PulseStore: Sendable {
                 "pollJson": Self.pollJsonData(m.poll),
                 "linkPreviewJson": Self.linkPreviewJsonData(m.linkPreview),
                 "topicId": m.topicId,
+                "payloadJson": m.payload,
             ],
         )
     }
@@ -403,6 +441,7 @@ public final class PulseStore: Sendable {
             viewedAt: viewedAt, viewedBy: nil, transcript: transcript,
             transcribedAt: transcribedAt, topicId: topicId, linkUrl: nil,
             linkPreview: decodedLinkPreview, poll: decodedPoll,
+            payload: row["payloadJson"],
         )
     }
 

@@ -71,6 +71,8 @@ private struct RoomMessageRow: View {
     let onInfo: (WireChatMessage) -> Void
     /// Wave 2 view-once — instant reveal (lightbox) + POST /viewed burn.
     let onViewOnce: (WireChatMessage) -> Void
+    // ── Wave 7 — rich-object cards + message actions ──
+    let wave7: Wave7RoomActions
 
     var body: some View {
         Group {
@@ -105,6 +107,7 @@ private struct RoomMessageRow: View {
                     }
                 },
                 onViewOnceOpen: onViewOnce,
+                wave7: wave7,
             )
             .contextMenu { contextMenu }
             .onAppear {
@@ -177,6 +180,21 @@ private struct RoomMessageRow: View {
         } label: {
             Label("Info", systemImage: "info.circle")
         }
+        // ── Wave 7 — message→kanban card + per-message reminder ──
+        if message.kind == "text" && message.deletedAt == nil {
+            Button {
+                wave7.kanbanSourceMessage = message
+                wave7.kanbanOpen = true
+            } label: {
+                Label("Add to board", systemImage: "square.stack.3d.up.fill")
+            }
+        }
+        Button {
+            wave7.reminderAnchor = message
+            wave7.remindersOpen = true
+        } label: {
+            Label("Remind me…", systemImage: "alarm")
+        }
     }
 }
 
@@ -202,6 +220,9 @@ private struct RoomContent: View {
     @State private var showFileImporter = false
     // Wave 2 — poll builder sheet.
     @State private var pollBuilderOpen = false
+    // ── Wave 7 — collaboration & hub surfaces ──
+    @StateObject private var wave7 = Wave7RoomActions()
+    @State private var leaderboardOpen = false
     // Wave 6 — DM safety-number sheet (F-CP-07/08) + the @-suggester (F-SM-04).
     @StateObject private var safetyBadges = PulseSafetyBadgeCache.shared
     @State private var safetyOpen = false
@@ -276,6 +297,18 @@ private struct RoomContent: View {
                     VoiceRoomChatEntry(model: rooms, conversationId: conversation.id)
                 }
             }
+            // Wave 7 F-RO-09 — room leaderboard (web group-info-sheet parity).
+            if conversation.isGroup {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        leaderboardOpen = true
+                    } label: {
+                        Image(systemName: "trophy")
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("Leaderboard")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     searchOpen.toggle()
@@ -329,6 +362,118 @@ private struct RoomContent: View {
         }
         .sheet(isPresented: $pollBuilderOpen) {
             PollBuilderSheet(viewModel: viewModel, session: session)
+        }
+        // ── Wave 7 sheet hosts ──
+        .sheet(isPresented: $wave7.redPacketCreateOpen) {
+            Wave7RedPacketCreateSheet { total, count, note in
+                wave7.createRedPacket(api: session.api, conversationId: conversation.id, total: total, count: count, note: note)
+            }
+        }
+        .sheet(isPresented: $wave7.gameCreateOpen) {
+            Wave7GameCreateSheet(
+                members: conversation.members.filter { $0.id != session.viewer?.id },
+                onCreate: { opponentId in
+                    wave7.createGame(api: session.api, conversationId: conversation.id, opponentId: opponentId)
+                },
+            )
+        }
+        .sheet(isPresented: $wave7.tournamentCreateOpen) {
+            Wave7TournamentCreateSheet { name in
+                wave7.createTournament(api: session.api, conversationId: conversation.id, name: name)
+            }
+        }
+        .sheet(isPresented: $wave7.kanbanOpen) {
+            Wave7KanbanSheet(
+                conversationId: conversation.id,
+                viewerId: session.viewer?.id ?? "",
+                isAdmin: false,
+                prefillTitle: nil,
+                loadBoard: { try? await session.api.kanbanBoard(conversationId: conversation.id) },
+                onAddCard: { title, column, assignee in
+                    wave7.addCard(api: session.api, conversationId: conversation.id, title: title, column: column, assigneeId: assignee)
+                },
+                onMoveCard: { cardId, column in
+                    wave7.moveCard(api: session.api, cardId: cardId, column: column)
+                },
+                onDeleteCard: { cardId in
+                    wave7.deleteCard(api: session.api, cardId: cardId)
+                },
+            )
+        }
+        .sheet(isPresented: $wave7.whiteboardOpen) {
+            Wave7WhiteboardSheet(
+                conversationId: conversation.id,
+                viewerId: session.viewer?.id ?? "",
+                load: { since in try? await session.api.whiteboard(conversationId: conversation.id, since: since) },
+                onStrokes: { strokes in
+                    wave7.postStrokes(api: session.api, conversationId: conversation.id, strokes: strokes)
+                },
+                onUndo: { wave7.undoStroke(api: session.api, conversationId: conversation.id) },
+                onClear: { wave7.clearBoard(api: session.api, conversationId: conversation.id) },
+            )
+        }
+        .sheet(isPresented: $wave7.eventsOpen) {
+            Wave7EventsSheet(
+                conversationId: conversation.id,
+                viewerId: session.viewer?.id ?? "",
+                isAdmin: false,
+                loadEvents: { try? await session.api.events(conversationId: conversation.id).events },
+                onCreate: { title, iso, desc, loc in
+                    wave7.createEvent(api: session.api, conversationId: conversation.id, title: title, startsAtIso: iso, description: desc, location: loc)
+                },
+                onRsvp: { eventId, status in wave7.rsvp(api: session.api, eventId: eventId, status: status) },
+                onCheckin: { eventId in wave7.checkin(api: session.api, eventId: eventId) },
+                onDelete: { eventId in wave7.deleteEvent(api: session.api, eventId: eventId) },
+            )
+        }
+        .sheet(isPresented: $wave7.remindersOpen) {
+            Wave7RemindersSheet(
+                loadReminders: { try? await session.api.reminders(dueOnly: false).items },
+                onCreate: { note, iso, anchored in
+                    wave7.createReminder(api: session.api, conversationId: conversation.id, note: note, remindAtIso: iso, anchored: anchored)
+                },
+                onResolve: { id in wave7.resolveReminder(api: session.api, id: id) },
+                onDelete: { id in wave7.deleteReminder(api: session.api, id: id) },
+                anchored: wave7.reminderAnchor,
+            )
+        }
+        .sheet(isPresented: $leaderboardOpen) {
+            Wave7LeaderboardSheet(
+                loadRoom: { try? await session.api.leaderboard(conversationId: conversation.id) },
+                loadGlobal: { try? await session.api.leaderboard(conversationId: nil) },
+            )
+        }
+        .sheet(item: Binding(
+            get: { wave7.redPacketDetailId.map { Wave7PacketTarget(id: $0) } },
+            set: { wave7.redPacketDetailId = $0?.id },
+        )) { target in
+            Wave7PacketDetailLoader(packetId: target.id, api: session.api)
+        }
+        .overlay(alignment: .bottom) {
+            if let toast = wave7.toast {
+                Text(toast)
+                    .font(.subheadline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(wave7.toastIsError ? Color.red.opacity(0.92) : Color.black.opacity(0.85), in: Capsule())
+                    .padding(.bottom, 96)
+                    .transition(.opacity)
+            }
+        }
+        .onAppear {
+            wave7.onCarrierMessage = { carrier in
+                viewModel.injectCarrier(carrier)
+            }
+            wave7.cardRedPacketLoad = { id in try? await session.api.redPacketDetail(id) }
+            wave7.cardGameLoad = { id in try? await session.api.gameDetail(id) }
+            wave7.cardTournamentLoad = { id in try? await session.api.tournamentDetail(id) }
+            wave7.cardGrab = { id in wave7.grabRedPacket(api: session.api, packetId: id) }
+            wave7.cardMove = { matchId, cell in wave7.moveGame(api: session.api, matchId: matchId, cell: cell) }
+            wave7.cardJoinGame = { matchId in wave7.joinGame(api: session.api, matchId: matchId) }
+            wave7.cardJoinTournament = { tid in wave7.joinTournament(api: session.api, tournamentId: tid) }
+            wave7.cardFinishTournament = { tid in wave7.finishTournament(api: session.api, tournamentId: tid) }
+            wave7.cardOpenDetail = { id in wave7.redPacketDetailId = id }
         }
         .fullScreenCover(item: $lightbox) { target in
             MediaLightboxView(url: target.url, caption: target.caption)
@@ -581,6 +726,7 @@ private struct RoomContent: View {
                                 openLightbox(message)
                                 viewModel.revealViewOnce(message, session: session)
                             },
+                            wave7: wave7,
                         )
                     }
                     if viewModel.loadingOlder && !viewModel.messages.isEmpty {
@@ -782,6 +928,41 @@ private struct RoomContent: View {
                 pollBuilderOpen = true
             } label: {
                 Label("New Poll", systemImage: "chart.bar")
+            }
+            // ── Wave 7 palette (web chat-room.tsx:2519-2634) ──
+            Button {
+                wave7.whiteboardOpen = true
+            } label: {
+                Label("Whiteboard", systemImage: "pencil.and.outline")
+            }
+            Button {
+                wave7.redPacketCreateOpen = true
+            } label: {
+                Label("Red packet", systemImage: "gift.fill")
+            }
+            Button {
+                wave7.eventsOpen = true
+            } label: {
+                Label("Events", systemImage: "calendar")
+            }
+            Button {
+                wave7.gameCreateOpen = true
+            } label: {
+                Label("Game", systemImage: "gamecontroller")
+            }
+            Button {
+                if conversation.isGroup {
+                    wave7.tournamentCreateOpen = true
+                } else {
+                    wave7.toast("Tournaments are for groups only", isError: true)
+                }
+            } label: {
+                Label("Tournament", systemImage: "trophy")
+            }
+            Button {
+                wave7.kanbanOpen = true
+            } label: {
+                Label("Kanban", systemImage: "square.stack.3d.up.fill")
             }
         } label: {
             Image(systemName: viewModel.staged == nil ? "plus.circle.fill" : "minus.circle.fill")
@@ -1016,6 +1197,8 @@ struct BubbleView: View {
     var onPollVote: ((String) -> Void)? = nil
     var onPollClose: (() -> Void)? = nil
     var onViewOnceOpen: ((WireChatMessage) -> Void)? = nil
+    // ── Wave 7 — rich-object cards (red packet / game / tournament) ──
+    var wave7: Wave7RoomActions? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1146,6 +1329,12 @@ struct BubbleView: View {
         // Wave 2 polls — the card replaces the body text entirely.
         if message.poll != nil || message.kind == "poll" {
             pollContent
+        } else if message.kind == "redpacket" {
+            wave7RedPacket
+        } else if message.kind == "game" {
+            wave7Game
+        } else if message.kind == "tournament" {
+            wave7Tournament
         } else {
             switch message.kind {
             case "image":
@@ -1162,6 +1351,55 @@ struct BubbleView: View {
                     .font(.body)
                     .textSelection(.enabled)
             }
+        }
+    }
+
+    // ── Wave 7 card contents ──
+    @ViewBuilder private var wave7RedPacket: some View {
+        if let wave7, let rp = PulseWave7Logic.redPacketPayload(message.payload) {
+            Wave7RedPacketCard(
+                packetId: rp.packetId,
+                total: rp.total ?? 0,
+                count: rp.count ?? 0,
+                note: rp.note,
+                isMine: mine,
+                viewerId: viewerId ?? "",
+                load: { wave7.cardRedPacketLoad($0) },
+                onGrab: { wave7.cardGrab(rp.packetId) },
+                onOpenDetail: { wave7.cardOpenDetail(rp.packetId) },
+            )
+        } else {
+            Text(message.content).font(.body)
+        }
+    }
+
+    @ViewBuilder private var wave7Game: some View {
+        if let wave7, let gp = PulseWave7Logic.gamePayload(message.payload) {
+            Wave7TicTacToeCard(
+                matchId: gp.matchId,
+                viewerId: viewerId ?? "",
+                load: { wave7.cardGameLoad($0) },
+                onMove: { cell in wave7.cardMove(gp.matchId, cell) },
+                onJoin: { wave7.cardJoinGame(gp.matchId) },
+            )
+        } else {
+            Text(message.content).font(.body)
+        }
+    }
+
+    @ViewBuilder private var wave7Tournament: some View {
+        if let wave7, let tp = PulseWave7Logic.tournamentPayload(message.payload) {
+            Wave7TournamentCard(
+                tournamentId: tp.tournamentId,
+                name: tp.name ?? "",
+                viewerId: viewerId ?? "",
+                isAdmin: message.senderId == viewerId,
+                load: { wave7.cardTournamentLoad($0) },
+                onJoin: { wave7.cardJoinTournament(tp.tournamentId) },
+                onFinish: { wave7.cardFinishTournament(tp.tournamentId) },
+            )
+        } else {
+            Text(message.content).font(.body)
         }
     }
 
@@ -1474,6 +1712,13 @@ final class RoomViewModel: ObservableObject {
     /// nil = General = the WHOLE room unfiltered (spec §1 row 9).
     @Published var activeTopicId: String?
     @Published private(set) var voiceRate: Float
+
+    /// W7 — carrier rows (game / tournament / red packet) land instantly from
+    /// the flow that created them; the next window refresh reconciles.
+    func injectCarrier(_ m: WireChatMessage) {
+        guard !messages.contains(where: { $0.id == m.id }) else { return }
+        messages.append(m)
+    }
 
     private let conversationId: String
     private let isGroupRoom: Bool
