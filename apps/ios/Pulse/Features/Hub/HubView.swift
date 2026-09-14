@@ -389,11 +389,11 @@ struct HubView: View {
                 }
             }
             HStack {
-                hubStat("PC", vm.wallet.page?.wallet?.coins)
-                hubStat("GEM", vm.wallet.page?.wallet?.gems)
-                hubStat("Streak", vm.wallet.page?.wallet?.streak)
+                hubStat("PC", vm.wallet.page?.wallet.coins)
+                hubStat("GEM", vm.wallet.page?.wallet.gems)
+                hubStat("Streak", vm.wallet.page?.wallet.streak)
             }
-            let checkedIn = vm.wallet.page?.wallet?.checkedInToday == true
+            let checkedIn = vm.wallet.page?.wallet.checkedInToday == true
             Button {
                 vm.checkin()
             } label: {
