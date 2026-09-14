@@ -215,7 +215,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(installResult.status, "connected")
         let community = try decode(
             WireAppCommunity.self,
-            #"{"conversation":{"id":"cnv1","kind":"group","title":"#011 · Twitch community","isPinned":false,"isMuted":false,"isArchived":false,"unreadCount":0},"memberCount":2,"joined":true}"#,
+            ##"{"conversation":{"id":"cnv1","kind":"group","title":"#011 · Twitch community","isPinned":false,"isMuted":false,"isArchived":false,"unreadCount":0},"memberCount":2,"joined":true}"##,
         )
         XCTAssertEqual(community.conversation?.id, "cnv1")
         XCTAssertEqual(community.joined, true)
