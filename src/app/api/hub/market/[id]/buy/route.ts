@@ -43,8 +43,12 @@ export async function POST(req: Request, { params }: RouteCtx) {
     update: {},
   })
 
-  const wallet = await db
-    .$transaction(async (tx) => {
+  // NOTE: the .catch fall-through here previously returned 200 {ok:true} on
+  // INSUFFICIENT (the NextResponse became the `wallet` value and the route
+  // kept executing) — Wave 7 E2E caught it; buyers now get an honest 402.
+  let wallet: Awaited<ReturnType<typeof db.userWallet.findUniqueOrThrow>>
+  try {
+    wallet = await db.$transaction(async (tx) => {
       const buyer = await tx.userWallet.update({
         where: { userId },
         data: { coins: { decrement: listing.price } },
@@ -90,15 +94,15 @@ export async function POST(req: Request, { params }: RouteCtx) {
       })
       return tx.userWallet.findUniqueOrThrow({ where: { userId } })
     })
-    .catch((err: unknown) => {
-      if (err instanceof Error && err.message === 'INSUFFICIENT') {
-        return NextResponse.json(
-          { error: `Insufficient PC — this costs ${listing.price}.` },
-          { status: 402 },
-        )
-      }
-      throw err
-    })
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === 'INSUFFICIENT') {
+      return NextResponse.json(
+        { error: `Insufficient PC — this costs ${listing.price}.` },
+        { status: 402 },
+      )
+    }
+    throw err
+  }
 
   return NextResponse.json({ ok: true, wallet })
 }
