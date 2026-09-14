@@ -411,10 +411,14 @@ struct HubView: View {
             }
         }
         .padding(16)
-        .background(
-            LinearGradient(colors: [Color(red: 0.07, green: 0.23, blue: 0.17), Color(red: 0.05, green: 0.17, blue: 0.13)], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 20),
-        )
+        .background {
+            let g = LinearGradient(
+                colors: [Color(red: 0.07, green: 0.23, blue: 0.17), Color(red: 0.05, green: 0.17, blue: 0.13)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing,
+            )
+            RoundedRectangle(cornerRadius: 20).fill(g)
+        }
     }
 
     private var tiles: some View {
@@ -436,7 +440,9 @@ struct HubView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+                .background {
+                    RoundedRectangle(cornerRadius: 16).fill(Color(uiColor: .secondarySystemBackground))
+                }
                 .onTapGesture { surface = s }
             }
         }
@@ -817,7 +823,9 @@ private struct HubAppsList: View {
             .font(.caption)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(category == slug ? PulseTheme.emerald.opacity(0.25) : Color(.secondarySystemBackground), in: Capsule())
+            .background {
+                Capsule().fill(category == slug ? PulseTheme.emerald.opacity(0.25) : Color(uiColor: .secondarySystemBackground))
+            }
             .onTapGesture { category = slug }
     }
 }
