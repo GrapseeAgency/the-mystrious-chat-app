@@ -2936,3 +2936,24 @@ Work Log:
 Stage Summary:
 - Gate: :protocol:test 19 Wave7 tests green · :data:testDebugUnitTest 21 Wave7 tests green (all pre-existing suites still green) · :app:compileDebugKotlin SUCCESS. Commit 217b9df.
 - Next: 7-d Android room surfaces (cards/sheets/attach rows/polling/notifications loop) then Hub rewrite.
+
+---
+Task ID: 7-e (Wave 7 gates — CI fix, release, CDN, report)
+Agent: Z.ai Code (orchestrator)
+Task: Close Wave 7 (Collaboration & Hub) — green CI, release v0.9.0-native, artifact byte-verify, CDN pin, completion report
+
+Work Log:
+- Recovered continuation state: worklog ended at 7-b, but git showed 7-c..7-e work already committed (Android room surfaces 5f1c58d, Hub rewrite e55f517, iOS full wave 8aa69a0, live E2E 93/93 + market-buy 402 fix dda750c, iOS CI rounds r1–r15 → green 9d9d194).
+- RED GATE 1 — Android CI failed at 8aa69a0: instrumented job, 5/5 RoomMigrationTest cases "A migration from 3 to 9 was required but not found". Root cause: Wave 7 added MIGRATION_8_9 to production (DataModule + PulseDatabase) but NOT to the androidTest builder chains (all six stopped at MIGRATION_7_8). Fix b62f89a: appended MIGRATION_8_9 to all six chains, added migration8To9AddsWave7CacheAndRoundTrips (wave7_cache DAO round-trip: upsert-replace, key isolation, delete; messages.payloadJson raw UPDATE/SELECT), KDoc updated.
+- Sandbox reset AGAIN mid-session (JDK/SDK gone): re-provisioned JDK 21 (/home/z/jdk-21.0.12.1+1 — system JRE lacks javac) + cmdline-tools + platforms;android-35 + build-tools;35.0.0 + local.properties. :data:compileDebugAndroidTestKotlin EXIT 0 before push.
+- RED GATE 2 — Web CI failed at dda750c: 9 no-require-imports lint errors in standalone node scripts (apps/qa/wave*.js, android pulse-relay fixture, iOS fixtures fixture) — first src/** touch since eslint scope drifted; fix already on main in 325e6e4 (ignores) but path filters never re-triggered Web CI. At HEAD: bun run lint exit 0. Documented as stale-red (not claimable CI VERIFIED).
+- Android CI green at b62f89a (build job: JVM tests + assembleRelease; instrumented job: emulator migration suite incl. new 8→9 case).
+- Local JVM gate (dev server stopped for RAM; one daemon OOM retry): BUILD SUCCESSFUL — protocol 103, data 50, domain 45, feature-voice 65 = 263 tests / 0 failures (feature-chat/calls/settings/hub NO-SOURCE). iOS: 245 XCTest / 0 failures (32 new Wave7).
+- Release: tag v0.9.0-native pushed → tag CI Android+iOS BOTH SUCCESS → release published. Asset Pulse-v0.9.0-native.apk 35,648,706 B; re-downloaded → sha256 36f560ed…4035 == GitHub digest (byte-verified); APK structure spot-check (classes.dex + assets/hub_catalog.json present). aapt2 badging not re-run — SDK reset mid-session (recorded honestly).
+- CDN: download/update-manifest.json pinned versionCode 19 / 0.9.0-native / tag-asset URL / sha256 36f560ed…4035; download/Pulse.apk mirror swapped to verified bytes (post-copy hash identical). gateway/socket stay "" (bridge pin still pending operator-level fix).
+- Fresh live E2E re-run at end of wave vs restarted backend: 93 PASS / 0 FAIL.
+- Report: docs/WAVE-7-COMPLETION-REPORT.md (feature-ID table F-RO-01…10 + F-HB-01…10, per-platform file lists, backend delta = market-buy 402 only, persistence/offline, all test counts, CI table incl. stale Web CI note, artifact verification, hardware-unverified list, limitations, continuation point).
+
+Stage Summary:
+- WAVE 7 COMPLETE to sandbox-verifiable depth: Android CI VERIFIED (main + tag), iOS CI VERIFIED (main r15 + tag), live E2E RELAY VERIFIED 93/93 (twice), release byte-verified + CDN-pinned. Hardware-unverified: notification delivery (WorkManager/UNUserNotificationCenter on device), stylus, haptics, on-device release smoke. Wave 3-HW + Wave 5-HW remain OPEN. Web CI stale-red documented, locally clean.
+- STOPPED per directive. Continuation point: next = master-spec next family AFTER spec-Wave 6 (Collaboration & Hub) — resolve exact wave number/family/feature IDs from docs/NATIVE-PARITY-MASTER-SPECIFICATION.md at next start (numbering-resolution step is mandatory, do not guess). Then final full-app audit (NOT started).

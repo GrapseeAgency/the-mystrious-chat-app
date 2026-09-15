@@ -1,12 +1,12 @@
 {
-  "versionCode": 18,
-  "versionName": "0.8.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.8.0-native/Pulse-v0.8.0-native.apk",
+  "versionCode": 19,
+  "versionName": "0.9.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.9.0-native/Pulse-v0.9.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "e30119d519acb9bd66c911af7307766d085ceb4f0ca18d6f4a1aa45e4be96542",
-  "notes": "Wave 5 \u2014 native Voice Rooms / Stage / Space on both platforms (Kotlin+Compose, Swift+SwiftUI): walkie-talkie PTT (hold>=260ms / tap-latch), 16kHz mono Int16 250ms chunks, per-peer 85ms jitter playhead + stale-seq drop, mute with software-gate truth, live ASR captions (4s WAV windows -> /api/voice/transcribe -> voice:transcript, 7s TTL, persisted toggle), stage hierarchy (host/speakers/hands/listeners, raise hand, approve, mute with real voice-seat enforcement, two-tap end, claim host, resync), spatial space (0..1 map, tap+drag with 80ms server-matched throttle, optimistic target + idle reconcile, proximity 0.18, honest error states). Web defects fixed natively: dead transmit path proven emitting (chunker tests), rejoin seq blackhole reset, stage audience voice seat for ALL roles, throttle mismatch + optimistic reconcile, space error state. Android: new :feature-voice module + AudioRecord/AudioTrack engine + mic FGS; iOS: Features/VoiceRooms + AVAudioEngine tap + per-peer AVAudioPlayerNode. Tests: Android 65 new JVM (feature-voice) green; iOS 46 new XCTest green. Relay runtime E2E 20/20 PASS (voice/stage/space flows vs live pulse-socket). PHYSICAL DEVICE audio: PENDING (hardware gate). APK versionCode 17.",
+  "sha256": "36f560ed6b3619da1b4894bfba0458436306276004ba3cefbbad5675edbe4035",
+  "notes": "Wave 7 — native Collaboration & Hub on both platforms (Kotlin+Compose, Swift+SwiftUI): red packets (atomic grab, exact error strings), tictactoe games (seats/turn/win +25 XP feed), tournaments (standings, join, finish), kanban (3 columns, move/add/assignee/delete rules, 1.5s poll), whiteboard (normalized canvas, batch strokes, undo/clear, 900ms since-delta), events (RSVP chips, check-in window +15 XP), reminders (relative parse, local notifications: WorkManager + UNUserNotificationCenter, 30s due-loop), leaderboard (room/global), live Hub rewrite (wallet hero+ledger, check-in streak, transfer, swap 100/80, tasks, market buy honest 402, logs, 100-app catalog bundled offline, communities auto-provisioning real rooms, My apps fan-out). Android Room v9 wave7_cache + messages.payloadJson (non-destructive MIGRATION_8_9, emulator-tested); iOS GRDB v7 wave7Cache + payloadJson. Zero new backend routes; zero new socket events (parity polling); one real backend fix: market buy INSUFFICIENT now honest 402 (was 200 {ok:true}). Tests: Android 263 JVM green (40 new Wave7) + emulator migration suite incl. new 8→9 case; iOS 245 XCTest green (32 new Wave7). Live E2E 93/93 PASS re-run at HEAD. PHYSICAL DEVICE notification delivery / stylus / haptics: PENDING (hardware gate). APK versionCode 19.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-12T18:47:33Z"
+  "updatedAt": "2026-09-15T13:36:44Z"
 }
