@@ -26,7 +26,10 @@ import org.junit.runner.RunWith
  *     are usable (DAO round-trip) and old rows backfill with defaults;
  *   - v5 → MIGRATION_5_6: rows survive; Wave-2 depth columns (viewedAt/
  *     transcript/transcribedAt/pollJson/linkPreviewJson/topicId) + the new
- *     topics/savedMessages tables are usable (DAO round-trips).
+ *     topics/savedMessages tables are usable (DAO round-trips);
+ *   - v5 → chain (…→ MIGRATION_7_8 → MIGRATION_8_9): rows survive;
+ *     Wave-7 additions (wave7_cache table + messages.payloadJson)
+ *     are usable (DAO + raw round-trip).
  * Runs on the emulator (android-ci connectedDebugAndroidTest).
  */
 @RunWith(AndroidJUnit4::class)
@@ -273,7 +276,7 @@ class RoomMigrationTest {
             // Wave 1: the compiled schema is now v5, so the REAL open path is
             // 3 → 4 → 5 — both migrations must be present (v5 columns are
             // additive; every assertion below still holds on the v5 state).
-            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8)
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9)
             .allowMainThreadQueries()
             .build()
 
@@ -348,7 +351,7 @@ class RoomMigrationTest {
     fun migration4To5PreservesRowsAndAddsMediaAndMembers() = runBlocking {
         createV4DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8)
+            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9)
             .allowMainThreadQueries()
             .build()
 
@@ -443,7 +446,7 @@ class RoomMigrationTest {
     fun migration5To6PreservesRowsAndAddsDepthColumnsAndTables() = runBlocking {
         createV5DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9)
             .allowMainThreadQueries()
             .build()
 
@@ -624,13 +627,14 @@ class RoomMigrationTest {
         // migrate through v7 — the real deployed device path.
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
             // Room ALWAYS upgrades to the compiled schema version — even the
-            // "stop at v6" probe must carry the full chain through v7.
+            // "stop at v6" probe must carry the full chain through v9.
             .addMigrations(
                 PulseDatabase.MIGRATION_3_4,
                 PulseDatabase.MIGRATION_4_5,
                 PulseDatabase.MIGRATION_5_6,
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
+                PulseDatabase.MIGRATION_8_9,
             )
             .allowMainThreadQueries()
             .build()
@@ -644,6 +648,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_5_6,
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
+                PulseDatabase.MIGRATION_8_9,
             )
             .allowMainThreadQueries()
             .build()
@@ -704,6 +709,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_5_6,
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
+                PulseDatabase.MIGRATION_8_9,
             )
             .allowMainThreadQueries()
             .build()
@@ -724,5 +730,58 @@ class RoomMigrationTest {
         assertEquals("{\"groups\":[{\"mine\":true}]}", db.storyDao().get("stories:me")?.groupsJson)
         db.storyDao().clearAll()
         assertEquals(0, db.storyDao().allCount())
+    }
+
+    @Test
+    fun migration8To9AddsWave7CacheAndRoundTrips() = runBlocking {
+        // v5 raw seed → real deployed device path through v8 → v9 (Wave 7).
+        createV5DatabaseWithSeedRows()
+        db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
+            .addMigrations(
+                PulseDatabase.MIGRATION_3_4,
+                PulseDatabase.MIGRATION_4_5,
+                PulseDatabase.MIGRATION_5_6,
+                PulseDatabase.MIGRATION_6_7,
+                PulseDatabase.MIGRATION_7_8,
+                PulseDatabase.MIGRATION_8_9,
+            )
+            .allowMainThreadQueries()
+            .build()
+
+        // ── every earlier surface survives the v9 hop ──────────
+        assertEquals("pre-v6 text row", db.messageDao().byId("m-v5")!!.body)
+        assertEquals(1, db.outboxDao().count())
+        assertEquals("half-typed pre-v6", db.draftDao().get("c1")?.text)
+        assertEquals(0, db.storyDao().allCount())
+
+        // ── wave7_cache round-trip (Wave-7 v9) ──────────────────
+        assertNull(db.wave7Dao().get("hub:market"))
+        db.wave7Dao().upsert(
+            Wave7CacheEntity(key = "hub:market", json = "{\"apps\":3}", updatedAt = 1_725_000_000_000L),
+        )
+        val hit = db.wave7Dao().get("hub:market")
+        assertNotNull(hit)
+        assertEquals("{\"apps\":3}", hit!!.json)
+        // upsert replaces (stale-mark overwrite path), keys are isolated
+        db.wave7Dao().upsert(
+            Wave7CacheEntity(key = "hub:market", json = "{\"apps\":4}", updatedAt = 1_725_000_060_000L),
+        )
+        assertEquals("{\"apps\":4}", db.wave7Dao().get("hub:market")!!.json)
+        assertNull(db.wave7Dao().get("reminders:me"))
+        db.wave7Dao().delete("hub:market")
+        assertNull(db.wave7Dao().get("hub:market"))
+
+        // ── messages.payloadJson column (v9 ALTER) round-trips ──
+        // Rich-object carriers (red packet / game / tournament) must survive
+        // offline restarts through the new column.
+        db.openHelper.writableDatabase.execSQL(
+            "UPDATE `messages` SET `payloadJson` = '{\"kind\":\"redpacket\"}' WHERE `id` = 'm-v5'",
+        )
+        db.openHelper.writableDatabase
+            .query("SELECT `payloadJson` FROM `messages` WHERE `id` = 'm-v5'")
+            .use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("{\"kind\":\"redpacket\"}", cursor.getString(0))
+            }
     }
 }
