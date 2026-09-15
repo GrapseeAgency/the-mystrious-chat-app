@@ -120,6 +120,52 @@ const NEXT_API_BASE = process.env.PULSE_ORIGIN ?? 'http://localhost:3000'
 const PRIVACY_KEY = process.env.CRON_SECRET ?? 'pulse-dispatch-key'
 const PRIVACY_TTL_MS = 30_000
 
+// ---------------------------------------------------------------------------
+// Wave 8 (spec §3.11 A-2) — session-token verification for joins that CARRY a
+// token. Sourced from Next's /api/internal/verify (shared key, NO db access
+// here). Migration semantics mirror the API middleware exactly:
+//   • join WITHOUT token            → accepted (web + pre-token natives)
+//   • join WITH a valid token       → accepted
+//   • join WITH an invalid/rotated  → refused: join:error + disconnect
+//                                     (a presented credential must be real)
+// Results cache per (userId, sha256-of-token) for 60s — matches the privacy
+// cache pattern; the API itself is a single indexed lookup.
+// ---------------------------------------------------------------------------
+const VERIFY_TTL_MS = 60_000
+const verifyCache = new Map<string, { valid: boolean; fetchedAt: number }>()
+const verifyInflight = new Map<string, Promise<boolean>>()
+
+async function verifySessionToken(userId: string, token: string): Promise<boolean> {
+  if (userId.length > 64 || token.length === 0 || token.length > 256) return false
+  const key = `${userId}:${token}`
+  const hit = verifyCache.get(key)
+  const now = Date.now()
+  if (hit && now - hit.fetchedAt < VERIFY_TTL_MS) return hit.valid
+  const inflight = verifyInflight.get(key)
+  if (inflight) return inflight
+  const promise = (async () => {
+    try {
+      const res = await fetch(
+        `${NEXT_API_BASE}/api/internal/verify?userId=${encodeURIComponent(userId)}&token=${encodeURIComponent(token)}`,
+        { headers: { 'x-pulse-key': PRIVACY_KEY }, signal: AbortSignal.timeout(4000) },
+      )
+      const json = (await res.json()) as { valid?: unknown }
+      const valid = res.status === 200 && json.valid === true
+      verifyCache.set(key, { valid, fetchedAt: now })
+      return valid
+    } catch {
+      // FAIL OPEN on transport errors (same honesty as privacy flags):
+      // an API hiccup must not disconnect the whole mesh. A definitive
+      // invalid verdict from the API is cached; a transport failure is not.
+      return true
+    }
+  })()
+  verifyInflight.set(key, promise)
+  const verdict = await promise
+  verifyInflight.delete(key)
+  return verdict
+}
+
 type PrivacyFlags = { typingVisible: boolean; presenceVisible: boolean }
 const privacyCache = new Map<string, { flags: PrivacyFlags; fetchedAt: number }>()
 let privacyInflight: Promise<void> | null = null
@@ -803,6 +849,20 @@ io.on('connection', (socket: Socket) => {
     if (!userId || userId.length > 64) {
       console.warn(`[ws] join rejected sock=${socket.id} (bad userId)`)
       return
+    }
+
+    // Wave 8 A-2 — optional token gate: a join that PRESENTS a token must
+    // verify (invalid → join:error + disconnect); token-less joins stay
+    // accepted during the migration window.
+    const joinToken = asTrimmedString((raw as { token?: unknown })?.token ?? null)
+    if (joinToken) {
+      const ok = await verifySessionToken(userId, joinToken)
+      if (!ok) {
+        console.warn(`[ws] join rejected user=${userId} sock=${socket.id} (invalid session token)`)
+        socket.emit('join:error', { error: 'Session token is invalid or has been rotated. Log in again.' })
+        socket.disconnect(true)
+        return
+      }
     }
 
     // Defensive re-join: forget previous mapping of THIS socket first.

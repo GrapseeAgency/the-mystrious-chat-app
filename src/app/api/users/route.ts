@@ -13,14 +13,19 @@ import {
   USER_NAME_MAX,
 } from '@/lib/serializers'
 import { ensurePulseBot } from '@/lib/ai-bot'
+import { generateSessionToken, hashSessionToken } from '@/lib/session-token'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * POST /api/users { name, color?, username? } → 201 { user: AppUser }
+ * POST /api/users { name, color?, username? } → 201 { user: AppUser, token }
  * Names are unique case-insensitively; @handles are unique exactly and
  * lowercase-normalized (3–20 chars, a-z0-9_).
  * → 409 { error, code: 'username_taken', suggestion } when the handle clashes.
+ * Wave 8 (spec §3.11 A-1): the response now ALSO carries `token` (random
+ * 32 B hex, raw shown exactly once; only its sha256 is stored). Web ignores
+ * the field today (token adoption is phase 2); natives persist it in
+ * Keystore/Keychain and attach `Authorization: Bearer` + socket join token.
  */
 export async function POST(req: Request) {
   const body = await safeJson(req)
@@ -74,7 +79,11 @@ export async function POST(req: Request) {
   // every new identity gets a Hub wallet (starting balance 100 PC / 5 GEM)
   await db.userWallet.upsert({ where: { userId: user.id }, create: { userId: user.id }, update: {} })
 
-  return NextResponse.json({ user: mapUser(user) }, { status: 201 })
+  // Wave 8 A-1: issue the session token (raw returned once, hash stored).
+  const token = generateSessionToken()
+  await db.user.update({ where: { id: user.id }, data: { sessionTokenHash: hashSessionToken(token) } })
+
+  return NextResponse.json({ user: mapUser(user), token }, { status: 201 })
 }
 
 /**
