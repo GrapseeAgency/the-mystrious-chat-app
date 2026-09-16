@@ -1,12 +1,12 @@
 {
-  "versionCode": 19,
-  "versionName": "0.9.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.9.0-native/Pulse-v0.9.0-native.apk",
+  "versionCode": 20,
+  "versionName": "0.10.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.10.0-native/Pulse-v0.10.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "36f560ed6b3619da1b4894bfba0458436306276004ba3cefbbad5675edbe4035",
-  "notes": "Wave 7 — native Collaboration & Hub on both platforms (Kotlin+Compose, Swift+SwiftUI): red packets (atomic grab, exact error strings), tictactoe games (seats/turn/win +25 XP feed), tournaments (standings, join, finish), kanban (3 columns, move/add/assignee/delete rules, 1.5s poll), whiteboard (normalized canvas, batch strokes, undo/clear, 900ms since-delta), events (RSVP chips, check-in window +15 XP), reminders (relative parse, local notifications: WorkManager + UNUserNotificationCenter, 30s due-loop), leaderboard (room/global), live Hub rewrite (wallet hero+ledger, check-in streak, transfer, swap 100/80, tasks, market buy honest 402, logs, 100-app catalog bundled offline, communities auto-provisioning real rooms, My apps fan-out). Android Room v9 wave7_cache + messages.payloadJson (non-destructive MIGRATION_8_9, emulator-tested); iOS GRDB v7 wave7Cache + payloadJson. Zero new backend routes; zero new socket events (parity polling); one real backend fix: market buy INSUFFICIENT now honest 402 (was 200 {ok:true}). Tests: Android 263 JVM green (40 new Wave7) + emulator migration suite incl. new 8→9 case; iOS 245 XCTest green (32 new Wave7). Live E2E 93/93 PASS re-run at HEAD. PHYSICAL DEVICE notification delivery / stylus / haptics: PENDING (hardware gate). APK versionCode 19.",
+  "sha256": "5540c8bb29e0b96093ed79a51ec173d5310c07a744cb99ecff22c59ee080b2ec",
+  "notes": "Wave 8 — native Platform & Hardening on both platforms (Kotlin+Compose, Swift+SwiftUI): session tokens (spec §3.11 A-1/A-2) — issued at create/reclaim, stored Android Keystore AES-GCM / iOS Keychain, Bearer on every API call, relay join gate (presented tokens verified, invalid refused join:error), rotation handling with honest re-login; Settings 9-section parity (Account+copy user ID, Appearance+wallpaper, Chat bubble-radius/density/drafts+outbox manager, Notifications+quiet hours local, Privacy toggles server-enforced, Real-time diagnostics probe, Accessibility honor-OS remove-animations/Reduce Motion, Data & Storage footprint+clears+LiveUpdater, About); chat consumption of bubble corners/density/wallpaper; reminder notifications gated by sound/vibrate/quiet-hours via versioned channels; Android R8 pipeline ON (conservative keeps, dex-verified, 23.97MB vs 35.65MB). Backend: POST /api/users returns token, NEW POST /api/users/login, NEW GET /api/internal/verify (x-pulse-key), optional-verify proxy (headerless accepted, invalid 401). Tests: Android 301 JVM green + emulator migration suite; iOS 245+20 XCTest green; live E2E 19/19 (tokens/settings/relay gate). PHYSICAL DEVICE: notification delivery, release-R8 on-device smoke, haptics — PENDING (hardware gate). APK versionCode 20 (R8-minified).",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-15T13:36:44Z"
+  "updatedAt": "2026-09-16T02:27:55Z"
 }
