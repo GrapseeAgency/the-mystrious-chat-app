@@ -29,19 +29,26 @@ public struct PulseAPIClient: Sendable {
 
     public let baseURL: URL
     public let userId: String
+    /// Wave 8 — the raw session token from the Keychain. Every outbound
+    /// request carries `Authorization: Bearer <token>` when present; the
+    /// server's optional-verify proxy accepts header-less requests (web
+    /// migration parity) and 401s present-but-invalid ones (Failure.kind
+    /// == .auth → the session layer clears the token + surfaces re-login).
+    public let authToken: String?
     private let session: URLSession
     private let decoder = JSONDecoder()
 
-    public init(baseURL: URL, userId: String, session: URLSession = .shared) {
+    public init(baseURL: URL, userId: String, authToken: String? = nil, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.userId = userId
+        self.authToken = authToken
         self.session = session
     }
 
     /// Identity-independent client (onboarding: no viewer yet — users routes
     /// never need one).
     public init(baseURL: URL, session: URLSession = .shared) {
-        self.init(baseURL: baseURL, userId: "", session: session)
+        self.init(baseURL: baseURL, userId: "", authToken: nil, session: session)
     }
 
     // ── reads ────────────────────────────────────────────────
@@ -322,12 +329,43 @@ public struct PulseAPIClient: Sendable {
         return try WireConversationEnvelope.extract(from: data)
     }
 
-    /// N3-b — create a new identity. 409 username_taken surfaces code + suggestion.
-    public func createUser(name: String, color: String, username: String? = nil) async throws -> WireUser {
+    /// N3-b / Wave 8 — create a new identity. 409 username_taken surfaces
+    /// code + suggestion. The 201 envelope now ALSO carries the raw session
+    /// token (`{ user, token }` — decode tolerantly, the web ignores it).
+    public func createAccount(name: String, color: String, username: String? = nil) async throws -> WireAuthEnvelope {
         var body: [String: Any] = ["name": name, "color": color]
         if let username, !username.isEmpty { body["username"] = username }
         let data = try await postRaw("/api/users", body: body)
-        return try decoder.decode(WireUserEnvelope.self, from: data).user
+        return try decoder.decode(WireAuthEnvelope.self, from: data)
+    }
+
+    /// Wave 8 — POST /api/users/login { name } — the reclaim confirm ("log
+    /// in instead"). 200 { user, token } | 400 "Name is required." |
+    /// 404 "No identity with that name on this Pulse." (honest copy lands
+    /// verbatim through Failure.message). Login ROTATES the stored hash —
+    /// the previous token 401s afterwards (last login wins).
+    public func login(name: String) async throws -> WireAuthEnvelope {
+        let data = try await postRaw("/api/users/login", body: ["name": name])
+        return try decoder.decode(WireAuthEnvelope.self, from: data)
+    }
+
+    // ── Wave 8 — settings blob (PulsePrefs server sync) ──────
+
+    /// GET /api/settings?userId= → 200 { preferences } (defaults merged
+    /// server-side). 404 = identity unknown (offline-created local ids).
+    public func settings() async throws -> WirePulsePrefs {
+        let envelope: WirePrefsEnvelope = try await get("/api/settings?userId=\(userId)")
+        return envelope.preferences ?? WirePulsePrefs()
+    }
+
+    /// PATCH /api/settings { userId, preferences: Partial } → 200
+    /// { preferences } (shallow-merged + clamped server-side). Only the
+    /// non-nil patch fields ride the body.
+    public func updateSettings(patch: WirePulsePrefs) async throws -> WirePulsePrefs {
+        let body: [String: Any] = ["userId": userId, "preferences": patch.asPatchBody()]
+        let data = try await patchRaw("/api/settings", body: body)
+        let envelope = try decoder.decode(WirePrefsEnvelope.self, from: data)
+        return envelope.preferences ?? WirePulsePrefs()
     }
 
     public func block(userId target: String) async throws {
@@ -1187,7 +1225,9 @@ public struct PulseAPIClient: Sendable {
     /// `timeoutCap` caps the request timeout (default 6 s — the house
     /// fail-fast rule); ONLY the voice-transcribe call raises it to 60 s.
     private func send(_ request: URLRequest, timeoutCap: TimeInterval = 6) async throws -> Data {
-        var request = request
+        // Wave 8 — Bearer attach lives on the request-building seam
+        // (unit-tested): every outbound call, no exceptions.
+        var request = Self.authorized(request, token: authToken)
         // Fail fast — an unreachable gateway must never spin for a minute.
         request.timeoutInterval = min(request.timeoutInterval, timeoutCap)
         let (data, response) = try await session.data(for: request)
@@ -1206,6 +1246,17 @@ public struct PulseAPIClient: Sendable {
             throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode)
         }
         return data
+    }
+
+    /// Wave 8 — the request-building auth seam (unit-tested in
+    /// Wave8WireTests): attaches `Authorization: Bearer <token>` when a
+    /// session token exists, returns the request untouched when it does
+    /// not (the server's optional-verify proxy accepts header-less calls).
+    static func authorized(_ request: URLRequest, token: String?) -> URLRequest {
+        var request = request
+        guard let token, !token.isEmpty else { return request }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
     }
 
     static func kind(for status: Int) -> Failure.Kind {

@@ -104,6 +104,8 @@ struct ThreadView: View {
                 mine: parentMessage.senderId == viewerId,
                 groupChat: conversation.isGroup,
                 viewerColor: { colorOf(senderId: parentMessage.senderId) },
+                // Wave 8 — thread bubbles honor the prefs corner token too.
+                bubbleRadius: session.prefs?.bubbleRadius ?? .lg,
                 viewerId: viewerId,
                 onViewOnceOpen: { message in revealViewOnce(message) },
             )
@@ -121,6 +123,8 @@ struct ThreadView: View {
                     mine: reply.senderId == viewerId,
                     groupChat: conversation.isGroup,
                     viewerColor: { colorOf(senderId: reply.senderId) },
+                    // Wave 8 — prefs corner token (session handoff).
+                    bubbleRadius: session.prefs?.bubbleRadius ?? .lg,
                     viewerId: viewerId,
                     onViewOnceOpen: { message in revealViewOnce(message) },
                 )

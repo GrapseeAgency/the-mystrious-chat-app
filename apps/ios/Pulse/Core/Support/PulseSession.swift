@@ -64,6 +64,17 @@ public final class PulseSession: ObservableObject {
     /// exists). Room MEMBERSHIP SURVIVES surface close (VR-1); the
     /// ChatRoomView mic entry + fullScreenCover host share this instance.
     @Published public private(set) var voiceRooms: VoiceRoomSessionModel?
+    /// Wave 8 — bumped when the server rejects our session token (API 401
+    /// or join:error). The token is already cleared + re-login surfaced by
+    /// `noteAuthFailure`; the tick lets deep surfaces react if they must.
+    @Published public private(set) var authRejectedTick = 0
+    /// Wave 8 — the conversation currently owning the screen (ChatRoomView
+    /// writes it). The incoming-attention gate uses it as the "you are
+    /// reading this room" check — no ping for the room in front of you.
+    @Published public var activeRoomId: String?
+    /// Wave 8 — weak handoff to the RootView-owned PulsePrefs (incoming
+    /// attention gating + the settings PATCH funnel + quiet-gate refresh).
+    public private(set) weak var prefs: PulsePrefs?
 
     /// Honest-toast center shared by every surface (not-yet-built features).
     public let toasts = ToastCenter()
@@ -80,13 +91,66 @@ public final class PulseSession: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
 
     public init() {
-        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL)
+        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, authToken: PulseKeychain.shared.loadSessionToken())
         // Timer publisher is not actor-isolated; hop back per tick.
         Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.pruneTypers() }
+            .sink { [weak self] _ in
+                self?.pruneTypers()
+                self?.prefs?.refreshQuietGate() // Wave 8 — quiet window opens/closes on the minute
+            }
             .store(in: &cancellables)
+    }
+
+    // ── Wave 8 — prefs handoff ───────────────────────────
+
+    /// RootView owns PulsePrefs; the session needs it for the incoming
+    /// attention gate, the quiet-gate refresh and the settings PATCH
+    /// funnel. Idempotent — the closures attach exactly once.
+    public func attach(prefs: PulsePrefs) {
+        self.prefs = prefs
+        guard prefs.patchRemote == nil else { return }
+        prefs.patchRemote = { [weak self] patch in
+            self?.sendPrefsPatch(patch)
+        }
+        prefs.authRejectionHandler = { [weak self] message in
+            self?.noteAuthFailure(message)
+        }
+    }
+
+    /// Optimistic settings PATCH: the local value already applied; this
+    /// persists { userId, preferences } and echoes the server-merged blob
+    /// back (server wins on the response). Failure → local value STAYS +
+    /// an honest offline note for the settings surface.
+    private func sendPrefsPatch(_ patch: WirePulsePrefs) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let server = try await self.api.updateSettings(patch: patch)
+                self.prefs?.applyServer(server)
+                self.prefs?.notePatchSettled(successful: true, note: nil)
+            } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
+                self.noteAuthFailure(failure.message)
+            } catch {
+                self.prefs?.notePatchSettled(successful: false, note: "Saved on this device — the server didn't answer.")
+            }
+        }
+    }
+
+    /// Wave 8 — the server rejected our session token (API 401 with
+    /// "Session token is invalid or has been rotated." or join:error).
+    /// Reaction: clear the Keychain token, drop it from future requests
+    /// AND socket joins (token-less is accepted — degraded honest mode),
+    /// surface re-login. No forced onboarding (offline-first stays).
+    public func noteAuthFailure(_ message: String? = nil) {
+        PulseKeychain.shared.clearSessionToken()
+        if let viewer {
+            api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: nil)
+        }
+        socket?.updateToken(nil)
+        toasts.show(message ?? "Session expired — log in again to stay in sync.")
+        authRejectedTick += 1
     }
 
     // ── lifecycle ────────────────────────────────────────────
@@ -95,7 +159,8 @@ public final class PulseSession: ObservableObject {
         socket?.disconnect()
         socket = nil
 
-        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id)
+        // Wave 8 — the rebuilt client carries the Keychain session token.
+        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: PulseKeychain.shared.loadSessionToken())
         store = Self.openStore()
         startOutbox()
         startCalls(viewer: viewer)
@@ -142,20 +207,25 @@ public final class PulseSession: ObservableObject {
         await PulseEndpoints.fetchManifestOverride()
 
         // 2. Rebind the API client — the override may have moved the gateway.
-        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id)
+        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: PulseKeychain.shared.loadSessionToken())
 
         // 3. Drain anything queued offline (flush trigger: session start).
         await flushOutboxNow()
 
-        // 4. Realtime only when a relay base is configured (nil → offline-first,
-        //    no reconnect spam against a dead address).
+        // 4. Wave 8 — pull the server-merged prefs blob (server value wins;
+        //    optimistic local values keep working when this fails).
+        await prefs?.syncFromServer(api: api)
+
+        // 5. Realtime only when a relay base is configured (nil → offline-first,
+        //    no reconnect spam against a dead address). The join payload
+        //    carries the session token when one exists (verified server-side).
         guard let socketBase = PulseEndpoints.socketURL else { return }
         let client = PulseSocketClient(socketURL: socketBase)
         client.signals = { [weak self] signal in
             Task { @MainActor in self?.handle(signal) }
         }
         socket = client
-        client.connect(userId: viewer.id)
+        client.connect(userId: viewer.id, token: PulseKeychain.shared.loadSessionToken())
     }
 
     private static func openStore() -> PulseStore? {
@@ -331,6 +401,12 @@ public final class PulseSession: ObservableObject {
         case .joined(let ids), .presenceSnapshot(let ids):
             connected = true
             onlineUserIds = Set(ids)
+        case .joinError(let message):
+            // Wave 8 — the relay verified our presented join token and
+            // refused it (rotated elsewhere / invalid). Clear + degrade to
+            // token-less so the reconnect lands instead of looping.
+            noteAuthFailure(message)
+            return
         case .connectionState(let isOn):
             connected = isOn
             // Flush trigger: socket connect / reconnect.
@@ -344,7 +420,10 @@ public final class PulseSession: ObservableObject {
             voiceRooms?.handle(signal)
         case .typing(let conversationId, let userId, let userName, let isTyping):
             registerTyping(conversationId: conversationId, userId: userId, userName: userName, isTyping: isTyping)
-        case .messageNew(_, let raw), .messageDeleted(_, let raw), .messageReact(_, let raw):
+        case .messageNew(let conversationId, let raw):
+            cacheMessage(from: raw)
+            noteIncomingAttention(conversationId: conversationId, raw: raw)
+        case .messageDeleted(_, let raw), .messageReact(_, let raw):
             cacheMessage(from: raw)
         case .messageEnvelope(_, _, let raw):
             // message:edited/pinned/viewed, poll:voted, link:preview,
@@ -374,6 +453,30 @@ public final class PulseSession: ObservableObject {
     private func cacheMessage(from raw: [String: Any]) {
         guard let store, let message = Self.decodeMessage(from: raw) else { return }
         try? store.upsert(messages: [message])
+    }
+
+    /// Wave 8 — incoming attention (web pulse-realtime-provider parity):
+    /// a message from SOMEONE ELSE, not a thread reply, in a room you are
+    /// NOT reading → soft ping + buzz + preview toast, each behind its own
+    /// toggle, all behind the LOCAL quiet-hours window.
+    private func noteIncomingAttention(conversationId: String, raw: [String: Any]) {
+        guard let message = Self.decodeMessage(from: raw), let viewer else { return }
+        guard message.senderId != viewer.id,
+              message.deletedAt == nil,
+              message.parentId == nil,
+              activeRoomId != conversationId else { return }
+        guard !(prefs?.isQuietHoursNow ?? false) else { return } // quiet — stay silent
+        if prefs?.notifSound == true {
+            PulseSounds.incoming()
+        }
+        if prefs?.notifVibrate == true {
+            PulseHaptics.incoming()
+        }
+        if prefs?.notifPreviews == true {
+            let sender = message.sender?.name ?? "Message"
+            let body = message.content.isEmpty ? "Sent an attachment" : message.content
+            toasts.show("\(sender): \(body)")
+        }
     }
 
     private func registerTyping(conversationId: String, userId: String, userName: String, isTyping: Bool) {

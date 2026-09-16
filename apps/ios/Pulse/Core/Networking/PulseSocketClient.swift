@@ -37,12 +37,22 @@ public final class PulseSocketClient {
         case spaceState(conversationId: String, raw: [String: Any])
         // Call signaling (generic — includes call:reject).
         case callSignal(event: String, raw: [String: Any])
+        /// Wave 8 — the relay refused our join because the PRESENTED session
+        /// token failed verification (invalid/rotated). The server disconnects
+        /// right after emitting this; the session layer reacts (clears the
+        /// Keychain token, drops the token from future joins, honest toast).
+        case joinError(message: String)
     }
 
     private let manager: SocketManager
     private let socket: SocketIOClient
     /// Last joined identity — re-emitted on every (re)connect.
     private var lastUserId: String?
+    /// Wave 8 — the session token riding the join payload. A PRESENT token
+    /// is verified server-side (invalid → join:error + disconnect); token-
+    /// less joins stay accepted (web migration parity). `updateToken` lets
+    /// the session drop a rotated token without tearing the client down.
+    private var lastToken: String?
 
     public init(socketURL: URL) {
         // Reconnect backoff — W0-PLAN parity with Android (800ms → 5s cap;
@@ -65,16 +75,17 @@ public final class PulseSocketClient {
 
     public var signals: ((Signal) -> Void)?
 
-    public func connect(userId: String) {
+    public func connect(userId: String, token: String? = nil) {
         lastUserId = userId
+        lastToken = token
 
         socket.on(clientEvent: .connect) { [weak self] _, _ in
             guard let self else { return }
             // Re-join on the FIRST connect and on every successful reconnect
             // (socket.io fires a fresh .connect for each one). Without the
             // re-emit the server drops us from presence + user rooms.
-            if let lastUserId = self.lastUserId {
-                self.socket.emit("join", ["userId": lastUserId])
+            if let payload = self.joinPayload() {
+                self.socket.emit("join", payload)
             }
             self.signals?(.connectionState(connected: true))
         }
@@ -87,8 +98,18 @@ public final class PulseSocketClient {
             // Emits made while disconnected are buffered and flushed the
             // moment the reconnect lands — re-joining here restores the user
             // room even if the .connect handler below were to race.
-            guard let self, let lastUserId = self.lastUserId else { return }
-            self.socket.emit("join", ["userId": lastUserId])
+            guard let self, let payload = self.joinPayload() else { return }
+            self.socket.emit("join", payload)
+        }
+
+        // Wave 8 — token gate refusal. The relay emits
+        // { error: "Session token is invalid or has been rotated. Log in again."
+        // } and disconnects us; the session layer consumes the signal.
+        socket.on("join:error") { [weak self] data, _ in
+            let obj = data.first as? [String: Any]
+            let message = obj?["error"] as? String
+                ?? "Session token is invalid or has been rotated. Log in again."
+            self?.signals?(.joinError(message: message))
         }
 
         socket.on("joined") { [weak self] data, _ in
@@ -212,6 +233,25 @@ public final class PulseSocketClient {
         }
 
         socket.connect()
+    }
+
+    /// Wave 8 — the join payload builder: { userId } plus { token } ONLY when
+    /// a session token is present (the relay verifies present tokens and
+    /// refuses invalid ones; absent ones stay accepted). nil when no
+    /// identity was ever joined.
+    private func joinPayload() -> [String: Any]? {
+        guard let lastUserId else { return nil }
+        var payload: [String: Any] = ["userId": lastUserId]
+        if let lastToken, !lastToken.isEmpty {
+            payload["token"] = lastToken
+        }
+        return payload
+    }
+
+    /// Wave 8 — rotation reaction: drop the (now invalid) token so the next
+    /// reconnect joins token-less (accepted) instead of looping join:error.
+    public func updateToken(_ token: String?) {
+        lastToken = token
     }
 
     public func emitTyping(recipients: [String], conversationId: String, userId: String, userName: String, isTyping: Bool) {

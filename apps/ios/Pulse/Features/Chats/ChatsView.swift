@@ -96,7 +96,7 @@ struct ChatsView: View {
             .safeAreaInset(edge: .top, spacing: 0) { topChrome }
             .navigationBarHidden(true)
             .navigationDestination(for: RoomRoute.self) { route in
-                ChatRoomView(conversation: route.conversation, session: session, jumpMessageId: route.jumpMessageId)
+                ChatRoomView(conversation: route.conversation, session: session, prefs: prefs, jumpMessageId: route.jumpMessageId)
             }
             .sheet(item: $viewModel.sheet) { target in
                 ChatActionSheet(

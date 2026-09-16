@@ -707,6 +707,16 @@ public final class PulseStore: Sendable {
         return Dictionary(rows, uniquingKeysWith: { _, later in later })
     }
 
+    /// Wave 8 — full draft rows (id + text + updatedAt) oldest-first, the
+    /// Drafts & outbox manager's feed. Blank rows never surface.
+    public func allDraftRows() throws -> [DraftRow] {
+        try dbQueue.read { db in
+            try DraftRow
+                .fetchAll(db, sql: "SELECT * FROM draft ORDER BY updatedAt ASC")
+                .filter { !$0.text.isEmpty }
+        }
+    }
+
     public func deleteDraft(conversationId: String) throws {
         _ = try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM draft WHERE conversationId = :cid", arguments: ["cid": conversationId])

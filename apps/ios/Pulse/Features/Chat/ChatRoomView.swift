@@ -8,9 +8,13 @@ import PhotosUI
 /// reply quotes, grouped reaction chips, voice waveform chips, read state,
 /// live typing with drifting dots. Apple mechanics: ScrollViewReader anchor,
 /// contextMenu reactions, FocusState composer, socket-driven updates.
+/// Wave 8 — the room consumes the server-synced PulsePrefs blob: the
+/// wallpaper wash background, the bubble corner token (md/lg/pill) and the
+/// row density spacing.
 struct ChatRoomView: View {
     let conversation: WireConversationSummary
     @ObservedObject var session: PulseSession
+    @ObservedObject var prefs: PulsePrefs
     /// Global-search jump — the room scrolls to + flashes this message after
     /// its initial load (bounded history expansion if it sits out of window).
     var jumpMessageId: String? = nil
@@ -24,6 +28,7 @@ struct ChatRoomView: View {
                 RoomContent(
                     conversation: conversation,
                     session: session,
+                    prefs: prefs,
                     viewModel: viewModel,
                 )
             } else {
@@ -39,9 +44,14 @@ struct ChatRoomView: View {
             }
             // The dock hides itself while a room owns the screen (web §12).
             session.roomVisible = true
+            // Wave 8 — the incoming-attention gate treats THIS room as read.
+            session.activeRoomId = conversation.id
         }
         .onDisappear {
             session.roomVisible = false
+            if session.activeRoomId == conversation.id {
+                session.activeRoomId = nil
+            }
         }
     }
 
@@ -64,6 +74,8 @@ private struct RoomMessageRow: View {
     let conversation: WireConversationSummary
     @ObservedObject var viewModel: RoomViewModel
     let colorOf: (String) -> Color
+    /// Wave 8 — prefs bubble corner token (md/lg/pill).
+    let bubbleRadius: PulseBubbleRadius
     let onOpenImage: (WireChatMessage) -> Void
     let onOpenFile: (WireChatMessage) -> Void
     let onOpenThread: (WireChatMessage) -> Void
@@ -89,6 +101,7 @@ private struct RoomMessageRow: View {
                 seen: viewModel.isSeen(message),
                 flashing: viewModel.flashMessageId == message.id,
                 replyCount: viewModel.replyCount(for: message),
+                bubbleRadius: bubbleRadius,
                 onOpenImage: onOpenImage,
                 onOpenFile: onOpenFile,
                 onOpenThread: onOpenThread,
@@ -201,9 +214,11 @@ private struct RoomMessageRow: View {
 private struct RoomContent: View {
     let conversation: WireConversationSummary
     @ObservedObject var session: PulseSession
+    @ObservedObject var prefs: PulsePrefs
     @ObservedObject var viewModel: RoomViewModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var composerFocused: Bool
 
     // Wave 1 surfaces — threads, forward, info, pins, lightbox, QuickLook,
@@ -258,6 +273,16 @@ private struct RoomContent: View {
         composerFocused = true
     }
 
+    /// Wave 8 — the prefs wallpaper wash behind the whole room; 'none'
+    /// renders nothing and the plain page look stays.
+    private var wallpaperWash: some View {
+        Group {
+            if let wash = prefs.wallpaper.wash(dark: colorScheme == .dark) {
+                wash
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Wave 2 topics — group rooms only (General = whole room, spec §1 row 9).
@@ -287,6 +312,12 @@ private struct RoomContent: View {
                 errorStrip(error)
             }
             composer
+        }
+        .background(alignment: .top) {
+            // Wave 8 — prefs wallpaper behind the whole room (web chat-room
+            // layered wallpaper parity; 'none' keeps the plain wash).
+            wallpaperWash
+                .ignoresSafeArea()
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -704,7 +735,9 @@ private struct RoomContent: View {
     private var messagesList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 6) {
+                // Wave 8 — prefs density: cozy keeps the Wave-0 rhythm,
+                // compact tightens the river (web chat-room density parity).
+                LazyVStack(spacing: prefs.density.rowSpacing) {
                     if viewModel.messages.isEmpty && viewModel.phase == .loading {
                         ProgressView("Loading messages…")
                             .padding(.top, 40)
@@ -720,6 +753,7 @@ private struct RoomContent: View {
                             conversation: conversation,
                             viewModel: viewModel,
                             colorOf: colorOf,
+                            bubbleRadius: prefs.bubbleRadius,
                             onOpenImage: { openLightbox($0) },
                             onOpenFile: { openFile($0) },
                             onOpenThread: { threadRoot = $0 },
@@ -1188,6 +1222,9 @@ struct BubbleView: View {
     /// Wave 1 — jump flash ring, live thread-reply chip, media surfaces.
     var flashing: Bool = false
     var replyCount: Int = 0
+    /// Wave 8 — prefs bubble corner token (md=10, lg=16, pill=26 native
+    /// radii; the tail corner stays 6). Defaults to the web's 'lg'.
+    var bubbleRadius: PulseBubbleRadius = .lg
     var onOpenImage: ((WireChatMessage) -> Void)? = nil
     var onOpenFile: ((WireChatMessage) -> Void)? = nil
     var onOpenThread: ((WireChatMessage) -> Void)? = nil
@@ -1221,10 +1258,14 @@ struct BubbleView: View {
         message.viewOnce == true && !mine && message.viewedAt != nil
     }
 
+    /// Wave 8 — the corner token drives every radius; the "tail" corner
+    /// (bottom-trailing for the viewer, bottom-leading for the peer) stays
+    /// the asymmetric 6 exactly like the web's rounded-br-md.
     private var bubbleShape: UnevenRoundedRectangle {
-        mine
-            ? UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 18, bottomTrailingRadius: 6, topTrailingRadius: 18)
-            : UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 6, bottomTrailingRadius: 18, topTrailingRadius: 18)
+        let r = bubbleRadius.cornerRadius
+        return mine
+            ? UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, bottomTrailingRadius: 6, topTrailingRadius: r)
+            : UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: 6, bottomTrailingRadius: r, topTrailingRadius: r)
     }
 
     var body: some View {
@@ -1320,7 +1361,7 @@ struct BubbleView: View {
         .padding(.bottom, reactionChipsHeight())
         .overlay(
             // Jump-to-message flash ring (amber pulse, ~1.5s — web parity).
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: bubbleRadius.cornerRadius, style: .continuous)
                 .stroke(PulseTheme.amber, lineWidth: 2.5)
                 .opacity(flashing ? 1 : 0)
                 .animation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true), value: flashing)
@@ -2930,5 +2971,48 @@ enum TempMessages {
             linkPreview: nil,
             poll: nil,
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Wave 8 — native wallpaper washes (web WALLPAPERS preview parity,
+// settings-screen.tsx + chat-room.tsx wallpaperGlows). Each token is one
+// soft diagonal gradient with light/dark variants; 'none' renders nothing
+// so the plain page look stays.
+// ─────────────────────────────────────────────────────────────
+extension PulseWallpaper {
+    func wash(dark: Bool) -> LinearGradient? {
+        switch self {
+        case .none:
+            return nil
+        case .aurora:
+            return LinearGradient(
+                colors: dark
+                    ? [Color(hex: 0x064E3B), Color(hex: 0x042F2E), Color(hex: 0x047857)]   // emerald-900 → teal-950 → emerald-700
+                    : [Color(hex: 0xA7F3D0), Color(hex: 0x99F6E4), Color(hex: 0x34D399)],  // emerald-200 → teal-200 → emerald-400
+                startPoint: .topLeading, endPoint: .bottomTrailing,
+            )
+        case .dusk:
+            return LinearGradient(
+                colors: dark
+                    ? [Color(hex: 0x451A03), Color(hex: 0x4C0519), Color(hex: 0x27272A)]   // amber-950 → rose-950 → zinc-800
+                    : [Color(hex: 0xFDE68A), Color(hex: 0xFDA4AF), Color(hex: 0xA1A1AA)],  // amber-200 → rose-300 → zinc-400
+                startPoint: .topLeading, endPoint: .bottomTrailing,
+            )
+        case .forest:
+            return LinearGradient(
+                colors: dark
+                    ? [Color(hex: 0x052E16), Color(hex: 0x064E3B), Color(hex: 0x15803D)]   // green-950 → emerald-900 → green-700
+                    : [Color(hex: 0xD9F99D), Color(hex: 0x6EE7B7), Color(hex: 0x22C55E)],  // lime-200 → emerald-300 → green-500
+                startPoint: .topLeading, endPoint: .bottomTrailing,
+            )
+        case .mono:
+            return LinearGradient(
+                colors: dark
+                    ? [Color(hex: 0x3F3F46), Color(hex: 0x18181B)]                          // zinc-700 → zinc-900
+                    : [Color(hex: 0xE4E4E7), Color(hex: 0xA1A1AA)],                         // zinc-200 → zinc-400
+                startPoint: .topLeading, endPoint: .bottomTrailing,
+            )
+        }
     }
 }

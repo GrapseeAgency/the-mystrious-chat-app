@@ -118,6 +118,10 @@ struct IdentityPickerSheet: View {
 
     private func pick(_ user: WireUser) {
         let viewer = PulseViewer(from: user)
+        // Wave 8 — switching to an existing identity CLEARS the previous
+        // identity's session token (identity-bound; setViewer does it) —
+        // the switcher does not authenticate, so the app runs token-less
+        // (accepted by the optional-verify proxy) until the next login.
         prefs.setViewer(viewer)
         session.start(as: viewer)
         PulseHaptics.success()
@@ -126,9 +130,14 @@ struct IdentityPickerSheet: View {
     }
 
     private func create() {
-        viewModel.create(api: session.api) { user in
+        viewModel.create(api: session.api) { user, token in
             let viewer = PulseViewer(from: user)
+            // Wave 8 — ORDER MATTERS: setViewer first (drops the previous
+            // identity's token), then persist the fresh token, then start.
             prefs.setViewer(viewer)
+            if let token, !token.isEmpty {
+                PulseKeychain.shared.saveSessionToken(token)
+            }
             session.start(as: viewer)
             session.particles.fire(kind: .confetti, count: 110)
             PulseHaptics.success()
@@ -197,7 +206,7 @@ final class IdentityViewModel: ObservableObject {
         }
     }
 
-    func create(api: PulseAPIClient, onSuccess: @escaping (WireUser) -> Void) {
+    func create(api: PulseAPIClient, onSuccess: @escaping (WireUser, String?) -> Void) {
         let name = newName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
         creating = true
@@ -207,9 +216,10 @@ final class IdentityViewModel: ObservableObject {
             guard let self else { return }
             defer { creating = false }
             do {
-                let user = try await api.createUser(name: name, color: newColor)
+                // Wave 8 — the 201 envelope carries the session token.
+                let envelope = try await api.createAccount(name: name, color: newColor)
                 newName = ""
-                onSuccess(user)
+                onSuccess(envelope.user, envelope.token)
             } catch {
                 if let failure = error as? PulseAPIClient.Failure, failure.code == "username_taken" {
                     errorText = failure.message

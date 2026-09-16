@@ -15,6 +15,10 @@ public final class PulseKeychain: @unchecked Sendable {
     public static let service = "app.pulse.chat"
     public static let identityAccount = "viewer.identity"
     public static let endpointsAccount = "endpoints.override"
+    /// Wave 8 — the raw session token (POST /api/users + /api/users/login).
+    /// Identity-bound: written after create/login, cleared on forget/switch
+    /// and on a server-side rotation rejection (401 / join:error).
+    public static let sessionTokenAccount = "session.token"
 
     private let queue = DispatchQueue(label: "app.pulse.chat.keychain")
 
@@ -67,6 +71,31 @@ public final class PulseKeychain: @unchecked Sendable {
         }
         guard let envelope = try? JSONDecoder().decode(IdentityEnvelope.self, from: data) else { return nil }
         return envelope.viewer
+    }
+
+    // ── session token (Wave 8) ───────────────────────────────
+
+    /// Persists the raw session token (64 hex chars from the create/login
+    /// envelopes). Best effort like saveViewer — a refused write degrades to
+    /// token-less operation (the server accepts header-less requests).
+    public func saveSessionToken(_ token: String) {
+        guard !token.isEmpty else {
+            clearSessionToken()
+            return
+        }
+        _ = save(Data(token.utf8), account: Self.sessionTokenAccount)
+    }
+
+    /// The stored token, nil when absent/corrupt (token-less operation).
+    public func loadSessionToken() -> String? {
+        guard let data = load(account: Self.sessionTokenAccount) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Identity forget/switch + rotation rejections land here. Missing
+    /// items are already "deleted" (delete is a graceful no-op).
+    public func clearSessionToken() {
+        delete(account: Self.sessionTokenAccount)
     }
 
     // ── SecItem plumbing (queue-confined, static) ────────────

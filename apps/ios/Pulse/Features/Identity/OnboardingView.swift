@@ -36,6 +36,11 @@ final class OnboardingViewModel: ObservableObject {
     @Published private(set) var pending = false
     @Published private(set) var signingIn = false
     @Published var notice: String?
+    /// Wave 8 — the reclaim confirm: "log in instead" found a live identity
+    /// by name; the confirm step calls POST /api/users/login (which issues
+    /// + ROTATES the session token) before the session starts.
+    @Published private(set) var reclaimCandidate: WireUser?
+    @Published private(set) var confirming = false
 
     private let api: PulseAPIClient
     private var checkTask: Task<Void, Never>?
@@ -119,21 +124,23 @@ final class OnboardingViewModel: ObservableObject {
     }
 
     /// Start chatting — create the account WITH the picked @handle.
-    func submit(onSuccess: @escaping (WireUser) -> Void) {
+    func submit(onSuccess: @escaping (WireUser, String?) -> Void) {
         let trimmed = handle.trimmingCharacters(in: .whitespaces)
         guard Self.isValidHandle(trimmed), !pending, serverTakenMessage == nil else { return }
         create(username: trimmed, onSuccess: onSuccess)
     }
 
     /// Skip for now — create the account without a handle.
-    func skip(onSuccess: @escaping (WireUser) -> Void) {
+    func skip(onSuccess: @escaping (WireUser, String?) -> Void) {
         guard !pending else { return }
         create(username: nil, onSuccess: onSuccess)
     }
 
     /// "That's me — log in instead" — the web's reclaim-by-name affordance.
-    func loginInstead(onSuccess: @escaping (WireUser) -> Void) {
-        guard validName, !signingIn else { return }
+    /// Step 1: the live lookup; success opens the CONFIRM step (the login
+    /// itself rotates the session token, so it waits for an explicit tap).
+    func loginInstead(onSuccess: @escaping (WireUser, String?) -> Void) {
+        guard validName, !signingIn, !confirming else { return }
         signingIn = true
         notice = nil
         Task { [weak self] in
@@ -141,7 +148,7 @@ final class OnboardingViewModel: ObservableObject {
             defer { self.signingIn = false }
             do {
                 if let user = try await self.api.lookupUserByName(self.trimmedName) {
-                    onSuccess(user)
+                    self.reclaimCandidate = user
                 } else {
                     self.notice = "No Pulse account with that name."
                 }
@@ -151,9 +158,39 @@ final class OnboardingViewModel: ObservableObject {
         }
     }
 
+    /// Wave 8 — reclaim confirm: POST /api/users/login { name }. 200 → the
+    /// token lands in the Keychain (A-1) and the session starts. Honest
+    /// 404 copy verbatim; the confirm step collapses on any failure.
+    func confirmReclaim(onSuccess: @escaping (WireUser, String?) -> Void) {
+        guard validName, !confirming, reclaimCandidate != nil else { return }
+        confirming = true
+        notice = nil
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.confirming = false }
+            do {
+                let envelope = try await self.api.login(name: self.trimmedName)
+                self.reclaimCandidate = nil
+                onSuccess(envelope.user, envelope.token)
+            } catch let failure as PulseAPIClient.Failure where failure.status == 404 {
+                self.reclaimCandidate = nil
+                self.notice = failure.message ?? "No identity with that name on this Pulse."
+            } catch {
+                self.reclaimCandidate = nil
+                self.notice = Self.message(of: error)
+            }
+        }
+    }
+
+    /// Collapse the confirm card without signing in.
+    func cancelReclaim() {
+        reclaimCandidate = nil
+        notice = nil
+    }
+
     // ── plumbing ─────────────────────────────────────────────
 
-    private func create(username: String?, onSuccess: @escaping (WireUser) -> Void) {
+    private func create(username: String?, onSuccess: @escaping (WireUser, String?) -> Void) {
         let trimmed = trimmedName
         guard !trimmed.isEmpty, !pending else { return }
         pending = true
@@ -162,8 +199,9 @@ final class OnboardingViewModel: ObservableObject {
             guard let self else { return }
             defer { self.pending = false }
             do {
-                let user = try await self.api.createUser(name: trimmed, color: self.color, username: username)
-                onSuccess(user)
+                // Wave 8 — the 201 envelope carries the session token.
+                let envelope = try await self.api.createAccount(name: trimmed, color: self.color, username: username)
+                onSuccess(envelope.user, envelope.token)
             } catch let failure as PulseAPIClient.Failure {
                 if failure.code == "username_taken" {
                     self.serverTakenMessage = failure.message
@@ -175,7 +213,7 @@ final class OnboardingViewModel: ObservableObject {
                 } else if failure.status == nil || failure.status == 404 || (500...599).contains(failure.status ?? 0) {
                     // offline-first: no live gateway answered → local identity.
                     // Onboarding completes; the app runs offline-first from here.
-                    onSuccess(Self.localIdentity(name: trimmed, color: self.color, username: username))
+                    onSuccess(Self.localIdentity(name: trimmed, color: self.color, username: username), nil)
                 } else {
                     self.notice = failure.message ?? "Network error — try again."
                 }
@@ -400,6 +438,12 @@ struct OnboardingView: View {
                 }
             }
 
+            // Wave 8 — reclaim confirm: the lookup found this name live on
+            // the Pulse; logging in issues + ROTATES a session token.
+            if viewModel.reclaimCandidate != nil {
+                reclaimConfirmCard
+            }
+
             if let notice = viewModel.notice, viewModel.step == .name {
                 noticeLine(notice, amberText)
             }
@@ -589,7 +633,64 @@ struct OnboardingView: View {
             .foregroundStyle(colorScheme == .dark ? Color(hex: 0x34D399) : Color(hex: 0x047857))
         }
         .buttonStyle(PulseButtonStyle())
-        .disabled(!viewModel.validName || viewModel.signingIn)
+        .disabled(!viewModel.validName || viewModel.signingIn || viewModel.reclaimCandidate != nil)
+        .accessibilityLabel("That's me — log in instead")
+    }
+
+    /// Wave 8 — reclaim confirm card: explicit "log in" (the login rotates
+    /// the stored token hash — last login wins) + an escape hatch.
+    private var reclaimConfirmCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(
+                "Sign in as “\(viewModel.trimmedName)”?",
+                systemImage: "person.crop.circle.badge.checkmark",
+            )
+            .font(.system(size: 13.5, weight: .semibold))
+            .foregroundStyle(zinc900)
+            Text("This signs you back into the existing account on this Pulse.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(zinc500)
+            HStack(spacing: 10) {
+                Button {
+                    viewModel.confirmReclaim(onSuccess: complete)
+                } label: {
+                    HStack(spacing: 6) {
+                        if viewModel.confirming {
+                            ProgressView().controlSize(.mini).tint(.white)
+                        }
+                        Text(viewModel.confirming ? "Signing in…" : "Log in")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 42)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(emerald600))
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(PulseButtonStyle())
+                .disabled(viewModel.confirming)
+                Button {
+                    viewModel.cancelReclaim()
+                } label: {
+                    Text("Cancel")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(zinc500)
+                        .frame(maxWidth: .infinity, minHeight: 42)
+                }
+                .buttonStyle(PulseButtonStyle())
+                .disabled(viewModel.confirming)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(colorScheme == .dark ? Color(hex: 0x27272A).opacity(0.6) : Color(hex: 0xFAFAFA)),
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(PulseTheme.emerald.opacity(0.4), lineWidth: 1),
+        )
+        .transition(.opacity.combined(with: .move(edge: .top)))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Sign in as \(viewModel.trimmedName)?")
     }
 
     private func ghostButton(title: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -627,9 +728,16 @@ struct OnboardingView: View {
 
     // ── completion ───────────────────────────────────────────
 
-    private func complete(_ user: WireUser) {
+    /// Wave 8 — `token` rides the create/login envelopes. ORDER MATTERS:
+    /// setViewer clears the identity-bound token on an id change; the fresh
+    /// token persists AFTER so rotation (login) lands intact. The offline
+    /// local-identity path arrives with token = nil (nothing to store).
+    private func complete(_ user: WireUser, token: String?) {
         let viewer = PulseViewer(from: user)
         prefs.setViewer(viewer)
+        if let token, !token.isEmpty {
+            PulseKeychain.shared.saveSessionToken(token)
+        }
         session.start(as: viewer)
         session.particles.fire(kind: .confetti, count: 110)
         PulseHaptics.success()

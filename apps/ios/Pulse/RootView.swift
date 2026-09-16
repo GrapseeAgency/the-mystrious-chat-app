@@ -168,7 +168,12 @@ struct RootView: View {
         .tint(PulseTheme.emerald)
         .preferredColorScheme(colorScheme)
         .onAppear {
-            session.particles.reduceMotionDisabled = reduceMotion
+            // Wave 8 — prefs handoff: incoming attention gate, settings PATCH
+            // funnel, quiet-gate refresh (idempotent, closures attach once).
+            session.attach(prefs: prefs)
+            // System Reduce Motion AND the in-app reducedMotion pref both calm
+            // the ambient particles (the prefs toggle PATCHes to the server).
+            session.particles.reduceMotionDisabled = reduceMotion || prefs.reducedMotion
             // Bootstrap the live layer when identity already exists.
             if !didBootstrap, let viewer = prefs.viewer {
                 didBootstrap = true
@@ -176,7 +181,10 @@ struct RootView: View {
             }
         }
         .onChange(of: reduceMotion) { _, newValue in
-            session.particles.reduceMotionDisabled = newValue
+            session.particles.reduceMotionDisabled = newValue || prefs.reducedMotion
+        }
+        .onChange(of: prefs.reducedMotion) { _, newValue in
+            session.particles.reduceMotionDisabled = reduceMotion || newValue
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
