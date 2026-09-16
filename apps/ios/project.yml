@@ -41,7 +41,7 @@ targets:
       CFBundleDisplayName: Pulse
       # Wave 3 — the native version string now mirrors the release tag
       # convention (v0.4.0-native was tag-only; Android carries versionName).
-      CFBundleShortVersionString: 0.9.0-native
+      CFBundleShortVersionString: 0.10.0-native
       UILaunchScreen: {}
       UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
       NSMicrophoneUsageDescription: Pulse uses the microphone for voice notes, voice rooms and calls.
