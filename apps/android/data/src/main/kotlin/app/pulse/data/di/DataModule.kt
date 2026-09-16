@@ -10,6 +10,9 @@ import app.pulse.data.local.MessageDao
 import app.pulse.data.local.OutboxDao
 import app.pulse.data.local.PulseDatabase
 import app.pulse.data.local.SavedDao
+import app.pulse.data.local.SessionTokenCipher
+import app.pulse.data.local.SessionTokenPersistence
+import app.pulse.data.local.SessionTokenStore
 import app.pulse.data.local.StoryDao
 import app.pulse.data.local.Wave7Dao
 import app.pulse.data.local.TopicDao
@@ -52,12 +55,19 @@ object DataModule {
 
     @Provides
     @Singleton
-    fun provideApi(http: HttpClient): PulseApi = PulseApi(http)
+    fun provideApi(http: HttpClient, tokenStore: SessionTokenStore): PulseApi = PulseApi(
+        http,
+        bearerToken = { tokenStore.cached },
+        onAuthInvalid = { reason -> tokenStore.markInvalidAsync(reason) },
+    )
 
     @Provides
     @Singleton
-    fun provideSocket(): PulseSocketClient = PulseSocketClient(PulseEndpoints.socketUrl)
-
+    fun provideSocket(tokenStore: SessionTokenStore): PulseSocketClient = PulseSocketClient(
+        PulseEndpoints.socketUrl,
+        tokenProvider = { tokenStore.cached },
+        onAuthInvalid = { reason -> tokenStore.markInvalidAsync(reason) },
+    )
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): PulseDatabase =
@@ -124,4 +134,15 @@ object DataModule {
 abstract class RepositoryModule {
     @Binds
     abstract fun bindPulseRepository(impl: PulseRepositoryImpl): PulseRepository
+
+    /** Wave 8 — session-token plumbing: DataStore persistence + Keystore cipher. */
+    @Binds
+    abstract fun bindSessionTokenPersistence(
+        impl: app.pulse.data.local.DataStoreSessionTokenPersistence,
+    ): SessionTokenPersistence
+
+    @Binds
+    abstract fun bindSessionTokenCipher(
+        impl: app.pulse.data.local.KeystoreSessionTokenCipher,
+    ): SessionTokenCipher
 }

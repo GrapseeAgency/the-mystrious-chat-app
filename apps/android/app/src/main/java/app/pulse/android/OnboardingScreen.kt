@@ -128,7 +128,11 @@ private val SWATCHES = listOf(
 private enum class NoticeTone { EMERALD, AMBER, MUTED }
 
 @Composable
-fun OnboardingScreen(viewModel: OnboardingViewModel = hiltViewModel()) {
+fun OnboardingScreen(
+    /** Wave 8 — honest session-rotated notice ("log in again") from the shell. */
+    sessionNotice: String? = null,
+    viewModel: OnboardingViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val haptics = LocalHapticFeedback.current
 
@@ -145,6 +149,10 @@ fun OnboardingScreen(viewModel: OnboardingViewModel = hiltViewModel()) {
     ) {
         OnboardingHero()
         Wordmark()
+
+        if (sessionNotice != null) {
+            NoticeLine(text = sessionNotice, tone = NoticeTone.AMBER)
+        }
 
         AnimatedContent(
             targetState = state.step,

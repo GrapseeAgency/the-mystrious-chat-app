@@ -21,6 +21,9 @@ class PulseApplication : Application() {
     @Inject
     lateinit var prefs: PulsePrefsStore
 
+    @Inject
+    lateinit var repository: app.pulse.domain.repository.PulseRepository
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -36,6 +39,24 @@ class PulseApplication : Application() {
         //      when present — ops can publish a live origin without a rebuild.
         //   4. Still nothing → stay offline-first, honestly.
         PulseEndpoints.applyBase(null)
+
+        // Wave 8 — mirror alert prefs for the notification path (quiet hours,
+        // reminder sound/vibration). Cheap flow collection, evaluated live.
+        appScope.launch {
+            repository.pulsePrefs.collect { p ->
+                app.pulse.android.notify.ReminderAlertPolicy.soundOn = p.notifSound ?: true
+                app.pulse.android.notify.ReminderAlertPolicy.vibrateOn = p.notifVibrate ?: false
+            }
+        }
+        appScope.launch {
+            prefs.quietHoursOn.collect { app.pulse.android.notify.ReminderAlertPolicy.quietHoursOn = it }
+        }
+        appScope.launch {
+            prefs.quietStart.collect { app.pulse.android.notify.ReminderAlertPolicy.quietStart = it }
+        }
+        appScope.launch {
+            prefs.quietEnd.collect { app.pulse.android.notify.ReminderAlertPolicy.quietEnd = it }
+        }
 
         appScope.launch {
             val userBase = runCatching { prefs.serverBase.first() }.getOrNull()

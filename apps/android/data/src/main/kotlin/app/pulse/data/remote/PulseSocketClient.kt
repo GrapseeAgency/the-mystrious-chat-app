@@ -66,6 +66,10 @@ import org.json.JSONObject
  */
 class PulseSocketClient(
     private val socketUrl: String,
+    /** Wave 8 — current session credential; a PRESENT token is verified by the relay. */
+    private val tokenProvider: () -> String? = { null },
+    /** Wave 8 — join:error hook (token invalid/rotated): clear + surface re-login. */
+    private val onAuthInvalid: (String?) -> Unit = {},
 ) {
     sealed interface Signal {
         /** Realtime transport state — true on connect, false on disconnect/error. */
@@ -95,6 +99,13 @@ class PulseSocketClient(
          * `CallSignal` would resolve to the nested class itself).
          */
         data class CallSignal(val signal: app.pulse.data.remote.PulseSocketClient.CallSignal) : Signal
+
+        /**
+         * Wave 8 — the relay refused our join because the PRESENTED token is
+         * invalid or has been rotated (server disconnects the socket right
+         * after). The app clears the credential and routes to re-login.
+         */
+        data class SessionRejected(val error: String) : Signal
     }
 
     /**
@@ -175,7 +186,13 @@ class PulseSocketClient(
         sock.on(Socket.EVENT_CONNECT) {
             _signals.tryEmit(Signal.Connection(true))
             joinedUserId?.let { id ->
-                sock.emit(SocketEvents.JOIN, JSONObject().put("userId", id))
+                // Wave 8 — the join payload carries the session token when one
+                // exists; a PRESENT token is verified server-side (invalid →
+                // join:error + disconnect). Token-less joins stay accepted
+                // during the web-migration window.
+                val payload = JSONObject().put("userId", id)
+                tokenProvider()?.let { payload.put("token", it) }
+                sock.emit(SocketEvents.JOIN, payload)
             }
         }
         sock.on(Socket.EVENT_DISCONNECT) { _signals.tryEmit(Signal.Connection(false)) }
@@ -186,6 +203,16 @@ class PulseSocketClient(
 
         sock.on(SocketEvents.JOINED) { args ->
             decode<JoinedAck>(args)?.let { _signals.tryEmit(Signal.Joined(it.onlineUserIds)) }
+        }
+        sock.on(SocketEvents.JOIN_ERROR) { args ->
+            val raw = args.firstOrNull()?.toString().orEmpty()
+            val message = runCatching {
+                val obj = org.json.JSONObject(raw)
+                obj.optString("error").takeIf { it.isNotEmpty() }
+            }.getOrNull() ?: raw.ifBlank { null }
+            Log.w(TAG, "join rejected: $message")
+            _signals.tryEmit(Signal.SessionRejected(message ?: "Session token is invalid or has been rotated. Log in again."))
+            onAuthInvalid(message)
         }
         sock.on(SocketEvents.PRESENCE_SNAPSHOT) { args ->
             decode<PresenceSnapshotPayload>(args)?.let { _signals.tryEmit(Signal.PresenceSnapshot(it.onlineUserIds)) }

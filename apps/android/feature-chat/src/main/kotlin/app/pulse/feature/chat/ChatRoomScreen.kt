@@ -173,6 +173,10 @@ fun ChatRoomScreen(
     val recordMs by viewModel.recordMs.collectAsStateWithLifecycle()
     val sendingVoice by viewModel.sendingVoice.collectAsStateWithLifecycle()
     val transcribingIds by viewModel.transcribingIds.collectAsStateWithLifecycle()
+    // Wave 8 — prefs-driven room rendering (bubble corners, density, wallpaper)
+    val prefs by viewModel.prefs.collectAsStateWithLifecycle()
+    val bubbleCorner = when (prefs.bubbleRadius) { "md" -> 10.dp; "pill" -> 26.dp; else -> 16.dp }
+    val densityGap = if (prefs.density == "compact") 3.dp else 6.dp
     val channelRole by viewModel.channelRole.collectAsStateWithLifecycle()
     val safety by viewModel.safety.collectAsStateWithLifecycle()
 
@@ -407,13 +411,21 @@ fun ChatRoomScreen(
             )
         }
 
-        Box(Modifier.weight(1f)) {
+        Box(
+            Modifier
+                .weight(1f)
+                .then(
+                    app.pulse.ui.PulseWallpaper.brush(prefs.wallpaper)
+                        ?.let { brush -> Modifier.background(brush) }
+                        ?: Modifier,
+                ),
+        ) {
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(densityGap),
             ) {
                 items(rowsReversed, key = { it.key }) { row ->
                     when (row) {
@@ -421,6 +433,7 @@ fun ChatRoomScreen(
                         is TimelineRow.Msg -> {
                             val message = row.message
                             MessageRow(
+                                bubbleCornerDp = bubbleCorner,
                                 message = message,
                                 conversation = conversation,
                                 viewerId = viewerId,
@@ -1623,6 +1636,7 @@ private fun MessageRow(
     onTournamentJoin: (String) -> Unit = {},
     onTournamentFinish: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    bubbleCornerDp: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
     val mine = message.authorId == viewerId
     val system = message.kind == Message.Kind.SYSTEM || message.authorId == "system"
@@ -1788,6 +1802,7 @@ private fun MessageRow(
                     onTranscribe = onTranscribe,
                     transcribing = transcribing,
                     modifier = Modifier.widthIn(max = 300.dp),
+                    bubbleCornerDp = bubbleCornerDp,
                 )
             }
         }
@@ -1963,11 +1978,12 @@ internal fun Bubble(
     voicePlayer: VoicePlayer? = null,
     onTranscribe: ((String) -> Unit)? = null,
     transcribing: Boolean = false,
+    bubbleCornerDp: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
     val shape = if (mine) {
-        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 6.dp)
+        RoundedCornerShape(topStart = bubbleCornerDp, topEnd = bubbleCornerDp, bottomStart = bubbleCornerDp, bottomEnd = 6.dp)
     } else {
-        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 6.dp, bottomEnd = 18.dp)
+        RoundedCornerShape(topStart = bubbleCornerDp, topEnd = bubbleCornerDp, bottomStart = 6.dp, bottomEnd = bubbleCornerDp)
     }
     val background: Brush = if (mine) {
         Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))

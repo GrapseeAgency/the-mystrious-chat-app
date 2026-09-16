@@ -83,6 +83,8 @@ class ProfileViewModel @Inject constructor(
     /** Switch the device viewer (native identity parity with web onboarding). */
     fun chooseIdentity(user: User) {
         viewModelScope.launch {
+            // Wave 8 — the previous identity's credential must not ride along.
+            runCatching { repo.clearSessionToken() }
             prefs.setViewer(user.id, user.name)
             repo.start(user.id)
             PulseFx.fire(PulseFx.BurstKind.STARS, count = 60)
@@ -154,6 +156,8 @@ class ProfileViewModel @Inject constructor(
 
     fun forgetIdentity() {
         viewModelScope.launch {
+            // Wave 8 — a forgotten identity leaves NO credential behind.
+            runCatching { repo.clearSessionToken() }
             prefs.setViewer(null, null)
         }
     }

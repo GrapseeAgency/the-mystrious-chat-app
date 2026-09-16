@@ -15,7 +15,9 @@ import app.pulse.data.local.MessageDao
 import app.pulse.data.local.MessageEntity
 import app.pulse.data.local.OutboxDao
 import app.pulse.data.local.OutboxEntity
+import app.pulse.data.local.PulsePrefsLocalStore
 import app.pulse.data.local.SavedDao
+import app.pulse.data.local.SessionTokenStore
 import app.pulse.data.local.StoryCacheEntity
 import app.pulse.data.local.Wave7CacheEntity
 import app.pulse.data.local.StoryDao
@@ -62,6 +64,8 @@ import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.usecase.FlushOutboxUseCase
 import app.pulse.protocol.ChatMessageDto
+import app.pulse.protocol.PulseWave8Logic
+import app.pulse.protocol.WirePulsePrefs
 import app.pulse.protocol.CallAnswerDto
 import app.pulse.protocol.CallCancelDto
 import app.pulse.protocol.CallHangupDto
@@ -184,6 +188,8 @@ class PulseRepositoryImpl @Inject constructor(
     private val storyDao: StoryDao,
     private val wave7Dao: app.pulse.data.local.Wave7Dao,
     private val socket: PulseSocketClient,
+    private val prefsLocalStore: PulsePrefsLocalStore,
+    private val sessionTokenStore: SessionTokenStore,
     @ApplicationContext private val context: Context,
 ) : PulseRepository {
 
@@ -216,6 +222,14 @@ class PulseRepositoryImpl @Inject constructor(
         viewerId = userId
         startPump()
         socket.connect(userId)
+        // Wave 8 — load the persisted session token into the synchronous cache
+        // BEFORE the refresh wave so the Bearer header rides from request one,
+        // then merge the server prefs blob over the local store (server wins).
+        scope.launch {
+            runCatching { sessionTokenStore.load() }
+                .onFailure { Log.w(TAG, "token load failed", it) }
+            fetchSettings()
+        }
         scope.launch { refreshConversations() }
         // Flush trigger: app start with a pending queue (web pwa-provider parity).
         scope.launch {
@@ -229,6 +243,76 @@ class PulseRepositoryImpl @Inject constructor(
             runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() }
                 .onFailure { Log.w(TAG, "start call-log flush failed", it) }
         }
+    }
+
+    /**
+     * Wave 8 — server prefs fetch (GET /api/settings). The server blob is
+     * already defaults-merged + clamped; the tolerant resolve keeps the local
+     * store junk-proof even when a proxy mangles the envelope. Failure is a
+     * no-op (offline-first: the local blob stays authoritative).
+     */
+    private suspend fun fetchSettings() {
+        val id = viewerId ?: return
+        when (val r = api.settings(id)) {
+            is PulseResult.Success -> {
+                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it) }
+            }
+            is PulseResult.Failure -> Log.i(TAG, "settings fetch skipped: ${r.kind}")
+        }
+    }
+
+    override val pulsePrefs: Flow<WirePulsePrefs> = prefsLocalStore.prefs
+
+    override suspend fun updatePulsePrefs(patch: WirePulsePrefs): Result<Unit> {
+        // Optimistic FIRST — the toggle lands in the UI instantly.
+        prefsLocalStore.applyLocal(patch)
+        val id = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
+        return when (val r = api.updateSettings(id, patch)) {
+            is PulseResult.Success -> {
+                // the server response is the authoritative clamp — re-anchor
+                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it) }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure ->
+                // honest offline parity: the LOCAL change stays, the caller hints
+                Result.failure(IllegalStateException(r.message ?: "Couldn't reach the Pulse server"))
+        }
+    }
+
+    override suspend fun login(name: String): Result<User> =
+        when (val r = api.login(name)) {
+            is PulseResult.Success -> {
+                // ROTATION: the raw token shows up exactly once — persist it now.
+                r.value.token?.let { t -> runCatching { sessionTokenStore.save(t) } }
+                val user = r.value.user
+                    ?: return Result.failure(IllegalStateException("Malformed login response"))
+                Result.success(user.toDomain())
+            }
+            is PulseResult.Failure ->
+                // 404 copy "No identity with that name on this Pulse." rides verbatim
+                Result.failure(OnboardingError.of(r))
+        }
+
+    /** Identity forget/switch — the credential must not outlive the identity. */
+    override suspend fun clearSessionToken() {
+        sessionTokenStore.clear()
+    }
+
+    /** Data & Storage — user-initiated drop of one held outbox row (no verdict event). */
+    override suspend fun discardOutboxEntry(clientId: String) {
+        outboxDao.deleteByClientId(clientId)
+        messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+    }
+
+    /** Data & Storage — drop every held outbox row + its optimistic temp bubble. */
+    override suspend fun clearOutbox() {
+        outboxDao.clearAll()
+        messageDao.deleteAllTempMessages()
+    }
+
+    /** Data & Storage — drop every composer draft at once. */
+    override suspend fun clearAllDrafts() {
+        draftDao.clearAll()
     }
 
     /** One collector, started once per process: signals → Room + events. */
@@ -252,6 +336,12 @@ class PulseRepositoryImpl @Inject constructor(
                                     .onFailure { Log.w(TAG, "reconnect call-log flush failed", it) }
                             }
                         }
+                    }
+                    is PulseSocketClient.Signal.SessionRejected -> {
+                        // Wave 8 — the relay verified our PRESENTED token and
+                        // refused it (rotated/invalid). Clear the credential;
+                        // the app layer routes to the honest re-login flow.
+                        scope.launch { runCatching { sessionTokenStore.markInvalid(signal.error) } }
                     }
                     is PulseSocketClient.Signal.Joined -> onlineIds.value = signal.onlineUserIds.toSet()
                     is PulseSocketClient.Signal.PresenceSnapshot -> onlineIds.value = signal.onlineUserIds.toSet()
@@ -458,7 +548,14 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun createIdentity(name: String, color: String?, username: String?): Result<User> =
         when (val r = api.createUser(name, color, username)) {
-            is PulseResult.Success -> Result.success(r.value.toDomain())
+            is PulseResult.Success -> {
+                // Wave 8 — the create response carries the raw session token
+                // (shown once server-side); persist it before returning.
+                r.value.token?.let { t -> runCatching { sessionTokenStore.save(t) } }
+                val user = r.value.user
+                    ?: return Result.failure(IllegalStateException("Malformed create response"))
+                Result.success(user.toDomain())
+            }
             is PulseResult.Failure ->
                 when {
                     // Definitive live-server verdicts surface untouched —

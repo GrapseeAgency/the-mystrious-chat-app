@@ -149,24 +149,22 @@ class OnboardingViewModel @Inject constructor(
         createAccount(null)
     }
 
-    /** "That's me — log in instead" — the web's reclaim-by-name affordance. */
+    /**
+     * "That's me — log in instead" — the web's reclaim-by-name affordance.
+     * Wave 8: this now runs POST /api/users/login { name }, which ROTATES the
+     * stored session hash and hands back the fresh token — the repository
+     * persists it (Keystore-backed SessionTokenStore) before the success
+     * lands. The honest 404 copy ("No identity with that name on this
+     * Pulse.") surfaces verbatim.
+     */
     fun loginInstead() {
         val s = _state.value
         val name = s.name.trim()
         if (name.isEmpty() || s.signingIn) return
         viewModelScope.launch {
             _state.value = _state.value.copy(signingIn = true, notice = null)
-            repo.lookupUserByName(name).fold(
-                onSuccess = { user ->
-                    if (user != null) {
-                        complete(user)
-                    } else {
-                        _state.value = _state.value.copy(
-                            signingIn = false,
-                            notice = "No Pulse account with that name.",
-                        )
-                    }
-                },
+            repo.login(name).fold(
+                onSuccess = { user -> complete(user) },
                 onFailure = { error ->
                     _state.value = _state.value.copy(
                         signingIn = false,

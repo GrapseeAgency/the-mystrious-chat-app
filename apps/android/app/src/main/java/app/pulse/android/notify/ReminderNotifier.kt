@@ -33,18 +33,43 @@ import java.util.concurrent.TimeUnit
  */
 object ReminderNotifier {
 
-    const val CHANNEL_ID = "pulse_reminders"
     private const val BASE_NOTIFICATION_ID = 70_000
+
+    /**
+     * Wave 8 — alert prefs gate. Channels are versioned per (sound, vibrate)
+     * combo because Android notification channels are create-once: the user's
+     * Notifications toggles select the channel, quiet hours force the silent
+     * one at show-time (a time-dependent decision channel settings can't hold).
+     */
+    fun channelIdFor(sound: Boolean, vibrate: Boolean): String =
+        "pulse_reminders_" + (if (sound) "s1" else "s0") + (if (vibrate) "v1" else "v0")
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Reminders", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Reminders you set in chats"
-            },
-        )
+        for (sound in listOf(true, false)) {
+            for (vibrate in listOf(true, false)) {
+                val id = channelIdFor(sound, vibrate)
+                if (manager.getNotificationChannel(id) != null) continue
+                manager.createNotificationChannel(
+                    NotificationChannel(id, "Reminders", NotificationManager.IMPORTANCE_HIGH).apply {
+                        description = "Reminders you set in chats"
+                        if (sound) {
+                            setSound(
+                                android.provider.Settings.System.DEFAULT_NOTIFICATION_URI,
+                                android.media.AudioAttributes.Builder()
+                                    .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                    .build(),
+                            )
+                        } else {
+                            setSound(null, null)
+                        }
+                        enableVibration(vibrate)
+                    },
+                )
+            }
+        }
     }
 
     /** Runtime notifications permission state (API 33+; below → granted by install). */
@@ -56,7 +81,11 @@ object ReminderNotifier {
     fun show(context: Context, reminderId: String, title: String, body: String) {
         ensureChannel(context)
         if (!notificationsAllowed(context)) return
-        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+        // Wave 8 alert gate — server prefs (sound/vibrate) + LOCAL quiet hours:
+        // quiet hours win over everything; otherwise the toggles pick the channel.
+        val sound = ReminderAlertPolicy.soundOn && !ReminderAlertPolicy.quietNow()
+        val vibrate = ReminderAlertPolicy.vibrateOn && !ReminderAlertPolicy.quietNow()
+        val builder = NotificationCompat.Builder(context, channelIdFor(sound, vibrate))
         builder.setSmallIcon(android.R.drawable.ic_popup_reminder)
         builder.setContentTitle(title.take(64))
         builder.setContentText(body.take(178))

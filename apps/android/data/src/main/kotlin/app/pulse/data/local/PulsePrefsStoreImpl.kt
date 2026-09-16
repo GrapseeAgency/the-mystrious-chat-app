@@ -39,6 +39,11 @@ class PulsePrefsStoreImpl @Inject constructor(
         val VOICE_RATE = floatPreferencesKey("voice.rate")
         /** Web parity key: pulse-voice-captions (live-caption toggle for voice rooms). */
         val VOICE_CAPTIONS = booleanPreferencesKey("voice.captions")
+        // ── Wave 8 — LOCAL settings (web pulse.settings.v1 parity) ──
+        val HAPTICS_ON = booleanPreferencesKey("pulse.settings.hapticsOn")
+        val QUIET_HOURS_ON = booleanPreferencesKey("pulse.settings.quietHoursOn")
+        val QUIET_START = stringPreferencesKey("pulse.settings.quietStart")
+        val QUIET_END = stringPreferencesKey("pulse.settings.quietEnd")
     }
 
     override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
@@ -51,6 +56,28 @@ class PulsePrefsStoreImpl @Inject constructor(
     override val serverBase: Flow<String?> = context.pulsePrefs.data.map { it[Keys.SERVER_BASE]?.takeIf { v -> v.isNotBlank() } }
     override val voiceRate: Flow<Float> = context.pulsePrefs.data.map { it[Keys.VOICE_RATE] ?: 1f }
     override val voiceCaptions: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.VOICE_CAPTIONS] ?: false }
+
+    // Wave 8 — local-only settings: web defaults off/22:00/07:00, haptics true.
+    override val hapticsOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.HAPTICS_ON] ?: true }
+    override val quietHoursOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.QUIET_HOURS_ON] ?: false }
+    override val quietStart: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_START] ?: "22:00" }
+    override val quietEnd: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_END] ?: "07:00" }
+
+    override suspend fun setHapticsOn(value: Boolean) {
+        context.pulsePrefs.edit { it[Keys.HAPTICS_ON] = value }
+    }
+
+    override suspend fun setQuietHoursOn(value: Boolean) {
+        context.pulsePrefs.edit { it[Keys.QUIET_HOURS_ON] = value }
+    }
+
+    override suspend fun setQuietStart(value: String) {
+        context.pulsePrefs.edit { it[Keys.QUIET_START] = value }
+    }
+
+    override suspend fun setQuietEnd(value: String) {
+        context.pulsePrefs.edit { it[Keys.QUIET_END] = value }
+    }
 
     override suspend fun setViewer(id: String?, name: String?, color: String?) {
         context.pulsePrefs.edit { p ->

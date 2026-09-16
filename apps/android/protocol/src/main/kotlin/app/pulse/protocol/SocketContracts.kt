@@ -53,6 +53,9 @@ object SocketEvents {
     const val LINK_PREVIEW = "link:preview"
     const val TRANSLATION_ADDED = "translation:added"
     const val CONVERSATION_UPDATED = "conversation:updated"
+
+    /** Wave 8 — join refused: a PRESENTED token failed server verification. */
+    const val JOIN_ERROR = "join:error"
     const val VOICE_ROSTER = "voice:roster"
     const val STAGE_STATE = "stage:state"
     const val STAGE_ENDED = "stage:ended"

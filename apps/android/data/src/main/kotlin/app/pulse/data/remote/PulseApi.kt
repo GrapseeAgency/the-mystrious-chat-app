@@ -82,6 +82,11 @@ import app.pulse.protocol.TranscribeResultDto
 import app.pulse.protocol.UnsubscribeAckDto
 import app.pulse.protocol.UploadResultDto
 import app.pulse.protocol.UserDto
+import app.pulse.protocol.UserAuthEnvelopeDto
+import app.pulse.protocol.SettingsEnvelopeDto
+import app.pulse.protocol.WirePulsePrefs
+import app.pulse.protocol.toPatchJson
+import app.pulse.protocol.decodeSettingsEnvelope
 import app.pulse.protocol.UserEnvelopeDto
 import app.pulse.protocol.UsernameCheckDto
 import app.pulse.protocol.UsersPageDto
@@ -97,10 +102,12 @@ import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
+import io.ktor.client.request.header
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.readBytes
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.JsonObject
@@ -111,11 +118,24 @@ import kotlinx.serialization.json.put
  * Ktor REST client — REAL wiring to the Next.js API (gateway :81 in dev).
  * The API identifies the caller with `userId` params (same as the web client);
  * every method maps failures onto PulseResult kinds identical to iOS.
+ *
+ * Wave 8 — session tokens: every request carries
+ * `Authorization: Bearer <token>` when the [bearerToken] provider hands back
+ * a credential (server-side optional-verify: no header = accepted for the
+ * web-migration window, present-but-invalid = 401). A 401 response invokes
+ * [onAuthInvalid] so the store layer clears the rotated credential and the
+ * app surfaces the honest re-login path.
  */
 private const val OFFLINE_COPY =
     "No gateway configured — set your server in Profile → Connection."
 
-class PulseApi(private val http: HttpClient) {
+class PulseApi(
+    private val http: HttpClient,
+    /** Current session credential — null = ride header-less (web migration window). */
+    private val bearerToken: () -> String? = { null },
+    /** Fired on any 401 so the token store can clear + surface re-login. */
+    private val onAuthInvalid: (String?) -> Unit = {},
+) {
 
     /**
      * Honest offline-first gate. With NO configured gateway, `PulseEndpoints.http`
@@ -134,7 +154,7 @@ class PulseApi(private val http: HttpClient) {
     private suspend fun <T> get(path: String, parse: (String) -> T): PulseResult<T> {
         if (!PulseEndpoints.isConfigured) return offlineFailure
         return try {
-            val res = http.get(PulseEndpoints.http(path))
+            val res = http.get(PulseEndpoints.http(path)) { authHeader() }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) PulseResult.Success(parse(text))
             else failureOf(res.status.value, text)
@@ -158,6 +178,7 @@ class PulseApi(private val http: HttpClient) {
                 contentType(ContentType.Application.Json)
                 if (body != null) setBody(body.toString())
                 if (timeoutMillis != null) timeout { requestTimeoutMillis = timeoutMillis }
+                authHeader()
             }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {
@@ -183,6 +204,7 @@ class PulseApi(private val http: HttpClient) {
             val res = http.patch(PulseEndpoints.http(path)) {
                 contentType(ContentType.Application.Json)
                 if (body != null) setBody(body.toString())
+                authHeader()
             }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {
@@ -196,6 +218,16 @@ class PulseApi(private val http: HttpClient) {
         } catch (e: Exception) {
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
+    }
+
+    /**
+     * Wave 8 — attach `Authorization: Bearer <token>` when a credential is
+     * present. The server's optional-verify proxy accepts header-less calls
+     * (web migration window) but rejects PRESENT-but-invalid tokens with 401,
+     * so we attach only when the store actually holds a token.
+     */
+    private fun io.ktor.client.request.HttpRequestBuilder.authHeader() {
+        bearerToken()?.let { header(HttpHeaders.Authorization, "Bearer $it") }
     }
 
     /**
@@ -223,6 +255,10 @@ class PulseApi(private val http: HttpClient) {
         } catch (_: Exception) {
             // non-JSON body — keep the raw text as the message
         }
+        // Wave 8 — a 401 means the presented token is invalid/rotated. The
+        // typed Kind.AUTH failure rides back to the caller AND the hook lets
+        // the store layer clear the credential + raise the re-login flow.
+        if (status == 401) onAuthInvalid(message)
         val base = PulseResult.fromHttp(status, message)
         return base.copy(code = code, suggestion = suggestion, status = status)
     }
@@ -334,8 +370,12 @@ class PulseApi(private val http: HttpClient) {
             PulseJson.decodeFromString(UserDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("user").toString())
         }
 
-    /** POST /api/users { name, color, username? } → 201 { user } | 409 username_taken | 409 name clash. */
-    suspend fun createUser(name: String, color: String?, username: String? = null): PulseResult<UserDto> =
+    /**
+     * POST /api/users { name, color, username? } → 201 { user, token }
+     * (Wave 8: the response now also carries the session token) |
+     * 409 username_taken | 409 name clash.
+     */
+    suspend fun createUser(name: String, color: String?, username: String? = null): PulseResult<UserAuthEnvelopeDto> =
         post(
             "/api/users",
             buildJsonObject {
@@ -343,7 +383,42 @@ class PulseApi(private val http: HttpClient) {
                 if (color != null) put("color", color)
                 if (!username.isNullOrBlank()) put("username", username)
             },
-        ) { PulseJson.decodeFromString(UserDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("user").toString()) }
+        ) { decodeUserAuth(it) }
+
+    /**
+     * POST /api/users/login { name } → 200 { user, token } (ROTATES the
+     * stored hash — the old token goes invalid) | 400 "Name is required." |
+     * 404 "No identity with that name on this Pulse." — the honest copy
+     * surfaces verbatim through the Failure.
+     */
+    suspend fun login(name: String): PulseResult<UserAuthEnvelopeDto> =
+        post("/api/users/login", jsonOf("name" to name)) { decodeUserAuth(it) }
+
+    // ── settings (Wave 8 — src/app/api/settings contract) ───────
+
+    /** GET /api/settings?userId= → { preferences } (defaults merged server-side). */
+    suspend fun settings(userId: String): PulseResult<SettingsEnvelopeDto> =
+        get("/api/settings?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            it.decodeSettingsEnvelope()
+        }
+
+    /** PATCH /api/settings { userId, preferences: Partial } → { preferences } (shallow-merged + clamped server-side). */
+    suspend fun updateSettings(userId: String, patch: WirePulsePrefs): PulseResult<SettingsEnvelopeDto> =
+        patch("/api/settings", patch.toPatchJson(userId)) {
+            it.decodeSettingsEnvelope()
+        }
+
+    /**
+     * Shared {user, token} decode. `user` unwraps from a nested envelope when
+     * present, else the root (pre-Wave-8 servers returned `{user}` without
+     * the token); `token` is the top-level 64-hex credential.
+     */
+    private fun decodeUserAuth(body: String): UserAuthEnvelopeDto {
+        val root = PulseJson.parseToJsonElement(body)
+        val user = PulseJson.decodeFromJsonElement(UserDto.serializer(), root.unwrapOrRoot("user"))
+        val token = (root as? JsonObject)?.get("token") as? kotlinx.serialization.json.JsonPrimitive
+        return UserAuthEnvelopeDto(user = user, token = token?.takeIf { it.isString }?.content)
+    }
 
     /** Small action POSTs (read/react/block/report) share one runner. */
     suspend fun postAction(path: String, body: JsonObject? = null): PulseResult<Unit> =
@@ -411,7 +486,7 @@ class PulseApi(private val http: HttpClient) {
     suspend fun downloadMedia(filePath: String): PulseResult<ByteArray> {
         if (!PulseEndpoints.isConfigured) return offlineFailure
         return try {
-            val res = http.get(PulseEndpoints.http("/api/uploads/$filePath"))
+            val res = http.get(PulseEndpoints.http("/api/uploads/$filePath")) { authHeader() }
             if (res.status.isSuccess()) {
                 PulseResult.Success(res.readBytes())
             } else {
@@ -740,6 +815,7 @@ class PulseApi(private val http: HttpClient) {
             val res = http.put(PulseEndpoints.http(path)) {
                 contentType(ContentType.Application.Json)
                 setBody(body.toString())
+                authHeader()
             }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {
@@ -761,7 +837,7 @@ class PulseApi(private val http: HttpClient) {
         return try {
             val res = http.delete(
                 PulseEndpoints.http("$path?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
-            )
+            ) { authHeader() }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {
                 @Suppress("UNCHECKED_CAST")
@@ -783,6 +859,7 @@ class PulseApi(private val http: HttpClient) {
             val res = http.delete(PulseEndpoints.http(path)) {
                 contentType(ContentType.Application.Json)
                 setBody(jsonOf("userId" to userId).toString())
+                authHeader()
             }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {

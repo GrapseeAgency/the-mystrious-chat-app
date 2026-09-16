@@ -135,6 +135,24 @@ interface PulsePrefsStore {
     /** Live-caption toggle for voice rooms (web parity key pulse-voice-captions). */
     val voiceCaptions: Flow<Boolean>
 
+    // ── Wave 8 — LOCAL settings (web pulse.settings.v1 parity) ─────
+    // These never ride the server prefs blob — the web keeps them in a
+    // localStorage zustand store; native keeps them in DataStore.
+
+    /** Haptic feedback master toggle (web hapticsOn, default true). */
+    val hapticsOn: Flow<Boolean>
+    /** Quiet hours — silence incoming pings/haptics inside the window. */
+    val quietHoursOn: Flow<Boolean>
+    /** Quiet window start 'HH:mm' 24h LOCAL time (default 22:00). */
+    val quietStart: Flow<String>
+    /** Quiet window end 'HH:mm' 24h LOCAL time — may be < start → overnight (default 07:00). */
+    val quietEnd: Flow<String>
+
+    suspend fun setHapticsOn(value: Boolean)
+    suspend fun setQuietHoursOn(value: Boolean)
+    suspend fun setQuietStart(value: String)
+    suspend fun setQuietEnd(value: String)
+
     suspend fun setViewer(id: String?, name: String?, color: String? = null)
     suspend fun setFxMode(mode: String)
     suspend fun setDarkOverride(value: String)
@@ -159,6 +177,48 @@ interface PulseRepository {
 
     /** Live relay connection truth — false = the offline banner tells the truth. */
     fun observeConnected(): Flow<Boolean>
+
+    // ── Wave 8 — session tokens + user preferences ──────────────
+
+    /**
+     * Live user preferences (server blob merged over the canonical defaults,
+     * kept in the local DataStore store; server value wins on fetch, toggles
+     * apply locally FIRST). Tolerant decode — unknown/missing fields never
+     * break the flow.
+     */
+    val pulsePrefs: Flow<app.pulse.protocol.WirePulsePrefs>
+
+    /**
+     * Optimistic prefs update: the local store applies the patch FIRST
+     * (instant UI), then PATCH /api/settings runs. A failed PATCH keeps the
+     * local change (honest offline parity with the web store) and returns a
+     * failure so the surface can hint at it.
+     */
+    suspend fun updatePulsePrefs(patch: app.pulse.protocol.WirePulsePrefs): Result<Unit>
+
+    /**
+     * POST /api/users/login { name } — reclaim an existing identity and
+     * ROTATE the session token (the old credential goes invalid). The
+     * returned user mirrors the lookup path; the token persists in the
+     * secure store before Result.success surfaces.
+     */
+    suspend fun login(name: String): Result<User>
+
+    /**
+     * Identity forget/switch — the stored session credential must not
+     * outlive the identity it belongs to. Clears the encrypted token store;
+     * requests after this ride header-less (optional-verify window).
+     */
+    suspend fun clearSessionToken()
+
+    /** Data & Storage manager — drop ONE held outbox row (+ its temp bubble). */
+    suspend fun discardOutboxEntry(clientId: String)
+
+    /** Data & Storage manager — drop EVERY held outbox row. */
+    suspend fun clearOutbox()
+
+    /** Data & Storage manager — drop every composer draft at once. */
+    suspend fun clearAllDrafts()
 
     /** Thread replies for one root (replies asc) — the ThreadScreen rehydration flow. */
     fun observeThreadMessages(rootId: String): Flow<List<Message>>

@@ -13,6 +13,7 @@ import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.protocol.GameDetailDto
+import app.pulse.protocol.WirePulsePrefs
 import app.pulse.protocol.KanbanPageDto
 import app.pulse.protocol.LeaderboardPageDto
 import app.pulse.protocol.RemindersPageDto
@@ -83,6 +84,14 @@ class ChatRoomViewModel @Inject constructor(
     /** The ONE active voice player — room + thread share the singleton. */
     val voicePlayer: VoicePlayer,
 ) : ViewModel() {
+
+    /** Wave 8 — server-backed prefs for bubble corners / density / wallpaper. */
+    val prefs: StateFlow<WirePulsePrefs> = repo.pulsePrefs
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            app.pulse.protocol.PulseWave8Logic.DEFAULTS,
+        )
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
 

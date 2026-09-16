@@ -7,6 +7,13 @@ plugins {
 }
 
 android {
+    testOptions {
+        unitTests {
+            // SessionTokenStore logs via android.util.Log on the invalidation path;
+            // JVM tests assert behavior, not logging.
+            isReturnDefaultValues = true
+        }
+    }
     namespace = "app.pulse.data"
     compileSdk = 35
     defaultConfig {

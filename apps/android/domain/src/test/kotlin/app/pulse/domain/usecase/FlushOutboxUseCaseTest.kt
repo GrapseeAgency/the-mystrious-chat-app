@@ -55,6 +55,17 @@ class FlushOutboxUseCaseTest {
         override suspend fun checkHandle(handle: String) =
             Result.success(app.pulse.domain.model.HandleCheck(available = true))
         override suspend fun lookupUserByName(name: String) = Result.success<app.pulse.domain.model.User?>(null)
+
+        // ── Wave 8 — session tokens + prefs + data manager stubs ──
+        override val pulsePrefs =
+            MutableStateFlow(app.pulse.protocol.WirePulsePrefs())
+        override suspend fun updatePulsePrefs(patch: app.pulse.protocol.WirePulsePrefs) = Result.success(Unit)
+        override suspend fun login(name: String) =
+            Result.success(app.pulse.domain.model.User(id = "a", name = name, handle = "h"))
+        override suspend fun clearSessionToken() {}
+        override suspend fun discardOutboxEntry(clientId: String) {}
+        override suspend fun clearOutbox() {}
+        override suspend fun clearAllDrafts() {}
         override suspend fun createDm(otherUserId: String) = Result.success(app.pulse.domain.model.Conversation(id = "c", kind = app.pulse.domain.model.Conversation.Kind.DM, title = "t"))
         override suspend fun createGroup(name: String, memberIds: List<String>) = Result.success(app.pulse.domain.model.Conversation(id = "c", kind = app.pulse.domain.model.Conversation.Kind.GROUP, title = name))
         override suspend fun me() = null

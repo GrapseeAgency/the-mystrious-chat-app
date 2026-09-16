@@ -112,7 +112,17 @@ import app.pulse.feature.chat.ThreadScreen
 import app.pulse.feature.hub.HubScreen
 import app.pulse.feature.calls.AddContactScreen
 import app.pulse.feature.calls.UserPageScreen
+import app.pulse.feature.settings.AboutSection
+import app.pulse.feature.settings.AccessibilitySection
+import app.pulse.feature.settings.AccountSection
+import app.pulse.feature.settings.AppearanceSection
 import app.pulse.feature.settings.BlockedListScreen
+import app.pulse.feature.settings.ChatSection
+import app.pulse.feature.settings.DataSection
+import app.pulse.feature.settings.NotificationsSection
+import app.pulse.feature.settings.PrivacySection
+import app.pulse.feature.settings.RealtimeSection
+import app.pulse.feature.settings.SettingsRootScreen
 import app.pulse.feature.settings.ProfileEditScreen
 import app.pulse.feature.settings.ProfileScreen
 import app.pulse.feature.stories.StoriesViewModel
@@ -566,6 +576,63 @@ private fun PulseShell(
                     BlockedListScreen(onBack = { navController.popBackStack() })
                 }
             }
+            // Wave 8 — the full Settings root + nine sections.
+            composable("settings") {
+                Box(Modifier.fillMaxSize()) {
+                    SettingsRootScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenSection = { id -> navController.navigate("settings/$id") },
+                        onOpenBlocked = { navController.navigate("settings/blocked") },
+                    )
+                }
+            }
+            composable(
+                "settings/{section}",
+                arguments = listOf(navArgument("section") { type = NavType.StringType }),
+            ) { entry ->
+                when (entry.arguments?.getString("section")) {
+                    "account" -> Box(Modifier.fillMaxSize()) {
+                        AccountSection(
+                            onBack = { navController.popBackStack() },
+                            onEditProfile = { navController.navigate("profile/edit") },
+                        )
+                    }
+                    "appearance" -> Box(Modifier.fillMaxSize()) {
+                        AppearanceSection(onBack = { navController.popBackStack() })
+                    }
+                    "chat" -> Box(Modifier.fillMaxSize()) {
+                        ChatSection(onBack = { navController.popBackStack() })
+                    }
+                    "notifications" -> Box(Modifier.fillMaxSize()) {
+                        NotificationsSection(onBack = { navController.popBackStack() })
+                    }
+                    "privacy" -> Box(Modifier.fillMaxSize()) {
+                        PrivacySection(
+                            onBack = { navController.popBackStack() },
+                            onOpenBlocked = { navController.navigate("settings/blocked") },
+                        )
+                    }
+                    "realtime" -> Box(Modifier.fillMaxSize()) {
+                        RealtimeSection(onBack = { navController.popBackStack() })
+                    }
+                    "accessibility" -> Box(Modifier.fillMaxSize()) {
+                        AccessibilitySection(onBack = { navController.popBackStack() })
+                    }
+                    "data" -> Box(Modifier.fillMaxSize()) {
+                        DataSection(onBack = { navController.popBackStack() })
+                    }
+                    "about" -> Box(Modifier.fillMaxSize()) {
+                        AboutSection(onBack = { navController.popBackStack() })
+                    }
+                    else -> Box(Modifier.fillMaxSize()) {
+                        SettingsRootScreen(
+                            onBack = { navController.popBackStack() },
+                            onOpenSection = { id -> navController.navigate("settings/$id") },
+                            onOpenBlocked = { navController.navigate("settings/blocked") },
+                        )
+                    }
+                }
+            }
             composable(
                 "room/{conversationId}?jump={jump}",
                 arguments = listOf(
@@ -682,6 +749,12 @@ private fun PulseShell(
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     switchTab("chats")
                 },
+                // Wave 8 — the dock More → Settings item is a REAL surface now
+                // (was the last honest dead-end toast in the dock).
+                onSettings = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    navController.navigate("settings")
+                },
                 onDeferred = { message -> honest(message) },
                 moreMenuOpen = moreMenuOpen,
                 onMoreMenuChange = { moreMenuOpen = it },
@@ -747,6 +820,7 @@ private fun CapsuleDock(
     onSearch: () -> Unit,
     onSaved: () -> Unit,
     onStories: () -> Unit,
+    onSettings: () -> Unit = {},
     onDeferred: (String) -> Unit,
     moreMenuOpen: Boolean,
     onMoreMenuChange: (Boolean) -> Unit,
@@ -850,6 +924,7 @@ private fun CapsuleDock(
                         onSearch = onSearch,
                         onSaved = onSaved,
                         onStories = onStories,
+                        onSettings = onSettings,
                         onDeferred = onDeferred,
                     )
                 }
@@ -965,6 +1040,7 @@ private fun MoreDockButton(
     onSearch: () -> Unit,
     onSaved: () -> Unit,
     onStories: () -> Unit,
+    onSettings: () -> Unit = {},
     onDeferred: (String) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -997,7 +1073,7 @@ private fun MoreDockButton(
                 leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null, tint = DockEmerald600) },
                 onClick = {
                     onOpenChange(false)
-                    onDeferred("Settings aren't available in this native build yet.")
+                    onSettings()
                 },
             )
             DropdownMenuItem(

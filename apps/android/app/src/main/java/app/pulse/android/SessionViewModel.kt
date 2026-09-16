@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pulse.core.PulseEndpoints
 import app.pulse.data.local.SecureSessionStore
+import app.pulse.data.local.SessionTokenStore
 import app.pulse.data.local.SessionVault
 import app.pulse.data.remote.ManifestEndpoints
 import app.pulse.domain.repository.PulsePrefsStore
@@ -13,8 +14,10 @@ import app.pulse.protocol.PulseJson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -26,6 +29,7 @@ class SessionViewModel @Inject constructor(
     private val prefs: PulsePrefsStore,
     private val repo: PulseRepository,
     private val secureSessionStore: SecureSessionStore,
+    private val sessionTokenStore: SessionTokenStore,
     private val manifestEndpoints: ManifestEndpoints,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
@@ -37,11 +41,27 @@ class SessionViewModel @Inject constructor(
         // keys were folded away.
         viewModelScope.launch {
             runCatching { manifestEndpoints.applyPersisted() }
+            // Wave 8 — the session credential warms the synchronous cache
+            // before the first REST call so the Bearer header rides along.
+            runCatching { sessionTokenStore.load() }
             runCatching {
                 val vaultJson = secureSessionStore.load() ?: return@runCatching
                 val vault = PulseJson.decodeFromString(SessionVault.serializer(), vaultJson)
                 if (vault.viewerId != null && prefs.viewerId.first() == null) {
                     prefs.setViewer(vault.viewerId, vault.viewerName, vault.viewerColor)
+                }
+            }
+        }
+        // Wave 8 — a 401 or relay join:error proved the stored token invalid
+        // or rotated: clear the device session and surface the honest
+        // re-login notice on the onboarding screen.
+        viewModelScope.launch {
+            sessionTokenStore.invalidated.collect { invalid ->
+                if (invalid && prefs.viewerId.first() != null) {
+                    _sessionNotice.value =
+                        "Your session ended. Log in again to reclaim your identity."
+                    prefs.setViewer(null, null)
+                    runCatching { secureSessionStore.delete() }
                 }
             }
         }
@@ -53,6 +73,11 @@ class SessionViewModel @Inject constructor(
             }
         }
     }
+
+    private val _sessionNotice = MutableStateFlow<String?>(null)
+
+    /** One-shot honest notice when the session token was rejected (401 / join:error). */
+    val sessionNotice: StateFlow<String?> = _sessionNotice.asStateFlow()
 
     val viewerId: StateFlow<String?> = prefs.viewerId
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -86,6 +111,8 @@ class SessionViewModel @Inject constructor(
 
     fun chooseViewer(id: String, name: String, color: String? = null) {
         viewModelScope.launch {
+            // Identity switch — the old identity's credential must not ride along.
+            runCatching { repo.clearSessionToken() }
             prefs.setViewer(id, name, color)
             saveVaultIdentity(id, name, null, color)
             repo.start(id)
@@ -94,6 +121,7 @@ class SessionViewModel @Inject constructor(
 
     fun forgetViewer() {
         viewModelScope.launch {
+            runCatching { repo.clearSessionToken() }
             prefs.setViewer(null, null)
             secureSessionStore.delete()
         }

@@ -532,6 +532,10 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    /** Wave 8 — Data & Storage "Clear outbox": every optimistic temp bubble at once. */
+    @Query("DELETE FROM messages WHERE id LIKE 'local_%'")
+    suspend fun deleteAllTempMessages()
+
     @Query("DELETE FROM messages WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<String>)
 
@@ -586,6 +590,10 @@ interface OutboxDao {
 
     @Query("SELECT COUNT(*) FROM outbox")
     suspend fun count(): Int
+
+    /** Wave 8 — Data & Storage "Clear outbox": drop every held row. */
+    @Query("DELETE FROM outbox")
+    suspend fun clearAll()
 
     /** FIFO cap — keep only the newest [max] rows (web MAX_QUEUE = 50). */
     @Query("DELETE FROM outbox WHERE id NOT IN (SELECT id FROM outbox ORDER BY id DESC LIMIT :max)")
