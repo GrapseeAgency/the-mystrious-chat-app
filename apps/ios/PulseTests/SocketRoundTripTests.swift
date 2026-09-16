@@ -86,7 +86,9 @@ final class SocketRoundTripTests: XCTestCase {
             }
         }
         clientA.connect(userId: viewerId)
-        await fulfillment(of: [joinedA], timeout: 10)
+        // 30s: this is the FIRST socket against the CI fixture — it eats the
+        // cold-boot + full handshake (measured 19.8s warm on this runner).
+        await fulfillment(of: [joinedA], timeout: 30)
 
         // 2. Client B — second participant shows up in presence.
         let clientB = PulseSocketClient(socketURL: base)
