@@ -96,7 +96,9 @@ final class CallSignalingRoundTripTests: XCTestCase {
         callee.connect(userId: calleeId)
         // The relay targets `user:<id>` rooms — both parties must have JOINED
         // before any call:* emission or the relay drops it (empty room).
-        await fulfillment(of: [callerJoined, calleeJoined], timeout: 10)
+        // 30s: the CI fixture cold-boots + two full handshakes; the warm
+        // SocketRoundTripTests run measured 19.8s on the same runner.
+        await fulfillment(of: [callerJoined, calleeJoined], timeout: 30)
 
         // Re-arm the payload observers (signals is a single callback).
         caller.signals = { [conversationId = self.conversationId] signal in
