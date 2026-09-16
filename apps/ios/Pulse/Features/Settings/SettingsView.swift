@@ -255,7 +255,7 @@ struct SettingsView: View {
             VStack(spacing: 5) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(token.wash(dark: systemScheme == .dark) ?? PulseTheme.zinc(100))
+                        .fill(token.wash(dark: systemScheme == .dark) ?? LinearGradient(colors: [PulseTheme.zinc(100), PulseTheme.zinc(100)], startPoint: .top, endPoint: .bottom))
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .strokeBorder(

@@ -91,7 +91,9 @@ public final class PulseSession: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
 
     public init() {
-        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, authToken: PulseKeychain.shared.loadSessionToken())
+        // Pre-login client: no viewer yet (no token to attach). start(as:)
+        // rebuilds it with the real userId + persisted Keychain token.
+        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL)
         // Timer publisher is not actor-isolated; hop back per tick.
         Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()

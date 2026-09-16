@@ -28,7 +28,7 @@ public enum PulseWave8Logic {
         return h * 60 + min
     }
 
-    private static let quietTimeRegex = try? NSRegularExpression(pattern: #"^(\d{1,2}):(\d{2})$"#)
+    private static let quietTimeRegex = try! NSRegularExpression(pattern: #"^(\d{1,2}):(\d{2})$"#)
 
     /// True when the current LOCAL time sits inside the quiet window.
     /// Supports overnight windows (e.g. 22:00 → 07:00). Verbatim port of
