@@ -2988,29 +2988,29 @@ extension PulseWallpaper {
         case .aurora:
             return LinearGradient(
                 colors: dark
-                    ? [Color(hex: 0x064E3B), Color(hex: 0x042F2E), Color(hex: 0x047857)]   // emerald-900 → teal-950 → emerald-700
-                    : [Color(hex: 0xA7F3D0), Color(hex: 0x99F6E4), Color(hex: 0x34D399)],  // emerald-200 → teal-200 → emerald-400
+                    ? [Color(hex: "064E3B"), Color(hex: "042F2E"), Color(hex: "047857")]   // emerald-900 → teal-950 → emerald-700
+                    : [Color(hex: "A7F3D0"), Color(hex: "99F6E4"), Color(hex: "34D399")],  // emerald-200 → teal-200 → emerald-400
                 startPoint: .topLeading, endPoint: .bottomTrailing,
             )
         case .dusk:
             return LinearGradient(
                 colors: dark
-                    ? [Color(hex: 0x451A03), Color(hex: 0x4C0519), Color(hex: 0x27272A)]   // amber-950 → rose-950 → zinc-800
-                    : [Color(hex: 0xFDE68A), Color(hex: 0xFDA4AF), Color(hex: 0xA1A1AA)],  // amber-200 → rose-300 → zinc-400
+                    ? [Color(hex: "451A03"), Color(hex: "4C0519"), Color(hex: "27272A")]   // amber-950 → rose-950 → zinc-800
+                    : [Color(hex: "FDE68A"), Color(hex: "FDA4AF"), Color(hex: "A1A1AA")],  // amber-200 → rose-300 → zinc-400
                 startPoint: .topLeading, endPoint: .bottomTrailing,
             )
         case .forest:
             return LinearGradient(
                 colors: dark
-                    ? [Color(hex: 0x052E16), Color(hex: 0x064E3B), Color(hex: 0x15803D)]   // green-950 → emerald-900 → green-700
-                    : [Color(hex: 0xD9F99D), Color(hex: 0x6EE7B7), Color(hex: 0x22C55E)],  // lime-200 → emerald-300 → green-500
+                    ? [Color(hex: "052E16"), Color(hex: "064E3B"), Color(hex: "15803D")]   // green-950 → emerald-900 → green-700
+                    : [Color(hex: "D9F99D"), Color(hex: "6EE7B7"), Color(hex: "22C55E")],  // lime-200 → emerald-300 → green-500
                 startPoint: .topLeading, endPoint: .bottomTrailing,
             )
         case .mono:
             return LinearGradient(
                 colors: dark
-                    ? [Color(hex: 0x3F3F46), Color(hex: 0x18181B)]                          // zinc-700 → zinc-900
-                    : [Color(hex: 0xE4E4E7), Color(hex: 0xA1A1AA)],                         // zinc-200 → zinc-400
+                    ? [Color(hex: "3F3F46"), Color(hex: "18181B")]                          // zinc-700 → zinc-900
+                    : [Color(hex: "E4E4E7"), Color(hex: "A1A1AA")],                         // zinc-200 → zinc-400
                 startPoint: .topLeading, endPoint: .bottomTrailing,
             )
         }
