@@ -63,8 +63,12 @@ android {
             // Minify stays OFF for the shipped release: the 3–4GB sandbox cannot
             // survive R8, and CI runners are reserved for verify/build parity.
             // Re-enable alongside CI-only builds when the pipeline owns releases.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // Wave 8 (spec §7): R8 pipeline ON with conservative keep rules
+            // (all app classes kept; libraries shrink+obfuscate). The rules
+            // file documents the posture; on-device release smoke stays a
+            // HARDWARE-REQUIRED gate per the four-tier vocabulary.
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
