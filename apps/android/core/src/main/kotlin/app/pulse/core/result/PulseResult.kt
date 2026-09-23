@@ -16,6 +16,12 @@ sealed interface PulseResult<out T> {
         val suggestion: String? = null,
         /** Raw HTTP status (409 name-clash vs username-taken branches need it). */
         val status: Int? = null,
+        /**
+         * Slow-mode window (R44/F-MS-20): seconds the server asked us to wait
+         * on a 429 — parsed from the body's `retryAfter` (web ApiError.retryAfter
+         * parity, src/lib/pulse-utils.ts). null = not a 429 / header absent.
+         */
+        val retryAfter: Int? = null,
     ) : PulseResult<Nothing> {
         enum class Kind { NETWORK, AUTH, FORBIDDEN, RATE_LIMITED, NOT_FOUND, VALIDATION, SERVER, UNKNOWN }
     }

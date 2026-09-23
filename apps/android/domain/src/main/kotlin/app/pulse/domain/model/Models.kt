@@ -365,6 +365,66 @@ data class ProfilePatch(
     val username: String? = null,
 )
 
+// ── REM-A group governance + scheduling models ─────────────────────────────
+
+/** Outcome of leaving a group (DELETE members) — succession bookkeeping included. */
+data class GroupLeave(
+    /** How many members remain in the group after the departure. */
+    val remainingMembers: Int,
+    /** Set when the leaver was the group's LAST admin — the server auto-promotes the longest-standing member. */
+    val promotedUserId: String? = null,
+)
+
+/**
+ * One pending delayed-send row (GET/POST /api/conversations/{id}/scheduled,
+ * DELETE /api/scheduled/{id}) — web ScheduledItem parity.
+ */
+data class ScheduledItem(
+    val id: String,
+    val conversationId: String,
+    val content: String,
+    /** ISO-8601 wire stamp — the moment the server will dispatch it. */
+    val scheduledAtIso: String,
+    val cancelledAtIso: String? = null,
+    val cancelledReason: String? = null,
+)
+
+/**
+ * Server detail meta for the group-info surface (web ConversationDetail
+ * subset). Fetched live on room/info open — NOT persisted in Room (schema v9
+ * is frozen); every read is honest server truth.
+ */
+data class GroupMeta(
+    /** THIS viewer's wire role — "admin" | "member" (null on DMs). */
+    val myRole: String?,
+    val isGroup: Boolean,
+    /** Disappearing-message TTL seconds (0 = off). */
+    val ttlSeconds: Int,
+    /** Announcement mode — admins only post while on. */
+    val broadcastMode: Boolean,
+    /** Slow mode — members wait Ns between sends (0 = off). */
+    val slowModeSeconds: Int,
+    /** Signal screen security (room-wide flag). */
+    val screenPrivacy: Boolean,
+    /** Shareable join code — null = no active link. */
+    val inviteCode: String?,
+) {
+    val isAdmin: Boolean get() = myRole == "admin"
+}
+
+/**
+ * Send/write failure that keeps the wire's typed metadata intact. The message
+ * text matches the legacy `"KIND: message"` shape so existing surfaces render
+ * it unchanged; the composer reads [retryAfter] to run the slow-mode
+ * countdown lockout (web ApiError.retryAfter parity, pulse-utils.ts).
+ */
+class PulseApiException(
+    val kind: String,
+    message: String?,
+    val status: Int? = null,
+    val retryAfter: Int? = null,
+) : IllegalStateException(message ?: "Request failed")
+
 /** A message — mirrors web `MessageDTO`. */
 @Serializable
 data class Message(
@@ -412,6 +472,13 @@ data class Message(
     val topicId: String? = null,
     // ── Wave 7 rich-object payload (raw JSON string from the wire; null on text rows) ──
     val payload: String? = null,
+    // ── REM-A — incognito + disappearing (F-MS-17/19) ──
+    /** Wire anon flag — group-only server-side; the sender's own rows keep it true. */
+    val anon: Boolean = false,
+    /** Deterministic per (sender, conversation) mask ("Ember the Falcon"). */
+    val anonAlias: String? = null,
+    /** Epoch ms when this row evaporates (wire expiresAt ISO → parsed). Null = forever. */
+    val expiresAtEpochMs: Long? = null,
 ) {
     enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, GAME, TOURNAMENT, SYSTEM }
 

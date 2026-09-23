@@ -907,7 +907,7 @@ fun ChatRoomScreen(
             conversationId = viewModel.conversationId,
             viewerId = viewerId ?: "",
             isAdmin = viewModel.isAdmin(),
-            prefillTitle = viewModel.kanbanSourceMessage?.let { null },
+            prefillTitle = viewModel.kanbanSourceTitle?.take(80), // audit D2 fix: was dead `let { null }`
             loadBoard = { viewModel.kanbanBoard(viewModel.conversationId) },
             onAddCard = { title, column, assigneeId -> viewModel.createKanbanCard(title, column, assigneeId) },
             onMoveCard = { cardId, column, position -> viewModel.moveKanbanCard(cardId, column, position) },
@@ -1025,7 +1025,7 @@ fun ChatRoomScreen(
                 null
             },
             onAddToBoard = {
-                viewModel.addMessageToBoard(target.id)
+                viewModel.addMessageToBoard(target.id, target.body)
                 actionTarget = null
             },
             onRemindMe = {

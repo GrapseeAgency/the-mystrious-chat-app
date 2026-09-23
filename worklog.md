@@ -3081,3 +3081,21 @@ Stage Summary:
 - VERDICT (honest, no "perfect"): product core is verified-working (293/293 E2E, 301/301 JVM, byte-verified release, no regressions); native parity is materially incomplete — 41 rows missing on BOTH natives (messaging polish D3–D10, translate/location, AI surfaces, PiP, group admin, conv themes), video calls Android-NF/iOS-audio-only, 2 Android FAILs (send cap 4000 vs server 2000; dead kanban prefill), iOS forget-viewer NF, F-MS-29 unimplemented on all three surfaces, 1 security default-key risk. Wave 3-HW + Wave 5-HW remain OPEN (hardware-blocked, never claimed).
 - NO code fixed during audit. Tree clean except audit artifacts (report + probe + features.tsv + worklog).
 - STOPPED per directive. Next: user reviews report; first remediation action on approval = remove default dispatch-key fallback (S5), then Android send cap (D1).
+
+---
+Task ID: REM-A/REM-B + orchestrator (remediation round 1)
+Agent: Z.ai Code (orchestrator; REM crews hit infra deadline, work recovered + repaired directly)
+Task: Execute audit backlog — S5, D1, D2, D25 + group admin + messaging flow (partial)
+
+Work Log:
+- R1 (S5 SECURITY): removed `?? 'pulse-dispatch-key'` default from 5 sites (dispatch/internal-verify/internal-privacy routes + relay PRIVACY_KEY/DISPATCH_KEY); fail-closed (unset secret refuses all); strong secret generated into .env + mini-services/pulse-socket/.env; relay never sends empty key; probe check inverted (default constant now MUST be refused); W8 suite key now reads CRON_SECRET from env. Verified: probe 29/29, W8 19/19.
+- R2 (D1): SendMessageUseCase MAX_LENGTH 4000→2000 + new JVM test (2000 sends, 2001 rejected, repo called once).
+- R3 (D2): kanban dead prefill fixed — VM carries kanbanSourceTitle (content), sheet prefills take(80); clears on create/remind/reset.
+- D25: lifecycle-aware polling — ChatsScreen + archived page start on enter/ON_START, stop on leave/ON_STOP (DisposableEffect + LifecycleEventObserver).
+- REM-A crew (Android, recovered): GroupInfoScreen (members/roles/add/promote/demote/kick/leave+succession/TTL picker/slow-mode admin/invite create+regen) + PulseApi/RepositoryImpl/Models/domain/WireDtos extensions (scheduled create/list/cancel, disappearing, slow-mode, members, invites, groupMeta) + VM: scheduled manager, slow-mode 429 lockout (armSlowMode + retryAfter parse), incognito alias fields, TTL/expiresAt decode. Orchestrator repairs: double-Result runCatching wraps (4 sites), PulseApiException smart-cast, unresolved DTO fields.
+- REM-B crew (iOS, recovered): GroupInfoView.swift, MessagingSurfaces.swift, PulseRemediationLogic.swift (MessageTextParser FORMAT_RE port + jumbo + spoiler, fnv1a alias), PulseAPIClient extensions (members/invites/scheduled/TTL/slow-mode), WireDtos viaAutomation + expiresAt, ChatRoomView integrations, outbox engine tweak. NOT compiled locally (Linux; no Xcode) — CI is the gate.
+- Gates after repairs: Android app compile SUCCESS; JVM 302/302 (protocol 122, data 69, domain 46, feature-voice 65); probe 29/29; W8 19/19; W7 93/93; lint clean.
+
+Stage Summary:
+- LANDED this round: S5, D1, D2, D25, group admin (both natives), scheduled sends (both), TTL picker+chip+filter (both, iOS filter best-effort), slow-mode lockout (both), incognito (both), iOS parser/jumbo/spoiler, iOS viaAutomation chip.
+- REMAINING (next round): Android render batch (parser/jumbo/24-picker/slash/stickers/effects-decode), forward-offline queue (D28), D24 export share chooser, D32 Android lightbox gestures, D45 BOOT receiver, iOS P2-P5 leftovers (24-picker/slash/stickers/effects if absent in MessagingSurfaces — verify in CI round), F-MD-06/07 translation+location, F-MS-29 phrases (web too), F-FX-05 conv themes, D34 badges, D38 FX, D40 logs poll, PiP, video calls, camera capture, hold-to-record, whiteboard/space bits, iOS story/channel tests, delta sync.

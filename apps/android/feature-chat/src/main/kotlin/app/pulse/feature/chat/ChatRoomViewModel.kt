@@ -10,7 +10,10 @@ import androidx.lifecycle.viewModelScope
 import app.pulse.core.media.PulseMedia
 import app.pulse.core.time.PulseTime
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.GroupMeta
 import app.pulse.domain.model.Message
+import app.pulse.domain.model.PulseApiException
+import app.pulse.domain.model.ScheduledItem
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.protocol.GameDetailDto
 import app.pulse.protocol.WirePulsePrefs
@@ -183,6 +186,98 @@ class ChatRoomViewModel @Inject constructor(
             _channelRole.value = runCatching { repo.myRole(conversationId).getOrNull() }.getOrNull()
         }
     }
+
+    // ── REM-A group meta (TTL chip, admin surfaces, invite link) ──────
+    /** Live server truth — null until the first load, kept for GroupInfo deep links. */
+    private val _groupMeta = MutableStateFlow<GroupMeta?>(null)
+    val groupMeta: StateFlow<GroupMeta?> = _groupMeta.asStateFlow()
+
+    fun loadGroupMeta() {
+        viewModelScope.launch {
+            _groupMeta.value = runCatching { repo.groupMeta(conversationId).getOrNull() }.getOrNull()
+        }
+    }
+
+    /** Refresh after any group mutation — the TTL/broadcast chips stay honest. */
+    fun refreshGroupMeta() = loadGroupMeta()
+
+    // ── REM-A slow-mode lockout (F-MS-20, web retryAfter parity) ─────
+    /** Epoch-ms deadline of an active slow-mode lockout — null/0 = composer free. */
+    private val _slowModeUntilMs = MutableStateFlow(0L)
+    private val _slowModeRemainingSec = MutableStateFlow(0)
+
+    /** Seconds left on the composer lockout (0 = unlocked) — ticks once per second. */
+    val slowModeRemainingSec: StateFlow<Int> = _slowModeRemainingSec.asStateFlow()
+
+    private var slowModeTicker: Job? = null
+
+    private fun armSlowMode(seconds: Int) {
+        val wait = seconds.coerceAtLeast(1)
+        _slowModeUntilMs.value = System.currentTimeMillis() + wait * 1000L
+        _slowModeRemainingSec.value = wait
+        slowModeTicker?.cancel()
+        slowModeTicker = viewModelScope.launch {
+            while (true) {
+                val remaining = ((_slowModeUntilMs.value - System.currentTimeMillis()) / 1000L).toInt()
+                _slowModeRemainingSec.value = remaining.coerceAtLeast(0)
+                if (remaining <= 0) break
+                delay(250)
+            }
+            _slowModeUntilMs.value = 0
+            _slowModeRemainingSec.value = 0
+        }
+    }
+
+    /** Send-failure classifier — a 429 arms the composer countdown (mm:ss). */
+    private fun failureNotice(failure: Throwable): String {
+        val retryAfter = (failure as? PulseApiException)?.retryAfter
+        if (retryAfter != null) armSlowMode(retryAfter)
+        return failure.message ?: "Couldn't send the message"
+    }
+
+    // ── REM-A scheduled sends (F-MS-18, Telegram-style) ──────────────
+    private val _scheduled = MutableStateFlow<List<ScheduledItem>>(emptyList())
+    val scheduled: StateFlow<List<ScheduledItem>> = _scheduled.asStateFlow()
+
+    private val _scheduledLoading = MutableStateFlow(false)
+    val scheduledLoading: StateFlow<Boolean> = _scheduledLoading.asStateFlow()
+
+    fun loadScheduled() {
+        viewModelScope.launch {
+            _scheduledLoading.value = true
+            _scheduled.value = runCatching { repo.scheduledMessages(conversationId).getOrDefault(emptyList()) }
+                .getOrDefault(emptyList())
+            _scheduledLoading.value = false
+        }
+    }
+
+    /** POST the pending row, then refresh the manager list (web parity toast). */
+    fun scheduleSend(content: String, scheduledAtIso: String) {
+        viewModelScope.launch {
+            repo.scheduleMessage(conversationId, content, scheduledAtIso)
+                .onSuccess { item ->
+                    notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)} — it sends itself")
+                    loadScheduled()
+                }
+                .onFailure { notify(failureNotice(it), isError = true) }
+        }
+    }
+
+    fun cancelScheduled(scheduledId: String) {
+        viewModelScope.launch {
+            runCatching { repo.cancelScheduled(scheduledId) }
+                .onSuccess {
+                    notify("Scheduled message cancelled")
+                    loadScheduled()
+                }
+                .onFailure { notify("Couldn't cancel the scheduled message", isError = true) }
+        }
+    }
+
+    private fun formatScheduleStamp(iso: String): String = runCatching {
+        val zoned = java.time.OffsetDateTime.parse(iso)
+        java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm").format(zoned)
+    }.getOrDefault(iso)
 
     // Wave 6 — DM safety-number sheet (settle-confirmed; NO optimistic lies).
     data class SafetyUi(val peerId: String, val state: SafetyState?, val busy: Boolean = false)
@@ -396,7 +491,53 @@ class ChatRoomViewModel @Inject constructor(
                     }
                 }
                 .onFailure { failure ->
-                    _state.value = _state.value.copy(error = failure.message)
+                    _state.value = _state.value.copy(error = failureNotice(failure))
+                }
+        }
+    }
+
+    /**
+     * REM-A rich send — sticker payloads (F-MS-24), effect-carried text
+     * (F-MS-23) and the incognito flag (F-MS-17) all ride ONE repo method.
+     * Echo/offline semantics match [send].
+     */
+    fun sendRich(
+        body: String,
+        kind: String = "text",
+        payload: String? = null,
+        anon: Boolean = false,
+        onDelivered: ((Message) -> Unit)? = null,
+    ) {
+        val editing = _state.value.editing
+        if (editing != null) {
+            sendEdit(editing.id, body)
+            return
+        }
+        val replyId = _state.value.replyTo?.id
+        _state.value = _state.value.copy(replyTo = null)
+        viewModelScope.launch {
+            repo.sendRichMessage(
+                conversationId = conversationId,
+                body = body,
+                kind = kind,
+                payload = payload,
+                anon = anon,
+                replyToId = replyId,
+                topicId = _activeTopicId.value,
+            )
+                .onSuccess { message ->
+                    if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
+                        runCatching { repo.clearDraft(conversationId) }
+                    } else {
+                        app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
+                        repo.setTyping(conversationId, viewerName(), false)
+                        runCatching { repo.clearDraft(conversationId) }
+                        afterOwnSend(message)
+                        onDelivered?.invoke(message)
+                    }
+                }
+                .onFailure { failure ->
+                    _state.value = _state.value.copy(error = failureNotice(failure))
                 }
         }
     }
@@ -1017,6 +1158,9 @@ class ChatRoomViewModel @Inject constructor(
     /** Message→kanban conversion source (set from the message action sheet). */
     var kanbanSourceMessage by androidx.compose.runtime.mutableStateOf<String?>(null)
 
+    /** Audit D2 fix: carry the anchored message body so the sheet prefills the derived title (web: server derives from content, cap 80). */
+    var kanbanSourceTitle by androidx.compose.runtime.mutableStateOf<String?>(null)
+
     /** Non-surface helper — routes into the room snackbar. */
     fun notifySticky(message: String) = notify(message, isError = false)
 
@@ -1069,6 +1213,7 @@ class ChatRoomViewModel @Inject constructor(
             repo.createKanbanCard(conversationId, title.trim(), column, assigneeId, kanbanSourceMessage)
                 .onSuccess {
                     kanbanSourceMessage = null
+                    kanbanSourceTitle = null
                     notify("Task \"${it.title}\" added to the board")
                 }
                 .onFailure { notify(it.message ?: "Could not add the card", isError = true) }
@@ -1076,8 +1221,9 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     /** Message long-press → "Add to board" (web parity: message→card title cap 80). */
-    fun addMessageToBoard(messageId: String) {
+    fun addMessageToBoard(messageId: String, content: String) {
         kanbanSourceMessage = messageId
+        kanbanSourceTitle = content
         kanbanOpen = true
     }
 
@@ -1143,6 +1289,7 @@ class ChatRoomViewModel @Inject constructor(
     /** Message long-press → "Remind me…" prefills the anchored message. */
     fun remindMe(messageId: String) {
         kanbanSourceMessage = null
+        kanbanSourceTitle = null
         _reminderAnchor.value = messageId
         remindersOpen = true
     }

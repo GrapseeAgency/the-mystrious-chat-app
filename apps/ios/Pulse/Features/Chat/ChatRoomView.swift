@@ -242,6 +242,16 @@ private struct RoomContent: View {
     @StateObject private var safetyBadges = PulseSafetyBadgeCache.shared
     @State private var safetyOpen = false
 
+    // ── REM-B — group admin / scheduled / reactions / stickers / who-reacted ──
+    @State private var groupInfoOpen = false
+    @State private var scheduleOpen = false
+    @State private var scheduledManagerOpen = false
+    @State private var reactionTarget: WireChatMessage?
+    @State private var stickerOpen = false
+    @State private var whoReactedOpen = false
+    @State private var whoReactedMessage: WireChatMessage?
+    @State private var whoReactedEmoji = ""
+
     /// F-CH-04 — broadcast composer lock: broadcastMode on + the viewer is
     /// NOT an admin (server 403s the post; the web hides the composer too).
     private var broadcastLocked: Bool {
@@ -297,6 +307,22 @@ private struct RoomContent: View {
                 )
             }
             pinnedBanner
+            // REM-B F-MS-19 — header TTL chip when disappearing is on.
+            if (conversation.ttlSeconds ?? 0) > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "timer")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PulseTheme.emerald)
+                    Text("Disappearing · \(GroupInfoView.ttlLabel(conversation.ttlSeconds))")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PulseTheme.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 5)
+                .background(PulseTheme.emerald.opacity(0.08))
+                .accessibilityLabel("Disappearing messages enabled")
+            }
             if searchOpen {
                 roomSearchPanel
             }
@@ -338,6 +364,20 @@ private struct RoomContent: View {
                     }
                     .buttonStyle(PulseButtonStyle())
                     .accessibilityLabel("Leaderboard")
+                }
+            }
+            // REM-B P1 — group info entry (member list, roles, invite,
+            // rename, leave, TTL, slow mode) — groups only, web parity.
+            if conversation.isGroup {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        PulseHaptics.tap()
+                        groupInfoOpen = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("Group info")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -393,6 +433,65 @@ private struct RoomContent: View {
         }
         .sheet(isPresented: $pollBuilderOpen) {
             PollBuilderSheet(viewModel: viewModel, session: session)
+        }
+        // ── REM-B sheet hosts ──
+        .sheet(isPresented: $groupInfoOpen) {
+            GroupInfoView(conversation: conversation, session: session)
+        }
+        .sheet(isPresented: $scheduleOpen) {
+            ScheduleSheet { date in
+                viewModel.scheduleDraft(for: date, session: session)
+            }
+        }
+        .sheet(isPresented: $scheduledManagerOpen) {
+            ScheduledManagerSheet(conversationId: conversation.id, session: session)
+                .onDisappear { viewModel.loadScheduled(session: session) }
+        }
+        .sheet(item: $reactionTarget) { target in
+            ReactionPickerSheet { emoji in
+                viewModel.react(target, emoji: emoji, session: session)
+            }
+        }
+        .sheet(isPresented: $stickerOpen) {
+            StickerPickerSheet { emoji, pack in
+                viewModel.sendSticker(emoji: emoji, pack: pack, session: session)
+            }
+        }
+        .sheet(isPresented: $whoReactedOpen) {
+            if let target = whoReactedMessage {
+                WhoReactedSheet(
+                    message: target,
+                    emoji: whoReactedEmoji,
+                    members: conversation.members,
+                    viewerId: session.viewer?.id,
+                    session: session,
+                )
+            }
+        }
+        .onChange(of: viewModel.pendingSlashSheet) { _, name in
+            guard let name else { return }
+            viewModel.pendingSlashSheet = nil
+            switch name {
+            case "poll": pollBuilderOpen = true
+            case "schedule": scheduleOpen = true
+            case "sticker": stickerOpen = true
+            case "whiteboard": wave7.whiteboardOpen = true
+            case "redpacket": wave7.redPacketCreateOpen = true
+            case "kanban": wave7.kanbanOpen = true
+            case "events": wave7.eventsOpen = true
+            case "game": wave7.gameCreateOpen = true
+            case "tournament":
+                if conversation.isGroup {
+                    wave7.tournamentCreateOpen = true
+                } else {
+                    wave7.toast("Tournaments are for groups only", isError: true)
+                }
+            case "stage", "space":
+                wave7.toast("Open the stage / space from the mic menu")
+            case "location":
+                wave7.toast("Location sharing is coming to this surface")
+            default: break
+            }
         }
         // ── Wave 7 sheet hosts ──
         .sheet(isPresented: $wave7.redPacketCreateOpen) {
@@ -1748,6 +1847,21 @@ final class RoomViewModel: ObservableObject {
     @Published var caption = ""
     @Published private(set) var uploading = false
 
+    // ── REM-B — scheduled / slow-mode / incognito / slash ──
+    /// F-MS-18 — the viewer's pending scheduled rows for THIS room (count
+    /// feeds the composer banner chip; the manager sheet lists details).
+    @Published private(set) var scheduledCount = 0
+    /// F-MS-20 — slow-mode lockout: after a 429 the composer refuses sends
+    /// until the server-suggested window elapses (countdown chip in the UI).
+    @Published private(set) var slowModeLockUntil: Date?
+    @Published private(set) var slowModeRemainingSeconds = 0
+    /// F-MS-17 — incognito mask (groups only): sends ride anon:true and the
+    /// optimistic bubble shows the deterministic FNV-1a alias.
+    @Published var anonOn = false
+    /// F-MS-22 — sheet command armed by the slash palette ('/poll' etc.) —
+    /// the view consumes it in onChange to present the right surface.
+    @Published var pendingSlashSheet: String?
+
     // Wave 2 — voice recording, playback, polls, transcription, topics.
     @Published private(set) var isRecording = false
     @Published private(set) var recordingElapsedMs: Double = 0
@@ -1786,7 +1900,43 @@ final class RoomViewModel: ObservableObject {
 
     var canSend: Bool {
         if staged != nil { return true }
-        return !draft.trimmingCharacters(in: .whitespaces).isEmpty
+        return !draft.trimmingCharacters(in: .whitespaces).isEmpty && !isSlowModeLocked
+    }
+
+    /// F-MS-20 — the composer is locked while the slow-mode window runs.
+    var isSlowModeLocked: Bool {
+        (slowModeLockUntil ?? .distantPast) > Date()
+    }
+
+    /// F-MS-18 — scheduled-row count refresh (open + after arming/cancelling).
+    func loadScheduled(session: PulseSession) {
+        Task { [weak self] in
+            guard let self else { return }
+            self.scheduledCount = (try? await session.api.scheduledMessages(conversationId: conversationId))?.count ?? 0
+        }
+    }
+
+    private var slowModeTicker: AnyCancellable?
+
+    private func armSlowModeLock(seconds: Int) {
+        slowModeLockUntil = Date().addingTimeInterval(Double(seconds))
+        slowModeRemainingSeconds = seconds
+        slowModeTicker?.cancel()
+        slowModeTicker = Timer.publish(every: 1, on: .main, in: .common)
+            .autoconnect()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let remaining = Int((self.slowModeLockUntil ?? .distantPast).timeIntervalSinceNow)
+                if remaining <= 0 {
+                    self.slowModeLockUntil = nil
+                    self.slowModeRemainingSeconds = 0
+                    self.slowModeTicker?.cancel()
+                    self.slowModeTicker = nil
+                } else {
+                    self.slowModeRemainingSeconds = remaining
+                }
+            }
     }
 
     /// Mic replaces the send arrow exactly when the web mic shows:
@@ -1814,6 +1964,8 @@ final class RoomViewModel: ObservableObject {
         loadPins(session: session)
         startTopicTicker()
         loadTopics(session: session)
+        // REM-B F-MS-18 — pending scheduled count for the composer banner.
+        loadScheduled(session: session)
         Task { await refresh(session: session) }
     }
 
@@ -1866,6 +2018,8 @@ final class RoomViewModel: ObservableObject {
                         if message.senderId == session.viewer?.id { return }
                     }
                     upsert(message)
+                    // REM-B F-MS-23 — effect-flagged rows burst full-screen.
+                    fireIncomingEffectIfAny(message, viewerId: session.viewer?.id, session: session)
                     if message.senderId != session.viewer?.id {
                         Task { try? await session.api.markRead(conversationId: self.conversationId) }
                     }
@@ -1901,6 +2055,7 @@ final class RoomViewModel: ObservableObject {
                           let message = PulseSession.decodeMessage(from: raw) else { return }
                     try? session.store?.upsert(messages: [message])
                     upsert(message)
+                    fireIncomingEffectIfAny(message, viewerId: session.viewer?.id, session: session)
                 default:
                     break
                 }
@@ -1973,9 +2128,11 @@ final class RoomViewModel: ObservableObject {
     /// ThreadView and surface as "N replies" chips on the parent bubble.
     /// Wave 2 topics: activeTopicId == nil → General = the WHOLE room;
     /// otherwise only rows filed under that topic (spec §1 row 9).
+    /// REM-B F-MS-19 — rows whose TTL already elapsed never render.
     private func riverRows(from rows: [WireChatMessage]) -> [WireChatMessage] {
         rows.filter { row in
             guard row.parentId == nil else { return false }
+            guard PulseRemediationLogic.isAlive(row.expiresAt) else { return false }
             if let active = activeTopicId {
                 return row.topicId == active
             }
@@ -1986,6 +2143,11 @@ final class RoomViewModel: ObservableObject {
     /// Live topic-view hygiene — drops rows that stopped matching the active
     /// filter (e.g. an envelope re-mapped a row's topic). No-op on General.
     private func refilterInPlace() {
+        let expired = messages.filter { !PulseRemediationLogic.isAlive($0.expiresAt) }
+        if !expired.isEmpty {
+            let alive = messages.filter { PulseRemediationLogic.isAlive($0.expiresAt) }
+            messages = alive
+        }
         guard let active = activeTopicId else { return }
         let filtered = messages.filter { $0.topicId == active }
         if filtered.count != messages.count {
@@ -2143,6 +2305,8 @@ final class RoomViewModel: ObservableObject {
     func upsert(_ message: WireChatMessage) {
         // Main river only — thread replies render in ThreadView.
         if message.parentId != nil { return }
+        // REM-B F-MS-19 — expired rows never surface.
+        guard PulseRemediationLogic.isAlive(message.expiresAt) else { return }
         // Wave 2 topics — an active topic view must not surface rows filed
         // elsewhere (the store keeps them; switching back refetches).
         if let active = activeTopicId, message.topicId != active { return }
@@ -2228,6 +2392,9 @@ final class RoomViewModel: ObservableObject {
             return
         }
         let clientId = UUID().uuidString
+        // REM-B F-MS-17 — groups only: armed mask + the server's deterministic
+        // FNV-1a alias (the optimistic bubble shows the exact stored alias).
+        let anonAlias = (isGroupRoom && anonOn) ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: conversationId) : nil
         let temp = TempMessages.make(
             conversationId: conversationId,
             viewer: viewer,
@@ -2235,6 +2402,8 @@ final class RoomViewModel: ObservableObject {
             content: body,
             parentId: nil,
             replyTo: replySource,
+            anon: anonAlias != nil,
+            anonAlias: anonAlias,
         )
         upsert(temp)
         try? session.store?.upsert(messages: [temp])
@@ -2246,6 +2415,7 @@ final class RoomViewModel: ObservableObject {
                     content: body,
                     replyToId: replyId,
                     topicId: activeTopicId,
+                    anon: anonAlias != nil,
                 )
                 self.swapTemp(temp.id, for: message, session: session)
                 self.clearDraft(session: session)
@@ -2260,7 +2430,16 @@ final class RoomViewModel: ObservableObject {
                     self.triggerUnfurl(for: message, viewerId: viewer.id, session: session)
                 }
             } catch {
-                if PulseOutboxEngine.isDroppable(error) {
+                // REM-B F-MS-20 — slow mode: 429 + retryAfter arms the
+                // composer countdown lock (web backoff parity).
+                if let failure = error as? PulseAPIClient.Failure,
+                   failure.status == 429, let wait = failure.retryAfter, wait > 0 {
+                    self.messages.removeAll { $0.id == temp.id }
+                    try? session.store?.deleteMessage(id: temp.id)
+                    self.draft = body
+                    self.armSlowModeLock(seconds: wait)
+                    self.errorText = Self.describe(error)
+                } else if PulseOutboxEngine.isDroppable(error) {
                     self.messages.removeAll { $0.id == temp.id }
                     try? session.store?.deleteMessage(id: temp.id)
                     self.errorText = Self.describe(error)
@@ -2269,6 +2448,127 @@ final class RoomViewModel: ObservableObject {
                     session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
                     session.toasts.show("Message queued — sends when you're back online")
                 }
+            }
+        }
+    }
+
+    // ── REM-B F-MS-22 — slash commands ─────────────────────
+
+    /// Interprets a leading '/' command from the draft. Returns TRUE when the
+    /// draft was consumed (sheet opened / error shown / effect sent) — FALSE
+    /// when the plain send path should proceed (text transform applied).
+    func interpretSlashDraft(session: PulseSession) -> Bool {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix("/") else { return false }
+        switch PulseRemediationLogic.applySlash(text) {
+        case .send(let content):
+            if content != text { draft = content }
+            return false
+        case .error(let message):
+            errorText = message
+            return true
+        case .help:
+            session.toasts.show("Try /me /shrug /roll /poll /schedule /sticker /effects confetti — type '/' for the full list")
+            return true
+        case .sheet(let name):
+            pendingSlashSheet = name
+            draft = ""
+            return true
+        case .topic(let name):
+            createTopic(name: name, emoji: "📌", session: session)
+            draft = ""
+            return true
+        case .remind:
+            session.toasts.show("Reminders ride \"Remind me…\" on any message")
+            return true
+        case .effect(let name, let content):
+            draft = ""
+            sendWithEffect(effect: name, content: content, session: session)
+            return true
+        }
+    }
+
+    /// F-MS-22/23 — effect-flagged send: payload { effect } rides kind text;
+    /// the sender's client fires the burst locally (web fireParticles parity).
+    private func sendWithEffect(effect: String, content: String, session: PulseSession) {
+        guard let viewer = session.viewer, editingTarget == nil, staged == nil else { return }
+        let clientId = UUID().uuidString
+        let temp = TempMessages.make(
+            conversationId: conversationId,
+            viewer: viewer,
+            clientId: clientId,
+            content: content,
+            parentId: nil,
+        )
+        upsert(temp)
+        try? session.store?.upsert(messages: [temp])
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let message = try await session.api.sendMessage(
+                    conversationId: conversationId,
+                    content: content,
+                    topicId: activeTopicId,
+                    payload: ["effect": effect],
+                )
+                self.swapTemp(temp.id, for: message, session: session)
+                if let kindName = PulseRemediationLogic.particleKind(forEffect: effect) {
+                    session.particles.fire(kind: Self.particleKind(named: kindName), count: 90, center: CGPoint(x: 0.5, y: 0.85))
+                }
+                self.loadTopics(session: session)
+            } catch {
+                self.messages.removeAll { $0.id == temp.id }
+                try? session.store?.deleteMessage(id: temp.id)
+                self.errorText = Self.describe(error)
+            }
+        }
+    }
+
+    // ── REM-B F-MS-24 — stickers ───────────────────────────
+
+    /// kind "sticker" + payload { emoji, pack } (web sticker-picker parity;
+    /// the bubble renders the emoji big). Online-only like all rich kinds.
+    func sendSticker(emoji: String, pack: String, session: PulseSession) {
+        guard let viewer = session.viewer else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let message = try await session.api.sendMessage(
+                    conversationId: conversationId,
+                    content: emoji,
+                    kind: "sticker",
+                    topicId: activeTopicId,
+                    payload: ["emoji": emoji, "pack": pack],
+                )
+                self.upsert(message)
+                try? session.store?.upsert(messages: [message])
+                self.loadTopics(session: session)
+            } catch {
+                session.toasts.show(Self.describe(error))
+            }
+        }
+    }
+
+    // ── REM-B F-MS-18 — schedule the composer draft ────────
+
+    func scheduleDraft(for date: Date, session: PulseSession) {
+        let body = draft.trimmingCharacters(in: .whitespaces)
+        guard !body.isEmpty else {
+            session.toasts.show("Type the message first — scheduling sends the draft")
+            return
+        }
+        let iso = ScheduleSheet.isoFormatter.string(from: date)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await session.api.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
+                self.draft = ""
+                self.scheduledCount += 1
+                try? session.store?.deleteDraft(conversationId: conversationId)
+                PulseHaptics.success()
+                session.toasts.show("Scheduled — \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")
+            } catch {
+                session.toasts.show(Self.describe(error))
             }
         }
     }
@@ -2908,6 +3208,24 @@ final class RoomViewModel: ObservableObject {
         }
         return "The gateway is unreachable."
     }
+
+    /// F-MS-23 — web EFFECT_PARTICLES name → native bus kind.
+    private static func particleKind(named name: String) -> ParticleBus.Kind {
+        switch name {
+        case "confetti": return .confetti
+        case "stars": return .stars
+        default: return .burst
+        }
+    }
+
+    /// F-MS-23 — incoming effect-flagged rows fire the burst for rows OTHERS
+    /// sent (own sends fire on the success path). messageNew + envelopes.
+    private func fireIncomingEffectIfAny(_ message: WireChatMessage, viewerId: String?, session: PulseSession) {
+        guard message.senderId != viewerId,
+              let effect = PulseRemediationLogic.effectOfPayload(message.payload),
+              let kindName = PulseRemediationLogic.particleKind(forEffect: effect) else { return }
+        session.particles.fire(kind: Self.particleKind(named: kindName), count: 90, center: CGPoint(x: 0.5, y: 0.85))
+    }
 }
 
 /// Optimistic temp-row factory shared by the river AND thread sends —
@@ -2923,6 +3241,8 @@ enum TempMessages {
         content: String,
         parentId: String?,
         replyTo: WireChatMessage? = nil,
+        anon: Bool = false,
+        anonAlias: String? = nil,
     ) -> WireChatMessage {
         let sender = WireSender(
             id: viewer.id,
@@ -2960,8 +3280,8 @@ enum TempMessages {
             fileSize: nil,
             pinnedAt: nil,
             viewOnce: nil,
-            anon: nil,
-            anonAlias: nil,
+            anon: anon ? true : nil,
+            anonAlias: anonAlias,
             viewedAt: nil,
             viewedBy: nil,
             transcript: nil,

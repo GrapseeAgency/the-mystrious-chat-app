@@ -23,6 +23,8 @@ import app.pulse.protocol.LinkPreviewDto
 import app.pulse.protocol.PollDto
 import app.pulse.protocol.PollOptionDto
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.longOrNull
 
 /**
  * Room cache — offline-first inbox. v2 added the UI-era columns: members,
@@ -206,6 +208,9 @@ data class MessageEntity(
             val userId = dto.userId ?: return@mapNotNull null
             app.pulse.domain.model.Reaction(emoji = emoji, userId = userId)
         }
+        // REM-A — reserved pulse:* keys ride payloadJson (schema v9 frozen);
+        // pop them back out so the domain payload stays the clean wire blob.
+        val (payloadClean, anon, anonAlias, expiresAt) = payloadPulseKeys(payloadJson)
         return Message(
             id = id, conversationId = conversationId, authorId = authorId,
             authorName = authorName, kind = Message.Kind.valueOf(kind), body = body,
@@ -229,11 +234,63 @@ data class MessageEntity(
                 }.getOrNull()
             },
             topicId = topicId,
-            payload = payloadJson,
+            payload = payloadClean,
+            anon = anon,
+            anonAlias = anonAlias,
+            expiresAtEpochMs = expiresAt,
         )
     }
 
     companion object {
+        // ── REM-A reserved payload keys (Room v9 is FROZEN — no new columns) ──
+        // incognito + disappearing fields persist inside payloadJson as
+        // "pulse:*" keys. Every payload consumer (web + natives) reads known
+        // keys only and ignores the rest, so the extras are inert on the wire.
+        private const val KEY_ANON = "pulse:anon"
+        private const val KEY_ALIAS = "pulse:anonAlias"
+        private const val KEY_EXPIRES = "pulse:expiresAtMs"
+
+        /** payloadJson → (clean payload, anon, anonAlias, expiresAtEpochMs). */
+        private fun payloadPulseKeys(raw: String?): Tuple4 = run {
+            val obj = raw?.let { r ->
+                runCatching {
+                    app.pulse.protocol.PulseJson.parseToJsonElement(r) as? kotlinx.serialization.json.JsonObject
+                }.getOrNull()
+            }
+            if (obj == null) return@run Tuple4(raw, false, null, null)
+            val anon = (obj[KEY_ANON] as? kotlinx.serialization.json.JsonPrimitive)?.booleanOrNull ?: false
+            val alias = (obj[KEY_ALIAS] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+            val expires = (obj[KEY_EXPIRES] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull
+            val clean = kotlinx.serialization.json.JsonObject(obj - KEY_ANON - KEY_ALIAS - KEY_EXPIRES)
+                .let { if (it.isEmpty()) null else it.toString() }
+            Tuple4(clean, anon, alias, expires?.takeIf { it > 0L })
+        }
+
+        private data class Tuple4(
+            val payload: String?,
+            val anon: Boolean,
+            val anonAlias: String?,
+            val expiresAtEpochMs: Long?,
+        )
+
+        /** Message → payloadJson with the reserved pulse:* keys merged in. */
+        private fun payloadWithPulseKeys(m: Message): String? {
+            val base = m.payload?.let { raw ->
+                runCatching {
+                    app.pulse.protocol.PulseJson.parseToJsonElement(raw) as? kotlinx.serialization.json.JsonObject
+                }.getOrNull()
+            } ?: kotlinx.serialization.json.JsonObject(emptyMap())
+            val withKeys = kotlinx.serialization.json.buildJsonObject {
+                base.forEach { (k, v) -> put(k, v) }
+                if (m.anon) put(KEY_ANON, kotlinx.serialization.json.JsonPrimitive(true))
+                if (!m.anonAlias.isNullOrBlank()) put(KEY_ALIAS, kotlinx.serialization.json.JsonPrimitive(m.anonAlias))
+                m.expiresAtEpochMs?.takeIf { it > 0L }?.let {
+                    put(KEY_EXPIRES, kotlinx.serialization.json.JsonPrimitive(it))
+                }
+            }
+            return if (withKeys.isEmpty()) null else withKeys.toString()
+        }
+
         fun from(m: Message, reactionsJson: String? = null) = MessageEntity(
             id = m.id, conversationId = m.conversationId, authorId = m.authorId,
             authorName = m.authorName, kind = m.kind.name, body = m.body,
@@ -257,7 +314,7 @@ data class MessageEntity(
                 app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.LinkPreviewDto.serializer(), preview.toDto())
             },
             topicId = m.topicId,
-            payloadJson = m.payload,
+            payloadJson = payloadWithPulseKeys(m),
         )
 
         /** ISO wire timestamp → epoch ms (null when absent/unparseable). */

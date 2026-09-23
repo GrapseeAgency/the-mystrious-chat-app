@@ -38,6 +38,8 @@ import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.FlushReport
 import app.pulse.domain.model.FolderSummary
+import app.pulse.domain.model.GroupLeave
+import app.pulse.domain.model.GroupMeta
 import app.pulse.domain.model.HandleCheck
 import app.pulse.domain.model.InviteJoinOutcome
 import app.pulse.domain.model.InvitePreview
@@ -48,9 +50,11 @@ import app.pulse.domain.model.OutboxDeliveryException
 import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.OutboxFailureClass
 import app.pulse.domain.model.ProfilePatch
+import app.pulse.domain.model.PulseApiException
 import app.pulse.domain.model.Reaction
 import app.pulse.domain.model.SavedItem
 import app.pulse.domain.model.SafetyState
+import app.pulse.domain.model.ScheduledItem
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.model.StoryItem
 import app.pulse.domain.model.StoryUser
@@ -127,6 +131,7 @@ import app.pulse.protocol.StageEndedPayload
 import app.pulse.protocol.StageStatePayload
 import app.pulse.protocol.StoriesPageDto
 import app.pulse.protocol.StoryItemDto
+import app.pulse.protocol.ScheduledItemDto
 import app.pulse.protocol.TopicDto
 import app.pulse.protocol.UserDto
 import app.pulse.protocol.VoiceChunkPayload
@@ -717,10 +722,94 @@ class PulseRepositoryImpl @Inject constructor(
                     Result.success(temp)
                 } else {
                     messageDao.deleteById(temp.id)
-                    Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+                    Result.failure(apiExceptionOf(r))
                 }
         }
     }
+
+    /**
+     * REM-A — rich TEXT-kind send (F-MS-17/24/23): carries the incognito flag
+     * (group-only server-side) and the sticker/effects payload blob. Optimistic
+     * echo + offline-outbox semantics mirror [sendMessage] exactly.
+     */
+    override suspend fun sendRichMessage(
+        conversationId: String,
+        body: String,
+        kind: String,
+        payload: String?,
+        anon: Boolean,
+        replyToId: String?,
+        parentId: String?,
+        topicId: String?,
+    ): Result<Message> {
+        val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
+        val nowIso = java.time.OffsetDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+        val temp = Message(
+            id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
+            conversationId = conversationId,
+            authorId = viewerId ?: "",
+            authorName = viewerId ?: "",
+            kind = Message.Kind.TEXT,
+            body = body,
+            createdAt = nowIso,
+            replyToId = replyToId,
+            threadRootId = parentId,
+            topicId = topicId,
+            anon = anon,
+        )
+        if (!viewerId.isNullOrBlank()) {
+            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+        }
+        return when (
+            val r = api.sendMessage(
+                conversationId = conversationId,
+                senderId = viewerId ?: "",
+                content = body,
+                replyToId = replyToId,
+                parentId = parentId,
+                kind = kind,
+                topicId = if (parentId == null) topicId else null,
+                anon = anon.takeIf { it },
+                payload = payload?.let { raw ->
+                    runCatching { PulseJson.parseToJsonElement(raw) }.getOrNull() as? kotlinx.serialization.json.JsonObject
+                },
+            )
+        ) {
+            is PulseResult.Success -> {
+                val message = r.value.toDomain()
+                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                dedupeTempEchoes(message)
+                scheduleConversationsRefresh()
+                Result.success(message)
+            }
+            is PulseResult.Failure ->
+                if (r.kind == PulseResult.Failure.Kind.NETWORK && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
+                    outboxDao.insert(
+                        OutboxEntity(
+                            conversationId = conversationId,
+                            clientId = clientId,
+                            content = body,
+                            createdAt = nowIso,
+                        ),
+                    )
+                    outboxDao.trimBeyond(MAX_OUTBOX)
+                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
+                    Result.success(temp)
+                } else {
+                    messageDao.deleteById(temp.id)
+                    Result.failure(apiExceptionOf(r))
+                }
+        }
+    }
+
+    /** Legacy error text (`"KIND: message"`) + the typed retryAfter carrier. */
+    private fun apiExceptionOf(f: PulseResult.Failure): PulseApiException = PulseApiException(
+        kind = f.kind.name,
+        message = f.message?.let { "${f.kind.name}: $it" } ?: f.kind.name,
+        status = f.status,
+        retryAfter = f.retryAfter,
+    )
 
     // ── Wave 1 messaging surface (spec §1.1 — every route exists today) ──
 
@@ -883,10 +972,14 @@ class PulseRepositoryImpl @Inject constructor(
      * Forward = re-POST the SAME body into the target conversation (no wire
      * endpoint — spec §1.1). Media is forwarded by reusing the stored paths;
      * the wire kind maps back through the whitelist (text|image|audio|sticker|
-     * location|file). Never queued — media sends are online-only (spec §1.2).
+     * location|file). REM-A F-MS-10: a NETWORK-class failure on a PLAIN TEXT
+     * forward rides the existing outbox (kind "text") instead of dying —
+     * media stays online-only per spec §1.2.
      */
-    override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> =
-        when (
+    override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> {
+        val textOnly = source.kind == Message.Kind.TEXT &&
+            source.imagePath == null && source.audioPath == null && source.filePath == null
+        return when (
             val r = api.sendMessage(
                 conversationId = targetConversationId,
                 senderId = viewerId ?: "",
@@ -906,8 +999,38 @@ class PulseRepositoryImpl @Inject constructor(
                 scheduleConversationsRefresh()
                 Result.success(message)
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> {
+                if (r.kind == PulseResult.Failure.Kind.NETWORK && textOnly && !viewerId.isNullOrBlank()) {
+                    val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
+                    val nowIso = java.time.OffsetDateTime.now()
+                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+                    val temp = Message(
+                        id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
+                        conversationId = targetConversationId,
+                        authorId = viewerId ?: "",
+                        authorName = viewerId ?: "",
+                        kind = Message.Kind.TEXT,
+                        body = source.body,
+                        createdAt = nowIso,
+                    )
+                    messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+                    outboxDao.insert(
+                        OutboxEntity(
+                            conversationId = targetConversationId,
+                            clientId = clientId,
+                            content = source.body,
+                            kind = "text",
+                            createdAt = nowIso,
+                        ),
+                    )
+                    outboxDao.trimBeyond(MAX_OUTBOX)
+                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, targetConversationId))
+                    return Result.success(temp)
+                }
+                Result.failure(apiExceptionOf(r))
+            }
         }
+    }
 
     /** Domain kind → wire kind (whitelist text|image|audio|sticker|location|file). */
     private fun wireKindOf(kind: Message.Kind): String? = when (kind) {
@@ -944,7 +1067,124 @@ class PulseRepositoryImpl @Inject constructor(
                 conversationDao.upsertAll(listOf(ConversationEntity.from(conversation)))
                 Result.success(conversation)
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    // ── REM-A group governance + scheduling (web group-info-sheet parity) ──
+
+    /** Live group meta — ALSO upserts the Room conversation cache (rename TTL etc. flow into the list). */
+    override suspend fun groupMeta(conversationId: String): Result<GroupMeta> =
+        when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                val dto = r.value
+                conversationDao.upsertAll(listOf(ConversationEntity.from(dto.toDomain(viewerId))))
+                Result.success(
+                    GroupMeta(
+                        myRole = dto.members.firstOrNull { it.id == viewerId }?.role,
+                        isGroup = dto.isGroup,
+                        ttlSeconds = dto.ttlSeconds ?: 0,
+                        broadcastMode = dto.broadcastMode == true,
+                        slowModeSeconds = dto.slowModeSeconds ?: 0,
+                        screenPrivacy = dto.screenPrivacy == true,
+                        inviteCode = dto.inviteCode,
+                    ),
+                )
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    /** PATCH /api/conversations/{id} — every success carries the updated detail; refresh the cache. */
+    private suspend fun patchGroupMeta(
+        conversationId: String,
+        name: String? = null,
+        broadcast: Boolean? = null,
+        screenPrivacy: Boolean? = null,
+    ): Result<Unit> =
+        when (val r = api.patchConversation(conversationId, viewerId ?: "", name = name, broadcast = broadcast, screenPrivacy = screenPrivacy)) {
+            is PulseResult.Success -> {
+                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun renameGroup(conversationId: String, name: String): Result<Unit> =
+        patchGroupMeta(conversationId, name = name)
+
+    override suspend fun setGroupBroadcast(conversationId: String, broadcast: Boolean): Result<Unit> =
+        patchGroupMeta(conversationId, broadcast = broadcast)
+
+    override suspend fun setScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> =
+        patchGroupMeta(conversationId, screenPrivacy = on)
+
+    override suspend fun addGroupMembers(conversationId: String, userIds: List<String>): Result<List<String>> =
+        when (val r = api.addMembers(conversationId, viewerId ?: "", userIds)) {
+            is PulseResult.Success -> Result.success(r.value.added)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun setMemberRole(conversationId: String, userId: String, promote: Boolean): Result<Unit> =
+        when (val r = api.promoteDemote(conversationId, viewerId ?: "", userId, promote)) {
+            is PulseResult.Success -> {
+                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun kickMember(conversationId: String, userId: String): Result<Unit> =
+        when (val r = api.kickMember(conversationId, viewerId ?: "", userId)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun leaveGroup(conversationId: String): Result<GroupLeave> =
+        when (val r = api.leaveGroup(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                // Departure = the row leaves the chats list (server truth).
+                conversationDao.delete(conversationId)
+                Result.success(GroupLeave(r.value.remainingMembers, r.value.promotedUserId))
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun createGroupInvite(conversationId: String, regenerate: Boolean): Result<String> =
+        when (val r = api.createInvite(conversationId, viewerId ?: "", regenerate)) {
+            is PulseResult.Success -> Result.success(r.value.inviteCode)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun setDisappearingTtl(conversationId: String, ttlSeconds: Int): Result<Int> =
+        when (val r = api.setDisappearingTtl(conversationId, viewerId ?: "", ttlSeconds)) {
+            is PulseResult.Success -> {
+                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                Result.success(r.value.ttlSeconds ?: ttlSeconds)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun setSlowMode(conversationId: String, seconds: Int): Result<Int> =
+        when (val r = api.setSlowMode(conversationId, viewerId ?: "", seconds)) {
+            is PulseResult.Success -> Result.success(r.value.slowModeSeconds)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun scheduledMessages(conversationId: String): Result<List<ScheduledItem>> =
+        when (val r = api.scheduledMessages(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.items.map { it.toDomainScheduled() })
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String): Result<ScheduledItem> =
+        when (val r = api.scheduleMessage(conversationId, viewerId ?: "", content, scheduledAtIso)) {
+            is PulseResult.Success -> Result.success(r.value.toDomainScheduled())
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun cancelScheduled(scheduledId: String): Result<Unit> =
+        when (val r = api.cancelScheduled(scheduledId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
     // ── offline outbox engine (Wave 0 — web pulse-outbox parity) ────
@@ -2515,6 +2755,11 @@ fun ChatMessageDto.toDomain(): Message = Message(
     // Wave 7 rich objects ride payload as a RAW JSON STRING (red packet / game /
     // tournament carriers) — cards parse tolerantly via PulseWave7Logic.
     payload = payload?.toString()?.takeIf { it != "null" && it != "{}" },
+    // REM-A — incognito + disappearing (F-MS-17/19): wire carries the anon flag,
+    // the deterministic alias, and the purge deadline (ISO → epoch ms).
+    anon = anon == true,
+    anonAlias = anonAlias,
+    expiresAtEpochMs = PulseTime.epochMs(expiresAt).takeIf { it > 0L },
 )
 
 // ── Wave 2 wire → domain mappers (saved library + topics) ──────
@@ -2539,6 +2784,16 @@ fun TopicDto.toDomain(): Topic = Topic(
     emoji = emoji,
     lastMessageAt = PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
     messageCount = messageCount,
+)
+
+/** Wire ScheduledItem row → the domain model (tolerant: blanks stay blank). */
+fun ScheduledItemDto.toDomainScheduled(): ScheduledItem = ScheduledItem(
+    id = id,
+    conversationId = conversationId,
+    content = content,
+    scheduledAtIso = scheduledAt,
+    cancelledAtIso = cancelledAt,
+    cancelledReason = cancelledReason,
 )
 
 private fun kindOf(wire: String): Message.Kind = when (wire) {

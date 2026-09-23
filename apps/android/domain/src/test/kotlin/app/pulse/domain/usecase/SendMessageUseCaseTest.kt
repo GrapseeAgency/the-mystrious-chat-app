@@ -186,6 +186,37 @@ class SendMessageUseCaseTest {
         override suspend fun downloadMedia(filePath: String) = Result.success("/tmp/$filePath")
         override suspend fun threadReplyCounts(rootIds: List<String>) = emptyMap<String, Int>()
 
+        // ── REM-A stubs (group governance + scheduling + rich sends) ──
+        override suspend fun groupMeta(conversationId: String) =
+            Result.failure<app.pulse.domain.model.GroupMeta>(UnsupportedOperationException())
+        override suspend fun renameGroup(conversationId: String, name: String) = Result.success(Unit)
+        override suspend fun setGroupBroadcast(conversationId: String, broadcast: Boolean) = Result.success(Unit)
+        override suspend fun setScreenPrivacy(conversationId: String, on: Boolean) = Result.success(Unit)
+        override suspend fun addGroupMembers(conversationId: String, userIds: List<String>) =
+            Result.success(emptyList<String>())
+        override suspend fun setMemberRole(conversationId: String, userId: String, promote: Boolean) = Result.success(Unit)
+        override suspend fun kickMember(conversationId: String, userId: String) = Result.success(Unit)
+        override suspend fun leaveGroup(conversationId: String) =
+            Result.success(app.pulse.domain.model.GroupLeave(remainingMembers = 0))
+        override suspend fun createGroupInvite(conversationId: String, regenerate: Boolean) = Result.success("code")
+        override suspend fun setDisappearingTtl(conversationId: String, ttlSeconds: Int) = Result.success(ttlSeconds)
+        override suspend fun setSlowMode(conversationId: String, seconds: Int) = Result.success(seconds)
+        override suspend fun scheduledMessages(conversationId: String) =
+            Result.success(emptyList<app.pulse.domain.model.ScheduledItem>())
+        override suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String) =
+            Result.failure<app.pulse.domain.model.ScheduledItem>(UnsupportedOperationException())
+        override suspend fun cancelScheduled(scheduledId: String) = Result.success(Unit)
+        override suspend fun sendRichMessage(
+            conversationId: String,
+            body: String,
+            kind: String,
+            payload: String?,
+            anon: Boolean,
+            replyToId: String?,
+            parentId: String?,
+            topicId: String?,
+        ): Result<Message> = Result.failure(UnsupportedOperationException())
+
         // ── Wave 2 messaging depth (stubs — the send path is the subject here) ──
         override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =
             Result.success(Unit)
@@ -299,6 +330,16 @@ class SendMessageUseCaseTest {
         assertTrue(result.isSuccess)
         assertEquals("hello pulse", result.getOrNull()?.body)
         assertEquals(1, repo.sent.size)
+    }
+
+    @Test
+    fun `caps body at the 2000-char server limit (audit D1)`() = runTest {
+        val repo = FakeRepo()
+        val ok = SendMessageUseCase(repo)(conversationId = "c1", body = "x".repeat(2000))
+        assertTrue(ok.isSuccess, "2000 chars must send")
+        val over = SendMessageUseCase(repo)(conversationId = "c1", body = "x".repeat(2001))
+        assertTrue(over.isFailure, "2001 chars must be rejected client-side (server 400s)")
+        assertEquals(1, repo.sent.size, "only the 2000-char message reached the repo")
     }
 
     @Test

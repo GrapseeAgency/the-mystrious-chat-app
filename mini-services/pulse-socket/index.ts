@@ -117,7 +117,8 @@ function dropPresence(socketId: string): boolean {
 // never blinds the whole mesh. Flags refresh lazily with a 30s TTL.
 // ---------------------------------------------------------------------------
 const NEXT_API_BASE = process.env.PULSE_ORIGIN ?? 'http://localhost:3000'
-const PRIVACY_KEY = process.env.CRON_SECRET ?? 'pulse-dispatch-key'
+// Fail-closed (audit finding S5): no default secret; empty key never sent.
+const PRIVACY_KEY = process.env.CRON_SECRET ?? ''
 const PRIVACY_TTL_MS = 30_000
 
 // ---------------------------------------------------------------------------
@@ -147,7 +148,7 @@ async function verifySessionToken(userId: string, token: string): Promise<boolea
     try {
       const res = await fetch(
         `${NEXT_API_BASE}/api/internal/verify?userId=${encodeURIComponent(userId)}&token=${encodeURIComponent(token)}`,
-        { headers: { 'x-pulse-key': PRIVACY_KEY }, signal: AbortSignal.timeout(4000) },
+        { headers: PRIVACY_KEY ? { 'x-pulse-key': PRIVACY_KEY } : {}, signal: AbortSignal.timeout(4000) },
       )
       const json = (await res.json()) as { valid?: unknown }
       const valid = res.status === 200 && json.valid === true
@@ -187,7 +188,7 @@ async function fetchPrivacyFlags(ids: string[]): Promise<void> {
     try {
       const res = await fetch(
         `${NEXT_API_BASE}/api/internal/privacy?ids=${encodeURIComponent(need.slice(0, 500).join(','))}`,
-        { headers: { 'x-pulse-key': PRIVACY_KEY }, signal: AbortSignal.timeout(5000) },
+        { headers: PRIVACY_KEY ? { 'x-pulse-key': PRIVACY_KEY } : {}, signal: AbortSignal.timeout(5000) },
       )
       const body = (await res.json().catch(() => null)) as {
         flags?: Record<string, { typingVisible?: unknown; presenceVisible?: unknown }>
@@ -1570,13 +1571,14 @@ io.on('connection', (socket: Socket) => {
 // ---------------------------------------------------------------------------
 const NEXT_APP_URL = process.env.PULSE_ORIGIN ?? 'http://localhost:3000'
 const DISPATCH_INTERVAL_MS = 20_000
-const DISPATCH_KEY = process.env.CRON_SECRET ?? 'pulse-dispatch-key'
+// Fail-closed (audit finding S5): no default secret; empty key never sent.
+const DISPATCH_KEY = process.env.CRON_SECRET ?? ''
 
 async function tickDispatch(): Promise<void> {
   try {
     const res = await fetch(`${NEXT_APP_URL}/api/maintenance/dispatch`, {
       method: 'POST',
-      headers: { 'x-pulse-key': DISPATCH_KEY },
+      headers: DISPATCH_KEY ? { 'x-pulse-key': DISPATCH_KEY } : {},
       signal: AbortSignal.timeout(8000),
     })
     const body = (await res.json().catch(() => null)) as { dispatched?: number } | null

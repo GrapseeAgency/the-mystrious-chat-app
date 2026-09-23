@@ -2,7 +2,7 @@
 // Targets: token lifecycle, internal-key boundaries, role/ownership enforcement,
 // privacy enforcement, server caps. Complements (does not duplicate) wave suites.
 const BASE = 'http://localhost:3000'
-const PULSE_KEY = process.env.CRON_SECRET ?? 'pulse-dispatch-key' // mirrored from server default (documented finding)
+const PULSE_KEY = process.env.CRON_SECRET // bun loads .env from repo root; probe fails fast if unset
 let pass = 0, fail = 0
 const results = []
 function check(name, cond, evidence) {
@@ -54,8 +54,9 @@ async function main() {
   check('internal/verify without key refused', vNoKey.status === 401 || vNoKey.status === 403, `got ${vNoKey.status}`)
   check('internal/privacy without key refused', pNoKey.status === 401 || pNoKey.status === 403, `got ${pNoKey.status}`)
   check('maintenance/dispatch without key refused', dNoKey.status === 401 || dNoKey.status === 403, `got ${dNoKey.status}`)
+  if (!PULSE_KEY) { console.error('PROBE CONFIG: CRON_SECRET not set (bun .env load) — aborting'); process.exit(2) }
   const dDefaultKey = await j('POST', '/api/maintenance/dispatch', {}, { 'x-pulse-key': 'pulse-dispatch-key' })
-  check('DOCUMENTED RISK: default constant accepted on dispatch', dDefaultKey.status === 200, `got ${dDefaultKey.status}`)
+  check('S5 FIXED: well-known default constant refused on dispatch', dDefaultKey.status === 401 || dDefaultKey.status === 403, `got ${dDefaultKey.status}`)
 
   // --- conversation + membership enforcement
   const conv = await j('POST', '/api/conversations', { creatorId: A.id, memberIds: [B.id, C.id], isGroup: true, name: `${uniq}-grp` })

@@ -22,7 +22,9 @@ public protocol PulseOutboxSending: Sendable {
         fileSize: Int?,
         kind: String?,
         viewOnce: Bool?,
-        topicId: String?
+        topicId: String?,
+        payload: [String: Any]?,
+        anon: Bool?
     ) async throws -> WireChatMessage
 }
 
@@ -150,7 +152,9 @@ public final class PulseOutboxEngine: ObservableObject {
                     fileSize: nil,
                     kind: nil,
                     viewOnce: nil,
-                    topicId: nil
+                    topicId: nil,
+                    payload: nil,
+                    anon: nil
                 )
                 try? store.upsert(messages: [real])
                 try? store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))

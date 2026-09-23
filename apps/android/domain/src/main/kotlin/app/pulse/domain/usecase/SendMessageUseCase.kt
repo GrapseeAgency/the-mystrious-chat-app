@@ -21,6 +21,7 @@ class SendMessageUseCase(private val repo: PulseRepository) {
     }
 
     companion object {
-        const val MAX_LENGTH = 4000
+        /** Server cap (serializers.ts MESSAGE_MAX) — audit D1: client was 4000, server 400s 2001-4000. */
+        const val MAX_LENGTH = 2000
     }
 }

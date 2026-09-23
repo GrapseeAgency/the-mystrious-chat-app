@@ -102,6 +102,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -228,7 +232,24 @@ fun ChatsScreen(
         if (viewerId != null) {
             viewModel.refresh()
             viewModel.loadChrome()
-            viewModel.startPolling()
+        }
+    }
+    // Audit D25 fix — poll ONLY while this surface is visible AND the app is
+    // foregrounded: start on enter + ON_START, stop on leave + ON_STOP.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.startPolling()
+                Lifecycle.Event.ON_STOP -> viewModel.stopPolling()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        viewModel.startPolling()
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            viewModel.stopPolling()
         }
     }
     LaunchedEffect(notice) {
@@ -633,9 +654,23 @@ fun ArchivedScreen(
     val haptics = LocalHapticFeedback.current
 
     LaunchedEffect(viewerId) {
-        if (viewerId != null) {
-            viewModel.refresh()
-            viewModel.startPolling()
+        if (viewerId != null) viewModel.refresh()
+    }
+    // Audit D25 fix (archived page): same visible-only polling contract.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.startPolling()
+                Lifecycle.Event.ON_STOP -> viewModel.stopPolling()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        viewModel.startPolling()
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            viewModel.stopPolling()
         }
     }
     LaunchedEffect(notice) {

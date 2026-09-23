@@ -17,13 +17,17 @@ public struct PulseAPIClient: Sendable {
         public var suggestion: String?
         /// Onboarding — raw HTTP status (409 name-clash vs username-taken branches).
         public var status: Int?
+        /// REM-B F-MS-20 — slow-mode 429s: seconds the server asked us to
+        /// wait (body { error, retryAfter } or the Retry-After header).
+        public var retryAfter: Int?
 
-        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil) {
+        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil, retryAfter: Int? = nil) {
             self.kind = kind
             self.message = message
             self.code = code
             self.suggestion = suggestion
             self.status = status
+            self.retryAfter = retryAfter
         }
     }
 
@@ -199,7 +203,9 @@ public struct PulseAPIClient: Sendable {
         fileSize: Int? = nil,
         kind: String? = nil,
         viewOnce: Bool? = nil,
-        topicId: String? = nil
+        topicId: String? = nil,
+        payload: [String: Any]? = nil,
+        anon: Bool? = nil
     ) async throws -> WireChatMessage {
         var body: [String: Any] = ["senderId": userId, "content": content, "kind": kind ?? "text"]
         if let replyToId { body["replyToId"] = replyToId }
@@ -215,6 +221,11 @@ public struct PulseAPIClient: Sendable {
         // under a topic (spec §1 rows 9/10 — thread replies never pass it).
         if viewOnce == true { body["viewOnce"] = true }
         if let topicId { body["topicId"] = topicId }
+        // REM-B — rich-object payload (sticker {emoji,pack} / effect
+        // {effect:…}) rides the JSON object (server serializes to the row);
+        // anon is the F-MS-17 incognito flag (groups only, server clamps).
+        if let payload { body["payload"] = payload }
+        if anon == true { body["anon"] = true }
         let data = try await postRaw("/api/conversations/\(conversationId)/messages", body: body)
         return try WireMessageEnvelope.extract(from: data)
     }
@@ -1137,6 +1148,133 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireAppCommunity.self, from: data)
     }
 
+    // ── REM-B — group admin (web group-info-sheet.tsx parity) ──
+
+    /// PATCH /api/conversations/{id} { requesterId, name?/photo?/broadcast? }
+    /// — admin-only group meta. `photo` is an "/api/uploads/<file>" path
+    /// ('' clears); `broadcast` toggles announcement mode. Verify against the
+    /// live route: name 1-GROUP_NAME_MAX, photo must match the stored-path
+    /// regex, 403s surface verbatim.
+    public func patchConversation(
+        _ conversationId: String,
+        requesterId: String,
+        name: String? = nil,
+        photo: String?? = nil,
+        broadcast: Bool? = nil,
+        screenPrivacy: Bool? = nil,
+    ) async throws -> WireConversationSummary {
+        var body: [String: Any] = ["requesterId": requesterId]
+        if let name { body["name"] = name }
+        if let photo { body["photo"] = photo ?? "" } // nil-in-optional = clear ('')
+        if let broadcast { body["broadcast"] = broadcast }
+        if let screenPrivacy { body["screenPrivacy"] = screenPrivacy }
+        let data = try await patchRaw("/api/conversations/\(q(conversationId))", body: body)
+        return try WireConversationEnvelope.extract(from: data)
+    }
+
+    /// POST /api/conversations/{id}/members { requesterId, userIds } —
+    /// admin-only add (dups deduped server-side) → { conversation, added }.
+    public func addMembers(_ conversationId: String, requesterId: String, userIds: [String]) async throws -> [String] {
+        let data = try await postRaw(
+            "/api/conversations/\(q(conversationId))/members",
+            body: ["requesterId": requesterId, "userIds": userIds],
+        )
+        return try envelope(WireMembersAdded.self, from: data).added ?? []
+    }
+
+    /// PATCH /api/conversations/{id}/members { requesterId, userId, role } —
+    /// admin-only role set ("admin" | "member"); last-admin demote 400s.
+    /// → { conversation } refreshed detail.
+    public func setMemberRole(_ conversationId: String, requesterId: String, userId: String, role: String) async throws -> WireConversationSummary {
+        let data = try await patchRaw(
+            "/api/conversations/\(q(conversationId))/members",
+            body: ["requesterId": requesterId, "userId": userId, "role": role],
+        )
+        return try WireConversationEnvelope.extract(from: data)
+    }
+
+    /// DELETE /api/conversations/{id}/members/{userId} { requesterId } —
+    /// kick a NON-admin member (self-kick 400, admin target 403).
+    public func kickMember(_ conversationId: String, requesterId: String, userId: String) async throws {
+        try await deleteEmpty(
+            "/api/conversations/\(q(conversationId))/members/\(q(userId))",
+            body: ["requesterId": requesterId],
+        )
+    }
+
+    /// DELETE /api/conversations/{id}/members { requesterId } — leave the
+    /// group (last-admin succession server-side) → { ok, remainingMembers,
+    /// promotedUserId? }.
+    public func leaveGroup(_ conversationId: String, requesterId: String) async throws -> WireLeaveResult {
+        let data = try await deleteRaw(
+            "/api/conversations/\(q(conversationId))/members",
+            body: ["requesterId": requesterId],
+        )
+        return try envelope(WireLeaveResult.self, from: data)
+    }
+
+    /// POST /api/conversations/{id}/invite { requesterId, regenerate? } —
+    /// admin-only lazy-create/rotate → { inviteCode }. The shareable link is
+    /// "pulse://invite/<code>" (deep-link F-DL) with the web's /join/<code>
+    /// shape mirrored by JoinInviteSheet.
+    public func inviteCreate(_ conversationId: String, requesterId: String, regenerate: Bool) async throws -> String {
+        let data = try await postRaw(
+            "/api/conversations/\(q(conversationId))/invite",
+            body: ["requesterId": requesterId, "regenerate": regenerate],
+        )
+        let decoded = try envelope(WireInviteCode.self, from: data)
+        guard let code = decoded.inviteCode, !code.isEmpty else {
+            throw Failure(kind: .validation, message: "Invite response missing the code")
+        }
+        return code
+    }
+
+    /// PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } —
+    /// participant-level TTL (presets 0 · 1d · 1w · 30d server-gated).
+    public func setDisappearingTtl(_ conversationId: String, userId: String, ttlSeconds: Int) async throws -> WireConversationSummary {
+        let data = try await patchRaw(
+            "/api/conversations/\(q(conversationId))/disappearing",
+            body: ["userId": userId, "ttlSeconds": ttlSeconds],
+        )
+        return try WireConversationEnvelope.extract(from: data)
+    }
+
+    /// PATCH /api/conversations/{id}/slow-mode { userId, seconds } —
+    /// admin-only member throttle (presets 0/5/10/30/60/300).
+    public func setSlowMode(_ conversationId: String, userId: String, seconds: Int) async throws -> Int {
+        let data = try await patchRaw(
+            "/api/conversations/\(q(conversationId))/slow-mode",
+            body: ["userId": userId, "seconds": seconds],
+        )
+        return try envelope(WireSlowModeResult.self, from: data).slowModeSeconds ?? seconds
+    }
+
+    // ── REM-B F-MS-18 — scheduled sends ──────────────────────
+
+    /// GET /api/conversations/{id}/scheduled?userId= — the caller's OWN
+    /// pending rows, soonest first (plus dispatch-refused ones).
+    public func scheduledMessages(conversationId: String) async throws -> [WireScheduledItem] {
+        let page: WireScheduledPage = try await get(
+            "/api/conversations/\(q(conversationId))/scheduled?userId=\(q(userId))",
+        )
+        return page.items ?? []
+    }
+
+    /// POST /api/conversations/{id}/scheduled { senderId, content,
+    /// scheduledAt } → 201 { item }. Window guard server-side: 30 s – 30 d.
+    public func scheduleMessage(conversationId: String, content: String, scheduledAtIso: String) async throws -> WireScheduledItem {
+        let data = try await postRaw(
+            "/api/conversations/\(q(conversationId))/scheduled",
+            body: ["senderId": userId, "content": content, "scheduledAt": scheduledAtIso],
+        )
+        return try envelope(WireScheduledItem.self, from: data)
+    }
+
+    /// DELETE /api/scheduled/{id} { requesterId } — sender-only cancel.
+    public func cancelScheduled(_ id: String) async throws {
+        try await deleteEmpty("/api/scheduled/\(q(id))", body: ["requesterId": userId])
+    }
+
     // ── plumbing ─────────────────────────────────────────────
     /// URL builder that keeps query strings intact (appendingPathComponent
     /// would percent-encode "?", breaking every ?userId= route).
@@ -1237,13 +1375,21 @@ public struct PulseAPIClient: Sendable {
             var message = String(data: data, encoding: .utf8)
             var code: String?
             var suggestion: String?
+            var retryAfter: Int?
             if let body = try? decoder.decode(WireErrorBody.self, from: data) {
                 if let error = body.error, !error.isEmpty { message = error }
                 code = body.code
                 suggestion = body.suggestion
+                retryAfter = body.retryAfter
                 if body.code == "username_taken" { kind = .validation }
             }
-            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode)
+            // F-MS-20 — the Retry-After header backs the body field (web
+            // apiJson parity: body number wins, else parse the header).
+            if retryAfter == nil, let raw = http.value(forHTTPHeaderField: "Retry-After"),
+               let seconds = Int(raw), seconds > 0 {
+                retryAfter = seconds
+            }
+            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter)
         }
         return data
     }

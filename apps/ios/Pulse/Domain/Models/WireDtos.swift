@@ -84,6 +84,8 @@ public struct WireErrorBody: Codable, Sendable {
     public let error: String?
     public let code: String?
     public let suggestion: String?
+    /// R44 — slow-mode 429s carry { error, retryAfter } (seconds to wait).
+    public let retryAfter: Int?
 }
 
 /// GET /api/users/check-username — live @handle availability (onboarding picker).
@@ -188,6 +190,12 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     // cards decode it tolerantly via PulseWave7Logic. Defaulted var keeps
     // the memberwise init source-compatible with every existing call site.
     public var payload: String? = nil
+    /// REM-B F-MS-19 — disappearing-TTL burn stamp (server sets createdAt +
+    /// ttlSeconds on rows of TTL-enabled rooms; the client hides past rows).
+    public var expiresAt: String? = nil
+    /// REM-B D42/AI-01 — automation-bot authorship stamp (F-MS-21 engine):
+    /// true on rows posted by @pulseai automations → bot tag chip in the room.
+    public var viaAutomation: Bool? = nil
 }
 
 public struct WireMessagesPage: Codable, Sendable {
@@ -195,6 +203,7 @@ public struct WireMessagesPage: Codable, Sendable {
     public let hasMore: Bool
     public let total: Int
 }
+
 
 /// GET /api/messages/{id}/thread?userId= — thread-root message + its replies
 /// (replies asc). Wave 1 thread sheet page (spec §1.1 "Thread read").
@@ -327,6 +336,49 @@ public struct WireOk: Codable, Hashable, Sendable {
     public let ok: Bool?
 }
 
+// ── REM-B — group admin / scheduled / slow-mode wire shapes ──
+
+/// POST /api/conversations/{id}/invite { requesterId, regenerate? }
+/// → 200 { inviteCode } (admin-only; lazy-create on first call).
+public struct WireInviteCode: Codable, Sendable {
+    public let inviteCode: String?
+}
+
+/// DELETE /api/conversations/{id}/members { requesterId } — leave verdict
+/// with the server's last-admin succession result.
+public struct WireLeaveResult: Codable, Sendable {
+    public let ok: Bool?
+    public let remainingMembers: Int?
+    public let promotedUserId: String?
+}
+
+/// POST /api/conversations/{id}/members { requesterId, userIds } verdict.
+public struct WireMembersAdded: Codable, Sendable {
+    public let added: [String]?
+}
+
+/// PATCH /api/conversations/{id}/slow-mode { userId, seconds } verdict.
+public struct WireSlowModeResult: Codable, Sendable {
+    public let ok: Bool?
+    public let slowModeSeconds: Int?
+}
+
+/// GET/POST /api/conversations/{id}/scheduled — Telegram-style delayed send
+/// rows owned by the caller (pending + refused; sentAt null on both).
+public struct WireScheduledItem: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let conversationId: String
+    public let content: String
+    public let scheduledAt: String
+    public let sentAt: String?
+    public let cancelledAt: String?
+    public let cancelledReason: String?
+}
+
+public struct WireScheduledPage: Codable, Sendable {
+    public let items: [WireScheduledItem]?
+}
+
 public struct WireConversationMember: Codable, Hashable, Sendable {
     public let id: String
     public let name: String
@@ -380,6 +432,12 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     public let lostStreak: WireStreak?
     /// N10-b — viewer flagged this row mark-as-unread (nil on older relays).
     public let myManualUnread: Bool?
+    // REM-B F-GR — conversation-DETAIL-only fields (tolerant: summaries
+    // decode nil). inviteCode mirrors serializers.ts L525 (groups only);
+    // slowModeSeconds the R44 member-send throttle (0 = off). Defaulted vars
+    // keep the memberwise init source-compatible with existing call sites.
+    public var inviteCode: String? = nil
+    public var slowModeSeconds: Int? = nil
 
     /// Pin/mute state derived from the wire timestamps (web parity helpers —
     /// ChatsView swipe + context menus read these).

@@ -82,9 +82,9 @@ async function main() {
   check('login: missing name 400', loginMissing.status === 400, loginMissing)
 
   // ── internal verify (relay-facing) ─────────────────────────
-  const verifyOk = await api(`/api/internal/verify?userId=${userId}&token=${rotated}`, { key: 'pulse-dispatch-key' })
+  const verifyOk = await api(`/api/internal/verify?userId=${userId}&token=${rotated}`, { key: process.env.CRON_SECRET ?? '' })
   check('internal/verify: valid → true', verifyOk.status === 200 && verifyOk.json.valid === true, verifyOk)
-  const verifyBad = await api(`/api/internal/verify?userId=${userId}&token=abcd`, { key: 'pulse-dispatch-key' })
+  const verifyBad = await api(`/api/internal/verify?userId=${userId}&token=abcd`, { key: process.env.CRON_SECRET ?? '' })
   check('internal/verify: invalid → false', verifyBad.status === 200 && verifyBad.json.valid === false, verifyBad)
   const verifyNoKey = await api(`/api/internal/verify?userId=${userId}&token=${rotated}`)
   check('internal/verify: no shared key → 401', verifyNoKey.status === 401, verifyNoKey)

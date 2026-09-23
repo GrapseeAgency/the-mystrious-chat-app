@@ -8,6 +8,8 @@ import app.pulse.domain.model.CallSignalOut
 import app.pulse.domain.model.Channel
 import app.pulse.domain.model.FlushReport
 import app.pulse.domain.model.FolderSummary
+import app.pulse.domain.model.GroupLeave
+import app.pulse.domain.model.GroupMeta
 import app.pulse.domain.model.HandleCheck
 import app.pulse.domain.model.InviteJoinOutcome
 import app.pulse.domain.model.InvitePreview
@@ -18,6 +20,7 @@ import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.ProfilePatch
 import app.pulse.domain.model.SavedItem
 import app.pulse.domain.model.SafetyState
+import app.pulse.domain.model.ScheduledItem
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.model.StoryItem
 import app.pulse.domain.model.StoryViewer
@@ -411,6 +414,70 @@ interface PulseRepository {
 
     /** Reply counts for river parent bubbles ("N replies ↳") — one batched Room query. */
     suspend fun threadReplyCounts(rootIds: List<String>): Map<String, Int>
+
+    // ── REM-A — group governance + scheduling + rich sends ─────────────
+
+    /**
+     * GET /api/conversations/{id}?userId= → the group meta subset (roles, TTL,
+     * broadcast, slow mode, screen privacy, invite code) as live server truth.
+     * Also upserts the Room conversation cache like [conversationDetail].
+     */
+    suspend fun groupMeta(conversationId: String): Result<GroupMeta>
+
+    /** PATCH /api/conversations/{id} { name } — group rename (admin-only server-side). */
+    suspend fun renameGroup(conversationId: String, name: String): Result<Unit>
+
+    /** PATCH /api/conversations/{id} { broadcast } — toggle announcement mode (admin-only). */
+    suspend fun setGroupBroadcast(conversationId: String, broadcast: Boolean): Result<Unit>
+
+    /** PATCH /api/conversations/{id} { screenPrivacy } — any participant may toggle. */
+    suspend fun setScreenPrivacy(conversationId: String, on: Boolean): Result<Unit>
+
+    /** POST /api/conversations/{id}/members { userIds[] } — admin-only add → the ids actually added. */
+    suspend fun addGroupMembers(conversationId: String, userIds: List<String>): Result<List<String>>
+
+    /** PATCH /api/conversations/{id}/members/{userId} { action } — promote/demote (admin-only). */
+    suspend fun setMemberRole(conversationId: String, userId: String, promote: Boolean): Result<Unit>
+
+    /** DELETE /api/conversations/{id}/members/{userId} — kick a non-admin member (admin-only). */
+    suspend fun kickMember(conversationId: String, userId: String): Result<Unit>
+
+    /** DELETE /api/conversations/{id}/members — LEAVE group (last-admin succession server-side). */
+    suspend fun leaveGroup(conversationId: String): Result<GroupLeave>
+
+    /** POST /api/conversations/{id}/invite — admin-only lazy create / regenerate → the code. */
+    suspend fun createGroupInvite(conversationId: String, regenerate: Boolean): Result<String>
+
+    /** PATCH /api/conversations/{id}/disappearing { ttlSeconds } — presets 0/86400/604800/2592000. */
+    suspend fun setDisappearingTtl(conversationId: String, ttlSeconds: Int): Result<Int>
+
+    /** PATCH /api/conversations/{id}/slow-mode { seconds } — admin-only; presets 0/5/10/30/60/300. */
+    suspend fun setSlowMode(conversationId: String, seconds: Int): Result<Int>
+
+    /** GET /api/conversations/{id}/scheduled?userId= — THIS viewer's pending delayed sends. */
+    suspend fun scheduledMessages(conversationId: String): Result<List<ScheduledItem>>
+
+    /** POST /api/conversations/{id}/scheduled { content, scheduledAt } — 30s..30d horizon server-side. */
+    suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String): Result<ScheduledItem>
+
+    /** DELETE /api/scheduled/{id} { requesterId } — owner-only cancel. */
+    suspend fun cancelScheduled(scheduledId: String): Result<Unit>
+
+    /**
+     * Rich TEXT-kind send — carries the incognito flag (group-only server-side)
+     * and the sticker/effects payload blob (sticker {emoji,pack} · {effect}).
+     * Optimistic echo + outbox semantics match [sendMessage].
+     */
+    suspend fun sendRichMessage(
+        conversationId: String,
+        body: String,
+        kind: String = "text",
+        payload: String? = null,
+        anon: Boolean = false,
+        replyToId: String? = null,
+        parentId: String? = null,
+        topicId: String? = null,
+    ): Result<Message>
 
     // ── Wave 2 messaging depth (spec WAVE2 §0 — all routes exist on the wire) ──
 

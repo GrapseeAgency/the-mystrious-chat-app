@@ -141,6 +141,69 @@ data class ConversationSummaryDto(
     val myStreak: JsonElement? = null,
     val deadStreak: JsonElement? = null,
     val lostStreak: JsonElement? = null,
+    // REM-A group-admin/slow-mode era — detail rows carry these (web
+    // ConversationDetail); summaries tolerate the same keys (defaulted).
+    /** Shareable join code — groups only, null = no active link. */
+    val inviteCode: String? = null,
+    /** R44 slow mode — members wait Ns between sends (0 = off). */
+    val slowModeSeconds: Int? = null,
+    /** R38 Signal screen security (room-wide flag). */
+    val screenPrivacy: Boolean? = null,
+)
+
+// ── REM-A group governance + scheduling DTOs ─────────────────
+
+/** DELETE members (leave) / members/[userId] (kick) → { ok, remainingMembers, promotedUserId? }. */
+@Serializable
+data class GroupMutationAckDto(
+    val ok: Boolean = false,
+    val remainingMembers: Int = 0,
+    /** Set when the leaver was the LAST admin — succession auto-promote. */
+    val promotedUserId: String? = null,
+)
+
+/** POST /api/conversations/{id}/invite { requesterId, regenerate? } → { inviteCode }. */
+@Serializable
+data class InviteCodeDto(
+    val inviteCode: String = "",
+)
+
+/** POST /api/conversations/{id}/members { requesterId, userIds[] } → { conversation, added[] }. */
+@Serializable
+data class MembersAddedDto(
+    val added: List<String> = emptyList(),
+)
+
+/** PATCH /api/conversations/{id}/slow-mode { userId, seconds } → { ok, slowModeSeconds }. */
+@Serializable
+data class SlowModeAckDto(
+    val ok: Boolean = false,
+    val slowModeSeconds: Int = 0,
+)
+
+/**
+ * One pending delayed-send row (GET/POST /api/conversations/{id}/scheduled,
+ * DELETE /api/scheduled/{id} — web ScheduledItem parity, tolerant decode).
+ */
+@Serializable
+data class ScheduledItemDto(
+    val id: String = "",
+    val conversationId: String = "",
+    val content: String = "",
+    val scheduledAt: String = "",
+    val sentAt: String? = null,
+    val cancelledAt: String? = null,
+    val cancelledReason: String? = null,
+)
+
+@Serializable
+data class ScheduledPageDto(
+    val items: List<ScheduledItemDto> = emptyList(),
+)
+
+@Serializable
+data class ScheduledItemEnvelopeDto(
+    val item: ScheduledItemDto? = null,
 )
 
 @Serializable

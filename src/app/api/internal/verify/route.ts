@@ -20,7 +20,10 @@ import { hashSessionToken } from '@/lib/session-token'
 export const dynamic = 'force-dynamic'
 
 function authorized(req: Request): boolean {
-  const expected = process.env.CRON_SECRET ?? 'pulse-dispatch-key'
+  // Fail-closed: no default secret. CRON_SECRET must be set in the environment;
+  // an unset/empty secret refuses every request (audit finding S5).
+  const expected = process.env.CRON_SECRET
+  if (!expected) return false
   return req.headers.get('x-pulse-key') === expected
 }
 

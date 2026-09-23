@@ -19,6 +19,7 @@ import app.pulse.protocol.GameDetailDto
 import app.pulse.protocol.GameMatchCreateResultDto
 import app.pulse.protocol.GamesPageDto
 import app.pulse.protocol.GroupEventDto
+import app.pulse.protocol.GroupMutationAckDto
 import app.pulse.protocol.HubLogsPageDto
 import app.pulse.protocol.HubTaskDto
 import app.pulse.protocol.HubTasksPageDto
@@ -56,9 +57,11 @@ import app.pulse.protocol.FoldersPageDto
 import app.pulse.protocol.FullUserDto
 import app.pulse.protocol.HandleRegistryDto
 import app.pulse.protocol.InviteEnvelopeDto
+import app.pulse.protocol.InviteCodeDto
 import app.pulse.protocol.InviteJoinResultDto
 import app.pulse.protocol.InvitePreviewDto
 import app.pulse.protocol.MentionsPageDto
+import app.pulse.protocol.MembersAddedDto
 import app.pulse.protocol.MessagesPageDto
 import app.pulse.protocol.OkDto
 import app.pulse.protocol.PulseJson
@@ -68,7 +71,11 @@ import app.pulse.protocol.ReportReasonsPageDto
 import app.pulse.protocol.SavedPageDto
 import app.pulse.protocol.SavedToggleDto
 import app.pulse.protocol.SafetyStateDto
+import app.pulse.protocol.ScheduledItemDto
+import app.pulse.protocol.ScheduledItemEnvelopeDto
+import app.pulse.protocol.ScheduledPageDto
 import app.pulse.protocol.SearchPageDto
+import app.pulse.protocol.SlowModeAckDto
 import app.pulse.protocol.StatsEnvelopeDto
 import app.pulse.protocol.StoriesPageDto
 import app.pulse.protocol.StoryCreatedDto
@@ -239,6 +246,7 @@ class PulseApi(
         var message: String? = body.take(300)
         var code: String? = null
         var suggestion: String? = null
+        var retryAfter: Int? = null
         try {
             val json = PulseJson.parseToJsonElement(body)
             if (json is JsonObject) {
@@ -251,6 +259,11 @@ class PulseApi(
                 (json["suggestion"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
                     if (it.isString) suggestion = it.content
                 }
+                // R44 slow mode — the 429 body carries { error, retryAfter } and a
+                // Retry-After header (same value). The body wins (web parity).
+                (json["retryAfter"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
+                    retryAfter = runCatching { it.content.toInt() }.getOrNull()
+                }
             }
         } catch (_: Exception) {
             // non-JSON body — keep the raw text as the message
@@ -260,7 +273,7 @@ class PulseApi(
         // the store layer clear the credential + raise the re-login flow.
         if (status == 401) onAuthInvalid(message)
         val base = PulseResult.fromHttp(status, message)
-        return base.copy(code = code, suggestion = suggestion, status = status)
+        return base.copy(code = code, suggestion = suggestion, status = status, retryAfter = retryAfter)
     }
 
     // ── conversations ───────────────────────────────────────────
@@ -303,6 +316,10 @@ class PulseApi(
         kind: String? = null,
         viewOnce: Boolean? = null,
         topicId: String? = null,
+        /** R24-b incognito — group-only server-side; DMs silently ignore it. */
+        anon: Boolean? = null,
+        /** Rich payload blob — sticker {emoji,pack} · location {lat,lng,label} · effects {effect}. */
+        payload: JsonObject? = null,
     ): PulseResult<ChatMessageDto> =
         post(
             "/api/conversations/$conversationId/messages",
@@ -320,6 +337,8 @@ class PulseApi(
                 if (fileSize != null) put("fileSize", fileSize)
                 if (viewOnce == true) put("viewOnce", true)
                 if (topicId != null) put("topicId", topicId)
+                if (anon == true) put("anon", true)
+                if (payload != null) put("payload", payload)
             },
         ) { PulseJson.decodeFromString(ChatMessageDto.serializer(), it) }
 
@@ -859,6 +878,29 @@ class PulseApi(
             val res = http.delete(PulseEndpoints.http(path)) {
                 contentType(ContentType.Application.Json)
                 setBody(jsonOf("userId" to userId).toString())
+                authHeader()
+            }
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) {
+                @Suppress("UNCHECKED_CAST")
+                PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
+            } else {
+                failureOf(res.status.value, text)
+            }
+        } catch (e: kotlinx.serialization.SerializationException) {
+            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+        }
+    }
+
+    /** DELETE helper with a caller-shaped JSON body (group kick/leave + scheduled cancel — { requesterId }). */
+    private suspend fun <T> deleteWithJson(path: String, body: JsonObject, parse: ((String) -> T)? = null): PulseResult<T> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.delete(PulseEndpoints.http(path)) {
+                contentType(ContentType.Application.Json)
+                setBody(body.toString())
                 authHeader()
             }
             val text = res.bodyAsText()
@@ -1525,6 +1567,139 @@ class PulseApi(
         post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/community", jsonOf("userId" to userId)) {
             PulseJson.decodeFromString(AppCommunityDto.serializer(), it)
         }
+
+    // ── REM-A group governance (web group-info-sheet parity) ──────────
+
+    /**
+     * PATCH /api/conversations/{id} { requesterId, name?/broadcast?/photo?/screenPrivacy? }
+     * Group meta changes — name/broadcast/photo are ADMIN-only server-side,
+     * screenPrivacy is any-participant. → { conversation: ConversationDetail }.
+     */
+    suspend fun patchConversation(
+        conversationId: String,
+        requesterId: String,
+        name: String? = null,
+        broadcast: Boolean? = null,
+        photo: String? = null,
+        screenPrivacy: Boolean? = null,
+    ): PulseResult<ConversationSummaryDto> =
+        patch(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8"),
+            buildJsonObject {
+                put("requesterId", requesterId)
+                if (name != null) put("name", name)
+                if (broadcast != null) put("broadcast", broadcast)
+                if (photo != null) put("photo", photo)
+                if (screenPrivacy != null) put("screenPrivacy", screenPrivacy)
+            },
+        ) {
+            PulseJson.decodeFromString(
+                ConversationSummaryDto.serializer(),
+                PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
+            )
+        }
+
+    /** POST /api/conversations/{id}/members { requesterId, userIds[] } — admin-only add. */
+    suspend fun addMembers(conversationId: String, requesterId: String, userIds: List<String>): PulseResult<MembersAddedDto> =
+        post(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members",
+            buildJsonObject {
+                put("requesterId", requesterId)
+                put("userIds", kotlinx.serialization.json.JsonArray(userIds.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+            },
+        ) { PulseJson.decodeFromString(MembersAddedDto.serializer(), it) }
+
+    /** PATCH /api/conversations/{id}/members { requesterId, userId, role } — promote/demote (admin-only). */
+    suspend fun setMemberRole(conversationId: String, requesterId: String, userId: String, role: String): PulseResult<Unit> =
+        patch(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members",
+            jsonOf("requesterId" to requesterId, "userId" to userId, "role" to role),
+        )
+
+    /**
+     * PATCH /api/conversations/{id}/members/{userId} { requesterId, action } —
+     * the same promote/demote contract on the member-scoped path (the web
+     * group-info sheet uses THIS route; both exist server-side).
+     */
+    suspend fun promoteDemote(conversationId: String, requesterId: String, userId: String, promote: Boolean): PulseResult<ConversationSummaryDto> =
+        patch(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members/" +
+                java.net.URLEncoder.encode(userId, "UTF-8"),
+            jsonOf("requesterId" to requesterId, "action" to if (promote) "promote" else "demote"),
+        ) {
+            PulseJson.decodeFromString(
+                ConversationSummaryDto.serializer(),
+                PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
+            )
+        }
+
+    /** DELETE /api/conversations/{id}/members/{userId} { requesterId } — kick a NON-admin member. */
+    suspend fun kickMember(conversationId: String, requesterId: String, userId: String): PulseResult<GroupMutationAckDto> =
+        deleteWithJson(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members/" +
+                java.net.URLEncoder.encode(userId, "UTF-8"),
+            jsonOf("requesterId" to requesterId),
+        ) { PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it) }
+
+    /**
+     * DELETE /api/conversations/{id}/members { requesterId } — LEAVE group.
+     * Self-removal path with last-admin succession; kicking yourself on the
+     * member-scoped route is a 400 with a "Leave group" pointer (web parity).
+     */
+    suspend fun leaveGroup(conversationId: String, requesterId: String): PulseResult<GroupMutationAckDto> =
+        deleteWithJson(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members",
+            jsonOf("requesterId" to requesterId),
+        ) { PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it) }
+
+    /** POST /api/conversations/{id}/invite { requesterId, regenerate? } — admin-only lazy create/regenerate. */
+    suspend fun createInvite(conversationId: String, requesterId: String, regenerate: Boolean): PulseResult<InviteCodeDto> =
+        post(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/invite",
+            jsonOf("requesterId" to requesterId, "regenerate" to regenerate),
+        ) { PulseJson.decodeFromString(InviteCodeDto.serializer(), it) }
+
+    /** PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } — any participant; presets 0/1d/7d/30d. */
+    suspend fun setDisappearingTtl(conversationId: String, userId: String, ttlSeconds: Int): PulseResult<ConversationSummaryDto> =
+        patch(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/disappearing",
+            jsonOf("userId" to userId, "ttlSeconds" to ttlSeconds),
+        ) {
+            PulseJson.decodeFromString(
+                ConversationSummaryDto.serializer(),
+                PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
+            )
+        }
+
+    /** PATCH /api/conversations/{id}/slow-mode { userId, seconds } — admin-only; presets 0/5/10/30/60/300. */
+    suspend fun setSlowMode(conversationId: String, userId: String, seconds: Int): PulseResult<SlowModeAckDto> =
+        patch(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/slow-mode",
+            jsonOf("userId" to userId, "seconds" to seconds),
+        ) { PulseJson.decodeFromString(SlowModeAckDto.serializer(), it) }
+
+    // ── REM-A scheduled sends (F-MS-18) ─────────────────────────────
+
+    /** GET /api/conversations/{id}/scheduled?userId= — the caller's OWN pending rows, soonest first. */
+    suspend fun scheduledMessages(conversationId: String, userId: String): PulseResult<ScheduledPageDto> =
+        get(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+                "/scheduled?userId=" + java.net.URLEncoder.encode(userId, "UTF-8"),
+        ) { PulseJson.decodeFromString(ScheduledPageDto.serializer(), it) }
+
+    /** POST /api/conversations/{id}/scheduled { senderId, content, scheduledAt } → 201 { item }. */
+    suspend fun scheduleMessage(conversationId: String, senderId: String, content: String, scheduledAtIso: String): PulseResult<ScheduledItemDto> =
+        post(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/scheduled",
+            jsonOf("senderId" to senderId, "content" to content, "scheduledAt" to scheduledAtIso),
+        ) { PulseJson.decodeFromString(ScheduledItemDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("item").toString()) }
+
+    /** DELETE /api/scheduled/{id} { requesterId } → { ok: true } — cancel a pending delayed send. */
+    suspend fun cancelScheduled(scheduledId: String, requesterId: String): PulseResult<OkDto> =
+        deleteWithJson(
+            "/api/scheduled/" + java.net.URLEncoder.encode(scheduledId, "UTF-8"),
+            jsonOf("requesterId" to requesterId),
+        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
 
     companion object {
         /** Per-request cap for the slow voice-caption ASR round-trip. */
