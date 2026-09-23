@@ -37,11 +37,19 @@ final class PulseCallVideoPolicyTests: XCTestCase {
         let toksText: String = toks.map(String.init).joined(separator: "|")
         let eq: Bool = toks.first == "m=video"
         let result: Bool = PulseCallSdp.hasVideo(videoSdp)
+        let viaProd = videoSdp.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\r" || $0 == "\n" }).count
+        let onlyLF = videoSdp.split(whereSeparator: { $0 == "\n" }).count
+        let onlyCR = videoSdp.split(whereSeparator: { $0 == "\r" }).count
+        let scalars = videoSdp.unicodeScalars.prefix(8).map { String($0.value) }.joined(separator: ",")
         let message = "DIAG lines=" + String(lines.count)
             + " vline=" + vlineText
             + " toks=" + toksText
             + " eq=" + String(eq)
             + " hasVideo=" + String(result)
+            + " prod=" + String(viaProd)
+            + " lf=" + String(onlyLF)
+            + " cr=" + String(onlyCR)
+            + " scalars=" + scalars
             + " raw=" + videoSdp
                 .replacingOccurrences(of: "\r", with: "<CR>")
                 .replacingOccurrences(of: "\n", with: "<LF>")
