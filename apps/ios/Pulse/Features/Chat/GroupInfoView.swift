@@ -150,7 +150,7 @@ struct GroupInfoView: View {
                         HStack {
                             Label("Disappearing messages", systemImage: "timer")
                             Spacer()
-                            Text(ttlLabel(detail.ttlSeconds))
+                            Text(Self.ttlLabel(detail.ttlSeconds))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -161,7 +161,7 @@ struct GroupInfoView: View {
                         HStack {
                             Label("Slow mode", systemImage: "tortoise")
                             Spacer()
-                            Text(slowModeLabel(detail.slowModeSeconds ?? 0))
+                            Text(Self.slowModeLabel(detail.slowModeSeconds ?? 0))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -264,7 +264,7 @@ struct GroupInfoView: View {
             isPresented: $ttlOpen,
             titleVisibility: .visible,
         ) {
-            ForEach(ttlPresets, id: \.seconds) { preset in
+            ForEach(Self.ttlPresets, id: \.seconds) { preset in
                 Button(preset.label) { setTtl(preset.seconds) }
             }
             Button("Cancel", role: .cancel) {}
@@ -276,7 +276,7 @@ struct GroupInfoView: View {
             isPresented: $slowModeOpen,
             titleVisibility: .visible,
         ) {
-            ForEach(slowModePresets, id: \.seconds) { preset in
+            ForEach(Self.slowModePresets, id: \.seconds) { preset in
                 Button(preset.label) { setSlowMode(preset.seconds) }
             }
             Button("Cancel", role: .cancel) {}
@@ -485,7 +485,7 @@ struct GroupInfoView: View {
         Task {
             do {
                 detail = try await session.api.setDisappearingTtl(conversation.id, userId: viewerId, ttlSeconds: seconds)
-                session.toasts.show(seconds == 0 ? "Disappearing messages off" : "New messages disappear after \(ttlLabel(seconds).lowercased())")
+                session.toasts.show(seconds == 0 ? "Disappearing messages off" : "New messages disappear after \(Self.ttlLabel(seconds).lowercased())")
             } catch {
                 session.toasts.show(RoomViewModel.describe(error))
             }
@@ -497,7 +497,7 @@ struct GroupInfoView: View {
             do {
                 let applied = try await session.api.setSlowMode(conversation.id, userId: viewerId, seconds: seconds)
                 detail?.slowModeSeconds = applied
-                session.toasts.show(applied == 0 ? "Slow mode off" : "Slow mode: 1 message per \(slowModeLabel(applied).lowercased())")
+                session.toasts.show(applied == 0 ? "Slow mode off" : "Slow mode: 1 message per \(Self.slowModeLabel(applied).lowercased())")
             } catch {
                 session.toasts.show(RoomViewModel.describe(error))
             }
