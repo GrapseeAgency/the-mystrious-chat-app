@@ -45,7 +45,7 @@ final class Wave2UITests: XCTestCase {
         )
         // 26 bars by default (web count), heights always in the 28…100 band.
         XCTAssertEqual(VoiceWaveform.bars(for: "any-id").count, 26)
-        XCTAssertTrue(VoiceWaveform.bars(for: "any-id").all { (28...100).contains($0) })
+        XCTAssertTrue(VoiceWaveform.bars(for: "any-id").allSatisfy { (28...100).contains($0) })
     }
 
     // ── UnfurlTrigger — http(s):// or bare www. ─────────────────

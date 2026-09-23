@@ -75,7 +75,7 @@ public struct WireWhiteboardPage: Codable, Sendable {
     public let resetAt: Int64?
 }
 
-public struct WireWhiteboardStrokePost: Codable, Sendable {
+public struct WireWhiteboardStrokePost: Codable, Equatable, Sendable {
     public let color: String
     public let width: Double
     public let points: [[Double]]
