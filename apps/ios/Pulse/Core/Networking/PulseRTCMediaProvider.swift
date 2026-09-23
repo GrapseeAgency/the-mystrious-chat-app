@@ -333,8 +333,8 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         // 30fps ceiling — the web profile is 1280×720 ideal; the chosen
         // format's own frame-rate range is respected when lower.
         // NOTE: RTCCameraVideoCapturer.startCapture takes (device, format, fps)
-        // — fps as Int32 (stasel/WebRTC 125 ObjC bridge).
-        let fps = Int32(max(1, min(Double(CallVideoConstants.targetFps), Self.fpsCeiling(of: format))))
+        // — fps as Int (stasel/WebRTC 125 ObjC bridge).
+        let fps = max(1, min(Int(CallVideoConstants.targetFps), Int(Self.fpsCeiling(of: format))))
         capturer.startCapture(with: device, format: format, fps: fps) { error in
             if let error {
                 // Async capture failure (device yanked mid-call) — the call
@@ -360,7 +360,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         guard let device = next, let format = Self.bestVideoFormat(for: device) else { return }
         Self.currentDevice = device
         capturer.stopCapture()
-        let fps = Int32(max(1, min(Double(CallVideoConstants.targetFps), Self.fpsCeiling(of: format))))
+        let fps = max(1, min(Int(CallVideoConstants.targetFps), Int(Self.fpsCeiling(of: format))))
         capturer.startCapture(with: device, format: format, fps: fps) { error in
             if let error {
                 NSLog("[call] camera flip failed: %@", error.localizedDescription)
