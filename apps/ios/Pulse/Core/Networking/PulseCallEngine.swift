@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import WebRTC
 
 // ─────────────────────────────────────────────────────────────
 // Pulse — Wave 3 call engine (the native useCallSession hook).
