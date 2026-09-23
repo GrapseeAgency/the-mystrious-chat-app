@@ -38,7 +38,7 @@ public enum PulseRemediationLogic {
     public static func anonAlias(viewerId: String, conversationId: String) -> String {
         let hash = fnv1a("\(viewerId):\(conversationId)")
         let adjective = anonAdjectives[Int(hash % UInt32(anonAdjectives.count))]
-        let animal = anonAnimals[Int(hash / UInt32(anonAdjectives.count)) % UInt32(anonAnimals.count)]
+        let animal = anonAnimals[Int(hash / UInt32(anonAdjectives.count) % UInt32(anonAnimals.count))]
         return "\(adjective) the \(animal)"
     }
 
