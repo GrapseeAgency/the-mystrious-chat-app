@@ -47,9 +47,10 @@ object CallVideoPolicy {
                 flushSection()
                 // m=<media> <port> <proto> <fmt> ...
                 val tokens = line.split(Regex("\\s+"))
-                if (tokens.size >= 3 && tokens[1] == "video") {
+                // tokens[0] is the full "m=video" token; tokens[1] is the port.
+                if (tokens.size >= 3 && tokens[0] == "m=video") {
                     sectionIsVideo = true
-                    sectionRejected = tokens[2].toIntOrNull() == 0
+                    sectionRejected = tokens[1].toIntOrNull() == 0
                 }
             } else if (sectionIsVideo && line == "a=inactive") {
                 sectionRejected = true

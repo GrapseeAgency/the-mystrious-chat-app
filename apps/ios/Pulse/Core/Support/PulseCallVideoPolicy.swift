@@ -43,8 +43,9 @@ public enum PulseCallSdp {
             if line.hasPrefix("m=") {
                 flushSection()
                 let tokens = line.split(separator: " ")
-                // m=<media> <port> <proto> <fmt> ...
-                if tokens.count >= 3, String(tokens[0].dropFirst()) == "video" {
+                // m=<media> <port> <proto> <fmt> ... — tokens[0] is the full
+                // "m=video" token (dropFirst() strips ONE char, not the "m=").
+                if tokens.count >= 3, tokens[0] == "m=video" {
                     sectionIsVideo = true
                     sectionRejected = Int(tokens[1]) == 0
                 }
