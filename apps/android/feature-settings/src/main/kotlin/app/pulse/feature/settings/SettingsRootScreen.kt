@@ -326,13 +326,57 @@ private val WALLPAPERS = PulseWallpaper.TOKENS
 private val FX_MODE_ROW_1 = listOf("aurora" to "Aurora", "caustics" to "Caustics", "mesh" to "Mesh")
 private val FX_MODE_ROW_2 = listOf("stars" to "Stars", "liquid" to "Liquid", "off" to "Off")
 
+/** R2-C item 3 — the five design languages (web UI_THEMES) as picker rows. */
+private val UI_THEME_ROW_1 = listOf(
+    "glass" to "Glass",
+    "kinetic" to "Kinetic",
+    "minimal" to "Minimal",
+)
+private val UI_THEME_ROW_2 = listOf(
+    "dynamic" to "Dynamic",
+    "aero" to "Aero",
+)
+
 @Composable
 fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
     val darkOverride by viewModel.darkOverride.collectAsStateWithLifecycle()
     val fxMode by viewModel.fxMode.collectAsStateWithLifecycle()
+    // R2-C item 3 — the selected design language.
+    val uiTheme by viewModel.uiTheme.collectAsStateWithLifecycle()
+    val uiThemeMeta = app.pulse.ui.PulseUiTheme.fromId(uiTheme)
     SectionScaffold("Appearance", onBack) {
-        Text("Wallpaper", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+        // R2-C item 3 — the design-language picker (web ui-theme.ts five
+        // languages; value strings ride the SAME `pulse.uiTheme.v2` key the
+        // web persists, so a native pick and a web pick stay in step locally).
+        Text("Design language", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            UI_THEME_ROW_1.forEachIndexed { index, (id, name) ->
+                SegmentedButton(
+                    selected = uiThemeMeta.id == id,
+                    onClick = { viewModel.setUiTheme(id) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = UI_THEME_ROW_1.size),
+                ) { Text(name, fontSize = 12.5.sp, maxLines = 1) }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            UI_THEME_ROW_2.forEachIndexed { index, (id, name) ->
+                SegmentedButton(
+                    selected = uiThemeMeta.id == id,
+                    onClick = { viewModel.setUiTheme(id) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = UI_THEME_ROW_2.size),
+                ) { Text(name, fontSize = 12.5.sp, maxLines = 1) }
+            }
+        }
+        Text(
+            uiThemeMeta.label + " — " + uiThemeMeta.detail,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        SegPicker("Color mode", listOf("system" to "System", "dark" to "Dark", "light" to "Light"), darkOverride, viewModel::setDarkOverride)
+        Text("Wallpaper", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             WALLPAPERS.forEach { (id, name) ->
                 val selected = prefs.wallpaper == id

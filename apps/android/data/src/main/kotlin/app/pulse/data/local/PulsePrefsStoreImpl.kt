@@ -25,6 +25,8 @@ internal val Context.pulsePrefs by preferencesDataStore(name = "pulse.prefs")
 @Singleton
 class PulsePrefsStoreImpl @Inject constructor(
     @ApplicationContext private val context: Context,
+    /** R2-C — the rich prefs store (ui-theme / spotlight / whiteboard draft). */
+    private val localStore: app.pulse.data.local.PulsePrefsLocalStore,
 ) : PulsePrefsStore {
 
     private object Keys {
@@ -123,4 +125,26 @@ class PulsePrefsStoreImpl @Inject constructor(
             if (clean == null) p.remove(Keys.SERVER_BASE) else p[Keys.SERVER_BASE] = clean
         }
     }
+
+    // ── R2-C — design language + spotlight + whiteboard draft (delegated
+    // to the rich PulsePrefsLocalStore, which owns the web-parity keys) ──
+
+    override val uiTheme: Flow<String> = localStore.uiTheme
+    override suspend fun setUiTheme(id: String) = localStore.setUiTheme(id)
+
+    override val spotlightRecents: Flow<List<String>> = localStore.spotlightRecents
+    override suspend fun pushSpotlightRecent(query: String) = localStore.pushSpotlightRecent(query)
+    override suspend fun clearSpotlightRecents() = localStore.clearSpotlightRecents()
+
+    override suspend fun whiteboardDraft(conversationId: String) = localStore.whiteboardDraft(conversationId)
+    override suspend fun appendWhiteboardDraft(conversationId: String, stroke: app.pulse.protocol.WhiteboardStrokePostDto) =
+        localStore.appendWhiteboardDraft(conversationId, stroke)
+    override suspend fun dropFirstWhiteboardDraft(conversationId: String, count: Int) =
+        localStore.dropFirstWhiteboardDraft(conversationId, count)
+    override suspend fun dropLastWhiteboardDraft(conversationId: String) =
+        localStore.dropLastWhiteboardDraft(conversationId)
+    override suspend fun replaceAllWhiteboardDraft(conversationId: String, strokes: List<app.pulse.protocol.WhiteboardStrokePostDto>) =
+        localStore.replaceAllWhiteboardDraft(conversationId, strokes)
+    override suspend fun clearWhiteboardDraft(conversationId: String) =
+        localStore.clearWhiteboardDraft(conversationId)
 }

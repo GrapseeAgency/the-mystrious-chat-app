@@ -88,6 +88,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
@@ -228,6 +229,10 @@ fun ChatRoomScreen(
     val recap by viewModel.recap.collectAsStateWithLifecycle()
     val recapLoading by viewModel.recapLoading.collectAsStateWithLifecycle()
     val groupMeta by viewModel.groupMeta.collectAsStateWithLifecycle()
+    // R2-C item 5 — the R44 slow-mode countdown (armed by the 429 retryAfter;
+    // the composer chip counts it down live and send/mic stay locked).
+    val slowModeRemainingSec by viewModel.slowModeRemainingSec.collectAsStateWithLifecycle()
+    val slowBlocked = slowModeRemainingSec > 0
     val screenPrivacyOn = groupMeta?.screenPrivacyEffective == true
     val roomTheme = convThemes[conversationId]
     val effectiveWallpaper = roomTheme?.wallpaper ?: prefs.wallpaper ?: "none"
@@ -650,8 +655,11 @@ fun ChatRoomScreen(
             // R2-A item 5 — the AI-recap header entry (web chat-room.tsx:4162).
             recapBusy = recapLoading,
             onRequestRecap = viewModel::requestRecap,
-            // R2-A item 6/7/8/9 — room info (groups/channels only).
-            onOpenRoomInfo = if (conversation?.isGroupish == true) {
+            // R2-C item 1 — room info for EVERY room kind: web's header menu
+            // covers DMs too (chat-room.tsx:2153-2171 · room-info-page.tsx),
+            // so the gate is only "the conversation is loaded". GroupInfoScreen
+            // adapts itself for DMs (partner header, no members/invite/roles).
+            onOpenRoomInfo = if (conversation != null) {
                 { onOpenRoomInfo(conversationId) }
             } else null,
         )
@@ -1174,6 +1182,47 @@ fun ChatRoomScreen(
             }
         }
 
+        // ── R2-C item 5 — slow-mode countdown chip (web chat-room.tsx:4747-
+        // 4768): appears the moment the server answers 429, counts the honest
+        // wait down live (mm:ss), then collapses. Send + mic stay disabled
+        // while it shows.
+        if (slowBlocked) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                    ),
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Speed,
+                            contentDescription = null,
+                            tint = PulsePalette.Emerald,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Slow mode — you can send again in " + slowCountdown(slowModeRemainingSec),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+
         // Composer — the text side swaps to the record bar while recording;
         // the right slot (HoldRecordSlot) is ALWAYS mounted so the hold
         // gesture survives. Wave 6 — broadcast channel lock: non-admins get
@@ -1247,13 +1296,15 @@ fun ChatRoomScreen(
                     }
                 }
                 Spacer(Modifier.width(6.dp))
-                val canSend = draft.isNotBlank()
+                val canSend = draft.isNotBlank() && !slowBlocked
                 val slotMic = !canSend && state.editing == null && state.staged == null && !sendingVoice && !recording
                 HoldRecordSlot(
                     recording = recording,
                     sending = sendingVoice,
                     micVisible = slotMic,
                     canSend = canSend,
+                    // R2-C item 5 — slow mode locks the mic (web disabled-mic parity).
+                    enabled = !slowBlocked,
                     onRecordStart = onStartVoiceHold,
                     onRecordArm = { armed -> cancelArmed = armed },
                     onRecordFinish = { cancelled ->
@@ -1437,6 +1488,15 @@ fun ChatRoomScreen(
             onUndo = { viewModel.undoWhiteboard(viewModel.conversationId) },
             onClear = { viewModel.clearWhiteboard(viewModel.conversationId) },
             onDismiss = { viewModel.whiteboardOpen = false },
+            // R2-C item 4 — the durable pending-stroke draft (survives close/death).
+            draft = WhiteboardDraftHooks(
+                load = { viewModel.whiteboardDraft(viewModel.conversationId) },
+                append = { viewModel.appendWhiteboardDraft(viewModel.conversationId, it) },
+                dropFirst = { viewModel.dropFirstWhiteboardDraft(viewModel.conversationId, it) },
+                dropLast = { viewModel.dropLastWhiteboardDraft(viewModel.conversationId) },
+                replaceAll = { viewModel.replaceAllWhiteboardDraft(viewModel.conversationId, it) },
+                clear = { viewModel.clearWhiteboardDraft(viewModel.conversationId) },
+            ),
         )
     }
     if (viewModel.eventsOpen) {
@@ -1953,7 +2013,7 @@ private fun wallpaperLabel(token: String): String =
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun ConvThemeSheet(
+internal fun ConvThemeSheet(
     current: ConvTheme?,
     globalWallpaper: String,
     onPickWallpaper: (String) -> Unit,
@@ -3250,6 +3310,12 @@ private fun formatRecordTimer(ms: Long): String {
 
 // ── D31 hold-to-record voice capture ────────────────────────────────────
 
+/** R2-C item 5 — mm:ss countdown for the slow-mode composer chip. */
+private fun slowCountdown(totalSeconds: Int): String {
+    val safe = totalSeconds.coerceAtLeast(0)
+    return "%d:%02d".format(safe / 60, safe % 60)
+}
+
 /**
  * The composer's right slot — ALWAYS the same node across idle → recording
  * so a press gesture started on the mic survives the recording bar replacing
@@ -3273,10 +3339,13 @@ private fun HoldRecordSlot(
     onRecordArm: (Boolean) -> Unit,
     onRecordFinish: (Boolean) -> Unit,
     onSend: () -> Unit,
+    /** R2-C item 5 — false while slow mode counts: gestures and taps dead. */
+    enabled: Boolean = true,
 ) {
     val density = LocalDensity.current
     val cancelThresholdPx = remember(density) { with(density) { 96.dp.toPx() } }
     val currentMicVisible by rememberUpdatedState(micVisible)
+    val currentEnabled by rememberUpdatedState(enabled)
     val currentRecordStart by rememberUpdatedState(onRecordStart)
     val currentRecordArm by rememberUpdatedState(onRecordArm)
     val currentRecordFinish by rememberUpdatedState(onRecordFinish)
@@ -3287,7 +3356,7 @@ private fun HoldRecordSlot(
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    if (!currentMicVisible) return@awaitEachGesture
+                    if (!currentMicVisible || !currentEnabled) return@awaitEachGesture
                     down.consume()
                     currentRecordStart()
                     var dragX = 0f
@@ -3316,7 +3385,7 @@ private fun HoldRecordSlot(
                 },
                 CircleShape,
             )
-            .clickable(enabled = !recording && !micVisible && canSend, onClick = onSend),
+            .clickable(enabled = !recording && !micVisible && canSend && enabled, onClick = onSend),
     ) {
         when {
             recording && sending -> CircularProgressIndicator(
@@ -3333,7 +3402,7 @@ private fun HoldRecordSlot(
             micVisible -> Icon(
                 Icons.Filled.Mic,
                 contentDescription = "Hold to record a voice note — slide left to cancel",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.4f),
                 modifier = Modifier.size(20.dp),
             )
             else -> Icon(

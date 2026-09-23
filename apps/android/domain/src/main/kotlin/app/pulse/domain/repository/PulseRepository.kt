@@ -162,6 +162,38 @@ interface PulsePrefsStore {
     suspend fun setQuietStart(value: String)
     suspend fun setQuietEnd(value: String)
 
+    // ── R2-C — design language + spotlight + whiteboard draft ──────
+
+    /**
+     * R2-C item 3 — design-language selection. EXACTLY the web value strings
+     * (src/lib/ui-theme.ts): "glass" | "kinetic" | "minimal" | "dynamic" |
+     * "aero", persisted under the web key `pulse.uiTheme.v2`.
+     */
+    val uiTheme: Flow<String>
+    suspend fun setUiTheme(id: String)
+
+    /**
+     * R2-C item 7 — spotlight recent searches (web spotlight.tsx:50-73
+     * parity): last 5 queries, deduped case-insensitively, newest first,
+     * stored under the web key `pulse.spotlight.recents.v1`.
+     */
+    val spotlightRecents: Flow<List<String>>
+    suspend fun pushSpotlightRecent(query: String)
+    suspend fun clearSpotlightRecents()
+
+    /**
+     * R2-C item 4 — the whiteboard PENDING-stroke draft (iOS
+     * PulseWhiteboardDraft parity): per-conversation durable queue of
+     * unsynced strokes — write-through on draw, restore on sheet open,
+     * purge on the server verdict / board-reset path.
+     */
+    suspend fun whiteboardDraft(conversationId: String): List<app.pulse.protocol.WhiteboardStrokePostDto>
+    suspend fun appendWhiteboardDraft(conversationId: String, stroke: app.pulse.protocol.WhiteboardStrokePostDto)
+    suspend fun dropFirstWhiteboardDraft(conversationId: String, count: Int)
+    suspend fun dropLastWhiteboardDraft(conversationId: String)
+    suspend fun replaceAllWhiteboardDraft(conversationId: String, strokes: List<app.pulse.protocol.WhiteboardStrokePostDto>)
+    suspend fun clearWhiteboardDraft(conversationId: String)
+
     suspend fun setViewer(id: String?, name: String?, color: String? = null)
     suspend fun setFxMode(mode: String)
     suspend fun setDarkOverride(value: String)

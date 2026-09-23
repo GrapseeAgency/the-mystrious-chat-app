@@ -105,6 +105,9 @@ class ChatRoomViewModel @Inject constructor(
     // R1-W2I — PiP pane store (F-PI-01..03): the pop-out toggle writes the
     // same process-singleton the shell-level overlay renders from.
     private val pipStore: PulsePiPStore,
+    // R2-C item 4 — the durable whiteboard pending-stroke draft store
+    // (iOS PulseWhiteboardDraft parity; per-conversation DataStore keys).
+    private val prefsStore: app.pulse.domain.repository.PulsePrefsStore,
 ) : ViewModel() {
 
     /** Wave 8 — server-backed prefs for bubble corners / density / wallpaper. */
@@ -1429,11 +1432,40 @@ class ChatRoomViewModel @Inject constructor(
     suspend fun whiteboard(conversationId: String, since: Long?): WhiteboardPageDto? =
         runCatching { repo.whiteboard(conversationId, since).getOrNull() }.getOrNull()
 
-    fun postWhiteboardStrokes(conversationId: String, strokes: List<WhiteboardStrokePostDto>) {
-        viewModelScope.launch {
-            repo.postWhiteboardStrokes(conversationId, strokes)
-                .onFailure { notify(it.message ?: "Stroke upload failed — try again", isError = true) }
-        }
+    /**
+     * R2-C item 4 — the flush now returns the server VERDICT: the sheet
+     * purges the durable draft only when the POST succeeded (strokes stay
+     * pending through failures and re-sync on the next open), and failures
+     * surface the honest toast.
+     */
+    suspend fun postWhiteboardStrokes(conversationId: String, strokes: List<WhiteboardStrokePostDto>): Boolean =
+        repo.postWhiteboardStrokes(conversationId, strokes)
+            .onFailure { notify(it.message ?: "Stroke upload failed — try again", isError = true) }
+            .isSuccess
+
+    // ── R2-C item 4 — durable whiteboard draft (per-conversation prefs) ──
+
+    suspend fun whiteboardDraft(conversationId: String): List<WhiteboardStrokePostDto> =
+        prefsStore.whiteboardDraft(conversationId)
+
+    fun appendWhiteboardDraft(conversationId: String, stroke: WhiteboardStrokePostDto) {
+        viewModelScope.launch { prefsStore.appendWhiteboardDraft(conversationId, stroke) }
+    }
+
+    fun dropFirstWhiteboardDraft(conversationId: String, count: Int) {
+        viewModelScope.launch { prefsStore.dropFirstWhiteboardDraft(conversationId, count) }
+    }
+
+    fun dropLastWhiteboardDraft(conversationId: String) {
+        viewModelScope.launch { prefsStore.dropLastWhiteboardDraft(conversationId) }
+    }
+
+    fun replaceAllWhiteboardDraft(conversationId: String, strokes: List<WhiteboardStrokePostDto>) {
+        viewModelScope.launch { prefsStore.replaceAllWhiteboardDraft(conversationId, strokes) }
+    }
+
+    fun clearWhiteboardDraft(conversationId: String) {
+        viewModelScope.launch { prefsStore.clearWhiteboardDraft(conversationId) }
     }
 
     fun undoWhiteboard(conversationId: String) {

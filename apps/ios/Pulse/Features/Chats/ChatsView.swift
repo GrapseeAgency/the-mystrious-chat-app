@@ -184,7 +184,8 @@ struct ChatsView: View {
     private func enterSearch() {
         if viewModel.selectMode { viewModel.exitSelect() }
         withAnimation(.pulse(.pulseSnappy, reduceMotion: reduceMotion)) {
-            viewModel.searching = true
+            // R2-D ITEM 8 — entering search reloads the recents rail.
+            viewModel.enterSearchMode()
         }
         viewModel.searchFocused = true
     }
@@ -194,6 +195,9 @@ struct ChatsView: View {
     }
 
     private func openRoom(_ conv: WireConversationSummary, jumpMessageId: String? = nil) {
+        // R2-D ITEM 8 — a room opened from search makes its query a recent
+        // (web pushRecent on chat/message activation parity).
+        viewModel.noteQueryUsed()
         path.append(RoomRoute(conversation: conv, jumpMessageId: jumpMessageId))
     }
 
@@ -474,6 +478,49 @@ struct ChatsView: View {
     private var searchResults: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
+                // R2-D ITEM 8 — the recent-searches rail (web spotlight.tsx
+                // Recents section + footer "Clear recents"): last 5 used
+                // queries, newest first, tap re-runs the query.
+                if viewModel.query.isEmpty, !viewModel.spotlightRecents.isEmpty {
+                    SectionHeader(label: "RECENT SEARCHES", count: viewModel.spotlightRecents.count)
+                    ForEach(Array(viewModel.spotlightRecents.enumerated()), id: \.offset) { pair in
+                        Button {
+                            PulseHaptics.tap()
+                            viewModel.searchTextChanged(pair.element, session: session)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(PulseTheme.textTertiary)
+                                Text(pair.element)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(PulseTheme.titleOnWash)
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 11)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Recent search \(pair.element)")
+                    }
+                    Button {
+                        PulseHaptics.tap()
+                        viewModel.clearSpotlightRecents()
+                    } label: {
+                        Text("Clear recents")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(PulseTheme.textTertiary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear recent searches")
+                }
+
                 if !viewModel.filteredRows.isEmpty {
                     SectionHeader(label: "CHATS", count: viewModel.filteredRows.count)
                     ForEach(viewModel.filteredRows) { row in
@@ -2355,6 +2402,10 @@ final class ChatsViewModel: ObservableObject {
     @Published private(set) var serverHits: [WireSearchMessage]?
     @Published private(set) var serverTotal: Int?
     @Published private(set) var serverSearching = false
+    // R2-D ITEM 8 — spotlight recent searches (web spotlight.tsx parity):
+    // last 5 queries, newest-first, surfaced while the query is empty.
+    @Published private(set) var spotlightRecents: [String] = []
+    private let recentsStore = PulseSpotlightRecents()
 
     // side queries (nil = unreachable → honest degradation)
     @Published private(set) var storyGroups: [WireStoryGroup] = []
@@ -2749,6 +2800,8 @@ final class ChatsViewModel: ObservableObject {
             deferredQuery = ""
             serverHits = nil
             serverTotal = nil
+            // R2-D ITEM 8 — back to the empty query: the recents rail shows.
+            spotlightRecents = recentsStore.read()
             return
         }
         searchDebounceTask = Task { [weak self] in
@@ -2765,6 +2818,22 @@ final class ChatsViewModel: ObservableObject {
         }
     }
 
+    /// R2-D ITEM 8 — a query actually used (the user opened a chat or a
+    /// message hit while it was active) becomes a recent (web pushRecent
+    /// fires on the same activations).
+    func noteQueryUsed() {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard searching, !trimmed.isEmpty else { return }
+        recentsStore.push(trimmed)
+        spotlightRecents = recentsStore.read()
+    }
+
+    /// R2-D ITEM 8 — web clearRecents parity (the footer "Clear recents").
+    func clearSpotlightRecents() {
+        recentsStore.clear()
+        spotlightRecents = []
+    }
+
     func closeSearch() {
         searchDebounceTask?.cancel()
         searching = false
@@ -2773,6 +2842,13 @@ final class ChatsViewModel: ObservableObject {
         deferredQuery = ""
         serverHits = nil
         serverTotal = nil
+    }
+
+    /// R2-D ITEM 8 — reload the recents rail when entering search mode so
+    /// it reflects every push since the last visit.
+    func enterSearchMode() {
+        searching = true
+        spotlightRecents = recentsStore.read()
     }
 
     // ── multi-select ─────────────────────────────────────────

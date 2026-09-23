@@ -95,6 +95,13 @@ public enum PulseFormat {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
+    /// R2-D — slow-mode countdown chip format: m:ss at minute scale, ss
+    /// under a minute ("0:45", "2:05"). Pure, total — clamps negatives to 0.
+    public static func countdown(_ totalSeconds: Int) -> String {
+        let s = max(0, totalSeconds)
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+
     /// Up to two-letter initials for palette avatars.
     public static func initials(of name: String) -> String {
         let parts = name.split(separator: " ").filter { !$0.isEmpty }

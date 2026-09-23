@@ -71,7 +71,13 @@ struct ContactsView: View {
         }
         .onAppear { viewModel.observe(session: session) }
         .sheet(isPresented: $callsHistoryOpen) {
-            CallsHistoryView(session: session)
+            // R2-D — web calls-page parity: tapping a row closes the history
+            // and reopens the chat through the RootView linked-room bridge
+            // (the same path pulse://room takes — fetch → Chats tab → open).
+            CallsHistoryView(session: session, onOpenConversation: { conversationId in
+                callsHistoryOpen = false
+                session.pendingLinkedRoomId = conversationId
+            })
         }
         .sheet(isPresented: $addContactOpen) {
             NavigationStack {

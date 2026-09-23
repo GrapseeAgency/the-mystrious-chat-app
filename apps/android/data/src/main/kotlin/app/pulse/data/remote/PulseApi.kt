@@ -295,10 +295,19 @@ class PulseApi(
         limit: Int = 200,
         before: String? = null,
         topicId: String? = null,
+        /**
+         * R2-C item 2 (D47 delta sync) — ISO-date cursor; the server returns
+         * only messages strictly NEWER than it, same { messages, hasMore,
+         * total } shape and limits as the newest window (route contract:
+         * when both after=/since= arrive the LATER one wins). Null = the
+         * unchanged full-window fetch.
+         */
+        since: String? = null,
     ): PulseResult<MessagesPageDto> {
         val cursor = before?.let { "&before=$it" } ?: ""
         val topic = topicId?.let { "&topicId=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
-        return get("/api/conversations/$conversationId/messages?limit=$limit$cursor$topic") {
+        val delta = since?.let { "&since=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
+        return get("/api/conversations/$conversationId/messages?limit=$limit$cursor$topic$delta") {
             PulseJson.decodeFromString(MessagesPageDto.serializer(), it)
         }
     }
@@ -642,8 +651,13 @@ class PulseApi(
             PulseJson.decodeFromString(MentionsPageDto.serializer(), it)
         }
 
-    /** DELETE /api/messages/{id} {requesterId} — sender-gated soft delete (clear chat). */
-    suspend fun deleteMessage(messageId: String, requesterId: String): PulseResult<Unit> {
+    /**
+     * DELETE /api/messages/{id} {requesterId} — sender-gated soft delete
+     * (clear chat). The route echoes the tombstoned row as { message } —
+     * R2-C item 2 upserts it repo-side (the tombstone's ORIGINAL createdAt
+     * can never re-arrive through a since= delta refetch).
+     */
+    suspend fun deleteMessage(messageId: String, requesterId: String): PulseResult<ChatMessageDto> {
         if (!PulseEndpoints.isConfigured) return offlineFailure
         return try {
             val res = http.delete(PulseEndpoints.http("/api/messages/$messageId")) {
@@ -651,7 +665,7 @@ class PulseApi(
                 setBody(jsonOf("requesterId" to requesterId).toString())
             }
             val text = res.bodyAsText()
-            if (res.status.isSuccess()) PulseResult.Success(Unit) else failureOf(res.status.value, text)
+            if (res.status.isSuccess()) PulseResult.Success(messageOf(text)) else failureOf(res.status.value, text)
         } catch (e: Exception) {
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }

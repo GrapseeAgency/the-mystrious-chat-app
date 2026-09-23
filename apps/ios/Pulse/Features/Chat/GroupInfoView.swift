@@ -40,6 +40,9 @@ struct GroupInfoView: View {
     // R2-B — group photo edit (web R33-b "Edit photo" overlay parity)
     @State private var photoItem: PhotosPickerItem?
     @State private var photoBusy = false
+    // R2-D ITEM 9 — member-list search (web room-info-page.tsx:320-331:
+    // surfaced only past 8 members, name/@handle substring, clearable).
+    @State private var memberQuery = ""
 
     struct MemberAction: Identifiable {
         var id: String { memberId }
@@ -54,6 +57,18 @@ struct GroupInfoView: View {
         (detail ?? conversation).members.first(where: { $0.id == viewerId })?.role
     }
     private var isAdmin: Bool { viewerRole == "admin" }
+
+    /// R2-D ITEM 9 — the filtered member list (web room-info-page.tsx
+    /// :320-331 verbatim): short rooms stay unfiltered; past 8 members a
+    /// non-empty query keeps name OR @handle case-insensitive matches.
+    private func visibleMembers(_ detail: WireConversationSummary) -> [WireConversationMember] {
+        let query = memberQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        guard detail.members.count > 8, !query.isEmpty else { return detail.members }
+        return detail.members.filter { member in
+            member.name.lowercased().contains(query)
+                || (member.username ?? "").lowercased().contains(query)
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -267,8 +282,45 @@ struct GroupInfoView: View {
 
             // ── members ──
             Section {
-                ForEach(detail.members, id: \.id) { member in
+                // R2-D ITEM 9 — the search pill (web shows it past 8 members:
+                // room-info-page.tsx:1425-1459, "Search members" placeholder).
+                if detail.members.count > 8 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                        TextField("Search members", text: $memberQuery)
+                            .font(.system(size: 13))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .accessibilityLabel("Search members")
+                        if !memberQuery.isEmpty {
+                            Button {
+                                memberQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear member search")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                ForEach(visibleMembers(detail), id: \.id) { member in
                     memberRow(member, detail: detail)
+                }
+                // R2-D ITEM 9 — the honest empty state (web :1604-1609 copy).
+                if detail.members.count > 8, visibleMembers(detail).isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption)
+                        Text("No members match \u{201C}\(memberQuery.trimmingCharacters(in: .whitespaces))\u{201D}")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
                 }
             } header: {
                 Text("Members")

@@ -59,7 +59,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -138,6 +137,7 @@ import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.PulseTheme
 import app.pulse.ui.isPulseDarkTheme
+import app.pulse.ui.pulseUiThemePageBackground
 import app.pulse.ui.pulseGlass
 import androidx.hilt.navigation.compose.hiltViewModel
 import android.Manifest
@@ -256,6 +256,8 @@ class MainActivity : ComponentActivity() {
                                 item.id,
                                 item.note.ifBlank { "Reminder" },
                                 item.snippet ?: item.conversation.name,
+                                // R2-C item 6 — the tap deep-links into the chat.
+                                item.conversationId.ifBlank { null },
                             )
                             runCatching { repository.resolveReminder(item.id) }
                         }
@@ -304,7 +306,10 @@ fun PulseRoot(
     val hydrated by session.hydrated.collectAsStateWithLifecycle()
     val fxRaw by session.fxMode.collectAsStateWithLifecycle()
     val darkRaw by session.darkOverride.collectAsStateWithLifecycle()
+    val uiThemeRaw by session.uiTheme.collectAsStateWithLifecycle()
     val reduced by session.reducedMotion.collectAsStateWithLifecycle()
+    // R2-C item 3 — the selected design language (web pulse.uiTheme.v2).
+    val uiTheme = app.pulse.ui.PulseUiTheme.fromId(uiThemeRaw)
 
     val dark = when (darkRaw) {
         "light" -> false
@@ -332,27 +337,32 @@ fun PulseRoot(
     // live @handle picker). Wait for prefs hydration to avoid a flash.
     val onboarding = hydrated && viewerId == null
 
-    PulseTheme(darkTheme = dark) {
-        Surface(Modifier.fillMaxSize()) {
-            Box {
-                AmbientField(
-                    mode = FxMode.from(fxRaw),
-                    dark = dark,
-                    reducedMotion = reduced,
-                    modifier = Modifier.fillMaxSize(),
-                )
+    PulseTheme(darkTheme = dark, uiTheme = uiTheme) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                // R2-C item 3 — the design-language page backdrop (aurora
+                // radials for glass, ink-linear for kinetic, …) sits behind
+                // the ambient FX field like the web .ui-root.
+                .pulseUiThemePageBackground(uiTheme, dark),
+        ) {
+            AmbientField(
+                mode = FxMode.from(fxRaw),
+                dark = dark,
+                reducedMotion = reduced,
+                modifier = Modifier.fillMaxSize(),
+            )
 
-                if (onboarding) {
-                    OnboardingScreen()
-                } else {
-                    PulseShell(viewerId = viewerId, session = session, deepLink = deepLink, onConsumeDeepLink = onConsumeDeepLink)
-                }
-
-                ParticleBurstHost(
-                    Modifier.fillMaxSize(),
-                    reducedMotion = reduced,
-                )
+            if (onboarding) {
+                OnboardingScreen()
+            } else {
+                PulseShell(viewerId = viewerId, session = session, deepLink = deepLink, onConsumeDeepLink = onConsumeDeepLink)
             }
+
+            ParticleBurstHost(
+                Modifier.fillMaxSize(),
+                reducedMotion = reduced,
+            )
         }
     }
 }

@@ -11,12 +11,19 @@ import SwiftUI
 ///   incoming missed     → arrow.down.right + "Missed" (caller cancel / 30s timeout)
 ///   timeout             → caller side of the same row ("No answer")
 ///   completed           → any connected call that ended normally (duration > 0)
+/// R2-D — rows follow the web calls-page contract: "tap a row to reopen the
+/// chat" (onOpenConversation) plus a redial affordance whenever the row
+/// carries a peer (the row knows its conversation + peer denormalized).
 struct CallsHistoryView: View {
     @ObservedObject var session: PulseSession
     @Environment(\.dismiss) private var dismiss
+    /// R2-D — web calls-page.tsx `onOpenConversation(item.conversationId)`
+    /// parity: the consumer closes the sheet and routes into the chat.
+    var onOpenConversation: ((String) -> Void)? = nil
 
     @State private var rows: [CallLogEntry] = []
     @State private var loadError: String?
+    @State private var redialBusyId: String?
 
     var body: some View {
         NavigationStack {
@@ -31,7 +38,15 @@ struct CallsHistoryView: View {
                     )
                 } else {
                     List(rows) { row in
-                        CallHistoryRow(row: row)
+                        CallHistoryRow(
+                            row: row,
+                            redialBusy: redialBusyId == row.id,
+                            onOpen: {
+                                PulseHaptics.tap()
+                                onOpenConversation?(row.conversationId)
+                            },
+                            onRedial: { redial(row) },
+                        )
                     }
                     .listStyle(.insetGrouped)
                 }
@@ -68,42 +83,92 @@ struct CallsHistoryView: View {
             }
         }
     }
+
+    /// R2-D — redial: the row carries everything the outgoing call needs
+    /// (conversation id + denormalized peer + voice/video kind), so no
+    /// conversation fetch is required. Missing engine → honest toast.
+    private func redial(_ row: CallLogEntry) {
+        guard redialBusyId == nil else { return }
+        guard let engine = session.callEngine else {
+            session.toasts.show("Calls aren't ready yet — try again in a moment")
+            return
+        }
+        PulseHaptics.tap()
+        redialBusyId = row.id
+        let peer = CallPeer(id: row.peerId, name: row.peerName, color: row.peerColor, avatar: row.peerAvatar)
+        engine.startOutgoing(to: peer, conversationId: row.conversationId, kind: CallKind(wireValue: row.kind))
+        // The overlay owns the call from here; clear the spinner either way.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            redialBusyId = nil
+        }
+    }
 }
 
 private struct CallHistoryRow: View {
     let row: CallLogEntry
+    var redialBusy: Bool = false
+    /// R2-D — reopen the chat (web calls-page row tap parity).
+    var onOpen: () -> Void = {}
+    /// R2-D — place a fresh outgoing call to the row's peer.
+    var onRedial: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(PulseTheme.emerald.opacity(0.14))
-                    .frame(width: 40, height: 40)
-                Text(initials)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(PulseTheme.emerald)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.peerName)
-                    .font(.system(size: 15, weight: .medium))
-                    .lineLimit(1)
-                HStack(spacing: 4) {
-                    Image(systemName: directionIcon)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(tint)
-                    Text(label)
-                        .font(.system(size: 12))
-                        .foregroundStyle(tint)
+        Button(action: onOpen) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(PulseTheme.emerald.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    Text(initials)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(PulseTheme.emerald)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.peerName)
+                        .font(.system(size: 15, weight: .medium))
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Image(systemName: directionIcon)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(tint)
+                        Text(label)
+                            .font(.system(size: 12))
+                            .foregroundStyle(tint)
+                    }
+                }
+                Spacer()
+                if row.peerId.isEmpty {
+                    Image(systemName: "phone")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                } else {
+                    // Redial affordance — the arrow shows the call direction
+                    // history; the button dials the same peer again.
+                    Button {
+                        onRedial()
+                    } label: {
+                        if redialBusy {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "phone.arrow.up.right.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(PulseTheme.emerald)
+                                .frame(width: 34, height: 34)
+                                .background(Circle().fill(PulseTheme.emerald.opacity(0.12)))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(redialBusy)
+                    .accessibilityLabel("Redial \(row.peerName)")
                 }
             }
-            Spacer()
-            Image(systemName: "phone")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(row.peerName), \(label)")
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(row.peerName), \(label) — tap to reopen the chat")
     }
 
     private var initials: String {

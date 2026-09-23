@@ -168,6 +168,10 @@ public final class PulsePrefs: ObservableObject {
     /// PATCH /api/conversations/[id]/screen-privacy route; this map is the
     /// instant local write-through so the veil engages without a round-trip.
     public static let screenPrivacyKey = "prefs.screenPrivacy"
+    /// R2-D — the design-language selection. Key AND values are byte-identical
+    /// to the web store (ui-theme.ts `pulse.uiTheme.v2`:
+    /// glass|kinetic|minimal|dynamic|aero) so the two platforms converge.
+    public static let uiThemeKey = "pulse.uiTheme.v2"
 
     /// R1-W2G D46 — namespaced key builder for the durable last-position
     /// cache per space room ("space:lastpos:<roomId>"). The relay keeps the
@@ -226,6 +230,8 @@ public final class PulsePrefs: ObservableObject {
         convThemes = Self.readConvThemes(defaults)
         // R2-B R42 — cached personal-veil map (tolerant: bad JSON → empty).
         screenPrivacy = Self.readScreenPrivacy(defaults)
+        // R2-D — design language (tolerant: junk/legacy → glass, web parity).
+        uiTheme = PulseUiTheme.parse(defaults.string(forKey: Self.uiThemeKey))
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
     }
 
@@ -258,6 +264,8 @@ public final class PulsePrefs: ObservableObject {
     @Published public private(set) var convThemes: [String: WireConvTheme]
     // ── R2-B R42 — per-conversation PERSONAL screen-security veil ──
     @Published public private(set) var screenPrivacy: [String: Bool]
+    // ── R2-D — the five locked design languages (ui-theme.ts parity) ──
+    @Published public private(set) var uiTheme: PulseUiThemeId
 
     public var hasIdentity: Bool { viewer != nil }
 
@@ -329,6 +337,14 @@ public final class PulsePrefs: ObservableObject {
     public func setChatsFilter(_ filter: ChatsFilter) {
         chatsFilter = filter
         defaults.set(filter.rawValue, forKey: Self.chatsFilterKey)
+    }
+
+    /// R2-D — pick a design language (glass | kinetic | minimal | dynamic |
+    /// aero). The raw value stored under "pulse.uiTheme.v2" is byte-identical
+    /// to the web's zustand-persist payload.
+    public func setUiTheme(_ theme: PulseUiThemeId) {
+        uiTheme = theme
+        defaults.set(theme.rawValue, forKey: Self.uiThemeKey)
     }
 
     /// W5-f — persist the voice captions toggle (L89-92 pattern).

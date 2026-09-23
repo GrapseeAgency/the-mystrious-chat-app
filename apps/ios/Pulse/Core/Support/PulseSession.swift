@@ -49,6 +49,12 @@ public final class PulseSession: ObservableObject {
     /// NavigationStack (same bridge pattern as pendingOpenRoom). Consumers
     /// call `consumePendingUserRoute()` when received.
     @Published public private(set) var pendingUserRoute: UserRoute?
+    /// R2-D — the linked-room bridge (conversation ID only): reminder-
+    /// notification taps (PulseReminderNotificationDelegate) and calls-
+    /// history rows set this; RootView consumes it and follows the exact
+    /// pulse://room path (detail fetch → Chats tab → requestOpenRoom).
+    /// Writable by the feature surfaces; RootView clears it on consumption.
+    @Published public var pendingLinkedRoomId: String?
     /// Opened on session start (nil before onboarding) — @Published so late
     /// view models can rehydrate the offline cache the moment it exists.
     @Published public private(set) var store: PulseStore?
@@ -220,7 +226,9 @@ public final class PulseSession: ObservableObject {
                     for item in due {
                         let note = (item.note?.isEmpty == false) ? item.note! : "Reminder"
                         let body = item.snippet ?? item.conversation?.name ?? ""
-                        PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body)
+                        // R2-D — the conversationId rides the userInfo so the
+                        // tap deep-links into the room (web reminder parity).
+                        PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId)
                         _ = try? await api.resolveReminder(item.id)
                     }
                 }

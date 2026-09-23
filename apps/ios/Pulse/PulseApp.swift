@@ -4,6 +4,7 @@
 
 import SwiftUI
 import BackgroundTasks
+import UserNotifications
 
 @main
 struct PulseApp: App {
@@ -14,6 +15,11 @@ struct PulseApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // R2-D — the notification-tap delegate (reminder taps → room).
+        // Registered once at process start so cold-start taps are captured
+        // even before RootView attaches its routing closure.
+        UNUserNotificationCenter.current().delegate = PulseReminderNotificationDelegate.shared
+
         // BGAppRefreshTask for the outbox. Registration returns false (and
         // logs) on the simulator / when the identifier is missing from the
         // Info.plist — tolerated, foreground flushing still covers it.

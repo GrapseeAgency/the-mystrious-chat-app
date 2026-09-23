@@ -321,16 +321,45 @@ private fun colIndex(col: String): Int = PulseWave7Logic.KANBAN_COLUMNS.indexOf(
 
 // ── Whiteboard (F-RO-03) ─────────────────────────────────────────────────
 
+/**
+ * R2-C item 4 — the durable pending-stroke draft hooks (iOS
+ * PulseWhiteboardDraft parity): the sheet writes through on every drawn
+ * stroke, restores + dedupes on open, purges on the server flush verdict
+ * and on the board-reset path. Backed by the per-conversation prefs store
+ * (`whiteboard.draft:<conversationId>`), so strokes survive sheet close,
+ * process death and crashes until the server verdicts them.
+ */
+class WhiteboardDraftHooks(
+    val load: suspend () -> List<WhiteboardStrokePostDto>,
+    val append: (WhiteboardStrokePostDto) -> Unit,
+    val dropFirst: (Int) -> Unit,
+    val dropLast: () -> Unit,
+    val replaceAll: (List<WhiteboardStrokePostDto>) -> Unit,
+    val clear: () -> Unit,
+)
+
+/** Triple(color,width,pts) → wire post (the draft store's shape). */
+private fun Triple<String, Float, List<Pair<Float, Float>>>.toStrokePost() = WhiteboardStrokePostDto(
+    color = first,
+    width = second.toDouble(),
+    points = third.map { listOf(it.first.toDouble(), it.second.toDouble()) },
+)
+
+private fun WhiteboardStrokePostDto.toStrokeTriple() =
+    Triple(color, width.toFloat(), points.map { it[0].toFloat() to it[1].toFloat() })
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WhiteboardSheet(
     conversationId: String,
     viewerId: String,
     load: suspend (since: Long?) -> WhiteboardPageDto?,
-    onStrokes: (List<WhiteboardStrokePostDto>) -> Unit,
+    onStrokes: suspend (List<WhiteboardStrokePostDto>) -> Boolean,
     onUndo: () -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
+    /** R2-C item 4 — the durable pending-stroke draft (required). */
+    draft: WhiteboardDraftHooks,
 ) {
     var color by remember { mutableStateOf(W7_COLORS[0]) }
     var width by remember { mutableStateOf(3f) }
@@ -342,6 +371,18 @@ fun WhiteboardSheet(
 
     LaunchedEffect(Unit) {
         load(null)?.let { remote = it; lastServerTime = it.serverTime ?: 0; resetAt = it.resetAt ?: 0 }
+        // R2-C item 4 — restore the durable draft on open, minus the strokes
+        // the snapshot ALREADY carries (they landed before the crash; the
+        // dedupe pass rewrites the store — iOS PulseWhiteboardDraft
+        // .droppingSynced/.replaceAll parity).
+        val pending = draft.load()
+        if (pending.isNotEmpty()) {
+            val restored = app.pulse.protocol.PulseWhiteboardDraftLogic.droppingSynced(pending, remote.strokes)
+            if (restored.size != pending.size) draft.replaceAll(restored)
+            if (restored.isNotEmpty()) {
+                localStrokes = localStrokes + restored.map { it.toStrokeTriple() }
+            }
+        }
     }
     // since-delta poll at 900 ms (web whiteboard-sheet.tsx:66)
     LaunchedEffect(Unit) {
@@ -350,7 +391,7 @@ fun WhiteboardSheet(
             load(lastServerTime)?.let { page ->
                 val st = page.serverTime ?: 0L
                 if (st > lastServerTime) lastServerTime = st
-                page.resetAt?.let { r -> if (r > resetAt) { resetAt = r; remote = WhiteboardPageDto(); localStrokes = emptyList() } }
+                page.resetAt?.let { r -> if (r > resetAt) { resetAt = r; remote = WhiteboardPageDto(); localStrokes = emptyList(); draft.clear() } }
                 if (page.strokes.isNotEmpty()) {
                     remote = WhiteboardPageDto(
                         strokes = remote.strokes + page.strokes,
@@ -366,7 +407,7 @@ fun WhiteboardSheet(
         Column(Modifier.padding(horizontal = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("🖌️ Whiteboard", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = onUndo) { Text("Undo") }
+                TextButton(onClick = { draft.dropLast(); onUndo() }) { Text("Undo") }
                 TextButton(onClick = { if (confirmClear) onClear() else confirmClear = true }) {
                     Text(if (confirmClear) "Tap again to clear" else "Clear", color = if (confirmClear) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                 }
@@ -417,7 +458,11 @@ fun WhiteboardSheet(
                                 }
                             } finally {
                                 if (currentPts.size >= 2) {
-                                    localStrokes = localStrokes + listOf(Triple(color, width, currentPts.takeLast(500)))
+                                    val stroke = Triple(color, width, currentPts.takeLast(500))
+                                    localStrokes = localStrokes + listOf(stroke)
+                                    // R2-C item 4 — draw-time write-through: the
+                                    // stroke is durable BEFORE any sync attempt.
+                                    draft.append(stroke.toStrokePost())
                                 }
                                 currentPts = emptyList()
                             }
@@ -458,15 +503,17 @@ fun WhiteboardSheet(
             )
             Spacer(Modifier.height(12.dp))
 
-            // flush pending strokes in batches of ≤40
+            // flush pending strokes in batches of ≤40 — a batch leaves the
+            // durable draft only when the server verdicts the POST
+            // (R2-C item 4: failures keep the strokes pending; the VM toast
+            // stays honest and the next sheet open re-syncs them).
             val flushable = localStrokes
             if (flushable.isNotEmpty()) {
                 LaunchedEffect(flushable.size) {
                     while (localStrokes.isNotEmpty()) {
                         val batch = localStrokes.take(40)
-                        onStrokes(batch.map { (c, w, pts) ->
-                            WhiteboardStrokePostDto(color = c, width = w.toDouble(), points = pts.map { listOf(it.first.toDouble(), it.second.toDouble()) })
-                        })
+                        val accepted = onStrokes(batch.map { it.toStrokePost() })
+                        if (accepted) draft.dropFirst(batch.size)
                         localStrokes = localStrokes.drop(batch.size)
                     }
                 }

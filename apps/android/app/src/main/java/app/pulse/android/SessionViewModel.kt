@@ -103,6 +103,10 @@ class SessionViewModel @Inject constructor(
     val darkOverride: StateFlow<String> = prefs.darkOverride
         .stateIn(viewModelScope, SharingStarted.Eagerly, "system")
 
+    /** R2-C item 3 — design language (web pulse.uiTheme.v2 value string). */
+    val uiTheme: StateFlow<String> = prefs.uiTheme
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "glass")
+
     val reducedMotion: StateFlow<Boolean> = prefs.reducedMotion
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 

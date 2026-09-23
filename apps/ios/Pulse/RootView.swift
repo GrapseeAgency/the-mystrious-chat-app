@@ -188,11 +188,31 @@ struct RootView: View {
             // System Reduce Motion AND the in-app reducedMotion pref both calm
             // the ambient particles (the prefs toggle PATCHes to the server).
             session.particles.reduceMotionDisabled = reduceMotion || prefs.reducedMotion
+            // R2-D — mirror the design language into the token set (the
+            // settings picker flips prefs.uiTheme; every PulseTheme-fed view
+            // swaps with it).
+            PulseTheme.activeUiTheme = prefs.uiTheme
             // Bootstrap the live layer when identity already exists.
             if !didBootstrap, let viewer = prefs.viewer {
                 didBootstrap = true
                 session.start(as: viewer)
             }
+            // R2-D — reminder-notification taps route like pulse://room: the
+            // delegate (registered in PulseApp.init) parses the userInfo into
+            // PulseDeepLink.room and hands it over through the session bridge.
+            // Cold-start taps that landed before this closure existed are
+            // replayed from the delegate's handoff slot.
+            PulseReminderNotificationDelegate.shared.onDeepLink = { link in
+                if case .room(let conversationId) = link {
+                    session.pendingLinkedRoomId = conversationId
+                }
+            }
+            if let tapped = PulseReminderNotificationDelegate.shared.consumeLastTappedRoomId() {
+                session.pendingLinkedRoomId = tapped
+            }
+        }
+        .onChange(of: prefs.uiTheme) { _, theme in
+            PulseTheme.activeUiTheme = theme
         }
         .onChange(of: reduceMotion) { _, newValue in
             session.particles.reduceMotionDisabled = newValue || prefs.reducedMotion
@@ -210,6 +230,14 @@ struct RootView: View {
             default:
                 break
             }
+        }
+        // R2-D — the shared linked-room bridge: reminder-notification taps
+        // (delegate) AND calls-history row taps land here and follow the
+        // exact pulse://room path (fetch detail → Chats tab → open room).
+        .onReceive(session.$pendingLinkedRoomId) { pending in
+            guard let conversationId = pending else { return }
+            session.pendingLinkedRoomId = nil
+            openLinkedRoom(conversationId)
         }
     }
 

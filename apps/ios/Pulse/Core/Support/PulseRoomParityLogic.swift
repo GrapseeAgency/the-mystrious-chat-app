@@ -123,4 +123,55 @@ public enum PulseRoomParityLogic {
     public static func recapGatePassed(liveCount: Int) -> Bool {
         liveCount >= 5
     }
+
+    // ── R2-D — message-info receipts (seen vs delivered) ────
+
+    /// One receipt candidate: the member identity + their read watermark.
+    /// A plain value keeps the split pure and directly testable.
+    public struct ReceiptMember: Equatable, Sendable {
+        public let id: String
+        public let lastReadAtIso: String?
+
+        public init(id: String, lastReadAtIso: String?) {
+            self.id = id
+            self.lastReadAtIso = lastReadAtIso
+        }
+    }
+
+    /// The seen/delivered split behind the message-info sheet (web
+    /// chat-room.tsx:5893-5960 + Android MessageSheets.kt:379-424 parity):
+    ///   • the viewer is never a recipient (excluded first);
+    ///   • "Seen by" = members whose lastReadAt >= the message's createdAt;
+    ///   • "Delivered to" = the rest.
+    /// A missing or unparseable watermark counts as delivered (never seen) —
+    /// web `Number.isNaN(readMs)` parity.
+    public struct ReceiptSplit: Equatable, Sendable {
+        public let seenBy: [ReceiptMember]
+        public let deliveredTo: [ReceiptMember]
+    }
+
+    public static func receiptSplit(
+        members: [ReceiptMember],
+        viewerId: String?,
+        createdAtIso: String,
+    ) -> ReceiptSplit {
+        let others = members.filter { member in
+            guard let viewerId, !viewerId.isEmpty else { return true }
+            return member.id != viewerId
+        }
+        guard let createdAt = PulseFormat.date(createdAtIso) else {
+            return ReceiptSplit(seenBy: [], deliveredTo: others)
+        }
+        var seen: [ReceiptMember] = []
+        var delivered: [ReceiptMember] = []
+        for member in others {
+            if let stamp = member.lastReadAtIso, let readAt = PulseFormat.date(stamp),
+               readAt >= createdAt {
+                seen.append(member)
+            } else {
+                delivered.append(member)
+            }
+        }
+        return ReceiptSplit(seenBy: seen, deliveredTo: delivered)
+    }
 }

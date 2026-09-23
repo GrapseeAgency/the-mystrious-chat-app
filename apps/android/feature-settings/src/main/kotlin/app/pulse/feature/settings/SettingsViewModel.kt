@@ -88,6 +88,10 @@ class SettingsViewModel @Inject constructor(
     val fxMode: StateFlow<String> = prefs.fxMode
         .stateIn(viewModelScope, SharingStarted.Eagerly, "aurora")
 
+    /** R2-C item 3 — the design language (web pulse.uiTheme.v2 value string). */
+    val uiTheme: StateFlow<String> = prefs.uiTheme
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "glass")
+
     /** Real-time & Voice — live relay truth. */
     val connected: StateFlow<Boolean> = repo.observeConnected()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -157,6 +161,11 @@ class SettingsViewModel @Inject constructor(
 
     fun setFxMode(value: String) {
         viewModelScope.launch { prefs.setFxMode(value) }
+    }
+
+    /** R2-C item 3 — design-language swap; the shell re-reads it live. */
+    fun setUiTheme(value: String) {
+        viewModelScope.launch { prefs.setUiTheme(value) }
     }
 
     /** Quiet-hours math (verbatim web port) evaluated against the CURRENT inputs. */

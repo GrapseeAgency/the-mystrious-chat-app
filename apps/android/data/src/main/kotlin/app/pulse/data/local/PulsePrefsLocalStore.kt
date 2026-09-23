@@ -6,14 +6,16 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import app.pulse.domain.model.ConvTheme
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.PulseWave8Logic
+import app.pulse.protocol.PulseWhiteboardDraftLogic
 import app.pulse.protocol.WirePulsePrefs
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 
 /**
@@ -41,11 +43,128 @@ class PulsePrefsLocalStore @Inject constructor(
          * Wave-8 rendering prefs (the shared prefs mechanism).
          */
         val CONV_THEMES = stringPreferencesKey("chat.convThemes")
+        /** R2-C item 3 — design-language selection (web localStorage key). */
+        val UI_THEME = stringPreferencesKey("pulse.uiTheme.v2")
+        /** R2-C item 7 — spotlight recent searches (web localStorage key). */
+        val SPOTLIGHT_RECENTS = stringPreferencesKey("pulse.spotlight.recents.v1")
     }
 
     /** Resolved prefs — defaults guaranteed on every emission. */
     val prefs: Flow<WirePulsePrefs> = context.pulsePrefs.data.map { p ->
         PulseWave8Logic.mergePrefs(p[Keys.PREFS])
+    }
+
+    // ── R2-C item 3 — design-language selection (pulse.uiTheme.v2) ──
+
+    /**
+     * Live design-language id — one of [UI_THEME_IDS] (the web value
+     * strings verbatim); anything unreadable falls back to "glass".
+     */
+    val uiTheme: Flow<String> = context.pulsePrefs.data.map { p ->
+        (p[Keys.UI_THEME])?.takeIf { it in UI_THEME_IDS } ?: UI_THEME_GLASS
+    }
+
+    suspend fun setUiTheme(id: String) {
+        if (id !in UI_THEME_IDS) return
+        context.pulsePrefs.edit { it[Keys.UI_THEME] = id }
+    }
+
+    // ── R2-C item 7 — spotlight recent searches ─────────────────
+
+    /**
+     * Last 5 non-blank queries, deduped case-insensitively, newest first
+     * (web spotlight.tsx readRecents/pushRecent parity).
+     */
+    val spotlightRecents: Flow<List<String>> = context.pulsePrefs.data.map { p ->
+        decodeSpotlightRecents(p[Keys.SPOTLIGHT_RECENTS])
+    }
+
+    suspend fun pushSpotlightRecent(query: String) {
+        val q = query.trim()
+        if (q.isEmpty()) return
+        context.pulsePrefs.edit { p ->
+            val current = decodeSpotlightRecents(p[Keys.SPOTLIGHT_RECENTS])
+                .filter { it.lowercase() != q.lowercase() }
+            val next = (listOf(q) + current).take(SPOTLIGHT_RECENTS_MAX)
+            p[Keys.SPOTLIGHT_RECENTS] = encodeSpotlightRecents(next)
+        }
+    }
+
+    suspend fun clearSpotlightRecents() {
+        context.pulsePrefs.edit { it.remove(Keys.SPOTLIGHT_RECENTS) }
+    }
+
+    private fun decodeSpotlightRecents(raw: String?): List<String> {
+        if (raw.isNullOrBlank()) return emptyList()
+        val arr = runCatching { PulseJson.parseToJsonElement(raw) as? kotlinx.serialization.json.JsonArray }
+            .getOrNull() ?: return emptyList()
+        return arr.mapNotNull { (it as? JsonPrimitive)?.takeIf { v -> v.isString }?.content }
+            .filter { it.isNotBlank() }
+            .take(SPOTLIGHT_RECENTS_MAX)
+    }
+
+    private fun encodeSpotlightRecents(list: List<String>): String {
+        val arr = kotlinx.serialization.json.buildJsonArray {
+            list.forEach { add(JsonPrimitive(it)) }
+        }
+        return PulseJson.encodeToString(kotlinx.serialization.json.JsonArray.serializer(), arr)
+    }
+
+    // ── R2-C item 4 — whiteboard pending-stroke draft store ─────
+
+    /** Per-conversation DataStore key (iOS `whiteboard.draft:<id>` style). */
+    private fun whiteboardDraftKey(conversationId: String) =
+        stringPreferencesKey("whiteboard.draft:$conversationId")
+
+    /** The pending strokes for a conversation, oldest first (tolerant). */
+    suspend fun whiteboardDraft(conversationId: String): List<app.pulse.protocol.WhiteboardStrokePostDto> {
+        if (!CONV_ID_OK.matches(conversationId)) return emptyList()
+        val raw = context.pulsePrefs.data.firstOrNull()?.get(whiteboardDraftKey(conversationId))
+        return PulseWhiteboardDraftLogic.decode(raw)
+    }
+
+    /** Draw-time write-through — persists the stroke BEFORE any sync attempt. */
+    suspend fun appendWhiteboardDraft(conversationId: String, stroke: app.pulse.protocol.WhiteboardStrokePostDto) {
+        if (!CONV_ID_OK.matches(conversationId)) return
+        context.pulsePrefs.edit { p ->
+            val pending = PulseWhiteboardDraftLogic.decode(p[whiteboardDraftKey(conversationId)])
+            p[whiteboardDraftKey(conversationId)] =
+                PulseWhiteboardDraftLogic.encode(pending + stroke)
+        }
+    }
+
+    /** Flush-verdict purge — the acknowledged batch leaves the queue front. */
+    suspend fun dropFirstWhiteboardDraft(conversationId: String, count: Int) {
+        if (!CONV_ID_OK.matches(conversationId)) return
+        context.pulsePrefs.edit { p ->
+            val pending = PulseWhiteboardDraftLogic.decode(p[whiteboardDraftKey(conversationId)])
+            p[whiteboardDraftKey(conversationId)] =
+                PulseWhiteboardDraftLogic.encode(PulseWhiteboardDraftLogic.droppingFirst(pending, count))
+        }
+    }
+
+    /** Undo purge — the newest pending stroke leaves the queue tail. */
+    suspend fun dropLastWhiteboardDraft(conversationId: String) {
+        if (!CONV_ID_OK.matches(conversationId)) return
+        context.pulsePrefs.edit { p ->
+            val pending = PulseWhiteboardDraftLogic.decode(p[whiteboardDraftKey(conversationId)])
+            p[whiteboardDraftKey(conversationId)] =
+                PulseWhiteboardDraftLogic.encode(PulseWhiteboardDraftLogic.droppingLast(pending))
+        }
+    }
+
+    /** Restore-time swap — rewrites the whole draft (the dedupe pass). */
+    suspend fun replaceAllWhiteboardDraft(conversationId: String, strokes: List<app.pulse.protocol.WhiteboardStrokePostDto>) {
+        if (!CONV_ID_OK.matches(conversationId)) return
+        context.pulsePrefs.edit { p ->
+            p[whiteboardDraftKey(conversationId)] = PulseWhiteboardDraftLogic.encode(strokes)
+        }
+    }
+
+    /** Server-side board reset — the pending queue is gone with the board. */
+    suspend fun clearWhiteboardDraft(conversationId: String) {
+        if (!CONV_ID_OK.matches(conversationId)) return
+        context.pulsePrefs.edit { it.remove(whiteboardDraftKey(conversationId)) }
     }
 
     // ── R1-W2F — per-conversation themes (F-FX-05) ────────────────
@@ -141,5 +260,12 @@ class PulsePrefsLocalStore @Inject constructor(
     companion object {
         /** Web conv-theme.ts CONV_ID_OK — cuid-style conversation keys only. */
         private val CONV_ID_OK = Regex("^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+        /** R2-C — the web ui-theme value strings (src/lib/ui-theme.ts). */
+        const val UI_THEME_GLASS = "glass"
+        val UI_THEME_IDS = setOf("glass", "kinetic", "minimal", "dynamic", "aero")
+
+        /** Web spotlight.tsx RECENTS_MAX. */
+        private const val SPOTLIGHT_RECENTS_MAX = 5
     }
 }

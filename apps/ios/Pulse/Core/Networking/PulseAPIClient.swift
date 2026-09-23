@@ -63,8 +63,9 @@ public struct PulseAPIClient: Sendable {
 
     /// Timeline pages: newest-first page (limit=200 default), older pages via
     /// the `before` cursor (ISO of the oldest loaded), in-conversation search
-    /// via `q` (server matches content + fileName) and topic-filtered views
-    /// via `topicId` (W2-DATA-B spec §0 — General is the unfiltered room).
+    /// via `q` (server matches content + fileName), topic-filtered views
+    /// via `topicId` (W2-DATA-B spec §0 — General is the unfiltered room) and
+    /// D47 delta-sync refreshes via `since` (only rows strictly newer).
     /// Pure query building lives in messagesPath so unit tests can pin the
     /// wire shape without network.
     public func messages(
@@ -72,27 +73,32 @@ public struct PulseAPIClient: Sendable {
         limit: Int = 200,
         before: String? = nil,
         query: String? = nil,
-        topicId: String? = nil
+        topicId: String? = nil,
+        since: String? = nil
     ) async throws -> WireMessagesPage {
         try await get(Self.messagesPath(
             conversationId: conversationId,
             limit: limit,
             before: before,
             query: query,
-            topicId: topicId
+            topicId: topicId,
+            since: since
         ))
     }
 
-    /// GET /api/conversations/{id}/messages?limit=&before=&q=&topicId= — the
-    /// exact pagination/search/topic contract from spec §0/§1. Blank search
-    /// strings AND blank topic ids are omitted (the server would match
-    /// nothing useful).
+    /// GET /api/conversations/{id}/messages?limit=&before=&q=&topicId=&since=
+    /// — the exact pagination/search/topic contract from spec §0/§1 plus the
+    /// D47 delta-sync cursor: `since` is an ISO date (validated by the route,
+    /// 400 on junk) returning only rows STRICTLY NEWER than it, same shape
+    /// and limits. Blank search strings, topic ids AND since cursors are
+    /// omitted (the server would match nothing useful).
     static func messagesPath(
         conversationId: String,
         limit: Int,
         before: String?,
         query: String?,
-        topicId: String? = nil
+        topicId: String? = nil,
+        since: String? = nil
     ) -> String {
         var path = "/api/conversations/\(conversationId)/messages?limit=\(limit)"
         if let before { path += "&before=\(before)" }
@@ -103,6 +109,10 @@ public struct PulseAPIClient: Sendable {
         if let topicId {
             let trimmed = topicId.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { path += "&topicId=\(queryEncoded(trimmed))" }
+        }
+        if let since {
+            let trimmed = since.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { path += "&since=\(queryEncoded(trimmed))" }
         }
         return path
     }

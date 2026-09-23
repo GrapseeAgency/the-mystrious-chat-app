@@ -229,6 +229,25 @@ struct SettingsView: View {
             }
             .padding(.vertical, 4)
 
+            // R2-D — the five locked design languages (web ui-theme.ts R25
+            // parity; the selection persists under the web's exact
+            // `pulse.uiTheme.v2` key and re-skins every PulseTheme-fed token).
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Design language")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text("One of five locked looks — \(PulseUiTheme.meta(for: prefs.uiTheme).detail)")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                    ForEach(PulseUiTheme.allMeta(), id: \.id) { themeMeta in
+                        uiThemeSwatch(themeMeta)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Chat wallpaper")
                     .font(.system(size: 13, weight: .semibold))
@@ -278,6 +297,54 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(token.label) wallpaper")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// R2-D — one design-language card: diagonal accent-pair swatch
+    /// (web swatch order preserved) + label, selected ring like the
+    /// wallpaper swatches.
+    private func uiThemeSwatch(_ themeMeta: PulseUiThemeMeta) -> some View {
+        let selected = prefs.uiTheme == themeMeta.id
+        let first = PulseUiThemeColor(hex: themeMeta.swatch.first ?? "#10b981").color
+        let second = PulseUiThemeColor(hex: themeMeta.swatch.count > 1 ? themeMeta.swatch[1] : themeMeta.swatch.first ?? "#0ea5e9").color
+        return Button {
+            PulseHaptics.tap()
+            prefs.setUiTheme(themeMeta.id)
+        } label: {
+            VStack(spacing: 5) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [first, second],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing,
+                            ),
+                        )
+                        .frame(height: 44)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(
+                                    selected ? PulseTheme.emerald : (systemScheme == .dark ? Color.white.opacity(0.14) : PulseTheme.zinc(200)),
+                                    lineWidth: selected ? 2 : 1,
+                                ),
+                        )
+                    if selected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                    }
+                }
+                Text(themeMeta.label)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(selected ? PulseTheme.emerald : .secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(themeMeta.label) design language — \(themeMeta.tagline)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

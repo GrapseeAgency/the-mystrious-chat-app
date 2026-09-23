@@ -73,11 +73,13 @@ class BootReceiver : BroadcastReceiver() {
             if (remindAtMs <= 0L) continue
             if (remindAtMs > now) {
                 // Still future — re-arm the offline one-shot (idempotent REPLACE).
+                // R2-C item 6 — the conversation rides along for the deep link.
                 ReminderNotifier.schedule(
                     context,
                     item.id,
                     item.note.ifBlank { "Reminder" },
                     remindAtMs,
+                    item.conversationId.ifBlank { null },
                 )
             } else if (item.firedAt == null) {
                 // Came due while the device was off — nudge now, converge after.
@@ -86,6 +88,7 @@ class BootReceiver : BroadcastReceiver() {
                     item.id,
                     item.note.ifBlank { "Reminder" },
                     item.snippet ?: item.conversation.name,
+                    item.conversationId.ifBlank { null },
                 )
                 runCatching { repository.resolveReminder(item.id) }
             }

@@ -28,10 +28,15 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Schedule
@@ -70,6 +75,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -82,6 +88,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import app.pulse.domain.model.Automation
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.GroupMeta
 import app.pulse.domain.model.User
@@ -256,6 +263,38 @@ class GroupInfoViewModel @Inject constructor(
                     }
                 }
                 .onFailure { notify(it.message ?: "Couldn't leave the group", isError = true) }
+        }
+    }
+
+    // ── R2-C item 1 — DM adaptations: conv theme + mute ─────────
+
+    /**
+     * Per-conversation themes for the DM "Chat theme" entry (the same
+     * F-FX-05 store the room header's sheet writes; LRU-capped at 48).
+     */
+    val convThemes: StateFlow<Map<String, ConvTheme>> = repo.convThemes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** The Appearance global wallpaper — the ConvThemeSheet fallback line. */
+    val globalWallpaper: StateFlow<String> = repo.pulsePrefs
+        .map { it.wallpaper ?: "none" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "none")
+
+    fun applyConvTheme(theme: ConvTheme?) {
+        viewModelScope.launch { repo.setConvTheme(conversationId, theme) }
+    }
+
+    /**
+     * R2-C item 1 — the room-info mute row (web room-info-page.tsx:858-901
+     * muteMutation parity): presets 8h · 1w · always, null = unmute.
+     */
+    fun setMute(until: String?) {
+        viewModelScope.launch {
+            repo.setMutedUntil(conversationId, until)
+                .onSuccess {
+                    notify(if (until == null) "Notifications unmuted" else "Notifications muted")
+                }
+                .onFailure { notify(it.message ?: "Couldn't update notifications", isError = true) }
         }
     }
 
@@ -512,6 +551,9 @@ fun GroupInfoScreen(
     val automations by viewModel.automations.collectAsStateWithLifecycle()
     val webhooks by viewModel.webhooks.collectAsStateWithLifecycle()
     val photoBusy by viewModel.photoBusy.collectAsStateWithLifecycle()
+    // R2-C item 1 — the DM room-info surface (conv theme + mute state).
+    val convThemes by viewModel.convThemes.collectAsStateWithLifecycle()
+    val globalWallpaper by viewModel.globalWallpaper.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -520,6 +562,8 @@ fun GroupInfoScreen(
     var addMembersOpen by remember { mutableStateOf(false) }
     var leaveConfirmOpen by remember { mutableStateOf(false) }
     var kickTarget by remember { mutableStateOf<ConversationMember?>(null) }
+    // R2-C item 1 — the DM theme sheet.
+    var themeOpen by remember { mutableStateOf(false) }
 
     // R2-A item 9 — the admin photo picker (web room-info "Edit photo"
     // overlay): pick → upload → PATCH photo (conversion lives in the VM).
@@ -542,11 +586,28 @@ fun GroupInfoScreen(
     val meta = state.meta
     val isAdmin = meta?.isAdmin == true
     val myId = viewModel.viewerId
+    // R2-C item 1 — the DM room-info adaptation (web room-info-page.tsx
+    // serves DMs too): partner header, TTL, screen security, theme, mute;
+    // members / invite / roles / announcement / leave stay group-only.
+    val isDm = conversation?.kind == Conversation.Kind.DM
+    val partner = conversation?.members?.firstOrNull { it.id != myId }
+
+    // R2-C item 8 — member-list search, surfaced ONLY past 8 members
+    // (web room-info-page.tsx:320-331 threshold); filters name (the native
+    // member row carries no username — honest single-field filter).
+    var memberFilter by remember { mutableStateOf("") }
+    val allMembers = conversation?.members ?: emptyList()
+    val memberQuery = memberFilter.trim().lowercase()
+    val visibleMembers = if (allMembers.size <= 8 || memberQuery.isEmpty()) {
+        allMembers
+    } else {
+        allMembers.filter { it.name.lowercase().contains(memberQuery) }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Group info", fontWeight = FontWeight.SemiBold) },
+                title = { Text(if (isDm) "Chat info" else "Group info", fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -575,43 +636,57 @@ fun GroupInfoScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        // R2-A item 9 — the live photo when one is set (web
-                        // GroupAvatar photo parity), else the letter avatar.
-                        val photo = conversation?.avatar
-                        if (photo != null) {
-                            AsyncImage(
-                                model = app.pulse.core.PulseEndpoints.http(photo),
-                                contentDescription = "${conversation?.title ?: "Group"} photo",
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                modifier = Modifier.size(56.dp).clip(androidx.compose.foundation.shape.CircleShape),
+                        if (isDm) {
+                            // R2-C item 1 — partner header: avatar + name.
+                            PulseAvatar(
+                                name = partner?.name ?: conversation?.title ?: "Chat",
+                                colorHex = partner?.color ?: conversation?.accentColor,
+                                size = 56.dp,
+                                isGroup = false,
                             )
                         } else {
-                            PulseAvatar(
-                                name = conversation?.title ?: "Group",
-                                colorHex = conversation?.accentColor,
-                                size = 56.dp,
-                                isGroup = true,
-                            )
+                            // R2-A item 9 — the live photo when one is set (web
+                            // GroupAvatar photo parity), else the letter avatar.
+                            val photo = conversation?.avatar
+                            if (photo != null) {
+                                AsyncImage(
+                                    model = app.pulse.core.PulseEndpoints.http(photo),
+                                    contentDescription = "${conversation?.title ?: "Group"} photo",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.size(56.dp).clip(androidx.compose.foundation.shape.CircleShape),
+                                )
+                            } else {
+                                PulseAvatar(
+                                    name = conversation?.title ?: "Group",
+                                    colorHex = conversation?.accentColor,
+                                    size = 56.dp,
+                                    isGroup = true,
+                                )
+                            }
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
-                                conversation?.title ?: "Group",
+                                if (isDm) partner?.name ?: conversation?.title ?: "Chat" else conversation?.title ?: "Group",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                "${conversation?.memberIds?.size ?: 0} members" +
-                                    if (meta?.broadcastMode == true) " · announcement" else "",
+                                if (isDm) {
+                                    "Direct message"
+                                } else {
+                                    "${conversation?.memberIds?.size ?: 0} members" +
+                                        if (meta?.broadcastMode == true) " · announcement" else ""
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        // R2-A item 9 — admins of ANY group get the photo edit
-                        // overlay (web room-info-page.tsx:742-760 parity).
-                        if (isAdmin) {
+                        // Group-only identity controls (DMs have neither) —
+                        // R2-A item 9 photo edit + rename, admins of ANY group.
+                        if (!isDm && isAdmin) {
                             IconButton(
                                 onClick = {
                                     photoPicker.launch(
@@ -625,12 +700,12 @@ fun GroupInfoScreen(
                                 } else {
                                     Icon(
                                         Icons.Filled.PhotoCamera,
-                                        contentDescription = if (photo != null) "Edit group photo" else "Add group photo",
+                                        contentDescription = if (conversation?.avatar != null) "Edit group photo" else "Add group photo",
                                     )
                                 }
                             }
                         }
-                        if (isAdmin) {
+                        if (!isDm && isAdmin) {
                             IconButton(onClick = { renameOpen = true }) {
                                 Icon(Icons.Filled.Edit, contentDescription = "Rename group")
                             }
@@ -679,8 +754,72 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── admin: invite link ───────────────────────────────
-            if (isAdmin) {
+            // ── R2-C item 1 — mute notifications (web room-info-page.tsx
+            // :858-901 — the per-user watermark API; presets 8h · 1w · always) ──
+            item {
+                val mutedUntil = conversation?.mutedUntilEpoch ?: 0
+                val isMuted = mutedUntil > System.currentTimeMillis()
+                Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (isMuted) Icons.Filled.NotificationsOff else Icons.Filled.Notifications,
+                            contentDescription = null,
+                            tint = if (isMuted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (isMuted) "Notifications muted" else "Mute notifications",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                            )
+                            Text(
+                                if (isMuted) "Muted for this chat" else "Presets mute pings from this chat",
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (isMuted) {
+                            TextButton(onClick = { viewModel.setMute(null) }) { Text("Unmute") }
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf("8h" to "8h", "1w" to "1w", "always" to "Always").forEach { (preset, label) ->
+                                    AssistChip(onClick = { viewModel.setMute(preset) }, label = { Text(label, fontSize = 11.sp) })
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── R2-C item 1 — DM chat theme entry (web room-info-page.tsx
+            // :1176-1200; groups reach the same sheet from the room header) ──
+            if (isDm) {
+                item {
+                    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { themeOpen = true }.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Filled.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Chat theme", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text(
+                                    if (convThemes[viewModel.conversationId] == null) "Following the Appearance default" else "Custom for this chat only",
+                                    fontSize = 11.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp).rotate(180f), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
+            // ── admin: invite link (groups only — DMs have no invites) ──
+            if (isAdmin && !isDm) {
                 item {
                     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                         Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -774,8 +913,8 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── admin: announcement + slow mode ─────────────────
-            if (isAdmin) {
+            // ── admin: announcement + slow mode (groups only) ────
+            if (isAdmin && !isDm) {
                 item {
                     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -849,26 +988,48 @@ fun GroupInfoScreen(
                 )
             }
 
-            // ── members ─────────────────────────────────────────
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    Icon(Icons.Filled.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Members · ${conversation?.memberIds?.size ?: 0}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Spacer(Modifier.weight(1f))
-                    if (isAdmin) {
-                        TextButton(onClick = {
-                            viewModel.loadDirectory()
-                            addMembersOpen = true
-                        }) {
-                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Add", fontSize = 12.sp)
+            // ── members (groups only — DMs render the partner header) ──
+            if (!isDm) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                        Icon(Icons.Filled.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Members · ${conversation?.memberIds?.size ?: 0}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Spacer(Modifier.weight(1f))
+                        if (isAdmin) {
+                            TextButton(onClick = {
+                                viewModel.loadDirectory()
+                                addMembersOpen = true
+                            }) {
+                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Add", fontSize = 12.sp)
+                            }
                         }
                     }
                 }
-            }
-            items(conversation?.members ?: emptyList(), key = { it.id }) { member ->
+                // R2-C item 8 — member search, ONLY past 8 members (web
+                // room-info-page.tsx:320-331 threshold).
+                if (allMembers.size > 8) {
+                    item {
+                        OutlinedTextField(
+                            value = memberFilter,
+                            onValueChange = { memberFilter = it },
+                            singleLine = true,
+                            placeholder = { Text("Search members", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            trailingIcon = {
+                                if (memberFilter.isNotEmpty()) {
+                                    IconButton(onClick = { memberFilter = "" }) {
+                                        Icon(Icons.Filled.Close, contentDescription = "Clear member search", modifier = Modifier.size(14.dp))
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                items(visibleMembers, key = { it.id }) { member ->
                 val isMe = member.id == myId
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -909,21 +1070,24 @@ fun GroupInfoScreen(
                     }
                     HorizontalDivider(Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 }
+                }
             }
 
-            // ── leave ───────────────────────────────────────────
-            item {
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = { leaveConfirmOpen = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Leave group")
+            // ── leave (groups only) ─────────────────────────────
+            if (!isDm) {
+                item {
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { leaveConfirmOpen = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Leave group")
+                    }
+                    Spacer(Modifier.height(24.dp))
                 }
-                Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -1037,6 +1201,23 @@ fun GroupInfoScreen(
                 }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { kickTarget = null }) { Text("Cancel") } },
+        )
+    }
+
+    // R2-C item 1 — the DM chat-theme sheet (the SAME ConvThemeSheet the
+    // room header mounts; every tap commits through the prefs store).
+    if (themeOpen) {
+        ConvThemeSheet(
+            current = convThemes[viewModel.conversationId],
+            globalWallpaper = globalWallpaper,
+            onPickWallpaper = { id -> viewModel.applyConvTheme(ConvTheme(wallpaper = id, tint = convThemes[viewModel.conversationId]?.tint)) },
+            onPickTint = { tint ->
+                viewModel.applyConvTheme(
+                    tint?.let { t -> ConvTheme(wallpaper = convThemes[viewModel.conversationId]?.wallpaper ?: globalWallpaper, tint = t) },
+                )
+            },
+            onReset = { viewModel.applyConvTheme(null) },
+            onDismiss = { themeOpen = false },
         )
     }
 }

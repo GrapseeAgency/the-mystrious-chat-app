@@ -580,6 +580,19 @@ interface MessageDao {
     @Query("SELECT COUNT(*) FROM messages WHERE threadRootId = :rootId")
     suspend fun countByThread(rootId: String): Int
 
+    /**
+     * R2-C item 2 (D47 delta sync) — the newest SERVER row's ISO createdAt
+     * for one conversation; the `since=` cursor. Optimistic temp bubbles
+     * (`local_*` ids) never anchor the cursor — their fake stamps would skip
+     * real rows. Null = the cache is empty → the caller keeps the full-window
+     * first-load fetch.
+     */
+    @Query(
+        "SELECT createdAt FROM messages WHERE conversationId = :conversationId " +
+            "AND id NOT LIKE 'local_%' ORDER BY createdAt DESC LIMIT 1",
+    )
+    suspend fun latestServerCreatedAt(conversationId: String): String?
+
     @Query("SELECT * FROM messages WHERE id = :id")
     suspend fun byId(id: String): MessageEntity?
 

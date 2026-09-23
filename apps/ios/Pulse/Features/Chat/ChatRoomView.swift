@@ -288,6 +288,9 @@ private struct RoomContent: View {
     // Wave 6 — DM safety-number sheet (F-CP-07/08) + the @-suggester (F-SM-04).
     @StateObject private var safetyBadges = PulseSafetyBadgeCache.shared
     @State private var safetyOpen = false
+    // R2-D ITEM 1 — the DM info surface (web header-menu parity: TTL, screen
+    // security, mute, theme + safety-number entries for DIRECT chats).
+    @State private var dmInfoOpen = false
 
     // ── REM-B — group admin / scheduled / reactions / stickers / who-reacted ──
     @State private var groupInfoOpen = false
@@ -520,6 +523,20 @@ private struct RoomContent: View {
                     .buttonStyle(PulseButtonStyle())
                     .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified — open safety number" : "Not verified — open safety number")
                 }
+                // R2-D ITEM 1 — DM info entry (web header-menu parity: the
+                // menu covers DMs with TTL + screen security + mute; iOS had
+                // NO privacy surface for DMs before this). Opens the compact
+                // RoomInfoSheet; groups keep their GroupInfoView branch.
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        PulseHaptics.tap()
+                        dmInfoOpen = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("Chat info")
+                }
             }
         }
         // R1-W2B F-FX-05 — per-conversation theme picker entry (web lives in
@@ -570,6 +587,21 @@ private struct RoomContent: View {
                 SafetySheetView(session: session, peer: partner)
             }
         }
+        // R2-D ITEM 1 — the DM info sheet (groups keep GroupInfoView below;
+        // the onDetailUpdated handoff matches that sheet's veil plumbing).
+        .sheet(isPresented: $dmInfoOpen) {
+            if let partner = dmPartner {
+                RoomInfoSheet(
+                    conversation: conversation,
+                    partner: partner,
+                    session: session,
+                    prefs: prefs,
+                    onDetailUpdated: { detail in
+                        viewModel.roomScreenPrivacy = detail.screenPrivacy
+                    },
+                )
+            }
+        }
         .task {
             // Wave 6 — populate the verified-badge cache for this DM (one
             // quiet GET on room open; the header badge reads the cache).
@@ -593,7 +625,7 @@ private struct RoomContent: View {
             ForwardSheet(source: source, session: session)
         }
         .sheet(item: $infoTarget) { message in
-            MessageInfoSheet(message: message, conversation: conversation)
+            MessageInfoSheet(message: message, conversation: conversation, viewerId: session.viewer?.id)
         }
         .sheet(isPresented: $pinsOpen) {
             pinsList
@@ -1349,6 +1381,13 @@ private struct RoomContent: View {
             if cameraDenied {
                 deniedNotice("Camera access is off — allow it to take photos for this chat.") { cameraDenied = false }
             }
+            // R2-D — the F-MS-20 slow-mode countdown: the chip appears the
+            // moment the server's 429 arms the lock, counts the honest wait
+            // down live (web chat-room.tsx slow-mode-chip parity) and
+            // collapses when the ticker clears the lock.
+            if viewModel.isSlowModeLocked {
+                slowModeChip
+            }
             if broadcastLocked {
                 // F-CH-04 — the broadcast lock replaces the composer row for
                 // non-admins (verbatim web copy; input is gone, not disabled).
@@ -1368,6 +1407,33 @@ private struct RoomContent: View {
                 composerRows
             }
         }
+    }
+
+    /// R2-D — slow-mode countdown chip (web chat-room.tsx:4758-4770 copy
+    /// verbatim, Gauge glyph + mm:ss countdown); role=status/live so the
+    /// remaining time is announced as it ticks.
+    private var slowModeChip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "gauge")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(PulseTheme.emerald)
+            Text("Slow mode — you can send again in \(PulseFormat.countdown(viewModel.slowModeRemainingSeconds))")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(PulseTheme.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(
+            Capsule()
+                .fill(PulseTheme.glassFill)
+                .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)),
+        )
+        .padding(.horizontal, 14)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Slow mode — you can send again in \(viewModel.slowModeRemainingSeconds) seconds")
     }
 
     @ViewBuilder
@@ -1415,9 +1481,26 @@ private struct RoomContent: View {
                     .focused($composerFocused)
                     .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
                     .disabled(viewModel.staged != nil)
+                    // R2-D — the composer is VISIBLY locked while the
+                    // slow-mode window runs (web send/mic disabled parity).
+                    .disabled(viewModel.isSlowModeLocked)
+                    .opacity(viewModel.isSlowModeLocked ? 0.55 : 1)
+                    .overlay(alignment: .leading) {
+                        if viewModel.isSlowModeLocked {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(PulseTheme.textTertiary)
+                                .padding(.leading, 16)
+                                .transition(.opacity)
+                        }
+                    }
                 }
 
                 voiceSendSlot
+                    // R2-D — mic/send refuses touches while the slow-mode
+                    // window runs (web disabled={slowRemaining > 0} parity).
+                    .opacity(viewModel.isSlowModeLocked ? 0.45 : 1)
+                    .allowsHitTesting(!viewModel.isSlowModeLocked)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -1795,19 +1878,24 @@ private struct RoomContent: View {
 
 /// Wave 1 message info — seen-by watermarks (conversation members) + the
 /// reaction groups with member names. Read-only, native sheet.
+/// R2-D — the sheet mirrors the web/Android delivered split: "Seen by" =
+/// lastReadAt >= createdAt, "Delivered to" = the rest (viewer excluded).
 private struct MessageInfoSheet: View {
     let message: WireChatMessage
     let conversation: WireConversationSummary
+    /// R2-D — the viewer id (excluded from both receipt lists, web parity).
+    var viewerId: String? = nil
 
     @Environment(\.dismiss) private var dismiss
 
-    private var createdAt: Date { PulseFormat.date(message.createdAt) ?? .distantPast }
-
-    private var seenBy: [WireConversationMember] {
-        conversation.members.filter { member in
-            guard let stamp = member.lastReadAt, let date = PulseFormat.date(stamp) else { return false }
-            return date >= createdAt
-        }
+    private var receipts: PulseRoomParityLogic.ReceiptSplit {
+        PulseRoomParityLogic.receiptSplit(
+            members: conversation.members.map {
+                PulseRoomParityLogic.ReceiptMember(id: $0.id, lastReadAtIso: $0.lastReadAt)
+            },
+            viewerId: viewerId,
+            createdAtIso: message.createdAt,
+        )
     }
 
     var body: some View {
@@ -1828,24 +1916,33 @@ private struct MessageInfoSheet: View {
                         }
                     }
                 }
-                let seenTitle = "\(seenBy.count) seen"
+                let split = receipts
+                let seenTitle = "Seen by · \(split.seenBy.count)"
                 Section {
-                    if seenBy.isEmpty {
-                        Text("Nobody has seen this message yet")
+                    if split.seenBy.isEmpty {
+                        Text("No read receipts yet")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(seenBy, id: \.id) { member in
-                        HStack(spacing: 10) {
-                            PulseAvatar(name: member.name, color: PulseTheme.color(named: member.color), size: 30)
-                            Text(member.name).font(.subheadline)
-                            Spacer()
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(PulseTheme.emerald)
-                        }
+                    ForEach(split.seenBy, id: \.id) { member in
+                        receiptRow(member, seen: true)
                     }
                 } header: {
                     Text(seenTitle)
+                }
+                // R2-D — "Delivered to" = everyone who hasn't read it yet
+                // (web chat-room.tsx:5940-5957 + Android MessageSheets parity).
+                Section {
+                    if split.deliveredTo.isEmpty {
+                        Text("Everyone has seen this message")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(split.deliveredTo, id: \.id) { member in
+                        receiptRow(member, seen: false)
+                    }
+                } header: {
+                    Text("Delivered to · \(split.deliveredTo.count)")
                 }
                 if let reactions = message.reactions, !reactions.isEmpty {
                     Section("Reactions") {
@@ -1870,6 +1967,32 @@ private struct MessageInfoSheet: View {
             }
         }
         .presentationDetents([.medium])
+    }
+
+    /// One receipt row — read watermark stamp + the double-check (seen) or
+    /// plain check (delivered) glyph, web seen-by-sheet rhythm.
+    private func receiptRow(_ member: PulseRoomParityLogic.ReceiptMember, seen: Bool) -> some View {
+        let summary = conversation.members.first(where: { $0.id == member.id })
+        return HStack(spacing: 10) {
+            PulseAvatar(
+                name: summary?.name ?? "Member",
+                color: PulseTheme.color(named: summary?.color),
+                photoURL: PulseTheme.photoURL(summary?.avatar),
+                size: 30,
+            )
+            VStack(alignment: .leading, spacing: 1) {
+                Text(summary?.name ?? "Member")
+                    .font(.subheadline)
+                Text(seen
+                    ? "Read at \(PulseFormat.listStamp(member.lastReadAtIso))"
+                    : "Delivered")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: seen ? "checkmark.circle.fill" : "checkmark.circle")
+                .foregroundStyle(seen ? PulseTheme.emerald : PulseTheme.textTertiary)
+        }
     }
 }
 
@@ -2820,9 +2943,18 @@ final class RoomViewModel: ObservableObject {
         }
         phase = messages.isEmpty ? .loading : phase
         do {
-            let page = try await session.api.messages(conversationId: conversationId)
-            messages = riverRows(from: page.messages)
-            hasMore = page.hasMore
+            // D47 delta sync — the route accepts `since=<ISO>` and answers
+            // with only the rows STRICTLY NEWER than the cursor (same shape).
+            // First load (no window on screen yet) keeps the full newest
+            // window; every later refresh fetches just the tail.
+            let deltaCursor = deltaSyncCursor
+            let page = try await session.api.messages(conversationId: conversationId, since: deltaCursor)
+            if deltaCursor != nil {
+                mergeDelta(page.messages)
+            } else {
+                messages = riverRows(from: page.messages)
+                hasMore = page.hasMore
+            }
             phase = .loaded
             errorText = nil
             try? session.store?.upsert(messages: page.messages)
@@ -2832,6 +2964,36 @@ final class RoomViewModel: ObservableObject {
             phase = .failed(RoomViewModel.describe(error))
             if messages.isEmpty { errorText = RoomViewModel.describe(error) }
         }
+    }
+
+    /// D47 — the delta-sync cursor: the newest REAL (non-optimistic) row's
+    /// wire createdAt ISO, exactly what the route's `since` expects. Local
+    /// `local_` rows are excluded — their client-side stamps must never gate
+    /// what the server considers "newer". Nil = no real rows → full load.
+    private var deltaSyncCursor: String? {
+        let real = messages.filter { !$0.id.hasPrefix("local_") }
+        guard let newest = real.max(by: {
+            let lhs = PulseFormat.date($0.createdAt) ?? .distantPast
+            let rhs = PulseFormat.date($1.createdAt) ?? .distantPast
+            return lhs < rhs
+        }) else { return nil }
+        return newest.createdAt
+    }
+
+    /// D47 — merges a delta page into the river: server rows the window
+    /// doesn't know yet are appended id-dedupe + re-sorted ascending (the
+    /// same rhythm loadOlder uses). Edits/deletes keep flowing through the
+    /// socket signals — this path only ever ADDS missing rows.
+    private func mergeDelta(_ fresh: [WireChatMessage]) {
+        let rows = riverRows(from: fresh)
+        guard !rows.isEmpty else { return }
+        let known = Set(messages.map(\.id))
+        let additions = rows.filter { !known.contains($0.id) }
+        guard !additions.isEmpty else { return }
+        for row in additions {
+            upsert(row)
+        }
+        noteRiverChanged()
     }
 
     /// The main river EXCLUDES thread replies (web parity) — they live in

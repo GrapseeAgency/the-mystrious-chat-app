@@ -542,8 +542,18 @@ class PulseRepositoryImpl @Inject constructor(
         limit: Int = 200,
         before: String? = null,
         topicId: String? = null,
-    ): Result<Unit> =
-        when (val r = api.messages(conversationId, limit, before, topicId)) {
+    ): Result<Unit> {
+        // R2-C item 2 (D47 delta sync) — a REFRESH (no `before` page cursor,
+        // unfiltered) rides `since=` when the Room cache already holds server
+        // rows for this conversation: only the strictly-newer tail crosses
+        // the wire and merges by upsert. The FIRST load (empty cache) and
+        // paged/topic fetches keep the unchanged full-window behavior.
+        val since = if (before == null && topicId == null) {
+            messageDao.latestServerCreatedAt(conversationId)
+        } else {
+            null
+        }
+        return when (val r = api.messages(conversationId, limit, before, topicId, since)) {
             is PulseResult.Success -> {
                 messageDao.upsertAll(
                     r.value.messages.map { dto ->
@@ -555,6 +565,7 @@ class PulseRepositoryImpl @Inject constructor(
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
 
     // ── users / identity ────────────────────────────────────────
     override suspend fun users(query: String): Result<List<User>> = when (val r = api.users()) {
@@ -1740,7 +1751,20 @@ class PulseRepositoryImpl @Inject constructor(
         }
 
     override suspend fun deleteMessage(messageId: String): Result<Unit> =
-        api.deleteMessage(messageId, viewerId ?: "").toResult()
+        when (val r = api.deleteMessage(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                // R2-C item 2 — the tombstone echoes back with its ORIGINAL
+                // createdAt, so a since= delta refetch can never re-fetch it:
+                // upsert the deleted row here (server truth) so "Message
+                // deleted" renders immediately (the VM's refetch then rides
+                // the delta path for anything genuinely newer).
+                r.value.toDomain().let { domain ->
+                    messageDao.upsertAll(listOf(MessageEntity.from(domain, reactionsJsonOf(domain))))
+                }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
 
     override suspend fun exportChat(conversationId: String): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
