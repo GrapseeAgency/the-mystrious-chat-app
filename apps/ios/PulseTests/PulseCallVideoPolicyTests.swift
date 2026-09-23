@@ -30,30 +30,12 @@ final class PulseCallVideoPolicyTests: XCTestCase {
     }
 
     func testOfferWithActiveVideoMLineIsDetected() {
-        let lines = videoSdp.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\r" || $0 == "\n" })
-        let vline = lines.first { $0.hasPrefix("m=video") }
-        let toks = vline.map { $0.split(separator: " ") } ?? []
-        let vlineText: String = vline.map(String.init) ?? "none"
-        let toksText: String = toks.map(String.init).joined(separator: "|")
-        let eq: Bool = toks.first == "m=video"
+        let lines = videoSdp.components(separatedBy: CharacterSet(charactersIn: "\r\n")).filter { !$0.isEmpty }
         let result: Bool = PulseCallSdp.hasVideo(videoSdp)
-        let viaProd = videoSdp.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\r" || $0 == "\n" }).count
-        let onlyLF = videoSdp.split(whereSeparator: { $0 == "\n" }).count
-        let onlyCR = videoSdp.split(whereSeparator: { $0 == "\r" }).count
-        let scalars = videoSdp.unicodeScalars.prefix(8).map { String($0.value) }.joined(separator: ",")
+        let vlineText: String = lines.first(where: { $0.hasPrefix("m=video") }) ?? "none"
         let message = "DIAG lines=" + String(lines.count)
             + " vline=" + vlineText
-            + " toks=" + toksText
-            + " eq=" + String(eq)
             + " hasVideo=" + String(result)
-            + " prod=" + String(viaProd)
-            + " lf=" + String(onlyLF)
-            + " cr=" + String(onlyCR)
-            + " scalars=" + scalars
-            + " raw=" + videoSdp
-                .replacingOccurrences(of: "\r", with: "<CR>")
-                .replacingOccurrences(of: "\n", with: "<LF>")
-                .replacingOccurrences(of: "\\", with: "<BSL>")
         XCTAssertTrue(result, message)
     }
 

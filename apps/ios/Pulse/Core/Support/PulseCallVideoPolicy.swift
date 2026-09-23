@@ -36,18 +36,21 @@ public enum PulseCallSdp {
             sectionRejected = false
         }
 
-        // Single pass over lines; SSE-independent (no Obj-C scanner state).
-        var iterator = sdp.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\r" || $0 == "\n" }).makeIterator()
-        while let rawLine = iterator.next() {
+        // NSString-bridge line splitting (components over closure-based split —
+        // the CI runner's toolchain miscompiled the Character==literal closure
+        // predicates here, and the bridge path is equivalent + faster anyway).
+        // components(separatedBy:) with BOTH chars treats every CR and LF as a
+        // boundary, so CRLF boundaries produce empty pieces we filter below.
+        for rawLine in sdp.components(separatedBy: CharacterSet(charactersIn: "\r\n")) where !rawLine.isEmpty {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("m=") {
                 flushSection()
-                let tokens = line.split(separator: " ")
+                let tokens = line.components(separatedBy: " ").filter { !$0.isEmpty }
                 // m=<media> <port> <proto> <fmt> ... — tokens[0] is the full
-                // "m=video" token (dropFirst() strips ONE char, not the "m=").
+                // "m=video" token; tokens[1] is the port (0 = rejected).
                 if tokens.count >= 3, tokens[0] == "m=video" {
                     sectionIsVideo = true
-                    sectionRejected = Int(tokens[1]) == 0
+                    sectionRejected = (Int(tokens[1]) ?? -1) == 0
                 }
             } else if sectionIsVideo, line == "a=inactive" {
                 sectionRejected = true
