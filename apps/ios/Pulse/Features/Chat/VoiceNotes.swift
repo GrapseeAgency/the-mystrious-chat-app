@@ -309,10 +309,16 @@ struct VoiceBubble: View {
 
     // Deterministic web-parity bars (D31 — same algorithm as the web bubble,
     // chat-room.tsx:6232; per-process hashValue would change every launch).
+    // The arithmetic is spelled out in typed locals — the inline version made
+    // the Swift type-checker time out (CI r2, "unable to type-check in
+    // reasonable time").
     private var bars: [CGFloat] {
-        VoiceWaveform.bars(for: message.id).map { value in
-            CGFloat(5 + (value - 28) / 72.0 * 15.0)
+        let raw: [Int] = VoiceWaveform.bars(for: message.id)
+        let scaled: [CGFloat] = raw.map { (value: Int) -> CGFloat in
+            let offset: Double = (Double(value) - 28.0) / 72.0
+            return CGFloat(5.0 + offset * 15.0)
         }
+        return scaled
     }
 
     private var rateLabel: String {
