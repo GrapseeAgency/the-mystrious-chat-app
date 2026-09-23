@@ -3217,3 +3217,25 @@ Stage Summary:
 - ROUND 1 REMEDIATION LIST NOW FULLY LANDED (code-verified; device/hardware behavior stays HARDWARE REQUIRED-UNVERIFIED, Wave 3-HW/5-HW OPEN): Android render batch (parser/jumbo/24-picker/who-reacted/slash/stickers/effects + share/lightbox/BOOT/hub), iOS batch (forward-offline/NWPath/forget-viewer/hub-cache/translate/location/themes/phrases/FX/logs-poll), video calls (both natives), camera+voice capture (both natives), PiP panes (both natives), web F-MS-29/D26/D47.
 - Remaining OPEN items are the documented external/hardware gates only: Wave 3-HW + 5-HW (device audio/video calls + push), FCM/APNs/TestFlight/AASA/bridge pin (operator). D47 delta-sync native adoption deferred (route live, consumers unaffected).
 - iOS is CI-gated (Linux sandbox): next push must show green build + XCTest before any release claim.
+
+---
+Task ID: R1-CLOSE (orchestrator)
+Agent: Z.ai Code (orchestrator)
+Task: CI hardening for the parity wave — iOS test rounds r1-r13 + release v0.11.1-native
+
+Work Log:
+- CI rounds on the parity wave (Android+Web green at first push; iOS iterated):
+  r1 RTCVideoTrack unresolved → PulseCallEngine lacked `import WebRTC`.
+  r2 VoiceNotes waveform expression type-check timeout → typed locals.
+  r3 WebRTC ObjC surface mismatches → startCapture(device,format,fps), fps via videoSupportedFrameRateRanges.maxFrameRate, camera flip = stop+restart on opposite device, non-optional formatDescription, receiver.track property.
+  r4 fps is Int in this bridge (r3 misread the label-vs-type error).
+  r5 Wave2UITests all→allSatisfy; WireWhiteboardStrokePost +Equatable.
+  r6 conv-themes fixture → WireConvTheme object shape ({wallpaper}).
+  r7 SDP m-line token indexing (iOS dropFirst() = ONE char → "=video"; Android checked tokens[1]=port for "video" + toIntOrNull on the proto token) — hasVideo was CONSTANT-FALSE on both natives; :feature-calls JVM 14/14 post-fix (module had been excluded from the earlier JVM run — full JVM now 450/450).
+  r8-r12 DIAGNOSTIC rounds: self-reporting assertions proved the runner toolchain miscompiles Character==escape-literal closure predicates (split whereSeparator closures returned false for REAL CR/LF while Obj-C-bridge replacingOccurrences matched them; scalar dump proved the chars). Two diagnostic pushes themselves needed fixes (escaped quotes inside interpolation are illegal; plain-concat used instead).
+  r13 FINAL FIX: hasVideo rewritten on NSString-bridge components(separatedBy: CharacterSet(charactersIn: "\r\n")) — no closures. iOS build-test + archive BOTH SUCCESS.
+- Release v0.11.1-native: bump versionCode 22 / versionName 0.11.1-native + download/update-manifest.json staged.
+
+Stage Summary:
+- ALL THREE CI PLATFORMS GREEN on the parity wave. Round 1 remediation backlog is code-complete and CI-verified; hardware gates (Wave 3-HW/5-HW) + external gates remain documented-OPEN as before.
+- Release v0.11.1-native follows (tag → release CI → asset byte-verify → CDN pin), same discipline as v0.10/v0.11.0.
