@@ -52,7 +52,7 @@ final class Wave8WireTests: XCTestCase {
     /// 'chat.convThemes') must never fail the decode.
     func testPrefsDecodeIgnoresUnknownFields() throws {
         let prefs = try decode(WirePulsePrefs.self, """
-        {"bubbleRadius":"md","density":"cozy","wallpaper":"dusk","unknownFutureField":42,"chat.convThemes":{"c1":"rose"},"notifPreviews":true}
+        {"bubbleRadius":"md","density":"cozy","wallpaper":"dusk","unknownFutureField":42,"chat.convThemes":{"c1":{"wallpaper":"rose"}},"notifPreviews":true}
         """)
         XCTAssertEqual(prefs.bubbleRadius, "md")
         XCTAssertEqual(prefs.density, "cozy")
