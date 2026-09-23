@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,6 +25,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,20 +70,30 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhotoCamera
+// R1-W2I F-PI-03 — pop-out mini chat menu icon (web PictureInPicture2).
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material3.Button
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Poll
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHost
@@ -96,6 +109,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -106,9 +120,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -124,6 +141,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.core.media.PulseMedia
 import app.pulse.core.time.PulseTime
+// R1-W2F — per-conversation themes (F-FX-05).
+import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.LinkPreviewInfo
 import app.pulse.domain.model.Message
@@ -171,6 +190,7 @@ fun ChatRoomScreen(
     val activeTopicId by viewModel.activeTopicId.collectAsStateWithLifecycle()
     val recording by viewModel.recording.collectAsStateWithLifecycle()
     val recordMs by viewModel.recordMs.collectAsStateWithLifecycle()
+    val recordAmps by viewModel.recordAmps.collectAsStateWithLifecycle()
     val sendingVoice by viewModel.sendingVoice.collectAsStateWithLifecycle()
     val transcribingIds by viewModel.transcribingIds.collectAsStateWithLifecycle()
     // Wave 8 — prefs-driven room rendering (bubble corners, density, wallpaper)
@@ -179,6 +199,19 @@ fun ChatRoomScreen(
     val densityGap = if (prefs.density == "compact") 3.dp else 6.dp
     val channelRole by viewModel.channelRole.collectAsStateWithLifecycle()
     val safety by viewModel.safety.collectAsStateWithLifecycle()
+    // R1-W2A — quick phrases (F-MS-29) + D34 verified badge state.
+    val phrases by viewModel.phrases.collectAsStateWithLifecycle()
+    val phrasesBusy by viewModel.phrasesBusy.collectAsStateWithLifecycle()
+    val peerVerified by viewModel.peerVerified.collectAsStateWithLifecycle()
+    // R1-W2F — translation (F-MD-06), location fix (F-MD-07), conv themes (F-FX-05).
+    val translatingId by viewModel.translatingId.collectAsStateWithLifecycle()
+    val translated by viewModel.translated.collectAsStateWithLifecycle()
+    val locationFix by viewModel.locationFix.collectAsStateWithLifecycle()
+    val convThemes by viewModel.convThemes.collectAsStateWithLifecycle()
+    // R1-W2I — PiP pane focus (F-PI-03): drives the pop-out toggle in the room menu.
+    val pipFocusedId by viewModel.pipFocusedConversationId.collectAsStateWithLifecycle()
+    val roomTheme = convThemes[conversationId]
+    val effectiveWallpaper = roomTheme?.wallpaper ?: prefs.wallpaper ?: "none"
 
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -200,6 +233,18 @@ fun ChatRoomScreen(
     var wasEditing by remember { mutableStateOf(false) }
     var expandedFor by remember { mutableStateOf<String?>(null) }
     var scrolledFlash by remember { mutableStateOf<String?>(null) }
+    // R1-W2A — reaction picker / who-reacted / stickers / slash help /
+    // schedule / quick-phrases hosts (D27, F-MS-24, F-MS-22, F-MS-29).
+    var reactionPickerTarget by remember { mutableStateOf<Message?>(null) }
+    var whoReactedFor by remember { mutableStateOf<Pair<Message, String>?>(null) }
+    var stickerOpen by remember { mutableStateOf(false) }
+    var scheduleOpen by remember { mutableStateOf(false) }
+    var helpOpen by remember { mutableStateOf(false) }
+    var phrasesOpen by remember { mutableStateOf(false) }
+    // R1-W2F — location share sheet (F-MD-07) + theme picker (F-FX-05).
+    var locationOpen by remember { mutableStateOf(false) }
+    var locationDenied by remember { mutableStateOf(false) }
+    var themeOpen by remember { mutableStateOf(false) }
 
     // Wave 6 — broadcast channel lock (role from the server detail).
     val isChannel = conversation?.kind == Conversation.Kind.CHANNEL
@@ -313,29 +358,92 @@ fun ChatRoomScreen(
         uri?.let(viewModel::onDocumentPicked)
     }
 
+    // ── D30 camera capture: CAMERA runtime gate → TakePicture(FileProvider) ──
+    // The shot lands on a cacheDir/camera uri, then flows through the SAME
+    // staged pipeline as the gallery pick (onImagePicked → ≤1280px JPEG q0.82
+    // data-URL → /api/uploads → caption sheet). Denial is an INLINE explainer
+    // (no crash, no dead end).
+    var captureUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraDenied by remember { mutableStateOf(false) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val uri = captureUri
+        captureUri = null
+        if (saved && uri != null) viewModel.onImagePicked(uri)
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            cameraDenied = false
+            captureUri?.let { cameraLauncher.launch(it) }
+        } else {
+            cameraDenied = true
+        }
+    }
+    val onCameraCapture: () -> Unit = {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        val uri = MediaSupport.newCameraCaptureUri(context)
+        captureUri = uri
+        if (granted) cameraLauncher.launch(uri) else cameraPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    // ── D31 hold-to-record: RECORD_AUDIO gate + honest inline explainer ──
     // Wave 2 mic gate — RECORD_AUDIO is requested at the UI layer; denial is
-    // an honest notice pointing at Settings (spec §2.1 voice flow).
+    // an inline explainer row above the composer (plus the one-shot notice)
+    // pointing at Settings — the mic button itself stays usable, no crash.
+    var micDenied by remember { mutableStateOf(false) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
+            micDenied = false
             viewModel.startRecording()
         } else {
+            micDenied = true
             viewModel.notify("Microphone access was denied — enable it in Settings", isError = true)
         }
     }
-    val onMicTap: () -> Unit = {
+    val onStartVoiceHold: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         if (granted) viewModel.startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+    val onVoiceHoldFinish: (Boolean) -> Unit = { cancelled ->
+        if (cancelled) viewModel.cancelRecording() else viewModel.stopAndSend()
+    }
+
+    // ── R1-W2F F-MD-07 — ACCESS_COARSE_LOCATION runtime gate for pin share.
+    // Mirrors the D30 camera gate: denial is an inline explainer INSIDE the
+    // location sheet (no crash, no dead end).
+    // NOTE for the manifest owner: AndroidManifest.xml needs
+    //     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    // — runtime-only; no background location is used (a static pin needs none).
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            locationDenied = false
+            viewModel.requestLocationFix()
+        } else {
+            locationDenied = true
+        }
+    }
+    val onShareLocation: () -> Unit = {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) viewModel.requestLocationFix() else locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
     }
 
     // Wave 2 topic rail — refresh on open + every 15s while the room is open
     // (web parity tick; after-send refreshes ride the VM).
     LaunchedEffect(conversationId) {
         viewModel.refreshTopics()
+        viewModel.loadPhrases()
         while (true) {
             delay(15_000)
             viewModel.refreshTopics()
         }
+    }
+
+    // D34 — DM peer verification state for the header badge (quiet fetch;
+    // tapping the badge still opens the safety sheet via onOpenSafety).
+    LaunchedEffect(dmPeerId) {
+        dmPeerId?.let(viewModel::loadPeerVerification)
     }
 
     Column(
@@ -364,6 +472,14 @@ fun ChatRoomScreen(
             onOpenLeaderboard = if (conversation?.isGroupish == true) {
                 { viewModel.openLeaderboard() }
             } else null,
+            // R1-W2F F-FX-05 — the overflow menu's theme picker entry.
+            onOpenTheme = { themeOpen = true },
+            // R1-W2I F-PI-03 — the pop-out mini-chat toggle (web header
+            // PictureInPicture2 button: focused pane → close, else open).
+            pipActive = pipFocusedId == conversationId,
+            onTogglePip = { viewModel.togglePipPane() },
+            // D34 — DM peer verification badge state (null = unknown/loading).
+            peerVerified = if (dmPeerId != null) peerVerified else null,
         )
 
         // Wave 2 topic rail — GROUP rooms only (DMs have nothing to file into).
@@ -415,7 +531,16 @@ fun ChatRoomScreen(
             Modifier
                 .weight(1f)
                 .then(
-                    app.pulse.ui.PulseWallpaper.brush(prefs.wallpaper)
+                    // R1-W2F F-FX-05 — per-conversation override ?? global default
+                    // (web effectiveConvWallpaper parity).
+                    app.pulse.ui.PulseWallpaper.brush(effectiveWallpaper)
+                        ?.let { brush -> Modifier.background(brush) }
+                        ?: Modifier,
+                )
+                .then(
+                    // R1-W2F F-FX-05 — the tint glow replaces the TOP gradient
+                    // stop (web applyConvTint parity), visible even on `none`.
+                    roomTheme?.tint?.let { tint -> convTintGlow(tint) }
                         ?.let { brush -> Modifier.background(brush) }
                         ?: Modifier,
                 ),
@@ -444,6 +569,9 @@ fun ChatRoomScreen(
                                 downloading = state.downloadingFileId == message.id,
                                 voicePlayer = viewModel.voicePlayer,
                                 transcribing = message.id in transcribingIds,
+                                // R1-W2F F-MD-06 — per-message LLM translation state.
+                                translating = translatingId == message.id,
+                                translatedText = translated[message.id],
                                 onTranscribe = viewModel::transcribeVoice,
                                 onVotePoll = viewModel::votePoll,
                                 onClosePoll = viewModel::closePoll,
@@ -473,6 +601,12 @@ fun ChatRoomScreen(
                                 onOpenImage = { lightboxTarget = message },
                                 onOpenFile = { viewModel.openFile(message, share = false) },
                                 onOpenThread = { onOpenThread(conversationId, message.id) },
+                                // D27 — long-press a reaction chip → who-reacted sheet.
+                                onWhoReacted = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
+                                    { emoji -> whoReactedFor = message to emoji }
+                                } else {
+                                    null
+                                },
                                 modifier = Modifier.animateItem(),
                             )
                         }
@@ -673,9 +807,10 @@ fun ChatRoomScreen(
             }
         }
 
-        // Composer — REPLACED wholesale by the record bar while recording.
-        // Wave 6 — broadcast channel lock: non-admins get the glass notice
-        // (web parity); the server still 403s every non-admin post.
+        // Composer — the text side swaps to the record bar while recording;
+        // the right slot (HoldRecordSlot) is ALWAYS mounted so the hold
+        // gesture survives. Wave 6 — broadcast channel lock: non-admins get
+        // the glass notice (web parity); the server still 403s non-admin posts.
         if (composerLocked) {
             Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
                 Row(
@@ -688,156 +823,100 @@ fun ChatRoomScreen(
                 }
             }
         } else Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
-            if (recording) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(
-                        onClick = viewModel::cancelRecording,
-                        modifier = Modifier.clip(CircleShape),
-                    ) {
-                        Icon(Icons.Filled.Close, contentDescription = "Cancel recording", tint = PulsePalette.Rose)
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    // Red pulsing dot — infinite alpha breathing.
-                    val pulse = rememberInfiniteTransition(label = "recordPulse")
-                    val dotAlpha by pulse.animateFloat(
-                        initialValue = 1f,
-                        targetValue = 0.25f,
-                        animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
-                        label = "recordDot",
-                    )
-                    Box(
-                        Modifier
-                            .size(12.dp)
-                            .alpha(dotAlpha)
-                            .clip(CircleShape)
-                            .background(PulsePalette.Rose),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        formatRecordTimer(recordMs),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = PulsePalette.Rose,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    if (sendingVoice) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PulsePalette.Emerald)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "Sending…",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else {
-                        IconButton(
-                            onClick = viewModel::stopAndSend,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .size(44.dp)
-                                .background(Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep)), CircleShape),
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send voice note",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-                }
-            } else {
+            // D31 hold-to-record — the RIGHT slot is ALWAYS mounted (same node
+            // across idle → recording) so the press gesture survives the state
+            // change: hold the mic to record, release to send, slide LEFT past
+            // the threshold to cancel (bar shows "Release to cancel").
+            var cancelArmed by remember { mutableStateOf(false) }
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                IconButton(
-                    onClick = {
-                        if (state.staged == null && state.editing == null) attachOpen = true
-                    },
-                    modifier = Modifier.clip(CircleShape),
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Attach", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                BasicTextField(
-                    value = draft,
-                    onValueChange = {
-                        draft = it
-                        viewModel.onDraftChanged(it)
-                    },
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                    cursorBrush = SolidColor(PulsePalette.Emerald),
-                    modifier = Modifier
-                        .weight(1f)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(22.dp))
-                        .padding(horizontal = 16.dp, vertical = 11.dp),
-                    decorationBox = { inner ->
-                        Box {
-                            if (draft.isEmpty()) {
-                                Text(
-                                    if (state.editing != null) "Edit your message" else "Message",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
+                Box(Modifier.weight(1f)) {
+                    if (recording) {
+                        RecordBarContent(
+                            recordMs = recordMs,
+                            amps = recordAmps,
+                            sending = sendingVoice,
+                            cancelArmed = cancelArmed,
+                            onCancel = viewModel::cancelRecording,
+                        )
+                    } else {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                            IconButton(
+                                onClick = {
+                                    if (state.staged == null && state.editing == null) attachOpen = true
+                                },
+                                modifier = Modifier.clip(CircleShape),
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = "Attach", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            inner()
+                            BasicTextField(
+                                value = draft,
+                                onValueChange = {
+                                    draft = it
+                                    viewModel.onDraftChanged(it)
+                                },
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                                cursorBrush = SolidColor(PulsePalette.Emerald),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(22.dp))
+                                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                                decorationBox = { inner ->
+                                    Box {
+                                        if (draft.isEmpty()) {
+                                            Text(
+                                                if (state.editing != null) "Edit your message" else "Message",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                            )
+                                        }
+                                        inner()
+                                    }
+                                },
+                            )
                         }
-                    },
-                )
+                    }
+                }
                 Spacer(Modifier.width(6.dp))
                 val canSend = draft.isNotBlank()
-                val showMic = !canSend && state.editing == null && state.staged == null && !sendingVoice
-                if (showMic) {
-                    // Wave 2 voice note entry (spec §1 row 11): blank draft +
-                    // no staged media + not editing → mic. Tap-to-start.
-                    IconButton(
-                        onClick = onMicTap,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .size(44.dp)
-                            .background(SolidColor(MaterialTheme.colorScheme.surfaceVariant), CircleShape),
-                    ) {
-                        Icon(
-                            Icons.Filled.Mic,
-                            contentDescription = "Record voice note",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                } else {
-                    IconButton(
-                        onClick = {
-                            if (!canSend) return@IconButton
-                            viewModel.send(draft)
-                            if (state.editing == null) draft = "" // edit path clears on success
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        },
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .size(44.dp)
-                            .background(
-                                if (canSend) {
-                                    Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))
-                                } else {
-                                    SolidColor(MaterialTheme.colorScheme.surfaceVariant)
-                                },
-                                CircleShape,
-                            ),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
+                val slotMic = !canSend && state.editing == null && state.staged == null && !sendingVoice && !recording
+                HoldRecordSlot(
+                    recording = recording,
+                    sending = sendingVoice,
+                    micVisible = slotMic,
+                    canSend = canSend,
+                    onRecordStart = onStartVoiceHold,
+                    onRecordArm = { armed -> cancelArmed = armed },
+                    onRecordFinish = { cancelled ->
+                        cancelArmed = false
+                        onVoiceHoldFinish(cancelled)
+                    },
+                    onSend = {
+                        if (!canSend) return@HoldRecordSlot
+                        viewModel.send(draft)
+                        if (state.editing == null) draft = "" // edit path clears on success
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    },
+                )
             }
-            }
+        }
+
+        // ── D30/D31 permission-denied inline explainers (graceful, no crash) ──
+        if (micDenied) {
+            PermissionExplainer(
+                message = "Microphone access is off — voice notes need it. Hold-to-record unlocks once it's on.",
+                onOpenSettings = { openAppSettings(context) },
+                onDismiss = { micDenied = false },
+            )
+        }
+        if (cameraDenied) {
+            PermissionExplainer(
+                message = "Camera access is off — allow it to take photos for this chat.",
+                onOpenSettings = { openAppSettings(context) },
+                onDismiss = { cameraDenied = false },
+            )
         }
 
         SnackbarHost(hostState = snackbar)
@@ -852,9 +931,19 @@ fun ChatRoomScreen(
                 attachOpen = false
                 photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
+            onCamera = {
+                attachOpen = false
+                onCameraCapture()
+            },
             onDocument = {
                 attachOpen = false
                 documentPicker.launch(PulseMedia.DOCUMENT_MIME_ARRAY)
+            },
+            // R1-W2F F-MD-07 — one-shot fix → confirm sheet → kind:"location" row.
+            onLocation = {
+                attachOpen = false
+                locationOpen = true
+                onShareLocation()
             },
             onPoll = {
                 attachOpen = false
@@ -869,6 +958,37 @@ fun ChatRoomScreen(
                 if (viewModel.isGroup) viewModel.openTournament() else viewModel.notifySticky("Tournaments are for groups only")
             },
             onKanban = { attachOpen = false; viewModel.openKanban() },
+        )
+    }
+
+    // R1-W2F F-MD-07 — location confirm sheet (fix lives in the VM; dismissal
+    // detaches any still-running one-shot listener).
+    if (locationOpen) {
+        LocationShareSheet(
+            fix = locationFix,
+            denied = locationDenied,
+            onRetry = { onShareLocation() },
+            onOpenSettings = { openAppSettings(context) },
+            onConfirm = { lat, lng, label ->
+                locationOpen = false
+                viewModel.sendLocation(lat, lng, label)
+            },
+            onDismiss = {
+                locationOpen = false
+                viewModel.cancelLocationFix()
+            },
+        )
+    }
+
+    // R1-W2F F-FX-05 — per-conversation theme picker (wallpaper + tint).
+    if (themeOpen) {
+        ConvThemeSheet(
+            current = roomTheme,
+            globalWallpaper = prefs.wallpaper ?: "none",
+            onPickWallpaper = { wallpaper -> viewModel.applyConvTheme(wallpaper, roomTheme?.tint) },
+            onPickTint = { tint -> viewModel.applyConvTheme(roomTheme?.wallpaper ?: (prefs.wallpaper ?: "none"), tint) },
+            onReset = { viewModel.clearConvTheme() },
+            onDismiss = { themeOpen = false },
         )
     }
 
@@ -1032,6 +1152,17 @@ fun ChatRoomScreen(
                 viewModel.remindMe(target.id)
                 actionTarget = null
             },
+            // R1-W2F F-MD-06 — Translate (text rows only; the server rejects
+            // the rest with its honest copy anyway).
+            onTranslate = if (target.kind == Message.Kind.TEXT && !target.isDeleted && target.body.isNotBlank()) {
+                {
+                    viewModel.translateMessage(target.id)
+                    actionTarget = null
+                }
+            } else {
+                null
+            },
+            alreadyTranslated = target.id in translated,
         )
     }
 
@@ -1285,13 +1416,19 @@ private fun RoomSearchBar(
     }
 }
 
-/** Attach sheet — photo picker, system document or poll builder (spec row 9 + Wave 2). */
+/**
+ * Attach sheet — photo picker, camera capture (D30), system document or poll
+ * builder (spec row 9 + Wave 2).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AttachSheet(
     onDismiss: () -> Unit,
     onPhoto: () -> Unit,
+    onCamera: () -> Unit,
     onDocument: () -> Unit,
+    // R1-W2F F-MD-07 — share a live pin (one-shot fix → confirm sheet).
+    onLocation: () -> Unit,
     onPoll: () -> Unit,
     onWhiteboard: () -> Unit,
     onRedPacket: () -> Unit,
@@ -1302,7 +1439,13 @@ private fun AttachSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         SheetAction(Icons.Filled.Image, "Photo", onPhoto)
+        // D30 — take a full-resolution shot with the system camera app; the
+        // file flows through the same ≤1280px JPEG upload path as "Photo".
+        SheetAction(Icons.Filled.PhotoCamera, "Camera", onCamera)
         SheetAction(Icons.Filled.InsertDriveFile, "Document", onDocument)
+        // R1-W2F F-MD-07 — wire kind whitelist carries "location" with the
+        // payload blob {lat,lng,label} (web/iOS parity).
+        SheetAction(Icons.Filled.Place, "Location", onLocation, tint = PulsePalette.Emerald)
         SheetAction(Icons.Filled.Poll, "Poll", onPoll, tint = PulsePalette.Emerald)
         // ── Wave 7 palette (web chat-room.tsx:2519-2634 order) ──
         SheetAction(Icons.Filled.Draw, "Whiteboard", onWhiteboard)
@@ -1312,6 +1455,189 @@ private fun AttachSheet(
         SheetAction(Icons.Filled.EmojiEvents, "Tournament", onTournament)
         SheetAction(Icons.Filled.ViewKanban, "Kanban", onKanban)
         Spacer(Modifier.height(28.dp))
+    }
+}
+
+// ── R1-W2F — F-FX-05 per-conversation theme picker ──────────────────────
+
+/**
+ * Web CONV_TINT_META swatch colors (the bg-*-500 Tailwind classes) — shared
+ * by the picker chips and the room glow so they can never drift.
+ */
+private fun convTintSwatch(tint: String): Color = when (tint) {
+    "emerald" -> Color(0xFF10B981)
+    "rose" -> Color(0xFFF43F5E)
+    "amber" -> Color(0xFFF59E0B)
+    "violet" -> Color(0xFF8B5CF6)
+    "teal" -> Color(0xFF14B8A6)
+    else -> Color.Transparent
+}
+
+/**
+ * Web applyConvTint parity — the tint REPLACES the top gradient stop over the
+ * wallpaper (visible even on the `none` wallpaper); alphas mirror
+ * CONV_TINT_META glow values (emerald/violet 0.17, rose/amber/teal 0.16).
+ */
+private fun convTintGlow(tint: String): Brush? {
+    val color = when (tint) {
+        "emerald" -> convTintSwatch(tint).copy(alpha = 0.17f)
+        "rose" -> convTintSwatch(tint).copy(alpha = 0.16f)
+        "amber" -> convTintSwatch(tint).copy(alpha = 0.16f)
+        "violet" -> convTintSwatch(tint).copy(alpha = 0.17f)
+        "teal" -> convTintSwatch(tint).copy(alpha = 0.16f)
+        else -> return null
+    }
+    return Brush.verticalGradient(listOf(color, Color.Transparent))
+}
+
+private fun wallpaperLabel(token: String): String =
+    app.pulse.ui.PulseWallpaper.TOKENS.firstOrNull { it.first == token }?.second ?: token
+
+/**
+ * R1-W2F F-FX-05 — per-conversation theme picker (web ConvThemePicker
+ * parity, iMessage-style): the SAME wallpaper swatches the Wave-8 Appearance
+ * picker renders (PulseWallpaper.TOKENS) + optional tint chips + "Reset to
+ * default". Every tap commits through the prefs store (`chat.convThemes`,
+ * LRU-capped at 48); the sheet stays open for live previewing like the web.
+ */
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ConvThemeSheet(
+    current: ConvTheme?,
+    globalWallpaper: String,
+    onPickWallpaper: (String) -> Unit,
+    onPickTint: (String?) -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val effectiveWallpaper = current?.wallpaper ?: globalWallpaper
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 26.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Palette, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Chat theme", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+            Text(
+                if (current == null) {
+                    "Following the Appearance default · ${wallpaperLabel(globalWallpaper)}"
+                } else {
+                    "Custom for this chat only"
+                },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "WALLPAPER",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                app.pulse.ui.PulseWallpaper.TOKENS.forEach { (id, name) ->
+                    val selected = effectiveWallpaper == id
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onPickWallpaper(id) }
+                            .padding(2.dp),
+                    ) {
+                        Box(
+                            Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    app.pulse.ui.PulseWallpaper.brush(id)
+                                        ?: Brush.verticalGradient(
+                                            listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surface),
+                                        ),
+                                )
+                                .then(
+                                    if (selected) {
+                                        Modifier.border(2.dp, PulsePalette.Emerald, RoundedCornerShape(12.dp))
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (selected) {
+                                Icon(Icons.Filled.Check, contentDescription = "Selected", tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(name, fontSize = 10.sp, color = if (selected) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "TINT",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // "No tint" clear chip (web Ban-button parity).
+                val noTint = current?.tint == null
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .then(if (noTint) Modifier.border(2.dp, PulsePalette.Emerald, CircleShape) else Modifier)
+                        .clickable { onPickTint(null) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = "No tint", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+                }
+                ConvTheme.TINTS.forEach { tint ->
+                    val selected = current?.tint == tint
+                    Box(
+                        Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(convTintSwatch(tint))
+                            .then(if (selected) Modifier.border(2.dp, PulsePalette.Emerald, CircleShape) else Modifier)
+                            .clickable { onPickTint(tint) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (selected) {
+                            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                        }
+                    }
+                }
+            }
+            if (current != null) {
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .clickable(onClick = onReset)
+                        .padding(vertical = 11.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Reset to default",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1478,6 +1804,15 @@ private fun RoomHeader(
     onToggleSearch: () -> Unit,
     onOpenSafety: (() -> Unit)? = null,
     onOpenLeaderboard: (() -> Unit)? = null,
+    // R1-W2F F-FX-05 — the room overflow menu (chat theme entry).
+    onOpenTheme: () -> Unit = {},
+    // R1-W2I F-PI-03 — the pop-out mini-chat toggle (web chat-room.tsx
+    // header PictureInPicture2 button, aria "Open/Close mini chat window").
+    pipActive: Boolean = false,
+    onTogglePip: () -> Unit = {},
+    // D34 — DM peer verification state (null = unknown/loading): emerald
+    // badge when verified, amber dot only when unverified (web parity).
+    peerVerified: Boolean? = null,
 ) {
     Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
         Row(
@@ -1504,8 +1839,18 @@ private fun RoomHeader(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (conversation != null && !conversation.isGroupish) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(Icons.Filled.Verified, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(14.dp))
+                        if (peerVerified == true) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Filled.Verified, contentDescription = "Verified", tint = PulsePalette.Emerald, modifier = Modifier.size(14.dp))
+                        } else if (peerVerified == false) {
+                            Spacer(Modifier.width(4.dp))
+                            Box(
+                                Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(PulsePalette.Amber),
+                            )
+                        }
                     }
                 }
                 AnimatedContentCompat(partnerTypingName != null) { typing ->
@@ -1589,6 +1934,48 @@ private fun RoomHeader(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // R1-W2F — the room overflow menu (new host; the header previously
+            // had only icon buttons). F-FX-05's theme picker entry lives here;
+            // future room actions slot in below.
+            var roomMenuOpen by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { roomMenuOpen = true }) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = "Room menu",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(expanded = roomMenuOpen, onDismissRequest = { roomMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Chat theme") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                        onClick = {
+                            roomMenuOpen = false
+                            onOpenTheme()
+                        },
+                    )
+                    // R1-W2I F-PI-03 — pop-out mini chat (web chat-room.tsx
+                    // :4023-4037: focused pane → close, else open this room).
+                    DropdownMenuItem(
+                        text = { Text(if (pipActive) "Close mini chat window" else "Open mini chat window") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Filled.PictureInPictureAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = if (pipActive) PulsePalette.Emerald else LocalContentColor.current,
+                            )
+                        },
+                        onClick = {
+                            roomMenuOpen = false
+                            onTogglePip()
+                        },
+                    )
+                }
+            }
         }
     }
 }
@@ -1616,6 +2003,9 @@ private fun MessageRow(
     downloading: Boolean,
     voicePlayer: VoicePlayer,
     transcribing: Boolean,
+    // R1-W2F F-MD-06 — inline LLM translation for the text bubble.
+    translating: Boolean = false,
+    translatedText: String? = null,
     onTranscribe: (String) -> Unit,
     onVotePoll: (String, String) -> Unit,
     onClosePoll: (String) -> Unit,
@@ -1635,6 +2025,8 @@ private fun MessageRow(
     onTournamentLoad: suspend (String) -> app.pulse.protocol.TournamentSummaryDto? = { null },
     onTournamentJoin: (String) -> Unit = {},
     onTournamentFinish: (String) -> Unit = {},
+    // D27 — long-press a reaction chip → who-reacted sheet (null = inert).
+    onWhoReacted: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
     bubbleCornerDp: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
@@ -1782,6 +2174,17 @@ private fun MessageRow(
                     onQuoteClick = onQuoteClick,
                     content = { ImageBubble(message = message, mine = mine, onOpen = onOpenImage) },
                 )
+                // R1-W2F F-MD-07 — tappable pin row (payload {lat,lng,label});
+                // tap fires ACTION_VIEW geo:lat,lng. Before the imagePath/file
+                // gates so a pin never falls into their paths.
+                message.kind == Message.Kind.LOCATION -> MediaWithQuote(
+                    quoteId = message.replyToId,
+                    quoteBody = message.replyToBody,
+                    quoteAuthor = message.replyToAuthor,
+                    mine = mine,
+                    onQuoteClick = onQuoteClick,
+                    content = { LocationPinBubble(message = message, mine = mine) },
+                )
                 message.filePath != null || message.kind == Message.Kind.FILE -> MediaWithQuote(
                     quoteId = message.replyToId,
                     quoteBody = message.replyToBody,
@@ -1801,6 +2204,9 @@ private fun MessageRow(
                     voicePlayer = voicePlayer,
                     onTranscribe = onTranscribe,
                     transcribing = transcribing,
+                    // R1-W2F F-MD-06 — inline translation line under the body.
+                    translating = translating,
+                    translatedText = translatedText,
                     modifier = Modifier.widthIn(max = 300.dp),
                     bubbleCornerDp = bubbleCornerDp,
                 )
@@ -1820,6 +2226,12 @@ private fun MessageRow(
                         Surface(
                             shape = RoundedCornerShape(999.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .combinedClickable(
+                                    onClick = { onWhoReacted?.invoke(emoji) },
+                                    onLongClick = { onWhoReacted?.invoke(emoji) },
+                                ),
                         ) {
                             Row(
                                 Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
@@ -1978,6 +2390,9 @@ internal fun Bubble(
     voicePlayer: VoicePlayer? = null,
     onTranscribe: ((String) -> Unit)? = null,
     transcribing: Boolean = false,
+    // R1-W2F F-MD-06 — per-message LLM translation render state.
+    translating: Boolean = false,
+    translatedText: String? = null,
     bubbleCornerDp: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
     val shape = if (mine) {
@@ -2084,6 +2499,34 @@ internal fun Bubble(
                 }
             }
 
+            // ── R1-W2F F-MD-06 — inline LLM translation (web TranslationLine
+            // parity: italic secondary line under the bubble content; the
+            // conversationId-independent map overwrites on re-translate).
+            if (translating) {
+                Spacer(Modifier.height(5.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(11.dp),
+                        strokeWidth = 1.5.dp,
+                        color = contentColor.copy(alpha = 0.8f),
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "Translating…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor.copy(alpha = 0.8f),
+                    )
+                }
+            }
+            if (!translatedText.isNullOrBlank()) {
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    translatedText,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
+                    color = contentColor.copy(alpha = 0.82f),
+                )
+            }
+
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
@@ -2153,9 +2596,10 @@ private fun VoiceBubbleStatic(message: Message, contentColor: Color) {
         Icon(Icons.Filled.GraphicEq, contentDescription = "Voice message", tint = contentColor, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            val seed = remember(message.id) { message.id.hashCode() }
-            repeat(16) { i ->
-                val h = (4 + ((seed * (i + 7)) % 14)).dp
+            // D31 — the exact web voiceBars LCG (same bars as web/iOS per id).
+            val bars = remember(message.id) { PulseMedia.voiceBubbleBars(message.id, count = 16) }
+            bars.forEach { v ->
+                val h = (4 + (v - 28) / 72f * 14f).dp
                 Box(
                     Modifier
                         .width(3.dp)
@@ -2228,10 +2672,13 @@ private fun VoiceBubble(
             }
             Spacer(Modifier.width(8.dp))
             // 26 deterministic bars — full color up to the playhead, dim after.
+            // D31 — the exact web voiceBars LCG: identical bars on web/iOS for
+            // the same message id (the wire carries NO waveform; all three
+            // surfaces derive it from the id deterministically).
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                val seed = remember(message.id) { message.id.hashCode() }
-                repeat(26) { i ->
-                    val h = (4 + ((seed * (i + 7)) % 14)).dp
+                val bars = remember(message.id) { PulseMedia.voiceBubbleBars(message.id) }
+                bars.forEachIndexed { i, v ->
+                    val h = (4 + (v - 28) / 72f * 14f).dp
                     val lit = durationMs > 0 && (i + 1) / 26f <= fraction
                     Box(
                         Modifier
@@ -2316,6 +2763,269 @@ private fun VoiceBubble(
 private fun formatRecordTimer(ms: Long): String {
     val totalSeconds = ms / 1000
     return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+}
+
+// ── D31 hold-to-record voice capture ────────────────────────────────────
+
+/**
+ * The composer's right slot — ALWAYS the same node across idle → recording
+ * so a press gesture started on the mic survives the recording bar replacing
+ * the composer (release then lands where the finger went down).
+ *
+ *   • idle, blank draft → MIC: press-and-hold starts recording (the gesture
+ *     starts only when [micVisible]; it keeps running until release even
+ *     though the slot has switched to its recording look).
+ *   • recording → SEND arrow: release (no cancel drag) sends, sliding LEFT
+ *     past ~96dp arms cancel ("Release to cancel" shows in the bar) and
+ *     release discards. [onRecordArm] carries the armed state to the bar.
+ *   • idle with text → plain send (tap).
+ */
+@Composable
+private fun HoldRecordSlot(
+    recording: Boolean,
+    sending: Boolean,
+    micVisible: Boolean,
+    canSend: Boolean,
+    onRecordStart: () -> Unit,
+    onRecordArm: (Boolean) -> Unit,
+    onRecordFinish: (Boolean) -> Unit,
+    onSend: () -> Unit,
+) {
+    val density = LocalDensity.current
+    val cancelThresholdPx = remember(density) { with(density) { 96.dp.toPx() } }
+    val currentMicVisible by rememberUpdatedState(micVisible)
+    val currentRecordStart by rememberUpdatedState(onRecordStart)
+    val currentRecordArm by rememberUpdatedState(onRecordArm)
+    val currentRecordFinish by rememberUpdatedState(onRecordFinish)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(44.dp)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (!currentMicVisible) return@awaitEachGesture
+                    down.consume()
+                    currentRecordStart()
+                    var dragX = 0f
+                    var armed = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        dragX += change.positionChange().x
+                        change.consume()
+                        val nowArmed = dragX < -cancelThresholdPx
+                        if (nowArmed != armed) {
+                            armed = nowArmed
+                            currentRecordArm(armed)
+                        }
+                    }
+                    currentRecordFinish(armed)
+                }
+            }
+            .clip(CircleShape)
+            .background(
+                when {
+                    recording -> Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))
+                    canSend -> Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))
+                    else -> SolidColor(MaterialTheme.colorScheme.surfaceVariant)
+                },
+                CircleShape,
+            )
+            .clickable(enabled = !recording && !micVisible && canSend, onClick = onSend),
+    ) {
+        when {
+            recording && sending -> CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = Color.White,
+            )
+            recording -> Icon(
+                Icons.AutoMirrored.Filled.Send,
+                contentDescription = "Release to send the voice note",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp),
+            )
+            micVisible -> Icon(
+                Icons.Filled.Mic,
+                contentDescription = "Hold to record a voice note — slide left to cancel",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+            else -> Icon(
+                Icons.AutoMirrored.Filled.Send,
+                contentDescription = "Send",
+                tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The left section while recording: cancel ✕, pulsing red dot, m:ss timer,
+ * LIVE waveform bars (one per 100ms amplitude sample, deterministic from the
+ * mic readings — no random) and the release hint. Replaces only the composer
+ * text; the right slot [HoldRecordSlot] stays mounted for the release.
+ */
+@Composable
+private fun RecordBarContent(
+    recordMs: Long,
+    amps: List<Float>,
+    sending: Boolean,
+    cancelArmed: Boolean,
+    onCancel: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = onCancel,
+            enabled = !sending,
+            modifier = Modifier.clip(CircleShape),
+        ) {
+            Icon(Icons.Filled.Close, contentDescription = "Cancel recording", tint = PulsePalette.Rose)
+        }
+        Spacer(Modifier.width(4.dp))
+        // Red pulsing dot — infinite alpha breathing.
+        val pulse = rememberInfiniteTransition(label = "recordPulse")
+        val dotAlpha by pulse.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.25f,
+            animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
+            label = "recordDot",
+        )
+        Box(
+            Modifier
+                .size(12.dp)
+                .alpha(dotAlpha)
+                .clip(CircleShape)
+                .background(PulsePalette.Rose),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            formatRecordTimer(recordMs),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = PulsePalette.Rose,
+        )
+        Spacer(Modifier.width(10.dp))
+        RecordWaveform(
+            amps = amps,
+            tint = PulsePalette.Rose,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        when {
+            sending -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = PulsePalette.Emerald)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Sending…",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            cancelArmed -> Text(
+                "‹ Release to cancel",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = PulsePalette.Rose,
+            )
+            else -> Text(
+                "Release to send",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Live hold-to-record waveform — one bar per amplitude sample (the VM keeps
+ * the last [PulseMedia.RECORD_WAVEFORM_BARS]). Bar height is a pure function
+ * of the recorded amplitude (4..24dp), nothing random.
+ */
+@Composable
+private fun RecordWaveform(
+    amps: List<Float>,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(PulseMedia.RECORD_WAVEFORM_BARS) { i ->
+            val amp = amps.getOrNull(i) ?: 0.06f
+            Box(
+                Modifier
+                    .size(width = 3.dp, height = (4 + amp * 20).dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(tint.copy(alpha = 0.85f)),
+            )
+        }
+    }
+}
+
+/**
+ * D30/D31 permission-denied explainer — an honest inline row above the
+ * composer with a jump to the app's Settings page. No crash, no dead end;
+ * dismissible; the permission launchers clear the state on grant.
+ */
+@Composable
+private fun PermissionExplainer(
+    message: String,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+    ) {
+        Row(
+            Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Lock,
+                contentDescription = null,
+                tint = PulsePalette.Amber,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                message,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onOpenSettings) {
+                Text("Open Settings", style = MaterialTheme.typography.labelMedium)
+            }
+            IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Dismiss", modifier = Modifier.size(14.dp))
+            }
+        }
+    }
+}
+
+/** App-info settings page — the jump target for the permission explainers. */
+private fun openAppSettings(context: android.content.Context) {
+    runCatching {
+        context.startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", context.packageName, null),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
 }
 
 /**

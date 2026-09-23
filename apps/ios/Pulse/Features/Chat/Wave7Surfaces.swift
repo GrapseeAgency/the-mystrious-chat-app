@@ -180,10 +180,17 @@ final class Wave7RoomActions: ObservableObject {
 
     // MARK: whiteboard
 
-    func postStrokes(api: PulseAPIClient, conversationId: String, strokes: [WireWhiteboardStrokePost]) {
-        Task { @MainActor in
-            do { _ = try await api.postWhiteboardStrokes(conversationId: conversationId, strokes: strokes) }
-            catch { toast(describe(error), isError: true) }
+    /// R1-W2G D44 — the sheet needs the sync VERDICT: a pending stroke
+    /// leaves the durable draft only when the server confirms the POST
+    /// (web whiteboard-sheet.tsx:497-500 truth). The verbatim error toast
+    /// still surfaces from here on failure.
+    func postStrokes(api: PulseAPIClient, conversationId: String, strokes: [WireWhiteboardStrokePost]) async -> Bool {
+        do {
+            _ = try await api.postWhiteboardStrokes(conversationId: conversationId, strokes: strokes)
+            return true
+        } catch {
+            toast(describe(error), isError: true)
+            return false
         }
     }
 
@@ -821,7 +828,9 @@ struct Wave7WhiteboardSheet: View {
     let conversationId: String
     let viewerId: String
     let load: (Int64?) async -> WireWhiteboardPage?
-    let onStrokes: ([WireWhiteboardStrokePost]) -> Void
+    /// R1-W2G D44 — async WITH a verdict: the draft store clears a stroke
+    /// only when its server sync confirms (see Wave7RoomActions.postStrokes).
+    let onStrokes: ([WireWhiteboardStrokePost]) async -> Bool
     let onUndo: () -> Void
     let onClear: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -830,6 +839,10 @@ struct Wave7WhiteboardSheet: View {
     @State private var lastServerTime: Int64 = 0
     @State private var resetAt: Int64 = 0
     @State private var localStrokes: [(String, Double, [[Double]])] = []
+    /// R1-W2G D44 — single-flight flush: while a batch POST is in flight,
+    /// fresh strokes (already draft-persisted at draw time) ride the NEXT
+    /// pass instead of racing the in-flight verdict.
+    @State private var flushing = false
     @State private var color = "#22c55e"
     @State private var width: Double = 3
     @State private var confirmClear = false
@@ -870,6 +883,15 @@ struct Wave7WhiteboardSheet: View {
                     onFinish: { pts in
                         if pts.count >= 2 {
                             localStrokes.append((color, width, pts))
+                            // R1-W2G D44 — persist the pending stroke BEFORE
+                            // any sync attempt so a crash/kill mid-draw
+                            // never loses it (web :527-529 draws the pending
+                            // stroke instantly; the native adds the durable
+                            // store the web does not have).
+                            PulseWhiteboardDraft.append(
+                                WireWhiteboardStrokePost(color: color, width: width, points: pts),
+                                conversationId: conversationId,
+                            )
                             flushPending()
                         }
                     },
@@ -883,12 +905,25 @@ struct Wave7WhiteboardSheet: View {
                 Spacer()
             }
             .task {
+                // R1-W2G D44 — restore the unsynced draft FIRST (a crash/kill
+                // mid-draw must not lose strokes), then the full snapshot
+                // drops restored copies the server already has (their first
+                // POST landed before the crash — exact color+width+points).
+                localStrokes = PulseWhiteboardDraft.strokes(conversationId: conversationId)
+                    .map { stroke in (stroke.color, stroke.width, stroke.points) }
                 // Full snapshot, then since-delta poll at 900 ms (web whiteboard-sheet.tsx:66).
                 if let page = await load(nil) {
                     remoteStrokes = page.strokes ?? []
                     lastServerTime = page.serverTime ?? 0
                     resetAt = page.resetAt ?? 0
+                    let kept = PulseWhiteboardDraft.droppingSynced(
+                        PulseWhiteboardDraft.strokes(conversationId: conversationId),
+                        snapshot: remoteStrokes,
+                    )
+                    PulseWhiteboardDraft.replaceAll(conversationId: conversationId, strokes: kept)
+                    localStrokes = kept.map { stroke in (stroke.color, stroke.width, stroke.points) }
                 }
+                flushPending()
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 900_000_000)
                     if let page = await load(lastServerTime) {
@@ -898,6 +933,9 @@ struct Wave7WhiteboardSheet: View {
                             resetAt = r
                             remoteStrokes = []
                             localStrokes = []
+                            // R1-W2G D44 — the board was reset server-side;
+                            // the pending draft is gone with it.
+                            PulseWhiteboardDraft.clear(conversationId: conversationId)
                         }
                         remoteStrokes.append(contentsOf: page.strokes ?? [])
                     }
@@ -906,13 +944,29 @@ struct Wave7WhiteboardSheet: View {
         }
     }
 
+    /// R1-W2G D44 — the draft store IS the pending queue (web pending
+    /// semantics, whiteboard-sheet.tsx:527-529): batches of ≤ 40 POST, and
+    /// each batch leaves the draft only on the server verdict. A failed
+    /// batch is removed honestly (:497-500) — the strokes never reached the
+    /// server, so the canvas drops them too instead of faking a sync (the
+    /// postStrokes toast says why). The draft is re-read every pass, so
+    /// strokes drawn mid-flight simply ride the next batch.
     private func flushPending() {
-        guard !localStrokes.isEmpty else { return }
-        let batch = localStrokes.prefix(40).map { c, w, pts in
-            WireWhiteboardStrokePost(color: c, width: w, points: pts)
+        guard !flushing else { return }
+        flushing = true
+        Task { @MainActor in
+            defer { flushing = false }
+            while true {
+                let pending = PulseWhiteboardDraft.strokes(conversationId: conversationId)
+                guard !pending.isEmpty else { break }
+                let batch = Array(pending.prefix(40))
+                let synced = await onStrokes(batch)
+                PulseWhiteboardDraft.removeFirst(conversationId: conversationId, count: batch.count)
+                localStrokes = PulseWhiteboardDraft.strokes(conversationId: conversationId)
+                    .map { stroke in (stroke.color, stroke.width, stroke.points) }
+                if !synced { break }
+            }
         }
-        onStrokes(Array(batch))
-        localStrokes.removeFirst(min(batch.count, localStrokes.count))
     }
 }
 

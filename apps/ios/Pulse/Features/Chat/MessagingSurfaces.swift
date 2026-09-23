@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 // ─────────────────────────────────────────────────────────────
 // REM-B P2/P3 — messaging-flow surfaces (web parity, native sheets):
@@ -8,6 +9,9 @@ import SwiftUI
 //   • WhoReactedSheet       — F-MS-08 long-press chip → who-reacted list
 //   • StickerPickerSheet    — F-MS-24 the web's 5 packs (kind "sticker")
 //   • SlashPaletteView      — F-MS-22 '/'-trigger palette above the composer
+// R1-W2B additions:
+//   • LocationShareSheet    — F-MD-07 CoreLocation fix → kind "location" pin
+//   • QuickPhrasesSheet     — F-MS-29 quick-phrase CRUD (rail manage surface)
 // ─────────────────────────────────────────────────────────────
 
 /// F-MS-18 — arm a delayed send. The server enforces 30 s minimum and a
@@ -474,6 +478,273 @@ struct SlashPaletteView: View {
             .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
             .padding(.horizontal, 12)
             .padding(.bottom, 4)
+        }
+    }
+}
+
+// MARK: - R1-W2B F-MD-07 — location share
+
+/// CoreLocation one-shot fix provider. CLLocationManager guarantees its
+/// delegate callbacks on the main run loop, so plain @Published writes are
+/// safe without extra isolation plumbing.
+final class LocationFixModel: NSObject, ObservableObject, CLLocationManagerDelegate {
+    enum Status: Equatable {
+        case idle, locating, ready, denied, failed
+    }
+
+    @Published var status: Status = .idle
+    @Published var lat: Double?
+    @Published var lng: Double?
+
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+    }
+
+    /// Ask for a fix — triggers the when-in-use TCC prompt on first use,
+    /// then a single high-level location reading (no continuous tracking —
+    /// a static pin needs no background location, spec F-MD-07 PERMS).
+    func requestFix() {
+        status = .locating
+        switch manager.authorizationStatus {
+        case .denied, .restricted:
+            status = .denied
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        default:
+            manager.requestLocation()
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .denied, .restricted:
+            status = .denied
+        case .notDetermined:
+            break
+        default:
+            if status == .locating {
+                manager.requestLocation()
+            }
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let fix = locations.last else { return }
+        lat = fix.coordinate.latitude
+        lng = fix.coordinate.longitude
+        status = .ready
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        if (error as? CLError)?.code == CLError.Code.denied {
+            status = .denied
+        } else {
+            status = .failed
+        }
+    }
+}
+
+/// F-MD-07 — the location confirm sheet (web location-share.tsx flow:
+/// locate → coords + label → REAL kind:'location' message with payload
+/// { lat, lng, label } — chat-room.tsx sendLocation L3120-3138).
+struct LocationShareSheet: View {
+    /// Called with the confirmed pin once the sheet dismisses (the room then
+    /// POSTs the message — the sheet owns NO transport).
+    var onConfirm: (Double, Double, String) -> Void = { _, _, _ in }
+
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var fix = LocationFixModel()
+    @State private var label = ""
+
+    private static let defaultLabel = "Current location"
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Pin") {
+                    switch fix.status {
+                    case .idle:
+                        Button {
+                            fix.requestFix()
+                        } label: {
+                            Label("Locate me", systemImage: "location.fill")
+                        }
+                    case .locating:
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Finding your location…").foregroundStyle(.secondary)
+                        }
+                    case .ready:
+                        if let lat = fix.lat, let lng = fix.lng {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Label(PulseRemediationLogic.coordinateText(lat: lat, lng: lng), systemImage: "location.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(PulseTheme.emerald)
+                                Button("Refresh fix") { fix.requestFix() }
+                                    .font(.caption)
+                            }
+                        }
+                    case .denied:
+                        Label("Location access is off — enable it in Settings to share a pin", systemImage: "location.slash")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    case .failed:
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Couldn't get a fix — try again", systemImage: "location.slash")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            Button("Retry") { fix.requestFix() }
+                                .font(.caption.weight(.semibold))
+                        }
+                    }
+                }
+                Section("Label") {
+                    TextField("Label", text: $label, prompt: Text(Self.defaultLabel))
+                        .textInputAutocapitalization(.sentences)
+                }
+                if fix.status == .ready, fix.lat != nil, fix.lng != nil {
+                    Section {
+                        Button {
+                            dismiss()
+                            onConfirm(fix.lat ?? 0, fix.lng ?? 0, resolvedLabel)
+                        } label: {
+                            Text("Send location")
+                                .frame(maxWidth: .infinity)
+                                .font(.subheadline.weight(.bold))
+                        }
+                        .disabled(fix.status != .ready)
+                    } footer: {
+                        Text("Sends a map pin to this chat. Your coordinates ride the message.")
+                    }
+                }
+            }
+            .navigationTitle("Share location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .onAppear {
+                if fix.status == .idle { fix.requestFix() }
+            }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var resolvedLabel: String {
+        label.trimmingCharacters(in: .whitespaces).isEmpty ? Self.defaultLabel : label
+    }
+}
+
+// MARK: - R1-W2B F-MS-29 — quick phrases manager
+
+/// F-MS-29 — quick-phrase CRUD (GET/POST/DELETE /api/users/{id}/phrases,
+/// phrases/route.ts: 1-120 chars, ≤12 rows, position asc). The composer rail
+/// renders the same list; this sheet manages it.
+struct QuickPhrasesSheet: View {
+    @ObservedObject var session: PulseSession
+    /// Fired after every mutation so the composer rail re-fetches.
+    var onChanged: () -> Void = {}
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var phrases: [WireQuickPhrase] = []
+    @State private var draft = ""
+    @State private var loading = true
+
+    private static let maxPhrases = 12
+    private static let maxChars = 120
+
+    private var canAdd: Bool {
+        !draft.trimmingCharacters(in: .whitespaces).isEmpty && phrases.count < Self.maxPhrases
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(phrases) { phrase in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(phrase.text)
+                                .font(.subheadline)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                delete(phrase)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                    if loading && phrases.isEmpty {
+                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 16)
+                    }
+                } header: {
+                    Text("Quick phrases")
+                } footer: {
+                    Text("One-tap lines above the composer. Up to \(Self.maxPhrases) phrases, \(Self.maxChars) characters each.")
+                }
+                Section("Add a phrase") {
+                    TextField("Type a phrase…", text: $draft, axis: .vertical)
+                        .lineLimit(1...3)
+                        .textInputAutocapitalization(.sentences)
+                    Button {
+                        add()
+                    } label: {
+                        Label("Add phrase", systemImage: "plus.circle.fill")
+                    }
+                    .disabled(!canAdd)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Quick phrases")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .refreshable { await load() }
+            .task { await load() }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func load() async {
+        phrases = (try? await session.api.quickPhrases()) ?? []
+        loading = false
+        onChanged()
+    }
+
+    private func add() {
+        let text = draft.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty, text.count <= Self.maxChars, phrases.count < Self.maxPhrases else { return }
+        Task {
+            do {
+                _ = try await session.api.createQuickPhrase(text: text)
+                draft = ""
+                PulseHaptics.success()
+                await load()
+            } catch {
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
+    }
+
+    private func delete(_ phrase: WireQuickPhrase) {
+        Task {
+            do {
+                try await session.api.deleteQuickPhrase(phrase.id)
+                PulseHaptics.tap()
+                await load()
+            } catch {
+                session.toasts.show(RoomViewModel.describe(error))
+            }
         }
     }
 }

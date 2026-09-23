@@ -57,12 +57,14 @@ function anonAliasFor(userId: string, conversationId: string): string {
 }
 
 /**
- * GET /api/conversations/[id]/messages?limit=200&before=<ISO>&q=<text>
+ * GET /api/conversations/[id]/messages?limit=200&before=<ISO>&q=<text>&since=<ISO>
  * → { messages: ChatMessage[], hasMore: boolean, total: number }
  *
  * Default window: the NEWEST `limit` messages, returned ascending.
  * `before=<ISO>` pages further back (messages strictly older than the ISO
  * timestamp — use the oldest message's createdAt as the cursor).
+ * `since=<ISO>` (D47 delta sync) returns only messages strictly NEWER than
+ * the cursor — same shape and limits; see the `since` comment below.
  * `q=<text>` switches into SEARCH mode: newest-first scan of the whole
  * conversation, case-insensitive substring match on text content AND
  * document fileName (R41), soft-deleted rows excluded, capped at `limit`
@@ -115,6 +117,29 @@ export async function GET(req: Request, { params }: RouteCtx) {
     )
   }
 
+  // D47 delta sync (spec-optional addendum): `since=` is the delta-sync
+  // cursor — only messages strictly NEWER than it are returned, in the
+  // same shape ({ messages, hasMore, total }) and under the same limits
+  // as every other mode. It rides the newest-window branch below and is
+  // purely ADDITIVE: existing consumers keep using `after=` untouched.
+  // When both cursors are supplied the LATER one wins, so a stale delta
+  // cursor can never rewind the window. (ISO date, matching `before=`/`after=`.)
+  const sinceRaw = url.searchParams.get('since')
+  if (sinceRaw && !parseIsoDate(sinceRaw)) {
+    return NextResponse.json(
+      { error: 'since must be a valid ISO date string.' },
+      { status: 400 },
+    )
+  }
+  const afterDate = afterRaw ? (parseIsoDate(afterRaw) as Date) : null
+  const sinceDate = sinceRaw ? (parseIsoDate(sinceRaw) as Date) : null
+  const newerThan =
+    afterDate !== null && sinceDate !== null
+      ? sinceDate > afterDate
+        ? sinceDate
+        : afterDate
+      : (sinceDate ?? afterDate)
+
   // R24-b: optional Zulip-topic filter — only alive messages filed under the
   // given topic. Omitted → unchanged whole-room behavior (General included).
   const topicFilterRaw = strField(url.searchParams.get('topicId'))
@@ -165,12 +190,13 @@ export async function GET(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ messages: rows.map((m) => mapMessage(m)), hasMore: rows.length === limit, total })
   }
 
-  // Newest window (also the polling path — `after` narrows it when supplied).
+  // Newest window (also the polling path — `after`/`since` narrow it when
+  // supplied; `since` is the D47 delta-sync alias, see the comment above).
   const [messages, total] = await Promise.all([
     db.message.findMany({
       where: {
         conversationId: id,
-        ...(afterRaw ? { createdAt: { gt: parseIsoDate(afterRaw) as Date } } : {}),
+        ...(newerThan ? { createdAt: { gt: newerThan } } : {}),
         ...(topicFilter ?? {}),
       },
       orderBy: { createdAt: 'desc' },

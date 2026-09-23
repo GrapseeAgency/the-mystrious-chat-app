@@ -129,3 +129,45 @@ func pulseStatusGlyphDisplay(_ value: String) -> String {
 func pulseValidHandle(_ handle: String) -> Bool {
     handle.range(of: "^[a-z0-9_]{3,20}$", options: .regularExpression) != nil
 }
+
+// ─────────────────────────────────────────────────────────────
+// R1-W2G — channel DIRECTORY kernels, pulled out of ChannelsView so the
+// CI target can pin the directory behaviours (channels-page.tsx parity:
+// the subscribed/discover partition, unread-flag counting, subscriber-count
+// copy and the row blurb fallback) without SwiftUI/transport involved.
+// ─────────────────────────────────────────────────────────────
+public enum PulseChannelDirectory {
+    /// The "Subscribed" section — isSubscribed == true ONLY.
+    public static func subscribed(_ channels: [WireChannelSummary]) -> [WireChannelSummary] {
+        channels.filter { $0.isSubscribed == true }
+    }
+
+    /// The "Discover" section — everything not DEFINITELY subscribed
+    /// (nil isSubscribed renders in Discover, channels-page parity).
+    public static func discover(_ channels: [WireChannelSummary]) -> [WireChannelSummary] {
+        channels.filter { !($0.isSubscribed == true) }
+    }
+
+    /// Unread-channel count across the whole feed — the `unread == true`
+    /// dot; nil/false never count.
+    public static func unreadCount(_ channels: [WireChannelSummary]) -> Int {
+        channels.filter { $0.unread == true }.count
+    }
+
+    /// Row copy — "1 subscriber" singular, else "N subscribers" (nil and 0
+    /// both render the plural "0 subscribers", ChannelsView parity).
+    public static func subscriberCount(_ memberCount: Int?) -> String {
+        let count = memberCount ?? 0
+        return count == 1 ? "1 subscriber" : "\(count) subscribers"
+    }
+
+    /// Row blurb — a non-blank description wins verbatim, else the preview,
+    /// else the verbatim empty copy (channelRow's fallback chain).
+    public static func blurb(_ channel: WireChannelSummary) -> String {
+        if let description = channel.description,
+           !description.trimmingCharacters(in: .whitespaces).isEmpty {
+            return description
+        }
+        return channel.preview ?? "No description yet"
+    }
+}

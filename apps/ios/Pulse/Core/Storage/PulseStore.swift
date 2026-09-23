@@ -186,6 +186,21 @@ public final class PulseStore: Sendable {
                 t.add(column: "payloadJson", .text)
             }
         }
+        m.registerMigration("v8") { db in
+            // R1-W2B — additive ALTERs only:
+            //   • outbox.payloadJson — the queued FORWARD envelope (D28:
+            //     F-MS-10 "queued if offline"; carries kind + stored media
+            //     paths so the flush re-POSTs the exact forward body).
+            //   • message.translationsJson — persisted LLM translations
+            //     (F-MD-06; the translation:added relay + POST /translate
+            //     responses cache offline).
+            try db.alter(table: "outbox") { t in
+                t.add(column: "payloadJson", .text)
+            }
+            try db.alter(table: "message") { t in
+                t.add(column: "translationsJson", .text)
+            }
+        }
         return m
     }
 
@@ -295,13 +310,13 @@ public final class PulseStore: Sendable {
                                  audioPath, durationMs, filePath, fileName, fileSize,
                                  editedAt, deletedAt, reactionsJson, senderColor,
                                  viewedAt, transcript, transcribedAt, pollJson,
-                                 linkPreviewJson, topicId, payloadJson)
+                                 linkPreviewJson, topicId, payloadJson, translationsJson)
             VALUES (:id, :conversationId, :authorId, :authorName, :kind, :body,
                     :createdAt, :replyToId, :pinnedAt, :parentId, :imagePath,
                     :audioPath, :durationMs, :filePath, :fileName, :fileSize,
                     :editedAt, :deletedAt, :reactionsJson, :senderColor,
                     :viewedAt, :transcript, :transcribedAt, :pollJson,
-                    :linkPreviewJson, :topicId, :payloadJson)
+                    :linkPreviewJson, :topicId, :payloadJson, :translationsJson)
             ON CONFLICT(id) DO UPDATE SET
               authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt,
               parentId=:parentId, imagePath=:imagePath, audioPath=:audioPath,
@@ -310,7 +325,7 @@ public final class PulseStore: Sendable {
               reactionsJson=:reactionsJson, senderColor=:senderColor,
               viewedAt=:viewedAt, transcript=:transcript, transcribedAt=:transcribedAt,
               pollJson=:pollJson, linkPreviewJson=:linkPreviewJson, topicId=:topicId,
-              payloadJson=:payloadJson
+              payloadJson=:payloadJson, translationsJson=:translationsJson
             """,
             arguments: [
                 "id": m.id, "conversationId": m.conversationId, "authorId": m.senderId,
@@ -329,6 +344,7 @@ public final class PulseStore: Sendable {
                 "linkPreviewJson": Self.linkPreviewJsonData(m.linkPreview),
                 "topicId": m.topicId,
                 "payloadJson": m.payload,
+                "translationsJson": Self.translationsJsonData(m.translations),
             ],
         )
     }
@@ -442,6 +458,7 @@ public final class PulseStore: Sendable {
             transcribedAt: transcribedAt, topicId: topicId, linkUrl: nil,
             linkPreview: decodedLinkPreview, poll: decodedPoll,
             payload: row["payloadJson"],
+            translations: Self.translations(fromJson: row["translationsJson"]),
         )
     }
 
@@ -488,6 +505,21 @@ public final class PulseStore: Sendable {
     static func linkPreview(fromJson json: String?) -> WireLinkPreview? {
         guard let json, !json.isEmpty, let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(WireLinkPreview.self, from: data)
+    }
+
+    // ── translationsJson codec (v8 cache column ⇄ wire translations) ──
+
+    /// [WireTranslation] → column text; nil/empty → NULL (no card, no bytes).
+    static func translationsJsonData(_ translations: [WireTranslation]?) -> String? {
+        guard let translations, !translations.isEmpty,
+              let data = try? JSONEncoder().encode(translations) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Column text → [WireTranslation]; corrupt rows degrade to nil.
+    static func translations(fromJson json: String?) -> [WireTranslation]? {
+        guard let json, !json.isEmpty, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([WireTranslation].self, from: data)
     }
 
     // ── topics cache (W2-DATA-B — Zulip-style sub-streams) ──
@@ -611,7 +643,9 @@ public final class PulseStore: Sendable {
 
     /// Appends one queued send (clientId dedupes; UNIQUE constraint drops
     /// double-enqueues exactly like the web store's `some(q.clientId === …)`).
-    public func appendOutbox(conversationId: String, clientId: String, content: String, kind: String = "text") throws {
+    /// `payloadJson` carries the queued FORWARD envelope (D28) — plain sends
+    /// leave it nil.
+    public func appendOutbox(conversationId: String, clientId: String, content: String, kind: String = "text", payloadJson: String? = nil) throws {
         let row = OutboxRow(
             id: nil,
             conversationId: conversationId,
@@ -620,6 +654,7 @@ public final class PulseStore: Sendable {
             kind: kind,
             createdAt: PulseOutboxClock.now(),
             attempts: 0,
+            payloadJson: payloadJson,
         )
         try dbQueue.write { db in
             try row.insert(db)
@@ -891,9 +926,13 @@ public struct OutboxRow: Codable, FetchableRecord, PersistableRecord, Equatable,
     public var kind: String
     public var createdAt: String
     public var attempts: Int
+    /// R1-W2B D28 — the queued forward envelope (JSON string of
+    /// PulseOutboxForward); nil for plain text sends. Optional decodes as
+    /// nil on rows written before the v8 column existed.
+    public var payloadJson: String?
 
     public init(id: Int64?, conversationId: String, clientId: String, content: String,
-                kind: String, createdAt: String, attempts: Int) {
+                kind: String, createdAt: String, attempts: Int, payloadJson: String? = nil) {
         self.id = id
         self.conversationId = conversationId
         self.clientId = clientId
@@ -901,6 +940,7 @@ public struct OutboxRow: Codable, FetchableRecord, PersistableRecord, Equatable,
         self.kind = kind
         self.createdAt = createdAt
         self.attempts = attempts
+        self.payloadJson = payloadJson
     }
 }
 

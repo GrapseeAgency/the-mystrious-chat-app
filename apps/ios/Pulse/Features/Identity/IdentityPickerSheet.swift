@@ -13,6 +13,9 @@ struct IdentityPickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel = IdentityViewModel()
+    // R1-W2B D23 — "Forget this viewer" arms a confirmation before the
+    // identity teardown (F-ID-06: PulsePrefs.setViewer(nil) had zero callers).
+    @State private var forgetArmed = false
 
     var body: some View {
         NavigationStack {
@@ -94,6 +97,21 @@ struct IdentityPickerSheet: View {
                     .buttonStyle(PulseButtonStyle())
                     .disabled(viewModel.creating || viewModel.newName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+
+                // R1-W2B D23 — explicit forget control (switcher only; the
+                // onboarding flow has no viewer to forget). Confirmation
+                // dialog first — this signs the device out of the identity.
+                if mode == .switcher, prefs.viewer != nil {
+                    Section {
+                        Button(role: .destructive) {
+                            forgetArmed = true
+                        } label: {
+                            Label("Forget this viewer", systemImage: "person.crop.circle.badge.minus")
+                        }
+                    } footer: {
+                        Text("Signs out of \(prefs.viewer?.name ?? "this identity") on this device — the session token is wiped and the app returns to onboarding. Chat history on the server is untouched.")
+                    }
+                }
             }
             .navigationTitle(mode == .onboarding ? "Who are you?" : "Switch identity")
             .navigationBarTitleDisplayMode(.large)
@@ -112,8 +130,33 @@ struct IdentityPickerSheet: View {
             }
             .refreshable { await viewModel.load(api: session.api) }
             .task { await viewModel.load(api: session.api) }
+            .confirmationDialog(
+                "Forget \(prefs.viewer?.name ?? "this viewer")?",
+                isPresented: $forgetArmed,
+                titleVisibility: .visible,
+            ) {
+                Button("Forget this viewer", role: .destructive) {
+                    forget()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You'll return to onboarding and can pick or create another identity.")
+            }
         }
         .interactiveDismissDisabled(mode == .onboarding)
+    }
+
+    /// R1-W2B D23 — the forget flow: session teardown first (socket drop,
+    /// live models released, token-less client rebound), then setViewer(nil)
+    /// which wipes the UserDefaults viewer, the Keychain mirror AND the
+    /// identity-bound session token (PulsePrefs.setViewer nil branch).
+    /// RootView flips back to the onboarding screen on the published change.
+    private func forget() {
+        PulseHaptics.tap()
+        session.stop()
+        prefs.setViewer(nil)
+        onPicked()
+        if mode == .switcher { dismiss() }
     }
 
     private func pick(_ user: WireUser) {

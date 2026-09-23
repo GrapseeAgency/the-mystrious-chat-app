@@ -497,9 +497,21 @@ public struct SpaceModel: Equatable, Sendable {
         errorText = nil
     }
 
+    /// R1-W2G D46 — seed the optimistic target from the durable
+    /// last-position cache at join time (web falls back to 0.5/0.5,
+    /// space-sheet.tsx:325-329). The server still wins when its state
+    /// carries a real self position — apply() only adopts non-nil rows.
+    public mutating func seedInitialPosition(x: Double, y: Double) {
+        targetX = Self.clamp01(x)
+        targetY = Self.clamp01(y)
+    }
+
     /// space:state — FULL state replace (SP-5: stale players self-heal).
     /// FIX #4: with the finger idle ≥ 300 ms, the server's self-position
     /// becomes the new optimistic target (drift + relays reconcile).
+    /// R1-W2G D46 — the server's own row wins ONLY when it carries a REAL
+    /// position: a nil x/y (the server returned nothing for us) must not
+    /// clobber the cached initial target with the 0.5 decode fallback.
     public mutating func apply(state: WireSpaceState, nowMs: Double) -> ReconcileVerdict {
         players = (state.players ?? []).map { player in
             Player(
@@ -512,7 +524,8 @@ public struct SpaceModel: Equatable, Sendable {
         }
         status = joined ? .connected : status
         let idle = lastLocalMoveMs.map { nowMs - $0 >= Self.reconcileIdleMs } ?? true
-        if idle, let me = selfPlayer, me.x != targetX || me.y != targetY {
+        let selfRow = (state.players ?? []).first { $0.id == myId }
+        if idle, selfRow?.x != nil, selfRow?.y != nil, let me = selfPlayer, me.x != targetX || me.y != targetY {
             targetX = me.x
             targetY = me.y
             return .adopt(x: me.x, y: me.y)
@@ -574,6 +587,21 @@ public struct SpaceModel: Equatable, Sendable {
 
     public static func clamp01(_ value: Double) -> Double {
         min(1, max(0, value))
+    }
+}
+
+/// R1-W2G D46 — one durable last-position row: JSON-encoded into
+/// UserDefaults under PulsePrefs.spaceLastPositionKey(roomId). The relay
+/// keeps the previous position in-memory only (mini-services/pulse-socket
+/// /index.ts:1288-1299); this is the native DURABLE twin so a rejoin
+/// reuses the last spot (server truth still wins when it returns one).
+public struct SpaceLastPosition: Codable, Equatable, Sendable {
+    public var x: Double
+    public var y: Double
+
+    public init(x: Double, y: Double) {
+        self.x = SpaceModel.clamp01(x)
+        self.y = SpaceModel.clamp01(y)
     }
 }
 

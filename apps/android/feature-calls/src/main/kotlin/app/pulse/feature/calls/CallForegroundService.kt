@@ -30,7 +30,18 @@ class CallForegroundService : Service() {
             return START_NOT_STICKY
         }
         val label = intent?.getStringExtra(EXTRA_PEER_NAME) ?: "Voice call"
-        startForeground(NOTIFICATION_ID, buildNotification(label), if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
+        val video = intent?.getBooleanExtra(EXTRA_VIDEO, false) ?: false
+        // Wave R1-W2D — video calls declare the CAMERA foreground-service type
+        // alongside MICROPHONE (Android 14 requires the manifest permission +
+        // the manifest service type to carry it) so capture survives the
+        // app leaving the foreground exactly like the mic does.
+        val type = if (Build.VERSION.SDK_INT >= 30) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                if (video) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0
+        } else {
+            0
+        }
+        startForeground(NOTIFICATION_ID, buildNotification(label), type)
         return START_NOT_STICKY
     }
 
@@ -58,10 +69,12 @@ class CallForegroundService : Service() {
         private const val NOTIFICATION_ID = 41
         const val EXTRA_PEER_NAME = "peerName"
         const val EXTRA_STOP = "stop"
+        const val EXTRA_VIDEO = "video"
 
-        fun start(context: Context, peerName: String) {
+        fun start(context: Context, peerName: String, video: Boolean = false) {
             val intent = Intent(context, CallForegroundService::class.java)
                 .putExtra(EXTRA_PEER_NAME, peerName)
+                .putExtra(EXTRA_VIDEO, video)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {

@@ -45,7 +45,11 @@ targets:
       UILaunchScreen: {}
       UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
       NSMicrophoneUsageDescription: Pulse uses the microphone for voice notes, voice rooms and calls.
-      NSCameraUsageDescription: Pulse uses the camera for photos, video notes and calls.
+      # Wave R1-W2D — video calls capture the camera through WebRTC; the
+      # description covers every camera surface (photos, video notes, calls).
+      NSCameraUsageDescription: Pulse uses the camera for photos, video notes and video calls.
+      # R1-W2B F-MD-07 — one-shot when-in-use fix for the location pin share.
+      NSLocationWhenInUseUsageDescription: Pulse uses your location once to share a map pin in a chat.
       # Wave 0 — outbox background refresh (matches PulseApp.outboxTaskID).
       BGTaskSchedulerPermittedIdentifiers: ["app.pulse.chat.outbox"]
       # Wave 6 — pulse:// deep links (invite / user / room), F-DL.

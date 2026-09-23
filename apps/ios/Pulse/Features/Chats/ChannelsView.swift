@@ -97,8 +97,10 @@ struct ChannelsView: View {
         channels.map { optimistic[$0.id] ?? $0 }
     }
 
-    private var subscribed: [WireChannelSummary] { resolved.filter { $0.isSubscribed ?? false } }
-    private var discover: [WireChannelSummary] { resolved.filter { !($0.isSubscribed ?? false) } }
+    // R1-W2G — the directory partition lives in PulseChannelDirectory
+    // (Core/Support), pinned by PulseStoryChannelTests.
+    private var subscribed: [WireChannelSummary] { PulseChannelDirectory.subscribed(resolved) }
+    private var discover: [WireChannelSummary] { PulseChannelDirectory.discover(resolved) }
 
     @ViewBuilder
     private var directoryContent: some View {
@@ -161,9 +163,8 @@ struct ChannelsView: View {
     private func channelRow(_ channel: WireChannelSummary) -> some View {
         let isSubscribed = channel.isSubscribed ?? false
         let busy = busyId == channel.id
-        let blurb = channel.description?.trimmingCharacters(in: .whitespaces).isEmpty == false
-            ? channel.description
-            : (channel.preview ?? "No description yet")
+        // R1-W2G — blurb fallback chain pinned in PulseChannelDirectory.
+        let blurb = PulseChannelDirectory.blurb(channel)
         return HStack(alignment: .top, spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
                 if let photo = channel.photo, !photo.isEmpty,
@@ -198,7 +199,7 @@ struct ChannelsView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(PulseTheme.titleOnPanel)
                     .lineLimit(1)
-                Text(blurb ?? "No description yet")
+                Text(blurb)
                     .font(.system(size: 12))
                     .foregroundStyle(PulseTheme.textSecondary)
                     .lineLimit(1)
@@ -263,9 +264,9 @@ struct ChannelsView: View {
         }
     }
 
+    // R1-W2G — copy pinned in PulseChannelDirectory.subscriberCount.
     private func subscriberCount(_ channel: WireChannelSummary) -> String {
-        let count = channel.memberCount ?? 0
-        return count == 1 ? "1 subscriber" : "\(count) subscribers"
+        PulseChannelDirectory.subscriberCount(channel.memberCount)
     }
 
     // ── create mode ──────────────────────────────────────────

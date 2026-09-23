@@ -126,6 +126,13 @@ struct ContactsView: View {
                             Label("Call", systemImage: "phone.fill")
                         }
                         .tint(PulseTheme.emerald)
+                        // Wave R1-W2D — real video call entry (wire kind 'video').
+                        Button {
+                            viewModel.callVideo(user, session: session)
+                        } label: {
+                            Label("Video", systemImage: "video.fill")
+                        }
+                        .tint(PulseTheme.emerald)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
@@ -296,6 +303,29 @@ final class ContactsViewModel: ObservableObject {
                 let conversation = try await session.api.createConversation(memberIds: [user.id], isGroup: false)
                 let peer = CallPeer(id: user.id, name: user.name, color: user.color, avatar: user.avatar)
                 engine.startOutgoing(to: peer, conversationId: conversation.id)
+            } catch {
+                PulseHaptics.warning()
+                errorText = ChatsViewModel.describe(error)
+            }
+            self?.loading = false
+        }
+    }
+
+    /// Wave R1-W2D — one-tap VIDEO call (wire kind 'video'). The engine
+    /// resolves the camera capability first: no usable camera degrades to a
+    /// voice call with an honest toast (web acquireMedia parity).
+    func callVideo(_ user: WireUser, session: PulseSession) {
+        guard user.id != session.viewer?.id else { return }
+        guard let engine = session.callEngine else {
+            errorText = "Calls aren't ready yet — try again in a moment."
+            return
+        }
+        PulseHaptics.tap()
+        Task { [weak self] in
+            do {
+                let conversation = try await session.api.createConversation(memberIds: [user.id], isGroup: false)
+                let peer = CallPeer(id: user.id, name: user.name, color: user.color, avatar: user.avatar)
+                engine.startOutgoing(to: peer, conversationId: conversation.id, kind: .video)
             } catch {
                 PulseHaptics.warning()
                 errorText = ChatsViewModel.describe(error)

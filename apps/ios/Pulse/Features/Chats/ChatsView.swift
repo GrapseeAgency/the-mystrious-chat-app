@@ -844,12 +844,14 @@ private struct StoriesRowView: View {
         }
     }
 
+    // R1-W2G — the ring partition lives in PulseStoryRing (StoryEngine.swift),
+    // pinned by PulseStoryChannelTests.
     private var myStoryGroup: WireStoryGroup? {
-        groups.first(where: { $0.mine == true })
+        PulseStoryRing.mine(groups)
     }
 
     private var otherGroups: [WireStoryGroup] {
-        groups.filter { $0.mine != true }
+        PulseStoryRing.others(groups)
     }
 }
 

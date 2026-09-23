@@ -159,6 +159,20 @@ public final class PulsePrefs: ObservableObject {
     public static let quietStartKey = "quiet.start"
     public static let quietEndKey = "quiet.end"
     public static let hapticsOnKey = "haptics.on"
+    /// R1-W2B F-FX-05 — local mirror of the per-conversation theme map (the
+    /// SERVER copy rides the settings blob under the web's "chat.convThemes"
+    /// key; this UserDefaults key follows the house "prefs." namespace).
+    public static let convThemesKey = "prefs.convThemes"
+
+    /// R1-W2G D46 — namespaced key builder for the durable last-position
+    /// cache per space room ("space:lastpos:<roomId>"). The relay keeps the
+    /// previous position in-memory only (mini-services/pulse-socket/index.ts
+    /// :1288-1299; web client falls back to 0.5/0.5) — this key is the
+    /// native DURABLE twin: a JSON-encoded SpaceLastPosition written by
+    /// VoiceRoomSessionModel with the voiceCaptions direct-defaults pattern.
+    public static func spaceLastPositionKey(_ roomId: String) -> String {
+        "space:lastpos:\(roomId)"
+    }
 
     public enum ChatsFilter: String, CaseIterable {
         case all, unread, groups
@@ -202,6 +216,9 @@ public final class PulsePrefs: ObservableObject {
         quietStart = defaults.string(forKey: Self.quietStartKey) ?? "22:00"
         quietEnd = defaults.string(forKey: Self.quietEndKey) ?? "07:00"
         hapticsOn = Self.bool(defaults, Self.hapticsOnKey, default: true)
+        // R1-W2B F-FX-05 — cached theme map (tolerant: bad JSON → empty map;
+        // the server blob overwrites it on the next successful sync).
+        convThemes = Self.readConvThemes(defaults)
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
     }
 
@@ -229,6 +246,9 @@ public final class PulsePrefs: ObservableObject {
     @Published public private(set) var quietStart: String
     @Published public private(set) var quietEnd: String
     @Published public private(set) var hapticsOn: Bool
+
+    // ── R1-W2B F-FX-05 — per-conversation themes (server-synced) ──
+    @Published public private(set) var convThemes: [String: WireConvTheme]
 
     public var hasIdentity: Bool { viewer != nil }
 
@@ -307,6 +327,46 @@ public final class PulsePrefs: ObservableObject {
         voiceCaptions = enabled
         defaults.set(enabled, forKey: Self.voiceCaptionsKey)
     }
+
+    // ── R1-W2B F-FX-05 — per-conversation theme setters ──
+
+    /// Web setConvTheme parity (conv-theme.ts:195-215): merges the patch into
+    /// the conversation's entry — a fresh entry seeds from the CURRENT global
+    /// wallpaper so tint-only rooms stay deterministic. Optimistic local
+    /// write + full-map PATCH through the settings funnel.
+    public func setConvTheme(conversationId: String, wallpaper: PulseWallpaper?, tint: String?) {
+        var map = convThemes ?? [:]
+        var entry = map[conversationId] ?? WireConvTheme(wallpaper: self.wallpaper.rawValue, tint: nil)
+        if let wallpaper { entry.wallpaper = wallpaper.rawValue }
+        if let tint {
+            entry.tint = Self.convTints.contains(tint) ? tint : nil
+        } else if wallpaper == nil {
+            entry.tint = nil // explicit nil tint clears (web patch.tint:null)
+        }
+        map[conversationId] = entry
+        storeConvThemes(map)
+        patch { $0.convThemes = map }
+    }
+
+    /// Web clearConvTheme parity — the room falls back to the global default.
+    public func clearConvTheme(conversationId: String) {
+        var map = convThemes ?? [:]
+        guard map[conversationId] != nil else { return }
+        map[conversationId] = nil
+        storeConvThemes(map)
+        patch { $0.convThemes = map }
+    }
+
+    private func storeConvThemes(_ map: [String: WireConvTheme]) {
+        convThemes = map
+        if let data = try? JSONEncoder().encode(map) {
+            defaults.set(data, forKey: Self.convThemesKey)
+        }
+    }
+
+    /// The accent tints the per-conversation picker offers (web CONV_TINTS
+    /// verbatim — conv-theme.ts:51).
+    public static let convTints = ["emerald", "rose", "amber", "violet", "teal"]
 
     // ── Wave 8 — server-synced setters (optimistic local first) ──
 
@@ -457,6 +517,14 @@ public final class PulsePrefs: ObservableObject {
         reducedMotion = merged.reducedMotion
         defaults.set(merged.reducedMotion, forKey: Self.reducedMotionKey)
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
+        // R1-W2B F-FX-05 — the server's theme map wins when present (same
+        // shallow-merge contract as every other blob field).
+        if let serverThemes = server.convThemes {
+            convThemes = serverThemes
+            if let data = try? JSONEncoder().encode(serverThemes) {
+                defaults.set(data, forKey: Self.convThemesKey)
+            }
+        }
     }
 
     /// PATCH verdict from the session funnel: success clears the hint,
@@ -485,5 +553,11 @@ public final class PulsePrefs: ObservableObject {
     private static func readViewer(_ defaults: UserDefaults) -> PulseViewer? {
         guard let data = defaults.data(forKey: viewerKey) else { return nil }
         return try? JSONDecoder().decode(PulseViewer.self, from: data)
+    }
+
+    /// Cached conv-theme map; anything unreadable degrades to an empty map.
+    private static func readConvThemes(_ defaults: UserDefaults) -> [String: WireConvTheme] {
+        guard let data = defaults.data(forKey: convThemesKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: WireConvTheme].self, from: data)) ?? [:]
     }
 }

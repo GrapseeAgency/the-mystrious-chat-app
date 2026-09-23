@@ -2,21 +2,34 @@ import AVFoundation
 import SwiftUI
 
 /// Wave 2 voice notes (spec §1 rows 1/11/12/13/15) — everything behind the
-/// composer's mic surface and the interactive voice bubble:
-///   • `VoiceMath` — the pure duration/rounding contract (unit-tested).
-///   • `VoiceRecorder` — tap-to-start AAC recorder → cache file
-///     voice-<uuid>.m4a (44.1 kHz mono, kind "audio" so /transcribe works —
-///     the web bug this mirrors is sending kind text).
+/// composer's mic surface and the interactive voice bubble (D31 hold-to-
+/// record since R1-W2E):
+///   • `VoiceMath` — the pure duration/rounding contract (unit-tested) plus
+///     the 10-minute auto-send ceiling.
+///   • `VoiceRecorder` — hold-to-record AAC recorder → cache file
+///     voice-<uuid>.m4a (44.1 kHz mono, metering on for the live waveform,
+///     kind "audio" so /transcribe works — the web bug this mirrors is
+///     sending kind text).
+///   • `VoiceWaveform` — the exact web `voiceBars` LCG for the bubbles.
 ///   • `VoicePlaybackManager` — ONE active AVAudioPlayer keyed by messageId,
 ///     100 ms Timer recomputing progress (no CADisplayLink), persisted rate
 ///     chip 1x → 1.5x → 2x (UserDefaults "pulse.voiceRate").
-///   • `VoiceBubble` / `VoiceRecordingBar` — the two UI surfaces.
+///   • `VoiceBubble` / `VoiceRecordingBar` / `VoiceLiveWaveform` — the UI
+///     surfaces (received bubble, hold bar with live bars).
 /// Neither class is actor-isolated: AVAudioRecorder/AVAudioPlayer tolerate
 /// main-actor driving, and the owning RoomViewModel deallocates on the main
 /// thread — a plain deinit teardown keeps Swift 5.10 isolation rules happy.
 enum VoiceMath {
     /// Recording floor — shorter takes are discarded (spec §1 row 11).
     static let minimumSendMs: Double = 600
+
+    /// Recording ceiling — the server refuses durationMs > 600000 (messages
+    /// route "durationMs must be a number between 0 and 600000"). A hold that
+    /// reaches the cap auto-sends the take instead of clipping mid-air (D31).
+    static let maximumSendMs: Double = 600_000
+
+    /// Live hold-to-record waveform — number of amplitude bars rendered (D31).
+    static let liveWaveformBars = 40
 
     /// `max(1, Int((elapsed/100).rounded()*100))` — the exact web rounding:
     /// quantize to 100 ms, never send 0.
@@ -28,6 +41,35 @@ enum VoiceMath {
     /// Whether a take must be discarded instead of sent.
     static func isTooShort(_ elapsedMs: Double) -> Bool {
         elapsedMs < minimumSendMs
+    }
+}
+
+/// D31 — the exact web `voiceBars` bubble waveform (chat-room.tsx:6232),
+/// ported bit-for-bit so all three surfaces render IDENTICAL decorative bars
+/// for the same message id (the payload carries NO waveform — web derives it
+/// client-side from the id, natives mirror that):
+///   1. `hashString` (pulse-utils.ts:59) — Int32-wrap h*31+code over UTF-16
+///      code units (exactly JS `charCodeAt`), then abs (Int32.min → 2^31).
+///   2. LCG loop `h = (h*1103515245 + 12345) % 2147483648` — JS `%` is fmod on
+///      DOUBLES (h*1.1e9 exceeds 2^53, so this must be Double math — Int64
+///      would silently diverge from the web).
+///   3. bar = round(28 + v*72) with v in 0…1 → heights 28…100 (%).
+enum VoiceWaveform {
+    static func bars(for seed: String, count: Int = 26) -> [Int] {
+        var hash: Int32 = 0
+        for unit in seed.utf16 {
+            hash = (hash &* 31) &+ Int32(unit)
+        }
+        var h = hash == Int32.min ? 2_147_483_648.0 : Double(abs(hash))
+        var bars: [Int] = []
+        bars.reserveCapacity(max(0, count))
+        for _ in 0..<max(0, count) {
+            h = (h * 1_103_515_245.0 + 12_345.0).truncatingRemainder(dividingBy: 2_147_483_648.0)
+            let v = abs(h) / 2_147_483_648.0
+            // Web Math.round == floor(x + 0.5) — half-up toward +∞.
+            bars.append(Int((28.0 + v * 72.0 + 0.5).rounded(.down)))
+        }
+        return bars
     }
 }
 
@@ -75,11 +117,21 @@ final class VoiceRecorder {
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]
         let recorder = try AVAudioRecorder(url: url, settings: settings)
+        // D31 — metering feeds the live hold-to-record waveform bars.
+        recorder.isMeteringEnabled = true
         guard recorder.record() else {
             throw VoiceRecorderError.startFailed
         }
         self.recorder = recorder
         fileURL = url
+    }
+
+    /// D31 — current input level in dB (−160…0) for the live waveform.
+    /// Returns nil when no recorder is active.
+    func averagePower() -> Float? {
+        guard let recorder, recorder.isRecording else { return nil }
+        recorder.updateMeters()
+        return recorder.averagePower(forChannel: 0)
     }
 
     /// Stops metering and KEEPS the file (send path).
@@ -255,10 +307,12 @@ struct VoiceBubble: View {
     private var isPlaying: Bool { playback?.playing == true }
     private var progress: Double { playback?.progress ?? 0 }
 
-    // Deterministic id-hashed bars (web parity — decorative, spec §1 row 13).
+    // Deterministic web-parity bars (D31 — same algorithm as the web bubble,
+    // chat-room.tsx:6232; per-process hashValue would change every launch).
     private var bars: [CGFloat] {
-        let seed = abs(message.id.hashValue)
-        return (0..<26).map { index in CGFloat(5 + (seed * (index + 7)) % 15) }
+        VoiceWaveform.bars(for: message.id).map { value in
+            CGFloat(5 + (value - 28) / 72.0 * 15.0)
+        }
     }
 
     private var rateLabel: String {
@@ -349,14 +403,21 @@ struct VoiceBubble: View {
 }
 
 /// Composer replacement while recording — cancel X, pulsing red dot, live
-/// m:ss timer, send (spec §1 row 11).
+/// m:ss timer, LIVE amplitude waveform (D31) and the release hint. The send
+/// affordance is the ALWAYS-MOUNTED trailing slot in the composer row (release
+/// to send / slide left to cancel), so this bar carries no send button.
 struct VoiceRecordingBar: View {
     let elapsedText: String
+    /// Live mic levels (0…1), one sample per 100 ms tick (D31).
+    var amplitudes: [Double] = []
+    /// True while the finger slid left past the cancel threshold.
+    var cancelArmed: Bool = false
+    /// True while the take is uploading — the bar freezes with a spinner.
+    var sending: Bool = false
     let onCancel: () -> Void
-    let onSend: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Button {
                 onCancel()
             } label: {
@@ -365,6 +426,7 @@ struct VoiceRecordingBar: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(PulseButtonStyle())
+            .disabled(sending)
             .accessibilityLabel("Discard recording")
 
             PulsingRedDot()
@@ -374,22 +436,43 @@ struct VoiceRecordingBar: View {
                 .foregroundStyle(.primary)
                 .frame(minWidth: 44, alignment: .leading)
 
-            Spacer(minLength: 0)
+            VoiceLiveWaveform(amplitudes: amplitudes)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                onSend()
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(PulseTheme.gradient(named: "emerald"))
+            if sending {
+                ProgressView().controlSize(.small)
+            } else if cancelArmed {
+                Text("‹ Release to cancel")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.red)
+            } else {
+                Text("Release to send")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(PulseButtonStyle())
-            .accessibilityLabel("Send voice note")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
         .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+}
+
+/// D31 live hold-to-record waveform — one capsule bar per amplitude sample
+/// (the room view model keeps the last VoiceMath.liveWaveformBars). Heights
+/// are a pure function of the recorded levels (3…18pt), nothing random.
+struct VoiceLiveWaveform: View {
+    let amplitudes: [Double]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<VoiceMath.liveWaveformBars, id: \.self) { index in
+                let level = index < amplitudes.count ? amplitudes[index] : 0.06
+                Capsule()
+                    .fill(Color.red.opacity(0.75))
+                    .frame(width: 2.5, height: 3 + level * 15)
+            }
+        }
     }
 }
 

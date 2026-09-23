@@ -1,6 +1,8 @@
 package app.pulse.domain.usecase
 
 import app.pulse.domain.model.FlushReport
+// R1-W2F — per-conversation themes (F-FX-05) in the FakeRepo stubs.
+import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.OutboxDeliveryException
 import app.pulse.domain.model.OutboxEntry
@@ -256,6 +258,21 @@ class FlushOutboxUseCaseTest {
         override suspend fun closePoll(pollId: String) =
             Result.failure<Message>(UnsupportedOperationException())
         override suspend fun unfurlMessage(messageId: String) {}
+
+        // ── R1-W2F2 fix — the R1-W2A quick-phrase members this fake never
+        // implemented; PulseRepository requires them, so the domain test
+        // source set did not compile without these stubs. ──
+        override suspend fun phrases() = Result.success(emptyList<app.pulse.domain.model.QuickPhrase>())
+        override suspend fun addPhrase(text: String) =
+            Result.failure<app.pulse.domain.model.QuickPhrase>(UnsupportedOperationException())
+        override suspend fun deletePhrase(phraseId: String) = Result.success(Unit)
+
+        // ── R1-W2F — F-MD-06/F-FX-05 (unused by the outbox policy) ──
+        override suspend fun translateMessage(messageId: String): Result<String> =
+            Result.failure(UnsupportedOperationException())
+        override val convThemes: kotlinx.coroutines.flow.Flow<Map<String, ConvTheme>> =
+            MutableStateFlow(emptyMap<String, ConvTheme>())
+        override suspend fun setConvTheme(conversationId: String, theme: ConvTheme?) {}
         override suspend fun refreshSavedLibrary() =
             Result.success(emptyList<app.pulse.domain.model.SavedItem>())
         override fun observeSavedLibrary() =

@@ -22,6 +22,22 @@ public struct WireAuthEnvelope: Codable, Sendable {
     public let token: String?
 }
 
+// MARK: - Conversation themes (R1-W2B F-FX-05)
+
+/// One conversation's theme override — web ConvTheme parity (src/lib/conv-theme.ts:28-31):
+/// `wallpaper` uses the exact global wallpaper token set, `tint` is the
+/// optional per-room accent. Stored inside the prefs blob under
+/// `chat.convThemes` (conv-theme.ts:22) as { conversationId: theme }.
+public struct WireConvTheme: Codable, Equatable, Sendable {
+    public var wallpaper: String?
+    public var tint: String?
+
+    public init(wallpaper: String? = nil, tint: String? = nil) {
+        self.wallpaper = wallpaper
+        self.tint = tint
+    }
+}
+
 // MARK: - PulsePrefs (settings blob)
 
 /// Device-side mirror of repo-root src/lib/prefs-defaults.ts PulsePrefs.
@@ -41,6 +57,16 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
     public var readReceipts: Bool?
     public var typingVisible: Bool?
     public var reducedMotion: Bool?
+    /// R1-W2B F-FX-05 — per-conversation theme map; the wire key is the
+    /// web's dotted "chat.convThemes" (prefs-defaults.ts:35), so this field
+    /// carries an explicit CodingKey. Absent/unknown entries decode nil.
+    public var convThemes: [String: WireConvTheme]?
+
+    enum CodingKeys: String, CodingKey {
+        case bubbleRadius, density, wallpaper, notifPreviews, notifSound
+        case notifVibrate, lastSeenVisible, readReceipts, typingVisible, reducedMotion
+        case convThemes = "chat.convThemes"
+    }
 
     public init(
         bubbleRadius: String? = nil,
@@ -52,7 +78,8 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
         lastSeenVisible: Bool? = nil,
         readReceipts: Bool? = nil,
         typingVisible: Bool? = nil,
-        reducedMotion: Bool? = nil
+        reducedMotion: Bool? = nil,
+        convThemes: [String: WireConvTheme]? = nil
     ) {
         self.bubbleRadius = bubbleRadius
         self.density = density
@@ -64,6 +91,7 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
         self.readReceipts = readReceipts
         self.typingVisible = typingVisible
         self.reducedMotion = reducedMotion
+        self.convThemes = convThemes
     }
 
     /// PATCH body fragment — only the non-nil fields enter
@@ -80,6 +108,18 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
         if let readReceipts { body["readReceipts"] = readReceipts }
         if let typingVisible { body["typingVisible"] = typingVisible }
         if let reducedMotion { body["reducedMotion"] = reducedMotion }
+        // F-FX-05 — the map rides the web's dotted key; only a non-nil map
+        // enters the patch (server shallow-merges + sanitizeConvThemeMap).
+        if let convThemes {
+            var wireMap: [String: Any] = [:]
+            for (conversationId, theme) in convThemes {
+                var entry: [String: Any] = [:]
+                if let wallpaper = theme.wallpaper { entry["wallpaper"] = wallpaper }
+                if let tint = theme.tint { entry["tint"] = tint }
+                wireMap[conversationId] = entry
+            }
+            body["chat.convThemes"] = wireMap
+        }
         return body
     }
 }

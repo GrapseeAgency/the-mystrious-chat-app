@@ -34,6 +34,8 @@ import app.pulse.domain.model.CallPeer
 import app.pulse.domain.model.CallSignalOut
 import app.pulse.domain.model.CallStatus
 import app.pulse.domain.model.Channel
+// R1-W2F — per-conversation themes (F-FX-05).
+import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.FlushReport
@@ -51,6 +53,7 @@ import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.OutboxFailureClass
 import app.pulse.domain.model.ProfilePatch
 import app.pulse.domain.model.PulseApiException
+import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.Reaction
 import app.pulse.domain.model.SavedItem
 import app.pulse.domain.model.SafetyState
@@ -267,6 +270,14 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     override val pulsePrefs: Flow<WirePulsePrefs> = prefsLocalStore.prefs
+
+    // ── R1-W2F — F-FX-05 per-conversation themes (`chat.convThemes`) ──
+
+    override val convThemes: Flow<Map<String, ConvTheme>> = prefsLocalStore.convThemes
+
+    override suspend fun setConvTheme(conversationId: String, theme: ConvTheme?) {
+        prefsLocalStore.setConvTheme(conversationId, theme)
+    }
 
     override suspend fun updatePulsePrefs(patch: WirePulsePrefs): Result<Unit> {
         // Optimistic FIRST — the toggle lands in the UI instantly.
@@ -991,6 +1002,12 @@ class PulseRepositoryImpl @Inject constructor(
                 fileName = source.fileName,
                 fileSize = source.fileSize,
                 kind = wireKindOf(source.kind),
+                // R1-W2F (F-MD-07) — location pins keep their {lat,lng,label}
+                // payload when forwarded, so the target room renders a REAL pin.
+                payload = source.payload?.let { raw ->
+                    runCatching { PulseJson.parseToJsonElement(raw) }.getOrNull()
+                        as? kotlinx.serialization.json.JsonObject
+                },
             )
         ) {
             is PulseResult.Success -> {
@@ -1038,6 +1055,8 @@ class PulseRepositoryImpl @Inject constructor(
         Message.Kind.IMAGE -> "image"
         Message.Kind.VOICE -> "audio"
         Message.Kind.FILE -> "file"
+        // R1-W2F (F-MD-07) — pins re-POST with their wire kind + payload.
+        Message.Kind.LOCATION -> "location"
         // VIDEO/POLL/RED_PACKET/SYSTEM are outside the send whitelist — omit
         // and let the server default to text (media fields still ride along).
         else -> null
@@ -1689,6 +1708,20 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
+    // ── R1-W2F — F-MD-06 translation ──────────────────────────────
+
+    /**
+     * POST /api/messages/{id}/translate — server-side LLM, persisted per
+     * language; the fresh row's `translations[0].text` is what renders.
+     * Failures carry the server's honest copy (403 non-participant, 400
+     * deleted/empty, 502 service down) through [apiExceptionOf].
+     */
+    override suspend fun translateMessage(messageId: String): Result<String> =
+        when (val r = api.translate(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
     override suspend fun markMessageViewed(messageId: String) {
         when (val r = api.markViewed(messageId, viewerId ?: "")) {
             is PulseResult.Success -> upsertMessage(r.value.toDomain())
@@ -2123,6 +2156,36 @@ class PulseRepositoryImpl @Inject constructor(
         when (val r = api.deleteReminder(reminderId, viewerId ?: "")) {
             is PulseResult.Success -> Result.success(Unit)
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        }
+
+    // ── R1-W2A — quick phrases (F-MS-29) ──────────────────────────────
+
+    override suspend fun phrases(): Result<List<QuickPhrase>> =
+        when (val r = api.phrases(viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(
+                r.value.phrases
+                    .map { QuickPhrase(id = it.id, text = it.text, position = it.position) }
+                    .sortedBy { it.position },
+            )
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun addPhrase(text: String): Result<QuickPhrase> =
+        when (val r = api.createPhrase(viewerId ?: "", text)) {
+            is PulseResult.Success -> Result.success(
+                QuickPhrase(
+                    id = r.value.phrase?.id.orEmpty(),
+                    text = r.value.phrase?.text.orEmpty().ifBlank { text },
+                    position = r.value.phrase?.position ?: 0,
+                ),
+            )
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun deletePhrase(phraseId: String): Result<Unit> =
+        when (val r = api.deletePhrase(viewerId ?: "", phraseId)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
     override suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto> =
@@ -2806,6 +2869,11 @@ private fun kindOf(wire: String): Message.Kind = when (wire) {
     "red_packet" -> Message.Kind.RED_PACKET
     "game" -> Message.Kind.GAME
     "tournament" -> Message.Kind.TOURNAMENT
+    // R1-W2A (F-MS-24): sticker rows carry payload {emoji,pack} and render
+    // as large emoji — never the system-pill fallback.
+    "sticker" -> Message.Kind.STICKER
+    // R1-W2F (F-MD-07): pin rows carry payload {lat,lng,label}.
+    "location" -> Message.Kind.LOCATION
     else -> Message.Kind.SYSTEM
 }
 

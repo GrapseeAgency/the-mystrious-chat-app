@@ -29,6 +29,25 @@ final class Wave2UITests: XCTestCase {
         XCTAssertEqual(VoicePlaybackManager.nextRate(after: 3.7), 1.5)
     }
 
+    // ── VoiceWaveform — the web voiceBars LCG (D31) ─────────────
+
+    func testVoiceBubbleBarsMatchTheWebLCG() {
+        // Vectors generated from the web implementation (chat-room.tsx:6232 +
+        // pulse-utils.ts:59 hashString) via node — the same message id must
+        // render the SAME decorative bars on web, Android and iOS.
+        XCTAssertEqual(
+            VoiceWaveform.bars(for: "abc123"),
+            [52, 65, 97, 88, 98, 78, 36, 47, 73, 38, 43, 55, 93, 84, 41, 51, 64, 66, 85, 34, 46, 87, 38, 33, 99, 75],
+        )
+        XCTAssertEqual(
+            VoiceWaveform.bars(for: "local-temp"),
+            [60, 76, 30, 95, 55, 45, 58, 49, 30, 48, 46, 93, 92, 66, 50, 98, 40, 77, 80, 68, 68, 76, 85, 38, 36, 61],
+        )
+        // 26 bars by default (web count), heights always in the 28…100 band.
+        XCTAssertEqual(VoiceWaveform.bars(for: "any-id").count, 26)
+        XCTAssertTrue(VoiceWaveform.bars(for: "any-id").all { (28...100).contains($0) })
+    }
+
     // ── UnfurlTrigger — http(s):// or bare www. ─────────────────
 
     func testUnfurlTriggerDetectsLinks() {

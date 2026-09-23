@@ -1275,6 +1275,41 @@ public struct PulseAPIClient: Sendable {
         try await deleteEmpty("/api/scheduled/\(q(id))", body: ["requesterId": userId])
     }
 
+    // ── R1-W2B — translation + quick phrases (F-MD-06 / F-MS-29) ──
+
+    /// POST /api/messages/{id}/translate { userId, lang? } → { message }.
+    /// LLM translation persisted per language (translate/route.ts:36-120);
+    /// a cached lang returns instantly, 502 = service down. The fresh row
+    /// carries message.translations — relays as translation:added to peers.
+    public func translateMessage(id: String, lang: String = "en") async throws -> WireChatMessage {
+        let data = try await postRaw(
+            "/api/messages/\(q(id))/translate",
+            body: ["userId": userId, "lang": lang],
+            timeoutCap: 30,
+        )
+        return try WireMessageEnvelope.extract(from: data)
+    }
+
+    /// GET /api/users/{id}/phrases → { phrases: [{id,text,position}] }
+    /// (phrases/route.ts:19-33, position asc, ≤12 rows).
+    public func quickPhrases() async throws -> [WireQuickPhrase] {
+        let page: WirePhrasesPage = try await get("/api/users/\(q(userId))/phrases")
+        return page.phrases ?? []
+    }
+
+    /// POST /api/users/{id}/phrases { text } → 201 { phrase } (append at
+    /// end; 400 on >120 chars or >12 rows — server copy surfaces verbatim).
+    public func createQuickPhrase(text: String) async throws -> WireQuickPhrase {
+        let data = try await postRaw("/api/users/\(q(userId))/phrases", body: ["text": text])
+        return try envelope(WirePhraseEnvelope.self, from: data).phrase
+            ?? envelope(WireQuickPhrase.self, from: data)
+    }
+
+    /// DELETE /api/users/{id}/phrases?phraseId= → { ok } (owner-guarded).
+    public func deleteQuickPhrase(_ phraseId: String) async throws {
+        try await deleteEmpty("/api/users/\(q(userId))/phrases?phraseId=\(q(phraseId))", body: ["userId": userId])
+    }
+
     // ── plumbing ─────────────────────────────────────────────
     /// URL builder that keeps query strings intact (appendingPathComponent
     /// would percent-encode "?", breaking every ?userId= route).

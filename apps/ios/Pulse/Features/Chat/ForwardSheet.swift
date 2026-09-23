@@ -203,19 +203,38 @@ struct ForwardSheet: View {
     /// Re-POST the source body per target (client-side forward — there is NO
     /// forward endpoint). Media rides the STORED paths (no re-upload); each
     /// target is independent — one failure never blocks the rest.
+    /// R1-W2B D28 — a target that fails with a NETWORK-class error queues
+    /// into the outbox (spec F-MS-10 offline column: "queued if offline";
+    /// web pulse-outbox semantics: network failures retry on the next flush
+    /// trigger, 4xx can never succeed and are honestly counted). Queued
+    /// forwards re-POST through PulseOutboxEngine with the stored kind +
+    /// media paths (PulseOutboxForward), so delivery completes when the
+    /// connection returns.
     private func send() {
         guard !sending, !selected.isEmpty else { return }
         sending = true
         let targets = conversations.filter { selected.contains($0.id) }
+        let forward = PulseOutboxForward(
+            kind: source.kind,
+            imagePath: source.imagePath,
+            audioPath: source.audioPath,
+            durationMs: source.durationMs,
+            filePath: source.filePath,
+            fileName: source.fileName,
+            fileSize: source.fileSize,
+        )
         Task {
             defer { sending = false }
             var delivered = 0
+            var queued = 0
             for target in targets {
                 do {
                     _ = try await session.api.sendMessage(
                         conversationId: target.id,
                         content: source.content,
                         imagePath: source.imagePath,
+                        audioPath: source.audioPath,
+                        durationMs: source.durationMs,
                         filePath: source.filePath,
                         fileName: source.fileName,
                         fileSize: source.fileSize,
@@ -223,11 +242,30 @@ struct ForwardSheet: View {
                     )
                     delivered += 1
                 } catch {
-                    // Independent per target — keep going, count honestly.
+                    if PulseOutboxEngine.isDroppable(error) {
+                        // 4xx — retrying could never succeed (block, gone
+                        // room, bad upload path). Honest count, no queue lie.
+                        continue
+                    }
+                    // Network-class — queue the exact forward body; the
+                    // engine flushes it on reconnect/foreground/heal.
+                    session.enqueueOutbox(
+                        conversationId: target.id,
+                        clientId: UUID().uuidString,
+                        content: source.content,
+                        kind: forward.kind ?? "text",
+                        payloadJson: PulseOutboxForward.encode(forward),
+                    )
+                    queued += 1
                 }
             }
-            if delivered > 0 {
-                session.toasts.show("Forwarded to \(delivered) chat\(delivered == 1 ? "" : "s")")
+            if delivered > 0 || queued > 0 {
+                var note = delivered > 0 ? "Forwarded to \(delivered) chat\(delivered == 1 ? "" : "s")" : ""
+                if queued > 0 {
+                    if !note.isEmpty { note += " · " }
+                    note += "\(queued) queued for when you're back online"
+                }
+                session.toasts.show(note.isEmpty ? "Forward queued" : note)
                 dismiss()
                 onFinished()
             } else {

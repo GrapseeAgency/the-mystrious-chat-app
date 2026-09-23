@@ -59,6 +59,7 @@ import app.pulse.domain.model.User
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Videocam
 import androidx.hilt.navigation.compose.hiltViewModel
 
 /**
@@ -70,6 +71,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 fun ContactsScreen(
     onOpenRoom: (String) -> Unit,
     onCallUser: (User) -> Unit = {},
+    onVideoCallUser: (User) -> Unit = {},
     onOpenCalls: () -> Unit = {},
     onOpenUser: (String) -> Unit = {},
     onOpenAdd: () -> Unit = {},
@@ -92,6 +94,18 @@ fun ContactsScreen(
         val target = callTarget
         callTarget = null
         if (granted && target != null) onCallUser(target)
+    }
+    // Wave R1-W2D — outgoing VIDEO calls: mic AND camera in one prompt
+    // (camera denial is handled honestly by the engine's audio-only fallback).
+    var videoCallTarget by remember { mutableStateOf<User?>(null) }
+    val videoLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        val target = videoCallTarget
+        videoCallTarget = null
+        if (grants[android.Manifest.permission.RECORD_AUDIO] == true && target != null) {
+            onVideoCallUser(target)
+        }
     }
 
     LaunchedEffect(dmResult) {
@@ -163,6 +177,15 @@ fun ContactsScreen(
                         online = presence.contains(user.id),
                         onMessage = { viewModel.openDm(user) },
                         onCall = { callTarget = user; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
+                        onVideoCall = {
+                            videoCallTarget = user
+                            videoLauncher.launch(
+                                arrayOf(
+                                    android.Manifest.permission.RECORD_AUDIO,
+                                    android.Manifest.permission.CAMERA,
+                                ),
+                            )
+                        },
                         onSafety = { safetyTarget = user },
                         onOpenProfile = { onOpenUser(user.id) },
                     )
@@ -236,6 +259,7 @@ private fun ContactRow(
     online: Boolean,
     onMessage: () -> Unit,
     onCall: () -> Unit = {},
+    onVideoCall: () -> Unit = {},
     onSafety: () -> Unit,
     onOpenProfile: () -> Unit = {},
 ) {
@@ -276,6 +300,15 @@ private fun ContactRow(
                 Icon(
                     Icons.Filled.Phone,
                     contentDescription = "Call ${user.name}",
+                    tint = PulsePalette.Emerald,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            // Wave R1-W2D — video call entry (wire kind 'video').
+            IconButton(onClick = onVideoCall) {
+                Icon(
+                    Icons.Filled.Videocam,
+                    contentDescription = "Video call ${user.name}",
                     tint = PulsePalette.Emerald,
                     modifier = Modifier.size(18.dp),
                 )

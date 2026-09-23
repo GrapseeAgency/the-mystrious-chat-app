@@ -23,6 +23,43 @@ interface RouteCtx {
 const MAX_DRAFT = 2000
 
 /**
+ * GET /api/conversations/[id]/draft?userId=… → { draft: string | null }
+ * Spec row F-CL-10 lists GET+PATCH; the GET serves a direct draft read for
+ * clients that open a room without first fetching the full summary/detail
+ * (the summary's `myDraft` stays the bulk path — same column, same shape).
+ * Self-service: `userId` must be the requester AND a participant of the
+ * conversation — the exact guard PATCH enforces. null = no draft stored.
+ */
+export async function GET(req: Request, { params }: RouteCtx) {
+  const { id } = await params
+
+  const url = new URL(req.url)
+  const userId = strField(url.searchParams.get('userId'))
+  if (!userId) {
+    return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  }
+
+  const [conv, participant] = await Promise.all([
+    db.conversation.findUnique({ where: { id }, select: { id: true } }),
+    db.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId: id } },
+      select: { id: true, draft: true },
+    }),
+  ])
+  if (!conv) {
+    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  }
+  if (!participant) {
+    return NextResponse.json(
+      { error: 'You are not a participant of this conversation.' },
+      { status: 403 },
+    )
+  }
+
+  return NextResponse.json({ draft: participant.draft ?? null })
+}
+
+/**
  * PATCH /api/conversations/[id]/draft  body { userId, draft }
  * draft: string ≤ 2000 chars ('' = clear).
  * → { ok: true, draft: string } | 400 | 403 | 404

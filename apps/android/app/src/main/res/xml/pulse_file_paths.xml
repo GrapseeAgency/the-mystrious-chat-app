@@ -8,6 +8,16 @@
     <cache-path
         name="downloads"
         path="downloads/" />
+    <!-- D30 camera capture: TakePicture writes the full-resolution shot to
+         cacheDir/camera before the ≤1280px JPEG upload pipeline consumes it. -->
+    <cache-path
+        name="camera"
+        path="camera/" />
+    <!-- R1-W2H D24: exportChat writes the .txt transcript to cacheDir/exports —
+         served to the share sheet via MediaSupport.buildShareIntent. -->
+    <cache-path
+        name="exports"
+        path="exports/" />
     <files-path
         name="files"
         path="." />

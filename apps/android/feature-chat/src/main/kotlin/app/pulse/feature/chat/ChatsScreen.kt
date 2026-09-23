@@ -122,6 +122,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -149,6 +150,7 @@ import app.pulse.ui.pulseGlass
 import app.pulse.ui.shimmer
 import app.pulse.ui.update.UpdaterBanner
 import androidx.hilt.navigation.compose.hiltViewModel
+import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -175,6 +177,16 @@ private fun streakHeat(count: Int): Int = when {
 }
 
 private fun countLabel(count: Int): String = if (count > 99) "99+" else "$count"
+
+/**
+ * R1-W2H D24 — ChatsViewModel's export-success notice is the only surface the
+ * VM (owned upstream this round) exposes the exported file name on:
+ * `notify("Chat exported — Saved $it")` where `it` is the file written under
+ * cacheDir/exports (PulseRepositoryImpl.exportChat). The screens parse THAT
+ * contract, rebuild the absolute path and fire MediaSupport's FileProvider
+ * ACTION_SEND chooser — D24's share sheet with zero VM edits.
+ */
+private const val EXPORT_NOTICE_PREFIX = "Chat exported — Saved "
 
 /**
  * The Chats tab — the native home page. Design + logic parity with the web
@@ -224,9 +236,12 @@ fun ChatsScreen(
     var actionTarget by remember { mutableStateOf<Conversation?>(null) }
     var activeFolderId by remember { mutableStateOf<String?>(null) }
     var foldersSheet by remember { mutableStateOf(false) }
+    // R1-W2H D24 — the exported file path awaiting the share-sheet launch.
+    var pendingShareFile by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(viewerId) {
         if (viewerId != null) {
@@ -254,10 +269,26 @@ fun ChatsScreen(
     }
     LaunchedEffect(notice) {
         val n = notice ?: return@LaunchedEffect
+        // R1-W2H D24 — intercept the export-success notice (VM contract, see
+        // EXPORT_NOTICE_PREFIX) and arm the ACTION_SEND share sheet launch.
+        n.text.removePrefix(EXPORT_NOTICE_PREFIX).takeIf { it != n.text }?.let { fileName ->
+            pendingShareFile = File(context.cacheDir, "exports/$fileName").absolutePath
+        }
         snackbar.showSnackbar(n.text, withDismissAction = false)
         viewModel.consumeNotice()
     }
-    LaunchedEffect(query) { viewModel.search(query) }
+    // R1-W2H D24 — fire the system chooser for the exported .txt via
+    // MediaSupport's FileProvider intent (state cleared first so a rejected
+    // launch can't loop; the toast still told the user where it saved).
+    LaunchedEffect(pendingShareFile) {
+        val path = pendingShareFile ?: return@LaunchedEffect
+        pendingShareFile = null
+        val file = File(path)
+        if (!file.exists()) return@LaunchedEffect
+        runCatching {
+            context.startActivity(MediaSupport.buildShareIntent(context, path, "text/plain", null))
+        }
+    }
     LaunchedEffect(searchRequest) {
         if (searchRequest > 0) {
             search = true
@@ -650,9 +681,11 @@ fun ArchivedScreen(
     val typing by viewModel.typing.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     var actionTarget by remember { mutableStateOf<Conversation?>(null) }
+    // R1-W2H D24 — same export share hand-off as the main tab.
+    var pendingShareFile by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
-
+    val context = LocalContext.current
     LaunchedEffect(viewerId) {
         if (viewerId != null) viewModel.refresh()
     }
@@ -675,8 +708,22 @@ fun ArchivedScreen(
     }
     LaunchedEffect(notice) {
         val n = notice ?: return@LaunchedEffect
+        // R1-W2H D24 — intercept the export-success notice (see ChatsScreen).
+        n.text.removePrefix(EXPORT_NOTICE_PREFIX).takeIf { it != n.text }?.let { fileName ->
+            pendingShareFile = File(context.cacheDir, "exports/$fileName").absolutePath
+        }
         snackbar.showSnackbar(n.text, withDismissAction = false)
         viewModel.consumeNotice()
+    }
+    // R1-W2H D24 — same ACTION_SEND chooser launch as the main tab.
+    LaunchedEffect(pendingShareFile) {
+        val path = pendingShareFile ?: return@LaunchedEffect
+        pendingShareFile = null
+        val file = File(path)
+        if (!file.exists()) return@LaunchedEffect
+        runCatching {
+            context.startActivity(MediaSupport.buildShareIntent(context, path, "text/plain", null))
+        }
     }
 
     // Same "local wins" merge as the main tab (spec row 1).

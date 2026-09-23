@@ -166,6 +166,15 @@ private struct RoomMessageRow: View {
         } label: {
             Label("Copy", systemImage: "doc.on.doc.fill")
         }
+        // R1-W2B F-MD-06 — on-demand LLM translation (POST /translate);
+        // the fresh row's translations render inline in the bubble.
+        if message.kind == "text", message.deletedAt == nil, !message.id.hasPrefix("local_") {
+            Button {
+                viewModel.translate(message, session: session)
+            } label: {
+                Label(message.translations?.isEmpty == false ? "Translate again" : "Translate", systemImage: "character.bubble")
+            }
+        }
         Button {
             viewModel.togglePin(message, session: session)
         } label: {
@@ -233,6 +242,12 @@ private struct RoomContent: View {
     @State private var searchQuery = ""
     @State private var photoItem: PhotosPickerItem?
     @State private var showFileImporter = false
+    // D30 camera capture — system camera + TCC state; D31 hold-to-record state.
+    @State private var showCamera = false
+    @State private var cameraDenied = false
+    @State private var micDenied = false
+    @State private var holdStarted = false
+    @State private var holdCancelArmed = false
     // Wave 2 — poll builder sheet.
     @State private var pollBuilderOpen = false
     // ── Wave 7 — collaboration & hub surfaces ──
@@ -251,6 +266,11 @@ private struct RoomContent: View {
     @State private var whoReactedOpen = false
     @State private var whoReactedMessage: WireChatMessage?
     @State private var whoReactedEmoji = ""
+
+    // ── R1-W2B — location share / conv themes / quick phrases ──
+    @State private var locationOpen = false
+    @State private var themeOpen = false
+    @State private var phrasesOpen = false
 
     /// F-CH-04 — broadcast composer lock: broadcastMode on + the viewer is
     /// NOT an admin (server 403s the post; the web hides the composer too).
@@ -283,12 +303,46 @@ private struct RoomContent: View {
         composerFocused = true
     }
 
-    /// Wave 8 — the prefs wallpaper wash behind the whole room; 'none'
-    /// renders nothing and the plain page look stays.
+    /// Wave 8 — the room background: the per-conversation theme override
+    /// (R1-W2B F-FX-05) wins over the global prefs wallpaper (web
+    /// effectiveConvWallpaper parity), and an optional tint layers a soft
+    /// accent glow over it (web applyConvTint parity — conv-theme.ts:175).
+    private var effectiveWallpaper: PulseWallpaper {
+        if let raw = prefs.convThemes[conversation.id]?.wallpaper,
+           let token = PulseWallpaper(rawValue: raw) {
+            return token
+        }
+        return prefs.wallpaper
+    }
+
+    private var convTintGlow: Color? {
+        guard let tint = prefs.convThemes[conversation.id]?.tint else { return nil }
+        return Self.convTintColor(named: tint)
+    }
+
+    /// Web CONV_TINT_META glow colors — emerald/rose/amber/violet/teal.
+    static func convTintColor(named tint: String) -> Color {
+        switch tint {
+        case "rose": return Color(red: 0.96, green: 0.25, blue: 0.37)
+        case "amber": return Color(red: 0.96, green: 0.62, blue: 0.04)
+        case "violet": return Color(red: 0.55, green: 0.36, blue: 0.97)
+        case "teal": return Color(red: 0.08, green: 0.72, blue: 0.65)
+        default: return PulseTheme.emerald
+        }
+    }
+
     private var wallpaperWash: some View {
         Group {
-            if let wash = prefs.wallpaper.wash(dark: colorScheme == .dark) {
+            if let wash = effectiveWallpaper.wash(dark: colorScheme == .dark) {
                 wash
+            }
+            if let tint = convTintGlow {
+                // The tint glow sits above the wallpaper (web replaces the
+                // top glow color — visible even on the `none` wallpaper).
+                LinearGradient(
+                    colors: [tint.opacity(0.16), Color.clear],
+                    startPoint: .top, endPoint: .center,
+                )
             }
         }
     }
@@ -392,6 +446,8 @@ private struct RoomContent: View {
             }
             // Wave 6 — DM-only safety entry (F-CP-07): ShieldCheck opens the
             // 60-digit sheet; the emerald badge shows while verified (F-CP-08).
+            // R1-W2B D34 — the UNVERIFIED state also carries the tiny amber
+            // dot (web R37 header parity, chat-room.tsx:3887-3892).
             if let partner = dmPartner {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -400,10 +456,49 @@ private struct RoomContent: View {
                     } label: {
                         Image(systemName: safetyBadges.isVerified(partner.id) ? "checkmark.shield.fill" : "shield.lefthalf.filled")
                             .foregroundStyle(safetyBadges.isVerified(partner.id) ? PulseTheme.emerald : PulseTheme.textSecondary)
+                            .overlay(alignment: .topTrailing) {
+                                if !safetyBadges.isVerified(partner.id) {
+                                    Circle()
+                                        .fill(PulseTheme.amber)
+                                        .frame(width: 6, height: 6)
+                                        .offset(x: 3, y: -3)
+                                }
+                            }
                     }
                     .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified — open safety number" : "Open safety number")
+                    .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified — open safety number" : "Not verified — open safety number")
                 }
+            }
+        }
+        // R1-W2B F-FX-05 — per-conversation theme picker entry (web lives in
+        // the room info page; native mirrors the chat toolbar for reach).
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    PulseHaptics.tap()
+                    themeOpen = true
+                } label: {
+                    Image(systemName: "paintpalette")
+                }
+                .buttonStyle(PulseButtonStyle())
+                .accessibilityLabel("Chat theme")
+            }
+            // R1-W2I F-PI-03 — the pop-out mini-chat toggle (web chat-room
+            // header PictureInPicture2 button): opens/closes this room's pane.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    PulseHaptics.tap()
+                    if session.pip.conversationId == conversation.id {
+                        session.pip.close()
+                    } else {
+                        session.pip.open(conversation.id)
+                    }
+                } label: {
+                    Image(systemName: session.pip.conversationId == conversation.id
+                        ? "pip.fill" : "pip")
+                }
+                .buttonStyle(PulseButtonStyle())
+                .accessibilityLabel("Pop out mini chat")
             }
         }
         .sheet(isPresented: $safetyOpen) {
@@ -418,6 +513,10 @@ private struct RoomContent: View {
             if let state = try? await session.api.safetyState(peerId: partner.id) {
                 safetyBadges.mark(partner.id, verified: state.verified)
             }
+        }
+        .task {
+            // R1-W2B F-MS-29 — the quick-phrase rail seeds on room open.
+            viewModel.loadQuickPhrases(session: session)
         }
         .sheet(item: $threadRoot) { root in
             ThreadView(conversation: conversation, root: root, session: session)
@@ -468,6 +567,20 @@ private struct RoomContent: View {
                 )
             }
         }
+        // ── R1-W2B sheet hosts ──
+        .sheet(isPresented: $locationOpen) {
+            LocationShareSheet { lat, lng, label in
+                viewModel.sendLocation(lat: lat, lng: lng, label: label, session: session)
+            }
+        }
+        .sheet(isPresented: $themeOpen) {
+            ConvThemeSheet(conversationId: conversation.id, prefs: prefs)
+        }
+        .sheet(isPresented: $phrasesOpen) {
+            QuickPhrasesSheet(session: session) {
+                viewModel.loadQuickPhrases(session: session)
+            }
+        }
         .onChange(of: viewModel.pendingSlashSheet) { _, name in
             guard let name else { return }
             viewModel.pendingSlashSheet = nil
@@ -489,7 +602,7 @@ private struct RoomContent: View {
             case "stage", "space":
                 wave7.toast("Open the stage / space from the mic menu")
             case "location":
-                wave7.toast("Location sharing is coming to this surface")
+                locationOpen = true
             default: break
             }
         }
@@ -538,7 +651,9 @@ private struct RoomContent: View {
                 viewerId: session.viewer?.id ?? "",
                 load: { since in try? await session.api.whiteboard(conversationId: conversation.id, since: since) },
                 onStrokes: { strokes in
-                    wave7.postStrokes(api: session.api, conversationId: conversation.id, strokes: strokes)
+                    // R1-W2G D44 — the sheet awaits the sync verdict: the
+                    // draft store clears a stroke only on server confirmation.
+                    await wave7.postStrokes(api: session.api, conversationId: conversation.id, strokes: strokes)
                 },
                 onUndo: { wave7.undoStroke(api: session.api, conversationId: conversation.id) },
                 onClear: { wave7.clearBoard(api: session.api, conversationId: conversation.id) },
@@ -622,6 +737,21 @@ private struct RoomContent: View {
             viewModel.handleRoomDisappeared()
         }
         .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+        // D30 camera capture — the shot flows through stageImage → the SAME
+        // ≤1280px JPEG staged pipeline as the photo picker (web parity).
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker(
+                onCapture: { image in
+                    if let data = image.jpegData(compressionQuality: 0.95) {
+                        viewModel.stageImage(data)
+                    } else {
+                        session.toasts.show("Couldn't read the camera photo")
+                    }
+                },
+                onCancel: {},
+            )
+            .ignoresSafeArea()
+        }
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: PulseMediaSupport.documentTypes,
@@ -948,22 +1078,21 @@ private struct RoomContent: View {
     }
 
     // ── composer ─────────────────────────────────────────────
-    @ViewBuilder
+    // D31 hold-to-record: the trailing slot (voiceSendSlot) is ALWAYS mounted
+    // in the same HStack position — idle mic, recording send-arrow and plain
+    // send are the SAME view with a swapped glyph — so a press gesture that
+    // starts on the mic survives the recording bar appearing, and release
+    // still lands where the finger went down.
     private var composer: some View {
-        if viewModel.isRecording {
-            // Recording bar replaces the composer entirely (spec §1 row 11).
-            VoiceRecordingBar(
-                elapsedText: PulseFormat.duration(viewModel.recordingElapsedMs),
-                onCancel: { viewModel.cancelVoiceRecording() },
-                onSend: { viewModel.finishAndSendVoice(session: session) },
-            )
-        } else {
-            idleComposer
-        }
-    }
-
-    private var idleComposer: some View {
         VStack(spacing: 0) {
+            if micDenied {
+                deniedNotice(
+                    "Microphone access is off — voice notes need it. Hold-to-record unlocks once it's on.",
+                ) { micDenied = false }
+            }
+            if cameraDenied {
+                deniedNotice("Camera access is off — allow it to take photos for this chat.") { cameraDenied = false }
+            }
             if broadcastLocked {
                 // F-CH-04 — the broadcast lock replaces the composer row for
                 // non-admins (verbatim web copy; input is gone, not disabled).
@@ -987,6 +1116,11 @@ private struct RoomContent: View {
 
     @ViewBuilder
     private var composerRows: some View {
+            // R1-W2B F-MS-29 — the quick-phrase rail sits right above the
+            // composer row (web spec row: "rail chips"; tap inserts the line).
+            if !viewModel.quickPhrases.isEmpty {
+                quickPhraseRail
+            }
             if let editing = viewModel.editingTarget {
                 editBar(editing)
             }
@@ -997,56 +1131,156 @@ private struct RoomContent: View {
                 stagedMediaBar(staged)
             }
             HStack(alignment: .bottom, spacing: 10) {
-                attachMenu
-
-                TextField(
-                    viewModel.editingTarget != nil ? "Edit message" : "Message",
-                    text: $viewModel.draft,
-                    axis: .vertical,
-                )
-                .lineLimit(1...5)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(Capsule().fill(Color(.secondarySystemBackground)))
-                .focused($composerFocused)
-                .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
-                .disabled(viewModel.staged != nil)
-
-                // Wave 2 voice — tap-to-start when the draft is empty and
-                // nothing is staged/editing (web parity).
-                if viewModel.canStartVoiceRecording {
-                    Button {
-                        PulseHaptics.tap()
-                        viewModel.startVoiceRecording(session: session)
-                    } label: {
-                        Image(systemName: "mic.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(PulseTheme.emerald)
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Record voice note")
+                if viewModel.isRecording {
+                    // Recording bar replaces the composer TEXT (spec §1 row 11)
+                    // — the trailing slot stays mounted for release-to-send.
+                    VoiceRecordingBar(
+                        elapsedText: PulseFormat.duration(viewModel.recordingElapsedMs),
+                        amplitudes: viewModel.recordingAmplitudes,
+                        cancelArmed: holdCancelArmed,
+                        sending: viewModel.sendingVoice,
+                        onCancel: {
+                            PulseHaptics.tap()
+                            viewModel.cancelVoiceRecording()
+                        },
+                    )
                 } else {
-                    Button {
-                        PulseHaptics.tap()
-                        if viewModel.editingTarget != nil {
-                            viewModel.saveEdit(session: session)
-                        } else if viewModel.staged != nil {
-                            viewModel.sendStaged(session: session)
-                        } else {
-                            viewModel.send(session: session)
-                        }
-                    } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(viewModel.canSend ? AnyShapeStyle(PulseTheme.gradient(named: "emerald")) : AnyShapeStyle(Color.secondary.opacity(0.4)))
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .disabled(!viewModel.canSend)
+                    attachMenu
+
+                    TextField(
+                        viewModel.editingTarget != nil ? "Edit message" : "Message",
+                        text: $viewModel.draft,
+                        axis: .vertical,
+                    )
+                    .lineLimit(1...5)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(Capsule().fill(Color(.secondarySystemBackground)))
+                    .focused($composerFocused)
+                    .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
+                    .disabled(viewModel.staged != nil)
                 }
+
+                voiceSendSlot
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(.ultraThinMaterial)
+    }
+
+    /// D31 — the ALWAYS-MOUNTED trailing composer slot. One Image node whose
+    /// glyph/style swap by state keeps view identity (and the in-flight press
+    /// gesture) alive across idle → recording:
+    ///   • blank draft → mic: press-and-hold records; release sends; slide
+    ///     left past 80pt arms cancel ("Release to cancel" in the bar).
+    ///   • recording → send arrow: release sends; a quick tap also sends (the
+    ///     post-grant case where the TCC prompt swallowed the finger lift).
+    ///   • draft text / staged / editing → plain send (tap, prior behavior).
+    /// ONE gesture (DragGesture minimumDistance 0) owns the slot — a competing
+    /// TapGesture would never win recognition, so taps route through onEnded.
+    private var voiceSendSlot: some View {
+        ZStack {
+            Image(systemName: viewModel.isRecording || !viewModel.canStartVoiceRecording ? "arrow.up.circle.fill" : "mic.circle.fill")
+                .font(.system(size: 32))
+                .foregroundStyle(slotStyle)
+                .gesture(holdGesture)
+            if viewModel.sendingVoice && !viewModel.isRecording {
+                ProgressView().tint(PulseTheme.emerald)
+            }
+        }
+        .accessibilityLabel(
+            viewModel.isRecording
+                ? "Release to send voice note — slide left to cancel"
+                : (viewModel.canStartVoiceRecording ? "Record voice note" : "Send"),
+        )
+    }
+
+    private var slotStyle: AnyShapeStyle {
+        if viewModel.isRecording { return AnyShapeStyle(PulseTheme.gradient(named: "emerald")) }
+        if viewModel.canStartVoiceRecording { return AnyShapeStyle(PulseTheme.emerald) }
+        return viewModel.canSend
+            ? AnyShapeStyle(PulseTheme.gradient(named: "emerald"))
+            : AnyShapeStyle(Color.secondary.opacity(0.4))
+    }
+
+    /// D31 press-and-hold recorder gesture — minimumDistance 0 so a plain
+    /// press counts; translation tracks the slide-to-cancel arm (leftward).
+    private var holdGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if !holdStarted {
+                    guard viewModel.canStartVoiceRecording else { return }
+                    holdStarted = true
+                    holdCancelArmed = false
+                    PulseHaptics.tap()
+                    viewModel.startVoiceRecording(session: session)
+                    return
+                }
+                let armed = value.translation.width < -80
+                if armed != holdCancelArmed {
+                    holdCancelArmed = armed
+                    if armed { PulseHaptics.tap() }
+                }
+            }
+            .onEnded { _ in
+                if !holdStarted {
+                    // Text-mode tap (drag with zero distance) — plain send.
+                    sendSlotTap()
+                    return
+                }
+                holdStarted = false
+                let cancelled = holdCancelArmed
+                holdCancelArmed = false
+                viewModel.endVoiceHold(cancelled: cancelled, session: session)
+            }
+    }
+
+    /// Slot tap — sends while recording (release already processed, e.g. the
+    /// TCC prompt case) or the plain send/edit/staged dispatch when text mode.
+    private func sendSlotTap() {
+        if holdStarted { return }
+        if viewModel.isRecording {
+            viewModel.finishAndSendVoice(session: session)
+            return
+        }
+        guard !viewModel.canStartVoiceRecording else { return }
+        PulseHaptics.tap()
+        if viewModel.editingTarget != nil {
+            viewModel.saveEdit(session: session)
+        } else if viewModel.staged != nil {
+            viewModel.sendStaged(session: session)
+        } else {
+            viewModel.send(session: session)
+        }
+    }
+
+    /// D30/D31 — the honest inline permission explainer (no crash, no dead
+    /// end): an explanatory row above the composer with a Settings jump.
+    private func deniedNotice(_ message: String, dismiss: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .font(.caption.weight(.semibold))
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.thinMaterial)
     }
 
     private var attachMenu: some View {
@@ -1056,10 +1290,32 @@ private struct RoomContent: View {
             } label: {
                 Label("Photo Library", systemImage: "photo")
             }
+            // D30 — take a full-resolution shot with the system camera; the
+            // file flows through the same staged upload path as the library.
+            Button {
+                CameraPicker.requestAccess { granted in
+                    DispatchQueue.main.async {
+                        if granted {
+                            showCamera = true
+                        } else {
+                            cameraDenied = true
+                        }
+                    }
+                }
+            } label: {
+                Label("Camera", systemImage: "camera")
+            }
             Button {
                 showFileImporter = true
             } label: {
                 Label("Document", systemImage: "folder")
+            }
+            // R1-W2B F-MD-07 — location share (web composer attach parity,
+            // chat-room.tsx composer palette + '/location').
+            Button {
+                locationOpen = true
+            } label: {
+                Label("Location", systemImage: "location.fill")
             }
             Button {
                 pollBuilderOpen = true
@@ -1108,6 +1364,59 @@ private struct RoomContent: View {
         }
         .disabled(viewModel.editingTarget != nil)
         .accessibilityLabel("Attach")
+    }
+
+    // ── R1-W2B F-MS-29 — the quick-phrase rail ───────────────
+    // One-tap lines above the composer (tap inserts at the caret end); the
+    // trailing "⋯" chip opens the manage sheet (add/delete rides the API).
+
+    private var quickPhraseRail: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(viewModel.quickPhrases) { phrase in
+                    Button {
+                        insertPhrase(phrase)
+                    } label: {
+                        Text(phrase.text)
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(PulseTheme.titleOnPanel)
+                            .lineLimit(1)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Capsule().fill(Color(.secondarySystemBackground)))
+                            .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .disabled(viewModel.editingTarget != nil)
+                    .accessibilityLabel("Insert \(phrase.text)")
+                }
+                Button {
+                    PulseHaptics.tap()
+                    phrasesOpen = true
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(PulseTheme.emerald)
+                        .frame(width: 30, height: 30)
+                        .background(Capsule().fill(PulseTheme.emerald.opacity(0.10)))
+                }
+                .buttonStyle(PulseButtonStyle())
+                .accessibilityLabel("Manage quick phrases")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func insertPhrase(_ phrase: WireQuickPhrase) {
+        PulseHaptics.tap()
+        let current = viewModel.draft
+        guard !current.isEmpty else {
+            viewModel.draft = phrase.text
+            return
+        }
+        let needsSpace = !current.hasSuffix(" ") && !current.hasSuffix("\n")
+        viewModel.draft = current + (needsSpace ? " " : "") + phrase.text
     }
 
     private func editBar(_ editing: WireChatMessage) -> some View {
@@ -1434,6 +1743,12 @@ struct BubbleView: View {
                 if message.poll == nil, let preview = message.linkPreview {
                     LinkPreviewCard(preview: preview)
                 }
+                // R1-W2B F-MD-06 — persisted LLM translation under the
+                // original (web TranslationLine parity: italic secondary
+                // strip with the globe glyph; chat-room.tsx:6913-6955).
+                if let translations = message.translations, let first = translations.first {
+                    translationStrip(first)
+                }
             }
 
             HStack(spacing: 5) {
@@ -1490,6 +1805,8 @@ struct BubbleView: View {
             case "video":
                 Label("Video", systemImage: "video.fill")
                     .font(.subheadline)
+            case "location":
+                locationContent
             default:
                 Text(message.content)
                     .font(.body)
@@ -1743,6 +2060,92 @@ struct BubbleView: View {
         }
     }
 
+    // ── R1-W2B F-MD-06 — translation strip ───────────────────
+
+    /// The first persisted translation rendered under the original text —
+    /// secondary italic with a globe glyph (web TranslationLine parity).
+    private func translationStrip(_ translation: WireTranslation) -> some View {
+        HStack(alignment: .top, spacing: 5) {
+            Image(systemName: "globe")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(mine ? Color.white.opacity(0.85) : PulseTheme.emerald)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(translation.text)
+                    .font(.footnote.italic())
+                    .foregroundStyle(mine ? Color.white.opacity(0.88) : Color.primary.opacity(0.7))
+                    .textSelection(.enabled)
+                Text(translation.lang.uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(mine ? Color.white.opacity(0.6) : PulseTheme.textTertiary)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(mine ? Color.white.opacity(0.14) : PulseTheme.emerald.opacity(0.06)))
+    }
+
+    // ── R1-W2B F-MD-07 — location card ───────────────────────
+
+    /// kind "location" rows render the stylized map card (web LocationBubble
+    /// parity — pure vector art, no tile servers); tapping opens Apple Maps
+    /// at the pin (spec F-MD-07 "Map card tap → platform maps").
+    @ViewBuilder
+    private var locationContent: some View {
+        if let loc = PulseRemediationLogic.locationOfPayload(message.payload) {
+            Button {
+                if let url = PulseRemediationLogic.appleMapsURL(lat: loc.lat, lng: loc.lng, label: loc.label) {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(mine ? Color.white.opacity(0.18) : PulseTheme.emerald.opacity(0.10))
+                        // Graticule grid — the pin's spot comes from the real
+                        // coordinates (equirectangular projection, web parity).
+                        VStack(spacing: 18) {
+                            ForEach(0..<4, id: \.self) { _ in
+                                Rectangle()
+                                    .fill((mine ? Color.white : PulseTheme.emerald).opacity(0.16))
+                                    .frame(height: 1)
+                            }
+                        }
+                        HStack(spacing: 26) {
+                            ForEach(0..<5, id: \.self) { _ in
+                                Rectangle()
+                                    .fill((mine ? Color.white : PulseTheme.emerald).opacity(0.16))
+                                    .frame(width: 1)
+                            }
+                        }
+                        VStack(spacing: 3) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.system(size: 30))
+                                .foregroundStyle(mine ? Color.white : PulseTheme.emerald)
+                        }
+                    }
+                    .frame(width: 216, height: 116)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(loc.label.isEmpty ? "Location" : loc.label)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(mine ? Color.white : PulseTheme.titleOnPanel)
+                            .lineLimit(1)
+                        Text(PulseRemediationLogic.coordinateText(lat: loc.lat, lng: loc.lng))
+                            .font(.caption2)
+                            .foregroundStyle(mine ? Color.white.opacity(0.8) : PulseTheme.textSecondary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Location pin \(loc.label) — open in Maps")
+        } else {
+            // Corrupt/legacy payload — degrade to the plain content text.
+            Text(message.content)
+                .font(.body)
+                .textSelection(.enabled)
+        }
+    }
+
     private var bubbleFill: some ShapeStyle {
         if mine {
             return AnyShapeStyle(LinearGradient(
@@ -1861,11 +2264,18 @@ final class RoomViewModel: ObservableObject {
     /// F-MS-22 — sheet command armed by the slash palette ('/poll' etc.) —
     /// the view consumes it in onChange to present the right surface.
     @Published var pendingSlashSheet: String?
+    /// R1-W2B F-MS-29 — the viewer's quick phrases for the composer rail
+    /// (server CRUD via /api/users/{id}/phrases; the manage sheet reloads
+    /// this through loadQuickPhrases after every mutation).
+    @Published private(set) var quickPhrases: [WireQuickPhrase] = []
 
     // Wave 2 — voice recording, playback, polls, transcription, topics.
     @Published private(set) var isRecording = false
     @Published private(set) var recordingElapsedMs: Double = 0
     @Published private(set) var sendingVoice = false
+    /// D31 — live mic levels (0…1) sampled every 100 ms while held; the
+    /// composer renders the last VoiceMath.liveWaveformBars as bars.
+    @Published private(set) var recordingAmplitudes: [Double] = []
     @Published private(set) var transcriptionBusy: Set<String> = []
     @Published private(set) var topics: [WireTopic] = []
     /// nil = General = the WHOLE room unfiltered (spec §1 row 9).
@@ -1893,6 +2303,9 @@ final class RoomViewModel: ObservableObject {
     private var voiceRecorder: VoiceRecorder?
     private var recordingStartedAt: Date?
     private var recordingTicker: AnyCancellable?
+    /// D31 — the session that armed the hold; the auto-send-at-cap tick needs
+    /// it when the finger is still down and cannot deliver it.
+    private weak var voiceSession: PulseSession?
     private var topicTicker: AnyCancellable?
     private var voiceLocalFiles: [String: URL] = [:]
     /// One active voice-note player for the whole room (messageId-keyed).
@@ -2549,6 +2962,66 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
+    // ── R1-W2B F-MD-06 — translate ───────────────────────
+
+    /// POST /api/messages/{id}/translate (text rows only) — the fresh row
+    /// carries message.translations; the bubble renders the strip inline.
+    /// Peers receive the same row via the translation:added relay envelope.
+    func translate(_ message: WireChatMessage, session: PulseSession) {
+        PulseHaptics.tap()
+        guard message.kind == "text", message.deletedAt == nil,
+              !message.id.hasPrefix("local_"),
+              !transcriptionBusy.contains(message.id) else { return }
+        transcriptionBusy.insert(message.id)
+        Task { [weak self] in
+            defer { self?.transcriptionBusy.remove(message.id) }
+            guard let self else { return }
+            do {
+                let fresh = try await session.api.translateMessage(id: message.id)
+                try? session.store?.upsert(messages: [fresh])
+                self.upsert(fresh)
+            } catch {
+                session.toasts.show(Self.describe(error))
+            }
+        }
+    }
+
+    // ── R1-W2B F-MD-07 — location send ───────────────────
+
+    /// kind "location" + payload { lat, lng, label } (web sendLocation parity,
+    /// chat-room.tsx:3120-3138; content rides empty like the web). Online-only
+    /// like every rich kind — failures surface the honest toast.
+    func sendLocation(lat: Double, lng: Double, label: String, session: PulseSession) {
+        guard session.viewer != nil else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let message = try await session.api.sendMessage(
+                    conversationId: self.conversationId,
+                    content: "",
+                    kind: "location",
+                    topicId: self.activeTopicId,
+                    payload: ["lat": lat, "lng": lng, "label": label],
+                )
+                self.upsert(message)
+                try? session.store?.upsert(messages: [message])
+                self.loadTopics(session: session)
+            } catch {
+                session.toasts.show(Self.describe(error))
+            }
+        }
+    }
+
+    // ── R1-W2B F-MS-29 — quick phrases ───────────────────
+
+    func loadQuickPhrases(session: PulseSession) {
+        guard session.viewer != nil else { return }
+        Task { [weak self] in
+            let rows = (try? await session.api.quickPhrases()) ?? []
+            await MainActor.run { self?.quickPhrases = rows }
+        }
+    }
+
     // ── REM-B F-MS-18 — schedule the composer draft ────────
 
     func scheduleDraft(for date: Date, session: PulseSession) {
@@ -2850,13 +3323,17 @@ final class RoomViewModel: ObservableObject {
 
     // ── Wave 2 voice notes (spec §1 rows 1/11/12/15) ─────
 
-    /// Tap-to-start — mic TCC, then the recording bar replaces the composer.
+    /// D31 hold-to-record — called the moment the mic slot receives a press.
+    /// Mic TCC first; if the prompt swallows the finger lift the recording
+    /// simply continues with the explicit bar (cancel X + slot tap to send).
     func startVoiceRecording(session: PulseSession) {
         guard !isRecording, voiceRecorder == nil else { return }
+        voiceSession = session
         Task { [weak self] in
             guard let self else { return }
             let granted = await VoiceRecorder.requestPermission()
             guard granted else {
+                self.voiceSession = nil
                 session.toasts.show("Microphone access is off — enable it in Settings to record voice notes")
                 return
             }
@@ -2865,14 +3342,25 @@ final class RoomViewModel: ObservableObject {
             do {
                 try recorder.start()
             } catch {
+                self.voiceSession = nil
                 session.toasts.show("Couldn't start recording")
                 return
             }
             self.voiceRecorder = recorder
             self.recordingStartedAt = Date()
             self.recordingElapsedMs = 0
+            self.recordingAmplitudes = []
             self.isRecording = true
             self.startRecordingTicker()
+        }
+    }
+
+    /// D31 — hold finished: slide-away cancels (discard), plain release sends.
+    func endVoiceHold(cancelled: Bool, session: PulseSession) {
+        if cancelled {
+            cancelVoiceRecording()
+        } else {
+            finishAndSendVoice(session: session)
         }
     }
 
@@ -2938,16 +3426,34 @@ final class RoomViewModel: ObservableObject {
         recordingStartedAt = nil
         isRecording = false
         recordingElapsedMs = 0
+        recordingAmplitudes = []
+        voiceSession = nil
     }
 
+    /// 100 ms sweep — wall-clock elapsed + LIVE metering (averagePower →
+    /// normalized 0…1 into the ring buffer for the waveform bars). At the
+    /// wire cap (server refuses durationMs > 600000) the take auto-sends
+    /// instead of recording a note the gateway would reject (D31).
     private func startRecordingTicker() {
         stopRecordingTicker()
-        recordingTicker = Timer.publish(every: 0.25, on: .main, in: .common)
+        recordingTicker = Timer.publish(every: 0.1, on: .main, in: .common)
             .autoconnect()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self, let startedAt = self.recordingStartedAt else { return }
-                self.recordingElapsedMs = Date().timeIntervalSince(startedAt) * 1000
+                let elapsed = Date().timeIntervalSince(startedAt) * 1000
+                self.recordingElapsedMs = elapsed
+                if let power = self.voiceRecorder?.averagePower() {
+                    // −50dB…0dB → 0…1 (anything below −50dB reads as silence).
+                    let normalized = Double(max(0, min(1, (power + 50) / 50)))
+                    self.recordingAmplitudes.append(normalized)
+                    if self.recordingAmplitudes.count > VoiceMath.liveWaveformBars {
+                        self.recordingAmplitudes.removeFirst(self.recordingAmplitudes.count - VoiceMath.liveWaveformBars)
+                    }
+                }
+                if elapsed >= VoiceMath.maximumSendMs, let session = self.voiceSession {
+                    self.finishAndSendVoice(session: session)
+                }
             }
     }
 
@@ -3291,6 +3797,156 @@ enum TempMessages {
             linkPreview: nil,
             poll: nil,
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// R1-W2B F-FX-05 — per-conversation theme sheet (web conv-theme-picker.tsx
+// parity). Wallpaper swatches reuse the exact global token set + the same
+// wash previews; optional accent tint chips layer over the wallpaper;
+// "Reset to default" removes the override entirely. Writes go through the
+// settings PATCH funnel (prefs blob key chat.convThemes) — the same server
+// path the web picker uses, so both surfaces converge.
+// ─────────────────────────────────────────────────────────────
+struct ConvThemeSheet: View {
+    let conversationId: String
+    @ObservedObject var prefs: PulsePrefs
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var override: WireConvTheme? {
+        prefs.convThemes[conversationId]
+    }
+
+    /// The EFFECTIVE wallpaper (override ?? global) — the selected swatch
+    /// matches what the room actually renders (web parity).
+    private var effectiveWallpaper: PulseWallpaper {
+        if let raw = override?.wallpaper, let token = PulseWallpaper(rawValue: raw) {
+            return token
+        }
+        return prefs.wallpaper
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("WALLPAPER")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 5), spacing: 10) {
+                            ForEach(PulseWallpaper.allCases, id: \.self) { token in
+                                swatch(token)
+                            }
+                        }
+                        Text(override == nil
+                            ? "Following Appearance default · \(prefs.wallpaper.rawValue)"
+                            : "Custom for this chat only")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("ACCENT TINT")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            ForEach(PulsePrefs.convTints, id: \.self) { tint in
+                                tintChip(tint)
+                            }
+                        }
+                        Text("Layers a soft glow over the wallpaper — also visible on None.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if override != nil {
+                        Button {
+                            PulseHaptics.tap()
+                            prefs.clearConvTheme(conversationId: conversationId)
+                        } label: {
+                            Label("Reset to default", systemImage: "arrow.counterclockwise")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.red)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .background(RoundedRectangle(cornerRadius: 14).fill(Color.red.opacity(0.08)))
+                        }
+                        .buttonStyle(PulseButtonStyle())
+                    }
+                }
+                .padding(16)
+            }
+            .background(PulseTheme.pageWash.ignoresSafeArea())
+            .navigationTitle("Chat theme")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    /// Wallpaper swatch — the room's own wash preview (light + dark aware of
+    /// nothing here; the gradient IS the room background source of truth).
+    private func swatch(_ token: PulseWallpaper) -> some View {
+        let selected = effectiveWallpaper == token
+        let isOverride = override?.wallpaper == token.rawValue
+        return Button {
+            PulseHaptics.tap()
+            prefs.setConvTheme(conversationId: conversationId, wallpaper: token, tint: nil)
+        } label: {
+            VStack(spacing: 5) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        token.wash(dark: false).map { AnyShapeStyle($0) }
+                            ?? AnyShapeStyle(Color(.secondarySystemBackground)),
+                    )
+                    .frame(height: 54)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(selected ? PulseTheme.emerald : PulseTheme.hairlineStrong, lineWidth: selected ? 2 : 1),
+                    )
+                    .overlay(alignment: .topTrailing) {
+                        if isOverride {
+                            Circle()
+                                .fill(PulseTheme.emerald)
+                                .frame(width: 6, height: 6)
+                                .padding(4)
+                        }
+                    }
+                Text(token.rawValue.capitalized)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(selected ? PulseTheme.emerald : PulseTheme.textSecondary)
+            }
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel("\(token.rawValue.capitalized) wallpaper")
+    }
+
+    private func tintChip(_ tint: String) -> some View {
+        let selected = override?.tint == tint
+        return Button {
+            PulseHaptics.tap()
+            if selected {
+                // Tapping the active tint clears it (web patch.tint:null).
+                prefs.setConvTheme(conversationId: conversationId, wallpaper: nil, tint: nil)
+            } else {
+                prefs.setConvTheme(conversationId: conversationId, wallpaper: nil, tint: tint)
+            }
+        } label: {
+            Circle()
+                .fill(RoomContent.convTintColor(named: tint))
+                .frame(width: 32, height: 32)
+                .overlay(
+                    Circle().strokeBorder(selected ? Color.primary : Color.clear, lineWidth: 2).padding(2),
+                )
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel("\(tint.capitalized) tint")
     }
 }
 

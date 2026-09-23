@@ -58,6 +58,12 @@ struct CallView: View {
             )
             .ignoresSafeArea()
 
+            // Wave R1-W2D — REAL remote video full-bleed behind the UI
+            // (renders only when the peer's m=video track actually arrives).
+            if engine.state == .connecting || engine.state == .connected {
+                RemoteVideoLayer(engine: engine)
+            }
+
             if let peer = engine.activePeer {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
@@ -75,6 +81,11 @@ struct CallView: View {
             } else {
                 // No peer (defensive — engine always has one when not idle).
                 ProgressView().tint(.white)
+            }
+
+            // Wave R1-W2D — local camera PiP (web bottom-28 trailing parity).
+            if engine.state == .connecting || engine.state == .connected {
+                LocalVideoPipLayer(engine: engine)
             }
         }
     }
@@ -124,10 +135,10 @@ struct CallView: View {
         }
     }
 
-    /// Native UI stays an audio-call UI; a wire 'video' offer is accepted and
-    /// answered audio-only (documented Wave 3 limitation) — the status line
-    /// still says what kind the WIRE carried.
-    private var isVideoKind: Bool { false }
+    /// Web parity: the status line says what the WIRE carried — an incoming
+    /// 'video' offer rings as "Incoming video call". Wave R1-W2D: the answer
+    /// now carries a REAL camera track (audio-only fallback stays honest).
+    private var isVideoKind: Bool { engine.activeKind == .video }
 
     private func errorCard(_ text: String) -> some View {
         VStack(spacing: 12) {
@@ -219,25 +230,49 @@ struct CallView: View {
                     }
                 }
             case .connected:
-                HStack(spacing: 26) {
-                    CallActionButton(
-                        label: engine.micEnabled ? "Mute" : "Unmute",
-                        icon: engine.micEnabled ? "mic.fill" : "mic.slash.fill",
-                        tone: engine.micEnabled ? .neutral : .dangerSoft,
-                        size: 60,
-                    ) {
-                        engine.toggleMute()
+                VStack(spacing: 14) {
+                    // Wave R1-W2D — video controls ONLY when a camera is
+                    // REALLY attached (audio-only fallback keeps the voice UI).
+                    if engine.videoCaptureActive {
+                        HStack(spacing: 26) {
+                            CallActionButton(
+                                label: engine.cameraEnabled ? "Camera" : "Camera off",
+                                icon: engine.cameraEnabled ? "video.fill" : "video.slash.fill",
+                                tone: engine.cameraEnabled ? .neutral : .dangerSoft,
+                                size: 60,
+                            ) {
+                                engine.toggleCamera()
+                            }
+                            CallActionButton(
+                                label: "Flip",
+                                icon: "arrow.triangle.2.circlepath.camera.fill",
+                                tone: .neutral,
+                                size: 60,
+                            ) {
+                                engine.flipCamera()
+                            }
+                        }
                     }
-                    CallActionButton(
-                        label: engine.speakerOn ? "Speaker" : "Earpiece",
-                        icon: engine.speakerOn ? "speaker.wave.2.fill" : "iphone.gen3",
-                        tone: .neutral,
-                        size: 60,
-                    ) {
-                        engine.toggleSpeaker()
-                    }
-                    CallActionButton(label: "End", icon: "phone.down.fill", tone: .danger, size: 72) {
-                        engine.endCall()
+                    HStack(spacing: 26) {
+                        CallActionButton(
+                            label: engine.micEnabled ? "Mute" : "Unmute",
+                            icon: engine.micEnabled ? "mic.fill" : "mic.slash.fill",
+                            tone: engine.micEnabled ? .neutral : .dangerSoft,
+                            size: 60,
+                        ) {
+                            engine.toggleMute()
+                        }
+                        CallActionButton(
+                            label: engine.speakerOn ? "Speaker" : "Earpiece",
+                            icon: engine.speakerOn ? "speaker.wave.2.fill" : "iphone.gen3",
+                            tone: .neutral,
+                            size: 60,
+                        ) {
+                            engine.toggleSpeaker()
+                        }
+                        CallActionButton(label: "End", icon: "phone.down.fill", tone: .danger, size: 72) {
+                            engine.endCall()
+                        }
                     }
                 }
             case .ended:

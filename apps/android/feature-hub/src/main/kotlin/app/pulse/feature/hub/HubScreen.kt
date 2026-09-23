@@ -35,26 +35,34 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import app.pulse.core.fx.PulseFx
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.HubLogDto
 import app.pulse.protocol.HubTaskDto
@@ -66,11 +74,16 @@ import app.pulse.protocol.SwapPageDto
 import app.pulse.protocol.WalletPageDto
 import app.pulse.ui.PulsePalette
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -149,6 +162,18 @@ class HubViewModel @Inject constructor(
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()
 
+    /**
+     * R1-W2H D38 — one-shot check-in success event (carries the reward). The
+     * screen turns it into the F-HB-02 celebration; never replayed to a
+     * re-entering surface (extraBufferCapacity=1, DROP_OLDEST, no replay).
+     */
+    private val _checkinSuccess = MutableSharedFlow<Long>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val checkinSuccess: SharedFlow<Long> = _checkinSuccess.asSharedFlow()
+
     private fun notify(text: String, isError: Boolean = false) {
         _notice.value = (if (isError) "⚠ " else "") + text
     }
@@ -181,6 +206,7 @@ class HubViewModel @Inject constructor(
             repo.checkinWallet().fold(
                 onSuccess = { v ->
                     notify("Checked in — +${v.reward} PC${if (v.streak > 1) " · ${v.streak}-day streak" else ""}")
+                    _checkinSuccess.tryEmit(v.reward) // R1-W2H D38 — once per success
                     loadWallet()
                 },
                 onFailure = { t ->
@@ -418,6 +444,21 @@ fun HubScreen(
     LaunchedEffect(notice) { notice?.let { toast = it; vm.consumeNotice() } }
     LaunchedEffect(toast) { toast?.let { delay(2_600); toast = null } }
 
+    // R1-W2H D38 — check-in celebration (spec F-HB-02 "Success haptic +
+    // particles"; the web's toast-only ground truth is exceeded, sanctioned).
+    // ONE confetti burst per successful check-in via the same API onboarding
+    // uses — the shell's global ParticleBurstHost renders it and ticks its own
+    // subtle haptic. The screen adds the house screen-haptic (LocalHapticFeedback,
+    // the idiom every other surface uses) so the success feedback survives
+    // Reduce Motion, where the host gates everything.
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(Unit) {
+        vm.checkinSuccess.collect {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            PulseFx.fire(PulseFx.BurstKind.CONFETTI, count = 90)
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -533,8 +574,11 @@ fun HubScreen(
         HubSurface.SWAP -> SwapSheet(vm = vm, onDismiss = { surface = null })
         HubSurface.TASKS -> TasksSheet(vm = vm, onDismiss = { surface = null })
         HubSurface.MARKET -> MarketSheet(vm = vm, onDismiss = { surface = null })
-        HubSurface.LOGS -> SheetHost(onDismiss = { surface = null }) {
-            LogsBody(logs = logs)
+        HubSurface.LOGS -> {
+            LogsLivePoll(vm) // R1-W2H D40 — 12s live poll while this sheet is open
+            SheetHost(onDismiss = { surface = null }) {
+                LogsBody(logs = logs)
+            }
         }
         HubSurface.APPS -> AppsSheet(
             catalog = catalog, installs = installs, vm = vm, myAppsOnly = false,
@@ -583,6 +627,48 @@ private fun SheetHost(onDismiss: () -> Unit, content: @Composable () -> Unit) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             content()
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * R1-W2H D40 — hub logs live poll (web ground truth hub-tab.tsx:603-611
+ * refetchInterval 12_000). Runs only while the Logs sheet is composed (the
+ * call site lives inside the LOGS branch, so closing the sheet disposes it)
+ * and pauses whenever the app drops below STARTED — the D25 house pattern
+ * (DisposableEffect + LifecycleEventObserver) copied verbatim. First tick is
+ * immediate so the sheet never opens empty; failure toasts stay rare (the VM
+ * notifies only on error).
+ */
+@Composable
+private fun LogsLivePoll(vm: HubViewModel) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    DisposableEffect(lifecycleOwner) {
+        var job: Job? = null
+        fun startLoop() {
+            job?.cancel()
+            job = scope.launch {
+                while (true) {
+                    vm.loadLogs()
+                    delay(12_000)
+                }
+            }
+        }
+        val obs = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> startLoop()
+                Lifecycle.Event.ON_STOP -> job?.cancel()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        // The sheet can open while the app is already STARTED — the observer
+        // only fires on transitions, so kick the loop for the current state.
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) startLoop()
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            job?.cancel()
         }
     }
 }

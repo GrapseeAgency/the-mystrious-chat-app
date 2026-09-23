@@ -89,6 +89,24 @@ object PulseWave7Logic {
         return runCatching { PulseJson.decodeFromString(TournamentPayloadDto.serializer(), payload) }.getOrNull()
     }
 
+    /** R1-W2A — tolerant decode of a sticker message payload ({emoji,pack}). */
+    fun stickerPayload(payload: String?): StickerPayloadDto? {
+        if (payload.isNullOrBlank()) return null
+        return runCatching { PulseJson.decodeFromString(StickerPayloadDto.serializer(), payload) }
+            .getOrNull()
+            ?.takeIf { it.emoji.isNotEmpty() }
+    }
+
+    /** R1-W2A — tolerant decode of an effect-carried payload ({effect}) — whitelisted names only. */
+    fun effectPayload(payload: String?): EffectPayloadDto? {
+        if (payload.isNullOrBlank()) return null
+        val decoded = runCatching { PulseJson.decodeFromString(EffectPayloadDto.serializer(), payload) }.getOrNull() ?: return null
+        return decoded.takeIf { it.effect in EFFECT_NAMES }
+    }
+
+    /** F-MS-23 whitelist — confetti · lasers · echo · sparkles (web parity). */
+    val EFFECT_NAMES: Set<String> = setOf("confetti", "lasers", "echo", "sparkles")
+
     /** Cell getter over the 9-char board string; out-of-range/short board → ' '. */
     fun cellAt(board: String, index: Int): Char =
         if (index in 0..8 && board.length == 9) board[index] else ' '

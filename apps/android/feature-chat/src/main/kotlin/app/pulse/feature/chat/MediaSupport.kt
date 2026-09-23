@@ -10,6 +10,8 @@ import android.util.Base64
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,10 +35,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -54,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -123,6 +134,21 @@ object MediaSupport {
             bitmap.recycle()
             "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
         }
+    }
+
+    /**
+     * D30 camera capture — a fresh JPEG file under cacheDir/camera plus its
+     * FileProvider content URI (authority "${applicationId}.files", path
+     * pattern "camera/" in res/xml/pulse_file_paths.xml). The system camera
+     * app writes the full-resolution shot to THIS uri via
+     * ActivityResultContracts.TakePicture; the file then flows through
+     * [imageToDataUrl] — the SAME ≤1280px JPEG q0.82 pipeline the gallery
+     * picker uses — so camera and gallery uploads are wire-identical.
+     */
+    fun newCameraCaptureUri(context: Context): Uri {
+        val dir = File(context.cacheDir, "camera").apply { mkdirs() }
+        val file = File(dir, "capture-${System.currentTimeMillis()}-${java.util.UUID.randomUUID()}.jpg")
+        return androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file)
     }
 
     /**
@@ -212,7 +238,12 @@ object MediaSupport {
         return Intent.createChooser(intent, "Open with")
     }
 
-    /** FileProvider SEND intent — the long-press "Share" alternative. */
+    /**
+     * FileProvider SEND intent — the long-press "Share" alternative and the
+     * D24 export hand-off (R1-W2H). The chooser carries ClipData + the grant
+     * flag too: some OEM resolver sheets only honor recipient grants off the
+     * chooser intent, and a dropped grant reads as "file unavailable" there.
+     */
     fun buildShareIntent(context: Context, absolutePath: String, mime: String, text: String?): Intent {
         val uri = fileUri(context, absolutePath)
         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -220,8 +251,11 @@ object MediaSupport {
             putExtra(Intent.EXTRA_STREAM, uri)
             if (!text.isNullOrBlank()) putExtra(Intent.EXTRA_TEXT, text)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = android.content.ClipData.newRawUri("pulse-share", uri)
         }
-        return Intent.createChooser(intent, "Share")
+        return Intent.createChooser(intent, "Share").apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
     }
 
     private fun fileUri(context: Context, absolutePath: String): Uri {
@@ -495,12 +529,23 @@ internal fun FileBubble(
     }
 }
 
-/** Fullscreen lightbox — black stage, tap-dismiss, caption below (spec D.4). */
+/**
+ * Fullscreen lightbox — black stage, tap-dismiss, caption below (spec D.4).
+ * D32 (R1-W2H): pinch-to-zoom + pan on the image (scale clamped 1f…5f, pan
+ * clamped to the stage so the photo can't be flung off-screen), double-tap
+ * resets to 1x, background tap still dismisses — but ONLY at 1x, so a zoom
+ * session never ends on a stray tap. The scrim stays.
+ */
 @Composable
 internal fun ImageLightbox(
     message: Message,
     onDismiss: () -> Unit,
 ) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
+    var stageSize by remember { mutableStateOf(IntSize.Zero) }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -508,8 +553,21 @@ internal fun ImageLightbox(
         Box(
             Modifier
                 .fillMaxSize()
+                .onSizeChanged { stageSize = it }
                 .background(Color.Black.copy(alpha = 0.96f))
-                .clickable(onClick = onDismiss)
+                // Scrim taps dismiss only at 1x; double-tap always resets.
+                // The image's transform detector consumes pinch/drag events,
+                // so clean taps reach this detector unconsumed.
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { if (scale == 1f) onDismiss() },
+                        onDoubleTap = {
+                            scale = 1f
+                            offsetX = 0f
+                            offsetY = 0f
+                        },
+                    )
+                }
                 .padding(12.dp),
             contentAlignment = Alignment.Center,
         ) {
@@ -520,7 +578,29 @@ internal fun ImageLightbox(
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onDismiss),
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offsetX,
+                        translationY = offsetY,
+                    )
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val next = (scale * zoom).coerceIn(1f, 5f)
+                            scale = next
+                            if (next > 1f) {
+                                // Pan lives only while zoomed, clamped to the
+                                // overflow each scale step makes visible.
+                                val boundX = stageSize.width * (next - 1f) / 2f
+                                val boundY = stageSize.height * (next - 1f) / 2f
+                                offsetX = (offsetX + pan.x).coerceIn(-boundX, boundX)
+                                offsetY = (offsetY + pan.y).coerceIn(-boundY, boundY)
+                            } else {
+                                offsetX = 0f
+                                offsetY = 0f
+                            }
+                        }
+                    },
             )
             if (message.body.isNotBlank()) {
                 Text(

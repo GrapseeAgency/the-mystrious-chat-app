@@ -81,6 +81,10 @@ public final class PulseSession: ObservableObject {
 
     public private(set) var api: PulseAPIClient
     public let particles = ParticleBus()
+    /// R1-W2I — PiP pane store (F-PI-01..03): the pop-out mini-chat panes
+    /// (web usePipChat). One session-level owner, rendered by the
+    /// RootView-level overlay + toggled from the room toolbar.
+    public let pip = PulsePiPStore()
 
     /// Raw relay signals for feature view models.
     public let signals = PassthroughSubject<PulseSocketClient.Signal, Never>()
@@ -153,6 +157,31 @@ public final class PulseSession: ObservableObject {
         socket?.updateToken(nil)
         toasts.show(message ?? "Session expired — log in again to stay in sync.")
         authRejectedTick += 1
+    }
+
+    /// R1-W2B D23 — identity teardown for "Forget this viewer": the viewer
+    /// deliberately signed out of this device. Drops the socket, releases
+    /// the viewer-bound live models (rebuilt by the next `start(as:)`) and
+    /// rebinds a token-less pre-login client. The caller (identity switcher)
+    /// then clears the viewer via prefs.setViewer(nil), which also wipes the
+    /// identity-bound Keychain session token. The outbox queue itself STAYS
+    /// (it belongs to the store, not the session) and flushes again once a
+    /// new identity starts.
+    public func stop() {
+        viewer = nil
+        socket?.disconnect()
+        socket = nil
+        outbox = nil
+        PulseOutboxEngine.active = nil
+        callEngine = nil
+        stories = nil
+        voiceRooms = nil
+        connected = false
+        onlineUserIds = []
+        typers = [:]
+        activeRoomId = nil
+        roomVisible = false
+        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL)
     }
 
     // ── lifecycle ────────────────────────────────────────────
@@ -348,11 +377,17 @@ public final class PulseSession: ObservableObject {
     /// Single enqueue entry point for queued sends (room send-path failures).
     /// The engine owns trimming + the heal timer; without one yet (no session)
     /// the store row still lands and the engine picks it up on start.
-    public func enqueueOutbox(conversationId: String, clientId: String, content: String, kind: String = "text") {
+    /// R1-W2B D28 — `payloadJson` carries the queued forward envelope
+    /// (PulseOutboxForward); plain sends leave it nil.
+    public func enqueueOutbox(conversationId: String, clientId: String, content: String, kind: String = "text", payloadJson: String? = nil) {
         if let outbox {
-            outbox.append(conversationId: conversationId, clientId: clientId, content: content, kind: kind)
+            if let forward = PulseOutboxForward.decode(payloadJson) {
+                outbox.appendForward(conversationId: conversationId, clientId: clientId, content: content, forward: forward)
+            } else {
+                outbox.append(conversationId: conversationId, clientId: clientId, content: content, kind: kind)
+            }
         } else {
-            try? store?.appendOutbox(conversationId: conversationId, clientId: clientId, content: content, kind: kind)
+            try? store?.appendOutbox(conversationId: conversationId, clientId: clientId, content: content, kind: kind, payloadJson: payloadJson)
         }
         flushOutbox()
     }

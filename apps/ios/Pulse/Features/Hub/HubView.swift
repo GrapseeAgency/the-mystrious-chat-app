@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -91,6 +92,15 @@ final class HubViewModel: ObservableObject {
             do {
                 let result = try await api.checkinWallet()
                 let streak = result.streak ?? 1
+                // R1-W2G D38 — F-HB-02 "Success haptic + particles". The web
+                // check-in is toast-only (hub-tab.tsx:89-99); the native
+                // reward moment exceeds it per spec: ONE confetti burst
+                // through the shared ParticleBus (same pattern as the
+                // ChatRoomView fires; the overlay + Reduce Motion gate live
+                // in RootView) plus ONE success haptic, once per successful
+                // check-in. The failure path stays silent.
+                session.particles.fire(kind: .confetti, count: 60)
+                PulseHaptics.success()
                 toast("Checked in — +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
                 loadWallet()
             } catch {
@@ -143,10 +153,39 @@ final class HubViewModel: ObservableObject {
 
     // MARK: tasks
 
+    /// R1-W2B D39 — read-through snapshot cache (Android cachedHubTasks
+    /// parity, PulseRepositoryImpl.kt:2340 + HubScreen.kt:240): the hub
+    /// renders INSTANTLY from the wave7Cache blob ("hub:tasks:<viewerId>")
+    /// before the network refresh; a successful fetch overwrites the blob
+    /// (server truth wins), a failure keeps the cached page visible.
     func loadTasks() {
         Task { @MainActor in
+            let cacheKey = "hub:tasks:\(session.viewer?.id ?? "anon")"
+            if tasks.isEmpty, let store = session.store,
+               let blob = try? store.loadWave7Cache(key: cacheKey),
+               let data = blob.json.data(using: .utf8),
+               let cached = try? JSONDecoder().decode(WireHubTasksPage.self, from: data),
+               !cached.tasks.isEmpty {
+                tasks = cached.tasks
+            }
             guard let api = api else { return }
-            tasks = (try? await api.hubTasks().tasks) ?? []
+            do {
+                let page = try await api.hubTasks()
+                tasks = page.tasks
+                if let store = session.store,
+                   let data = try? JSONEncoder().encode(page),
+                   let json = String(data: data, encoding: .utf8) {
+                    try? store.saveWave7Cache(
+                        key: cacheKey,
+                        json: json,
+                        updatedAt: Int64(Date().timeIntervalSince1970 * 1000),
+                    )
+                }
+            } catch {
+                // Offline — the cached rail stays; a cold empty start gets
+                // the honest note instead of a silent blank column.
+                if tasks.isEmpty { toast(describe(error), isError: true) }
+            }
         }
     }
 
@@ -302,6 +341,12 @@ struct HubView: View {
     @State private var catalog = HubCatalog(apps: [], categories: [], taglines: [:])
     @State private var surface: HubSurface?
     @State private var expandedApp: HubCatalogApp?
+    // R1-W2G D40 — the 12 s logs ticker (house Timer.publish pattern, see
+    // VoiceRoomSessionModel) + the scene gate that pauses it while the app
+    // is inactive. The subscription only exists while the logs surface is
+    // mounted, so nothing leaks after the sheet closes.
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var logsTicker = Timer.publish(every: 12, on: .main, in: .common).autoconnect()
 
     init(session: PulseSession, onOpenRoom: ((WireConversationSummary) -> Void)? = nil) {
         self.session = session
@@ -466,6 +511,15 @@ struct HubView: View {
         case .logs:
             HubLogsList(logs: vm.logs)
                 .task { vm.loadLogs() }
+                // R1-W2G D40 — live logs: a 12 s repeating refresh while the
+                // logs surface is open (web hub-tab.tsx:603-611
+                // refetchInterval 12_000 parity). Scene-gated — no hub
+                // fetches while the app is inactive; the onReceive
+                // subscription dies with the surface.
+                .onReceive(logsTicker) { _ in
+                    guard scenePhase == .active else { return }
+                    vm.loadLogs()
+                }
         case .apps:
             HubAppsList(catalog: catalog, installs: vm.installs, myAppsOnly: false) { app in
                 expandedApp = app

@@ -56,4 +56,39 @@ class PulseMediaTest {
         )
         assertEquals(PulseMedia.DOCUMENT_MIMES.size, PulseMedia.DOCUMENT_MIME_ARRAY.size)
     }
+
+    @Test
+    fun `voice bubble bars match the web voiceBars LCG exactly`() {
+        // Vectors generated from the web implementation (chat-room.tsx:6232 +
+        // pulse-utils.ts:59 hashString) via node — the natives must render the
+        // SAME decorative bars as the web for the same message id.
+        assertEquals(
+            listOf(52, 65, 97, 88, 98, 78, 36, 47, 73, 38, 43, 55, 93, 84, 41, 51, 64, 66, 85, 34, 46, 87, 38, 33, 99, 75),
+            PulseMedia.voiceBubbleBars("abc123"),
+        )
+        assertEquals(
+            listOf(60, 76, 30, 95, 55, 45, 58, 49, 30, 48, 46, 93, 92, 66, 50, 98, 40, 77, 80, 68, 68, 76, 85, 38, 36, 61),
+            PulseMedia.voiceBubbleBars("local-temp"),
+        )
+        // 26 bars by default (web count), heights always in the 28..100 band.
+        assertEquals(26, PulseMedia.voiceBubbleBars("any-id").size)
+        assertTrue(PulseMedia.voiceBubbleBars("any-id").all { it in 28..100 })
+        // Deterministic — same id, same bars, every process.
+        assertEquals(PulseMedia.voiceBubbleBars("abc123"), PulseMedia.voiceBubbleBars("abc123"))
+    }
+
+    @Test
+    fun `record amplitude normalizes into the 0-1 meter range`() {
+        assertEquals(0f, PulseMedia.normalizeRecordAmplitude(0))
+        assertEquals(0f, PulseMedia.normalizeRecordAmplitude(-5))
+        assertEquals(1f, PulseMedia.normalizeRecordAmplitude(32767))
+        assertEquals(0.5f, PulseMedia.normalizeRecordAmplitude(16384), 0.001f)
+    }
+
+    @Test
+    fun `voice caps match the wire contract`() {
+        assertEquals(600L, PulseMedia.MIN_VOICE_MS)
+        assertEquals(600_000L, PulseMedia.MAX_VOICE_MS)
+        assertEquals(PulseMedia.RECORD_WAVEFORM_BARS, 40)
+    }
 }

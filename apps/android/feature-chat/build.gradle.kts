@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
@@ -36,4 +37,13 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+
+    // R1-W2A/R1-W2I — payload blobs + PiP state encode via kotlinx-serialization
+    // (same artifact the :domain module carries for its wire DTOs).
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // JVM unit tests — the pure parser/jumbo/slash/effects/sticker kernels
+    // (mirrors the :feature-stories JVM test stack).
+    testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

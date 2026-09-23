@@ -196,6 +196,22 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     /// REM-B D42/AI-01 — automation-bot authorship stamp (F-MS-21 engine):
     /// true on rows posted by @pulseai automations → bot tag chip in the room.
     public var viaAutomation: Bool? = nil
+    /// R1-W2B F-MD-06 — persisted LLM translations (serializers.ts L232/320:
+    /// [{lang,text}]). Defaulted var keeps the memberwise init source-compatible
+    /// with every existing call site; older relays omit the key → nil.
+    public var translations: [WireTranslation]? = nil
+}
+
+/// One persisted per-language translation on a message row (web
+/// MessageTranslationEntry parity — src/lib/types.ts:120).
+public struct WireTranslation: Codable, Hashable, Sendable {
+    public let lang: String
+    public let text: String
+
+    public init(lang: String, text: String) {
+        self.lang = lang
+        self.text = text
+    }
 }
 
 public struct WireMessagesPage: Codable, Sendable {
@@ -377,6 +393,26 @@ public struct WireScheduledItem: Codable, Hashable, Sendable, Identifiable {
 
 public struct WireScheduledPage: Codable, Sendable {
     public let items: [WireScheduledItem]?
+}
+
+// ── R1-W2B — quick phrases / translation wire shapes ──
+
+/// One quick phrase (GET/POST /api/users/{id}/phrases — route.ts L18-68:
+/// { id, text, position }, position asc, ≤12 rows, text ≤120 chars).
+public struct WireQuickPhrase: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let text: String
+    public let position: Int?
+}
+
+/// GET /api/users/{id}/phrases → { phrases: [...] }.
+public struct WirePhrasesPage: Codable, Sendable {
+    public let phrases: [WireQuickPhrase]?
+}
+
+/// POST /api/users/{id}/phrases → 201 { phrase } (tolerant envelope OR bare).
+public struct WirePhraseEnvelope: Codable, Sendable {
+    public let phrase: WireQuickPhrase?
 }
 
 public struct WireConversationMember: Codable, Hashable, Sendable {

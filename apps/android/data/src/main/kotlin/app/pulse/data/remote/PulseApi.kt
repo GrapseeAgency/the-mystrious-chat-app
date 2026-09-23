@@ -32,6 +32,8 @@ import app.pulse.protocol.MarketPageDto
 import app.pulse.protocol.ReminderItemDto
 import app.pulse.protocol.ReminderResolveDto
 import app.pulse.protocol.RemindersPageDto
+import app.pulse.protocol.PhrasesPageDto
+import app.pulse.protocol.PhraseEnvelopeDto
 import app.pulse.protocol.RedPacketCreateResultDto
 import app.pulse.protocol.RedPacketDetailDto
 import app.pulse.protocol.RedPacketGrabResultDto
@@ -660,6 +662,30 @@ class PulseApi(
     /** POST /api/messages/{id}/viewed {userId} → { message } (idempotent burn stamp). */
     suspend fun markViewed(messageId: String, userId: String): PulseResult<ChatMessageDto> =
         post("/api/messages/$messageId/viewed", jsonOf("userId" to userId)) { messageOf(it) }
+
+    /**
+     * R1-W2F — POST /api/messages/{id}/translate {userId, lang?} → { message }.
+     * The LLM result persists per language server-side (translate/route.ts);
+     * the mapped fresh row carries `translations: [{lang, text}]` — a field
+     * ChatMessageDto (tolerantly) ignores, so the TEXT is lifted straight from
+     * the wire JSON here, same manual extraction as [unfurl]. `lang` is
+     * omitted — the server defaults to "en". LLM round-trips are slow: 30 s
+     * cap (iOS parity, timeoutCap: 30).
+     */
+    suspend fun translate(messageId: String, userId: String): PulseResult<String> =
+        post(
+            "/api/messages/" + java.net.URLEncoder.encode(messageId, "UTF-8") + "/translate",
+            jsonOf("userId" to userId),
+            timeoutMillis = TRANSLATE_TIMEOUT_MS,
+        ) { json ->
+            val message = (PulseJson.parseToJsonElement(json) as? JsonObject)
+                ?.get("message") as? JsonObject
+            val first = (message?.get("translations") as? kotlinx.serialization.json.JsonArray)
+                ?.firstOrNull() as? JsonObject
+            (first?.get("text") as? kotlinx.serialization.json.JsonPrimitive)
+                ?.takeIf { it.isString }?.content
+                ?: throw kotlinx.serialization.SerializationException("translate: empty translation")
+        }
 
     /** POST /api/conversations/{id}/poll {senderId, question, options[]} → 201 { message } (poll attached). */
     suspend fun createPoll(
@@ -1372,6 +1398,34 @@ class PulseApi(
             PulseJson.decodeFromString(OkDto.serializer(), it)
         }
 
+    // ── quick phrases (F-MS-29) ────────────────────────────────────
+
+    /** GET /api/users/{id}/phrases → { phrases: [{id,text,position}] } (position asc). */
+    suspend fun phrases(userId: String): PulseResult<PhrasesPageDto> =
+        get("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases") {
+            PulseJson.decodeFromString(PhrasesPageDto.serializer(), it)
+        }
+
+    /** POST /api/users/{id}/phrases { text } → 201 { phrase } (server caps 12 rows × 120 chars). */
+    suspend fun createPhrase(userId: String, text: String): PulseResult<PhraseEnvelopeDto> =
+        post(
+            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases",
+            jsonOf("text" to text),
+        ) {
+            PulseJson.decodeFromString(
+                PhraseEnvelopeDto.serializer(),
+                PulseJson.parseToJsonElement(it).unwrapOrRoot("phrase").toString(),
+            )
+        }
+
+    /** DELETE /api/users/{id}/phrases?phraseId=X → { ok } (owner-guarded server-side). */
+    suspend fun deletePhrase(userId: String, phraseId: String): PulseResult<OkDto> =
+        deleteWithJson(
+            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases?phraseId=" +
+                java.net.URLEncoder.encode(phraseId, "UTF-8"),
+            buildJsonObject { },
+        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+
     /** POST /api/games { userId, conversationId, game?='tictactoe', opponentId? } → { match, message }. */
     suspend fun createGame(userId: String, conversationId: String, opponentId: String?): PulseResult<GameMatchCreateResultDto> =
         post(
@@ -1704,6 +1758,9 @@ class PulseApi(
     companion object {
         /** Per-request cap for the slow voice-caption ASR round-trip. */
         private const val TRANSCRIBE_TIMEOUT_MS = 60_000L
+
+        /** R1-W2F — LLM translate round-trip cap (iOS parity, timeoutCap: 30). */
+        private const val TRANSLATE_TIMEOUT_MS = 30_000L
 
         fun jsonOf(vararg pairs: Pair<String, Any?>): JsonObject = buildJsonObject {
             pairs.forEach { (k, v) ->

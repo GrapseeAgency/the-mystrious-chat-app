@@ -290,6 +290,46 @@ public enum PulseRemediationLogic {
         return effectNames.contains(effect) ? effect : nil
     }
 
+    // ── R1-W2B F-MD-07 — location payload decode (kind "location" rows) ──
+
+    /// Web LocationPayload parity (location-share.tsx:20-24 + chat-room.tsx
+    /// sendLocation L3129-3135): { lat: number, lng: number, label: string }.
+    /// The wire payload is a JSON STRING (messages/route.ts L286 stringify);
+    /// decode tolerantly — a corrupt payload yields nil (plain-text fallback).
+    public static func locationOfPayload(_ payload: String?) -> (lat: Double, lng: Double, label: String)? {
+        guard let payload, !payload.isEmpty,
+              let data = payload.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let lat = object["lat"] as? Double,
+              let lng = object["lng"] as? Double,
+              abs(lat) <= 90, abs(lng) <= 180 else { return nil }
+        let label = object["label"] as? String ?? ""
+        return (lat: lat, lng: lng, label: label)
+    }
+
+    /// Apple Maps deep link for a pin (web uses maps.google.com; native opens
+    /// Apple Maps — spec F-MD-07 "Map card tap → platform maps"). Coordinates
+    /// formatted with 6-decimal precision; label rides as the `q` when present.
+    public static func appleMapsURL(lat: Double, lng: Double, label: String) -> URL? {
+        var components = URLComponents(string: "https://maps.apple.com/")
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        var query = "ll=\(lat),\(lng)"
+        if !trimmed.isEmpty {
+            query += "&q=\(trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed)"
+        }
+        components?.query = query
+        return components?.url
+    }
+
+    /// Human coordinate line under the pin (web LocationBubble coordText
+    /// parity — location-share.tsx:54): "12.3456° N, 45.6789° W".
+    public static func coordinateText(lat: Double, lng: Double) -> String {
+        func component(_ value: Double, positive: String, negative: String) -> String {
+            "\(String(format: "%.4f", abs(value)))° \(value >= 0 ? positive : negative)"
+        }
+        return "\(component(lat, positive: "N", negative: "S")), \(component(lng, positive: "E", negative: "W"))"
+    }
+
     // ── F-MS-24 — sticker packs (web sticker-picker.tsx verbatim) ──
 
     public struct StickerPack: Equatable, Identifiable {

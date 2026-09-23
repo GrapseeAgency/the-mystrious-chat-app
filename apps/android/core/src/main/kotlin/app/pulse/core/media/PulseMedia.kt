@@ -82,6 +82,50 @@ object PulseMedia {
     fun voiceDurationMs(elapsedMs: Long): Long = maxOf(1L, Math.round(elapsedMs / 100.0) * 100)
 
     /**
+     * Recording ceiling — the server refuses durationMs > 600000 (messages
+     * route: "durationMs must be a number between 0 and 600000"), and the
+     * MediaRecorder carries the same setMaxDuration. A hold that reaches the
+     * cap auto-sends the take instead of clipping mid-air (D31).
+     */
+    const val MAX_VOICE_MS: Long = 600_000
+
+    /** Live hold-to-record waveform — number of amplitude bars rendered (D31). */
+    const val RECORD_WAVEFORM_BARS: Int = 40
+
+    /**
+     * MediaRecorder.maxAmplitude (0..32767) → normalized 0f..1f for the live
+     * hold-to-record waveform. Raw ≤ 0 (silence/not-yet-sampled) → 0f.
+     */
+    fun normalizeRecordAmplitude(rawAmplitude: Int): Float =
+        if (rawAmplitude <= 0) 0f else (rawAmplitude / 32767f).coerceIn(0f, 1f)
+
+    /**
+     * D31 — the exact web `voiceBars` bubble waveform (chat-room.tsx:6232),
+     * ported bit-for-bit so all three surfaces render IDENTICAL decorative
+     * bars for the same message id (the payload carries NO waveform — web
+     * derives it client-side from the id, natives mirror that):
+     *   1. `hashString` (pulse-utils.ts:59) — Int32-wrap h*31+code, then abs.
+     *      Kotlin `Int` overflow wraps like JS `|0`; the abs is taken in
+     *      Double space so Int.MIN_VALUE still maps to 2147483648.
+     *   2. LCG loop `h = (h*1103515245 + 12345) % 2147483648` — JS `%` is
+     *      fmod on DOUBLES (h*1.1e9 exceeds 2^53, so this must be Double
+     *      math, not Long — Int would silently diverge from the web).
+     *   3. bar = round(28 + v*72) with v in 0..1 → heights 28..100 (%).
+     */
+    fun voiceBubbleBars(seed: String, count: Int = 26): List<Int> {
+        var hash = 0
+        for (char in seed) hash = hash * 31 + char.code
+        var h = if (hash == Int.MIN_VALUE) 2147483648.0 else Math.abs(hash).toDouble()
+        val bars = ArrayList<Int>(count.coerceAtLeast(0))
+        repeat(count) {
+            h = (h * 1103515245.0 + 12345.0) % 2147483648.0
+            val v = Math.abs(h) / 2147483648.0
+            bars.add(Math.round(28.0 + v * 72.0).toInt())
+        }
+        return bars
+    }
+
+    /**
      * Link-unfurl trigger (spec §1 row 8): `https?://` or a bare `www.`
      * anywhere in the body — the sender's client then calls /unfurl once.
      */

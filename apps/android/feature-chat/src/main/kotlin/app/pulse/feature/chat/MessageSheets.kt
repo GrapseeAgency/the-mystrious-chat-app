@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.PushPin
+// R1-W2F — F-MD-06 translation action.
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -197,6 +199,10 @@ internal fun MessageActionSheet(
     // ── Wave 7 ──
     onAddToBoard: (() -> Unit)? = null,
     onRemindMe: (() -> Unit)? = null,
+    // ── R1-W2F — F-MD-06 LLM translation (text rows only; server persists per language) ──
+    onTranslate: (() -> Unit)? = null,
+    /** iOS parity — an already-translated row re-labels the action. */
+    alreadyTranslated: Boolean = false,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Row(
@@ -226,6 +232,14 @@ internal fun MessageActionSheet(
             SheetAction(Icons.Filled.Edit, "Edit", onEdit)
         }
         SheetAction(Icons.Filled.ContentCopy, "Copy", onCopy)
+        // ── R1-W2F F-MD-06 — the message long-press menu's Translate entry ──
+        onTranslate?.let {
+            SheetAction(
+                Icons.Filled.Translate,
+                if (alreadyTranslated) "Translate again" else "Translate",
+                it,
+            )
+        }
         SheetAction(
             Icons.Filled.PushPin,
             if (pinned) "Unpin" else "Pin",

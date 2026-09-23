@@ -480,7 +480,55 @@ data class Message(
     /** Epoch ms when this row evaporates (wire expiresAt ISO → parsed). Null = forever. */
     val expiresAtEpochMs: Long? = null,
 ) {
-    enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, GAME, TOURNAMENT, SYSTEM }
+    // R1-W2F (F-MD-07): wire kind "location" — pin rows carry payload {lat,lng,label}.
+    enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, GAME, TOURNAMENT, STICKER, LOCATION, SYSTEM }
 
     val isDeleted: Boolean get() = deletedAt != null
 }
+
+/**
+ * R1-W2F — `kind=="location"` payload blob: {lat,lng,label} (web
+ * LocationPayload / parseLocationPayload in location-share.tsx). lat/lng have
+ * NO defaults on purpose: a garbled or partial blob fails the decode and the
+ * bubble falls back to plain text — the same honesty as the web parser.
+ */
+@Serializable
+data class LocationPayload(
+    val lat: Double,
+    val lng: Double,
+    /** Blank on the wire → renderers fall back to "Current location". */
+    val label: String = "",
+)
+
+/**
+ * R1-W2F — one conversation's theme override (F-FX-05, web ConvTheme in
+ * conv-theme.ts): wallpaper mirrors the global Appearance tokens and tint is
+ * an optional accent layered over the room wallpaper. Stored under the prefs
+ * key `chat.convThemes` as { conversationId: { wallpaper, tint? } } — the web
+ * JSON shape, byte-identical.
+ */
+data class ConvTheme(
+    val wallpaper: String,
+    val tint: String? = null,
+) {
+    companion object {
+        /** Web conv-theme.ts CONV_WALLPAPERS — the global Appearance token set. */
+        val WALLPAPERS: List<String> = listOf("none", "aurora", "dusk", "forest", "mono")
+
+        /** Web conv-theme.ts CONV_TINTS. */
+        val TINTS: List<String> = listOf("emerald", "rose", "amber", "violet", "teal")
+
+        /** Web MAX_CONV_THEMES — the /api/settings 4KB prefs budget keeps 48 safe. */
+        const val MAX_MAP_ENTRIES = 48
+    }
+}
+
+/**
+ * One row of the viewer's quick-phrase rail (F-MS-29 — GET/POST/DELETE
+ * /api/users/{id}/phrases). position is the server-side ordering key.
+ */
+data class QuickPhrase(
+    val id: String,
+    val text: String,
+    val position: Int = 0,
+)

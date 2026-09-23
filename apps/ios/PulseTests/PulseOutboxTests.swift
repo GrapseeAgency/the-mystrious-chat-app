@@ -18,6 +18,10 @@ final class PulseOutboxTests: XCTestCase {
         private let lock = NSLock()
         private var behaviors: [String: Behavior]
         private var attempted: [String] = []
+        /// R1-W2B D28 — every sendMessage's forward-relevant body, recorded
+        /// as "kind|imagePath|audioPath|durationMs|filePath|fileName|fileSize"
+        /// so the flush pass-through is pinned in tests.
+        private var attemptedBodies: [String] = []
 
         init(behaviors: [String: Behavior]) {
             self.behaviors = behaviors
@@ -33,6 +37,14 @@ final class PulseOutboxTests: XCTestCase {
             lock.lock()
             defer { lock.unlock() }
             return attempted.filter { $0 == content }.count
+        }
+
+        /// The recorded body of the Nth attempt (nil when fewer ran).
+        func recordedBody(at index: Int) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard index >= 0, index < attemptedBodies.count else { return nil }
+            return attemptedBodies[index]
         }
 
         // W1-DATA-B — full PulseOutboxSending requirement (mirrors the
@@ -57,6 +69,9 @@ final class PulseOutboxTests: XCTestCase {
         ) async throws -> WireChatMessage {
             lock.lock()
             attempted.append(content)
+            attemptedBodies.append(
+                "\(kind ?? "nil")|\(imagePath ?? "nil")|\(audioPath ?? "nil")|\(durationMs.map { String($0) } ?? "nil")|\(filePath ?? "nil")|\(fileName ?? "nil")|\(fileSize.map { String($0) } ?? "nil")",
+            )
             lock.unlock()
             switch behavior(for: content) {
             case .success:
@@ -199,6 +214,54 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .network, message: nil)))
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .server, message: nil, status: 502)))
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .unknown, message: nil)))
+    }
+
+    // ── R1-W2B D28 — queued forwards flush with their stored body ──
+
+    func testQueuedForwardFlushesWithKindAndMediaPaths() async throws {
+        let store = try PulseStore()
+        let forward = PulseOutboxForward(
+            kind: "file",
+            imagePath: nil,
+            audioPath: "uploads/voice.m4a",
+            durationMs: 1_400,
+            filePath: "uploads/doc.pdf",
+            fileName: "doc.pdf",
+            fileSize: 2048,
+        )
+        try store.appendOutbox(
+            conversationId: "c2",
+            clientId: "fwd-1",
+            content: "look at this",
+            kind: "file",
+            payloadJson: PulseOutboxForward.encode(forward),
+        )
+
+        let sender = StubSender(behaviors: [:])
+        let engine = makeEngine(store, sender)
+        await engine.flush()
+
+        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(sender.attempts(of: "look at this"), 1)
+        XCTAssertEqual(
+            sender.recordedBody(at: 0),
+            "file|nil|uploads/voice.m4a|1400.0|uploads/doc.pdf|doc.pdf|2048",
+        )
+    }
+
+    func testPlainQueuedTextStillFlushesTextOnly() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "cid-1", content: "plain", kind: "text")
+
+        let sender = StubSender(behaviors: [:])
+        let engine = makeEngine(store, sender)
+        await engine.flush()
+
+        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(
+            sender.recordedBody(at: 0),
+            "nil|nil|nil|nil|nil|nil|nil",
+        )
     }
 }
 

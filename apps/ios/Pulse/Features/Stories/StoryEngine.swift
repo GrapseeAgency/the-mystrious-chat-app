@@ -61,6 +61,25 @@ func storyEpochMs(_ iso: String?) -> Int64 {
     return 0
 }
 
+// MARK: - Tray ring partition (R1-W2G — pulled out of ChatsView's private
+// StoriesRowView so the CI target can pin it; the audit's story-ring gap)
+
+/// The chats-tray story ring feed: the viewer's OWN group drives the "My
+/// status" cell (nil = no live story → the "+" composer affordance, D1);
+/// everyone else's groups render after it in feed order, each ring tinted
+/// by the group's allSeen flag.
+public enum PulseStoryRing {
+    /// The viewer's own live group, if any.
+    public static func mine(_ groups: [WireStoryGroup]) -> WireStoryGroup? {
+        groups.first { $0.mine == true }
+    }
+
+    /// Everyone else's groups, feed order preserved (the ring row order).
+    public static func others(_ groups: [WireStoryGroup]) -> [WireStoryGroup] {
+        groups.filter { !($0.mine == true) }
+    }
+}
+
 // MARK: - Composer state (web composer parity, pure)
 
 /// Pure composer state — Text/Photo pill toggle, hard 280-char caption cap,

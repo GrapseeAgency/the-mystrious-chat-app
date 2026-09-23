@@ -41,6 +41,16 @@ public final class PulseCallEngine: ObservableObject {
     /// Ended-card text ('No answer', 'Declined', 'Call ended · 0:42', …).
     @Published public private(set) var summary: String?
 
+    // ── Wave R1-W2D — REAL video state (CallView binds these) ──
+    /// True iff a real camera capturer is running (drives video-only controls).
+    @Published public private(set) var videoCaptureActive = false
+    /// Camera (video) toggle mirror — web track.enabled parity.
+    @Published public private(set) var cameraEnabled = false
+    /// The local camera track once capture is live (nil = audio-only call).
+    @Published public private(set) var localVideoTrack: RTCVideoTrack?
+    /// The peer's video track once it arrives over the negotiated m=video.
+    @Published public private(set) var remoteVideoTrack: RTCVideoTrack?
+
     /// Honest mic-denied copy (web parity wording, native settings path).
     public static let micDeniedMessage =
         "Microphone access is needed for calls. Enable it for Pulse in Settings → Privacy → Microphone."
@@ -99,9 +109,35 @@ public final class PulseCallEngine: ObservableObject {
 
     /// Entry point from the contact row / chat toolbar. Shows the ring
     /// immediately (web parity), then acquires media + sends call:offer.
+    ///
+    /// Wave R1-W2D — for kind == .video the CAMERA capability is resolved
+    /// FIRST (web acquireMedia parity: no usable camera ⇒ the call degrades
+    /// to voice + an honest toast BEFORE the ring opens, so the wire kind
+    /// always carries the ACTUAL kind).
     public func startOutgoing(to peer: CallPeer, conversationId: String, kind: CallKind = .voice) {
         guard case .idle = machine.state else { return }
         guard !viewer.id.isEmpty, !peer.id.isEmpty, peer.id != viewer.id, !conversationId.isEmpty else { return }
+        guard kind == .video else {
+            beginOutgoing(to: peer, conversationId: conversationId, kind: kind)
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let cameraOk = await self.media.requestCameraPermission() && self.media.canCaptureVideo()
+            // Something else (another call) took over while the prompt was up.
+            guard case .idle = self.machine.state else { return }
+            if !cameraOk {
+                self.toasts.show("Camera unavailable — starting a voice call")
+            }
+            self.beginOutgoing(
+                to: peer,
+                conversationId: conversationId,
+                kind: PulseCallVideoPolicy.resolveOutgoingKind(kind, cameraCapable: cameraOk),
+            )
+        }
+    }
+
+    private func beginOutgoing(to peer: CallPeer, conversationId: String, kind: CallKind) {
         let info = CallInfo(
             callId: CallWire.newCallId(),
             conversationId: conversationId,
@@ -132,6 +168,15 @@ public final class PulseCallEngine: ObservableObject {
             return
         }
         pc = connection
+        // Wave R1-W2D — attach the REAL camera BEFORE createOffer so the
+        // offer carries a sendrecv m=video (web caller parity). A failed
+        // attach degrades gracefully: the offer stays audio-only.
+        if machine.call?.kind == .video {
+            let attached = connection.enableLocalVideoCapture()
+            videoCaptureActive = attached
+            cameraEnabled = attached
+            localVideoTrack = connection.localVideoTrack()
+        }
         do {
             let sdp = try await connection.createOffer()
             try await connection.setLocalDescription(sdp: sdp)
@@ -187,6 +232,25 @@ public final class PulseCallEngine: ObservableObject {
                 sendReject(for: call)
                 apply(.abortLocal, now: Date())
                 return
+            }
+            // Wave R1-W2D — REAL video answer: attach the camera BEFORE
+            // setRemoteDescription (web callee parity — getUserMedia first),
+            // gated on the wire kind AND the offer SDP's usable m=video line.
+            // No usable camera ⇒ audio-only answer; the caller's video still
+            // flows in over the recvonly m-line (web fallback parity).
+            let wantsVideo = PulseCallVideoPolicy.shouldAttachVideo(
+                kind: call.kind,
+                offerSdp: offer.sdp,
+                cameraCapable: media.canCaptureVideo(),
+            )
+            if wantsVideo {
+                let attached = connection.enableLocalVideoCapture()
+                videoCaptureActive = attached
+                cameraEnabled = attached
+                localVideoTrack = connection.localVideoTrack()
+                if !attached {
+                    toasts.show("Camera unavailable — answering with audio only")
+                }
             }
             try await connection.setRemoteDescription(sdp: offer.sdp, type: "offer")
             remoteDescriptionSet = true
@@ -262,6 +326,24 @@ public final class PulseCallEngine: ObservableObject {
         micEnabled.toggle()
         pc?.setAudioEnabled(micEnabled)
     }
+
+    /// Wave R1-W2D — camera (video) toggle: RTCVideoTrack.isEnabled flip
+    /// (web toggleCamera parity). Honest no-op without a live camera.
+    public func toggleCamera() {
+        guard videoCaptureActive else { return }
+        let next = !cameraEnabled
+        pc?.setVideoEnabled(next)
+        cameraEnabled = next
+    }
+
+    /// Wave R1-W2D — front ⇄ back camera flip (honest no-op without camera).
+    public func flipCamera() {
+        guard videoCaptureActive else { return }
+        pc?.switchCamera()
+    }
+
+    /// The wire kind of the live call (CallView status line parity).
+    public var activeKind: CallKind? { machine.call?.kind }
 
     /// Speaker toggle → AVAudioSession.overrideOutputAudioPort (earpiece ⇄
     /// loudspeaker). Hardware-gated: real routes need a physical device.
@@ -405,6 +487,13 @@ public final class PulseCallEngine: ObservableObject {
         }
     }
 
+    /// Wave R1-W2D — the peer's video track arrived over the m=video line;
+    /// publish it so CallView renders the full-bleed remote surface.
+    func handleRemoteVideoTrack(_ track: RTCVideoTrack) {
+        guard remoteVideoTrack !== track else { return }
+        remoteVideoTrack = track
+    }
+
     // ── heartbeat ────────────────────────────────────────────
 
     func tick() {
@@ -522,6 +611,11 @@ public final class PulseCallEngine: ObservableObject {
         remoteDescriptionSet = false
         offerSent = false
         incomingOffer = nil
+        // Wave R1-W2D — video mirrors reset with the media leg.
+        videoCaptureActive = false
+        cameraEnabled = false
+        localVideoTrack = nil
+        remoteVideoTrack = nil
         PulseCallAudioSession.shared.restore()
     }
 
@@ -640,6 +734,12 @@ public final class PulseCallEngine: ObservableObject {
         func peerConnectionStateDidChange(_ state: PulseCallConnectionState) {
             Task { @MainActor in
                 self.engine?.handleConnectionState(state)
+            }
+        }
+
+        func peerDidReceiveRemoteVideoTrack(_ track: RTCVideoTrack) {
+            Task { @MainActor in
+                self.engine?.handleRemoteVideoTrack(track)
             }
         }
     }

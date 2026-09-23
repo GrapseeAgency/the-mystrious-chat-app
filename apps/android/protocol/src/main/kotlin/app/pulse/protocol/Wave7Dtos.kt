@@ -96,6 +96,20 @@ data class RedPacketPayloadDto(
     val note: String? = null,
 )
 
+/** R1-W2A — `kind=="sticker"` payload string: {emoji, pack} (web parseSticker shape). */
+@Serializable
+data class StickerPayloadDto(
+    val emoji: String = "",
+    /** Unknown packs degrade to the default pack name (web parity). */
+    val pack: String = "Pulse",
+)
+
+/** R1-W2A — effect-carried `kind=="text"` payload string: { effect } (F-MS-23/D29). */
+@Serializable
+data class EffectPayloadDto(
+    val effect: String = "",
+)
+
 // ── Whiteboard (F-RO-03) ─────────────────────────────────────────────────
 
 @Serializable
@@ -261,6 +275,22 @@ data class RemindersPageDto(val items: List<ReminderItemDto> = emptyList())
 
 @Serializable
 data class ReminderEnvelopeDto(val item: ReminderItemDto? = null)
+
+// ── Quick phrases (F-MS-29) — GET/POST/DELETE /api/users/{id}/phrases ─────
+
+/** GET → { phrases: [{id,text,position}] } · POST → { phrase: {…} }. */
+@Serializable
+data class QuickPhraseDto(
+    val id: String = "",
+    val text: String = "",
+    val position: Int = 0,
+)
+
+@Serializable
+data class PhrasesPageDto(val phrases: List<QuickPhraseDto> = emptyList())
+
+@Serializable
+data class PhraseEnvelopeDto(val phrase: QuickPhraseDto? = null)
 
 @Serializable
 data class ReminderResolveDto(

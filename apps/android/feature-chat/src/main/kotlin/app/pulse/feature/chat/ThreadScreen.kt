@@ -519,6 +519,9 @@ private fun ThreadContentBubble(
             onOpen = { onConsumeViewOnce(message) },
         )
         message.imagePath != null -> ImageBubble(message = message, mine = mine, onOpen = onOpenImage)
+        // R1-W2F F-MD-07 — pins render the same tappable row in threads
+        // (threads reply on any row kind; the room render lives in the river).
+        message.kind == Message.Kind.LOCATION -> LocationPinBubble(message = message, mine = mine)
         message.filePath != null || message.kind == Message.Kind.FILE -> FileBubble(
             message = message,
             mine = mine,

@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Mic
@@ -21,6 +24,9 @@ import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.FlipCameraAndroid
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.domain.call.CallSnapshot
 import app.pulse.domain.model.CallDirection
+import app.pulse.domain.model.CallKind
 import app.pulse.domain.model.CallState
 import app.pulse.ui.initialsOf
 
@@ -45,17 +52,27 @@ import app.pulse.ui.initialsOf
  * whole machine (incoming ring → outgoing ring → connecting → connected →
  * ended), exactly like the web call-overlay. All actions flow through
  * [CallViewModel] → [CallEngine] → the pure state machine.
+ *
+ * Wave R1-W2D — REAL video calls: remote video renders full-bleed, the local
+ * camera rides a mirrored PiP tile, and video/flip controls appear only when
+ * a camera is truly attached (audio-only fallback keeps the voice UI).
  */
 @Composable
 fun CallOverlay(vm: CallViewModel) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val micMuted by vm.micMuted.collectAsStateWithLifecycle()
     val speakerOn by vm.speakerOn.collectAsStateWithLifecycle()
+    val videoCaptureActive by vm.videoCaptureActive.collectAsStateWithLifecycle()
+    val cameraEnabled by vm.cameraEnabled.collectAsStateWithLifecycle()
+    val videoNotice by vm.videoNotice.collectAsStateWithLifecycle()
 
     if (snapshot.state == CallState.IDLE) return
 
-    // RECORD_AUDIO gate — every mic-starting action passes through here and
-    // is honest about denial (the call cannot proceed without it).
+    val isVideoCall = snapshot.kind == CallKind.VIDEO
+
+    // RECORD_AUDIO (+ CAMERA for video offers) gate — every call answer
+    // passes through here and is honest about denial (no mic ⇒ cannot answer;
+    // camera denied ⇒ the engine's audio-only fallback keeps the call alive).
     val micLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -69,6 +86,19 @@ fun CallOverlay(vm: CallViewModel) {
             vm.decline()
         }
     }
+    // Video offers: both permissions in one prompt (voice callers never see
+    // a camera prompt).
+    val videoAcceptLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        when {
+            grants[android.Manifest.permission.RECORD_AUDIO] == true &&
+                snapshot.state == CallState.INCOMING_RINGING -> vm.accept()
+            grants[android.Manifest.permission.RECORD_AUDIO] == false &&
+                snapshot.state == CallState.INCOMING_RINGING -> vm.decline()
+            else -> Unit
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -76,6 +106,13 @@ fun CallOverlay(vm: CallViewModel) {
             .background(Color(0xE6121212))
             .semantics { contentDescription = "Call screen" },
     ) {
+        // Remote video — full-bleed behind everything (web object-cover parity);
+        // renders only when the peer's video track actually arrives.
+        if (isVideoCall &&
+            (snapshot.state == CallState.CONNECTING || snapshot.state == CallState.CONNECTED)
+        ) {
+            RemoteVideoSurface(vm.engine, Modifier.fillMaxSize())
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -98,6 +135,20 @@ fun CallOverlay(vm: CallViewModel) {
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
             )
+            // Honest one-shot notice when a wanted video call degraded to
+            // voice (web toast 'Camera unavailable — starting a voice call').
+            if (videoNotice != null && snapshot.state != CallState.ENDED) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = videoNotice.orEmpty(),
+                    color = Color(0xFFFBBF24),
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .background(Color(0x33FBBF24), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
             Spacer(Modifier.weight(1f))
 
             when (snapshot.state) {
@@ -115,13 +166,23 @@ fun CallOverlay(vm: CallViewModel) {
                             description = "Decline call",
                             container = Color(0xFFE11D48),
                         ) { vm.decline() }
-                        // Accept — the mic permission must be live to answer.
+                        // Accept — the mic permission must be live to answer;
+                        // video offers prompt the camera too (single prompt).
                         CallButton(
                             icon = Icons.Filled.Call,
                             description = "Accept call",
                             container = Color(0xFF10B981),
                         ) {
-                            micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                            if (isVideoCall) {
+                                videoAcceptLauncher.launch(
+                                    arrayOf(
+                                        android.Manifest.permission.RECORD_AUDIO,
+                                        android.Manifest.permission.CAMERA,
+                                    ),
+                                )
+                            } else {
+                                micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                            }
                         }
                     }
                 }
@@ -136,7 +197,30 @@ fun CallOverlay(vm: CallViewModel) {
                 }
 
                 else -> {
-                    // Active call controls: mute, speaker, hangup.
+                    // Video controls (only when a camera is REALLY attached):
+                    // camera toggle + flip — web toggleCamera parity + native flip.
+                    if (videoCaptureActive) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 18.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CallButton(
+                                icon = if (cameraEnabled) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
+                                description = if (cameraEnabled) "Turn camera off" else "Turn camera on",
+                                container = if (cameraEnabled) Color(0xFF3F3F46) else Color.White,
+                                tint = if (cameraEnabled) Color.White else Color.Black,
+                            ) { vm.toggleVideo() }
+                            CallButton(
+                                icon = Icons.Filled.FlipCameraAndroid,
+                                description = "Switch camera",
+                                container = Color(0xFF3F3F46),
+                            ) { vm.switchCamera() }
+                        }
+                    }
+                    // Active call controls: mute, hangup, speaker (audio path untouched).
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -173,6 +257,20 @@ fun CallOverlay(vm: CallViewModel) {
                 }
             }
         }
+
+        // Local camera PiP — mirrored self-view tile above the controls
+        // (web bottom-28 end-4 parity). Hidden when the camera toggle is off.
+        if (isVideoCall && videoCaptureActive &&
+            (snapshot.state == CallState.CONNECTING || snapshot.state == CallState.CONNECTED)
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 210.dp),
+            ) {
+                LocalVideoPip(vm.engine)
+            }
+        }
     }
 }
 
@@ -182,9 +280,12 @@ private fun statusLine(snapshot: CallSnapshot, micMuted: Boolean): String {
     if (!error.isNullOrBlank()) return error
     val summary = snapshot.summary
     if (!summary.isNullOrBlank() && snapshot.state == CallState.ENDED) return summary
+    val isVideo = snapshot.kind == CallKind.VIDEO
     return when (snapshot.state) {
         CallState.OUTGOING_RINGING -> "Ringing…"
-        CallState.INCOMING_RINGING -> "Incoming voice call"
+        // Web parity: the incoming ring says what the WIRE carried
+        // (call-overlay.tsx 'Incoming video call' / 'Incoming voice call').
+        CallState.INCOMING_RINGING -> if (isVideo) "Incoming video call" else "Incoming voice call"
         CallState.CONNECTING -> "Connecting…"
         CallState.CONNECTED ->
             formatDuration(snapshot.durationSec) + if (micMuted) " · muted" else ""

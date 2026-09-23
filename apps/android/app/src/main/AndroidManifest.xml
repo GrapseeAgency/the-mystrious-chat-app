@@ -4,12 +4,17 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Wave 3 calls: keep mic capture alive in an ongoing-call foreground service. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Wave R1-W2D: video calls keep camera capture alive in the same service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <!-- LiveUpdate: hand the downloaded APK to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- R1-W2H D45: re-arm reminder one-shots after reboot (BootReceiver). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".PulseApplication"
@@ -59,11 +64,12 @@
                 android:resource="@xml/pulse_file_paths" />
         </provider>
 
-        <!-- Wave 3 calls: ongoing-call foreground service (microphone type). -->
+        <!-- Wave 3 calls: ongoing-call foreground service (microphone type;
+             Wave R1-W2D: + camera for video calls). -->
         <service
             android:name="app.pulse.feature.calls.CallForegroundService"
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:foregroundServiceType="microphone|camera" />
 
         <!-- Wave 5 voice rooms: keep mic capture alive in an ongoing-room
              foreground service (same idiom: ALL services live in the app
@@ -72,5 +78,20 @@
             android:name="app.pulse.feature.voice.VoiceForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- R1-W2H D45: after reboot the reminder WorkManager one-shots have no
+             guarantee of being re-armed in time — BootReceiver re-schedules
+             still-future reminders via ReminderNotifier.schedule and fires the
+             notify path for ones that came due while the device was off.
+             exported=false: the system delivers BOOT_COMPLETED to it regardless. -->
+        <receiver
+            android:name="app.pulse.android.notify.BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

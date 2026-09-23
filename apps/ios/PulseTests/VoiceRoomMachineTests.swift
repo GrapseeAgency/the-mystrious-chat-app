@@ -485,6 +485,45 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertEqual(SpaceModel.clamp01(1.5), 1)
     }
 
+    // ── R1-W2G D46 — durable last-position seeds (pure model side) ──
+
+    func testSeedInitialPositionOverridesTheDefaultCenter() {
+        var space = SpaceModel(myId: "me")
+        XCTAssertEqual(space.targetX, 0.5)
+        XCTAssertEqual(space.targetY, 0.5)
+        // The durable cache seeds the rejoin position — clamped 0..1 like
+        // every other move input.
+        space.seedInitialPosition(x: 1.4, y: -0.2)
+        XCTAssertEqual(space.targetX, 1)
+        XCTAssertEqual(space.targetY, 0)
+    }
+
+    func testServerRowWithoutPositionKeepsTheSeededTarget() {
+        var space = SpaceModel(myId: "me")
+        space.seedInitialPosition(x: 0.8, y: 0.7)
+        // Server state where OUR row carries no x/y (the server returned
+        // nothing for us): the seeded target must survive the reconcile —
+        // the 0.5 decode fallback may not clobber it (D46).
+        _ = space.apply(
+            state: WireSpaceState(
+                conversationId: "conv",
+                players: [
+                    WireSpacePlayer(id: "me", name: "me", color: "emerald", x: nil, y: nil),
+                    WireSpacePlayer(id: "a", name: "a", color: "emerald", x: 0.1, y: 0.1),
+                ],
+            ),
+            nowMs: 10_000,
+        )
+        XCTAssertEqual(space.targetX, 0.8)
+        XCTAssertEqual(space.targetY, 0.7)
+        XCTAssertEqual(space.selfPlayer?.x, 0.5) // the row still renders at the decode fallback
+        // A REAL server position still wins (server truth), after idle.
+        let verdict = space.apply(state: spaceState(("me", 0.25, 0.35)), nowMs: 20_000)
+        XCTAssertEqual(verdict, .adopt(x: 0.25, y: 0.35))
+        XCTAssertEqual(space.targetX, 0.25)
+        XCTAssertEqual(space.targetY, 0.35)
+    }
+
     // ════════════════════════════════════════════════════
     // CaptionWindowAccumulator (VR-7)
     // ════════════════════════════════════════════════════

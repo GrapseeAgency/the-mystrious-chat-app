@@ -9,10 +9,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pulse.core.media.PulseMedia
 import app.pulse.core.time.PulseTime
+// R1-W2F — per-conversation themes (F-FX-05) + location payloads (F-MD-07).
+import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.GroupMeta
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.PulseApiException
+import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.ScheduledItem
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.protocol.GameDetailDto
@@ -53,6 +56,19 @@ import kotlinx.coroutines.launch
 /** One-shot room-level snackbar/toast notice (web toast parity). */
 data class RoomNotice(val text: String, val isError: Boolean = false)
 
+/**
+ * R1-W2F — one-shot location fix state for the pin share (F-MD-07). The
+ * last-known seed keeps the sheet honest while a fresh fix lands; the
+ * permission gate lives at the UI layer (mic/camera precedent).
+ */
+data class LocationFix(
+    val locating: Boolean = false,
+    val lat: Double? = null,
+    val lng: Double? = null,
+    /** No provider / LocationManager refused — the sheet offers a retry. */
+    val failed: Boolean = false,
+)
+
 /** A media attachment staged above the composer (upload lifecycle lives here). */
 data class StagedMedia(
     val kind: Kind,
@@ -86,6 +102,9 @@ class ChatRoomViewModel @Inject constructor(
     private val sendUseCase: SendMessageUseCase,
     /** The ONE active voice player — room + thread share the singleton. */
     val voicePlayer: VoicePlayer,
+    // R1-W2I — PiP pane store (F-PI-01..03): the pop-out toggle writes the
+    // same process-singleton the shell-level overlay renders from.
+    private val pipStore: PulsePiPStore,
 ) : ViewModel() {
 
     /** Wave 8 — server-backed prefs for bubble corners / density / wallpaper. */
@@ -97,6 +116,23 @@ class ChatRoomViewModel @Inject constructor(
         )
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
+
+    // ── R1-W2I — PiP pane (F-PI-01..03), web usePipChat legacy contract ──
+
+    /**
+     * The focused pane's conversation (null = stack-only / none) — the room
+     * header's pop-out toggle reads it exactly like web chat-room.tsx's
+     * `pipConversationId` selector (`s.isOpen ? s.conversationId : null`).
+     */
+    val pipFocusedConversationId: StateFlow<String?> = pipStore.state
+        .map { s -> if (s.isOpen) s.conversationId else null }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Web header toggle parity: this room focused → close it; anything
+     *  else (another pane focused / no pane) → open THIS conversation's pane. */
+    fun togglePipPane() {
+        if (pipFocusedConversationId.value == conversationId) pipStore.close() else pipStore.open(conversationId)
+    }
 
     /** Global-search / notification jump — the room scrolls + flashes on arrival. */
     private val initialJumpMessageId: String? = savedStateHandle.get<String>("jump")
@@ -153,6 +189,15 @@ class ChatRoomViewModel @Inject constructor(
 
     private val _sendingVoice = MutableStateFlow(false)
     val sendingVoice: StateFlow<Boolean> = _sendingVoice.asStateFlow()
+
+    /**
+     * D31 live waveform — normalized mic amplitudes (0f..1f) sampled from
+     * MediaRecorder.maxAmplitude every 100 ms while the hold lasts. The
+     * composer renders the last [PulseMedia.RECORD_WAVEFORM_BARS] entries as
+     * bars; the list is DETERMINISTIC from the amplitude samples (no random).
+     */
+    private val _recordAmps = MutableStateFlow<List<Float>>(emptyList())
+    val recordAmps: StateFlow<List<Float>> = _recordAmps.asStateFlow()
 
     /** Voice notes currently awaiting their transcript (pill → spinner). */
     private val _transcribingIds = MutableStateFlow<Set<String>>(emptySet())
@@ -403,6 +448,12 @@ class ChatRoomViewModel @Inject constructor(
                     }
                     is PulseEvent.MessageReceived -> if (event.conversationId == conversationId) {
                         scheduleRead()
+                        // D29/F-MS-23 — incoming effect payloads fire the
+                        // app-wide burst (web triggerEffectFor parity:
+                        // confetti→confetti · sparkles→stars · lasers/echo→burst).
+                        PulseEffects.burstOfPayload(event.message.payload)?.let { kind ->
+                            app.pulse.core.fx.PulseFx.fire(kind)
+                        }
                     }
                     is PulseEvent.OutboxDropped -> notify("Message couldn't be delivered", isError = true)
                     else -> Unit
@@ -507,6 +558,8 @@ class ChatRoomViewModel @Inject constructor(
         payload: String? = null,
         anon: Boolean = false,
         onDelivered: ((Message) -> Unit)? = null,
+        /** Send burst kind — effect sends map to their web EFFECT_PARTICLES kind. */
+        fxKind: app.pulse.core.fx.PulseFx.BurstKind? = app.pulse.core.fx.PulseFx.BurstKind.BURST,
     ) {
         val editing = _state.value.editing
         if (editing != null) {
@@ -529,7 +582,7 @@ class ChatRoomViewModel @Inject constructor(
                     if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         runCatching { repo.clearDraft(conversationId) }
                     } else {
-                        app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
+                        fxKind?.let { kind -> app.pulse.core.fx.PulseFx.fire(kind, count = 26) }
                         repo.setTyping(conversationId, viewerName(), false)
                         runCatching { repo.clearDraft(conversationId) }
                         afterOwnSend(message)
@@ -638,6 +691,35 @@ class ChatRoomViewModel @Inject constructor(
 
     fun react(messageId: String, emoji: String) {
         viewModelScope.launch { repo.react(messageId, emoji) }
+    }
+
+    // ── R1-W2A — F-MS-24 sticker send + F-MS-23 effect send ──────────
+
+    /** Sticker tile tap → REAL kind:"sticker" message, payload {emoji,pack}. */
+    fun sendSticker(emoji: String, pack: String) {
+        if (emoji.isBlank()) return
+        val payload = app.pulse.protocol.PulseJson.encodeToString(
+            app.pulse.protocol.StickerPayloadDto.serializer(),
+            app.pulse.protocol.StickerPayloadDto(emoji = emoji, pack = pack.ifBlank { "Pulse" }),
+        )
+        sendRich(body = emoji, kind = "sticker", payload = payload)
+    }
+
+    /** /effects <name> [text] — effect rides the text row's payload blob. */
+    fun sendEffect(effect: String, content: String) {
+        if (effect !in app.pulse.protocol.PulseWave7Logic.EFFECT_NAMES) return
+        val payload = app.pulse.protocol.PulseJson.encodeToString(
+            app.pulse.protocol.EffectPayloadDto.serializer(),
+            app.pulse.protocol.EffectPayloadDto(effect = effect),
+        )
+        sendRich(
+            body = content,
+            kind = "text",
+            payload = payload,
+            // Own effect sends fire the mapped burst (web parity) — the
+            // generic send burst is replaced, not stacked.
+            fxKind = PulseEffects.burstKindOf(effect),
+        )
     }
 
     fun retry() {
@@ -948,9 +1030,13 @@ class ChatRoomViewModel @Inject constructor(
     // ── Wave 2: voice recording (spec §1 row 1 / row 11) ───────────────
 
     /**
-     * Tap-to-start (NOT hold, web parity). RECORD_AUDIO is requested at the
-     * UI layer BEFORE this call. MediaRecorder → AAC in MPEG_4, max 10 min,
-     * temp file cacheDir/voice-<uuid>.m4a; a 100ms ticker drives the timer.
+     * D31 hold-to-record — called the moment the mic button receives a press
+     * (RECORD_AUDIO is requested at the UI layer BEFORE this call).
+     * MediaRecorder → AAC in MPEG_4, max 10 min (the server durationMs cap),
+     * temp file cacheDir/voice-<uuid>.m4a. The 100ms ticker drives the timer
+     * (wall-clock honest, no drift), samples maxAmplitude into
+     * [_recordAmps] for the live waveform and AUTO-SENDS the take when the
+     * [PulseMedia.MAX_VOICE_MS] ceiling is reached mid-hold.
      */
     fun startRecording() {
         if (_recording.value || _sendingVoice.value) return
@@ -962,6 +1048,9 @@ class ChatRoomViewModel @Inject constructor(
             mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             mr.setAudioSamplingRate(44100)
             mr.setMaxDuration(600_000)
+            // D31 — metering: mr.maxAmplitude reports the raw 0..32767 range
+            // while held (the sandbox platform jar omits setMaxAmplitude —
+            // the ceiling call is a no-op re-scale, dropped honestly).
             mr.setOutputFile(file.absolutePath)
             mr.prepare()
             mr.start()
@@ -975,12 +1064,27 @@ class ChatRoomViewModel @Inject constructor(
         recordFile = file
         recordStartedAtMs = SystemClock.elapsedRealtime()
         _recordMs.value = 0L
+        _recordAmps.value = emptyList()
         _recording.value = true
         recordTicker?.cancel()
         recordTicker = viewModelScope.launch {
             while (isActive) {
                 delay(100)
-                _recordMs.value += 100
+                val elapsed = if (recordStartedAtMs > 0) SystemClock.elapsedRealtime() - recordStartedAtMs else _recordMs.value
+                _recordMs.value = elapsed
+                // Live waveform sample — maxAmplitude is the peak since the
+                // last call, which IS the correct per-tick reading.
+                val mr = recorder
+                if (mr != null) {
+                    val amp = runCatching { PulseMedia.normalizeRecordAmplitude(mr.maxAmplitude) }.getOrDefault(0f)
+                    _recordAmps.value = (_recordAmps.value + amp).takeLast(PulseMedia.RECORD_WAVEFORM_BARS)
+                }
+                // Hold reached the wire cap (server refuses durationMs > 600000):
+                // send what we have instead of recording a take that would 400.
+                if (elapsed >= PulseMedia.MAX_VOICE_MS) {
+                    stopAndSend()
+                    break
+                }
             }
         }
     }
@@ -992,6 +1096,7 @@ class ChatRoomViewModel @Inject constructor(
         recordFile = null
         _recording.value = false
         _recordMs.value = 0L
+        _recordAmps.value = emptyList()
     }
 
     /**
@@ -1008,6 +1113,7 @@ class ChatRoomViewModel @Inject constructor(
         recordFile = null
         _recording.value = false
         _recordMs.value = 0L
+        _recordAmps.value = emptyList()
         if (elapsedMs < app.pulse.core.media.PulseMedia.MIN_VOICE_MS || file == null) {
             file?.delete()
             notify("Too short — voice note discarded")
@@ -1409,12 +1515,245 @@ class ChatRoomViewModel @Inject constructor(
     suspend fun leaderboard(conversationId: String?): LeaderboardPageDto? =
         runCatching { repo.leaderboard(conversationId).getOrNull() }.getOrNull()
 
+    // ── R1-W2A — quick phrases (F-MS-29) ──────────────────────────────
+
+    private val _phrases = MutableStateFlow<List<app.pulse.domain.model.QuickPhrase>>(emptyList())
+    val phrases: StateFlow<List<app.pulse.domain.model.QuickPhrase>> = _phrases.asStateFlow()
+
+    private val _phrasesBusy = MutableStateFlow(false)
+    val phrasesBusy: StateFlow<Boolean> = _phrasesBusy.asStateFlow()
+
+    private var phrasesOpen by androidx.compose.runtime.mutableStateOf(false)
+
+    fun openPhrases() { phrasesOpen = true }
+    fun closePhrases() { phrasesOpen = false }
+
+    /** Rail rows refresh on room open and after every add/delete. */
+    fun loadPhrases() {
+        viewModelScope.launch {
+            val fetched: Result<List<QuickPhrase>> = repo.phrases()
+            _phrases.value = fetched.getOrElse { emptyList() }
+        }
+    }
+
+    fun addPhrase(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || _phrasesBusy.value) return
+        _phrasesBusy.value = true
+        viewModelScope.launch {
+            val outcome: Result<QuickPhrase> = repo.addPhrase(trimmed)
+            outcome
+                .onSuccess { phrase ->
+                    // Append at the end (server assigns position); keep the rail honest.
+                    _phrases.value = _phrases.value + phrase
+                }
+                .onFailure { notify(it.message ?: "Couldn't add the phrase", isError = true) }
+            _phrasesBusy.value = false
+        }
+    }
+
+    fun deletePhrase(phraseId: String) {
+        if (_phrasesBusy.value) return
+        _phrasesBusy.value = true
+        viewModelScope.launch {
+            runCatching { repo.deletePhrase(phraseId) }
+                .onSuccess { _phrases.value = _phrases.value.filterNot { it.id == phraseId } }
+                .onFailure { notify(it.message ?: "Couldn't delete the phrase", isError = true) }
+            _phrasesBusy.value = false
+        }
+    }
+
+    // ── R1-W2F — F-MD-06 translation ─────────────────────────────────
+
+    /** The message whose LLM translation is in flight (menu row → spinner). */
+    private val _translatingId = MutableStateFlow<String?>(null)
+    val translatingId: StateFlow<String?> = _translatingId.asStateFlow()
+
+    /**
+     * messageId → translated text — conversationId-INDEPENDENT (the server
+     * persists per language; this map is the session's render cache).
+     * Re-translating a message overwrites its entry.
+     */
+    private val _translated = MutableStateFlow<Map<String, String>>(emptyMap())
+    val translated: StateFlow<Map<String, String>> = _translated.asStateFlow()
+
+    /**
+     * Long-press "Translate" → POST /api/messages/{id}/translate {userId}.
+     * One LLM round-trip at a time; failures surface the server's honest copy
+     * verbatim ("Deleted messages cannot be translated.", 403 non-participant…).
+     */
+    fun translateMessage(messageId: String) {
+        if (messageId.isBlank() || messageId.startsWith(TEMP_MESSAGE_PREFIX)) return
+        if (_translatingId.value != null) return
+        _translatingId.value = messageId
+        viewModelScope.launch {
+            val outcome: Result<String> = repo.translateMessage(messageId)
+            outcome
+                .onSuccess { text ->
+                    _translated.value = _translated.value + (messageId to text)
+                }
+                .onFailure { failure ->
+                    // Strip the typed "KIND: " prefix when there is one; a bare
+                    // transport error keeps the generic copy.
+                    val raw = (failure as? PulseApiException)?.message
+                    val copy = raw?.let { m -> m.substringAfter(": ").takeIf { t -> t.isNotBlank() && t != m } }
+                    notify(copy ?: "Translation unavailable", isError = true)
+                }
+            _translatingId.value = null
+        }
+    }
+
+    // ── R1-W2F — F-MD-07 location share ──────────────────────────────
+
+    /** Live one-shot fix the share sheet renders (locating → fix / failure). */
+    private val _locationFix = MutableStateFlow(LocationFix())
+    val locationFix: StateFlow<LocationFix> = _locationFix.asStateFlow()
+
+    /** Registered one-shot update listener — removed on first fix / timeout. */
+    private var locationListener: android.location.LocationListener? = null
+
+    /**
+     * One-shot location read — NO continuous tracking (a static pin needs no
+     * background location, web/iOS parity). Provider priority NETWORK → GPS →
+     * PASSIVE: coarse is fine for a pin (spec F-MD-07 PERMS). The last-known
+     * reading seeds the sheet immediately so it never renders empty while the
+     * fresh fix lands.
+     */
+    fun requestLocationFix() {
+        if (_locationFix.value.locating) return
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+        if (lm == null) {
+            _locationFix.value = LocationFix(failed = true)
+            return
+        }
+        val provider = listOf(
+            android.location.LocationManager.NETWORK_PROVIDER,
+            android.location.LocationManager.GPS_PROVIDER,
+            android.location.LocationManager.PASSIVE_PROVIDER,
+        ).firstOrNull { p -> runCatching { lm.isProviderEnabled(p) }.getOrDefault(false) }
+        if (provider == null) {
+            _locationFix.value = LocationFix(failed = true)
+            return
+        }
+        val seed = runCatching { lm.getLastKnownLocation(provider) }.getOrNull()
+        _locationFix.value = LocationFix(locating = true, lat = seed?.latitude, lng = seed?.longitude)
+        val listener = object : android.location.LocationListener {
+            override fun onLocationChanged(location: android.location.Location) {
+                _locationFix.value = LocationFix(
+                    locating = false,
+                    lat = location.latitude,
+                    lng = location.longitude,
+                )
+                cancelLocationFix()
+            }
+            // Pre-API 30 runtimes declare these abstract — explicit overrides
+            // keep old devices from throwing AbstractMethodError on status flips.
+            @Deprecated("Deprecated in Java")
+            override fun onStatusChanged(p: String?, status: Int, extras: android.os.Bundle?) = Unit
+            override fun onProviderEnabled(p: String) = Unit
+            override fun onProviderDisabled(p: String) = Unit
+        }
+        val requested = runCatching {
+            lm.requestLocationUpdates(provider, 0L, 0f, listener, context.mainLooper)
+        }.isSuccess
+        if (!requested) {
+            _locationFix.value = LocationFix(failed = true)
+            return
+        }
+        locationListener = listener
+        // Honesty timeout — a cold GPS can stall forever; give up after 12 s
+        // (a stale seed may already be showing; Retry re-runs the request).
+        viewModelScope.launch {
+            delay(LOCATION_FIX_TIMEOUT_MS)
+            val current = _locationFix.value
+            if (current.locating && current.lat == null) {
+                cancelLocationFix()
+                _locationFix.value = LocationFix(failed = true)
+            }
+        }
+    }
+
+    /** Detach the one-shot listener (also the onCleared hygiene). */
+    fun cancelLocationFix() {
+        locationListener?.let { listener ->
+            val lm = context.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+            runCatching { lm?.removeUpdates(listener) }
+        }
+        locationListener = null
+        if (_locationFix.value.locating) {
+            _locationFix.value = _locationFix.value.copy(locating = false)
+        }
+    }
+
+    /**
+     * Confirm-sheet → REAL kind:"location" message, payload {lat,lng,label}
+     * (web sendLocation parity: content rides EMPTY — the label lives in the
+     * payload blob; wire kind whitelist text|image|audio|sticker|location|file).
+     */
+    fun sendLocation(lat: Double, lng: Double, label: String) {
+        val resolved = label.trim().take(80).ifBlank { "Current location" }
+        val payload = app.pulse.protocol.PulseJson.encodeToString(
+            app.pulse.domain.model.LocationPayload.serializer(),
+            app.pulse.domain.model.LocationPayload(lat = lat, lng = lng, label = resolved),
+        )
+        sendRich(body = "", kind = "location", payload = payload)
+    }
+
+    // ── R1-W2F — F-FX-05 per-conversation themes ─────────────────────
+
+    /** Live `chat.convThemes` overrides (LRU-capped at 48 in the prefs store). */
+    val convThemes: StateFlow<Map<String, ConvTheme>> = repo.convThemes
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** This room's override — null = follows the global Appearance default. */
+    val convTheme: ConvTheme? get() = convThemes.value[conversationId]
+
+    /** Wallpaper the room renders: override ?? global prefs (web effectiveConvWallpaper). */
+    val effectiveWallpaper: String
+        get() = convTheme?.wallpaper ?: prefs.value.wallpaper ?: "none"
+
+    /** Live-apply one swatch tap (web ConvThemePicker commit parity, local prefs). */
+    fun applyConvTheme(wallpaper: String, tint: String?) {
+        if (wallpaper !in ConvTheme.WALLPAPERS) return
+        if (tint != null && tint !in ConvTheme.TINTS) return
+        viewModelScope.launch {
+            runCatching { repo.setConvTheme(conversationId, ConvTheme(wallpaper = wallpaper, tint = tint)) }
+        }
+    }
+
+    /** Drop the override — the room falls back to the global default. */
+    fun clearConvTheme() {
+        viewModelScope.launch { runCatching { repo.setConvTheme(conversationId, null) } }
+    }
+
+    // ── R1-W2A — D34 verified badge (quiet header state, NO sheet) ────
+
+    /** DM-peer verification state for the header badge (null = unknown/loading). */
+    private val _peerVerified = MutableStateFlow<Boolean?>(null)
+    val peerVerified: StateFlow<Boolean?> = _peerVerified.asStateFlow()
+
+    /**
+     * Quiet safety fetch for the D34 header badge — deliberately does NOT
+     * open the safety sheet (that is loadSafety's job when the badge is tapped).
+     */
+    fun loadPeerVerification(peerId: String) {
+        if (peerId.isBlank()) return
+        viewModelScope.launch {
+            val outcome: Result<SafetyState> = repo.safetyState(peerId)
+            _peerVerified.value = outcome.getOrNull()?.verified
+        }
+    }
+
+    // ── R1-W2A — D29 incoming effect FX + rich sends ──────────────────
+
     override fun onCleared() {
         // Recording must never outlive the room — stop + release + delete.
         stopRecorderLocked()
         recordFile?.delete()
         recordFile = null
         _recording.value = false
+        // R1-W2F — the one-shot location listener must never outlive the room.
+        cancelLocationFix()
         voicePlayer.release()
         super.onCleared()
     }
@@ -1425,6 +1764,9 @@ class ChatRoomViewModel @Inject constructor(
 
         /** Bounded jump-window expansion — web parity (≤14 before= rounds). */
         const val JUMP_MAX_ROUNDS = 14
+
+        /** R1-W2F — one-shot location fix honesty timeout (web geolocation 9s). */
+        const val LOCATION_FIX_TIMEOUT_MS = 12_000L
 
         /** Web parity unfurl hint moved to PulseMedia.isUnfurlCandidate (JVM-pinned). */
     }

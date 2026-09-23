@@ -107,6 +107,8 @@ import app.pulse.feature.chat.ChatRoomScreen
 import app.pulse.feature.chat.ChannelsScreen
 import app.pulse.feature.chat.JoinInviteSheet
 import app.pulse.feature.chat.MentionsScreen
+import app.pulse.feature.chat.PipOverlayViewModel
+import app.pulse.feature.chat.PipPaneOverlay
 import app.pulse.feature.chat.SavedLibraryScreen
 import app.pulse.feature.chat.ThreadScreen
 import app.pulse.feature.hub.HubScreen
@@ -379,6 +381,11 @@ private fun PulseShell(
     val viewerName by session.viewerName.collectAsStateWithLifecycle()
     val viewerColor by session.viewerColor.collectAsStateWithLifecycle()
     val voiceState by voiceVm.voiceState.collectAsStateWithLifecycle()
+    // R1-W2I — PiP pane overlay (F-PI-01..03): the renderer VM bridge; the
+    // pane state itself lives in the PulsePiPStore @Singleton so panes
+    // outlive every surface (web usePipChat module-singleton parity).
+    val pipVm: PipOverlayViewModel = hiltViewModel()
+    val reducedMotion by session.reducedMotion.collectAsStateWithLifecycle()
 
     // Identity adoption for the voice/stage/space wire payloads (the calls
     // surface receives the same values through callPeer's caller args).
@@ -523,6 +530,19 @@ private fun PulseShell(
                                 avatar = user.avatar,
                                 callerName = viewerName,
                                 callerColor = viewerColor,
+                            )
+                        },
+                        // Wave R1-W2D — real video calls (wire kind 'video';
+                        // camera prompt handled in ContactsScreen).
+                        onVideoCallUser = { user ->
+                            callVm.callPeer(
+                                peerId = user.id,
+                                name = user.name,
+                                color = user.color,
+                                avatar = user.avatar,
+                                callerName = viewerName,
+                                callerColor = viewerColor,
+                                kind = app.pulse.domain.model.CallKind.VIDEO,
                             )
                         },
                         onOpenCalls = { navController.navigate("calls") },
@@ -772,6 +792,31 @@ private fun PulseShell(
                 contentColor = Color.White,
                 shape = RoundedCornerShape(14.dp),
             ) { Text(data.visuals.message, fontSize = 13.sp) }
+        }
+
+        // R1-W2I — the PiP pane overlay (F-PI-01..03): floats above the
+        // NavHost + dock and every pushed room (web mounts PipChat at the
+        // shell AND inside the room overlay — the two never co-render, so
+        // one always-on instance here is the same net effect). Hidden on
+        // the Settings sub-pages (web hides the shell instance while
+        // settings is open). Sits BELOW the call/voice overlays.
+        if (currentRoute?.startsWith("settings") != true) {
+            PipPaneOverlay(
+                viewModel = pipVm,
+                viewerId = viewerId,
+                dark = dark,
+                reducedMotion = reducedMotion,
+                onOpenRoom = { id ->
+                    // F-PI-03 open bridge — a header tap opens the conversation
+                    // in the main shell; a tap inside its own room is a no-op
+                    // (web dispatch is equally inert with no shell listener).
+                    val currentEntry = navController.currentBackStackEntry
+                    val alreadyThere = currentEntry?.destination?.route == "room/{conversationId}" &&
+                        currentEntry.arguments?.getString("conversationId") == id
+                    if (!alreadyThere) navController.navigate("room/$id")
+                },
+                onNotice = { honest(it) },
+            )
         }
 
         // Wave 3 — the call overlay owns the WHOLE screen whenever the engine

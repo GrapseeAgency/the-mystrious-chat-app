@@ -148,6 +148,20 @@ struct RootView: View {
                 OnboardingView(session: session, prefs: prefs, onPicked: { didBootstrap = true })
             }
 
+            // R1-W2I — the PiP pane overlay (F-PI-01..03): floats above the
+            // tab chrome and pushed rooms, below the call/rooms overlays
+            // (Android mounts the same instance shape at its root). The host
+            // self-gates on the store being open and observes it directly.
+            if prefs.viewer != nil {
+                PipPaneHostView(
+                    session: session,
+                    pip: session.pip,
+                    onOpenRoom: { conversationId in
+                        openLinkedRoom(conversationId)
+                    },
+                )
+            }
+
             // Wave 3 — the native call surface owns the WHOLE screen whenever
             // the engine is not idle (ringing/connecting/connected/ended).
             if let engine = session.callEngine {

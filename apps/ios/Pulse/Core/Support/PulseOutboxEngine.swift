@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Network
 
 /// Sender boundary for the outbox engine — PulseAPIClient conforms in the
 /// app; tests stub it HERE (this is the only mock seam Wave 0 allows).
@@ -7,7 +8,9 @@ import Combine
 /// parameter list (Swift witness matching ignores default arguments, so a
 /// defaulted-param method would no longer witness a shorter requirement).
 /// The engine only ever fills the text fields — media/thread sends are
-/// online-only and never queued (spec §1.2).
+/// online-only and never queued (spec §1.2). R1-W2B D28 relaxes exactly one
+/// case: FORWARDS (F-MS-10 "queued if offline") queue with their stored
+/// kind + media paths via PulseOutboxForward.
 public protocol PulseOutboxSending: Sendable {
     func sendMessage(
         conversationId: String,
@@ -30,6 +33,44 @@ public protocol PulseOutboxSending: Sendable {
 
 extension PulseAPIClient: PulseOutboxSending {}
 
+/// R1-W2B D28 — the queued forward envelope (F-MS-10 offline column).
+/// Mirrors web forward-sheet.tsx ForwardPayload (L23-33): the copy re-POSTs
+/// with the ORIGINAL stored media paths (no re-upload) and the matching
+/// kind (documents ride kind "file" with their name/size). Encoded as the
+/// outbox row's payloadJson; the engine decodes it on flush.
+public struct PulseOutboxForward: Codable, Equatable, Sendable {
+    public var kind: String?
+    public var imagePath: String?
+    public var audioPath: String?
+    public var durationMs: Double?
+    public var filePath: String?
+    public var fileName: String?
+    public var fileSize: Int?
+
+    public init(kind: String?, imagePath: String?, audioPath: String?, durationMs: Double?,
+                filePath: String?, fileName: String?, fileSize: Int?) {
+        self.kind = kind
+        self.imagePath = imagePath
+        self.audioPath = audioPath
+        self.durationMs = durationMs
+        self.filePath = filePath
+        self.fileName = fileName
+        self.fileSize = fileSize
+    }
+
+    /// Serialized for the outbox row (nil-safe: a failed encode → nil payload
+    /// → the flush degrades to a plain text send with the forward's content).
+    public static func encode(_ forward: PulseOutboxForward) -> String? {
+        guard let data = try? JSONEncoder().encode(forward) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    public static func decode(_ json: String?) -> PulseOutboxForward? {
+        guard let json, !json.isEmpty, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(PulseOutboxForward.self, from: data)
+    }
+}
+
 /// Outbox engine — offline sends, mirroring src/lib/pulse-outbox.ts:
 ///   • FIFO queue, hard cap 50 (oldest dropped beyond it)
 ///   • flush drains in order and STOPS at the first network-class failure
@@ -40,7 +81,10 @@ extension PulseAPIClient: PulseOutboxSending {}
 ///     honest toast (retrying could never succeed)
 ///   • network failure → attempts++, retried on the next trigger
 /// Triggers: session start with pending entries, socket (re)connect, app
-/// foreground, BGAppRefreshTask and a 60s self-heal timer while entries exist.
+/// foreground, BGAppRefreshTask, a 60s self-heal timer while entries exist
+/// and — R1-W2B D41 — the NWPathMonitor satisfaction edge (spec F-OF-04:
+/// "online" flush trigger; the path turning satisfied flushes immediately
+/// instead of waiting up to 60 s for the heal sweep).
 @MainActor
 public final class PulseOutboxEngine: ObservableObject {
     public enum Event {
@@ -70,6 +114,13 @@ public final class PulseOutboxEngine: ObservableObject {
     private let senderProvider: () -> (any PulseOutboxSending)?
     private var healTask: Task<Void, Never>?
     private var working = false
+    // R1-W2B D41 — NWPathMonitor flush trigger (spec F-OF-04). The monitor
+    // lives as long as the engine (its handler only weakly references self,
+    // so engine teardown releases it) and its satisfaction EDGE calls the
+    // same flush every other trigger uses.
+    private let pathMonitor = NWPathMonitor()
+    private var pathMonitorStarted = false
+    private var lastPathSatisfied = false
 
     public init(store: PulseStore, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
         self.store = store
@@ -78,6 +129,7 @@ public final class PulseOutboxEngine: ObservableObject {
         if pendingCount > 0 {
             startHealTimer()
         }
+        startPathMonitor()
     }
 
     // The heal task holds `weak self`; after deallocation the loop exits on
@@ -92,6 +144,25 @@ public final class PulseOutboxEngine: ObservableObject {
             try store.appendOutbox(conversationId: conversationId, clientId: clientId, content: content, kind: kind)
         } catch {
             // Duplicate clientId (double-tap) — already queued, nothing to do.
+        }
+        trimToLimit()
+        pendingCount = store.countOutbox()
+        startHealTimer()
+    }
+
+    /// R1-W2B D28 — enqueues one queued FORWARD. `forward` carries the
+    /// stored kind + media paths; the flush re-POSTs the exact body.
+    public func appendForward(conversationId: String, clientId: String, content: String, forward: PulseOutboxForward) {
+        do {
+            try store.appendOutbox(
+                conversationId: conversationId,
+                clientId: clientId,
+                content: content,
+                kind: forward.kind ?? "text",
+                payloadJson: PulseOutboxForward.encode(forward),
+            )
+        } catch {
+            // Duplicate clientId — already queued.
         }
         trimToLimit()
         pendingCount = store.countOutbox()
@@ -139,18 +210,22 @@ public final class PulseOutboxEngine: ObservableObject {
         for entry in entries {
             if Task.isCancelled { break }
             do {
+                // R1-W2B D28 — a forward entry re-POSTs its stored kind +
+                // media paths (web ForwardPayload parity); plain sends keep
+                // the text-only body.
+                let forward = PulseOutboxForward.decode(entry.payloadJson)
                 let real = try await sender.sendMessage(
                     conversationId: entry.conversationId,
                     content: entry.content,
                     replyToId: nil,
                     parentId: nil,
-                    imagePath: nil,
-                    audioPath: nil,
-                    durationMs: nil,
-                    filePath: nil,
-                    fileName: nil,
-                    fileSize: nil,
-                    kind: nil,
+                    imagePath: forward?.imagePath,
+                    audioPath: forward?.audioPath,
+                    durationMs: forward?.durationMs,
+                    filePath: forward?.filePath,
+                    fileName: forward?.fileName,
+                    fileSize: forward?.fileSize,
+                    kind: forward?.kind,
                     viewOnce: nil,
                     topicId: nil,
                     payload: nil,
@@ -196,6 +271,35 @@ public final class PulseOutboxEngine: ObservableObject {
     private func stopHealTimer() {
         healTask?.cancel()
         healTask = nil
+    }
+
+    // ── connectivity trigger (R1-W2B D41 — NWPathMonitor, F-OF-04) ──
+
+    /// Watches the network path; the moment it turns satisfied (wifi/cell
+    /// comes back) with entries still queued, the SAME flush runs — no
+    /// waiting for the 60 s heal sweep. Idempotent: re-entrant flushes are
+    /// already ignored while one is draining.
+    private func startPathMonitor() {
+        guard !pathMonitorStarted else { return }
+        pathMonitorStarted = true
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            let satisfied = path.status == NWPath.Status.satisfied
+            // The handler fires on the monitor's private queue — hop to the
+            // engine's MainActor before touching state.
+            Task { @MainActor in
+                self?.handlePathUpdate(satisfied: satisfied)
+            }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "app.pulse.chat.outbox.path"))
+    }
+
+    private func handlePathUpdate(satisfied: Bool) {
+        let wasSatisfied = lastPathSatisfied
+        lastPathSatisfied = satisfied
+        guard satisfied, !wasSatisfied, pendingCount > 0 else { return }
+        Task { [weak self] in
+            await self?.flush()
+        }
     }
 
     // ── helpers ──────────────────────────────────────────────

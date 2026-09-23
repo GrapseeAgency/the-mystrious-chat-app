@@ -1,14 +1,19 @@
 import Foundation
+import AVFoundation
 import WebRTC
 
 // ─────────────────────────────────────────────────────────────
 // Pulse — Wave 3 REAL WebRTC media provider (stasel/WebRTC binary
 // distribution, SPM product "WebRTC").
 //
-// Audio-only media path (kind 'voice' fully implemented; a kind 'video'
-// OFFER is accepted on the wire and answered audio-only — the video m-line
-// is rejected by the unified-plan answer, which every WebRTC endpoint
-// handles. Documented Wave 3 limitation: no camera capture natively).
+// Wave R1-W2D — REAL video: a kind 'video' offer (checked on the WIRE kind
+// AND the offer SDP's m=video line) is answered WITH a real camera track
+// (RTCCameraVideoCapturer, front camera default) instead of audio-only
+// (defect D21 fixed). No usable camera / denied permission ⇒ the audio-only
+// fallback keeps the call alive (web call-overlay.tsx parity). The capture
+// pipeline itself is a HARDWARE gate (Wave 3-HW stays OPEN).
+//
+// Audio-only media path (kind 'voice' fully implemented):
 //
 // Actor-isolation map (kept boring on purpose — no local compile):
 //   • PulseCallMediaProviding is @MainActor (engine + provider both live on
@@ -45,6 +50,13 @@ public protocol PulseCallPeerDelegate: AnyObject {
     func peerDidProduceLocalCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int32?)
     /// ICE connection state mapping (see PulseRTCPeerAdapter.mapIceState).
     func peerConnectionStateDidChange(_ state: PulseCallConnectionState)
+    /// Remote video track arrived over the negotiated m=video line
+    /// (default no-op — only the call engine cares).
+    func peerDidReceiveRemoteVideoTrack(_ track: RTCVideoTrack)
+}
+
+public extension PulseCallPeerDelegate {
+    func peerDidReceiveRemoteVideoTrack(_ track: RTCVideoTrack) {}
 }
 
 /// The engine's view of one live peer connection (fake-able in tests).
@@ -56,16 +68,33 @@ public protocol PulseCallPeerConnecting: AnyObject {
     func addRemoteCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) async throws
     /// Mute = audio track enabled toggle (web parity: track.enabled).
     func setAudioEnabled(_ enabled: Bool)
+    /// Wave R1-W2D — REAL camera path. Creates + attaches a front-camera
+    /// RTCCameraVideoCapturer track (1280×720@30 preferred) BEFORE the SDP
+    /// dance. Returns false when no usable camera exists → audio-only.
+    func enableLocalVideoCapture() -> Bool
+    /// Camera (video) toggle — RTCVideoTrack.isEnabled flip (web parity).
+    func setVideoEnabled(_ enabled: Bool)
+    /// Front ⇄ back camera flip.
+    func switchCamera()
+    /// The local camera track once capture is live (nil = audio-only).
+    func localVideoTrack() -> RTCVideoTrack?
+    /// The remote video track once it arrives (nil = not yet / audio-only).
+    func remoteVideoTrack() -> RTCVideoTrack?
     func close()
 }
 
-/// The engine's view of the media layer: mic permission + peer connection
-/// factory (fake-able in tests). The AVAudioSession lifecycle lives in
-/// PulseCallAudioSession (engine-owned, MainActor → MainActor).
+/// The engine's view of the media layer: mic/camera permission + peer
+/// connection factory (fake-able in tests). The AVAudioSession lifecycle
+/// lives in PulseCallAudioSession (engine-owned, MainActor → MainActor).
 @MainActor
 public protocol PulseCallMediaProviding: AnyObject {
     func requestMicPermission() async -> Bool
-    /// Audio-only peer connection with the local mic track attached.
+    /// Wave R1-W2D — camera permission (requests when .notDetermined).
+    func requestCameraPermission() async -> Bool
+    /// Sync capability probe: camera authorized AND ≥1 capture device.
+    func canCaptureVideo() -> Bool
+    /// Peer connection with the local mic track attached (video rides its
+    /// own m-line once enableLocalVideoCapture() runs on the connection).
     func makePeerConnection(delegate: (any PulseCallPeerDelegate)?) -> (any PulseCallPeerConnecting)?
 }
 
@@ -85,6 +114,24 @@ public final class PulseRTCMediaProvider: PulseCallMediaProviding {
 
     public func requestMicPermission() async -> Bool {
         await PulseCallAudioSession.shared.requestMicPermission()
+    }
+
+    /// Camera permission — requests on first use, honest about denial.
+    public func requestCameraPermission() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            return true
+        case .notDetermined:
+            return await AVCaptureDevice.requestAccess(for: .video)
+        default:
+            return false
+        }
+    }
+
+    /// Sync probe: authorized AND at least one real capture device exists.
+    public func canCaptureVideo() -> Bool {
+        guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { return false }
+        return !RTCCameraVideoCapturer.captureDevices().isEmpty
     }
 
     public func makePeerConnection(delegate: (any PulseCallPeerDelegate)?) -> (any PulseCallPeerConnecting)? {
@@ -124,11 +171,19 @@ enum PulseRTCError: Error {
 /// @optional Obj-C, extra methods are inert).
 final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallPeerConnecting {
     private let pc: RTCPeerConnection
+    private let factory: RTCPeerConnectionFactory
     private let audioTrack: RTCAudioTrack?
     private let box: PulseRTCDelegateBox
 
+    // ── video handles (Wave R1-W2D — REAL camera path) ──
+    private var videoSource: RTCVideoSource?
+    private var videoCapturer: RTCCameraVideoCapturer?
+    private var localVideo: RTCVideoTrack?
+    private var remoteVideo: RTCVideoTrack?
+
     init?(factory: RTCPeerConnectionFactory, delegate: (any PulseCallPeerDelegate)?) {
         box = PulseRTCDelegateBox(delegate)
+        self.factory = factory
 
         let config = RTCConfiguration()
         // ICE: deployment-manifest TURN override (Wave 3-HW) when adopted;
@@ -248,8 +303,91 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         audioTrack?.isEnabled = enabled
     }
 
+    // ── REAL camera path (Wave R1-W2D) ──────────────────
+
+    /// Creates + attaches a REAL front-camera video track (back camera as
+    /// fallback, any device last). MUST run BEFORE the SDP dance so the
+    /// unified-plan transceiver associates with the peer's m=video line
+    /// (web callee parity: getUserMedia BEFORE setRemoteDescription).
+    /// Returns false when no usable camera exists — audio-only fallback.
+    func enableLocalVideoCapture() -> Bool {
+        if localVideo != nil { return true }
+        let devices = RTCCameraVideoCapturer.captureDevices()
+        let device = devices.first(where: { $0.position == .front })
+            ?? devices.first(where: { $0.position == .back })
+            ?? devices.first
+        guard let device else { return false }
+        guard let format = Self.bestVideoFormat(for: device) else { return false }
+        let source = factory.videoSource()
+        let capturer = RTCCameraVideoCapturer(delegate: source)
+        let track = factory.videoTrack(with: source, trackId: "pulse-video0")
+        pc.add(track, streamIds: ["pulse-stream0"])
+        localVideo = track
+        videoSource = source
+        videoCapturer = capturer
+        // 30fps ceiling — the web profile is 1280×720 ideal; the chosen
+        // format's own frame rate is respected when lower.
+        let fps = Int(min(Double(CallVideoConstants.targetFps), format.frameRate.rounded()))
+        capturer.startCapture(with: format, fps: max(1, fps)) { error in
+            if let error {
+                // Async capture failure (device yanked mid-call) — the call
+                // stays alive audio/video-black; honest hardware-gate territory.
+                NSLog("[call] startCapture failed: %@", error.localizedDescription)
+            }
+        }
+        return true
+    }
+
+    func setVideoEnabled(_ enabled: Bool) {
+        localVideo?.isEnabled = enabled
+    }
+
+    func switchCamera() {
+        videoCapturer?.switchCamera { error in
+            if let error {
+                NSLog("[call] switchCamera failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    func localVideoTrack() -> RTCVideoTrack? {
+        localVideo
+    }
+
+    func remoteVideoTrack() -> RTCVideoTrack? {
+        remoteVideo
+    }
+
+    /// Closest-to-target format (web ideal 1280×720), then closest fps (30).
+    private static func bestVideoFormat(for device: AVCaptureDevice) -> AVCaptureDevice.Format? {
+        let formats = RTCCameraVideoCapturer.supportedFormats(for: device)
+        return formats.min { lhs, rhs in
+            let (lw, lh) = dimensions(lhs)
+            let (rw, rh) = dimensions(rhs)
+            let dl = abs(lw - CallVideoConstants.targetWidth) + abs(lh - CallVideoConstants.targetHeight)
+            let dr = abs(rw - CallVideoConstants.targetWidth) + abs(rh - CallVideoConstants.targetHeight)
+            if dl != dr { return dl < dr }
+            return abs(lhs.frameRate - Double(CallVideoConstants.targetFps))
+                < abs(rhs.frameRate - Double(CallVideoConstants.targetFps))
+        }
+    }
+
+    private static func dimensions(_ format: AVCaptureDevice.Format) -> (Int, Int) {
+        guard let desc = format.formatDescription else { return (0, 0) }
+        let dims = CMVideoFormatDescriptionGetDimensions(desc)
+        return (Int(dims.width), Int(dims.height))
+    }
+
     func close() {
         pc.delegate = nil
+        // Stop the camera BEFORE the pc (capture thread must outlive nothing).
+        if let capturer = videoCapturer {
+            capturer.stopCapture()
+        }
+        videoCapturer = nil
+        localVideo = nil
+        remoteVideo = nil
+        videoSource = nil
         pc.close()
     }
 
@@ -310,7 +448,17 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         // Covered by didChangeIceConnectionState — ignore to stay idempotent.
     }
 
-    func peerConnection(_ peerConnection: RTCPeerConnection, didStartReceivingOn transceiver: RTCRtpTransceiver) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didStartReceivingOn transceiver: RTCRtpTransceiver) {
+        // UNIFIED_PLAN remote-track intake — video m-lines promote the
+        // receiver's track into the render flow (engine publishes it).
+        guard transceiver.mediaType == .video else { return }
+        guard let track = transceiver.receiver.track() as? RTCVideoTrack else { return }
+        remoteVideo = track
+        let box = self.box
+        Task { @MainActor in
+            box.current()?.peerDidReceiveRemoteVideoTrack(track)
+        }
+    }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove receiver: RTCRtpReceiver) {}
 

@@ -260,6 +260,20 @@ interface SearchResponse {
   total?: number
 }
 
+// ── F-MS-29: quick phrases — server-backed composer rail ──────
+// Rows live in Prisma (QuickPhrase) behind /api/users/[id]/phrases
+// (GET/POST/DELETE). These mirror the server-side caps exactly.
+const QUICK_PHRASE_MAX = 120
+const QUICK_PHRASES_MAX = 12
+interface QuickPhrase {
+  id: string
+  text: string
+  position: number
+}
+interface PhrasesResponse {
+  phrases: QuickPhrase[]
+}
+
 const CLUSTER_WINDOW_MS = 5 * 60 * 1000
 const NEAR_BOTTOM_PX = 160
 const OLDER_PAGE_SIZE = 40
@@ -2481,6 +2495,77 @@ export function ChatRoom({
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [trayOpen, setTray])
+
+  // ── F-MS-29: quick phrases — composer rail data + CRUD ────────
+  // Nothing is cached locally: the server rows are the single source of
+  // truth (spec row F-MS-29; the route validates ≤12 phrases × ≤120 chars).
+  const phrasesQuery = useQuery({
+    queryKey: ['phrases', me.id],
+    queryFn: async (): Promise<QuickPhrase[]> => {
+      const res = await apiJson<PhrasesResponse>(
+        `/api/users/${encodeURIComponent(me.id)}/phrases`,
+      )
+      return res.phrases
+    },
+    staleTime: 30_000,
+  })
+  const phrases = phrasesQuery.data ?? []
+  /** small manage popover (add/delete) hanging off the rail's tail button */
+  const [phrasesManageOpen, setPhrasesManageOpen] = useState(false)
+  const [phraseDraft, setPhraseDraft] = useState('')
+
+  const addPhrase = useMutation({
+    mutationFn: async (text: string) => {
+      const res = await apiJson<{ phrase: QuickPhrase }>(
+        `/api/users/${encodeURIComponent(me.id)}/phrases`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        },
+      )
+      return res.phrase
+    },
+    onSuccess: (phrase) => {
+      void queryClient.invalidateQueries({ queryKey: ['phrases', me.id] })
+      setPhraseDraft('')
+      haptic(12)
+      toast.success(`Quick phrase saved — "${phrase.text}"`)
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : 'Could not save the phrase'),
+  })
+
+  const deletePhrase = useMutation({
+    mutationFn: (phraseId: string) =>
+      apiJson<{ ok: boolean }>(
+        `/api/users/${encodeURIComponent(me.id)}/phrases?phraseId=${encodeURIComponent(phraseId)}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['phrases', me.id] })
+      haptic(8)
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : 'Could not delete the phrase'),
+  })
+
+  /** chip tap → drop the phrase into the composer (same rules as the emoji
+   *  picker: append with a space separator, then autosize + refocus). */
+  const insertQuickPhrase = useCallback(
+    (text: string) => {
+      haptic(8)
+      setInput((prev) => {
+        if (prev.length === 0) return text
+        return /\s$/.test(prev) ? prev + text : `${prev} ${text}`
+      })
+      requestAnimationFrame(() => {
+        autosize()
+        textareaRef.current?.focus()
+      })
+    },
+    [autosize],
+  )
 
   // ── R34-b: progressive-disclosure attachments tray ────────
   // Discord rule: the FREQUENT actions (photo, sticker, emoji, mic/voice)
@@ -4955,6 +5040,138 @@ export function ChatRoom({
           >
             <Ban className="size-4 shrink-0 text-rose-500" aria-hidden />
             You can no longer message this account
+          </div>
+        ) : null}
+
+        {/* F-MS-29 — quick phrases rail: one-tap lines above the composer.
+            Server-backed (GET/POST/DELETE /api/users/[id]/phrases, no local
+            persistence) — tap a chip to insert its text into the input; the
+            tail affordance opens the small manage popover (add + delete). */}
+        {!broadcastLocked && !dmBlocked && !recording && !editing && phrasesQuery.isSuccess ? (
+          <div
+            role="toolbar"
+            aria-label="Quick phrases"
+            className="pulse-scroll mb-2 flex items-center gap-1.5 overflow-x-auto pb-0.5"
+          >
+            {phrases.map((phrase) => (
+              <motion.button
+                key={phrase.id}
+                type="button"
+                whileTap={{ scale: 0.94 }}
+                transition={spring.snappy}
+                onClick={() => insertQuickPhrase(phrase.text)}
+                className="glass-pill max-w-[220px] shrink-0 truncate rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-zinc-600 outline-none transition-colors hover:text-emerald-600 dark:text-zinc-300 dark:hover:text-emerald-400"
+              >
+                {phrase.text}
+              </motion.button>
+            ))}
+            <Popover
+              open={phrasesManageOpen}
+              onOpenChange={(open) => {
+                setPhrasesManageOpen(open)
+                if (!open) setPhraseDraft('')
+              }}
+            >
+              <PopoverTrigger asChild>
+                <motion.button
+                  type="button"
+                  aria-label="Manage quick phrases"
+                  onClick={() => haptic(8)}
+                  whileTap={{ scale: 0.94 }}
+                  transition={spring.snappy}
+                  className={
+                    phrases.length === 0
+                      ? 'glass-pill flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-zinc-500 outline-none transition-colors hover:text-emerald-600 dark:text-zinc-400 dark:hover:text-emerald-400'
+                      : 'glass-pill flex size-7 shrink-0 items-center justify-center text-zinc-500 outline-none transition-colors hover:text-emerald-600 dark:text-zinc-400 dark:hover:text-emerald-400'
+                  }
+                >
+                  {phrases.length === 0 ? (
+                    <>
+                      <Plus className="size-3.5 shrink-0" aria-hidden />
+                      Quick phrase
+                    </>
+                  ) : (
+                    <Pencil className="size-3.5" aria-hidden />
+                  )}
+                </motion.button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="start"
+                sideOffset={10}
+                className="w-[272px] rounded-2xl p-2.5 dark:bg-zinc-800"
+              >
+                <div className="flex items-center justify-between px-1 pb-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                    Quick phrases
+                  </span>
+                  <span className="text-[10px] font-semibold tabular-nums text-zinc-400 dark:text-zinc-500">
+                    {phrases.length}/{QUICK_PHRASES_MAX}
+                  </span>
+                </div>
+                <div className="pulse-scroll max-h-52 overflow-y-auto">
+                  {phrases.map((phrase) => (
+                    <div
+                      key={phrase.id}
+                      className="flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700/60"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => insertQuickPhrase(phrase.text)}
+                        className="min-w-0 flex-1 truncate text-left text-[12.5px] text-zinc-700 outline-none dark:text-zinc-200"
+                      >
+                        {phrase.text}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete quick phrase: ${phrase.text}`}
+                        disabled={deletePhrase.isPending}
+                        onClick={() => deletePhrase.mutate(phrase.id)}
+                        className="shrink-0 rounded-full p-1 text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 disabled:opacity-50"
+                      >
+                        <X className="size-3.5" aria-hidden />
+                      </button>
+                    </div>
+                  ))}
+                  {phrases.length === 0 ? (
+                    <p className="px-1 pb-1.5 pt-1 text-[11.5px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+                      No phrases yet — save the lines you send often, then tap them above the
+                      composer.
+                    </p>
+                  ) : null}
+                </div>
+                <form
+                  className="mt-1.5 flex items-center gap-1.5 border-t border-zinc-200 pt-2 dark:border-zinc-700"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const text = phraseDraft.trim()
+                    if (text.length === 0 || addPhrase.isPending || phrases.length >= QUICK_PHRASES_MAX) return
+                    addPhrase.mutate(text)
+                  }}
+                >
+                  <Input
+                    value={phraseDraft}
+                    maxLength={QUICK_PHRASE_MAX}
+                    placeholder="Add a phrase…"
+                    aria-label="New quick phrase"
+                    onChange={(e) => setPhraseDraft(e.target.value)}
+                    className="h-8 min-w-0 flex-1 rounded-full bg-zinc-100 px-3 text-[12.5px] dark:bg-zinc-700/60"
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={
+                      phraseDraft.trim().length === 0 ||
+                      addPhrase.isPending ||
+                      phrases.length >= QUICK_PHRASES_MAX
+                    }
+                    className="h-8 shrink-0 rounded-full px-3.5 text-[11.5px]"
+                  >
+                    Add
+                  </Button>
+                </form>
+              </PopoverContent>
+            </Popover>
           </div>
         ) : null}
 

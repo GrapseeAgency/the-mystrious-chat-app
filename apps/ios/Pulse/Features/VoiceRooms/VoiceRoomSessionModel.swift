@@ -133,7 +133,12 @@ public final class VoiceRoomSessionModel: ObservableObject {
         case .spaceState(let conversationId, let raw):
             guard conversationId == spaceConversationId else { return }
             if let state = Self.decode(WireSpaceState.self, from: raw) {
-                _ = space.apply(state: state, nowMs: nowMs())
+                let verdict = space.apply(state: state, nowMs: nowMs())
+                // R1-W2G D46 — an adopted SERVER position is the last known
+                // position too; the cache refreshes with the server's truth.
+                if case .adopt(let x, let y) = verdict {
+                    storeLastPosition(roomId: conversationId, x: x, y: y)
+                }
             }
         case .connectionState(let isOn):
             handleConnection(connected: isOn)
@@ -451,6 +456,12 @@ public final class VoiceRoomSessionModel: ObservableObject {
     public func joinSpace(conversationId: String) {
         guard !space.joined else { return }
         space.beginJoin()
+        // R1-W2G D46 — the durable last-position cache seeds the initial
+        // target on rejoin (web falls back to 0.5/0.5); the server still
+        // wins when its state returns a real self position (apply()).
+        if let cached = loadLastPosition(roomId: conversationId) {
+            space.seedInitialPosition(x: cached.x, y: cached.y)
+        }
         open(.space)
         // Remember which conversation the space seat belongs to (SpaceModel
         // is pure — no wire ids). The re-join path uses it too.
@@ -467,6 +478,9 @@ public final class VoiceRoomSessionModel: ObservableObject {
     public func leaveSpace() {
         guard space.joined else { return }
         if let conversationId = spaceConversationId {
+            // R1-W2G D46 — leave-time flush of the optimistic target (drag
+            // frames past the last throttled emit never wrote through).
+            storeLastPosition(roomId: conversationId, x: space.targetX, y: space.targetY)
             emitRoom(.spaceLeave, VoiceRoomWire.spaceLeave(conversationId: conversationId))
         }
         space.leave()
@@ -477,7 +491,26 @@ public final class VoiceRoomSessionModel: ObservableObject {
     public func moveSpace(x: Double, y: Double) {
         guard space.joined, let conversationId = spaceConversationId else { return }
         guard case .emit(let clampedX, let clampedY) = space.localMove(x: x, y: y, nowMs: nowMs()) else { return }
+        // R1-W2G D46 — write-through on every position change that EMITS:
+        // the 80 ms throttle gate doubles as the write debounce, and the
+        // direct defaults write is the house prefs pattern (voiceCaptions).
+        storeLastPosition(roomId: conversationId, x: clampedX, y: clampedY)
         emitRoom(.spaceMove, VoiceRoomWire.spaceMove(conversationId: conversationId, x: clampedX, y: clampedY))
+    }
+
+    // ── R1-W2G D46 — durable last-position cache ("space:lastpos:<roomId>",
+    // JSON-encoded SpaceLastPosition; direct defaults writes, the same
+    // pattern the captions toggle uses — the ONLY persisted artefacts of
+    // the rooms feature).
+
+    private func loadLastPosition(roomId: String) -> SpaceLastPosition? {
+        guard let data = defaults.data(forKey: PulsePrefs.spaceLastPositionKey(roomId)) else { return nil }
+        return try? JSONDecoder().decode(SpaceLastPosition.self, from: data)
+    }
+
+    private func storeLastPosition(roomId: String, x: Double, y: Double) {
+        guard let data = try? JSONEncoder().encode(SpaceLastPosition(x: x, y: y)) else { return }
+        defaults.set(data, forKey: PulsePrefs.spaceLastPositionKey(roomId))
     }
 
     /// The space conversation id — SpaceModel is pure (no wire ids), so

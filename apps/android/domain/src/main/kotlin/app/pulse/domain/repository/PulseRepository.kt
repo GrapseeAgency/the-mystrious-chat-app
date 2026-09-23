@@ -3,6 +3,8 @@ package app.pulse.domain.repository
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.BlockedAccount
 import app.pulse.domain.model.CallLogEntry
+// R1-W2F — per-conversation themes (F-FX-05).
+import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.CallSignalData
 import app.pulse.domain.model.CallSignalOut
 import app.pulse.domain.model.Channel
@@ -18,6 +20,7 @@ import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.MentionItem
 import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.ProfilePatch
+import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.SavedItem
 import app.pulse.domain.model.SafetyState
 import app.pulse.domain.model.ScheduledItem
@@ -712,6 +715,44 @@ interface PulseRepository {
 
     /** DELETE reminder — owner-only cancel (also unschedules the local notification). */
     suspend fun deleteReminder(reminderId: String): Result<Unit>
+
+    // ── R1-W2A — quick phrases (F-MS-29) ──────────────────────────────
+
+    /** GET /api/users/{viewerId}/phrases — the composer quick-phrase rail (position asc). */
+    suspend fun phrases(): Result<List<QuickPhrase>>
+
+    /** POST /api/users/{viewerId}/phrases { text } — server caps 12 rows × 120 chars. */
+    suspend fun addPhrase(text: String): Result<QuickPhrase>
+
+    /** DELETE /api/users/{viewerId}/phrases?phraseId= — owner-guarded. */
+    suspend fun deletePhrase(phraseId: String): Result<Unit>
+
+    // ── R1-W2F — F-MD-06 translation ──────────────────────────────────
+
+    /**
+     * POST /api/messages/{id}/translate { userId, lang? } — the server's LLM
+     * result is persisted per language (translate/route.ts) and the mapped
+     * fresh row carries it; the translated TEXT for the default language
+     * ("en") is returned. Re-translating the same message is a cheap server
+     * cache hit; 4xx/502 copy is honest ("Deleted messages cannot be…").
+     */
+    suspend fun translateMessage(messageId: String): Result<String>
+
+    // ── R1-W2F — F-FX-05 per-conversation themes (`chat.convThemes`) ──
+
+    /**
+     * Live per-conversation theme overrides, keyed by conversationId — the
+     * device-side mirror of the web `chat.convThemes` prefs blob, LRU-capped
+     * at [ConvTheme.MAX_MAP_ENTRIES]. Missing id = follows the global default.
+     */
+    val convThemes: Flow<Map<String, ConvTheme>>
+
+    /**
+     * Upsert ONE conversation's theme override (null = clear it — the room
+     * falls back to the global Appearance default). Persists LOCALLY through
+     * the same DataStore prefs mechanism as the Wave-8 rendering prefs.
+     */
+    suspend fun setConvTheme(conversationId: String, theme: ConvTheme?)
 
     /** POST /api/games — carrier message `kind=game` is upserted locally. */
     suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto>

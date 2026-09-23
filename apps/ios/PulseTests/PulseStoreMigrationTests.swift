@@ -594,4 +594,68 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertNil(PulseStore.linkPreview(fromJson: nil))
         XCTAssertNil(PulseStore.linkPreview(fromJson: "garbage"))
     }
+
+    // ── v8 round-trips (R1-W2B — D28 forward queue + F-MD-06 translations) ──
+
+    func testV8TranslationsRoundTripThroughCache() throws {
+        let store = try PulseStore()
+        var message = makeMessage(id: "m1", conversationId: "c1")
+        message.translations = [
+            WireTranslation(lang: "en", text: "Hello there"),
+            WireTranslation(lang: "es", text: "Hola"),
+        ]
+        try store.upsert(messages: [message])
+
+        let cached = try XCTUnwrap(try store.message(id: "m1"))
+        XCTAssertEqual(cached.translations?.count, 2)
+        XCTAssertEqual(cached.translations?.first?.lang, "en")
+        XCTAssertEqual(cached.translations?.first?.text, "Hello there")
+        XCTAssertEqual(cached.translations?.last?.text, "Hola")
+
+        // nil translations → NULL column → nil on the way back.
+        var bare = makeMessage(id: "m2", conversationId: "c1")
+        bare.translations = nil
+        try store.upsert(messages: [bare])
+        XCTAssertNil(try store.message(id: "m2")?.translations)
+
+        // Codec parity with the poll/linkPreview pair.
+        XCTAssertNil(PulseStore.translationsJsonData(nil))
+        XCTAssertNil(PulseStore.translations(fromJson: nil))
+        XCTAssertNil(PulseStore.translations(fromJson: "not json"))
+    }
+
+    func testV8OutboxForwardPayloadRoundTrip() throws {
+        let store = try PulseStore()
+        let forward = PulseOutboxForward(
+            kind: "file",
+            imagePath: nil,
+            audioPath: nil,
+            durationMs: nil,
+            filePath: "uploads/doc.pdf",
+            fileName: "doc.pdf",
+            fileSize: 2048,
+        )
+        try store.appendOutbox(
+            conversationId: "c1",
+            clientId: "fwd-1",
+            content: "document body",
+            kind: "file",
+            payloadJson: PulseOutboxForward.encode(forward),
+        )
+
+        let row = try XCTUnwrap(try store.outboxAll().first)
+        XCTAssertEqual(row.kind, "file")
+        let decoded = try XCTUnwrap(PulseOutboxForward.decode(row.payloadJson))
+        XCTAssertEqual(decoded, forward)
+
+        // Plain text rows carry no payload (decode → nil → text flush path).
+        try store.appendOutbox(conversationId: "c1", clientId: "txt-1", content: "plain", kind: "text")
+        let plain = try XCTUnwrap(try store.outboxAll().last)
+        XCTAssertNil(plain.payloadJson)
+        XCTAssertNil(PulseOutboxForward.decode(plain.payloadJson))
+
+        // Garbage payloads degrade to nil (never crash the flush).
+        XCTAssertNil(PulseOutboxForward.decode("not json"))
+        XCTAssertNil(PulseOutboxForward.decode(nil))
+    }
 }
