@@ -1,0 +1,175 @@
+F-ID-01	Create identity (name ≤32 + color swatch)
+F-ID-02	Handle claim: debounced availability, reserved/taken, suggestion, skip
+F-ID-03	Reclaim existing identity (409 name clash → lookup/login)
+F-ID-04	Session identity model
+F-ID-05	Multi-identity switcher
+F-ID-06	Forget viewer
+F-ID-07	Avatar color palette (8)
+F-CL-01	Summary list sorted by `updatedAt`, preview builders (text/photo/voice/file/reply/deleted/draft)
+F-CL-02	Unread counts, dock badge 99+
+F-CL-03	Pin to top (per-user toggle)
+F-CL-04	Mute 8 h / 1 w / always (+ "Muted until stamp" copy)
+F-CL-05	Archive + archived sub-page
+F-CL-06	Mark unread (manual)
+F-CL-07	Filter chips all/unread/groups (persisted)
+F-CL-08	Note to Self (get-or-create)
+F-CL-09	Streaks live/at-risk/lost + heat ring
+F-CL-10	Drafts: per-conv, list preview "Draft:", server mirror
+F-CL-11	Presence dots + "N online"
+F-CL-12	Typing preview in rows (4 s expiry)
+F-CL-13	Swipe-left reveal Pin/Archive
+F-CL-14	Long-press multi-select + batch archive/mute-8h/mark-read
+F-CL-15	Export chat `.txt` (full history ≤24 pages)
+F-CL-16	Clear my messages (sequential soft-delete)
+F-CL-17	Pull-to-refresh, skeletons, empty/error cards
+F-CL-18	Foreground 6 s poll
+F-CL-19	Conversation action sheet (pin/archive/unread/mute/export/clear)
+F-MS-01	Send text ≤2000 (server MESSAGE_MAX)
+| F-MS-02 | Formatting: ```pre```, `code`, **bold**, __underline__, *italic*, ~~strike~~, \|\|spoiler\|\| | **Build**: parser + styled spans; spoiler = tap-to-reveal | **Build**: AttributedString parser + blur spoiler | — (content is raw markdown-ish text) | — | — | — | — | — | — | Spoiler reveal animation |
+F-MS-03	Jumbo-emoji detection (emoji-only → large bubble)
+F-MS-04	Edit own text message
+F-MS-05	Delete for everyone → tombstone
+F-MS-06	Reply quote (incl. deleted variant)
+F-MS-07	Threads ("Reply in thread", thread view)
+F-MS-08	Reactions: 6 quick + 24 picker, grouped chips, who-reacted, toggle
+F-MS-09	Copy text
+F-MS-10	Forward to chat… (multi-target)
+F-MS-11	Save/star → Saved library
+F-MS-12	Pin message + room pins sheet
+F-MS-13	Convert message → task
+F-MS-14	Remind me (picker → reminder)
+F-MS-15	Message info (owner: delivered/viewed, timestamps)
+F-MS-16	View-once (burn after view)
+F-MS-17	Incognito send (anon + stable alias FNV-1a)
+F-MS-18	Scheduled messages + scheduled manager
+F-MS-19	Disappearing TTL (conversation)
+F-MS-20	Slow mode (429 + retryAfter countdown on composer)
+F-MS-21	Broadcast composer lock (channels/stage non-admin)
+F-MS-22	Slash commands (15) + SlashPalette
+F-MS-23	Message effects (confetti/lasers/echo/sparkles full-screen)
+F-MS-24	Sticker picker (24)
+F-MS-25	Offline send → outbox FIFO ≤50, `temp-` bubble, flush on online/visible/20 s, stop-at-first-failure
+F-MS-26	Delivery ticks: sent → delivered → read ("Seen")
+F-MS-27	Typing emit (start/1.2 s idle stop)
+F-MS-28	History paging (`before` cursor) + day separators + reverse layout
+F-MS-29	Quick phrases rail (CRUD)
+F-MS-30	Topic rail (per-room topics; scoped message view)
+F-MD-01	Photo send: client square-crop ≤512 / compress ≤1280 JPEG 0.82 → data-URL POST → bubble
+F-MD-02	Document send ≤10 MB (file card: name/size icon)
+F-MD-03	Voice notes: hold-to-record ≥600 ms, waveform, playback 1×/1.5×/2×, duration
+F-MD-04	Voice-note transcription (ASR strip under bubble)
+F-MD-05	Link unfurl (OG card, live fetch, relay)
+F-MD-06	Translation (LLM, per lang, persisted)
+F-MD-07	Location share (pin card)
+F-MD-08	Photo lightbox / viewer (tap → full-screen, captions)
+F-MD-09	Upload durability (UploadedFile BLOB fallback survives disk wipe)
+F-RO-01	Polls: builder, vote/move, close, live tally
+F-RO-02	Red packets: send (atomic debit + precomputed slices), grab, refund, bubble art
+F-RO-03	Whiteboard: live multi-user strokes, undo, clear
+F-RO-04	Kanban: board CRUD, message→card
+F-RO-05	Events: create, RSVP going/maybe/no, check-in
+F-RO-06	Reminders: create, due list, fire
+F-RO-07	Tic-tac-toe: invite (open O seat), moves, win line, abandoned
+F-RO-08	Tournaments: open season, join, standings, finish
+F-RO-09	Leaderboard (XP + msgs + game wins + tournament pts; scoped/global)
+F-RO-10	XP economy (2/msg, 250/day cap) + streak buckets
+F-VR-01	Join/leave voice room, live roster
+F-VR-02	Push-to-talk: hold → unmute, PCM chunk relay, mute toggle
+F-VR-03	Live captions (~4 s PCM → ASR → ephemeral `voice:transcript`)
+F-VR-04	Speaking indicators
+F-ST-01	Stage rooms: speakers/audience hierarchy, join/leave
+F-ST-02	Hand raise + host approve (audience → speaker)
+F-ST-03	Host controls: mute speaker, end room
+F-ST-04	Stage audio = same PTT chunk pipeline as F-VR-02
+F-SP-01	Spatial map: join, move avatar between positions
+F-SP-02	Peer positions rendered live
+F-SP-03	Audio behaviour follows web contract (position relay only; no positional-audio DSP server-side)
+F-CA-01	Audio call: offer/answer/ICE over socket, P2P (Google STUN; **no TURN — same limitation as web**)
+F-CA-02	Video call (video→audio fallback when no camera)
+F-CA-03	Ring / accept / reject / 30 s timeout / busy / offline guards
+F-CA-04	Call overlay UI: mute, speaker toggle, hangup, live duration
+F-CA-05	Call log (single-writer: caller logs completed/missed/declined) + Calls page
+F-CA-06	In-call state survives navigation (web overlay is shell-level)
+F-SR-01	Story rail: rings (unseen spin), mine/seen chips
+F-SR-02	Composer: text/image story + background color
+F-SR-03	Viewer: tap-through, progress segments, 24 h expiry
+F-SR-04	Story views: mark viewed (dedup), owner sees viewer list
+F-SR-05	Delete own story
+F-CH-01	Channel directory (+ mine)
+F-CH-02	Create broadcast channel + first post
+F-CH-03	Subscribe / unsubscribe (admin succession rules)
+F-CH-04	Composer lock for non-admins (see F-MS-21)
+F-CP-01	Contacts roster A–Z + presence
+F-CP-02	Add-contact page (name lookup → DM)
+F-CP-03	Full user page (#/user/<id>): profile, stats, actions
+F-CP-04	Edit profile: name/about/avatar upload/status emoji+text
+F-CP-05	Block/unblock + server-enforced DM boundary
+F-CP-06	Report account (reason + details; private)
+F-CP-07	Safety numbers (12×5 digits, deterministic sha256) + verify
+F-CP-08	Peer verification badge
+F-CP-09	Status emoji + text
+F-SM-01	Spotlight global search (⌘K / search pill): conversations + server message hits
+F-SM-02	Room search page (#/room/<id>/search)
+F-SM-03	Mentions feed + unread badge (@FullName boundary regex, 14 d)
+F-SM-04	@mention composition (trigger in composer)
+F-FD-01	Folder rail with data + filter
+F-FD-02	Create / rename / emoji / reorder
+F-FD-03	Membership full-replace (txn) + assignment from list
+F-PI-01	≤3 live panes; 1 expanded draggable glass window; open-new demotes focused + evicts oldest
+F-PI-02	Collapsed pills: 48 px avatar, unread 9+, close X, tap → expand/open conversation
+F-PI-03	Header tap dispatches open-conversation
+F-SE-01	Account (profile card, copy User ID, edit-profile)
+F-SE-02	Appearance (color mode, UI themes, nav styles, FX mode, wallpaper)
+F-SE-03	Chat (bubbleRadius, density, drafts & outbox management)
+F-SE-04	Notifications (previews/sound/vibrate + quiet hours)
+F-SE-05	Privacy & Security (lastSeen / readReceipts / typing + blocked list)
+F-SE-06	Real-time & Voice (socket badge, online count, network, voice-room info — **display-only on web too**)
+F-SE-07	Accessibility (reduced motion, haptics)
+F-SE-08	Data & Storage (footprint stats, clear drafts/outbox, PWA install)
+F-SE-09	About (version, GitHub)
+F-HB-01	Wallet (PC/GEM balance + ledger)
+F-HB-02	Daily check-in (+25 PC streak bonus)
+F-HB-03	@handle transfer (atomic)
+F-HB-04	Swap PC⇄GEM (rates + stats)
+F-HB-05	Tasks (personal kanban CRUD)
+F-HB-06	Market (post listing, buy with escrow)
+F-HB-07	Logs stream (limit 80)
+F-HB-08	Apps matrix: 100-app catalog, 10 categories, search, install/connect
+F-HB-09	App communities (appKey group, founder admin)
+F-HB-10	My apps (installed list)
+F-GR-01	Create DM/group (server dedupe)
+F-GR-02	Group info: rename, photo, description, flags
+F-GR-03	Members: add, remove, promote/demote (admin)
+F-GR-04	Leave group
+F-GR-05	Invite codes: create/regenerate, public preview, redeem (`?join=` web)
+F-GR-06	conversation:updated handling (list refresh trigger)
+F-OF-01	Offline shell (SW precache, offline 503 page)
+F-OF-02	PWA install prompt
+F-OF-03	Outbox FIFO ≤50 (F-MS-25)
+F-OF-04	Flush triggers: mount-with-pending / online / visibilitychange / 20 s self-heal
+F-OF-05	Delta sync (web re-fetches full lists; **natives should add cursor sync**)
+F-AI-01	LLM companion bot "Pulse AI" (DMs always; groups via @Pulse AI; typing relay; 16-msg context)
+F-AI-02	Command bot (10 deterministic commands; trigger via `/cmd`, `@pulseai`, "pulseai,")
+F-AI-03	Keyword automations (admin-authored trigger/reply, word-boundary, `viaAutomation`)
+F-AI-04	AI recap (last 30 msgs → ≤5 bullets; 5-min cache; 409 <5)
+F-AI-05	Webhooks: manage (participant-gated) + public ingest `POST /api/webhooks/{token}`
+F-RT-01	join → joined{onlineUserIds} → presence:snapshot (privacy-filtered)
+F-RT-02	typing (privacy-gated R47)
+F-RT-03	message fan-out: new/deleted/read/react/edited/pinned/viewed
+F-RT-04	poll:voted, link:preview, translation:added, conversation:updated
+F-RT-05	voice/stage/space room events
+F-RT-06	call signaling
+F-RT-07	Reconnect: 800 ms→5 s, polling-first upgrade (web)
+F-RT-08	Privacy flags service-side (typing hidden, presence filtered; fail-open 30 s TTL)
+F-FX-01	Ambient modes ×6 (off/aurora/caustics/mesh/stars/liquid; 3 GLSL shaders + 2 Canvas approximations; epoch t=14.2)
+F-FX-02	Particle bursts: confetti/hearts/stars/burst (send/react/onboarding triggers)
+F-FX-03	5 UI themes (glass/kinetic/minimal/dynamic/aero)
+F-FX-04	13 nav architectures
+F-FX-05	Conversation themes (wallpaper + tint, ≤48 entries in prefs)
+F-FX-06	Dark mode (system/light/dark cycle)
+F-FX-07	Motion system: 4 springs (snappy/soft/bouncy/gentle), press 0.94, stagger 28 ms, reduced-motion
+F-PS-01	In-app update system (manifest → APK, 4 integrity gates) — **Android-only today by design**
+F-PS-02	Scheduled-message dispatch cron (server flushes ≤25 due)
+F-PS-03	OS push notifications — **does not exist on web at all** (in-app only)
+F-PS-04	Deep links: web hash routes + `?join=CODE`; Android manifest declares `pulse://` (dead); iOS none
+F-PS-05	Health/observability (socket `GET /` health; web debug surfaces)
