@@ -29,6 +29,9 @@ struct RootView: View {
     @State private var newChatOpen = false
     @State private var settingsOpen = false
     @State private var storiesOpen = false
+    // R3-A item 9 — the dock More menu carries a Calls row that opens the
+    // real call-history page (same surface the chats header hosts).
+    @State private var callsOpen = false
     // Wave 2 — dock More → Saved opens the real saved library (spec §1 row 14);
     // the old create-self-chat detour is gone.
     @State private var savedLibraryOpen = false
@@ -104,6 +107,7 @@ struct RootView: View {
                             onSettings: { settingsOpen = true },
                             onSaved: { savedLibraryOpen = true },
                             onStories: { storiesOpen = true },
+                            onCalls: { callsOpen = true },
                         )
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
@@ -124,6 +128,15 @@ struct RootView: View {
                 }
                 .sheet(isPresented: $storiesOpen) {
                     StoriesView(session: session)
+                }
+                // R3-A item 9 — the dock More → Calls page. Row taps ride the
+                // EXISTING linked-room bridge (pendingLinkedRoomId → fetch →
+                // Chats tab → open room), identical to the chats-header entry.
+                .sheet(isPresented: $callsOpen) {
+                    CallsHistoryView(session: session, onOpenConversation: { conversationId in
+                        callsOpen = false
+                        session.pendingLinkedRoomId = conversationId
+                    })
                 }
                 .sheet(isPresented: $savedLibraryOpen) {
                     SavedLibraryView(session: session) { conversation, messageId in
@@ -306,6 +319,8 @@ private struct CapsuleDock: View {
     var onSettings: () -> Void = {}
     var onSaved: () -> Void = {}
     var onStories: () -> Void = {}
+    // R3-A item 9 — More → Calls (the real history page).
+    var onCalls: () -> Void = {}
 
     @State private var moreOpen = false
     @State private var wobbling: PulseTab?
@@ -434,6 +449,9 @@ private struct CapsuleDock: View {
             }
             moreItem("Search", icon: "magnifyingglass") {
                 session.requestChatsSearch()
+            }
+            moreItem("Calls", icon: "phone") {
+                onCalls()
             }
             moreItem("Saved", icon: "bookmark") {
                 onSaved()

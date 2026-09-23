@@ -577,6 +577,22 @@ private fun PulseShell(
                     CallsView(
                         onBack = { navController.popBackStack() },
                         onOpenRoom = { id -> navController.navigate("room/$id") },
+                        // R3-B item 5 — redial: the SAME engine path as the contacts
+                        // call button, driven by the row's denormalized peer + wire
+                        // kind (the engine resolves the DM, iOS R2-D parity).
+                        onRedial = { row ->
+                            row.peer?.let { peer ->
+                                callVm.callPeer(
+                                    peerId = peer.id,
+                                    name = peer.name,
+                                    color = peer.color,
+                                    avatar = peer.avatar,
+                                    callerName = viewerName,
+                                    callerColor = viewerColor,
+                                    kind = row.kind,
+                                )
+                            }
+                        },
                     )
                 }
             }

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Forward
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Poll
@@ -62,6 +63,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.AnnotatedString
@@ -199,6 +201,10 @@ internal fun MessageActionSheet(
     // ── Wave 7 ──
     onAddToBoard: (() -> Unit)? = null,
     onRemindMe: (() -> Unit)? = null,
+    // ── R3-B item 6 — web "Convert to task" (text rows, thread roots only) ──
+    onConvertToTask: (() -> Unit)? = null,
+    /** Busy while the kanban round-trip runs — the row spins + disables. */
+    taskPending: Boolean = false,
     // ── R1-W2F — F-MD-06 LLM translation (text rows only; server persists per language) ──
     onTranslate: (() -> Unit)? = null,
     /** iOS parity — an already-translated row re-labels the action. */
@@ -252,6 +258,14 @@ internal fun MessageActionSheet(
         // ── Wave 7: message→kanban card + per-message reminder (web parity) ──
         if (message.kind == Message.Kind.TEXT && !message.isDeleted) {
             onAddToBoard?.let { SheetAction(Icons.Filled.ViewKanban, "Add to board", it) }
+        }
+        // R3-B item 6 — web chat-room.tsx:6372-6379: "Convert to task" for
+        // TOP-LEVEL text rows (parentId === null), LoaderCircle while pending.
+        // Checklist is the native stand-in for the web's lucide checklist glyph.
+        if (message.kind == Message.Kind.TEXT && !message.isDeleted && message.threadRootId == null) {
+            onConvertToTask?.let {
+                SheetAction(Icons.Filled.Checklist, "Convert to task", it, busy = taskPending, enabled = !taskPending)
+            }
         }
         onRemindMe?.let { SheetAction(Icons.Filled.Alarm, "Remind me…", it) }
         onDelete?.let {
@@ -630,15 +644,28 @@ internal fun SheetAction(
     label: String,
     onClick: () -> Unit,
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
+    /** R3-B item 6 — disabled row (web GlassMenuItem disabled parity). */
+    enabled: Boolean = true,
+    /** Swap the leading glyph for a spinner while the action round-trips. */
+    busy: Boolean = false,
 ) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.55f)
             .padding(horizontal = 24.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = tint)
+        if (busy) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                strokeWidth = 2.dp,
+                color = tint,
+            )
+        } else {
+            Icon(icon, contentDescription = null, tint = tint)
+        }
         Spacer(Modifier.width(16.dp))
         Text(label, fontSize = 16.sp)
     }

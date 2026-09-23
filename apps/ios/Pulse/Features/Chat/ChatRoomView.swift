@@ -111,6 +111,10 @@ private struct RoomMessageRow: View {
     let onViewOnce: (WireChatMessage) -> Void
     // ── Wave 7 — rich-object cards + message actions ──
     let wave7: Wave7RoomActions
+    // R3-A item 7 — roster names drive the @mention chips in bubble bodies.
+    let memberNames: [String]
+    // R3-A item 4 — tap a reaction chip → who-reacted roster sheet.
+    let onWhoReacted: (WireChatMessage, String) -> Void
 
     var body: some View {
         Group {
@@ -153,6 +157,8 @@ private struct RoomMessageRow: View {
                 },
                 onViewOnceOpen: onViewOnce,
                 wave7: wave7,
+                memberNames: memberNames,
+                onReactionChip: onWhoReacted,
             )
             .contextMenu { contextMenu }
             .onAppear {
@@ -243,6 +249,18 @@ private struct RoomMessageRow: View {
                 Label("Add to board", systemImage: "square.stack.3d.up.fill")
             }
         }
+        // R3-A item 11 — Chanty-style direct conversion (web chat-room.tsx
+        // "Convert to task" :6372-6379: text rows only, not deleted, thread
+        // roots only — the message itself becomes the board card via the
+        // messageId POST, no form).
+        if message.kind == "text" && message.deletedAt == nil && message.parentId == nil
+            && !message.id.hasPrefix("local_") {
+            Button {
+                viewModel.convertMessageToTask(message, session: session)
+            } label: {
+                Label("Convert to task", systemImage: "checklist")
+            }
+        }
         Button {
             wave7.reminderAnchor = message
             wave7.remindersOpen = true
@@ -301,6 +319,10 @@ private struct RoomContent: View {
     @State private var whoReactedOpen = false
     @State private var whoReactedMessage: WireChatMessage?
     @State private var whoReactedEmoji = ""
+
+    /// R3-A item 7 — roster display names for the @mention chips in bubble
+    /// bodies (web memberNames stable-list parity).
+    private var memberNames: [String] { conversation.members.map(\.name) }
 
     // ── R1-W2B — location share / conv themes / quick phrases ──
     @State private var locationOpen = false
@@ -368,6 +390,16 @@ private struct RoomContent: View {
         default: return PulseTheme.emerald
         }
     }
+
+    /// R3-A item 8 — the four effect names (web EFFECT set verbatim:
+    /// confetti/lasers/echo/sparkles) with SF glyphs for the attach-menu
+    /// Effects submenu. The pick routes the EXISTING sendWithEffect engine.
+    static let expressEffects: [(name: String, icon: String)] = [
+        ("confetti", "party.popper"),
+        ("lasers", "bolt"),
+        ("echo", "dot.radiowaves.left.and.right"),
+        ("sparkles", "sparkles"),
+    ]
 
     private var wallpaperWash: some View {
         Group {
@@ -439,6 +471,15 @@ private struct RoomContent: View {
             // F-SM-04 — @-suggester popover (roster, top-5 prefix match).
             if !mentionCandidates.isEmpty {
                 mentionPopover()
+            }
+            // R3-A item 1 — the live '/' palette (web SlashPalette parity:
+            // draft starts with '/', pick routes the outcome machine). The
+            // palette and the @-suggester never compete — a '/' draft carries
+            // no @-token at the tail.
+            if slashPaletteVisible {
+                SlashPaletteView(draft: viewModel.draft) { command in
+                    pickSlashCommand(command)
+                }
             }
             if !session.connected {
                 offlineStrip
@@ -1104,6 +1145,13 @@ private struct RoomContent: View {
                                 viewModel.revealViewOnce(message, session: session)
                             },
                             wave7: wave7,
+                            memberNames: memberNames,
+                            onWhoReacted: { message, emoji in
+                                // R3-A item 4 — chip tap → the who-reacted roster.
+                                whoReactedMessage = message
+                                whoReactedEmoji = emoji
+                                whoReactedOpen = true
+                            },
                         )
                     }
                     if viewModel.loadingOlder && !viewModel.messages.isEmpty {
@@ -1388,6 +1436,16 @@ private struct RoomContent: View {
             if viewModel.isSlowModeLocked {
                 slowModeChip
             }
+            // R3-A item 5 — the incognito hint (web anon-pill parity,
+            // chat-room.tsx:4799-4833): groups only, X disarms the mask.
+            if conversation.isGroup && viewModel.anonOn {
+                incognitoPill
+            }
+            // R3-A item 3 — pending scheduled sends (web scheduledChip parity,
+            // chat-room.tsx:4726-4741) — tap opens the manager drawer.
+            if viewModel.scheduledCount > 0 {
+                scheduledChip
+            }
             if broadcastLocked {
                 // F-CH-04 — the broadcast lock replaces the composer row for
                 // non-admins (verbatim web copy; input is gone, not disabled).
@@ -1434,6 +1492,116 @@ private struct RoomContent: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Slow mode — you can send again in \(viewModel.slowModeRemainingSeconds) seconds")
+    }
+
+    /// R3-A item 5 — the incognito hint pill (web anon-pill :4809-4830 copy
+    /// verbatim): emerald wash + mask glyph + "hides your name" line + an X
+    /// that disarms. Only mounted while the mask is armed in a GROUP.
+    private var incognitoPill: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "theatermasks.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(PulseTheme.emerald)
+            Text("Incognito on — next message hides your name")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(PulseTheme.textSecondary)
+            Spacer(minLength: 0)
+            Button {
+                PulseHaptics.tap()
+                viewModel.anonOn = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(PulseTheme.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Turn off incognito")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(PulseTheme.emerald.opacity(0.12))
+                .overlay(Capsule().strokeBorder(PulseTheme.emerald.opacity(0.35), lineWidth: 1)),
+        )
+        .padding(.horizontal, 14)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// R3-A item 3 — pending scheduled sends (web scheduledChip :4726-4741
+    /// "N pending — tap to manage" parity; the web also stamps the next
+    /// dispatch time, the iOS count-only chip notes that divergence).
+    private var scheduledChip: some View {
+        Button {
+            PulseHaptics.tap()
+            scheduledManagerOpen = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(PulseTheme.amber)
+                Text("\(viewModel.scheduledCount) pending — tap to manage")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(PulseTheme.textSecondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(PulseTheme.glassFill)
+                    .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)),
+            )
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(PulseButtonStyle())
+        .padding(.horizontal, 14)
+        .padding(.bottom, 6)
+        .accessibilityLabel("\(viewModel.scheduledCount) scheduled messages — open the manager")
+    }
+
+    // ── R3-A item 1 — the '/' palette wiring ─────────────────
+
+    /// Web SlashPalette open-gate parity (chat-room.tsx:5200): the draft
+    /// starts with '/' while the composer is in normal send mode. The
+    /// @-suggester owns the popover slot when its candidates are visible.
+    private var slashPaletteVisible: Bool {
+        !broadcastLocked
+            && viewModel.editingTarget == nil
+            && !viewModel.isRecording
+            && mentionCandidates.isEmpty
+            && viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/")
+    }
+
+    /// Web runPaletteCommand parity (chat-room.tsx:3226-3330): the pick
+    /// stages "/cmd + any typed args"; commands that take arguments wait for
+    /// the send tap (the send path runs the SAME outcome machine), arg-less
+    /// commands fire immediately through interpretSlashDraft so EVERY
+    /// outcome (sheets / help / recap / remind / effects / errors) lands.
+    private func pickSlashCommand(_ command: PulseRemediationLogic.SlashCommand) {
+        let typedArgs = slashArgs(from: viewModel.draft)
+        viewModel.draft = typedArgs.isEmpty ? "\(command.cmd) " : "\(command.cmd) \(typedArgs)"
+        guard command.args.isEmpty else {
+            composerFocused = true
+            return
+        }
+        _ = viewModel.interpretSlashDraft(session: session)
+    }
+
+    /// The args after the leading "/token" (web replace(/^\/\S*\s*/, '')
+    /// parity) — no closure predicates, plain token walk.
+    private func slashArgs(from draft: String) -> String {
+        var pieces: [String] = []
+        var droppedFirst = false
+        for piece in draft.split(separator: " ") {
+            if !droppedFirst && piece.hasPrefix("/") {
+                droppedFirst = true
+                continue
+            }
+            pieces.append(String(piece))
+        }
+        return pieces.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     @ViewBuilder
@@ -1589,6 +1757,11 @@ private struct RoomContent: View {
         } else if viewModel.staged != nil {
             viewModel.sendStaged(session: session)
         } else {
+            // R3-A item 1 — the send tap is a LIVE slash trigger (web Enter
+            // parity: submit runs parseComposerInput first). A leading '/'
+            // command is consumed by the outcome machine; plain text falls
+            // through to the ordinary send.
+            if viewModel.interpretSlashDraft(session: session) { return }
             viewModel.send(session: session)
         }
     }
@@ -1656,6 +1829,19 @@ private struct RoomContent: View {
             } label: {
                 Label("Location", systemImage: "location.fill")
             }
+            // R3-A item 3 — scheduled sends UI: arm the draft (ScheduleSheet)
+            // and manage the pending rows (ScheduledManagerSheet: list +
+            // cancel). Web tray 'Schedule' + manager drawer parity.
+            Button {
+                scheduleOpen = true
+            } label: {
+                Label("Schedule send", systemImage: "calendar.badge.clock")
+            }
+            Button {
+                scheduledManagerOpen = true
+            } label: {
+                Label("Scheduled sends", systemImage: "clock.arrow.circlepath")
+            }
             Button {
                 pollBuilderOpen = true
             } label: {
@@ -1695,6 +1881,39 @@ private struct RoomContent: View {
                 wave7.kanbanOpen = true
             } label: {
                 Label("Kanban", systemImage: "square.stack.3d.up.fill")
+            }
+            // ── R3-A items 2/5/8 — the Express section (web tray 'Express'
+            // group parity): sticker packs, the effect-flagged sends and the
+            // incognito mask (groups only) — every former-dead surface now
+            // has a discoverable entry.
+            Section("Express") {
+                Button {
+                    stickerOpen = true
+                } label: {
+                    Label("Stickers", systemImage: "face.smiling")
+                }
+                Menu {
+                    ForEach(Self.expressEffects, id: \.name) { effect in
+                        Button {
+                            viewModel.sendEffect(effect: effect.name, session: session)
+                        } label: {
+                            Label(effect.name.capitalized, systemImage: effect.icon)
+                        }
+                    }
+                } label: {
+                    Label("Effects", systemImage: "sparkles")
+                }
+                if conversation.isGroup {
+                    Button {
+                        PulseHaptics.tap()
+                        viewModel.anonOn.toggle()
+                    } label: {
+                        Label(
+                            viewModel.anonOn ? "Incognito on — tap to send under your name" : "Incognito",
+                            systemImage: viewModel.anonOn ? "theatermasks.fill" : "theatermasks",
+                        )
+                    }
+                }
             }
         } label: {
             Image(systemName: viewModel.staged == nil ? "plus.circle.fill" : "minus.circle.fill")
@@ -2027,6 +2246,11 @@ struct BubbleView: View {
     var onViewOnceOpen: ((WireChatMessage) -> Void)? = nil
     // ── Wave 7 — rich-object cards (red packet / game / tournament) ──
     var wave7: Wave7RoomActions? = nil
+    // R3-A item 7 — roster names drive the @mention chips in body text.
+    var memberNames: [String] = []
+    // R3-A item 4 — tap a reaction chip → who-reacted roster sheet (web
+    // chat-room.tsx ReactionChip tap → reactionInfo parity). nil = decorative.
+    var onReactionChip: ((WireChatMessage, String) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -2187,9 +2411,23 @@ struct BubbleView: View {
             case "location":
                 locationContent
             default:
-                Text(message.content)
-                    .font(.body)
-                    .textSelection(.enabled)
+                // R3-A items 6/7 — the web BubbleText outcome natively: jumbo
+                // solo-emoji rows render oversized plain text; everything else
+                // flows through the ported FORMAT_RE formatter + mention chips.
+                if PulseRemediationLogic.isJumboEmoji(message.content) {
+                    Text(message.content)
+                        .font(.system(size: 34))
+                        .lineSpacing(2)
+                        .textSelection(.enabled)
+                        .accessibilityLabel("Emoji message: \(message.content)")
+                } else {
+                    PulseBubbleBody(
+                        content: message.content,
+                        cacheKey: message.id,
+                        memberNames: memberNames,
+                        mine: mine,
+                    )
+                }
             }
         }
     }
@@ -2557,17 +2795,33 @@ struct BubbleView: View {
     private var reactionChips: some View {
         HStack(spacing: 4) {
             ForEach(reactions, id: \.emoji) { group in
-                HStack(spacing: 3) {
-                    Text(group.emoji).font(.caption)
-                    if group.count > 1 {
-                        Text("\(group.count)")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                // R3-A item 4 — the chip is a Button whenever the room wires
+                // the who-reacted sheet (web ReactionChip long-press → drawer
+                // parity, native affordance = tap). Without the callback the
+                // chip stays decorative (threads).
+                Button {
+                    PulseHaptics.tap()
+                    onReactionChip?(message, group.emoji)
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(group.emoji).font(.caption)
+                        if group.count > 1 {
+                            Text("\(group.count)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(.thinMaterial))
+                    .contentShape(Capsule())
                 }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(.thinMaterial))
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    onReactionChip == nil
+                        ? "\(group.count) reactions with \(group.emoji)"
+                        : "Who reacted with \(group.emoji) — \(group.count) people",
+                )
             }
         }
         .offset(y: 12)
@@ -2575,6 +2829,152 @@ struct BubbleView: View {
 
     private func reactionChipsHeight() -> CGFloat {
         reactions.isEmpty ? 0 : 14
+    }
+}
+
+/// R3-A items 6/7 — the web BubbleText outcome natively. Runs come from the
+/// tested pure logic (PulseBubbleTextLogic = buildMentionRuns + the ported
+/// FORMAT_RE parser); the renderer:
+///   • concatenates consecutive inline runs into ONE SwiftUI Text (perfect
+///     flow for the common bold/italic/code/mention cases),
+///   • renders ```pre``` blocks and ||spoiler|| runs as detached blocks —
+///     spoilers blur + tap-reveal (web SpoilerSpan :6804-6834 parity).
+/// Performance: the parsed run list is NSCache'd per message id + roster
+/// signature (PulseBubbleTextLogic.cachedRuns) so LazyVStack re-renders
+/// never re-scan long bodies.
+struct PulseBubbleBody: View {
+    let content: String
+    let cacheKey: String
+    let memberNames: [String]
+    let mine: Bool
+
+    @State private var revealedSpoilers: Set<Int> = []
+
+    var body: some View {
+        let runs = PulseBubbleTextLogic.cachedRuns(key: cacheKey, content: content, memberNames: memberNames)
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(blocked(runs).enumerated()), id: \.offset) { _, block in
+                chunkView(block)
+            }
+        }
+        .textSelection(.enabled)
+    }
+
+    /// One rendered chunk: a pure inline run list → one attributed Text;
+    /// a pre/spoiler run → its dedicated block view.
+    @ViewBuilder
+    private func chunkView(_ chunk: [PulseBubbleTextLogic.Run]) -> some View {
+        if let first = chunk.first {
+            switch first.style {
+            case .pre:
+                preBlock(first.text)
+            case .spoiler:
+                spoilerBlock(first.text, id: spoilerId(first.text))
+            default:
+                inlineText(chunk)
+            }
+        }
+    }
+
+    private func inlineText(_ runs: [PulseBubbleTextLogic.Run]) -> Text {
+        var merged = Text("")
+        for run in runs {
+            merged = merged + styled(run)
+        }
+        return merged
+    }
+
+    /// Web run styling parity (BubbleText :6898-6967): bold/italic/underline/
+    /// strike, mono code chips, emerald mention chips. Run backgrounds make
+    /// the chips readable on BOTH bubble fills (web bg-emerald-500/20).
+    private func styled(_ run: PulseBubbleTextLogic.Run) -> Text {
+        let piece = Text(run.text)
+        switch run.style {
+        case .plain:
+            return piece
+        case .bold:
+            return piece.bold()
+        case .italic:
+            return piece.italic()
+        case .underline:
+            return piece.underline()
+        case .strike:
+            return piece.strikethrough()
+        case .code:
+            return piece
+                .font(.system(.callout, design: .monospaced))
+                .backgroundColor(mine ? Color.white.opacity(0.20) : Color.primary.opacity(0.07))
+        case .pre:
+            return piece
+        case .spoiler:
+            return piece
+        case .mention:
+            return piece
+                .bold()
+                .foregroundColor(PulseTheme.emeraldDeep)
+                .backgroundColor(PulseTheme.emerald.opacity(0.20))
+        }
+    }
+
+    /// ```pre``` — block-level mono card (web :6917-6928).
+    private func preBlock(_ text: String) -> some View {
+        Text(text)
+            .font(.system(.callout, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(mine ? Color.black.opacity(0.20) : Color.primary.opacity(0.06)),
+            )
+            .accessibilityLabel("Code block")
+    }
+
+    /// ||spoiler|| — blur-reveal (web SpoilerSpan: 5px blur + wash, tap once).
+    private func spoilerBlock(_ text: String, id: Int) -> some View {
+        let revealed = revealedSpoilers.contains(id)
+        return Text(text)
+            .padding(.horizontal, 3)
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(revealed ? Color.clear : (mine ? Color.white.opacity(0.25) : Color.secondary.opacity(0.20))),
+            )
+            .blur(radius: revealed ? 0 : 5)
+            .onTapGesture {
+                guard !revealed else { return }
+                PulseHaptics.tap()
+                revealedSpoilers.insert(id)
+            }
+            .accessibilityLabel(revealed ? text : "Hidden spoiler — tap to reveal")
+    }
+
+    /// Spoiler ids must survive re-renders even when the SAME text appears
+    /// twice — key on the run text (revealed state is per-row @State anyway).
+    private func spoilerId(_ text: String) -> Int {
+        PulseTheme.hashString(text)
+    }
+
+    /// Groups consecutive runs so pre/spoiler split the flow into blocks and
+    /// everything else concatenates inline (web <p> semantics).
+    private func blocked(_ runs: [PulseBubbleTextLogic.Run]) -> [[PulseBubbleTextLogic.Run]] {
+        var blocks: [[PulseBubbleTextLogic.Run]] = []
+        var inline: [PulseBubbleTextLogic.Run] = []
+        for run in runs {
+            if run.style == .pre || run.style == .spoiler {
+                if !inline.isEmpty {
+                    blocks.append(inline)
+                    inline = []
+                }
+                blocks.append([run])
+            } else {
+                inline.append(run)
+            }
+        }
+        if !inline.isEmpty {
+            blocks.append(inline)
+        }
+        return blocks
     }
 }
 
@@ -3479,8 +3879,68 @@ final class RoomViewModel: ObservableObject {
             return true
         case .effect(let name, let content):
             draft = ""
+            // R3-A item 8 — the web send path can never fire an effect with
+            // an empty body (its send button is disabled on empty input), so
+            // the machine mirrors that honestly instead of POSTing "".
+            guard !content.isEmpty else {
+                session.toasts.show("Type the message first — the effect rides your send")
+                return true
+            }
             sendWithEffect(effect: name, content: content, session: session)
             return true
+        }
+    }
+
+    /// R3-A item 8 — attach-menu Effects entry: the CURRENT draft rides the
+    /// EXISTING sendWithEffect engine (optimistic temp → payload {effect} →
+    /// particle burst). An empty draft surfaces the honest toast instead of
+    /// a silent no-op; reply/edit/staged state blocks like the plain send.
+    func sendEffect(effect: String, session: PulseSession) {
+        let body = draft.trimmingCharacters(in: .whitespaces)
+        guard !body.isEmpty else {
+            session.toasts.show("Type the message first — the effect rides your send")
+            return
+        }
+        guard editingTarget == nil, staged == nil else { return }
+        draft = ""
+        replyTarget = nil
+        typingStopTask?.cancel()
+        typingStopTask = nil
+        session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
+        sendWithEffect(effect: effect, content: body, session: session)
+    }
+
+    // ── R3-A item 11 — Chanty-style message → task conversion ──
+
+    /// Re-entry guard while a conversion POST is in flight (the context menu
+    /// has no spinner; a second tap inside the window is ignored).
+    private var convertingTaskIds: Set<String> = []
+
+    /// Web convertToTask parity (chat-room.tsx:2100-2122): the message itself
+    /// becomes a board card via POST /api/conversations/{id}/kanban with
+    /// { userId, messageId } — the server derives the title (first 80 chars)
+    /// and keeps sourceMessageId provenance. Honest toast on BOTH outcomes;
+    /// the success burst mirrors web fireParticles({kind:'burst',count:40}).
+    func convertMessageToTask(_ message: WireChatMessage, session: PulseSession) {
+        PulseHaptics.tap()
+        guard !convertingTaskIds.contains(message.id) else { return }
+        convertingTaskIds.insert(message.id)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.convertingTaskIds.remove(message.id) }
+            do {
+                let card = try await session.api.createKanbanCard(
+                    conversationId: conversationId,
+                    title: nil,
+                    column: nil,
+                    assigneeId: nil,
+                    messageId: message.id,
+                )
+                session.toasts.show("Task \"\(card.title ?? "")\" created from message")
+                session.particles.fire(kind: .burst, count: 40)
+            } catch {
+                session.toasts.show(Self.describe(error))
+            }
         }
     }
 

@@ -327,6 +327,19 @@ class ChatRoomViewModel @Inject constructor(
         java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm").format(zoned)
     }.getOrDefault(iso)
 
+    // ── R3-B item 4 — F-MS-17 incognito arming (GROUPS only, session-scoped) ──
+    /**
+     * Web anonNext parity (chat-room.tsx:806): armed → the NEXT plain text
+     * send posts anonymously; the server clamps it off on DMs, one-shot
+     * (disarmed on acceptance), never persisted.
+     */
+    private val _anonNext = MutableStateFlow(false)
+    val anonNext: StateFlow<Boolean> = _anonNext.asStateFlow()
+
+    fun toggleIncognito() {
+        _anonNext.value = !_anonNext.value
+    }
+
     // Wave 6 — DM safety-number sheet (settle-confirmed; NO optimistic lies).
     data class SafetyUi(val peerId: String, val state: SafetyState?, val busy: Boolean = false)
 
@@ -527,17 +540,33 @@ class ChatRoomViewModel @Inject constructor(
         }
         val replyId = _state.value.replyTo?.id
         _state.value = _state.value.copy(replyTo = null)
+        // R3-B item 4 — the arming only consumes on a real send in GROUPS
+        // (web chat-room.tsx:1670 gates on isGroup). The optimistic echo
+        // already wears the deterministic "Adjective the Animal" alias the
+        // server will store (web anonAliasPreview parity) — fnv1a + word
+        // lists ported 1:1 in protocol IncognitoAlias (JVM-pinned).
+        val anonArmed = _anonNext.value && isGroup
+        val anonAliasPreview = if (anonArmed) {
+            app.pulse.protocol.IncognitoAlias.aliasFor(repo.viewerId ?: "", conversationId)
+        } else {
+            null
+        }
         viewModelScope.launch {
             // Quote replies DO file to the active topic (only THREAD replies
             // are excluded — the repo drops topicId on parentId sends).
-            sendUseCase(conversationId, body, replyId, topicId = _activeTopicId.value)
+            sendUseCase(conversationId, body, replyId, topicId = _activeTopicId.value, anon = anonArmed, anonAliasPreview = anonAliasPreview)
                 .onSuccess { message ->
                     if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         // Network-class failure → queued in the outbox. The
                         // composer text has left for the queue — clear the
                         // draft and let the pending bubble + banner tell it.
+                        // (Incognito sends never reach this branch — the repo
+                        // refuses to queue an un-maskable row.)
                         runCatching { repo.clearDraft(conversationId) }
                     } else {
+                        // One-shot: web disarms the mask after a successful send
+                        // (chat-room.tsx:1747-1750).
+                        if (anonArmed) _anonNext.value = false
                         app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
                         repo.setTyping(conversationId, viewerName(), false)
                         runCatching { repo.clearDraft(conversationId) }
@@ -1334,6 +1363,31 @@ class ChatRoomViewModel @Inject constructor(
         kanbanSourceMessage = messageId
         kanbanSourceTitle = content
         kanbanOpen = true
+    }
+
+    // ── R3-B item 6 — web "Convert to task" (text messages) ──────────────
+    /**
+     * Web chat-room.tsx:2100-2109 — the long-press action POSTs
+     * { userId, messageId } to /api/conversations/{id}/kanban and the SERVER
+     * derives the card title from the message (first 80 chars, route.ts:172-190).
+     * Toast copy verbatim: 'Task created from message' / 'Could not create
+     * the task'. Busy while the round-trip runs (the sheet row spins).
+     */
+    private val _taskPending = MutableStateFlow(false)
+    val taskPending: StateFlow<Boolean> = _taskPending.asStateFlow()
+
+    fun convertMessageToTask(messageId: String) {
+        if (_taskPending.value) return
+        viewModelScope.launch {
+            _taskPending.value = true
+            try {
+                repo.createKanbanCard(conversationId, null, null, null, messageId)
+                    .onSuccess { notify("Task created from message") }
+                    .onFailure { notify("Could not create the task", isError = true) }
+            } finally {
+                _taskPending.value = false
+            }
+        }
     }
 
     // suspend fetchers used by the in-bubble cards (polling parity)

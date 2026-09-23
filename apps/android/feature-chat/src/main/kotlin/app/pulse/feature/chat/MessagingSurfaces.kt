@@ -31,11 +31,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.outlined.SentimentSatisfied
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -67,15 +69,18 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.pulse.core.time.PulseTime
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.LocationPayload
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.QuickPhrase
+import app.pulse.domain.model.ScheduledItem
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.PulseWave7Logic
 import app.pulse.ui.PulseAvatar
@@ -570,6 +575,173 @@ internal fun ScheduleSheet(
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Schedule") }
+        }
+    }
+}
+
+// ── R3-B item 3 — scheduled sends manager (web ScheduledListDrawer) ───────
+
+/**
+ * The web chat-room.tsx:8661-8755 drawer, ported: the viewer's pending
+ * delayed sends for THIS room with per-row cancel (DELETE /api/scheduled/{id}
+ * via the VM's existing cancelScheduled), refused rows kept visible ("Not
+ * sent — blocked · was {stamp}"), honest loading and the verbatim empty
+ * state. Consumes the ChatRoomViewModel `scheduled` StateFlow.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ScheduledSendsSheet(
+    items: List<ScheduledItem>,
+    loading: Boolean,
+    onCancel: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Schedule,
+                    contentDescription = null,
+                    tint = PulsePalette.Amber,
+                    modifier = Modifier.size(15.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (items.isEmpty()) {
+                        "Nothing scheduled"
+                    } else {
+                        "${items.size} scheduled ${if (items.size == 1) "message" else "messages"}"
+                    },
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            when {
+                loading -> Row(
+                    Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Loading scheduled messages",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.semantics { contentDescription = "Loading scheduled messages" },
+                    )
+                }
+                items.isEmpty() -> Text(
+                    "Draft a message and choose \u201CSchedule message\u201D — it sends itself later.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 22.dp),
+                )
+                else -> Column(
+                    Modifier
+                        .heightIn(max = 320.dp)
+                        .padding(vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items.forEach { item ->
+                        val refused = item.cancelledAtIso != null
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    if (refused) {
+                                        MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                    },
+                                )
+                                .padding(10.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    if (refused) Icons.Filled.Block else Icons.Filled.Schedule,
+                                    contentDescription = null,
+                                    tint = if (refused) MaterialTheme.colorScheme.error else PulsePalette.Amber,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    if (refused) {
+                                        "Not sent — blocked · was " + PulseTime.listStamp(item.scheduledAtIso)
+                                    } else {
+                                        PulseTime.listStamp(item.scheduledAtIso) + " · " + PulseTime.clock(item.scheduledAtIso)
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.4.sp,
+                                    color = if (refused) MaterialTheme.colorScheme.error else PulsePalette.Amber,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                IconButton(
+                                    onClick = { onCancel(item.id) },
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .semantics {
+                                            contentDescription = if (refused) {
+                                                "Remove this blocked message"
+                                            } else {
+                                                "Cancel this scheduled message"
+                                            }
+                                        },
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                }
+                            }
+                            Text(
+                                item.content.replace(Regex("\\s+"), " ").trim(),
+                                fontSize = 13.sp,
+                                lineHeight = 17.sp,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (refused) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                textDecoration = if (refused) TextDecoration.LineThrough else null,
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable(onClick = onDismiss),
+            ) {
+                Text(
+                    "Close",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 13.dp),
+                )
+            }
         }
     }
 }

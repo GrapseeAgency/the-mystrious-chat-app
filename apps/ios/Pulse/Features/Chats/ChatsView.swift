@@ -85,6 +85,11 @@ struct ChatsView: View {
     @State private var storiesViewerPresent = false
     @State private var storiesViewerStart: String?
     @State private var composerPresent = false
+    // R3-A items 9/10 — the header phone/compose buttons are LIVE chrome:
+    // the calls page (CallsHistoryView) and the real new-chat composer
+    // (the SAME NewChatSheet the dock's compose button hosts).
+    @State private var callsOpen = false
+    @State private var newChatOpen = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -139,6 +144,25 @@ struct ChatsView: View {
                         composerPresent = false
                         Task { await viewModel.refreshQuiet(session: session) }
                     }, onClose: { composerPresent = false })
+                }
+            }
+            // R3-A item 9 — the calls page (web calls-page parity). A row tap
+            // rides the EXISTING linked-room bridge: RootView's
+            // pendingLinkedRoomId receiver fetches the detail and opens the
+            // chat exactly like pulse://room (R2-D item 6 path, untouched).
+            .sheet(isPresented: $callsOpen) {
+                CallsHistoryView(session: session, onOpenConversation: { conversationId in
+                    callsOpen = false
+                    session.pendingLinkedRoomId = conversationId
+                })
+            }
+            // R3-A item 10 — the real new-chat composer (the SAME sheet the
+            // dock's compose button hosts); a created/picked room opens right
+            // here on the chats tab.
+            .sheet(isPresented: $newChatOpen) {
+                NewChatSheet(session: session) { conversation in
+                    newChatOpen = false
+                    openRoom(conversation)
                 }
             }
             .fullScreenCover(isPresented: $viewModel.archivedOpen) {
@@ -219,13 +243,17 @@ struct ChatsView: View {
                     session: session,
                     prefs: prefs,
                     onGoProfile: onGoProfile,
+                    // R3-A item 9 — the dead toast is gone: the phone button
+                    // opens the real call-history page.
                     onPhone: {
                         PulseHaptics.tap()
-                        session.toasts.show("Calls aren't available in this native build yet.")
+                        callsOpen = true
                     },
+                    // R3-A item 10 — the dead toast is gone: the compose
+                    // button opens the SAME NewChatSheet the dock uses.
                     onCompose: {
                         PulseHaptics.tap()
-                        session.toasts.show("New chat composer isn't in this native build yet.")
+                        newChatOpen = true
                     },
                     onStartSearch: {
                         PulseHaptics.tap()

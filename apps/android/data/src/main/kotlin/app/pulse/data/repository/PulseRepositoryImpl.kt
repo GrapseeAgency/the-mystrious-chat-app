@@ -763,6 +763,7 @@ class PulseRepositoryImpl @Inject constructor(
         kind: String,
         payload: String?,
         anon: Boolean,
+        anonAliasPreview: String?,
         replyToId: String?,
         parentId: String?,
         topicId: String?,
@@ -782,6 +783,9 @@ class PulseRepositoryImpl @Inject constructor(
             threadRootId = parentId,
             topicId = topicId,
             anon = anon,
+            // R3-B item 4 — the optimistic row wears the deterministic alias
+            // the server will store (web optimistic-mask parity).
+            anonAlias = anonAliasPreview.takeIf { anon },
         )
         if (!viewerId.isNullOrBlank()) {
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
@@ -809,7 +813,10 @@ class PulseRepositoryImpl @Inject constructor(
                 Result.success(message)
             }
             is PulseResult.Failure ->
-                if (r.kind == PulseResult.Failure.Kind.NETWORK && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
+                // R3-B item 4 — an INCOGNITO send never queues offline: the
+                // outbox row carries no anon flag, so a flush would post the
+                // message UN-masked. Honest retract instead of a privacy lie.
+                if (r.kind == PulseResult.Failure.Kind.NETWORK && !anon && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
                     outboxDao.insert(
                         OutboxEntity(
                             conversationId = conversationId,

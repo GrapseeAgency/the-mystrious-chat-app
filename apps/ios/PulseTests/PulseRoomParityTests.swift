@@ -283,4 +283,34 @@ final class PulseRoomParityTests: XCTestCase {
         // A non-command never turns into a recap request.
         XCTAssertNotEqual(PulseRemediationLogic.applySlash("recap"), .recap)
     }
+
+    // ── R3-A — palette fuzzy match (slash-palette.tsx:127-140) ──
+
+    func testFuzzyMatchWebExamples() {
+        // The web doc-string example: "/ef co" finds "/effects confetti …".
+        let command = PulseRemediationLogic.slashCommands.first { $0.cmd == "/effects confetti" }
+        XCTAssertNotNil(command)
+        XCTAssertTrue(PulseRemediationLogic.slashFuzzyMatch(
+            haystack: "\(command?.cmd ?? "") \(command?.args ?? "") \(command?.help ?? "")",
+            needle: "/ef co",
+        ))
+    }
+
+    func testFuzzyMatchReordersWhitespaceAndCase() {
+        XCTAssertTrue(PulseRemediationLogic.slashFuzzyMatch(haystack: "/schedule  Schedule this message", needle: "/ SCHEDULE"))
+        // Whitespace in the needle is stripped before the in-order walk.
+        XCTAssertTrue(PulseRemediationLogic.slashFuzzyMatch(haystack: "/sticker Open the packs", needle: "/ s t i c ker"))
+    }
+
+    func testFuzzyMatchRejectsOutOfOrderAndMissing() {
+        // "zz" appears nowhere in the /help row.
+        XCTAssertFalse(PulseRemediationLogic.slashFuzzyMatch(haystack: "/help Show every command", needle: "/zz"))
+        // Reverse order breaks the in-order requirement (no wrap-around).
+        XCTAssertFalse(PulseRemediationLogic.slashFuzzyMatch(haystack: "/poll", needle: "/llpo"))
+    }
+
+    func testFuzzyMatchEmptyNeedleMatchesEverything() {
+        XCTAssertTrue(PulseRemediationLogic.slashFuzzyMatch(haystack: "/me Send an italic action line", needle: ""))
+        XCTAssertTrue(PulseRemediationLogic.slashFuzzyMatch(haystack: "/me", needle: "   "))
+    }
 }

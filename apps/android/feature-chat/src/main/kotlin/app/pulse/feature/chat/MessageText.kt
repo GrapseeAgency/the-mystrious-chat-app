@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -121,6 +122,33 @@ object MessageTextParser {
         return segments
     }
 
+    // ── R3-B item 2 — @mention runs (web buildMentionRuns port) ──────────
+
+    /** One run of the mention split — [mention] is the matched member name (no @). */
+    data class MentionRun(val text: String, val mention: String?)
+
+    /**
+     * Splits text into [plain, @mention, plain, …] runs against the REAL
+     * roster names (web chat-room.tsx:6837-6856): longest names first so
+     * "Alice Chen" wins over a hypothetical "Alice", case-insensitive match.
+     * No roster → one run, zero regex work.
+     */
+    fun buildMentionRuns(content: String, memberNames: List<String>): List<MentionRun> {
+        val names = memberNames.filter { it.isNotBlank() }.sortedByDescending { it.length }
+        if (names.isEmpty()) return listOf(MentionRun(content, null))
+        val mentionRe = Regex("@(${names.joinToString("|") { Regex.escape(it) }})", RegexOption.IGNORE_CASE)
+        val runs = mutableListOf<MentionRun>()
+        var last = 0
+        for (match in mentionRe.findAll(content)) {
+            val start = match.range.first
+            if (start > last) runs += MentionRun(content.substring(last, start), null)
+            runs += MentionRun(match.value, match.groupValues[1])
+            last = match.range.last + 1
+        }
+        if (last < content.length) runs += MentionRun(content.substring(last), null)
+        return if (runs.isEmpty()) listOf(MentionRun(content, null)) else runs
+    }
+
     // ── F-MS-03 — jumbo emoji (pulse-utils.ts:152-160 port) ─────────────
 
     /** Web cap: trimmed UTF-16 length ≤ 24 and the whole-string run {1,9}. */
@@ -222,6 +250,9 @@ object MessageTextParser {
     }
 }
 
+/** One inline piece in string order — the spoiler tap-reveal hit test model. */
+private data class InlineHit(val spoiler: Boolean, val length: Int)
+
 /**
  * F-MS-02 — styled bubble body. Pre blocks render as their own mono cards
  * (web block-level parity); everything else flows in ONE AnnotatedString so
@@ -236,9 +267,22 @@ internal fun FormattedMessageBody(
     contentColor: Color,
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.bodyLarge,
+    // R3-B item 2 — the room roster; @Name tokens matching a member highlight.
+    memberNames: List<String> = emptyList(),
 ) {
-    val segments = remember(body) { MessageTextParser.parse(body) }
-    if (segments.isEmpty()) return
+    if (body.isEmpty()) return
+
+    // Per-message parse cache (body + roster keys) — the LazyColumn river
+    // re-composes rows on scroll without re-running either regex pass.
+    val runs = remember(body, memberNames) {
+        MessageTextParser.buildMentionRuns(body, memberNames).map { run ->
+            if (run.mention != null) {
+                null to run
+            } else {
+                MessageTextParser.parse(run.text) to run
+            }
+        }
+    }
 
     // Web chrome: mine → bg-black/20 code, bg-white/25 spoiler; theirs →
     // zinc-100 / dark:bg-black/40 (surface tint approximates both modes).
@@ -252,60 +296,99 @@ internal fun FormattedMessageBody(
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     }
+    // R3-B item 2 — web mention chip colors verbatim (chat-room.tsx:6903):
+    // bg-emerald-500/20 + emerald-800 text in light, bg-emerald-400/25 +
+    // emerald-200 text in dark — identical on mine and their bubbles.
+    val darkChrome = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val mentionBg = if (darkChrome) {
+        Color(0xFF34D399).copy(alpha = 0.25f)
+    } else {
+        Color(0xFF10B981).copy(alpha = 0.20f)
+    }
+    val mentionText = if (darkChrome) Color(0xFFA7F3D0) else Color(0xFF065F46)
 
     // Spoiler reveal state — occurrence index within the whole message,
-    // counted in build order (Pre segments emit nothing inline).
+    // counted in build order (Pre segments emit nothing inline; mention
+    // runs occupy inline space but are never spoilers).
     val revealed = remember(body) { mutableStateListOf<Int>() }
     val layout = remember { mutableStateOf<TextLayoutResult?>(null) }
-    var spoilerCounter = -1
-    val inline = buildAnnotatedString {
-        segments.forEach { segment ->
-            when (segment) {
-                is MessageTextParser.Segment.Pre -> Unit // rendered as its own card below
-                is MessageTextParser.Segment.Plain -> append(segment.text)
-                is MessageTextParser.Segment.Code -> withStyle(
-                    SpanStyle(fontFamily = FontFamily.Monospace, background = chrome, fontSize = 12.5.sp),
-                ) { append(segment.text) }
-                is MessageTextParser.Segment.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(segment.text) }
-                is MessageTextParser.Segment.Underline -> withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) { append(segment.text) }
-                is MessageTextParser.Segment.Strike -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(segment.text) }
-                is MessageTextParser.Segment.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(segment.text) }
-                is MessageTextParser.Segment.Spoiler -> {
-                    spoilerCounter += 1
-                    val open = spoilerCounter in revealed
-                    withStyle(
-                        SpanStyle(
-                            background = if (open) Color.Transparent else spoilerBg,
-                            color = if (open) contentColor else Color.Transparent,
-                        ),
-                    ) { append(segment.text) }
+
+    // Inline pieces in string order, cached with the parse — the spoiler
+    // tap-reveal hit test walks exactly this list (flag + length per piece).
+    val inlineHits = remember(runs) {
+        buildList {
+            runs.forEach { (segments, run) ->
+                if (segments == null) {
+                    add(InlineHit(false, run.text.length))
+                } else {
+                    segments.forEach { segment ->
+                        if (segment !is MessageTextParser.Segment.Pre) {
+                            add(InlineHit(segment is MessageTextParser.Segment.Spoiler, segment.length))
+                        }
+                    }
                 }
             }
         }
     }
-    val hasSpoilers = spoilerCounter >= 0
+
+    var spoilerCounter = -1
+    val inline = buildAnnotatedString {
+        runs.forEach { (segments, run) ->
+            if (segments == null) {
+                // @mention chip — web renders "@{mention}" semibold on the
+                // emerald chip (the run text already carries the @).
+                withStyle(
+                    SpanStyle(fontWeight = FontWeight.SemiBold, background = mentionBg, color = mentionText),
+                ) { append(run.text) }
+                return@forEach
+            }
+            segments.forEach { segment ->
+                when (segment) {
+                    is MessageTextParser.Segment.Pre -> Unit // rendered as its own card below
+                    is MessageTextParser.Segment.Plain -> append(segment.text)
+                    is MessageTextParser.Segment.Code -> withStyle(
+                        SpanStyle(fontFamily = FontFamily.Monospace, background = chrome, fontSize = 12.5.sp),
+                    ) { append(segment.text) }
+                    is MessageTextParser.Segment.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(segment.text) }
+                    is MessageTextParser.Segment.Underline -> withStyle(SpanStyle(textDecoration = TextDecoration.Underline)) { append(segment.text) }
+                    is MessageTextParser.Segment.Strike -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(segment.text) }
+                    is MessageTextParser.Segment.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(segment.text) }
+                    is MessageTextParser.Segment.Spoiler -> {
+                        spoilerCounter += 1
+                        val open = spoilerCounter in revealed
+                        withStyle(
+                            SpanStyle(
+                                background = if (open) Color.Transparent else spoilerBg,
+                                color = if (open) contentColor else Color.Transparent,
+                            ),
+                        ) { append(segment.text) }
+                    }
+                }
+            }
+        }
+    }
+    val hasSpoilers = inlineHits.any { it.spoiler }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        if (segments.any { it !is MessageTextParser.Segment.Pre }) {
+        if (inlineHits.isNotEmpty()) {
             Text(
                 text = inline,
                 style = style.copy(color = contentColor),
                 onTextLayout = { layout.value = it },
                 modifier = if (hasSpoilers) {
-                    Modifier.pointerInput(segments) {
+                    Modifier.pointerInput(inlineHits.toList()) {
                         detectTapGestures { position ->
                             val result = layout.value ?: return@detectTapGestures
                             val offset = result.getOffsetForPosition(position)
                             var index = -1
                             var cursor = 0
                             var hit = -1
-                            segments.forEach { segment ->
-                                if (segment is MessageTextParser.Segment.Pre) return@forEach
-                                if (segment is MessageTextParser.Segment.Spoiler) {
+                            inlineHits.forEach { piece ->
+                                if (piece.spoiler) {
                                     index += 1
-                                    if (hit < 0 && offset >= cursor && offset < cursor + segment.length) hit = index
+                                    if (hit < 0 && offset >= cursor && offset < cursor + piece.length) hit = index
                                 }
-                                cursor += segment.length
+                                cursor += piece.length
                             }
                             if (hit >= 0 && hit !in revealed) revealed.add(hit)
                         }
@@ -315,19 +398,21 @@ internal fun FormattedMessageBody(
                 },
             )
         }
-        segments.forEach { segment ->
-            if (segment is MessageTextParser.Segment.Pre) {
-                Text(
-                    segment.text,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.5.sp,
-                    lineHeight = 17.sp,
-                    color = contentColor,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(chrome, RoundedCornerShape(9.dp))
-                        .padding(horizontal = 9.dp, vertical = 6.dp),
-                )
+        runs.forEach { (segments, _) ->
+            segments?.forEach { segment ->
+                if (segment is MessageTextParser.Segment.Pre) {
+                    Text(
+                        segment.text,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.5.sp,
+                        lineHeight = 17.sp,
+                        color = contentColor,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(chrome, RoundedCornerShape(9.dp))
+                            .padding(horizontal = 9.dp, vertical = 6.dp),
+                    )
+                }
             }
         }
     }

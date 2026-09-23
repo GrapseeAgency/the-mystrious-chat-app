@@ -214,6 +214,7 @@ class SendMessageUseCaseTest {
             kind: String,
             payload: String?,
             anon: Boolean,
+            anonAliasPreview: String?,
             replyToId: String?,
             parentId: String?,
             topicId: String?,

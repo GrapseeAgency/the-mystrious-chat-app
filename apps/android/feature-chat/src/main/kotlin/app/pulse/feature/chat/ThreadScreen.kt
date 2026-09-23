@@ -65,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import app.pulse.core.fx.PulseFx
 import app.pulse.core.media.PulseMedia
+import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.domain.repository.PulseEvent
@@ -114,6 +115,11 @@ class ThreadViewModel @Inject constructor(
     /** The thread root — rehydrated from Room, refreshed by loadThread. */
     val parent: StateFlow<Message?> = repo.observeMessages(conversationId)
         .map { rows -> rows.firstOrNull { it.id == rootId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** R3-B item 2 — the room summary; its roster drives @mention highlight. */
+    val conversation: StateFlow<Conversation?> = repo.observeConversations()
+        .map { list -> list.firstOrNull { it.id == conversationId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Replies asc — live Room flow (realtime appends ride message:new upserts). */
@@ -242,6 +248,9 @@ fun ThreadScreen(
     val parent by viewModel.parent.collectAsStateWithLifecycle()
     val replies by viewModel.replies.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // R3-B item 2 — the roster that drives @mention highlight in bubbles.
+    val conversation by viewModel.conversation.collectAsStateWithLifecycle()
+    val memberNames = conversation?.memberNames.orEmpty()
 
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -356,6 +365,7 @@ fun ThreadScreen(
                                 viewerId = viewerId,
                                 downloading = false,
                                 voicePlayer = viewModel.voicePlayer,
+                                memberNames = memberNames,
                                 onConsumeViewOnce = { target ->
                                     viewModel.consumeViewOnce(target)
                                     lightboxTarget = target
@@ -377,6 +387,7 @@ fun ThreadScreen(
                             viewerId = viewerId,
                             downloading = state.downloadingFileId == reply.id,
                             voicePlayer = viewModel.voicePlayer,
+                            memberNames = memberNames,
                             onConsumeViewOnce = { target ->
                                 viewModel.consumeViewOnce(target)
                                 lightboxTarget = target
@@ -493,6 +504,7 @@ private fun ThreadContentBubble(
     viewerId: String?,
     downloading: Boolean,
     voicePlayer: VoicePlayer,
+    memberNames: List<String> = emptyList(),
     onConsumeViewOnce: (Message) -> Unit,
     onTranscribe: (String) -> Unit,
     onOpenImage: () -> Unit,
@@ -536,6 +548,8 @@ private fun ThreadContentBubble(
             onQuoteClick = null,
             voicePlayer = voicePlayer,
             onTranscribe = onTranscribe,
+            // R3-B item 2 — mentions highlight inside threads too.
+            memberNames = memberNames,
             modifier = Modifier.widthIn(max = 300.dp),
         )
     }

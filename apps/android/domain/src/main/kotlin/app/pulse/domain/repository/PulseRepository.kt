@@ -543,6 +543,11 @@ interface PulseRepository {
      * Rich TEXT-kind send — carries the incognito flag (group-only server-side)
      * and the sticker/effects payload blob (sticker {emoji,pack} · {effect}).
      * Optimistic echo + outbox semantics match [sendMessage].
+     *
+     * R3-B item 4 — [anonAliasPreview] stamps the OPTIMISTIC echo with the
+     * deterministic "Adjective the Animal" alias (web anonAliasPreview parity,
+     * chat-room.tsx:1685-1715) so the queued/displayed row already wears the
+     * exact mask the server will store.
      */
     suspend fun sendRichMessage(
         conversationId: String,
@@ -550,6 +555,7 @@ interface PulseRepository {
         kind: String = "text",
         payload: String? = null,
         anon: Boolean = false,
+        anonAliasPreview: String? = null,
         replyToId: String? = null,
         parentId: String? = null,
         topicId: String? = null,

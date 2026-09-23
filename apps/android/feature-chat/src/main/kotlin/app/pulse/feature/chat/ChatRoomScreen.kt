@@ -87,9 +87,12 @@ import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -229,6 +232,13 @@ fun ChatRoomScreen(
     val recap by viewModel.recap.collectAsStateWithLifecycle()
     val recapLoading by viewModel.recapLoading.collectAsStateWithLifecycle()
     val groupMeta by viewModel.groupMeta.collectAsStateWithLifecycle()
+
+    // R3-B item 3 — the scheduled sends flow now has a consumer (manager sheet
+    // + composer chip); item 4 — the incognito arming; item 6 — task busy.
+    val scheduledItems by viewModel.scheduled.collectAsStateWithLifecycle()
+    val scheduledLoading by viewModel.scheduledLoading.collectAsStateWithLifecycle()
+    val anonNext by viewModel.anonNext.collectAsStateWithLifecycle()
+    val taskPending by viewModel.taskPending.collectAsStateWithLifecycle()
     // R2-C item 5 — the R44 slow-mode countdown (armed by the 429 retryAfter;
     // the composer chip counts it down live and send/mic stay locked).
     val slowModeRemainingSec by viewModel.slowModeRemainingSec.collectAsStateWithLifecycle()
@@ -264,6 +274,8 @@ fun ChatRoomScreen(
     var whoReactedFor by remember { mutableStateOf<Pair<Message, String>?>(null) }
     var stickerOpen by remember { mutableStateOf(false) }
     var scheduleOpen by remember { mutableStateOf(false) }
+    // R3-B item 3 — scheduled sends manager sheet.
+    var scheduledOpen by remember { mutableStateOf(false) }
     var helpOpen by remember { mutableStateOf(false) }
     var phrasesOpen by remember { mutableStateOf(false) }
     // R1-W2F — location share sheet (F-MD-07) + theme picker (F-FX-05).
@@ -606,6 +618,9 @@ fun ChatRoomScreen(
     LaunchedEffect(conversationId) {
         viewModel.refreshTopics()
         viewModel.loadPhrases()
+        // R3-B item 3 — load the pending scheduled sends once on open (the
+        // manager + composer chip re-arm after every schedule/cancel via the VM).
+        viewModel.loadScheduled()
         while (true) {
             delay(15_000)
             viewModel.refreshTopics()
@@ -662,6 +677,9 @@ fun ChatRoomScreen(
             onOpenRoomInfo = if (conversation != null) {
                 { onOpenRoomInfo(conversationId) }
             } else null,
+            // R3-B item 3 — the scheduled sends manager (overflow entry).
+            onOpenScheduled = { scheduledOpen = true },
+            scheduledCount = scheduledItems.count { it.cancelledAtIso == null },
         )
 
         // Wave 2 topic rail — GROUP rooms only (DMs have nothing to file into).
@@ -1223,6 +1241,94 @@ fun ChatRoomScreen(
             }
         }
 
+        // ── R3-B item 3 — scheduled sends chip (web chat-room.tsx:4726-4741):
+        // "next · N pending — tap to manage" while this room has pending rows.
+        val nextScheduled = scheduledItems.filter { it.cancelledAtIso == null }.minByOrNull { PulseTime.epochMs(it.scheduledAtIso) }
+        if (nextScheduled != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                    ),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .clickable { scheduledOpen = true }
+                        .semantics { contentDescription = "Manage pending scheduled messages" },
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Schedule,
+                            contentDescription = null,
+                            tint = PulsePalette.Amber,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            PulseTime.listStamp(nextScheduled.scheduledAtIso) + " · " +
+                                scheduledItems.count { it.cancelledAtIso == null } + " pending — tap to manage",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── R3-B item 4 — the armed-incognito hint (web chat-room.tsx:4800-4825,
+        // verbatim copy): tap the X to disarm before the next send.
+        if (anonNext && conversation?.isGroupish == true && !recording) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = PulsePalette.Emerald.copy(alpha = 0.14f),
+                ) {
+                    Row(
+                        Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.VisibilityOff,
+                            contentDescription = null,
+                            tint = PulsePalette.Emerald,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Incognito on — next message hides your name",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = PulsePalette.Emerald,
+                        )
+                        IconButton(onClick = viewModel::toggleIncognito) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Turn off incognito",
+                                tint = PulsePalette.Emerald,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Composer — the text side swaps to the record bar while recording;
         // the right slot (HoldRecordSlot) is ALWAYS mounted so the hold
         // gesture survives. Wave 6 — broadcast channel lock: non-admins get
@@ -1259,6 +1365,33 @@ fun ChatRoomScreen(
                         )
                     } else {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                            // R3-B item 4 — the incognito arming toggle (web anonNext;
+                            // GROUPS only — the server clamps anon off on DMs).
+                            if (conversation?.isGroupish == true) {
+                                IconButton(
+                                    onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.toggleIncognito()
+                                    },
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .semantics {
+                                            contentDescription = if (anonNext) {
+                                                "Turn off incognito"
+                                            } else {
+                                                "Incognito — next send hides your name"
+                                            }
+                                            stateDescription = if (anonNext) "Armed" else "Off"
+                                        },
+                                ) {
+                                    Icon(
+                                        if (anonNext) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = null,
+                                        tint = if (anonNext) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
                             IconButton(
                                 onClick = {
                                     if (state.staged == null && state.editing == null) attachOpen = true
@@ -1399,6 +1532,16 @@ fun ChatRoomScreen(
                 viewModel.scheduleSend(scheduleDraft.orEmpty(), iso)
                 scheduleDraft = null
             },
+        )
+    }
+    // R3-B item 3 — the scheduled sends manager (consumes the VM's
+    // `scheduled` StateFlow; cancel rides the existing cancelScheduled).
+    if (scheduledOpen) {
+        ScheduledSendsSheet(
+            items = scheduledItems,
+            loading = scheduledLoading,
+            onCancel = { scheduledId -> viewModel.cancelScheduled(scheduledId) },
+            onDismiss = { scheduledOpen = false },
         )
     }
     if (helpOpen) {
@@ -1544,6 +1687,18 @@ fun ChatRoomScreen(
     }
 
     actionTarget?.let { target ->
+        // R3-B item 6 — web onSettled parity: the sheet stays open (row
+        // spinning) while the kanban round-trip runs, then closes.
+        var taskInFlight by remember { mutableStateOf(false) }
+        LaunchedEffect(taskPending) {
+            when {
+                taskPending -> taskInFlight = true
+                taskInFlight -> {
+                    taskInFlight = false
+                    actionTarget = null
+                }
+            }
+        }
         MessageActionSheet(
             message = target,
             isMine = target.authorId == viewerId,
@@ -1601,6 +1756,16 @@ fun ChatRoomScreen(
                 viewModel.addMessageToBoard(target.id, target.body)
                 actionTarget = null
             },
+            // R3-B item 6 — web "Convert to task": one-shot POST
+            // { userId, messageId } → /api/conversations/{id}/kanban.
+            onConvertToTask = if (target.kind == Message.Kind.TEXT && !target.isDeleted && target.threadRootId == null) {
+                {
+                    viewModel.convertMessageToTask(target.id)
+                }
+            } else {
+                null
+            },
+            taskPending = taskPending,
             onRemindMe = {
                 viewModel.remindMe(target.id)
                 actionTarget = null
@@ -2330,6 +2495,9 @@ private fun RoomHeader(
     onRequestRecap: () -> Unit = {},
     // R2-A item 6/7/8/9 — room info (GroupInfoScreen); null on DMs.
     onOpenRoomInfo: (() -> Unit)? = null,
+    // R3-B item 3 — the scheduled sends manager (overflow row + pending count).
+    onOpenScheduled: () -> Unit = {},
+    scheduledCount: Int = 0,
 ) {
     Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
         Row(
@@ -2517,6 +2685,31 @@ private fun RoomHeader(
                             onTogglePip()
                         },
                     )
+                    // R3-B item 3 — the scheduled sends manager (web tray row
+                    // "Manage N pending scheduled messages", chat-room.tsx:8650).
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (scheduledCount > 0) {
+                                    "Scheduled sends ($scheduledCount pending)"
+                                } else {
+                                    "Scheduled sends"
+                                },
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Filled.Schedule,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = if (scheduledCount > 0) PulsePalette.Amber else LocalContentColor.current,
+                            )
+                        },
+                        onClick = {
+                            roomMenuOpen = false
+                            onOpenScheduled()
+                        },
+                    )
                 }
             }
         }
@@ -2589,12 +2782,31 @@ private fun MessageRow(
             return@Column
         }
 
-        // Group sender label above their first bubble run
+        // Group sender label above their first bubble run — incognito rows
+        // (R3-B item 4) mask the real name behind the server alias with a
+        // neutral zinc dot (web anonMasked parity, chat-room.tsx:7232-7235).
         if (!mine && conversation?.isGroupish == true) {
+            val anonMasked = message.anon && message.anonAlias != null
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(PulsePalette.parse(message.senderColor) ?: PulsePalette.Teal))
+                Box(
+                    Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (anonMasked) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                PulsePalette.parse(message.senderColor) ?: PulsePalette.Teal
+                            },
+                        ),
+                )
                 Spacer(Modifier.width(5.dp))
-                Text(message.authorName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (anonMasked) message.anonAlias.orEmpty() else message.authorName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
 
@@ -2750,6 +2962,8 @@ private fun MessageRow(
                     // R1-W2F F-MD-06 — inline translation line under the body.
                     translating = translating,
                     translatedText = translatedText,
+                    // R3-B item 2 — the roster that drives @mention highlight.
+                    memberNames = conversation?.memberNames.orEmpty(),
                     modifier = Modifier.widthIn(max = 300.dp),
                     bubbleCornerDp = bubbleCornerDp,
                 )
@@ -2936,6 +3150,8 @@ internal fun Bubble(
     // R1-W2F F-MD-06 — per-message LLM translation render state.
     translating: Boolean = false,
     translatedText: String? = null,
+    // R3-B item 2 — the room roster; @Name tokens render as mention chips.
+    memberNames: List<String> = emptyList(),
     bubbleCornerDp: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
     val shape = if (mine) {
@@ -3026,11 +3242,26 @@ internal fun Bubble(
                     Text("Photo", color = contentColor, style = MaterialTheme.typography.bodyMedium)
                 }
                 else -> Column {
-                    Text(
-                        message.body,
-                        color = contentColor,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+                    // R3-B item 1/2/3 — rich body: markdown/spoilers/mention
+                    // chips via FormattedMessageBody, with the web jumbo gate
+                    // (chat-room.tsx:7213/7603-7604) first — pure-emoji short
+                    // rows render oversized (34sp, 1.2 line) instead.
+                    val jumbo = message.poll == null && MessageTextParser.isJumboEmoji(message.body)
+                    if (jumbo) {
+                        Text(
+                            message.body,
+                            color = contentColor,
+                            fontSize = 34.sp,
+                            lineHeight = 40.8.sp,
+                        )
+                    } else {
+                        FormattedMessageBody(
+                            body = message.body,
+                            mine = mine,
+                            contentColor = contentColor,
+                            memberNames = memberNames,
+                        )
+                    }
                     // Wave 2 link preview (spec §1 row 8): absent → plain text
                     // until the link:preview envelope lands (loading/failure
                     // states are inherent); polls never carry one.

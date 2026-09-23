@@ -108,6 +108,8 @@ struct ThreadView: View {
                 bubbleRadius: session.prefs?.bubbleRadius ?? .lg,
                 viewerId: viewerId,
                 onViewOnceOpen: { message in revealViewOnce(message) },
+                // R3-A item 7 — thread bubbles format + mention-chip too.
+                memberNames: conversation.members.map(\.name),
             )
             .padding(.bottom, 4)
             ForEach(Array(replies.enumerated()), id: \.element.id) { index, reply in
@@ -127,6 +129,8 @@ struct ThreadView: View {
                     bubbleRadius: session.prefs?.bubbleRadius ?? .lg,
                     viewerId: viewerId,
                     onViewOnceOpen: { message in revealViewOnce(message) },
+                    // R3-A item 7 — thread bubbles format + mention-chip too.
+                    memberNames: conversation.members.map(\.name),
                 )
             }
         }
