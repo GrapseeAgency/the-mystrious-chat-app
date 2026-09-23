@@ -30,7 +30,13 @@ final class PulseCallVideoPolicyTests: XCTestCase {
     }
 
     func testOfferWithActiveVideoMLineIsDetected() {
-        XCTAssertTrue(PulseCallSdp.hasVideo(videoSdp))
+        let lines = videoSdp.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\r" || $0 == "\n" })
+        let vline = lines.first { $0.hasPrefix("m=video") }
+        let toks = vline.map { $0.split(separator: " ") } ?? []
+        XCTAssertTrue(
+            PulseCallSdp.hasVideo(videoSdp),
+            "DIAG lines=\(lines.count) vline=\(vline.map(String.init) ?? \"nil\") toks=\(toks.map(String.init)) eq=\(toks.first == \"m=video\") hasVideo=\(PulseCallSdp.hasVideo(videoSdp))"
+        )
     }
 
     func testRejectedVideoMLinePortZeroIsNotVideo() {
@@ -73,7 +79,8 @@ final class PulseCallVideoPolicyTests: XCTestCase {
 
     func testCalleeAttachesVideoOnlyForVideoKindAndUsableMLineAndCamera() {
         XCTAssertTrue(
-            PulseCallVideoPolicy.shouldAttachVideo(kind: .video, offerSdp: videoSdp, cameraCapable: true)
+            PulseCallVideoPolicy.shouldAttachVideo(kind: .video, offerSdp: videoSdp, cameraCapable: true),
+            "DIAG kindVideo=\(CallKind.video == .video) hasVideo=\(PulseCallSdp.hasVideo(videoSdp)) lfHasVideo=\(PulseCallSdp.hasVideo(videoSdp.replacingOccurrences(of: \"\\r\\n\", with: \"\\n\")))"
         )
     }
 
