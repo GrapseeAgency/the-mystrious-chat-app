@@ -211,6 +211,10 @@ fun ChatsScreen(
     /** Wave 6 — mentions / channels surfaces + the folders manage sheet. */
     onOpenMentions: () -> Unit = {},
     onOpenChannels: () -> Unit = {},
+    // R2-A item 2/1 — the header phone icon opens the calls history page and
+    // the pencil icon opens the REAL new-chat composer (web chats header).
+    onOpenCalls: () -> Unit = {},
+    onOpenNewChat: () -> Unit = {},
     /** Incremented by the dock's More → Search action to open search mode. */
     searchRequest: Int = 0,
     viewModel: ChatsViewModel = hiltViewModel(),
@@ -364,8 +368,10 @@ fun ChatsScreen(
                     viewerColor = viewerColor,
                     dark = dark,
                     onAvatar = { onSwitchTab("profile") },
-                    onCalls = { honest("Calls aren't available in this native build yet.") },
-                    onCompose = { honest("The new chat composer isn't available in this native build yet.") },
+                    // R2-A item 2 — real calls history (route owned by the shell).
+                    onCalls = onOpenCalls,
+                    // R2-A item 1 — real new-chat composer (shell-hosted sheet).
+                    onCompose = onOpenNewChat,
                     onTheme = onCycleTheme,
                     onSearch = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)

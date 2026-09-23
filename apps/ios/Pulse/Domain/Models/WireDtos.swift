@@ -474,6 +474,11 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     // keep the memberwise init source-compatible with existing call sites.
     public var inviteCode: String? = nil
     public var slowModeSeconds: Int? = nil
+    // R2-B R38/R42 — screen-security flags (serializers.ts:530-533): the
+    // room-wide switch + the viewer's personal veil. Absent on list
+    // summaries and older relays → nil (veil off).
+    public var screenPrivacy: Bool? = nil
+    public var myScreenPrivacy: Bool? = nil
 
     /// Pin/mute state derived from the wire timestamps (web parity helpers —
     /// ChatsView swipe + context menus read these).

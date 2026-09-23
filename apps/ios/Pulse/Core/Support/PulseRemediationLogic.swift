@@ -183,6 +183,7 @@ public enum PulseRemediationLogic {
         case sheet(String) // poll | schedule | sticker | location | whiteboard | redpacket | kanban | events | game | stage | space | tournament
         case topic(String)
         case remind(String)
+        case recap
         case help
     }
 
@@ -225,6 +226,7 @@ public enum PulseRemediationLogic {
         case "poll": return .sheet("poll")
         case "schedule": return .sheet("schedule")
         case "remind": return .remind(rest)
+        case "recap": return .recap
         case "sticker": return .sheet("sticker")
         case "location": return .sheet("location")
         case "whiteboard", "redpacket", "kanban", "events", "game", "stage", "space", "tournament":

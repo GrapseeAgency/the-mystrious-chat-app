@@ -192,19 +192,131 @@ half4 main(float2 fragCoord) {
 }
 """
 
+// R2-A item 11 — caustics + liquid complete the six-mode set (web
+// webgl-glow.tsx CAUSTICS_FRAG / LIQUID_FRAG ports; AGSL is GLSL-ES-flavoured
+// so the translation is nearly verbatim).
+private const val AGSL_CAUSTICS = """
+uniform float2 resolution;
+uniform float time;
+uniform float intensity;
+uniform float dark;
+
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / resolution;
+    float aspect = resolution.x / max(resolution.y, 1.0);
+    float t = time * 0.62;
+
+    float2 p = float2(uv.x * aspect, uv.y) * 3.4;
+    float2 i = p;
+    float c = 1.0;
+    float inten = 0.005;
+    for (int n = 0; n < 4; n++) {
+        float tt = t * (1.0 - (3.5 / float(n + 1)));
+        i = p + float2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));
+        c += 1.0 / length(float2(p.x / (sin(i.x + tt) / inten), p.y / (cos(i.y + tt) / inten)));
+    }
+    c /= 4.0;
+    c = 1.17 - pow(c, 1.4);
+    float v = clamp(pow(abs(c), 8.0), 0.0, 1.6);
+
+    float3 aqua = float3(0.30, 0.91, 0.85);
+
+    float3 darkCol = float3(0.008, 0.050, 0.055);
+    darkCol += aqua * v * 0.55 * intensity + float3(0.063, 0.725, 0.506) * v * 0.20;
+    darkCol = 1.0 - exp(-darkCol * 1.7);
+
+    float3 lightCol = float3(0.940, 0.970, 0.970);
+    lightCol -= float3(0.0, 0.28, 0.30) * v * 0.35 * intensity;
+
+    float3 col = mix(lightCol, darkCol, dark);
+    float2 q = uv - 0.5;
+    col *= mix(1.0, 1.0 - 0.5 * dot(q, q), dark);
+    return half4(col, 1.0);
+}
+"""
+
+// liquid — slow metaball fluid (web R31-b). The five ball centers are
+// TIME-ONLY data: the CPU uploads u_balls once per frame (web drawBalls
+// parity) so the fragment shader stays free of per-pixel trig.
+private const val AGSL_LIQUID = """
+uniform float2 resolution;
+uniform float time;
+uniform float intensity;
+uniform float dark;
+uniform float3 u_balls[5]; // xy center (aspect space), z radius
+
+float hash21(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
+// polynomial smooth-min (IQ) — nearby blobs merge into one fluid body
+float smin(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / resolution;
+    float aspect = resolution.x / max(resolution.y, 1.0);
+    float2 p = float2(uv.x * aspect, uv.y);
+
+    float f = smin(u_balls[0].z - distance(p, u_balls[0].xy),
+                   u_balls[1].z - distance(p, u_balls[1].xy), 0.20);
+    f = smin(f, u_balls[2].z - distance(p, u_balls[2].xy), 0.22);
+    f = smin(f, u_balls[3].z - distance(p, u_balls[3].xy), 0.22);
+    f = smin(f, u_balls[4].z - distance(p, u_balls[4].xy), 0.22);
+
+    float body  = 1.0 - smoothstep(-0.03, 0.07, f);
+    float core  = smoothstep(0.60, 0.92, body);
+    float mid   = smoothstep(0.34, 0.58, body) - core;
+    float outer = smoothstep(0.12, 0.32, body) - smoothstep(0.34, 0.58, body);
+    float rim   = smoothstep(0.42, 0.62, body) * (1.0 - smoothstep(0.66, 0.88, body));
+    float halo  = 0.5 / (1.0 + max(-f, 0.0) * 12.0);
+
+    float3 emerald = float3(0.063, 0.725, 0.506);
+    float3 teal    = float3(0.078, 0.722, 0.651);
+    float3 rose    = float3(0.957, 0.247, 0.369);
+
+    float3 darkCol = float3(0.010, 0.042, 0.036);
+    darkCol += emerald * core * 0.85;
+    darkCol += teal    * mid  * 0.55;
+    darkCol += rose    * outer * 0.16;
+    darkCol += float3(0.86, 0.97, 0.93) * rim * 0.10;
+    darkCol += emerald * halo * 0.28;
+    darkCol = 1.0 - exp(-darkCol * intensity * 1.7);
+
+    float3 lightCol = float3(0.968, 0.976, 0.972);
+    lightCol -= emerald * core * 0.20 * intensity;
+    lightCol -= teal    * mid  * 0.14 * intensity;
+    lightCol -= rose    * outer * 0.05 * intensity;
+    lightCol += float3(1.0) * rim * 0.16;
+
+    float3 col = mix(lightCol, darkCol, dark);
+    col += (hash21(uv * resolution) - 0.5) * 0.012;
+
+    float2 q = uv - 0.5;
+    col *= mix(1.0, 1.0 - 0.5 * dot(q, q), dark);
+    return half4(col, 1.0);
+}
+"""
+
 /** API-gated holder so remember never touches RuntimeShader below API 33. */
-private class AgslShaderHolder private constructor(val shader: Any) {
+private class AgslShaderHolder private constructor(val shader: Any, private val hasBalls: Boolean) {
     companion object {
         fun create(mode: FxMode): AgslShaderHolder? {
             if (Build.VERSION.SDK_INT < 33) return null
             val src = when (mode) {
                 FxMode.AURORA -> AGSL_AURORA
+                FxMode.CAUSTICS -> AGSL_CAUSTICS
                 FxMode.MESH -> AGSL_MESH
                 FxMode.STARS -> AGSL_STARS
+                FxMode.LIQUID -> AGSL_LIQUID
                 else -> return null
             }
             return runCatching {
-                AgslShaderHolder(android.graphics.RuntimeShader(src))
+                AgslShaderHolder(android.graphics.RuntimeShader(src), hasBalls = mode == FxMode.LIQUID)
             }.getOrNull()
         }
     }
@@ -219,6 +331,22 @@ private class AgslShaderHolder private constructor(val shader: Any) {
         s.setFloatUniform("time", time)
         s.setFloatUniform("intensity", intensity)
         s.setFloatUniform("dark", dark)
+        // liquid-only: the five metaball centers (web drawBalls parity —
+        // same Lissajous constants, 10 sin/cos per FRAME not per pixel).
+        if (!hasBalls) return
+        val aspect = w / h.coerceAtLeast(1f)
+        val balls = FloatArray(15)
+        fun put(i: Int, x: Float, y: Float, r: Float) {
+            balls[i * 3] = x * aspect
+            balls[i * 3 + 1] = y
+            balls[i * 3 + 2] = r
+        }
+        put(0, 0.50f + 0.15f * sin(0.21f * time), 0.56f + 0.13f * cos(0.16f * time), 0.185f)
+        put(1, 0.28f + 0.13f * cos(0.14f * time + 1.3f), 0.30f + 0.12f * sin(0.24f * time + 0.8f), 0.170f)
+        put(2, 0.72f + 0.14f * sin(0.18f * time + 2.9f), 0.42f + 0.14f * cos(0.13f * time + 2.1f), 0.180f)
+        put(3, 0.40f + 0.16f * cos(0.28f * time + 4.2f), 0.70f + 0.11f * sin(0.15f * time + 3.4f), 0.165f)
+        put(4, 0.64f + 0.12f * sin(0.34f * time + 5.1f), 0.24f + 0.12f * cos(0.17f * time + 1.7f), 0.175f)
+        runCatching { s.setFloatUniform("u_balls", balls) }
     }
 }
 
@@ -290,8 +418,52 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
                     drawCircle(white.copy(alpha = 0.7f * tw * strength * 2f), r, Offset(sx, sy))
                 }
             }
+            FxMode.CAUSTICS -> {
+                // aqua interference rings — brighter + cooler than the blobs
+                val aqua = Color(0xFF4DE8D8)
+                repeat(3) { ring ->
+                    val cx = w * (0.5f + 0.22f * sin(time * (0.24f + ring * 0.11f) + ring * 2.1f))
+                    val cy = h * (0.5f + 0.20f * cos(time * (0.19f + ring * 0.13f) + ring * 1.3f))
+                    val radius = h * (0.30f + ring * 0.14f)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color.Transparent, aqua.copy(alpha = strength * intensity), Color.Transparent),
+                            center = Offset(cx, cy),
+                            radius = radius,
+                        ),
+                        radius = radius,
+                        center = Offset(cx, cy),
+                        blendMode = blend,
+                    )
+                }
+            }
+            FxMode.LIQUID -> {
+                // five fused metaballs — emerald/teal body with a rose rim
+                val emerald = Color(0xFF10B981)
+                val rose = Color(0xFFF43F5E)
+                repeat(5) { ball ->
+                    val cx = w * (0.5f + 0.15f * sin(time * 0.21f + ball * 1.7f))
+                    val cy = h * (0.5f + 0.14f * cos(time * 0.16f + ball * 2.3f))
+                    val radius = h * (0.22f + ball * 0.02f)
+                    val bodyColor = if (ball % 2 == 0) emerald else teal
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                bodyColor.copy(alpha = (strength + 0.12f) * intensity),
+                                rose.copy(alpha = 0.05f * intensity),
+                                Color.Transparent,
+                            ),
+                            center = Offset(cx, cy),
+                            radius = radius,
+                        ),
+                        radius = radius,
+                        center = Offset(cx, cy),
+                        blendMode = blend,
+                    )
+                }
+            }
             else -> {
-                // three drifting curtains/blobs — the shared geometry of aurora/mesh/caustics/liquid
+                // three drifting curtains/blobs — aurora/mesh shared geometry
                 val blobs = listOf(
                     Triple(emerald, 0.32f * sin(time * 0.31f), 0.60f + 0.14f * cos(time * 0.23f)),
                     Triple(teal, 0.26f * cos(time * 0.21f + 1.7f), 0.34f + 0.16f * sin(time * 0.27f + 0.6f)),

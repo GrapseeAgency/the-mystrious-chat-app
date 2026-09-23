@@ -322,6 +322,10 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
 
 private val WALLPAPERS = PulseWallpaper.TOKENS
 
+/** R2-A item 11 — web WEBGL_MODES as two legible 3-wide picker rows. */
+private val FX_MODE_ROW_1 = listOf("aurora" to "Aurora", "caustics" to "Caustics", "mesh" to "Mesh")
+private val FX_MODE_ROW_2 = listOf("stars" to "Stars", "liquid" to "Liquid", "off" to "Off")
+
 @Composable
 fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
@@ -346,7 +350,28 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
             }
         }
         SegPicker("Color mode", listOf("system" to "System", "dark" to "Dark", "light" to "Light"), darkOverride, viewModel::setDarkOverride)
-        SegPicker("Ambient FX", listOf("aurora" to "Aurora", "stars" to "Stars", "off" to "Off"), fxMode, viewModel::setFxMode)
+        // R2-A item 11 — the FULL six-mode set (web WEBGL_MODES: off · aurora ·
+        // caustics · mesh · stars · liquid); two 3-wide rows keep the labels legible.
+        Text("Ambient FX", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            FX_MODE_ROW_1.forEachIndexed { index, (id, name) ->
+                SegmentedButton(
+                    selected = fxMode == id,
+                    onClick = { viewModel.setFxMode(id) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = FX_MODE_ROW_1.size),
+                ) { Text(name, fontSize = 12.5.sp, maxLines = 1) }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            FX_MODE_ROW_2.forEachIndexed { index, (id, name) ->
+                SegmentedButton(
+                    selected = fxMode == id,
+                    onClick = { viewModel.setFxMode(id) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = FX_MODE_ROW_2.size),
+                ) { Text(name, fontSize = 12.5.sp, maxLines = 1) }
+            }
+        }
         Spacer(Modifier.height(20.dp))
     }
 }

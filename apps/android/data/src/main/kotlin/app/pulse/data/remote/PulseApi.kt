@@ -12,6 +12,9 @@ import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.AppCommunityDto
 import app.pulse.protocol.AppInstallResultDto
 import app.pulse.protocol.AppInstallStateDto
+import app.pulse.protocol.AiRecapDto
+import app.pulse.protocol.AutomationEnvelopeDto
+import app.pulse.protocol.AutomationsPageDto
 import app.pulse.protocol.CheckinResultDto
 import app.pulse.protocol.CheckinWalletResultDto
 import app.pulse.protocol.EventsPageDto
@@ -83,8 +86,11 @@ import app.pulse.protocol.StoriesPageDto
 import app.pulse.protocol.StoryCreatedDto
 import app.pulse.protocol.StoryViewAckDto
 import app.pulse.protocol.StoryViewersDto
+import app.pulse.protocol.ScreenPrivacyAckDto
 import app.pulse.protocol.SubscribeAckDto
 import app.pulse.protocol.ThreadPageDto
+import app.pulse.protocol.WebhookDto
+import app.pulse.protocol.WebhooksPageDto
 import app.pulse.protocol.TopicDto
 import app.pulse.protocol.TopicsPageDto
 import app.pulse.protocol.TranscribeResultDto
@@ -883,6 +889,25 @@ class PulseApi(
             val res = http.delete(
                 PulseEndpoints.http("$path?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
             ) { authHeader() }
+            val text = res.bodyAsText()
+            if (res.status.isSuccess()) {
+                @Suppress("UNCHECKED_CAST")
+                PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
+            } else {
+                failureOf(res.status.value, text)
+            }
+        } catch (e: kotlinx.serialization.SerializationException) {
+            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+        } catch (e: Exception) {
+            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+        }
+    }
+
+    /** DELETE helper with the FULL path (query already embedded — webhook delete's requesterId). */
+    private suspend fun <T> deleteAt(path: String, parse: ((String) -> T)? = null): PulseResult<T> {
+        if (!PulseEndpoints.isConfigured) return offlineFailure
+        return try {
+            val res = http.delete(PulseEndpoints.http(path)) { authHeader() }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {
                 @Suppress("UNCHECKED_CAST")
@@ -1755,12 +1780,88 @@ class PulseApi(
             jsonOf("requesterId" to requesterId),
         ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
 
+    // ── R2-A round-2 parity (automations · webhooks · AI recap · per-viewer privacy) ──
+
+    /** GET /api/conversations/{id}/automations?userId= — participant-only rows. */
+    suspend fun automations(conversationId: String, userId: String): PulseResult<AutomationsPageDto> =
+        get(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+                "/automations?userId=" + java.net.URLEncoder.encode(userId, "UTF-8"),
+        ) { PulseJson.decodeFromString(AutomationsPageDto.serializer(), it) }
+
+    /** POST /api/conversations/{id}/automations { userId, trigger, reply } — admin-only → 201 { automation }. */
+    suspend fun createAutomation(conversationId: String, userId: String, trigger: String, reply: String): PulseResult<AutomationEnvelopeDto> =
+        post(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/automations",
+            jsonOf("userId" to userId, "trigger" to trigger, "reply" to reply),
+        ) { PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), it) }
+
+    /** PATCH /api/automations/{id} { userId, enabled?/trigger? } — admin-only → { automation }. */
+    suspend fun patchAutomation(automationId: String, userId: String, enabled: Boolean?, trigger: String?): PulseResult<AutomationEnvelopeDto> =
+        patch(
+            "/api/automations/" + java.net.URLEncoder.encode(automationId, "UTF-8"),
+            buildJsonObject {
+                put("userId", userId)
+                if (enabled != null) put("enabled", enabled)
+                if (trigger != null) put("trigger", trigger)
+            },
+        ) { PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), it) }
+
+    /** DELETE /api/automations/{id} { userId } — admin-only → { ok: true }. */
+    suspend fun deleteAutomation(automationId: String, userId: String): PulseResult<OkDto> =
+        deleteWithJson(
+            "/api/automations/" + java.net.URLEncoder.encode(automationId, "UTF-8"),
+            jsonOf("userId" to userId),
+        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+
+    /** GET /api/webhooks?conversationId=&requesterId= → { webhooks[] } — everyone may read. */
+    suspend fun webhooks(conversationId: String, requesterId: String): PulseResult<WebhooksPageDto> =
+        get(
+            "/api/webhooks?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+                "&requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
+        ) { PulseJson.decodeFromString(WebhooksPageDto.serializer(), it) }
+
+    /** POST /api/webhooks { conversationId, name, requesterId } — admin-only → 201 WebhookDTO. */
+    suspend fun createWebhook(conversationId: String, name: String, requesterId: String): PulseResult<WebhookDto> =
+        post(
+            "/api/webhooks",
+            jsonOf("conversationId" to conversationId, "name" to name, "requesterId" to requesterId),
+        ) { PulseJson.decodeFromString(WebhookDto.serializer(), it) }
+
+    /** DELETE /api/webhooks/{token}?requesterId= — admin-only → { ok: true }. */
+    suspend fun deleteWebhook(token: String, requesterId: String): PulseResult<OkDto> =
+        deleteAt(
+            "/api/webhooks/" + java.net.URLEncoder.encode(token, "UTF-8") +
+                "?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
+        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+
+    /** POST /api/ai/recap { userId, conversationId } — LLM summary of the last ~30 messages. */
+    suspend fun aiRecap(userId: String, conversationId: String): PulseResult<AiRecapDto> =
+        post(
+            "/api/ai/recap",
+            jsonOf("userId" to userId, "conversationId" to conversationId),
+            timeoutMillis = RECAP_TIMEOUT_MS,
+        ) { PulseJson.decodeFromString(AiRecapDto.serializer(), it) }
+
+    /**
+     * PATCH /api/conversations/{id}/screen-privacy { userId, on } — R42 the
+     * per-VIEWER veil flag → { ok, screenPrivacy }.
+     */
+    suspend fun setMyScreenPrivacy(conversationId: String, userId: String, on: Boolean): PulseResult<ScreenPrivacyAckDto> =
+        patch(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/screen-privacy",
+            jsonOf("userId" to userId, "on" to on),
+        ) { PulseJson.decodeFromString(ScreenPrivacyAckDto.serializer(), it) }
+
     companion object {
         /** Per-request cap for the slow voice-caption ASR round-trip. */
         private const val TRANSCRIBE_TIMEOUT_MS = 60_000L
 
         /** R1-W2F — LLM translate round-trip cap (iOS parity, timeoutCap: 30). */
         private const val TRANSLATE_TIMEOUT_MS = 30_000L
+
+        /** R2-A — the recap LLM round-trip can crawl; same cap class as translate. */
+        private const val RECAP_TIMEOUT_MS = 30_000L
 
         fun jsonOf(vararg pairs: Pair<String, Any?>): JsonObject = buildJsonObject {
             pairs.forEach { (k, v) ->

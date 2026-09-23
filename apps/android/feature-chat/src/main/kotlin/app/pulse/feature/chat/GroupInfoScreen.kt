@@ -1,5 +1,9 @@
 package app.pulse.feature.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -27,10 +32,12 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -62,6 +69,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -72,12 +80,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import app.pulse.domain.model.Automation
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.GroupMeta
 import app.pulse.domain.model.User
+import app.pulse.domain.model.Webhook
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.ui.PulseAvatar
+import coil.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,6 +109,8 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class GroupInfoViewModel @Inject constructor(
     savedStateHandle: androidx.lifecycle.SavedStateHandle,
+    // R2-A item 9 — the photo pick's data-URL conversion needs the app context.
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
     private val repo: PulseRepository,
 ) : ViewModel() {
 
@@ -254,6 +267,214 @@ class GroupInfoViewModel @Inject constructor(
         }
     }
 
+    // ── R2-A item 6 — AUTOMATIONS (web automations-sheet.tsx) ─────────
+
+    data class AutomationsUi(
+        val rows: List<Automation> = emptyList(),
+        val loading: Boolean = false,
+        val creating: Boolean = false,
+        /** id → busy row (toggle/rename/delete in flight). */
+        val busyIds: Set<String> = emptySet(),
+    )
+
+    private val _automations = MutableStateFlow(AutomationsUi())
+    val automations: StateFlow<AutomationsUi> = _automations.asStateFlow()
+
+    fun loadAutomations() {
+        viewModelScope.launch {
+            _automations.value = _automations.value.copy(loading = true)
+            val result: kotlin.Result<List<Automation>> = repo.automations(conversationId)
+            _automations.value = _automations.value.copy(
+                rows = result.getOrElse { emptyList() },
+                loading = false,
+            )
+        }
+    }
+
+    fun createAutomation(trigger: String, reply: String) {
+        if (_automations.value.creating) return
+        _automations.value = _automations.value.copy(creating = true)
+        viewModelScope.launch {
+            repo.createAutomation(conversationId, trigger, reply)
+                .onSuccess { created ->
+                    _automations.value = _automations.value.copy(
+                        rows = _automations.value.rows + created,
+                        creating = false,
+                    )
+                    notify("Automation created")
+                }
+                .onFailure { failure ->
+                    _automations.value = _automations.value.copy(creating = false)
+                    notify(failure.message ?: "Could not create the automation", isError = true)
+                }
+        }
+    }
+
+    /** Optimistic toggle with honest rollback (web toggleMutation parity). */
+    fun toggleAutomation(row: Automation) {
+        if (row.id in _automations.value.busyIds) return
+        val next = !row.enabled
+        _automations.value = _automations.value.copy(
+            rows = _automations.value.rows.map { if (it.id == row.id) it.copy(enabled = next) else it },
+            busyIds = _automations.value.busyIds + row.id,
+        )
+        viewModelScope.launch {
+            repo.setAutomationEnabled(row.id, next)
+                .onSuccess { fresh ->
+                    _automations.value = _automations.value.copy(
+                        rows = _automations.value.rows.map { if (it.id == row.id) fresh else it },
+                    )
+                }
+                .onFailure { failure ->
+                    _automations.value = _automations.value.copy(
+                        rows = _automations.value.rows.map { if (it.id == row.id) it.copy(enabled = row.enabled) else it },
+                    )
+                    notify(failure.message ?: "Could not update the automation", isError = true)
+                }
+            _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds - row.id)
+        }
+    }
+
+    /** R41 — trigger rename-in-place (PATCH gains `trigger`). */
+    fun renameAutomationTrigger(automationId: String, trigger: String) {
+        if (automationId in _automations.value.busyIds) return
+        _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds + automationId)
+        viewModelScope.launch {
+            repo.setAutomationTrigger(automationId, trigger)
+                .onSuccess { fresh ->
+                    _automations.value = _automations.value.copy(
+                        rows = _automations.value.rows.map { if (it.id == automationId) fresh else it },
+                    )
+                    notify("Trigger updated")
+                }
+                .onFailure { notify(it.message ?: "Could not rename the trigger", isError = true) }
+            _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds - automationId)
+        }
+    }
+
+    fun deleteAutomation(automationId: String) {
+        if (automationId in _automations.value.busyIds) return
+        _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds + automationId)
+        viewModelScope.launch {
+            repo.deleteAutomation(automationId)
+                .onSuccess {
+                    _automations.value = _automations.value.copy(
+                        rows = _automations.value.rows.filterNot { it.id == automationId },
+                    )
+                    notify("Automation deleted")
+                }
+                .onFailure { notify(it.message ?: "Could not delete the automation", isError = true) }
+            _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds - automationId)
+        }
+    }
+
+    // ── R2-A item 7 — WEBHOOKS (web group-info-sheet.tsx WebhooksSection) ──
+
+    data class WebhooksUi(
+        val rows: List<Webhook> = emptyList(),
+        val loading: Boolean = false,
+        val creating: Boolean = false,
+    )
+
+    private val _webhooks = MutableStateFlow(WebhooksUi())
+    val webhooks: StateFlow<WebhooksUi> = _webhooks.asStateFlow()
+
+    fun loadWebhooks() {
+        viewModelScope.launch {
+            _webhooks.value = _webhooks.value.copy(loading = true)
+            val result: kotlin.Result<List<Webhook>> = repo.webhooks(conversationId)
+            _webhooks.value = _webhooks.value.copy(rows = result.getOrElse { emptyList() }, loading = false)
+        }
+    }
+
+    fun createWebhook(name: String) {
+        if (_webhooks.value.creating) return
+        _webhooks.value = _webhooks.value.copy(creating = true)
+        viewModelScope.launch {
+            repo.createWebhook(conversationId, name)
+                .onSuccess { created ->
+                    _webhooks.value = _webhooks.value.copy(
+                        rows = _webhooks.value.rows + created,
+                        creating = false,
+                    )
+                    notify("Webhook “${created.name}” created")
+                }
+                .onFailure { failure ->
+                    _webhooks.value = _webhooks.value.copy(creating = false)
+                    notify(failure.message ?: "Could not create the webhook", isError = true)
+                }
+        }
+    }
+
+    fun deleteWebhook(token: String) {
+        viewModelScope.launch {
+            repo.deleteWebhook(token)
+                .onSuccess {
+                    _webhooks.value = _webhooks.value.copy(rows = _webhooks.value.rows.filterNot { it.token == token })
+                    notify("Webhook deleted")
+                }
+                .onFailure { notify(it.message ?: "Could not delete the webhook", isError = true) }
+        }
+    }
+
+    // ── R2-A item 8 — SCREEN SECURITY (web room-info-page.tsx:581-632) ──
+
+    /** R42 per-VIEWER veil flag (dedicated participant route). */
+    fun setMyPrivacy(on: Boolean) {
+        viewModelScope.launch {
+            repo.setMyScreenPrivacy(conversationId, on)
+                .onSuccess {
+                    notify(if (on) "Screen security on for you" else "Screen security off for you")
+                    load()
+                }
+                .onFailure { notify(it.message ?: "Could not update screen security", isError = true) }
+        }
+    }
+
+    /** R38 room-wide switch (any participant; deliberately NOT admin-gated). */
+    fun setRoomPrivacy(on: Boolean) {
+        viewModelScope.launch {
+            repo.setScreenPrivacy(conversationId, on)
+                .onSuccess {
+                    notify(if (on) "Screen security on" else "Screen security off")
+                    load()
+                }
+                .onFailure { notify(it.message ?: "Could not update screen security", isError = true) }
+        }
+    }
+
+    // ── R2-A item 9 — PHOTO EDIT (web room-info-page.tsx:476-484) ─────
+
+    private val _photoBusy = MutableStateFlow(false)
+    val photoBusy: StateFlow<Boolean> = _photoBusy.asStateFlow()
+
+    /**
+     * The picked photo rides the real upload chain (/api/uploads → data-URL
+     * conversion via MediaSupport, identical to staged media) and the
+     * validated path lands in the PATCH — web `setPhotoMutation` parity.
+     */
+    fun updatePhoto(uri: android.net.Uri) {
+        if (_photoBusy.value) return
+        _photoBusy.value = true
+        viewModelScope.launch {
+            MediaSupport.imageToDataUrl(appContext, uri)
+                .onSuccess { dataUrl ->
+                    repo.uploadMedia(dataUrl)
+                        .onSuccess { path ->
+                            repo.setGroupPhoto(conversationId, path)
+                                .onSuccess {
+                                    notify("Photo updated")
+                                    load()
+                                }
+                                .onFailure { notify(it.message ?: "Could not update the photo", isError = true) }
+                        }
+                        .onFailure { notify(it.message ?: "Could not upload that photo", isError = true) }
+                }
+                .onFailure { notify(it.message ?: "Could not prepare that photo", isError = true) }
+            _photoBusy.value = false
+        }
+    }
+
     companion object {
         /** Web room-info TTL labels (chat-room.tsx header chip parity). */
         fun ttlLabel(seconds: Int): String = when (seconds) {
@@ -287,6 +508,10 @@ fun GroupInfoScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
+    // R2-A items 6/7/8/9 — automations, webhooks, photo-busy state.
+    val automations by viewModel.automations.collectAsStateWithLifecycle()
+    val webhooks by viewModel.webhooks.collectAsStateWithLifecycle()
+    val photoBusy by viewModel.photoBusy.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -296,7 +521,17 @@ fun GroupInfoScreen(
     var leaveConfirmOpen by remember { mutableStateOf(false) }
     var kickTarget by remember { mutableStateOf<ConversationMember?>(null) }
 
-    LaunchedEffect(Unit) { viewModel.load() }
+    // R2-A item 9 — the admin photo picker (web room-info "Edit photo"
+    // overlay): pick → upload → PATCH photo (conversion lives in the VM).
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let(viewModel::updatePhoto)
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.load()
+        viewModel.loadAutomations()
+        viewModel.loadWebhooks()
+    }
     LaunchedEffect(state.left) { if (state.left) onLeft() }
     LaunchedEffect(state.notice) {
         val notice = state.notice ?: return@LaunchedEffect
@@ -340,12 +575,24 @@ fun GroupInfoScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        PulseAvatar(
-                            name = conversation?.title ?: "Group",
-                            colorHex = conversation?.accentColor,
-                            size = 56.dp,
-                            isGroup = true,
-                        )
+                        // R2-A item 9 — the live photo when one is set (web
+                        // GroupAvatar photo parity), else the letter avatar.
+                        val photo = conversation?.avatar
+                        if (photo != null) {
+                            AsyncImage(
+                                model = app.pulse.core.PulseEndpoints.http(photo),
+                                contentDescription = "${conversation?.title ?: "Group"} photo",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.size(56.dp).clip(androidx.compose.foundation.shape.CircleShape),
+                            )
+                        } else {
+                            PulseAvatar(
+                                name = conversation?.title ?: "Group",
+                                colorHex = conversation?.accentColor,
+                                size = 56.dp,
+                                isGroup = true,
+                            )
+                        }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -362,10 +609,71 @@ fun GroupInfoScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        // R2-A item 9 — admins of ANY group get the photo edit
+                        // overlay (web room-info-page.tsx:742-760 parity).
+                        if (isAdmin) {
+                            IconButton(
+                                onClick = {
+                                    photoPicker.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                    )
+                                },
+                                enabled = !photoBusy,
+                            ) {
+                                if (photoBusy) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(
+                                        Icons.Filled.PhotoCamera,
+                                        contentDescription = if (photo != null) "Edit group photo" else "Add group photo",
+                                    )
+                                }
+                            }
+                        }
                         if (isAdmin) {
                             IconButton(onClick = { renameOpen = true }) {
                                 Icon(Icons.Filled.Edit, contentDescription = "Rename group")
                             }
+                        }
+                    }
+                }
+            }
+
+            // ── R2-A item 8 — screen security (web room-info-page.tsx:973-1023:
+            // per-VIEWER switch first, then the room-wide switch) ──
+            item {
+                Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.VisibilityOff, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Screen security", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text(
+                                    "Hide messages when you leave the app",
+                                    fontSize = 11.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = meta?.myScreenPrivacy == true,
+                                onCheckedChange = { viewModel.setMyPrivacy(it) },
+                            )
+                        }
+                        HorizontalDivider()
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Screen security for everyone", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
+                                Text(
+                                    "The whole room veils — any participant can toggle it",
+                                    fontSize = 11.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = meta?.screenPrivacy == true,
+                                onCheckedChange = { viewModel.setRoomPrivacy(it) },
+                            )
                         }
                     }
                 }
@@ -512,6 +820,33 @@ fun GroupInfoScreen(
                         }
                     }
                 }
+            }
+
+            // ── R2-A item 6 — AUTOMATIONS (admin manages; members read) ──
+            item {
+                AutomationsSection(
+                    isAdmin = isAdmin,
+                    state = automations,
+                    onCreate = viewModel::createAutomation,
+                    onToggle = viewModel::toggleAutomation,
+                    onRename = viewModel::renameAutomationTrigger,
+                    onDelete = viewModel::deleteAutomation,
+                    onLoad = viewModel::loadAutomations,
+                )
+            }
+
+            // ── R2-A item 7 — WEBHOOKS (everyone reads/copies; admin creates) ──
+            item {
+                WebhooksSection(
+                    isAdmin = isAdmin,
+                    state = webhooks,
+                    onCreate = viewModel::createWebhook,
+                    onDelete = viewModel::deleteWebhook,
+                    onLoad = viewModel::loadWebhooks,
+                    onNotice = { text, _ ->
+                        scope.launch { snackbar.showSnackbar(text, withDismissAction = false) }
+                    },
+                )
             }
 
             // ── members ─────────────────────────────────────────

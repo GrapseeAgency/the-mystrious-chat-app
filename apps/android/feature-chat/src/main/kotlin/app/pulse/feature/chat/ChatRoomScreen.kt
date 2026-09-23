@@ -57,6 +57,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Event
@@ -67,6 +69,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Mic
@@ -106,9 +109,12 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -126,6 +132,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -138,6 +145,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.core.media.PulseMedia
 import app.pulse.core.time.PulseTime
@@ -153,6 +162,7 @@ import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Chat room — the native rebuild of the web conversation surface, now on the
@@ -179,6 +189,10 @@ fun ChatRoomScreen(
     voiceLiveCount: Int = 0,
     /** Opens the voice-rooms overlay for this conversation. */
     onOpenVoiceRoom: () -> Unit = {},
+    // R2-A item 6/7/8/9 — the room-info surface (GroupInfoScreen) hosts the
+    // automations/webhooks managers, the screen-security toggles and the
+    // photo edit; groups/channels only (web room-info-page parity).
+    onOpenRoomInfo: (String) -> Unit = {},
 ) {
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
@@ -210,11 +224,17 @@ fun ChatRoomScreen(
     val convThemes by viewModel.convThemes.collectAsStateWithLifecycle()
     // R1-W2I — PiP pane focus (F-PI-03): drives the pop-out toggle in the room menu.
     val pipFocusedId by viewModel.pipFocusedConversationId.collectAsStateWithLifecycle()
+    // R2-A item 5 — AI recap card state; item 8 — live group meta drives the veil.
+    val recap by viewModel.recap.collectAsStateWithLifecycle()
+    val recapLoading by viewModel.recapLoading.collectAsStateWithLifecycle()
+    val groupMeta by viewModel.groupMeta.collectAsStateWithLifecycle()
+    val screenPrivacyOn = groupMeta?.screenPrivacyEffective == true
     val roomTheme = convThemes[conversationId]
     val effectiveWallpaper = roomTheme?.wallpaper ?: prefs.wallpaper ?: "none"
 
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
+    val listScope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
@@ -245,6 +265,10 @@ fun ChatRoomScreen(
     var locationOpen by remember { mutableStateOf(false) }
     var locationDenied by remember { mutableStateOf(false) }
     var themeOpen by remember { mutableStateOf(false) }
+    // R2-A item 5 — the composer draft staged for the /schedule armer.
+    var scheduleDraft by remember { mutableStateOf<String?>(null) }
+    // R2-A item 4 — the frozen pre-open read watermark (unread divider).
+    var unreadAnchorMs by remember(conversationId) { mutableStateOf<Long?>(null) }
 
     // Wave 6 — broadcast channel lock (role from the server detail).
     val isChannel = conversation?.kind == Conversation.Kind.CHANNEL
@@ -259,7 +283,11 @@ fun ChatRoomScreen(
 
     // Timeline rows (asc) with day separators, then reversed for the
     // reverseLayout list — index 0 is the newest row, the anchor for tails.
-    val rows = remember(messages) { buildTimelineRows(messages) }
+    // R2-A item 4 — an "unread" divider row is inserted at the first OTHER
+    // person's message after the frozen watermark (web chat-room.tsx:1398-1424).
+    val rows = remember(messages, unreadAnchorMs, viewerId) {
+        buildTimelineRows(messages, unreadAnchorMs, viewerId)
+    }
     val rowsReversed = remember(rows) { rows.asReversed() }
     val lastMineId = remember(messages, viewerId) {
         messages.lastOrNull { it.authorId == viewerId && !it.isDeleted }?.id
@@ -291,6 +319,79 @@ fun ChatRoomScreen(
         if (rows.isNotEmpty() && listState.firstVisibleItemIndex <= 2) {
             listState.animateScrollToItem(0)
         }
+    }
+
+    // R2-A item 4 — freeze the viewer's pre-open read watermark from the FIRST
+    // Room summary that lands (web chats-tab handlePress freezes it at tap
+    // time): only when unreadCount > 0, else no divider. markRead on entry
+    // zeroes the summary shortly after, so this runs exactly once.
+    LaunchedEffect(conversation) {
+        if (unreadAnchorMs != null) return@LaunchedEffect
+        val conv = conversation ?: return@LaunchedEffect
+        unreadAnchorMs = if (conv.unreadCount > 0) {
+            conv.members.firstOrNull { it.id == viewerId }?.lastReadAt
+        } else {
+            null
+        }
+    }
+
+    // R2-A item 4 — jump-to-latest tracking (web chat-room.tsx:1575-1612):
+    // near-tail detection clears the missed counter; off-screen arrivals
+    // accumulate into the pill badge.
+    val nearTail by remember { derivedStateOf { listState.firstVisibleItemIndex <= 1 } }
+    val missedCount = remember { mutableIntStateOf(0) }
+    var lastSeenLen by remember { mutableStateOf(0) }
+    LaunchedEffect(rows.size, nearTail) {
+        val len = rows.size
+        if (nearTail) {
+            lastSeenLen = len
+            missedCount.intValue = 0
+        } else if (len > lastSeenLen) {
+            missedCount.intValue += len - lastSeenLen
+            lastSeenLen = len
+        } else if (len < lastSeenLen) {
+            // room switch / cache reset
+            lastSeenLen = len
+            missedCount.intValue = 0
+        }
+    }
+
+    // R2-A item 8 — screen security: while EITHER flag is on, FLAG_SECURE
+    // keeps the room out of screenshots + the task-switcher preview (the
+    // Android analogue of the web blur engagement), and the message area
+    // covers while the app is backgrounded (web privacyHidden parity).
+    var privacyHidden by remember { mutableStateOf(false) }
+    val activity = context as? android.app.Activity
+    DisposableEffect(screenPrivacyOn) {
+        val window = activity?.window
+        if (screenPrivacyOn && window != null) {
+            window.setFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                android.view.WindowManager.LayoutParams.FLAG_SECURE,
+            )
+        }
+        onDispose {
+            if (screenPrivacyOn && window != null) {
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, screenPrivacyOn) {
+        val obs = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> privacyHidden = true
+                Lifecycle.Event.ON_RESUME -> {
+                    privacyHidden = false
+                    // Returning from room-info (privacy toggles/photo) re-reads
+                    // the live flags so the veil + toggles stay honest.
+                    viewModel.loadGroupMeta()
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
     // Load-older trigger — the reverseLayout list ends at the OLDEST rows;
@@ -429,6 +530,72 @@ fun ChatRoomScreen(
         if (granted) viewModel.requestLocationFix() else locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
     }
 
+    /**
+     * R2-A item 5 — one slash machine for BOTH the palette pick and the send
+     * path (web applySlash at chat-room.tsx:296-502 + runPaletteCommand:3226):
+     * text outcomes send, sheet outcomes open their REAL surface, /recap runs
+     * the AI recap request.
+     */
+    fun runPaletteCommand(command: PulseSlash.SlashCommand) {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        draft = ""
+        viewModel.onDraftChanged("")
+        when (val outcome = PulseSlash.applySlash(command.cmd)) {
+            is PulseSlash.Outcome.Send -> viewModel.send(outcome.content)
+            is PulseSlash.Outcome.Effect -> viewModel.sendEffect(outcome.effect, outcome.content)
+            is PulseSlash.Outcome.Error -> viewModel.notify(outcome.message, isError = true)
+            is PulseSlash.Outcome.Topic -> viewModel.createTopic(outcome.name, "💬")
+            is PulseSlash.Outcome.Remind -> viewModel.remindMe("")
+            PulseSlash.Outcome.Recap -> viewModel.requestRecap()
+            PulseSlash.Outcome.Help -> helpOpen = true
+            is PulseSlash.Outcome.Sheet -> when (outcome.sheet) {
+                "poll" -> pollBuilderOpen = true
+                "schedule" -> {
+                    scheduleDraft = ""
+                    scheduleOpen = true
+                }
+                "sticker" -> stickerOpen = true
+                "location" -> {
+                    locationOpen = true
+                    onShareLocation()
+                }
+                "whiteboard" -> viewModel.openWhiteboard()
+                "redpacket" -> viewModel.openRedPacket()
+                "kanban" -> viewModel.openKanban()
+                "events" -> viewModel.openEvents()
+                "game" -> viewModel.openGame()
+                "tournament" -> if (viewModel.isGroup) viewModel.openTournament() else viewModel.notifySticky("Tournaments are for groups only")
+                // /stage + /space open the live rooms overlay (voice/stage/space
+                // share one engine-owned surface on Android).
+                else -> onOpenVoiceRoom()
+            }
+        }
+    }
+
+    /** Composer send — leading-slash drafts run the command machine first. */
+    fun sendCurrentDraft() {
+        if (draft.isBlank()) return
+        val outcome = PulseSlash.applySlash(draft)
+        when (outcome) {
+            is PulseSlash.Outcome.Send -> {
+                viewModel.send(outcome.content)
+                if (state.editing == null) draft = "" // edit path clears on success
+            }
+            is PulseSlash.Outcome.Effect -> {
+                viewModel.sendEffect(outcome.effect, outcome.content)
+                draft = ""
+            }
+            else -> runPaletteCommand(
+                PulseSlash.SlashCommand(
+                    cmd = "/" + draft.trim().drop(1).substringBefore(' ').lowercase(),
+                    args = "",
+                    help = "",
+                ),
+            )
+        }
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
     // Wave 2 topic rail — refresh on open + every 15s while the room is open
     // (web parity tick; after-send refreshes ride the VM).
     LaunchedEffect(conversationId) {
@@ -480,6 +647,13 @@ fun ChatRoomScreen(
             onTogglePip = { viewModel.togglePipPane() },
             // D34 — DM peer verification badge state (null = unknown/loading).
             peerVerified = if (dmPeerId != null) peerVerified else null,
+            // R2-A item 5 — the AI-recap header entry (web chat-room.tsx:4162).
+            recapBusy = recapLoading,
+            onRequestRecap = viewModel::requestRecap,
+            // R2-A item 6/7/8/9 — room info (groups/channels only).
+            onOpenRoomInfo = if (conversation?.isGroupish == true) {
+                { onOpenRoomInfo(conversationId) }
+            } else null,
         )
 
         // Wave 2 topic rail — GROUP rooms only (DMs have nothing to file into).
@@ -555,6 +729,7 @@ fun ChatRoomScreen(
                 items(rowsReversed, key = { it.key }) { row ->
                     when (row) {
                         is TimelineRow.Day -> DaySeparator(row.label)
+                        is TimelineRow.Unread -> UnreadDivider()
                         is TimelineRow.Msg -> {
                             val message = row.message
                             MessageRow(
@@ -610,6 +785,103 @@ fun ChatRoomScreen(
                                 modifier = Modifier.animateItem(),
                             )
                         }
+                    }
+                }
+            }
+
+            // R2-A item 4 — jump-to-latest pill (web chat-room.tsx:4527-4565):
+            // visible while scrolled away from the tail, badge = the number of
+            // rows that landed off-screen; tap scrolls to the newest row.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !nearTail,
+                enter = fadeIn() + scaleIn(initialScale = 0.85f, animationSpec = PulseMotion.snappy()),
+                exit = fadeOut() + scaleOut(targetScale = 0.9f, animationSpec = tween(120)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 10.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = PulsePalette.Emerald,
+                    contentColor = Color.White,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.semantics {
+                        contentDescription = if (missedCount.intValue > 0) {
+                            "Jump to newest messages — ${missedCount.intValue} new"
+                        } else {
+                            "Jump to newest messages"
+                        }
+                    },
+                ) {
+                    Row(
+                        Modifier
+                            .clickable {
+                                missedCount.intValue = 0
+                                listScope.launch { listState.animateScrollToItem(0) }
+                            }
+                            .padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("New messages", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Filled.KeyboardArrowDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        if (missedCount.intValue > 0) {
+                            Spacer(Modifier.width(4.dp))
+                            Box(
+                                Modifier
+                                    .size(18.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    if (missedCount.intValue > 99) "99+" else "${missedCount.intValue}",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PulsePalette.Emerald,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // R2-A item 8 — the veil over the message area while the app is
+            // backgrounded (web screen-privacy-veil: covers ONLY the messages;
+            // header + composer stay untouched).
+            if (screenPrivacyOn && privacyHidden) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    Column(
+                        Modifier.fillMaxSize().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Shield,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(30.dp),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Screen security is on",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "Messages stay hidden until you return to Pulse.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
                     }
                 }
             }
@@ -774,6 +1046,101 @@ fun ChatRoomScreen(
             }
         }
 
+        // R2-A item 5 — AI recap card pinned above the composer (web
+        // chat-room.tsx:4835-4900): loading spinner → summary with Copy, and
+        // an auto-dismiss after 15 s so it never outstays its welcome.
+        LaunchedEffect(recap) {
+            if (recap != null) {
+                delay(15_000)
+                viewModel.consumeRecap()
+            }
+        }
+        AnimatedVisibility(
+            visible = recap != null || recapLoading,
+            enter = fadeIn() + scaleIn(initialScale = 0.96f, animationSpec = PulseMotion.soft()),
+            exit = fadeOut() + scaleOut(targetScale = 0.96f, animationSpec = tween(120)),
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(PulsePalette.Violet.copy(alpha = 0.14f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Filled.AutoAwesome,
+                                contentDescription = null,
+                                tint = PulsePalette.Violet,
+                                modifier = Modifier.size(15.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("AI recap", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                when {
+                                    recapLoading -> "Summarizing the latest messages"
+                                    recap != null -> "Based on ${recap?.basedOn ?: 0} messages"
+                                    else -> ""
+                                },
+                                fontSize = 10.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (recap != null && !recapLoading) {
+                            TextButton(onClick = {
+                                clipboard.setText(AnnotatedString(recap?.text.orEmpty()))
+                                viewModel.notify("Recap copied")
+                            }) {
+                                Text("Copy", fontSize = 11.sp, color = PulsePalette.Emerald, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        IconButton(onClick = viewModel::consumeRecap) {
+                            Icon(Icons.Filled.Close, contentDescription = "Dismiss recap", modifier = Modifier.size(14.dp))
+                        }
+                    }
+                    if (recap != null && !recapLoading) {
+                        Text(
+                            recap?.text.orEmpty(),
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(13.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Reading the room…",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // R2-A item 5 — the '/'-command palette (web chat-room.tsx:5199):
+        // drafts starting with '/' list the matched commands; a pick runs the
+        // same outcome machine the web palette does.
+        if (draft.startsWith("/") && state.editing == null) {
+            SlashPalette(
+                draft = draft,
+                onPick = ::runPaletteCommand,
+            )
+        }
+
         // Wave 6 — @mention suggester above the composer (roster-filtered).
         val memberNames = conversation?.memberNames.orEmpty()
         val activeToken = draft.substringAfterLast(' ', "")
@@ -895,9 +1262,7 @@ fun ChatRoomScreen(
                     },
                     onSend = {
                         if (!canSend) return@HoldRecordSlot
-                        viewModel.send(draft)
-                        if (state.editing == null) draft = "" // edit path clears on success
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        sendCurrentDraft()
                     },
                 )
             }
@@ -959,6 +1324,34 @@ fun ChatRoomScreen(
             },
             onKanban = { attachOpen = false; viewModel.openKanban() },
         )
+    }
+
+    // R2-A item 5 — the palette's sticker / schedule / help hosts (the
+    // composables existed since R1-W2A; the palette pick now opens them with
+    // REAL send/schedule paths).
+    if (stickerOpen) {
+        StickerPickerSheet(
+            onDismiss = { stickerOpen = false },
+            onPick = { emoji, pack ->
+                stickerOpen = false
+                viewModel.sendSticker(emoji, pack)
+            },
+        )
+    }
+    if (scheduleOpen) {
+        ScheduleSheet(
+            draft = scheduleDraft.orEmpty(),
+            busy = false,
+            onDismiss = { scheduleOpen = false },
+            onSchedule = { iso ->
+                scheduleOpen = false
+                viewModel.scheduleSend(scheduleDraft.orEmpty(), iso)
+                scheduleDraft = null
+            },
+        )
+    }
+    if (helpOpen) {
+        SlashHelpDialog(onDismiss = { helpOpen = false })
     }
 
     // R1-W2F F-MD-07 — location confirm sheet (fix lives in the VM; dismissal
@@ -1228,22 +1621,47 @@ internal sealed interface TimelineRow {
         override val key: String get() = "day-$iso"
     }
 
+    /** R2-A item 4 — the unread divider (anchored at the first unread row). */
+    object Unread : TimelineRow {
+        override val key: String get() = "unread-divider"
+    }
+
     /** A river message (thread replies never reach this list). */
     data class Msg(val message: Message) : TimelineRow {
         override val key: String get() = message.id
     }
 }
 
-/** Asc rows with a centered day pill wherever the calendar date changes. */
-internal fun buildTimelineRows(messages: List<Message>): List<TimelineRow> {
+/**
+ * Asc rows with a centered day pill wherever the calendar date changes.
+ * R2-A item 4 — [unreadAnchorMs] (the viewer's pre-open read watermark, null
+ * = no divider) inserts an [TimelineRow.Unread] row before the first OTHER
+ * person's non-deleted message newer than the watermark (web chat-room.tsx
+ * buildTimeline unreadDividerPlaced parity).
+ */
+internal fun buildTimelineRows(
+    messages: List<Message>,
+    unreadAnchorMs: Long? = null,
+    viewerId: String? = null,
+): List<TimelineRow> {
     val rows = mutableListOf<TimelineRow>()
     var lastIso: String? = null
+    var dividerPlaced = unreadAnchorMs == null
     for (message in messages) {
         val t = PulseTime.parse(message.createdAt)
         val iso = t?.atZoneSameInstant(java.time.ZoneId.systemDefault())?.toLocalDate()?.toString()
         if (iso != null && iso != lastIso) {
             rows += TimelineRow.Day(iso, PulseTime.dayChip(message.createdAt))
             lastIso = iso
+        }
+        if (!dividerPlaced &&
+            message.authorId != viewerId &&
+            !message.isDeleted &&
+            unreadAnchorMs != null &&
+            (PulseTime.parse(message.createdAt)?.toInstant()?.toEpochMilli() ?: 0L) > unreadAnchorMs
+        ) {
+            rows += TimelineRow.Unread
+            dividerPlaced = true
         }
         rows += TimelineRow.Msg(message)
     }
@@ -1262,6 +1680,39 @@ private fun DaySeparator(label: String) {
                 .clip(RoundedCornerShape(999.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
                 .padding(horizontal = 12.dp, vertical = 4.dp),
+        )
+    }
+}
+
+/** R2-A item 4 — the emerald unread divider (web chat-room.tsx UnreadDivider). */
+@Composable
+private fun UnreadDivider() {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(PulsePalette.Emerald.copy(alpha = 0.45f)),
+        )
+        Text(
+            "Unread messages",
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = PulsePalette.Emerald,
+            modifier = Modifier
+                .padding(horizontal = 10.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(PulsePalette.Emerald.copy(alpha = 0.12f))
+                .padding(horizontal = 10.dp, vertical = 3.dp),
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(PulsePalette.Emerald.copy(alpha = 0.45f)),
         )
     }
 }
@@ -1813,6 +2264,12 @@ private fun RoomHeader(
     // D34 — DM peer verification state (null = unknown/loading): emerald
     // badge when verified, amber dot only when unverified (web parity).
     peerVerified: Boolean? = null,
+    // R2-A item 5 — the AI-recap header entry (web chat-room.tsx:4162-4166:
+    // disabled while the LLM round-trip is in flight).
+    recapBusy: Boolean = false,
+    onRequestRecap: () -> Unit = {},
+    // R2-A item 6/7/8/9 — room info (GroupInfoScreen); null on DMs.
+    onOpenRoomInfo: (() -> Unit)? = null,
 ) {
     Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
         Row(
@@ -1947,6 +2404,32 @@ private fun RoomHeader(
                     )
                 }
                 DropdownMenu(expanded = roomMenuOpen, onDismissRequest = { roomMenuOpen = false }) {
+                    // R2-A item 6/7/8/9 — room info (automations, webhooks,
+                    // screen security, photo) — groups/channels only.
+                    if (onOpenRoomInfo != null) {
+                        DropdownMenuItem(
+                            text = { Text("Room info") },
+                            leadingIcon = {
+                                Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+                            },
+                            onClick = {
+                                roomMenuOpen = false
+                                onOpenRoomInfo()
+                            },
+                        )
+                    }
+                    // R2-A item 5 — AI recap (web header overflow parity).
+                    DropdownMenuItem(
+                        text = { Text(if (recapBusy) "Summarizing…" else "AI recap") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = PulsePalette.Violet)
+                        },
+                        enabled = !recapBusy,
+                        onClick = {
+                            roomMenuOpen = false
+                            onRequestRecap()
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text("Chat theme") },
                         leadingIcon = {

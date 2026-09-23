@@ -28,6 +28,7 @@ import app.pulse.data.local.toInfo
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
 import app.pulse.domain.model.BlockedAccount
+import app.pulse.domain.model.Automation
 import app.pulse.domain.model.CallKind
 import app.pulse.domain.model.CallLogEntry
 import app.pulse.domain.model.CallPeer
@@ -67,6 +68,7 @@ import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
 import app.pulse.domain.model.UserProfile
 import app.pulse.domain.model.UserStats
+import app.pulse.domain.model.Webhook
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.usecase.FlushOutboxUseCase
@@ -74,6 +76,7 @@ import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.PulseWave8Logic
 import app.pulse.protocol.WirePulsePrefs
 import app.pulse.protocol.CallAnswerDto
+import app.pulse.protocol.AiRecapDto
 import app.pulse.protocol.CallCancelDto
 import app.pulse.protocol.CallHangupDto
 import app.pulse.protocol.CallIceDto
@@ -1105,6 +1108,7 @@ class PulseRepositoryImpl @Inject constructor(
                         broadcastMode = dto.broadcastMode == true,
                         slowModeSeconds = dto.slowModeSeconds ?: 0,
                         screenPrivacy = dto.screenPrivacy == true,
+                        myScreenPrivacy = dto.myScreenPrivacy == true,
                         inviteCode = dto.inviteCode,
                     ),
                 )
@@ -1135,6 +1139,101 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun setScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> =
         patchGroupMeta(conversationId, screenPrivacy = on)
+
+    // ── R2-A — round-2 parity (automations · webhooks · recap · privacy · photo) ──
+
+    override suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> =
+        when (val r = api.setMyScreenPrivacy(conversationId, viewerId ?: "", on)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> =
+        when (val r = api.patchConversation(conversationId, viewerId ?: "", photo = photoPath)) {
+            is PulseResult.Success -> {
+                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun automations(conversationId: String): Result<List<Automation>> =
+        when (val r = api.automations(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.automations.map { it.toDomain() })
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun createAutomation(conversationId: String, trigger: String, reply: String): Result<Automation> =
+        when (val r = api.createAutomation(conversationId, viewerId ?: "", trigger, reply)) {
+            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun setAutomationEnabled(automationId: String, enabled: Boolean): Result<Automation> =
+        when (val r = api.patchAutomation(automationId, viewerId ?: "", enabled = enabled, trigger = null)) {
+            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun setAutomationTrigger(automationId: String, trigger: String): Result<Automation> =
+        when (val r = api.patchAutomation(automationId, viewerId ?: "", enabled = null, trigger = trigger)) {
+            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun deleteAutomation(automationId: String): Result<Unit> =
+        when (val r = api.deleteAutomation(automationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun webhooks(conversationId: String): Result<List<Webhook>> =
+        when (val r = api.webhooks(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.webhooks.map { it.toDomain() })
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun createWebhook(conversationId: String, name: String): Result<Webhook> =
+        when (val r = api.createWebhook(conversationId, name, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.toDomain())
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun deleteWebhook(token: String): Result<Unit> =
+        when (val r = api.deleteWebhook(token, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun aiRecap(conversationId: String): Result<AiRecapDto> =
+        when (val r = api.aiRecap(viewerId ?: "", conversationId)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    /** Wire automation row → domain (AutomationDto/Room2Dtos.kt). */
+    private fun app.pulse.protocol.AutomationDto.toDomain(): Automation = Automation(
+        id = id,
+        conversationId = conversationId,
+        trigger = trigger,
+        reply = reply,
+        enabled = enabled,
+        hits = hits,
+        lastFiredAtIso = lastFiredAt,
+        createdAtIso = createdAt,
+        createdByName = createdBy?.name,
+    )
+
+    /** Wire webhook row → domain (WebhookDto/Room2Dtos.kt). */
+    private fun app.pulse.protocol.WebhookDto.toDomain(): Webhook = Webhook(
+        id = id,
+        name = name,
+        token = token,
+        avatarColor = avatarColor,
+        url = url,
+        createdAtIso = createdAt,
+        createdBy = createdBy,
+    )
 
     override suspend fun addGroupMembers(conversationId: String, userIds: List<String>): Result<List<String>> =
         when (val r = api.addMembers(conversationId, viewerId ?: "", userIds)) {
@@ -1327,7 +1426,14 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {
-        socket.emitTyping(recipients = emptyList(), conversationId, viewerId ?: "", userName = userName, isTyping = typing)
+        // R2-A — the relay fans typing out to `recipients` user rooms and DROPS
+        // empty recipient lists (pulse-socket/index.ts: recipients.length===0 →
+        // no relay). The web room computes members-minus-me (chat-room.tsx:1238)
+        // for this same payload; the cached conversation row supplies the ids.
+        val recipients = conversationDao.byId(conversationId)?.toDomain()?.memberIds
+            .orEmpty()
+            .filter { it != viewerId }
+        socket.emitTyping(recipients = recipients, conversationId, viewerId ?: "", userName = userName, isTyping = typing)
     }
 
     override suspend fun react(messageId: String, emoji: String): Result<Unit> {

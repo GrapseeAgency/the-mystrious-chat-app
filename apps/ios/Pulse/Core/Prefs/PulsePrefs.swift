@@ -163,6 +163,11 @@ public final class PulsePrefs: ObservableObject {
     /// SERVER copy rides the settings blob under the web's "chat.convThemes"
     /// key; this UserDefaults key follows the house "prefs." namespace).
     public static let convThemesKey = "prefs.convThemes"
+    /// R2-B R42 — local mirror of the per-conversation PERSONAL screen-
+    /// security veil (myScreenPrivacy). The server copy rides the dedicated
+    /// PATCH /api/conversations/[id]/screen-privacy route; this map is the
+    /// instant local write-through so the veil engages without a round-trip.
+    public static let screenPrivacyKey = "prefs.screenPrivacy"
 
     /// R1-W2G D46 — namespaced key builder for the durable last-position
     /// cache per space room ("space:lastpos:<roomId>"). The relay keeps the
@@ -219,6 +224,8 @@ public final class PulsePrefs: ObservableObject {
         // R1-W2B F-FX-05 — cached theme map (tolerant: bad JSON → empty map;
         // the server blob overwrites it on the next successful sync).
         convThemes = Self.readConvThemes(defaults)
+        // R2-B R42 — cached personal-veil map (tolerant: bad JSON → empty).
+        screenPrivacy = Self.readScreenPrivacy(defaults)
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
     }
 
@@ -249,6 +256,8 @@ public final class PulsePrefs: ObservableObject {
 
     // ── R1-W2B F-FX-05 — per-conversation themes (server-synced) ──
     @Published public private(set) var convThemes: [String: WireConvTheme]
+    // ── R2-B R42 — per-conversation PERSONAL screen-security veil ──
+    @Published public private(set) var screenPrivacy: [String: Bool]
 
     public var hasIdentity: Bool { viewer != nil }
 
@@ -361,6 +370,32 @@ public final class PulsePrefs: ObservableObject {
         convThemes = map
         if let data = try? JSONEncoder().encode(map) {
             defaults.set(data, forKey: Self.convThemesKey)
+        }
+    }
+
+    // ── R2-B R42 — personal screen-security veil ──
+
+    /// Instant local write-through for MY veil on one conversation; the
+    /// server mirror PATCH runs from the caller (GroupInfoView) and the
+    /// verdict lands via adoptServerScreenPrivacy.
+    public func setScreenPrivacy(conversationId: String, on: Bool) {
+        var map = screenPrivacy
+        map[conversationId] = on
+        storeScreenPrivacy(map)
+    }
+
+    /// Server truth landed (detail fetch or PATCH echo): the server value
+    /// wins for that conversation — the same shallow-merge contract as every
+    /// other server-backed blob field.
+    public func adoptServerScreenPrivacy(conversationId: String, on: Bool) {
+        guard screenPrivacy[conversationId] != on else { return }
+        setScreenPrivacy(conversationId: conversationId, on: on)
+    }
+
+    private func storeScreenPrivacy(_ map: [String: Bool]) {
+        screenPrivacy = map
+        if let data = try? JSONEncoder().encode(map) {
+            defaults.set(data, forKey: Self.screenPrivacyKey)
         }
     }
 
@@ -559,5 +594,11 @@ public final class PulsePrefs: ObservableObject {
     private static func readConvThemes(_ defaults: UserDefaults) -> [String: WireConvTheme] {
         guard let data = defaults.data(forKey: convThemesKey) else { return [:] }
         return (try? JSONDecoder().decode([String: WireConvTheme].self, from: data)) ?? [:]
+    }
+
+    /// Cached personal-veil map; anything unreadable degrades to an empty map.
+    private static func readScreenPrivacy(_ defaults: UserDefaults) -> [String: Bool] {
+        guard let data = defaults.data(forKey: screenPrivacyKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: Bool].self, from: data)) ?? [:]
     }
 }

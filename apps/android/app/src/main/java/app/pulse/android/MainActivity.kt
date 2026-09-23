@@ -105,8 +105,10 @@ import app.pulse.feature.chat.ArchivedScreen
 import app.pulse.feature.chat.ChatsScreen
 import app.pulse.feature.chat.ChatRoomScreen
 import app.pulse.feature.chat.ChannelsScreen
+import app.pulse.feature.chat.GroupInfoScreen
 import app.pulse.feature.chat.JoinInviteSheet
 import app.pulse.feature.chat.MentionsScreen
+import app.pulse.feature.chat.NewChatSheet
 import app.pulse.feature.chat.PipOverlayViewModel
 import app.pulse.feature.chat.PipPaneOverlay
 import app.pulse.feature.chat.SavedLibraryScreen
@@ -397,6 +399,10 @@ private fun PulseShell(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var moreMenuOpen by remember { mutableStateOf(false) }
+    // R2-A item 1 — the shell-hosted new-chat composer (web mounts
+    // NewChatSheet at the shell; both the dock FAB and the chats header
+    // pencil raise it).
+    var newChatOpen by remember { mutableStateOf(false) }
     val dark = isPulseDarkTheme()
 
     fun switchTab(route: String) {
@@ -478,6 +484,13 @@ private fun PulseShell(
                     },
                     onOpenMentions = { navController.navigate("mentions") },
                     onOpenChannels = { navController.navigate("channels") },
+                    // R2-A item 2 — the header phone button opens the REAL calls page.
+                    onOpenCalls = { navController.navigate("calls") },
+                    // R2-A item 1 — the header pencil opens the shell-hosted composer.
+                    onOpenNewChat = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        newChatOpen = true
+                    },
                     searchRequest = searchTick,
                 )
 
@@ -554,6 +567,19 @@ private fun PulseShell(
                     CallsView(
                         onBack = { navController.popBackStack() },
                         onOpenRoom = { id -> navController.navigate("room/$id") },
+                    )
+                }
+            }
+            // R2-A item 6/7/8/9 — the room-info surface: automations manager,
+            // webhooks manager, screen-security toggles and the photo edit.
+            composable(
+                "room-info/{conversationId}",
+                arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    GroupInfoScreen(
+                        onBack = { navController.popBackStack() },
+                        onLeft = { navController.popBackStack() },
                     )
                 }
             }
@@ -676,6 +702,8 @@ private fun PulseShell(
                     voiceJoined = voiceState.joined && voiceState.conversationId == conversationId,
                     voiceLiveCount = voiceState.roster.size,
                     onOpenVoiceRoom = { voiceVm.openVoice(conversationId) },
+                    // R2-A item 6/7/8/9 — the room-menu "Room info" entry.
+                    onOpenRoomInfo = { id -> navController.navigate("room-info/$id") },
                 )
             }
             composable(
@@ -752,7 +780,8 @@ private fun PulseShell(
                 onSelect = { route -> switchTab(route) },
                 onCompose = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    honest("The new chat composer isn't available in this native build yet.")
+                    // R2-A item 1 — the REAL new-chat composer (was a stub toast).
+                    newChatOpen = true
                 },
                 onSearch = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -778,6 +807,22 @@ private fun PulseShell(
                 onDeferred = { message -> honest(message) },
                 moreMenuOpen = moreMenuOpen,
                 onMoreMenuChange = { moreMenuOpen = it },
+            )
+        }
+
+        // R2-A item 1 — the shell-hosted new-chat composer (web mounts the
+        // NewChatSheet at the shell): dock FAB + chats header pencil both
+        // raise it; a create navigates into the room and the Room-cache-backed
+        // chats list refreshes itself through the existing flows.
+        if (newChatOpen) {
+            NewChatSheet(
+                viewerId = viewerId,
+                onDismiss = { newChatOpen = false },
+                onConversationOpened = { id ->
+                    newChatOpen = false
+                    navController.navigate("room/$id")
+                },
+                onNotice = { honest(it) },
             )
         }
 

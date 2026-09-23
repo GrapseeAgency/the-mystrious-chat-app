@@ -15,6 +15,10 @@ import PhotosUI
 struct GroupInfoView: View {
     let conversation: WireConversationSummary
     @ObservedObject var session: PulseSession
+    /// R2-B — the room reads prefs (my veil flag) live; also lets the info
+    /// sheet push fresh detail (veil flag, photo) back into the room.
+    @ObservedObject var prefs: PulsePrefs
+    var onDetailUpdated: ((WireConversationSummary) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -33,6 +37,9 @@ struct GroupInfoView: View {
     @State private var broadcastOpen = false
     @State private var inviteCode: String?
     @State private var inviteBusy = false
+    // R2-B — group photo edit (web R33-b "Edit photo" overlay parity)
+    @State private var photoItem: PhotosPickerItem?
+    @State private var photoBusy = false
 
     struct MemberAction: Identifiable {
         var id: String { memberId }
@@ -110,6 +117,24 @@ struct GroupInfoView: View {
                         size: 56,
                         groupID: detail.id,
                     )
+                    .overlay(alignment: .bottomTrailing) {
+                        // R33-b — "Edit photo" overlay for admins of ANY group
+                        // (channels and plain groups alike; the PATCH route has
+                        // always accepted photo for every group) — opens the
+                        // real upload chain (pick → /api/uploads → PATCH photo).
+                        if isAdmin {
+                            PhotosPicker(selection: $photoItem, matching: .images) {
+                                Image(systemName: photoBusy ? "hourglass" : "pencil")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 22, height: 22)
+                                    .background(Circle().fill(PulseTheme.emerald))
+                                    .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+                            }
+                            .disabled(photoBusy)
+                            .accessibilityLabel(detail.photo == nil ? "Add group photo" : "Edit group photo")
+                        }
+                    }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(detail.name ?? "Group")
                             .font(.headline)
@@ -167,6 +192,40 @@ struct GroupInfoView: View {
                         }
                     }
                 }
+            }
+
+            // ── R38/R42 — screen security (comfort setting, deliberately
+            // NOT admin-gated — web parity): the personal veil frosts MY
+            // view; the room-wide switch frosts every member's view. Both
+            // flags OR together inside the room.
+            Section {
+                Toggle(isOn: Binding(
+                    get: { prefs.screenPrivacy[conversation.id] ?? false },
+                    set: { setMyScreenPrivacy($0) },
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Screen security", systemImage: "eye.slash")
+                            .font(.subheadline.weight(.medium))
+                        Text("Blur messages when Pulse loses focus — just for you")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityLabel("Screen security for you")
+                Toggle(isOn: Binding(
+                    get: { detail?.screenPrivacy ?? false },
+                    set: { setRoomScreenPrivacy($0) },
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Screen security for everyone", systemImage: "shield.lefthalf.filled")
+                            .font(.subheadline.weight(.medium))
+                        Text("Applies to every member of this chat")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(detail == nil)
+                .accessibilityLabel("Screen security for everyone")
             }
 
             // ── invite (admin; web room-info-page parity) ──
@@ -229,6 +288,27 @@ struct GroupInfoView: View {
                 }
             }
 
+            // ── R39 — Automations (keyword-triggered auto-replies). One
+            // section (rows + optimistic switch + honest delete + create
+            // sheet live in RoomIntegrationsSurfaces.swift). Admins manage;
+            // members read rows or the honest manage caption (web parity).
+            AutomationsSection(
+                conversationId: conversation.id,
+                viewerId: viewerId,
+                isAdmin: isAdmin,
+                session: session,
+            )
+
+            // ── R2-B — Webhooks (Discord-style incoming integrations, web
+            // group-info-sheet parity): everyone copies ingest URLs, admins
+            // create/delete.
+            WebhooksSection(
+                conversationId: conversation.id,
+                viewerId: viewerId,
+                isAdmin: isAdmin,
+                session: session,
+            )
+
             // ── leave ──
             Section {
                 Button(role: .destructive) {
@@ -242,6 +322,13 @@ struct GroupInfoView: View {
         }
         .listStyle(.insetGrouped)
         .scrollDismissesKeyboard(.immediately)
+        .onChange(of: photoItem) { _, item in
+            // R33-b — the picked photo flows through the avatar square
+            // pipeline → /api/uploads → PATCH conversation photo.
+            guard let item else { return }
+            photoItem = nil
+            Task { await uploadPhoto(item) }
+        }
         .alert("Rename group", isPresented: $renameOpen) {
             TextField("Group name", text: $renameDraft)
             Button("Save") { rename() }
@@ -501,6 +588,67 @@ struct GroupInfoView: View {
             } catch {
                 session.toasts.show(RoomViewModel.describe(error))
             }
+        }
+    }
+
+    // ── R2-B — screen security + group photo ─────────────
+
+    /// R42 — MY veil: the prefs map is the instant local write-through, the
+    /// dedicated per-viewer route is the server mirror (a comfort setting,
+    /// never admin-gated — web parity). Failures keep the local value.
+    private func setMyScreenPrivacy(_ on: Bool) {
+        prefs.setScreenPrivacy(conversationId: conversation.id, on: on)
+        Task {
+            do {
+                let confirmed = try await session.api.setMyScreenPrivacy(conversation.id, on: on)
+                prefs.adoptServerScreenPrivacy(conversationId: conversation.id, on: confirmed)
+                session.toasts.show(confirmed ? "Screen security on for you" : "Screen security off for you")
+            } catch {
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
+    }
+
+    /// R38 — the room-wide switch: PATCH conversation { screenPrivacy }.
+    /// Any participant may toggle it (deliberately not admin-gated).
+    private func setRoomScreenPrivacy(_ on: Bool) {
+        Task {
+            do {
+                let fresh = try await session.api.patchConversation(
+                    conversation.id,
+                    requesterId: viewerId,
+                    screenPrivacy: on,
+                )
+                detail = fresh
+                onDetailUpdated?(fresh)
+                session.toasts.show(on ? "Screen security on" : "Screen security off")
+            } catch {
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
+    }
+
+    /// R33-b — PhotosPicker → square ≤512 JPEG q0.85 → /api/uploads →
+    /// PATCH conversation { photo } → refresh the header (web parity).
+    private func uploadPhoto(_ item: PhotosPickerItem) async {
+        guard !photoBusy else { return }
+        guard let raw = try? await item.loadTransferable(type: Data.self),
+              let jpeg = PulseAvatarImage.jpegData(from: raw) else {
+            session.toasts.show("Couldn't read that image — try another one")
+            return
+        }
+        photoBusy = true
+        defer { photoBusy = false }
+        do {
+            let path = try await session.api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
+            let fresh = try await session.api.patchConversation(conversation.id, requesterId: viewerId, photo: path)
+            detail = fresh
+            onDetailUpdated?(fresh)
+            session.noteInboxChanged()
+            PulseHaptics.success()
+            session.toasts.show("Photo updated")
+        } catch {
+            session.toasts.show(RoomViewModel.describe(error))
         }
     }
 

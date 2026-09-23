@@ -63,6 +63,30 @@ struct ChatRoomView: View {
     }
 }
 
+/// R30-c — the unread divider (web chat-room.tsx:4418-4434 parity):
+/// emerald hairlines around a tracking-widest UNREAD capsule.
+struct UnreadDividerRow: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(PulseTheme.emerald.opacity(0.4))
+                .frame(height: 1)
+            Text("UNREAD")
+                .font(.system(size: 10, weight: .bold))
+                .kerning(1.6)
+                .foregroundStyle(PulseTheme.emerald)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(PulseTheme.emerald.opacity(0.10)))
+            Rectangle()
+                .fill(PulseTheme.emerald.opacity(0.4))
+                .frame(height: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Unread messages")
+    }
+}
+
 /// One river row — day chip + bubble + context menu + pagination trigger.
 /// Extracted from RoomContent so the Swift type-checker sees a bounded
 /// expression (Wave 1 row carries media/thread/flash wiring).
@@ -76,6 +100,8 @@ private struct RoomMessageRow: View {
     let colorOf: (String) -> Color
     /// Wave 8 — prefs bubble corner token (md/lg/pill).
     let bubbleRadius: PulseBubbleRadius
+    /// R30-c — the tap-time unread divider sits right above this row.
+    let showUnreadDivider: Bool
     let onOpenImage: (WireChatMessage) -> Void
     let onOpenFile: (WireChatMessage) -> Void
     let onOpenThread: (WireChatMessage) -> Void
@@ -88,6 +114,12 @@ private struct RoomMessageRow: View {
 
     var body: some View {
         Group {
+            // R30-c — the unread divider anchors at the FIRST message newer
+            // than the frozen lastRead watermark (web buildItems parity).
+            if showUnreadDivider {
+                UnreadDividerRow()
+                    .padding(.vertical, 4)
+            }
             // Day chip when the calendar day changes between rows.
             if index == 0 || PulseFormat.dayLabel(previous?.createdAt) != PulseFormat.dayLabel(message.createdAt) {
                 CapsuleLabel(PulseFormat.dayLabel(message.createdAt))
@@ -272,6 +304,9 @@ private struct RoomContent: View {
     @State private var themeOpen = false
     @State private var phrasesOpen = false
 
+    // R2-B — the veil reads the app scene (the native blur/hidden signal).
+    @Environment(\.scenePhase) private var scenePhase
+
     /// F-CH-04 — broadcast composer lock: broadcastMode on + the viewer is
     /// NOT an admin (server 403s the post; the web hides the composer too).
     private var broadcastLocked: Bool {
@@ -380,7 +415,24 @@ private struct RoomContent: View {
             if searchOpen {
                 roomSearchPanel
             }
+            // R38/R42 — the veil covers ONLY the message river (header +
+            // composer stay untouched, web parity). Stable modifier chain so
+            // the scroll identity never resets across toggles.
             messagesList
+                .blur(radius: veilEngaged ? 24 : 0)
+                .overlay {
+                    if veilEngaged {
+                        veilCover
+                    }
+                }
+                .allowsHitTesting(!veilEngaged)
+            // R34-b — AI recap card pinned above the composer.
+            if viewModel.recap != nil {
+                recapCard
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             // F-SM-04 — @-suggester popover (roster, top-5 prefix match).
             if !mentionCandidates.isEmpty {
                 mentionPopover()
@@ -483,6 +535,18 @@ private struct RoomContent: View {
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Chat theme")
             }
+            // R34-b — AI recap entry (web header-menu "Recap with AI" parity;
+            // the requestRecap ≥5 gate + 15 s auto-dismiss card handle the rest).
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    PulseHaptics.tap()
+                    viewModel.requestRecap(session: session)
+                } label: {
+                    Image(systemName: "sparkles")
+                }
+                .buttonStyle(PulseButtonStyle())
+                .accessibilityLabel("Recap with AI")
+            }
             // R1-W2I F-PI-03 — the pop-out mini-chat toggle (web chat-room
             // header PictureInPicture2 button): opens/closes this room's pane.
             ToolbarItem(placement: .topBarTrailing) {
@@ -518,6 +582,10 @@ private struct RoomContent: View {
             // R1-W2B F-MS-29 — the quick-phrase rail seeds on room open.
             viewModel.loadQuickPhrases(session: session)
         }
+        .task {
+            // R2-B R38/R42 — server truth for both veil flags on room open.
+            await viewModel.loadPrivacyState(session: session)
+        }
         .sheet(item: $threadRoot) { root in
             ThreadView(conversation: conversation, root: root, session: session)
         }
@@ -535,7 +603,16 @@ private struct RoomContent: View {
         }
         // ── REM-B sheet hosts ──
         .sheet(isPresented: $groupInfoOpen) {
-            GroupInfoView(conversation: conversation, session: session)
+            GroupInfoView(
+                conversation: conversation,
+                session: session,
+                prefs: prefs,
+                onDetailUpdated: { detail in
+                    // R38 — the room-wide veil flag rides the info-sheet's
+                    // fresh detail so the river re-veils without a refetch.
+                    viewModel.roomScreenPrivacy = detail.screenPrivacy
+                },
+            )
         }
         .sheet(isPresented: $scheduleOpen) {
             ScheduleSheet { date in
@@ -983,6 +1060,7 @@ private struct RoomContent: View {
                             viewModel: viewModel,
                             colorOf: colorOf,
                             bubbleRadius: prefs.bubbleRadius,
+                            showUnreadDivider: (unreadDividerIndex ?? -1) == index,
                             onOpenImage: { openLightbox($0) },
                             onOpenFile: { openFile($0) },
                             onOpenThread: { threadRoot = $0 },
@@ -1011,14 +1089,30 @@ private struct RoomContent: View {
                         .padding(.horizontal, 16)
                     }
                     Color.clear.frame(height: 4).id("tail")
+                        .onAppear {
+                            // R26 — the tail sentinel doubles as the native
+                            // nearBottomRef: visible = the viewer sits at the
+                            // bottom (didSet resets the missed badge).
+                            viewModel.isTailVisible = true
+                        }
+                        .onDisappear {
+                            viewModel.isTailVisible = false
+                        }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
             .defaultScrollAnchor(.bottom)
             .onChange(of: viewModel.messages.count) { _, _ in
-                withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
-                    proxy.scrollTo("tail", anchor: .bottom)
+                // R26 — the missed-badge machine + tail-id pill arming run
+                // on every river change; the auto-scroll only fires while
+                // the viewer sits at the bottom (web nearBottomRef parity —
+                // reading history is never yanked to the tail).
+                viewModel.noteRiverChanged()
+                if viewModel.isTailVisible {
+                    withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
+                        proxy.scrollTo("tail", anchor: .bottom)
+                    }
                 }
             }
             .onChange(of: viewModel.jumpTargetId) { _, target in
@@ -1028,7 +1122,169 @@ private struct RoomContent: View {
             .onAppear {
                 proxy.scrollTo("tail", anchor: .bottom)
             }
+            // R26 — Telegram-style jump-to-latest pill (web chat-room
+            // :4527-4568 parity): armed on off-screen arrivals, badge shows
+            // the missed count, tap lands on the tail.
+            .overlay(alignment: .bottom) {
+                jumpPill(proxy: proxy)
+            }
         }
+    }
+
+    // ── R2-B — jump pill · unread divider index · recap card · veil ──
+
+    /// The tap-time anchor (frozen in the view model) drives the divider
+    /// row index — nil when there is nothing unread or nothing qualifies.
+    private var unreadDividerIndex: Int? {
+        viewModel.unreadDividerRow(viewerId: session.viewer?.id)
+    }
+
+    @ViewBuilder
+    private func jumpPill(proxy: ScrollViewProxy) -> some View {
+        if viewModel.showJumpPill {
+            Button {
+                PulseHaptics.tap()
+                viewModel.jumpToLatest()
+                withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
+                    proxy.scrollTo("tail", anchor: .bottom)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text("New messages")
+                        .font(.caption.weight(.semibold))
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 11, weight: .bold))
+                    if viewModel.missedCount > 0 {
+                        Text(PulseRoomParityLogic.missedBadgeText(viewModel.missedCount))
+                            .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 18, minHeight: 18)
+                            .background(Circle().fill(.white))
+                            .foregroundStyle(PulseTheme.emerald)
+                    }
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 14)
+                .padding(.vertical, 8)
+                .foregroundStyle(.white)
+                .background(Capsule().fill(PulseTheme.emerald))
+                .shadow(color: PulseTheme.emerald.opacity(0.35), radius: 8, y: 3)
+            }
+            .buttonStyle(PulseButtonStyle())
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            .accessibilityLabel(viewModel.missedCount > 0
+                ? "Jump to newest messages — \(viewModel.missedCount) new"
+                : "Jump to newest messages")
+        } else {
+            Color.clear.frame(height: 0)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// R34-b — the recap card (web :4835-4905 parity): sparkles chip, the
+    /// "Summarizing…" loading state, the bullet summary with a copy button,
+    /// and a dismiss control; auto-dismiss is armed by the view model.
+    @ViewBuilder
+    private var recapCard: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(PulseTheme.violet700)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(PulseTheme.violet700.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("AI recap")
+                        .font(.caption.weight(.bold))
+                    Spacer()
+                    if case .ready(_, let basedOn)? = viewModel.recap {
+                        Text("Based on \(basedOn) messages")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Button {
+                            viewModel.copyRecap()
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .tint(PulseTheme.emerald)
+                        .accessibilityLabel("Copy recap")
+                    }
+                    Button {
+                        viewModel.dismissRecap()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss recap")
+                }
+                switch viewModel.recap {
+                case .loading:
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("Reading the room…")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                case .ready:
+                    Text(viewModel.recapText)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                case nil:
+                    EmptyView()
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.regularMaterial))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("AI recap")
+    }
+
+    /// R38/R42 — the veil engages when EITHER flag is on; on iOS the
+    /// "unfocused" state is scenePhase != .active (app switcher, another
+    /// app, lock — web blur/hidden parity).
+    private var veilEngaged: Bool {
+        let eitherOn = viewModel.roomScreenPrivacy == true
+            || (session.prefs?.screenPrivacy[conversation.id] == true)
+        return eitherOn && scenePhase != .active
+    }
+
+    private var veilCover: some View {
+        ZStack {
+            Rectangle().fill(.regularMaterial)
+            VStack(spacing: 10) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(PulseTheme.emerald)
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(PulseTheme.emerald.opacity(0.12)))
+                Text("Screen security is on")
+                    .font(.subheadline.weight(.semibold))
+                Text("Messages are hidden while Pulse is not focused")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(.thinMaterial))
+            .padding(28)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Screen security is on — messages are hidden while Pulse is not focused")
     }
 
     private func openLightbox(_ message: WireChatMessage) {
@@ -2269,6 +2525,39 @@ final class RoomViewModel: ObservableObject {
     /// this through loadQuickPhrases after every mutation).
     @Published private(set) var quickPhrases: [WireQuickPhrase] = []
 
+    // ── R2-B — unread divider · jump-pill missed count · AI recap · veil ──
+    /// R30-c — the tap-time unread anchor (web chats-tab.tsx:431-435 freeze):
+    /// MY lastReadAt from the route-carried summary when the row showed an
+    /// unread badge, else nil — nil means the divider never places.
+    private let unreadAnchorMs: Double?
+    /// R26 — off-screen arrivals badge on the jump-to-latest pill (the web
+    /// missedCountRef machine chat-room.tsx:1594-1612; the pure step lives
+    /// in PulseRoomParityLogic.missedStep).
+    @Published private(set) var missedCount = 0
+    private var lastSeenLen = 0
+    private var lastTailId: String?
+    /// The tail sentinel row is on-screen — the viewer sits at the bottom
+    /// (the native nearBottomRef). Reaching the bottom resets the badge.
+    @Published var isTailVisible = true {
+        didSet {
+            guard oldValue != isTailVisible, isTailVisible else { return }
+            missedCount = 0
+            lastSeenLen = messages.count
+            showJumpPill = false
+        }
+    }
+    /// Web showJump — armed when a new tail lands while scrolled away,
+    /// cleared at the bottom (never by the scroll position alone).
+    @Published private(set) var showJumpPill = false
+    /// R34-b — live recap card content; nil = no card. Loading while the
+    /// LLM summarizes, then the returned summary; auto-dismisses after 15 s.
+    enum RecapPhase: Equatable { case loading; case ready(text: String, basedOn: Int) }
+    @Published private(set) var recap: RecapPhase?
+    private var recapDismissTask: Task<Void, Never>?
+    /// R38 — the room-wide screen-security switch (server conversation flag;
+    /// nil = unknown / older relay → veil off).
+    @Published var roomScreenPrivacy: Bool?
+
     // Wave 2 — voice recording, playback, polls, transcription, topics.
     @Published private(set) var isRecording = false
     @Published private(set) var recordingElapsedMs: Double = 0
@@ -2367,6 +2656,14 @@ final class RoomViewModel: ObservableObject {
         self.isGroupRoom = conversation.isGroup
         self.initialJumpMessageId = initialJumpMessageId
         self.voiceRate = VoicePlaybackManager.storedRate()
+        // R2-B R30-c — freeze the unread anchor from the list summary the
+        // route carried (web freezes the same values at tap time).
+        let viewerId = session.viewer?.id
+        self.unreadAnchorMs = PulseRoomParityLogic.unreadAnchorMs(
+            myLastReadAtIso: conversation.members.first(where: { $0.id == viewerId })?.lastReadAt,
+            unreadCount: conversation.unreadCount,
+        )
+        self.roomScreenPrivacy = conversation.screenPrivacy
         for member in conversation.members {
             if let stamp = member.lastReadAt {
                 memberWatermarks[member.id] = PulseFormat.date(stamp)
@@ -2673,6 +2970,125 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
+    // ── R2-B — jump-pill missed machine + unread divider anchor ──
+
+    /// R26 — fed on EVERY river length change by the view (the web effects
+    /// on messages.data + lastMessageId, chat-room.tsx:1543-1612): the badge
+    /// grows while away, resets at the bottom, and the pill arms only when a
+    /// NEW tail lands while the viewer is scrolled away. History prepends
+    /// (load older) grow the badge silently without arming the pill — the
+    /// web's exact behavior (the pill show is tail-id driven).
+    func noteRiverChanged() {
+        let newLen = messages.count
+        if isTailVisible {
+            missedCount = 0
+            lastSeenLen = newLen
+        } else if newLen > lastSeenLen {
+            missedCount += newLen - lastSeenLen
+            lastSeenLen = newLen
+        } else if newLen < lastSeenLen {
+            // room switch / cache reset — badge drops
+            lastSeenLen = newLen
+            missedCount = 0
+        }
+        let tailId = messages.last?.id
+        if tailId != lastTailId {
+            let isArrival = lastTailId != nil
+            lastTailId = tailId
+            if isArrival, !isTailVisible {
+                showJumpPill = true
+                PulseHaptics.tap()
+            }
+        }
+    }
+
+    /// Pill tap — drop the badge, land on the tail (web jump button parity).
+    func jumpToLatest() {
+        showJumpPill = false
+        missedCount = 0
+        lastSeenLen = messages.count
+    }
+
+    /// R30-c — the index the unread divider row sits BEFORE (web
+    /// buildItems parity). Nil = anchor absent or nothing qualifies.
+    func unreadDividerRow(viewerId: String?) -> Int? {
+        PulseRoomParityLogic.unreadDividerIndex(
+            messages: messages,
+            viewerId: viewerId,
+            anchorMs: unreadAnchorMs,
+        )
+    }
+
+    // ── R2-B R34-b — AI recap ──
+
+    /// Web requestRecap parity: the ≥5-live-messages gate toasts locally,
+    /// then POST /api/ai/recap fills the card; failures surface verbatim.
+    func requestRecap(session: PulseSession) {
+        if case .loading = recap { return }
+        let liveCount = messages.filter { $0.deletedAt == nil }.count
+        guard PulseRoomParityLogic.recapGatePassed(liveCount: liveCount) else {
+            session.toasts.show("Recap needs at least 5 messages in this chat")
+            return
+        }
+        recap = .loading
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await session.api.aiRecap(conversationId: self.conversationId)
+                self.recap = .ready(text: result.recap, basedOn: result.basedOn ?? 0)
+                PulseHaptics.tap()
+                self.scheduleRecapDismiss()
+            } catch {
+                self.recap = nil
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
+    }
+
+    /// Auto-dismiss after 15 s so the card never outstays its welcome.
+    private func scheduleRecapDismiss() {
+        recapDismissTask?.cancel()
+        recapDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            withAnimation { self.recap = nil }
+        }
+    }
+
+    func dismissRecap() {
+        recapDismissTask?.cancel()
+        recapDismissTask = nil
+        withAnimation { recap = nil }
+    }
+
+    func copyRecap() {
+        if case .ready(let text, _)? = recap {
+            UIPasteboard.general.string = text
+            PulseHaptics.tap()
+            session?.toasts.show("Recap copied")
+        }
+    }
+
+    /// The returned summary once the card holds a result (nil while loading).
+    var recapText: String? {
+        if case .ready(let text, _)? = recap { return text }
+        return nil
+    }
+
+    // ── R2-B R38/R42 — screen security (veil) ──
+
+    /// One quiet detail GET on room open (web detail-query parity): refresh
+    /// the room-wide flag + adopt the server's per-viewer flag into the
+    /// prefs map. Local state stays authoritative until this lands.
+    func loadPrivacyState(session: PulseSession) async {
+        let viewerId = session.viewer?.id ?? ""
+        guard !viewerId.isEmpty, let detail = try? await session.api.conversationDetail(id: conversationId, userId: viewerId) else { return }
+        roomScreenPrivacy = detail.screenPrivacy
+        if let mine = detail.myScreenPrivacy {
+            session.prefs?.adoptServerScreenPrivacy(conversationId: conversationId, on: mine)
+        }
+    }
+
     // ── room search (server q= + local window filter) ───────
 
     private var searchTask: Task<Void, Never>?
@@ -2893,6 +3309,11 @@ final class RoomViewModel: ObservableObject {
             return true
         case .remind:
             session.toasts.show("Reminders ride \"Remind me…\" on any message")
+            return true
+        case .recap:
+            // R34-b — /recap rides the same requestRecap as the header entry.
+            draft = ""
+            requestRecap(session: session)
             return true
         case .effect(let name, let content):
             draft = ""

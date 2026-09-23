@@ -1563,6 +1563,47 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
+    // ── R2-A item 5 — AI recap (web chat-room.tsx:2178-2208) ─────────
+
+    /** Live recap card content — null = no card (web `recap` state parity). */
+    data class RecapUi(val text: String, val basedOn: Int)
+
+    private val _recap = MutableStateFlow<RecapUi?>(null)
+    val recap: StateFlow<RecapUi?> = _recap.asStateFlow()
+
+    private val _recapLoading = MutableStateFlow(false)
+    val recapLoading: StateFlow<Boolean> = _recapLoading.asStateFlow()
+
+    fun consumeRecap() {
+        _recap.value = null
+    }
+
+    /**
+     * Header-menu / palette /recap entry — POST /api/ai/recap { userId,
+     * conversationId }. Gate: real activity only (≥5 live messages, web
+     * requestRecap parity). Failures surface the server's honest copy.
+     */
+    fun requestRecap() {
+        if (_recapLoading.value) return
+        val liveCount = messages.value.count { !it.isDeleted }
+        if (liveCount < RECAP_MIN_MESSAGES) {
+            notify("Recap needs at least $RECAP_MIN_MESSAGES messages in this chat")
+            return
+        }
+        _recapLoading.value = true
+        viewModelScope.launch {
+            val outcome: Result<app.pulse.protocol.AiRecapDto> = repo.aiRecap(conversationId)
+            outcome
+                .onSuccess { dto -> _recap.value = RecapUi(text = dto.recap, basedOn = dto.basedOn) }
+                .onFailure { failure ->
+                    val raw = (failure as? PulseApiException)?.message
+                    val copy = raw?.let { m -> m.substringAfter(": ").takeIf { t -> t.isNotBlank() && t != m } }
+                    notify(copy ?: "Recap is unavailable right now", isError = true)
+                }
+            _recapLoading.value = false
+        }
+    }
+
     // ── R1-W2F — F-MD-06 translation ─────────────────────────────────
 
     /** The message whose LLM translation is in flight (menu row → spinner). */
@@ -1767,6 +1808,9 @@ class ChatRoomViewModel @Inject constructor(
 
         /** R1-W2F — one-shot location fix honesty timeout (web geolocation 9s). */
         const val LOCATION_FIX_TIMEOUT_MS = 12_000L
+
+        /** R2-A item 5 — recap activity gate (web requestRecap: liveCount < 5). */
+        const val RECAP_MIN_MESSAGES = 5
 
         /** Web parity unfurl hint moved to PulseMedia.isUnfurlCandidate (JVM-pinned). */
     }

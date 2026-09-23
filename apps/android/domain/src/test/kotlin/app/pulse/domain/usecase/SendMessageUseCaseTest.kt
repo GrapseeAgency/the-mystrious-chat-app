@@ -241,6 +241,26 @@ class SendMessageUseCaseTest {
             Result.failure<app.pulse.domain.model.QuickPhrase>(UnsupportedOperationException())
         override suspend fun deletePhrase(phraseId: String) = Result.success(Unit)
 
+        // ── R2-A — round-2 parity members (unused by the send-path tests) ──
+        override suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean) = Result.success(Unit)
+        override suspend fun setGroupPhoto(conversationId: String, photoPath: String) = Result.success(Unit)
+        override suspend fun automations(conversationId: String) =
+            Result.success(emptyList<app.pulse.domain.model.Automation>())
+        override suspend fun createAutomation(conversationId: String, trigger: String, reply: String) =
+            Result.failure<app.pulse.domain.model.Automation>(UnsupportedOperationException())
+        override suspend fun setAutomationEnabled(automationId: String, enabled: Boolean) =
+            Result.failure<app.pulse.domain.model.Automation>(UnsupportedOperationException())
+        override suspend fun setAutomationTrigger(automationId: String, trigger: String) =
+            Result.failure<app.pulse.domain.model.Automation>(UnsupportedOperationException())
+        override suspend fun deleteAutomation(automationId: String) = Result.success(Unit)
+        override suspend fun webhooks(conversationId: String) =
+            Result.success(emptyList<app.pulse.domain.model.Webhook>())
+        override suspend fun createWebhook(conversationId: String, name: String) =
+            Result.failure<app.pulse.domain.model.Webhook>(UnsupportedOperationException())
+        override suspend fun deleteWebhook(token: String) = Result.success(Unit)
+        override suspend fun aiRecap(conversationId: String) =
+            Result.failure<app.pulse.protocol.AiRecapDto>(UnsupportedOperationException())
+
         // ── R1-W2F — F-MD-06/F-FX-05 (stubs — the send path is the subject here) ──
         override suspend fun translateMessage(messageId: String): Result<String> =
             Result.failure(UnsupportedOperationException())
