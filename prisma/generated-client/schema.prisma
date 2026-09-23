@@ -22,6 +22,7 @@ model User {
   statusEmoji        String? // Discord-style custom status glyph (null = none)
   statusText         String? // Discord-style custom status line (null = none)
   preferences        String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
+  sessionTokenHash   String? // sha256 hex of the native session token (spec §3.11 A-1/A-2) — raw token never stored; null = pre-token identity (migration-accepted)
   createdAt          DateTime                  @default(now())
   lastSeenAt         DateTime                  @default(now())
   appInstalls        AppInstall[]

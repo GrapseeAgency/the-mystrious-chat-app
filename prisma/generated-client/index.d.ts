@@ -5360,6 +5360,7 @@ export namespace Prisma {
     statusEmoji: string | null
     statusText: string | null
     preferences: string | null
+    sessionTokenHash: string | null
     createdAt: Date | null
     lastSeenAt: Date | null
     xp: number | null
@@ -5377,6 +5378,7 @@ export namespace Prisma {
     statusEmoji: string | null
     statusText: string | null
     preferences: string | null
+    sessionTokenHash: string | null
     createdAt: Date | null
     lastSeenAt: Date | null
     xp: number | null
@@ -5394,6 +5396,7 @@ export namespace Prisma {
     statusEmoji: number
     statusText: number
     preferences: number
+    sessionTokenHash: number
     createdAt: number
     lastSeenAt: number
     xp: number
@@ -5423,6 +5426,7 @@ export namespace Prisma {
     statusEmoji?: true
     statusText?: true
     preferences?: true
+    sessionTokenHash?: true
     createdAt?: true
     lastSeenAt?: true
     xp?: true
@@ -5440,6 +5444,7 @@ export namespace Prisma {
     statusEmoji?: true
     statusText?: true
     preferences?: true
+    sessionTokenHash?: true
     createdAt?: true
     lastSeenAt?: true
     xp?: true
@@ -5457,6 +5462,7 @@ export namespace Prisma {
     statusEmoji?: true
     statusText?: true
     preferences?: true
+    sessionTokenHash?: true
     createdAt?: true
     lastSeenAt?: true
     xp?: true
@@ -5561,6 +5567,7 @@ export namespace Prisma {
     statusEmoji: string | null
     statusText: string | null
     preferences: string | null
+    sessionTokenHash: string | null
     createdAt: Date
     lastSeenAt: Date
     xp: number
@@ -5597,6 +5604,7 @@ export namespace Prisma {
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
+    sessionTokenHash?: boolean
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
@@ -5637,6 +5645,7 @@ export namespace Prisma {
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
+    sessionTokenHash?: boolean
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
@@ -5654,6 +5663,7 @@ export namespace Prisma {
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
+    sessionTokenHash?: boolean
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
@@ -5671,6 +5681,7 @@ export namespace Prisma {
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
+    sessionTokenHash?: boolean
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
@@ -5678,7 +5689,7 @@ export namespace Prisma {
     xpDay?: boolean
   }
 
-  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "statusEmoji" | "statusText" | "preferences" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
+  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "statusEmoji" | "statusText" | "preferences" | "sessionTokenHash" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
   export type UserInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     appInstalls?: boolean | User$appInstallsArgs<ExtArgs>
     wallet?: boolean | User$walletArgs<ExtArgs>
@@ -5743,6 +5754,7 @@ export namespace Prisma {
       statusEmoji: string | null
       statusText: string | null
       preferences: string | null
+      sessionTokenHash: string | null
       createdAt: Date
       lastSeenAt: Date
       xp: number
@@ -6202,6 +6214,7 @@ export namespace Prisma {
     readonly statusEmoji: FieldRef<"User", 'String'>
     readonly statusText: FieldRef<"User", 'String'>
     readonly preferences: FieldRef<"User", 'String'>
+    readonly sessionTokenHash: FieldRef<"User", 'String'>
     readonly createdAt: FieldRef<"User", 'DateTime'>
     readonly lastSeenAt: FieldRef<"User", 'DateTime'>
     readonly xp: FieldRef<"User", 'Int'>
@@ -53198,6 +53211,7 @@ export namespace Prisma {
     statusEmoji: 'statusEmoji',
     statusText: 'statusText',
     preferences: 'preferences',
+    sessionTokenHash: 'sessionTokenHash',
     createdAt: 'createdAt',
     lastSeenAt: 'lastSeenAt',
     xp: 'xp',
@@ -53838,6 +53852,7 @@ export namespace Prisma {
     statusEmoji?: StringNullableFilter<"User"> | string | null
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
+    sessionTokenHash?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
     lastSeenAt?: DateTimeFilter<"User"> | Date | string
     xp?: IntFilter<"User"> | number
@@ -53877,6 +53892,7 @@ export namespace Prisma {
     statusEmoji?: SortOrderInput | SortOrder
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
+    sessionTokenHash?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -53919,6 +53935,7 @@ export namespace Prisma {
     statusEmoji?: StringNullableFilter<"User"> | string | null
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
+    sessionTokenHash?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
     lastSeenAt?: DateTimeFilter<"User"> | Date | string
     xp?: IntFilter<"User"> | number
@@ -53958,6 +53975,7 @@ export namespace Prisma {
     statusEmoji?: SortOrderInput | SortOrder
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
+    sessionTokenHash?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -53983,6 +54001,7 @@ export namespace Prisma {
     statusEmoji?: StringNullableWithAggregatesFilter<"User"> | string | null
     statusText?: StringNullableWithAggregatesFilter<"User"> | string | null
     preferences?: StringNullableWithAggregatesFilter<"User"> | string | null
+    sessionTokenHash?: StringNullableWithAggregatesFilter<"User"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     lastSeenAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     xp?: IntWithAggregatesFilter<"User"> | number
@@ -56914,6 +56933,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -56953,6 +56973,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -56992,6 +57013,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -57031,6 +57053,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -57070,6 +57093,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -57087,6 +57111,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -57104,6 +57129,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -60416,6 +60442,7 @@ export namespace Prisma {
     statusEmoji?: SortOrder
     statusText?: SortOrder
     preferences?: SortOrder
+    sessionTokenHash?: SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -60438,6 +60465,7 @@ export namespace Prisma {
     statusEmoji?: SortOrder
     statusText?: SortOrder
     preferences?: SortOrder
+    sessionTokenHash?: SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -60455,6 +60483,7 @@ export namespace Prisma {
     statusEmoji?: SortOrder
     statusText?: SortOrder
     preferences?: SortOrder
+    sessionTokenHash?: SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -66678,6 +66707,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -66716,6 +66746,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -66759,6 +66790,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -66797,6 +66829,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -66851,6 +66884,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -66889,6 +66923,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -66938,6 +66973,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -66976,6 +67012,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67014,6 +67051,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67052,6 +67090,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67095,6 +67134,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67133,6 +67173,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67187,6 +67228,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67225,6 +67267,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67274,6 +67317,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67312,6 +67356,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67350,6 +67395,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67388,6 +67434,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67442,6 +67489,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67480,6 +67528,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67518,6 +67567,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67556,6 +67606,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67610,6 +67661,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67648,6 +67700,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67686,6 +67739,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67724,6 +67778,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67778,6 +67833,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67816,6 +67872,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67854,6 +67911,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67892,6 +67950,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -67946,6 +68005,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -67984,6 +68044,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68022,6 +68083,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68060,6 +68122,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68114,6 +68177,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68152,6 +68216,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68190,6 +68255,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68228,6 +68294,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68282,6 +68349,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68320,6 +68388,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68358,6 +68427,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68396,6 +68466,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68450,6 +68521,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68488,6 +68560,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68526,6 +68599,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68564,6 +68638,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68607,6 +68682,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68645,6 +68721,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68699,6 +68776,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68737,6 +68815,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68786,6 +68865,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68824,6 +68904,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68862,6 +68943,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68900,6 +68982,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68954,6 +69037,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68992,6 +69076,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69030,6 +69115,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69068,6 +69154,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69122,6 +69209,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69160,6 +69248,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69948,6 +70037,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69986,6 +70076,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70105,6 +70196,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70143,6 +70235,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70305,6 +70398,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70343,6 +70437,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70418,6 +70513,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70456,6 +70552,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70576,6 +70673,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70614,6 +70712,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70727,6 +70826,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70765,6 +70865,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70868,6 +70969,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70906,6 +71008,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -71534,6 +71637,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -71572,6 +71676,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -72450,6 +72555,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -72488,6 +72594,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -72627,6 +72734,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -72665,6 +72773,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -73604,6 +73713,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -73642,6 +73752,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -73717,6 +73828,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -73755,6 +73867,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -74181,6 +74294,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -74219,6 +74333,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    sessionTokenHash?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -74306,6 +74421,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -74344,6 +74460,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
