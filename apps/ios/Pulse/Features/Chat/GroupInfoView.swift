@@ -254,7 +254,7 @@ struct GroupInfoView: View {
             isPresented: $broadcastOpen,
             titleVisibility: .visible,
         ) {
-            Button(detail?.broadcastMode == true ? "Turn off" : "Turn on") { toggleBroadcast() }
+            Button(detail.broadcastMode == true ? "Turn off" : "Turn on") { toggleBroadcast() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Only admins can post while announcement mode is on.")
