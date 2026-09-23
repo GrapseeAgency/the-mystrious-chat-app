@@ -42,6 +42,10 @@ final class PulseCallVideoPolicyTests: XCTestCase {
             + " toks=" + toksText
             + " eq=" + String(eq)
             + " hasVideo=" + String(result)
+            + " raw=" + videoSdp
+                .replacingOccurrences(of: "\r", with: "<CR>")
+                .replacingOccurrences(of: "\n", with: "<LF>")
+                .replacingOccurrences(of: "\\", with: "<BSL>")
         XCTAssertTrue(result, message)
     }
 
