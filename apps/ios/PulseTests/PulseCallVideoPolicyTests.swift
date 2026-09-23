@@ -33,10 +33,16 @@ final class PulseCallVideoPolicyTests: XCTestCase {
         let lines = videoSdp.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\r" || $0 == "\n" })
         let vline = lines.first { $0.hasPrefix("m=video") }
         let toks = vline.map { $0.split(separator: " ") } ?? []
-        XCTAssertTrue(
-            PulseCallSdp.hasVideo(videoSdp),
-            "DIAG lines=\(lines.count) vline=\(vline.map(String.init) ?? \"nil\") toks=\(toks.map(String.init)) eq=\(toks.first == \"m=video\") hasVideo=\(PulseCallSdp.hasVideo(videoSdp))"
-        )
+        let vlineText: String = vline.map(String.init) ?? "none"
+        let toksText: String = toks.map(String.init).joined(separator: "|")
+        let eq: Bool = toks.first == "m=video"
+        let result: Bool = PulseCallSdp.hasVideo(videoSdp)
+        let message = "DIAG lines=" + String(lines.count)
+            + " vline=" + vlineText
+            + " toks=" + toksText
+            + " eq=" + String(eq)
+            + " hasVideo=" + String(result)
+        XCTAssertTrue(result, message)
     }
 
     func testRejectedVideoMLinePortZeroIsNotVideo() {
@@ -78,10 +84,14 @@ final class PulseCallVideoPolicyTests: XCTestCase {
     // ── shouldAttachVideo — the callee/caller camera gate ───────
 
     func testCalleeAttachesVideoOnlyForVideoKindAndUsableMLineAndCamera() {
-        XCTAssertTrue(
-            PulseCallVideoPolicy.shouldAttachVideo(kind: .video, offerSdp: videoSdp, cameraCapable: true),
-            "DIAG kindVideo=\(CallKind.video == .video) hasVideo=\(PulseCallSdp.hasVideo(videoSdp)) lfHasVideo=\(PulseCallSdp.hasVideo(videoSdp.replacingOccurrences(of: \"\\r\\n\", with: \"\\n\")))"
-        )
+        let hasVideo: Bool = PulseCallSdp.hasVideo(videoSdp)
+        let lfHasVideo: Bool = PulseCallSdp.hasVideo(videoSdp.replacingOccurrences(of: "\r\n", with: "\n"))
+        let kindVideo: Bool = CallKind.video == .video
+        let result: Bool = PulseCallVideoPolicy.shouldAttachVideo(kind: .video, offerSdp: videoSdp, cameraCapable: true)
+        let message = "DIAG kindVideo=" + String(kindVideo)
+            + " hasVideo=" + String(hasVideo)
+            + " lfHasVideo=" + String(lfHasVideo)
+        XCTAssertTrue(result, message)
     }
 
     func testCalleeWithNoCameraStaysAudioOnlyEvenForVideoOffers() {
