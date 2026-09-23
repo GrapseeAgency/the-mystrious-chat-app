@@ -67,6 +67,8 @@ import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
@@ -88,6 +90,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.ScheduleSend
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Verified
@@ -263,6 +266,10 @@ fun ChatRoomScreen(
     var lightboxTarget by remember { mutableStateOf<Message?>(null) }
     var pinsOpen by remember { mutableStateOf(false) }
     var attachOpen by remember { mutableStateOf(false) }
+    // R4-B item 2 — the attach sheet's Effects submenu state (web
+    // trayEffectsOpen parity): the four chips route into the SAME outcome
+    // machine as the /effects slash (PulseSlash.Outcome.Effect → sendEffect).
+    var attachEffectsOpen by remember { mutableStateOf(false) }
     var pollBuilderOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var wasEditing by remember { mutableStateOf(false) }
@@ -1475,7 +1482,7 @@ fun ChatRoomScreen(
 
     if (attachOpen) {
         AttachSheet(
-            onDismiss = { attachOpen = false },
+            onDismiss = { attachOpen = false; attachEffectsOpen = false },
             onPhoto = {
                 attachOpen = false
                 photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -1507,6 +1514,62 @@ fun ChatRoomScreen(
                 if (viewModel.isGroup) viewModel.openTournament() else viewModel.notifySticky("Tournaments are for groups only")
             },
             onKanban = { attachOpen = false; viewModel.openKanban() },
+            // ── R4-B item 2 — Express rows ──
+            effectsOpen = attachEffectsOpen,
+            onToggleEffects = { attachEffectsOpen = !attachEffectsOpen },
+            onPickEffect = { effect ->
+                attachOpen = false
+                attachEffectsOpen = false
+                if (draft.isNotBlank()) {
+                    // The /effects outcome machine, reused verbatim: a draft
+                    // rides the effect-flagged send (sendCurrentDraft's
+                    // Outcome.Effect branch).
+                    viewModel.sendEffect(effect, draft)
+                    draft = ""
+                    viewModel.onDraftChanged("")
+                } else {
+                    // Empty draft → stage the command; the existing slash
+                    // machine sends it on the next send tap (web arms the
+                    // effect — Android stages it visibly, honest parity).
+                    draft = "/effects $effect "
+                    viewModel.onDraftChanged(draft)
+                }
+            },
+            onStickers = {
+                attachOpen = false
+                attachEffectsOpen = false
+                stickerOpen = true
+            },
+            onScheduleSend = {
+                attachOpen = false
+                attachEffectsOpen = false
+                val text = draft.trim()
+                if (text.isEmpty()) {
+                    // Web Schedule tile copy verbatim (chat-room.tsx:2615).
+                    viewModel.notify("Type the message first, then schedule it")
+                } else {
+                    scheduleDraft = text
+                    scheduleOpen = true
+                }
+            },
+            onScheduledSends = {
+                attachOpen = false
+                attachEffectsOpen = false
+                scheduledOpen = true
+            },
+            // Group-gated like the composer toggle (web groupOnly parity):
+            // null in DMs hides the row entirely. Both entries flip the SAME
+            // VM anonNext state — one source of truth.
+            onIncognito = if (conversation?.isGroupish == true) {
+                {
+                    attachOpen = false
+                    attachEffectsOpen = false
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    viewModel.toggleIncognito()
+                }
+            } else {
+                null
+            },
         )
     }
 
@@ -2112,6 +2175,16 @@ private fun AttachSheet(
     onGame: () -> Unit,
     onTournament: () -> Unit,
     onKanban: () -> Unit,
+    // R4-B item 2 — the web tray's Express group (chat-room.tsx:2752-2800).
+    // Discoverability only: every row opens/toggles an EXISTING engine.
+    effectsOpen: Boolean,
+    onToggleEffects: () -> Unit,
+    onPickEffect: (String) -> Unit,
+    onStickers: () -> Unit,
+    onScheduleSend: () -> Unit,
+    onScheduledSends: () -> Unit,
+    /** null in DMs — group-gated exactly like the composer incognito toggle. */
+    onIncognito: (() -> Unit)?,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         SheetAction(Icons.Filled.Image, "Photo", onPhoto)
@@ -2130,6 +2203,68 @@ private fun AttachSheet(
         SheetAction(Icons.Filled.SportsEsports, "Game", onGame)
         SheetAction(Icons.Filled.EmojiEvents, "Tournament", onTournament)
         SheetAction(Icons.Filled.ViewKanban, "Kanban", onKanban)
+
+        // ── R4-B item 2 — Express (web tray group verbatim label) ──
+        Text(
+            "EXPRESS",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 24.dp, top = 8.dp, bottom = 2.dp),
+        )
+        // Effects submenu — the web tray's inline effect chips
+        // (chat-room.tsx:4992-5025): confetti | lasers | echo | sparkles,
+        // each routing into the SAME outcome machine as the /effects slash.
+        if (effectsOpen) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf("confetti", "lasers", "echo", "sparkles").forEach { effect ->
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = PulsePalette.Violet.copy(alpha = 0.12f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, PulsePalette.Violet.copy(alpha = 0.25f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { contentDescription = "Send with the $effect effect" },
+                    ) {
+                        Row(
+                            Modifier
+                                .clickable(onClick = { onPickEffect(effect) })
+                                .padding(horizontal = 6.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(
+                                Icons.Filled.AutoAwesome,
+                                contentDescription = null,
+                                tint = PulsePalette.Violet,
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                effect,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PulsePalette.Violet,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        SheetAction(Icons.Filled.AutoAwesome, "Effects", onToggleEffects, tint = PulsePalette.Violet)
+        SheetAction(Icons.Filled.EmojiEmotions, "Stickers", onStickers)
+        SheetAction(Icons.Filled.ScheduleSend, "Schedule send", onScheduleSend)
+        SheetAction(Icons.Filled.EventRepeat, "Scheduled sends", onScheduledSends)
+        if (onIncognito != null) {
+            SheetAction(Icons.Filled.VisibilityOff, "Incognito", onIncognito, tint = PulsePalette.Emerald)
+        }
         Spacer(Modifier.height(28.dp))
     }
 }

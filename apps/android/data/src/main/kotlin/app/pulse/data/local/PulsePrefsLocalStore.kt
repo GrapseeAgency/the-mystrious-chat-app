@@ -45,6 +45,8 @@ class PulsePrefsLocalStore @Inject constructor(
         val CONV_THEMES = stringPreferencesKey("chat.convThemes")
         /** R2-C item 3 — design-language selection (web localStorage key). */
         val UI_THEME = stringPreferencesKey("pulse.uiTheme.v2")
+        /** R4-B item 3 — navigation style (web localStorage key, byte-exact). */
+        val NAV_STYLE = stringPreferencesKey(app.pulse.protocol.PulseNavStyle.PREFS_KEY)
         /** R2-C item 7 — spotlight recent searches (web localStorage key). */
         val SPOTLIGHT_RECENTS = stringPreferencesKey("pulse.spotlight.recents.v1")
     }
@@ -67,6 +69,22 @@ class PulsePrefsLocalStore @Inject constructor(
     suspend fun setUiTheme(id: String) {
         if (id !in UI_THEME_IDS) return
         context.pulsePrefs.edit { it[Keys.UI_THEME] = id }
+    }
+
+    // ── R4-B item 3 — navigation style (pulse.navStyle.v2) ──
+
+    /**
+     * Live navigation style — one of the 8 phone-feasible [PulseNavStyle]
+     * ids (the web value strings verbatim); the web's 5 excluded ids, junk
+     * and wrong-case values all fall back to the capsule default (the same
+     * resolve the web's getNavStyleMeta fallback performs).
+     */
+    val navStyle: Flow<app.pulse.protocol.PulseNavStyle> = context.pulsePrefs.data.map { p ->
+        app.pulse.protocol.PulseNavStyle.fromPersisted(p[Keys.NAV_STYLE])
+    }
+
+    suspend fun setNavStyle(style: app.pulse.protocol.PulseNavStyle) {
+        context.pulsePrefs.edit { it[Keys.NAV_STYLE] = style.id }
     }
 
     // ── R2-C item 7 — spotlight recent searches ─────────────────

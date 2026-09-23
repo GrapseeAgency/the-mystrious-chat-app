@@ -132,6 +132,10 @@ class PulsePrefsStoreImpl @Inject constructor(
     override val uiTheme: Flow<String> = localStore.uiTheme
     override suspend fun setUiTheme(id: String) = localStore.setUiTheme(id)
 
+    // R4-B item 3 — navigation style (web pulse.navStyle.v2 key, delegated).
+    override val navStyle: Flow<app.pulse.protocol.PulseNavStyle> = localStore.navStyle
+    override suspend fun setNavStyle(style: app.pulse.protocol.PulseNavStyle) = localStore.setNavStyle(style)
+
     override val spotlightRecents: Flow<List<String>> = localStore.spotlightRecents
     override suspend fun pushSpotlightRecent(query: String) = localStore.pushSpotlightRecent(query)
     override suspend fun clearSpotlightRecents() = localStore.clearSpotlightRecents()

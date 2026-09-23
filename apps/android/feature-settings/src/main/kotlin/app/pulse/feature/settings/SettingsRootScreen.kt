@@ -84,8 +84,10 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -337,6 +339,23 @@ private val UI_THEME_ROW_2 = listOf(
     "aero" to "Aero",
 )
 
+/**
+ * R4-B item 3 — the 8 phone-feasible navigation architectures with the web
+ * nav-registry.ts:51-63 label + hint strings VERBATIM (only the web's
+ * floating-dock / command-bar / radial / gesture / contextual-dock are
+ * left out — desktop/keyboard/exotic idioms, see protocol PulseNavStyle).
+ */
+private val NAV_STYLE_CARDS = listOf(
+    Triple(app.pulse.protocol.PulseNavStyle.CAPSULE, "Floating Capsule", "Detached glass capsule dock — the default"),
+    Triple(app.pulse.protocol.PulseNavStyle.FLOATING_TOP, "Floating Top Nav", "Capsule bar floating beneath the top edge"),
+    Triple(app.pulse.protocol.PulseNavStyle.PILL, "Pill Navigation", "Single segmented pill with sliding fill"),
+    Triple(app.pulse.protocol.PulseNavStyle.BOTTOM_BAR, "Bottom Bar", "Classic edge-to-edge bottom bar"),
+    Triple(app.pulse.protocol.PulseNavStyle.TAB_BAR, "Tab Bar", "iOS-style tab bar with tinted squircles"),
+    Triple(app.pulse.protocol.PulseNavStyle.FLOATING_TAB_BAR, "Floating Tab Bar", "Detached card, elevated active tab"),
+    Triple(app.pulse.protocol.PulseNavStyle.RAIL, "Navigation Rail", "Persistent vertical side rail"),
+    Triple(app.pulse.protocol.PulseNavStyle.ISLAND, "Island Navigation", "Dynamic-island pill that expands on tap"),
+)
+
 @Composable
 fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
@@ -345,6 +364,8 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
     // R2-C item 3 — the selected design language.
     val uiTheme by viewModel.uiTheme.collectAsStateWithLifecycle()
     val uiThemeMeta = app.pulse.ui.PulseUiTheme.fromId(uiTheme)
+    // R4-B item 3 — the selected navigation architecture.
+    val navStyle by viewModel.navStyle.collectAsStateWithLifecycle()
     SectionScaffold("Appearance", onBack) {
         // R2-C item 3 — the design-language picker (web ui-theme.ts five
         // languages; value strings ride the SAME `pulse.uiTheme.v2` key the
@@ -375,6 +396,67 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
+        // R4-B item 3 — the navigation-architecture picker (web
+        // nav-registry.ts labels/hints verbatim for the 8 phone-feasible
+        // styles): 2-column card grid, selection ring like the wallpaper
+        // swatches. The value strings ride the SAME `pulse.navStyle.v2` key
+        // the web persists; the web's 5 excluded architectures are
+        // documented on protocol PulseNavStyle (they parse to capsule).
+        val haptics = LocalHapticFeedback.current
+        Text(
+            "Navigation style",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
+        )
+        NAV_STYLE_CARDS.chunked(2).forEach { row ->
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                row.forEach { (style, label, hint) ->
+                    val selected = navStyle == style
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                            .border(
+                                if (selected) 2.dp else 1.dp,
+                                if (selected) PulsePalette.Emerald else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                                RoundedCornerShape(14.dp),
+                            )
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.setNavStyle(style)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .semantics {
+                                contentDescription = "Navigation style: $label"
+                                if (selected) stateDescription = "Selected"
+                            },
+                    ) {
+                        Text(
+                            label,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (selected) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            hint,
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                        )
+                    }
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
         SegPicker("Color mode", listOf("system" to "System", "dark" to "Dark", "light" to "Light"), darkOverride, viewModel::setDarkOverride)
         Text("Wallpaper", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {

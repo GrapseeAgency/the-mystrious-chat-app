@@ -174,4 +174,20 @@ public enum PulseRoomParityLogic {
         }
         return ReceiptSplit(seenBy: seen, deliveredTo: delivered)
     }
+
+    // ── R4-A item 2 — one-shot incognito (web + Android parity) ──
+
+    /// The web disarms the mask after a SERVER-ACCEPTED send
+    /// (chat-room.tsx:1747-1751 onSuccess; Android R3-B one-shot disarm,
+    /// ChatRoomViewModel.kt:566-570) — the old iOS behavior kept it armed
+    /// until manually disarmed. This pure step is the exact shared verdict:
+    ///   • armed + server-accepted send → DISARMED (the one-shot consume);
+    ///   • queued / offline / 429 / any failure → STILL ARMED (the text may
+    ///     still go out later; the mask must not silently drop first).
+    /// `armed` is the state CAPTURED AT SEND TIME (Android `anonArmed`
+    /// parity) so an in-flight toggle cannot desync the verdict.
+    public static func anonDisarmAfterSend(armed: Bool, serverAccepted: Bool) -> Bool {
+        if armed && serverAccepted { return false }
+        return armed
+    }
 }

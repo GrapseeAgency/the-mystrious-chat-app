@@ -176,6 +176,13 @@ extension PulseTheme {
         )
     }
 
+    /// Auto-linked bubble URL color (R4-A item 1, web renderPlain :6885-6888):
+    /// text-emerald-700 light, text-emerald-400 dark (mine rows override to
+    /// white at the call site).
+    static var bubbleLink: Color {
+        adaptive(PulseUiThemeColor(hex: "#047857").color, emerald400)
+    }
+
     /// Dock/panel shadow strength — heavier in dark.
     static var panelShadowOpacity: Double { 0.14 }
 

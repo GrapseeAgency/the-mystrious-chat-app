@@ -2834,11 +2834,16 @@ struct BubbleView: View {
 
 /// R3-A items 6/7 — the web BubbleText outcome natively. Runs come from the
 /// tested pure logic (PulseBubbleTextLogic = buildMentionRuns + the ported
-/// FORMAT_RE parser); the renderer:
+/// FORMAT_RE parser + the R4-A splitUrlSegments composition); the renderer:
 ///   • concatenates consecutive inline runs into ONE SwiftUI Text (perfect
 ///     flow for the common bold/italic/code/mention cases),
 ///   • renders ```pre``` blocks and ||spoiler|| runs as detached blocks —
-///     spoilers blur + tap-reveal (web SpoilerSpan :6804-6834 parity).
+///     spoilers blur + tap-reveal (web SpoilerSpan :6804-6834 parity),
+///   • R4-A item 1 — url runs ride AttributedString `.link` so they render
+///     as tappable links INSIDE the composed text (web renderPlain anchors,
+///     :6873-6896). One attributed Text per inline chunk keeps every
+///     per-run attribute (including links) intact — Text-concatenation
+///     fragments cannot reliably carry per-run links.
 /// Performance: the parsed run list is NSCache'd per message id + roster
 /// signature (PulseBubbleTextLogic.cachedRuns) so LazyVStack re-renders
 /// never re-scan long bodies.
@@ -2876,44 +2881,68 @@ struct PulseBubbleBody: View {
         }
     }
 
+    /// R4-A item 1 — inline chunks assemble as ONE AttributedString so a
+    /// `.link` run stays tappable inside the composed Text (the previous
+    /// Text(a)+Text(b) fragments could not carry per-run links). Attribute
+    /// parity with the R3 styled() modifiers is preserved run-for-run.
     private func inlineText(_ runs: [PulseBubbleTextLogic.Run]) -> Text {
-        var merged = Text("")
+        var attributed = AttributedString()
         for run in runs {
-            merged = merged + styled(run)
+            attributed += styled(run)
         }
-        return merged
+        return Text(attributed)
     }
 
     /// Web run styling parity (BubbleText :6898-6967): bold/italic/underline/
-    /// strike, mono code chips, emerald mention chips. Run backgrounds make
-    /// the chips readable on BOTH bubble fills (web bg-emerald-500/20).
-    private func styled(_ run: PulseBubbleTextLogic.Run) -> Text {
-        let piece = Text(run.text)
+    /// strike, mono code chips, emerald mention chips — plus R4-A url runs
+    /// as real anchors (underline, mine = white, else emerald-700/400;
+    /// www. opens prefixed https:// exactly like the web href :6879). Run
+    /// backgrounds make the chips readable on BOTH bubble fills (web
+    /// bg-emerald-500/20).
+    private func styled(_ run: PulseBubbleTextLogic.Run) -> AttributedString {
+        var piece = AttributedString(run.text)
         switch run.style {
         case .plain:
-            return piece
+            break
         case .bold:
-            return piece.bold()
+            piece.inlinePresentationIntent = .stronglyEmphasized
         case .italic:
-            return piece.italic()
+            piece.inlinePresentationIntent = .emphasized
         case .underline:
-            return piece.underline()
+            piece.underlineStyle = .single
         case .strike:
-            return piece.strikethrough()
+            piece.strikethroughStyle = .single
         case .code:
-            return piece
-                .font(.system(.callout, design: .monospaced))
-                .backgroundColor(mine ? Color.white.opacity(0.20) : Color.primary.opacity(0.07))
+            piece.font = .system(.callout, design: .monospaced)
+            piece.backgroundColor = mine ? Color.white.opacity(0.20) : Color.primary.opacity(0.07)
         case .pre:
-            return piece
+            break
         case .spoiler:
-            return piece
+            break
         case .mention:
-            return piece
-                .bold()
-                .foregroundColor(PulseTheme.emeraldDeep)
-                .backgroundColor(PulseTheme.emerald.opacity(0.20))
+            piece.inlinePresentationIntent = .stronglyEmphasized
+            piece.foregroundColor = PulseTheme.emeraldDeep
+            piece.backgroundColor = PulseTheme.emerald.opacity(0.20)
+        case .url:
+            // Web renderPlain :6876-6891 — href https://-prefixes www.,
+            // underline, text-white on my bubbles / emerald-700 light and
+            // emerald-400 dark otherwise. A token the URL parser cannot
+            // promote to a URL degrades to styled text (honest, no crash).
+            piece.link = Self.linkURL(for: run.text)
+            piece.underlineStyle = .single
+            piece.foregroundColor = mine ? Color.white : PulseTheme.bubbleLink
         }
+        return piece
+    }
+
+    /// Web anchor href parity: "www." tokens open as https://www.… (the
+    /// regex keeps scheme-less tokens only when they start with www.);
+    /// http(s):// tokens open as-is. Returns nil for unsalvageable tokens.
+    private static func linkURL(for value: String) -> URL? {
+        if value.hasPrefix("www.") {
+            return URL(string: "https://" + value)
+        }
+        return URL(string: value)
     }
 
     /// ```pre``` — block-level mono card (web :6917-6928).
@@ -3786,6 +3815,10 @@ final class RoomViewModel: ObservableObject {
         // REM-B F-MS-17 — groups only: armed mask + the server's deterministic
         // FNV-1a alias (the optimistic bubble shows the exact stored alias).
         let anonAlias = (isGroupRoom && anonOn) ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: conversationId) : nil
+        // R4-A item 2 — armed state captured AT SEND TIME (Android
+        // `anonArmed` parity) so an in-flight toggle can't desync the
+        // one-shot verdict.
+        let wasAnonArmed = anonAlias != nil
         let temp = TempMessages.make(
             conversationId: conversationId,
             viewer: viewer,
@@ -3810,6 +3843,15 @@ final class RoomViewModel: ObservableObject {
                 )
                 self.swapTemp(temp.id, for: message, session: session)
                 self.clearDraft(session: session)
+                // R4-A item 2 — ONE-SHOT incognito: a server-accepted send
+                // consumes the mask and the hint pill hides with it (web
+                // chat-room.tsx:1747-1751 onSuccess; Android R3-B one-shot
+                // disarm, ChatRoomViewModel.kt:566-570). Gated on the
+                // send-time arming like Android — a plain send never touches
+                // a mask the user armed mid-flight.
+                if wasAnonArmed {
+                    self.anonOn = PulseRoomParityLogic.anonDisarmAfterSend(armed: wasAnonArmed, serverAccepted: true)
+                }
                 session.particles.fire(kind: .burst, count: 22)
                 session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
                 // Wave 2 topics — own send bumps Topic.lastMessageAt server-side.
@@ -3835,9 +3877,28 @@ final class RoomViewModel: ObservableObject {
                     try? session.store?.deleteMessage(id: temp.id)
                     self.errorText = Self.describe(error)
                 } else {
-                    // Temp row stays (queued clock) — outbox flush reconciles.
-                    session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
-                    session.toasts.show("Message queued — sends when you're back online")
+                    // R4-A privacy repair (orchestrator) — an incognito send
+                    // NEVER rides the outbox: the queue payload is
+                    // content-only, so a later flush would post the text
+                    // UN-masked (identity leak). Android parity (R3-B
+                    // PulseRepositoryImpl :812-818): retract the optimistic
+                    // bubble, keep the draft, keep the mask armed — privacy
+                    // over delivery.
+                    if wasAnonArmed {
+                        self.messages.removeAll { $0.id == temp.id }
+                        try? session.store?.deleteMessage(id: temp.id)
+                        self.draft = body
+                        session.toasts.show("Incognito needs a live connection — message kept in the composer")
+                    } else {
+                        // Temp row stays (queued clock) — outbox flush reconciles.
+                        // R4-A item 2 — a QUEUED send is not a server-accepted
+                        // send: the mask stays armed (PulseRoomParityLogic
+                        // .anonDisarmAfterSend false branch — Android
+                        // :560-564 parity; the manual disarm path above the
+                        // composer still works).
+                        session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
+                        session.toasts.show("Message queued — sends when you're back online")
+                    }
                 }
             }
         }

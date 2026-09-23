@@ -17,14 +17,21 @@ enum PulseTab: Int, CaseIterable {
 /// field renders behind the tab chrome, the particle overlay above it, and
 /// the onboarding (name → live @handle picker, web design parity) IS the app
 /// until a viewer exists. Color scheme follows prefs (system/light/dark).
-/// Tab chrome is the floating capsule dock (web §12) — the stock TabView is
-/// gone; exactly one panel is mounted at a time (web AnimatePresence parity).
+/// Tab chrome is the R4-A 8-style navigation registry (web nav-registry.ts
+/// parity; default = the floating capsule dock, web §12) — the stock TabView
+/// is gone; exactly one panel is mounted at a time (web AnimatePresence
+/// parity). Every style renders over the same shared dock context; the
+/// floating-top bar and the side rail ride their own safe-area channels.
 struct RootView: View {
     @StateObject private var session = PulseSession()
     @StateObject private var prefs = PulsePrefs()
     @State private var didBootstrap = false
     @State private var tab: PulseTab = .chats
     @State private var navDirection = 0
+    // R4-A item 3 — the mirrored navigation style. prefs owns the persisted
+    // value; RootView mirrors it on attach + onChange (the uiTheme pattern)
+    // and the dock switch renders the matching layout renderer.
+    @State private var navStyle: PulseNavStyle = .capsule
     // Dock nav surfaces — every dock button now opens something real.
     @State private var newChatOpen = false
     @State private var settingsOpen = false
@@ -92,27 +99,42 @@ struct RootView: View {
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: tab)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     // Reserve the dock's footprint so lists always clear it
-                    // (zero while a chat room owns the screen — dock hidden).
-                    Color.clear.frame(height: session.roomVisible ? 0 : 74)
+                    // (zero while a chat room owns the screen — dock hidden;
+                    // zero for top/side styles — they reserve their own
+                    // R4-A channels below).
+                    Color.clear.frame(height: dockBottomReserve)
+                }
+                // R4-A item 3 — the floating-top channel: the glass bar
+                // lives IN the top inset so every screen (lists, room
+                // chrome) clears it through the same mechanism the bottom
+                // dock reserve uses. Zero while a room owns the screen.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if !session.roomVisible, navStyle.zone == .top {
+                        FloatingTopDock(context: dockContext, active: tab)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    } else {
+                        Color.clear.frame(height: 0)
+                    }
+                }
+                // R4-A item 3 — the rail channel: a persistent left rail;
+                // all content insets right of it. Zero while a room owns
+                // the screen (dock auto-hide in room, unchanged).
+                .safeAreaInset(edge: .leading, spacing: 0) {
+                    if !session.roomVisible, navStyle.zone == .side {
+                        RailDock(context: dockContext, active: tab)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    } else {
+                        Color.clear.frame(width: 0, height: 0)
+                    }
                 }
                 .overlay(alignment: .bottom) {
                     if !session.roomVisible {
-                        CapsuleDock(
-                            session: session,
-                            dark: isDark,
-                            reduceMotion: reduceMotion,
-                            tab: tab,
-                            onTab: { switchTab($0) },
-                            onCompose: { newChatOpen = true },
-                            onSettings: { settingsOpen = true },
-                            onSaved: { savedLibraryOpen = true },
-                            onStories: { storiesOpen = true },
-                            onCalls: { callsOpen = true },
-                        )
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        bottomDock
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: session.roomVisible)
+                .animation(reduceMotion ? nil : .pulse(.pulseSoft, reduceMotion: reduceMotion), value: navStyle)
                 .overlay {
                     ToastHostView(center: session.toasts)
                 }
@@ -173,6 +195,16 @@ struct RootView: View {
                         openLinkedRoom(conversationId)
                     },
                 )
+                // R4-A item 3 — the PiP host rides the SAME nav channels:
+                // panes keep their internal top/bottom reserves but must
+                // also clear the floating-top bar and the rail (the dock
+                // drives the geometry, the host follows).
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: pipTopReserve)
+                }
+                .safeAreaInset(edge: .leading, spacing: 0) {
+                    Color.clear.frame(width: pipLeadingReserve)
+                }
             }
 
             // Wave 3 — the native call surface owns the WHOLE screen whenever
@@ -198,6 +230,9 @@ struct RootView: View {
             // Wave 8 — prefs handoff: incoming attention gate, settings PATCH
             // funnel, quiet-gate refresh (idempotent, closures attach once).
             session.attach(prefs: prefs)
+            // R4-A item 3 — mirror the nav style on attach (onChange below
+            // keeps the mirror live after Appearance picks).
+            navStyle = prefs.navStyle
             // System Reduce Motion AND the in-app reducedMotion pref both calm
             // the ambient particles (the prefs toggle PATCHes to the server).
             session.particles.reduceMotionDisabled = reduceMotion || prefs.reducedMotion
@@ -226,6 +261,11 @@ struct RootView: View {
         }
         .onChange(of: prefs.uiTheme) { _, theme in
             PulseTheme.activeUiTheme = theme
+        }
+        // R4-A item 3 — RootView mirrors prefs.navStyle on change so every
+        // dock channel (bottom/top/leading) re-renders with the pick.
+        .onChange(of: prefs.navStyle) { _, style in
+            navStyle = style
         }
         .onChange(of: reduceMotion) { _, newValue in
             session.particles.reduceMotionDisabled = newValue || prefs.reducedMotion
@@ -258,6 +298,78 @@ struct RootView: View {
         guard target != tab else { return }
         navDirection = target.rawValue > tab.rawValue ? 1 : -1
         tab = target
+    }
+
+    // ── R4-A item 3 — nav-style geometry + dock dispatch ────
+
+    /// The shared dock state/actions — every style renderer consumes THIS
+    /// (web TabProps + onContextAction parity); RootView keeps owning the
+    /// sheets and bridges behind every closure.
+    private var dockContext: PulseDockContext {
+        PulseDockContext(
+            unread: session.dockUnreadCount,
+            dark: isDark,
+            reduceMotion: reduceMotion,
+            onTab: { switchTab($0) },
+            onCompose: { newChatOpen = true },
+            onSettings: { settingsOpen = true },
+            onSearch: { session.requestChatsSearch() },
+            onCalls: { callsOpen = true },
+            onSaved: { savedLibraryOpen = true },
+            onStories: { storiesOpen = true },
+        )
+    }
+
+    /// Bottom-zone styles reserve the dock's footprint (the R3-era 74);
+    /// floating-top and rail reserve nothing at the bottom — they occupy
+    /// their own top/leading channels instead.
+    private var dockBottomReserve: CGFloat {
+        if session.roomVisible { return 0 }
+        return navStyle.zone == .bottom ? 74 : 0
+    }
+
+    /// PiP clearances — mirror the visible nav channels so panes never
+    /// slide under the floating-top bar or the rail.
+    private var pipTopReserve: Int {
+        (!session.roomVisible && navStyle.zone == .top) ? Int(PulseDockMetrics.topBarHeight) : 0
+    }
+
+    private var pipLeadingReserve: Int {
+        (!session.roomVisible && navStyle.zone == .side) ? Int(PulseDockMetrics.railWidth) : 0
+    }
+
+    /// The bottom-zone dock host — capsule stays byte-as-is (brief), the
+    /// other bottom styles are the R4-A renderers over the shared context.
+    @ViewBuilder
+    private var bottomDock: some View {
+        switch navStyle {
+        case .capsule:
+            CapsuleDock(
+                session: session,
+                dark: isDark,
+                reduceMotion: reduceMotion,
+                tab: tab,
+                onTab: { switchTab($0) },
+                onCompose: { newChatOpen = true },
+                onSettings: { settingsOpen = true },
+                onSaved: { savedLibraryOpen = true },
+                onStories: { storiesOpen = true },
+                onCalls: { callsOpen = true },
+            )
+        case .floatingTop, .rail:
+            // Top/side styles render in their own inset channels.
+            Color.clear.frame(height: 0)
+        case .pill:
+            PillNavDock(context: dockContext, active: tab)
+        case .bottomBar:
+            BottomBarDock(context: dockContext, active: tab)
+        case .tabBar:
+            TabBarDock(context: dockContext, active: tab)
+        case .floatingTabBar:
+            FloatingTabBarDock(context: dockContext, active: tab)
+        case .island:
+            IslandDock(context: dockContext, active: tab)
+        }
     }
 
     // ── Wave 6 deep links (F-DL) ─────────────────────────────

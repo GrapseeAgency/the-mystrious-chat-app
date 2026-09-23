@@ -83,6 +83,93 @@ public enum PulseWallpaper: String, CaseIterable, Sendable {
     }
 }
 
+/// Where a navigation style lives visually (web NavStyleMeta.zone parity;
+/// the web's 'overlay' zone belongs to the excluded radial style).
+public enum PulseNavZone: Equatable, Sendable {
+    case bottom, top, side
+}
+
+/// R4-A item 3 — the 8 phone-feasible navigation architectures, ported
+/// from web src/lib/nav-registry.ts (:50-64; label + hint strings VERBATIM).
+/// Raw values are byte-same with the web store under the EXACT key
+/// "pulse.navStyle.v2". The five EXCLUDED web idioms (floating-dock,
+/// command-bar, radial, gesture, contextual-dock — desktop / keyboard /
+/// exotic gesture surfaces) deliberately have NO case: they still PARSE
+/// (→ capsule fallback) so a future widening is drop-in safe.
+public enum PulseNavStyle: String, CaseIterable, Sendable {
+    case capsule
+    case floatingTop = "floating-top"
+    case pill
+    case bottomBar = "bottom-bar"
+    case tabBar = "tab-bar"
+    case floatingTabBar = "floating-tab-bar"
+    case rail
+    case island
+
+    /// Web NavStyleMeta.label — byte-identical strings.
+    public var label: String {
+        switch self {
+        case .capsule: return "Floating Capsule"
+        case .floatingTop: return "Floating Top Nav"
+        case .pill: return "Pill Navigation"
+        case .bottomBar: return "Bottom Bar"
+        case .tabBar: return "Tab Bar"
+        case .floatingTabBar: return "Floating Tab Bar"
+        case .rail: return "Navigation Rail"
+        case .island: return "Island Navigation"
+        }
+    }
+
+    /// Web NavStyleMeta.hint — byte-identical strings.
+    public var hint: String {
+        switch self {
+        case .capsule: return "Detached glass capsule dock — the default"
+        case .floatingTop: return "Capsule bar floating beneath the top edge"
+        case .pill: return "Single segmented pill with sliding fill"
+        case .bottomBar: return "Classic edge-to-edge bottom bar"
+        case .tabBar: return "iOS-style tab bar with tinted squircles"
+        case .floatingTabBar: return "Detached card, elevated active tab"
+        case .rail: return "Persistent vertical side rail"
+        case .island: return "Dynamic-island pill that expands on tap"
+        }
+    }
+
+    /// Web NavStyleMeta.zone (overlay/radial excluded with its style).
+    public var zone: PulseNavZone {
+        switch self {
+        case .floatingTop: return .top
+        case .rail: return .side
+        default: return .bottom
+        }
+    }
+
+    /// SF Symbol glyph for the Appearance picker cards.
+    public var pickerIcon: String {
+        switch self {
+        case .capsule: return "capsule"
+        case .floatingTop: return "rectangle.topthird.inset.filled"
+        case .pill: return "switch.2"
+        case .bottomBar: return "rectangle.bottomthird.inset.filled"
+        case .tabBar: return "square.grid.2x2"
+        case .floatingTabBar: return "dock.rectangle"
+        case .rail: return "sidebar.left"
+        case .island: return "record.circle"
+        }
+    }
+
+    /// Web DEFAULT_NAV_STYLE.
+    public static let defaultValue: PulseNavStyle = .capsule
+
+    /// Tolerant decode — one of the 8 shipped ids parses through; EVERY
+    /// other token (the 5 excluded web ids, junk, legacy values, nil) falls
+    /// back to capsule so a stored future-style survives an app update and
+    /// a junk value never breaks the shell (web getNavStyleMeta parity).
+    public static func parse(_ raw: String?) -> PulseNavStyle {
+        guard let raw else { return .defaultValue }
+        return PulseNavStyle(rawValue: raw) ?? .defaultValue
+    }
+}
+
 /// Resolved (non-optional) preference values — the device-side mirror of
 /// web DEFAULT_PREFERENCES. PulseWave8Logic.mergedPrefs shallow-merges a
 /// server patch over a base of these (web mergePrefs parity).
@@ -172,6 +259,10 @@ public final class PulsePrefs: ObservableObject {
     /// to the web store (ui-theme.ts `pulse.uiTheme.v2`:
     /// glass|kinetic|minimal|dynamic|aero) so the two platforms converge.
     public static let uiThemeKey = "pulse.uiTheme.v2"
+    /// R4-A item 3 — the navigation architecture. Key AND values byte-identical
+    /// to the web store (nav-registry.ts `pulse.navStyle.v2`); the 5 excluded
+    /// web ids + junk decode to capsule via PulseNavStyle.parse.
+    public static let navStyleKey = "pulse.navStyle.v2"
 
     /// R1-W2G D46 — namespaced key builder for the durable last-position
     /// cache per space room ("space:lastpos:<roomId>"). The relay keeps the
@@ -232,6 +323,9 @@ public final class PulsePrefs: ObservableObject {
         screenPrivacy = Self.readScreenPrivacy(defaults)
         // R2-D — design language (tolerant: junk/legacy → glass, web parity).
         uiTheme = PulseUiTheme.parse(defaults.string(forKey: Self.uiThemeKey))
+        // R4-A item 3 — nav architecture (tolerant: excluded ids/junk →
+        // capsule, web parity).
+        navStyle = PulseNavStyle.parse(defaults.string(forKey: Self.navStyleKey))
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
     }
 
@@ -266,6 +360,8 @@ public final class PulsePrefs: ObservableObject {
     @Published public private(set) var screenPrivacy: [String: Bool]
     // ── R2-D — the five locked design languages (ui-theme.ts parity) ──
     @Published public private(set) var uiTheme: PulseUiThemeId
+    // ── R4-A item 3 — the navigation architecture (nav-registry parity) ──
+    @Published public private(set) var navStyle: PulseNavStyle
 
     public var hasIdentity: Bool { viewer != nil }
 
@@ -345,6 +441,14 @@ public final class PulsePrefs: ObservableObject {
     public func setUiTheme(_ theme: PulseUiThemeId) {
         uiTheme = theme
         defaults.set(theme.rawValue, forKey: Self.uiThemeKey)
+    }
+
+    /// R4-A item 3 — pick a navigation architecture (the raw value stored
+    /// under "pulse.navStyle.v2" is byte-identical to the web's payload;
+    /// RootView mirrors the change into the dock renderer).
+    public func setNavStyle(_ style: PulseNavStyle) {
+        navStyle = style
+        defaults.set(style.rawValue, forKey: Self.navStyleKey)
     }
 
     /// W5-f — persist the voice captions toggle (L89-92 pattern).

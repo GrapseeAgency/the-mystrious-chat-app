@@ -182,6 +182,15 @@ interface PulsePrefsStore {
     suspend fun clearSpotlightRecents()
 
     /**
+     * R4-B item 3 — navigation architecture (web nav-registry.ts parity):
+     * one of the 8 phone-feasible PulseNavStyle ids, persisted under the
+     * web's EXACT key `pulse.navStyle.v2`; unreadable values (junk, the 5
+     * excluded ids) resolve to the capsule default on read.
+     */
+    val navStyle: Flow<app.pulse.protocol.PulseNavStyle>
+    suspend fun setNavStyle(style: app.pulse.protocol.PulseNavStyle)
+
+    /**
      * R2-C item 4 — the whiteboard PENDING-stroke draft (iOS
      * PulseWhiteboardDraft parity): per-conversation durable queue of
      * unsynced strokes — write-through on draw, restore on sheet open,

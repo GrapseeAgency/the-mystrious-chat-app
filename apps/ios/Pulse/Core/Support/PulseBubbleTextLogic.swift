@@ -12,9 +12,22 @@ import Foundation
 //   • cachedRuns             — NSCache front (keyed by message id + roster
 //                              signature) so LazyVStack re-renders never
 //                              re-scan long bodies.
+// R4-A — URL auto-linking (web splitUrlSegments parity):
+//   • splitUrlSegments       — verbatim port of pulse-utils.ts:163-180
+//                              (the EXACT regex, no trailing-punctuation
+//                              trimming — web parity over cleverness).
+//   • bubbleRuns composes    — plain stretches split into text/url runs
+//                              exactly where the web's renderPlain applies
+//                              (chat-room.tsx:6873-6896): URLs linkify in
+//                              PLAIN stretches only — never inside bold/
+//                              italic/code/pre/spoiler runs (pre/spoiler
+//                              render as detached blocks anyway, and code
+//                              is its own web node, so both are excluded
+//                              by construction — same as the web).
 // References: src/components/chat/chat-room.tsx buildMentionRuns /
-// BubbleText (:6836-6985), src/lib/pulse-utils.ts (jumbo stays in
-// PulseRemediationLogic.isJumboEmoji — the tested port).
+// BubbleText (:6836-6985), src/lib/pulse-utils.ts splitUrlSegments
+// (:163-180) (jumbo stays in PulseRemediationLogic.isJumboEmoji — the
+// tested port).
 // ─────────────────────────────────────────────────────────────
 public enum PulseBubbleTextLogic {
 
@@ -28,6 +41,50 @@ public enum PulseBubbleTextLogic {
         case pre
         case spoiler
         case mention
+        /// R4-A — a URL detected by the verbatim web splitUrlSegments
+        /// regex; the renderer carries it as a tappable link run.
+        case url
+    }
+
+    /// One output element of the verbatim web segmenter — plain text or a
+    /// detected URL token (kind/value parity with pulse-utils.ts).
+    public enum UrlSegment: Equatable {
+        case text(String)
+        case url(String)
+    }
+
+    /// The web regex, byte-for-byte: /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi
+    /// (pulse-utils.ts:164). Deliberately NOT extended with trailing-
+    /// punctuation exclusion — web parity over cleverness (R4-A brief).
+    private static let urlPattern = "(https?://[^\\s<]+|www\\.[^\\s<]+)"
+
+    /// Verbatim port of pulse-utils.ts splitUrlSegments (:163-175): splits
+    /// text into plain/url segments so bubbles can auto-link URLs. The `gi`
+    /// flags map to NSRegularExpression .caseInsensitive (global by nature).
+    public static func splitUrlSegments(in text: String) -> [UrlSegment] {
+        if text.isEmpty { return [] }
+        // Fixed literal pattern — the try? fallback degrades to one plain
+        // segment, mirroring the web loop matching nothing.
+        guard let regex = try? NSRegularExpression(pattern: urlPattern, options: [.caseInsensitive]) else {
+            return [.text(text)]
+        }
+        let ns = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        if matches.isEmpty { return [.text(text)] }
+        var segments: [UrlSegment] = []
+        var last = 0
+        for match in matches {
+            if match.range.location > last {
+                let gap = ns.substring(with: NSRange(location: last, length: match.range.location - last))
+                segments.append(.text(gap))
+            }
+            segments.append(.url(ns.substring(with: match.range)))
+            last = match.range.location + match.range.length
+        }
+        if last < ns.length {
+            segments.append(.text(ns.substring(from: last)))
+        }
+        return segments
     }
 
     public struct Run: Equatable {
@@ -99,7 +156,16 @@ public enum PulseBubbleTextLogic {
             }
             for segment in PulseRemediationLogic.parseText(mentionRun.text) {
                 switch segment {
-                case .plain(let text): runs.append(Run(text, .plain))
+                case .plain(let text):
+                    // R4-A — web renderPlain order: URL segmentation applies
+                    // to PLAIN stretches only (:6873-6896), after formatting
+                    // split the runs. Everything else stays unsegmented.
+                    for urlSegment in splitUrlSegments(in: text) {
+                        switch urlSegment {
+                        case .text(let piece): runs.append(Run(piece, .plain))
+                        case .url(let piece): runs.append(Run(piece, .url))
+                        }
+                    }
                 case .bold(let text): runs.append(Run(text, .bold))
                 case .italic(let text): runs.append(Run(text, .italic))
                 case .underline(let text): runs.append(Run(text, .underline))

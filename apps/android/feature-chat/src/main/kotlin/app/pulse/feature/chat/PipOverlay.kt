@@ -258,6 +258,9 @@ fun PipPaneOverlay(
     onOpenRoom: (conversationId: String) -> Unit,
     onNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
+    // R4-B item 3 — extra LEFT clearance so the draggable panes never sit
+    // over the rail-style navigation band (68dp rail width).
+    startInset: Dp = 0.dp,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
@@ -282,7 +285,7 @@ fun PipPaneOverlay(
         val boxBottom = frameH - bottomReserve
         if (boxBottom - PIP_TOP_RESERVE < paneH + 24.dp) return@BoxWithConstraints
 
-        val minX = PIP_MARGIN_X
+        val minX = PIP_MARGIN_X + startInset
         val maxX = frameW - PIP_MARGIN_X - paneW
         val minY = PIP_TOP_RESERVE
         val maxY = boxBottom - paneH

@@ -313,4 +313,28 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertTrue(PulseRemediationLogic.slashFuzzyMatch(haystack: "/me Send an italic action line", needle: ""))
         XCTAssertTrue(PulseRemediationLogic.slashFuzzyMatch(haystack: "/me", needle: "   "))
     }
+
+    // ── R4-A item 2 — one-shot incognito disarm ──────────────
+    // Web chat-room.tsx:1747-1751 (onSuccess consumes the mask) + Android
+    // R3-B one-shot disarm (ChatRoomViewModel.kt:566-570). The old iOS
+    // behavior kept the mask armed until manually disarmed — this pins the
+    // new shared verdict.
+
+    func testAnonDisarmsAfterServerAcceptedSend() {
+        XCTAssertFalse(PulseRoomParityLogic.anonDisarmAfterSend(armed: true, serverAccepted: true))
+    }
+
+    func testAnonStaysArmedWhenSendQueuedOrFailed() {
+        // Queued / offline / 429 / dropped — the text may still go out
+        // later, so the mask must not silently drop first (Android
+        // onFailure parity: the failure branch never touches the flag).
+        XCTAssertTrue(PulseRoomParityLogic.anonDisarmAfterSend(armed: true, serverAccepted: false))
+    }
+
+    func testPlainSendNeverConsumesTheMask() {
+        // A send that did NOT ride the mask (armed: false) never touches
+        // the flag either way — the Android `if (anonArmed)` gate.
+        XCTAssertFalse(PulseRoomParityLogic.anonDisarmAfterSend(armed: false, serverAccepted: true))
+        XCTAssertFalse(PulseRoomParityLogic.anonDisarmAfterSend(armed: false, serverAccepted: false))
+    }
 }
