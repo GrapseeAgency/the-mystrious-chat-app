@@ -3099,3 +3099,16 @@ Work Log:
 Stage Summary:
 - LANDED this round: S5, D1, D2, D25, group admin (both natives), scheduled sends (both), TTL picker+chip+filter (both, iOS filter best-effort), slow-mode lockout (both), incognito (both), iOS parser/jumbo/spoiler, iOS viaAutomation chip.
 - REMAINING (next round): Android render batch (parser/jumbo/24-picker/slash/stickers/effects-decode), forward-offline queue (D28), D24 export share chooser, D32 Android lightbox gestures, D45 BOOT receiver, iOS P2-P5 leftovers (24-picker/slash/stickers/effects if absent in MessagingSurfaces — verify in CI round), F-MD-06/07 translation+location, F-MS-29 phrases (web too), F-FX-05 conv themes, D34 badges, D38 FX, D40 logs poll, PiP, video calls, camera capture, hold-to-record, whiteboard/space bits, iOS story/channel tests, delta sync.
+
+---
+Task ID: REM-RELEASE (remediation round 1 close)
+Agent: Z.ai Code (orchestrator)
+Task: CI verification rounds + release v0.11.0-native
+
+Work Log:
+- CI rounds: r1 2218e8e iOS fail (UInt32/Int in FNV alias) → fixed; r2 9ce7662 iOS fail (static members used from instance scope) → Self.-qualified; r3 641fd7a iOS fail (content(detail) param shadowed @State optional) → fixed; r4 dc52f2f iOS SUCCESS (build + XCTest + archive). Android CI SUCCESS at 2218e8e (build + emulator migration + R8 assembleRelease). Web CI SUCCESS at 2218e8e.
+- Release: bump 21 / 0.11.0-native (564016a) → tag v0.11.0-native → tag CI Android+iOS BOTH SUCCESS → release published; asset Pulse-v0.11.0-native.apk 24,027,645 B re-downloaded, sha256 544f84fd…24bc == GitHub digest, aapt badging versionCode 21 / 0.11.0-native; CDN update-manifest.json pinned (versionCode 21 + digest); download/Pulse.apk mirror swapped (post-copy hash identical).
+
+Stage Summary:
+- REMEDIATION ROUND 1 CLOSED: all CI green (Android main+tag, iOS main+tag, Web main), release v0.11.0-native byte-verified + CDN-pinned. Shipped: S5 fail-closed keys, D1 cap 2000, D2 prefill, D25 lifecycle polling, group admin (both natives), scheduled/TTL/slow-mode/incognito (both), iOS formatter/jumbo/spoiler/viaAutomation.
+- REMAINING (continuation): Android render batch (parser/jumbo/24-picker/slash/stickers/effects), forward-offline queue, D24 export share, D32 lightbox gestures, D45 BOOT receiver, F-MD-06/07 translate/location, F-MS-29 phrases (web too), F-FX-05 conv themes, D34/D38/D40, PiP, video calls, camera capture, hold-to-record/waveform, whiteboard/space bits, iOS story/channel tests, delta sync, Wave 3-HW/5-HW hardware gates.

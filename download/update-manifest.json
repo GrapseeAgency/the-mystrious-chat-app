@@ -3,7 +3,7 @@
   "versionName": "0.11.0-native",
   "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.11.0-native/Pulse-v0.11.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "5540c8bb29e0b96093ed79a51ec173d5310c07a744cb99ecff22c59ee080b2ec",
+  "sha256": "544f84fd703fd4681b83e7717fa62ac6f2a08ea7dbaefc41c322f0d71d3124bc",
   "notes": "Remediation wave \u2014 audit backlog execution: SECURITY fail-closed internal keys (no default secret; env CRON_SECRET required on dispatch/verify/privacy + relay), Android send cap aligned to server 2000, kanban prefill fixed, lifecycle-aware polling (battery), GROUP ADMIN on both natives (info/members/add/promote/demote/kick/leave+succession/invites), scheduled messages (both), disappearing TTL (both), slow-mode 429 lockout (both), incognito alias (both), iOS message formatter (bold/italic/strike/code/pre/spoiler) + jumbo emoji + viaAutomation bot chip, iOS group-info UI, outbox/prefs refinements. Tests: Android 302 JVM green + CI emulator + R8 release; iOS CI build+XCTest+archive green; live E2E probe 29/29 + Wave7 93/93 + Wave8 19/19. PHYSICAL DEVICE items remain hardware-gated (notifications delivery, haptics, camera, WebRTC media leg).",
   "gateway": "",
   "socket": "",
