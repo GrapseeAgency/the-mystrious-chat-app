@@ -181,6 +181,10 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     private var localVideo: RTCVideoTrack?
     private var remoteVideo: RTCVideoTrack?
 
+    /// The device currently feeding the capturer (camera-flip bookkeeping;
+    /// main-actor-confined call flow in practice).
+    static var currentDevice: AVCaptureDevice?
+
     init?(factory: RTCPeerConnectionFactory, delegate: (any PulseCallPeerDelegate)?) {
         box = PulseRTCDelegateBox(delegate)
         self.factory = factory
@@ -317,6 +321,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
             ?? devices.first(where: { $0.position == .back })
             ?? devices.first
         guard let device else { return false }
+        Self.currentDevice = device
         guard let format = Self.bestVideoFormat(for: device) else { return false }
         let source = factory.videoSource()
         let capturer = RTCCameraVideoCapturer(delegate: source)
@@ -326,9 +331,11 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         videoSource = source
         videoCapturer = capturer
         // 30fps ceiling — the web profile is 1280×720 ideal; the chosen
-        // format's own frame rate is respected when lower.
-        let fps = Int(min(Double(CallVideoConstants.targetFps), format.frameRate.rounded()))
-        capturer.startCapture(with: format, fps: max(1, fps)) { error in
+        // format's own frame-rate range is respected when lower.
+        // NOTE: RTCCameraVideoCapturer.startCapture takes (device, format, fps)
+        // — fps as Int32 (stasel/WebRTC 125 ObjC bridge).
+        let fps = Int32(max(1, min(Double(CallVideoConstants.targetFps), Self.fpsCeiling(of: format))))
+        capturer.startCapture(with: device, format: format, fps: fps) { error in
             if let error {
                 // Async capture failure (device yanked mid-call) — the call
                 // stays alive audio/video-black; honest hardware-gate territory.
@@ -343,9 +350,20 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     }
 
     func switchCamera() {
-        videoCapturer?.switchCamera { error in
+        // RTCCameraVideoCapturer has no switchCamera in this build — flip =
+        // stop, then re-start on the opposite-position device (same pipeline).
+        guard let capturer = videoCapturer else { return }
+        let devices = RTCCameraVideoCapturer.captureDevices()
+        let current = Self.currentDevice
+        let next = devices.first(where: { $0.position == .front && current?.position != .front })
+            ?? devices.first(where: { $0.position == .back && current?.position != .back })
+        guard let device = next, let format = Self.bestVideoFormat(for: device) else { return }
+        Self.currentDevice = device
+        capturer.stopCapture()
+        let fps = Int32(max(1, min(Double(CallVideoConstants.targetFps), Self.fpsCeiling(of: format))))
+        capturer.startCapture(with: device, format: format, fps: fps) { error in
             if let error {
-                NSLog("[call] switchCamera failed: %@", error.localizedDescription)
+                NSLog("[call] camera flip failed: %@", error.localizedDescription)
             }
         }
     }
@@ -359,6 +377,8 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     }
 
     /// Closest-to-target format (web ideal 1280×720), then closest fps (30).
+    /// AVCaptureDevice.Format carries NO single frameRate — the supported
+    /// ranges (videoSupportedFrameRateRanges) supply the ceiling.
     private static func bestVideoFormat(for device: AVCaptureDevice) -> AVCaptureDevice.Format? {
         let formats = RTCCameraVideoCapturer.supportedFormats(for: device)
         return formats.min { lhs, rhs in
@@ -367,14 +387,20 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
             let dl = abs(lw - CallVideoConstants.targetWidth) + abs(lh - CallVideoConstants.targetHeight)
             let dr = abs(rw - CallVideoConstants.targetWidth) + abs(rh - CallVideoConstants.targetHeight)
             if dl != dr { return dl < dr }
-            return abs(lhs.frameRate - Double(CallVideoConstants.targetFps))
-                < abs(rhs.frameRate - Double(CallVideoConstants.targetFps))
+            return abs(fpsCeiling(of: lhs) - Double(CallVideoConstants.targetFps))
+                < abs(fpsCeiling(of: rhs) - Double(CallVideoConstants.targetFps))
         }
     }
 
+    /// Highest frame rate the format supports (first range wins — all ranges
+    /// of a live format share the ceiling in practice).
+    private static func fpsCeiling(of format: AVCaptureDevice.Format) -> Double {
+        format.videoSupportedFrameRateRanges.first?.maxFrameRate ?? Double(CallVideoConstants.targetFps)
+    }
+
     private static func dimensions(_ format: AVCaptureDevice.Format) -> (Int, Int) {
-        guard let desc = format.formatDescription else { return (0, 0) }
-        let dims = CMVideoFormatDescriptionGetDimensions(desc)
+        // formatDescription is non-optional in the current SDK surface.
+        let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
         return (Int(dims.width), Int(dims.height))
     }
 
@@ -452,7 +478,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         // UNIFIED_PLAN remote-track intake — video m-lines promote the
         // receiver's track into the render flow (engine publishes it).
         guard transceiver.mediaType == .video else { return }
-        guard let track = transceiver.receiver.track() as? RTCVideoTrack else { return }
+        guard let track = transceiver.receiver.track as? RTCVideoTrack else { return }
         remoteVideo = track
         let box = self.box
         Task { @MainActor in
