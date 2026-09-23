@@ -3,10 +3,11 @@
   "versionName": "0.11.1-native",
   "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.11.1-native/Pulse-v0.11.1-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "544f84fd703fd4681b83e7717fa62ac6f2a08ea7dbaefc41c322f0d71d3124bc",
-  "notes": "Remediation wave \u2014 audit backlog execution: SECURITY fail-closed internal keys (no default secret; env CRON_SECRET required on dispatch/verify/privacy + relay), Android send cap aligned to server 2000, kanban prefill fixed, lifecycle-aware polling (battery), GROUP ADMIN on both natives (info/members/add/promote/demote/kick/leave+succession/invites), scheduled messages (both), disappearing TTL (both), slow-mode 429 lockout (both), incognito alias (both), iOS message formatter (bold/italic/strike/code/pre/spoiler) + jumbo emoji + viaAutomation bot chip, iOS group-info UI, outbox/prefs refinements. Tests: Android 302 JVM green + CI emulator + R8 release; iOS CI build+XCTest+archive green; live E2E probe 29/29 + Wave7 93/93 + Wave8 19/19. PHYSICAL DEVICE items remain hardware-gated (notifications delivery, haptics, camera, WebRTC media leg).",
+  "sha256": "f53fe580fec493c699ac679f561d2967d0cf5e0406e6cf7e57f0b9759dd5c595",
+  "notes": "Parity wave continuation \u2014 natives reach web parity: Android render batch (formatting parser/jumbo emoji/24-reaction picker/who-reacted/slash palette/sticker picker/effect FX + export share sheet/lightbox zoom/BOOT receiver/hub FX+logs poll), iOS batch (offline-forward outbox/NWPath flush/forget-viewer/hub cache/translate/location share/conv themes/quick phrases/check-in FX/logs poll/whiteboard draft strokes/space last-position), REAL VIDEO CALLS on both natives, camera capture + hold-to-record voice with web-identical waveform on both natives, in-app PiP panes on both natives, web quick-phrases rail + draft GET + delta sync. Tests: Android 450 JVM green + CI emulator + R8 release; iOS CI build+XCTest(298)+archive green; live E2E 293/293 + security probe 29/29. PHYSICAL DEVICE behaviors remain hardware-gated (Wave 3-HW/5-HW).",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-16T02:27:55Z"
+  "updatedAt": "2026-09-23T17:58:11Z",
+  "apkSize": 24156318
 }
