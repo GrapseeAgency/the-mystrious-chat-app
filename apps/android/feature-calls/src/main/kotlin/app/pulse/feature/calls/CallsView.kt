@@ -23,12 +23,17 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallMade
 import androidx.compose.material.icons.filled.CallMissed
 import androidx.compose.material.icons.filled.CallReceived
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,14 +42,20 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.domain.model.CallLogEntry
+import app.pulse.domain.model.CallState
 import app.pulse.domain.model.CallStatus
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.ui.PulsePalette
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -73,6 +84,11 @@ class CallHistoryViewModel @Inject constructor(
                 .onSuccess { _notice.value = null }
         }
     }
+
+    /** R3-B item 5 — the redial fallback surfaces through the same channel. */
+    fun notify(text: String) {
+        _notice.value = text
+    }
 }
 
 /**
@@ -86,15 +102,57 @@ class CallHistoryViewModel @Inject constructor(
  *   incoming missed     → ↯ + "Missed" (caller cancel / 30s timeout)
  *   timeout             → caller side of the same row ("No answer")
  *   completed           → any connected call that ended normally (duration > 0)
+ *
+ * R3-B item 5 — rows that carry a peer identity also carry a trailing REDIAL
+ * button (web calls-page.tsx rows reopen the chat; iOS rows redial): same
+ * engine path as the contacts call button, RECORD_AUDIO gated first, with a
+ * per-row busy spinner and the honest "Calls aren't ready yet" fallback when
+ * the engine never leaves idle (DM resolution failure).
  */
 @Composable
 fun CallsView(
     onBack: () -> Unit,
     onOpenRoom: (String) -> Unit = {},
+    // R3-B item 5 — start an outgoing call from a history row's identity.
+    onRedial: (CallLogEntry) -> Unit = {},
 ) {
     val vm: CallHistoryViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    val callVm: CallViewModel = androidx.hilt.navigation.compose.hiltViewModel()
     val rows by vm.rows.collectAsStateWithLifecycle()
     val notice by vm.notice.collectAsStateWithLifecycle()
+    val callState by callVm.snapshot.collectAsStateWithLifecycle()
+
+    // Redial busy machine: armed on tap → cleared the moment the engine's
+    // snapshot leaves IDLE (the call overlay takes over) or after the honest
+    // 6 s timeout when the engine never starts ("Calls aren't ready yet").
+    var redialBusyId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(callState.state, redialBusyId) {
+        if (redialBusyId != null && callState.state != CallState.IDLE) redialBusyId = null
+    }
+    LaunchedEffect(redialBusyId) {
+        if (redialBusyId != null) {
+            delay(6_000)
+            if (redialBusyId != null) {
+                vm.notify("Calls aren't ready yet")
+                redialBusyId = null
+            }
+        }
+    }
+
+    // Wave 3 gate (contacts precedent): RECORD_AUDIO must be live before the
+    // engine touches the mic; denial keeps the call unstarted (honest).
+    var pendingRedial by remember { mutableStateOf<CallLogEntry?>(null) }
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val target = pendingRedial
+        pendingRedial = null
+        if (granted && target != null) {
+            onRedial(target)
+        } else {
+            redialBusyId = null
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -139,7 +197,22 @@ fun CallsView(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(rows, key = { it.id }) { row ->
-                    CallRow(row, onClick = { onOpenRoom(row.conversationId) })
+                    CallRow(
+                        row = row,
+                        redialBusy = redialBusyId == row.id,
+                        onClick = { onOpenRoom(row.conversationId) },
+                        onRedial = if (row.peer != null) {
+                            {
+                                if (redialBusyId == null) {
+                                    redialBusyId = row.id
+                                    pendingRedial = row
+                                    micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                }
+                            }
+                        } else {
+                            null
+                        },
+                    )
                 }
             }
         }
@@ -148,7 +221,12 @@ fun CallsView(
 }
 
 @Composable
-private fun CallRow(row: CallLogEntry, onClick: () -> Unit) {
+private fun CallRow(
+    row: CallLogEntry,
+    redialBusy: Boolean,
+    onClick: () -> Unit,
+    onRedial: (() -> Unit)?,
+) {
     val (icon, label, tint) = rowPresentation(row)
     Row(
         modifier = Modifier
@@ -197,12 +275,42 @@ private fun CallRow(row: CallLogEntry, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.width(8.dp))
-        Icon(
-            Icons.Filled.Call,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
-        )
+        if (onRedial != null) {
+            // R3-B item 5 — the redial disc: emerald disc + phone glyph,
+            // per-row spinner while the outgoing call is being armed.
+            if (redialBusy) {
+                Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = PulsePalette.Emerald,
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(PulsePalette.Emerald, CircleShape)
+                        .clickable(onClick = onRedial)
+                        .semantics { contentDescription = "Redial ${row.peer?.name ?: "unknown"}" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Call,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        } else {
+            Icon(
+                Icons.Filled.Call,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
+        }
     }
 }
 

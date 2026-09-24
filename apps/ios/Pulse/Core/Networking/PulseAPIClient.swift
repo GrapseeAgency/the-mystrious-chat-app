@@ -63,8 +63,9 @@ public struct PulseAPIClient: Sendable {
 
     /// Timeline pages: newest-first page (limit=200 default), older pages via
     /// the `before` cursor (ISO of the oldest loaded), in-conversation search
-    /// via `q` (server matches content + fileName) and topic-filtered views
-    /// via `topicId` (W2-DATA-B spec §0 — General is the unfiltered room).
+    /// via `q` (server matches content + fileName), topic-filtered views
+    /// via `topicId` (W2-DATA-B spec §0 — General is the unfiltered room) and
+    /// D47 delta-sync refreshes via `since` (only rows strictly newer).
     /// Pure query building lives in messagesPath so unit tests can pin the
     /// wire shape without network.
     public func messages(
@@ -72,27 +73,32 @@ public struct PulseAPIClient: Sendable {
         limit: Int = 200,
         before: String? = nil,
         query: String? = nil,
-        topicId: String? = nil
+        topicId: String? = nil,
+        since: String? = nil
     ) async throws -> WireMessagesPage {
         try await get(Self.messagesPath(
             conversationId: conversationId,
             limit: limit,
             before: before,
             query: query,
-            topicId: topicId
+            topicId: topicId,
+            since: since
         ))
     }
 
-    /// GET /api/conversations/{id}/messages?limit=&before=&q=&topicId= — the
-    /// exact pagination/search/topic contract from spec §0/§1. Blank search
-    /// strings AND blank topic ids are omitted (the server would match
-    /// nothing useful).
+    /// GET /api/conversations/{id}/messages?limit=&before=&q=&topicId=&since=
+    /// — the exact pagination/search/topic contract from spec §0/§1 plus the
+    /// D47 delta-sync cursor: `since` is an ISO date (validated by the route,
+    /// 400 on junk) returning only rows STRICTLY NEWER than it, same shape
+    /// and limits. Blank search strings, topic ids AND since cursors are
+    /// omitted (the server would match nothing useful).
     static func messagesPath(
         conversationId: String,
         limit: Int,
         before: String?,
         query: String?,
-        topicId: String? = nil
+        topicId: String? = nil,
+        since: String? = nil
     ) -> String {
         var path = "/api/conversations/\(conversationId)/messages?limit=\(limit)"
         if let before { path += "&before=\(before)" }
@@ -103,6 +109,10 @@ public struct PulseAPIClient: Sendable {
         if let topicId {
             let trimmed = topicId.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { path += "&topicId=\(queryEncoded(trimmed))" }
+        }
+        if let since {
+            let trimmed = since.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { path += "&since=\(queryEncoded(trimmed))" }
         }
         return path
     }
@@ -1350,6 +1360,102 @@ public struct PulseAPIClient: Sendable {
     /// DELETE /api/users/{id}/phrases?phraseId= → { ok } (owner-guarded).
     public func deleteQuickPhrase(_ phraseId: String) async throws {
         try await deleteEmpty("/api/users/\(q(userId))/phrases?phraseId=\(q(phraseId))", body: ["userId": userId])
+    }
+
+    // ── R2-B — AI recap · automations · webhooks · per-viewer veil ──
+
+    /// POST /api/ai/recap { userId, conversationId } → { recap, basedOn,
+    /// cached }. Server gates: 409 below 5 live messages, 502 LLM down —
+    /// both throw with the route's verbatim error copy (no fake text here).
+    /// The recap is a live LLM call, so the timeout rides the translate cap
+    /// (30 s) instead of the house 6 s fail-fast.
+    public func aiRecap(conversationId: String) async throws -> WireRecapResult {
+        let data = try await postRaw(
+            "/api/ai/recap",
+            body: ["userId": userId, "conversationId": conversationId],
+            timeoutCap: 30,
+        )
+        return try envelope(WireRecapResult.self, from: data)
+    }
+
+    /// GET /api/conversations/{id}/automations?userId= → { automations }
+    /// (participant-only; rows createdAt desc, creator chip included).
+    public func automations(conversationId: String) async throws -> [WireAutomation] {
+        let page: WireAutomationsPage = try await get(
+            "/api/conversations/\(q(conversationId))/automations?userId=\(q(userId))",
+        )
+        return page.automations ?? []
+    }
+
+    /// POST /api/conversations/{id}/automations { userId, trigger, reply }
+    /// → 201 { automation } (admin-only; 409 duplicate trigger verbatim).
+    public func createAutomation(conversationId: String, trigger: String, reply: String) async throws -> WireAutomation {
+        let data = try await postRaw(
+            "/api/conversations/\(q(conversationId))/automations",
+            body: ["userId": userId, "trigger": trigger, "reply": reply],
+        )
+        return try envelope(WireAutomationEnvelope.self, from: data).automation
+            ?? envelope(WireAutomation.self, from: data)
+    }
+
+    /// PATCH /api/automations/{id} { userId, enabled?/trigger?/reply? }
+    /// → { automation } — admin-only flip / R41 trigger rename / reply edit.
+    public func updateAutomation(
+        _ id: String,
+        enabled: Bool? = nil,
+        trigger: String? = nil,
+        reply: String? = nil,
+    ) async throws -> WireAutomation {
+        var body: [String: Any] = ["userId": userId]
+        if let enabled { body["enabled"] = enabled }
+        if let trigger { body["trigger"] = trigger }
+        if let reply { body["reply"] = reply }
+        let data = try await patchRaw("/api/automations/\(q(id))", body: body)
+        return try envelope(WireAutomationEnvelope.self, from: data).automation
+            ?? envelope(WireAutomation.self, from: data)
+    }
+
+    /// DELETE /api/automations/{id} { userId } → { ok } (admin-only).
+    public func deleteAutomation(_ id: String) async throws {
+        try await deleteEmpty("/api/automations/\(q(id))", body: ["userId": userId])
+    }
+
+    /// GET /api/webhooks?conversationId=&requesterId= → { webhooks }
+    /// (participant-only; rows createdAt asc).
+    public func webhooks(conversationId: String) async throws -> [WireWebhook] {
+        let page: WireWebhooksPage = try await get(
+            "/api/webhooks?conversationId=\(q(conversationId))&requesterId=\(q(userId))",
+        )
+        return page.webhooks ?? []
+    }
+
+    /// POST /api/webhooks { conversationId, name, requesterId } → 201
+    /// bare WebhookDTO (participant-only create; token is server-generated).
+    public func createWebhook(conversationId: String, name: String) async throws -> WireWebhook {
+        let data = try await postRaw(
+            "/api/webhooks",
+            body: ["conversationId": conversationId, "name": name, "requesterId": userId],
+        )
+        return try envelope(WireWebhook.self, from: data)
+    }
+
+    /// DELETE /api/webhooks/{token}?requesterId= → { ok } (admin-only).
+    public func deleteWebhook(token: String) async throws {
+        try await deleteEmpty(
+            "/api/webhooks/\(q(token))?requesterId=\(q(userId))",
+            body: ["requesterId": userId],
+        )
+    }
+
+    /// PATCH /api/conversations/{id}/screen-privacy { userId, on }
+    /// → the viewer's personal veil flag (participant-only, R42).
+    public func setMyScreenPrivacy(_ conversationId: String, on: Bool) async throws -> Bool {
+        let data = try await patchRaw(
+            "/api/conversations/\(q(conversationId))/screen-privacy",
+            body: ["userId": userId, "on": on],
+        )
+        let result = try envelope(WireScreenPrivacyResult.self, from: data)
+        return result.screenPrivacy ?? on
     }
 
     // ── plumbing ─────────────────────────────────────────────

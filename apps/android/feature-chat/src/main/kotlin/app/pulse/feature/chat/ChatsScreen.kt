@@ -67,6 +67,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocalFireDepartment
@@ -99,6 +100,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -211,6 +213,10 @@ fun ChatsScreen(
     /** Wave 6 — mentions / channels surfaces + the folders manage sheet. */
     onOpenMentions: () -> Unit = {},
     onOpenChannels: () -> Unit = {},
+    // R2-A item 2/1 — the header phone icon opens the calls history page and
+    // the pencil icon opens the REAL new-chat composer (web chats header).
+    onOpenCalls: () -> Unit = {},
+    onOpenNewChat: () -> Unit = {},
     /** Incremented by the dock's More → Search action to open search mode. */
     searchRequest: Int = 0,
     viewModel: ChatsViewModel = hiltViewModel(),
@@ -226,6 +232,8 @@ fun ChatsScreen(
     val mentionCount by viewModel.mentionCount.collectAsStateWithLifecycle()
     val searchHits by viewModel.searchHits.collectAsStateWithLifecycle()
     val searchRunning by viewModel.searching.collectAsStateWithLifecycle()
+    // R2-C item 7 — recent searches for the search bar (last 5).
+    val spotlightRecents by viewModel.spotlightRecents.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
 
     var search by remember { mutableStateOf(false) }
@@ -294,6 +302,11 @@ fun ChatsScreen(
             search = true
             focused = true
         }
+    }
+    // R2-C item 7 — the debounced server message search (the VM owns the
+    // 250ms rhythm; the screen only feeds it). Chats filter live above it.
+    LaunchedEffect(search, query) {
+        if (search) viewModel.search(query)
     }
     LaunchedEffect(selectMode, selectedIds) {
         if (selectMode && selectedIds.isEmpty()) selectMode = false
@@ -364,8 +377,10 @@ fun ChatsScreen(
                     viewerColor = viewerColor,
                     dark = dark,
                     onAvatar = { onSwitchTab("profile") },
-                    onCalls = { honest("Calls aren't available in this native build yet.") },
-                    onCompose = { honest("The new chat composer isn't available in this native build yet.") },
+                    // R2-A item 2 — real calls history (route owned by the shell).
+                    onCalls = onOpenCalls,
+                    // R2-A item 1 — real new-chat composer (shell-hosted sheet).
+                    onCompose = onOpenNewChat,
                     onTheme = onCycleTheme,
                     onSearch = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -440,8 +455,21 @@ fun ChatsScreen(
                         searching = searchRunning,
                         typing = typing,
                         presence = presence,
-                        onPress = { conv -> openConversation(viewModel, conv, onOpenRoom) },
-                        onOpenHit = { hit -> onOpenRoom(hit.conversationId, hit.id) },
+                        // R2-C item 7 — recent-search suggestions + push-on-open.
+                        recents = spotlightRecents,
+                        onPickRecent = { picked ->
+                            query = picked
+                            focused = false
+                        },
+                        onClearRecents = { viewModel.clearSpotlightRecents() },
+                        onPress = { conv ->
+                            if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
+                            openConversation(viewModel, conv, onOpenRoom)
+                        },
+                        onOpenHit = { hit ->
+                            if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
+                            onOpenRoom(hit.conversationId, hit.id)
+                        },
                     )
                     all.isEmpty() -> EmptyStateCard(
                         title = "No conversations yet",
@@ -2020,9 +2048,43 @@ private fun SearchResults(
     presence: Set<String>,
     onPress: (Conversation) -> Unit,
     onOpenHit: (MessageHit) -> Unit,
+    // R2-C item 7 — recent searches (web spotlight.tsx recents parity).
+    recents: List<String> = emptyList(),
+    onPickRecent: (String) -> Unit = {},
+    onClearRecents: () -> Unit = {},
 ) {
     val q = query.trim()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 128.dp)) {
+        // R2-C item 7 — recent searches surface while the query is EMPTY
+        // (last 5, deduped, newest first; tap refills the field, Clear wipes).
+        if (q.isEmpty() && recents.isNotEmpty()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = 12.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("RECENT SEARCHES", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp, color = Zinc400)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onClearRecents) { Text("Clear", fontSize = 11.sp, color = Zinc500) }
+            }
+            recents.forEach { recent ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable(onClick = { onPickRecent(recent) })
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(Icons.Filled.History, contentDescription = null, tint = Zinc400, modifier = Modifier.size(18.dp))
+                    Text(recent, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
         if (rows.isNotEmpty()) {
             SearchSectionHeader("Chats", rows.size)
             rows.forEachIndexed { index, conv ->

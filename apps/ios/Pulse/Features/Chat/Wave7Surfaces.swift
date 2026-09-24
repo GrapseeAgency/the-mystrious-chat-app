@@ -268,12 +268,13 @@ final class Wave7RoomActions: ObservableObject {
                 )
                 reminderAnchor = nil
                 remindersOpen = false
-                // Tier 1 — schedule the local fire (offline-capable).
+                // Tier 1 — schedule the local fire (offline-capable); the
+                // conversationId rides the userInfo so the tap opens the room.
                 if let iso = item.remindAt {
                     let ms = Self.epochMs(from: iso)
                     if let ms {
                         PulseReminderNotifications.requestAuthorization()
-                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms)
+                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms, conversationId: conversationId)
                     }
                 }
                 toast("Reminder set")

@@ -28,6 +28,7 @@ import app.pulse.data.local.toInfo
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
 import app.pulse.domain.model.BlockedAccount
+import app.pulse.domain.model.Automation
 import app.pulse.domain.model.CallKind
 import app.pulse.domain.model.CallLogEntry
 import app.pulse.domain.model.CallPeer
@@ -69,6 +70,7 @@ import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
 import app.pulse.domain.model.UserProfile
 import app.pulse.domain.model.UserStats
+import app.pulse.domain.model.Webhook
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.usecase.FlushOutboxUseCase
@@ -76,6 +78,7 @@ import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.PulseWave8Logic
 import app.pulse.protocol.WirePulsePrefs
 import app.pulse.protocol.CallAnswerDto
+import app.pulse.protocol.AiRecapDto
 import app.pulse.protocol.CallCancelDto
 import app.pulse.protocol.CallHangupDto
 import app.pulse.protocol.CallIceDto
@@ -541,8 +544,18 @@ class PulseRepositoryImpl @Inject constructor(
         limit: Int = 200,
         before: String? = null,
         topicId: String? = null,
-    ): Result<Unit> =
-        when (val r = api.messages(conversationId, limit, before, topicId)) {
+    ): Result<Unit> {
+        // R2-C item 2 (D47 delta sync) — a REFRESH (no `before` page cursor,
+        // unfiltered) rides `since=` when the Room cache already holds server
+        // rows for this conversation: only the strictly-newer tail crosses
+        // the wire and merges by upsert. The FIRST load (empty cache) and
+        // paged/topic fetches keep the unchanged full-window behavior.
+        val since = if (before == null && topicId == null) {
+            messageDao.latestServerCreatedAt(conversationId)
+        } else {
+            null
+        }
+        return when (val r = api.messages(conversationId, limit, before, topicId, since)) {
             is PulseResult.Success -> {
                 messageDao.upsertAll(
                     r.value.messages.map { dto ->
@@ -554,6 +567,7 @@ class PulseRepositoryImpl @Inject constructor(
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
 
     // ── users / identity ────────────────────────────────────────
     override suspend fun users(query: String): Result<List<User>> = when (val r = api.users()) {
@@ -752,6 +766,7 @@ class PulseRepositoryImpl @Inject constructor(
         kind: String,
         payload: String?,
         anon: Boolean,
+        anonAliasPreview: String?,
         replyToId: String?,
         parentId: String?,
         topicId: String?,
@@ -771,6 +786,9 @@ class PulseRepositoryImpl @Inject constructor(
             threadRootId = parentId,
             topicId = topicId,
             anon = anon,
+            // R3-B item 4 — the optimistic row wears the deterministic alias
+            // the server will store (web optimistic-mask parity).
+            anonAlias = anonAliasPreview.takeIf { anon },
         )
         if (!viewerId.isNullOrBlank()) {
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
@@ -799,7 +817,10 @@ class PulseRepositoryImpl @Inject constructor(
                 Result.success(receipt)
             }
             is PulseResult.Failure ->
-                if (r.kind == PulseResult.Failure.Kind.NETWORK && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
+                // R3-B item 4 — an INCOGNITO send never queues offline: the
+                // outbox row carries no anon flag, so a flush would post the
+                // message UN-masked. Honest retract instead of a privacy lie.
+                if (r.kind == PulseResult.Failure.Kind.NETWORK && !anon && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
                     outboxDao.insert(
                         OutboxEntity(
                             conversationId = conversationId,
@@ -1126,6 +1147,7 @@ class PulseRepositoryImpl @Inject constructor(
                         broadcastMode = dto.broadcastMode == true,
                         slowModeSeconds = dto.slowModeSeconds ?: 0,
                         screenPrivacy = dto.screenPrivacy == true,
+                        myScreenPrivacy = dto.myScreenPrivacy == true,
                         inviteCode = dto.inviteCode,
                     ),
                 )
@@ -1156,6 +1178,101 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun setScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> =
         patchGroupMeta(conversationId, screenPrivacy = on)
+
+    // ── R2-A — round-2 parity (automations · webhooks · recap · privacy · photo) ──
+
+    override suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> =
+        when (val r = api.setMyScreenPrivacy(conversationId, viewerId ?: "", on)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> =
+        when (val r = api.patchConversation(conversationId, viewerId ?: "", photo = photoPath)) {
+            is PulseResult.Success -> {
+                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun automations(conversationId: String): Result<List<Automation>> =
+        when (val r = api.automations(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.automations.map { it.toDomain() })
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun createAutomation(conversationId: String, trigger: String, reply: String): Result<Automation> =
+        when (val r = api.createAutomation(conversationId, viewerId ?: "", trigger, reply)) {
+            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun setAutomationEnabled(automationId: String, enabled: Boolean): Result<Automation> =
+        when (val r = api.patchAutomation(automationId, viewerId ?: "", enabled = enabled, trigger = null)) {
+            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun setAutomationTrigger(automationId: String, trigger: String): Result<Automation> =
+        when (val r = api.patchAutomation(automationId, viewerId ?: "", enabled = null, trigger = trigger)) {
+            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun deleteAutomation(automationId: String): Result<Unit> =
+        when (val r = api.deleteAutomation(automationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun webhooks(conversationId: String): Result<List<Webhook>> =
+        when (val r = api.webhooks(conversationId, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.webhooks.map { it.toDomain() })
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun createWebhook(conversationId: String, name: String): Result<Webhook> =
+        when (val r = api.createWebhook(conversationId, name, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(r.value.toDomain())
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun deleteWebhook(token: String): Result<Unit> =
+        when (val r = api.deleteWebhook(token, viewerId ?: "")) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override suspend fun aiRecap(conversationId: String): Result<AiRecapDto> =
+        when (val r = api.aiRecap(viewerId ?: "", conversationId)) {
+            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    /** Wire automation row → domain (AutomationDto/Room2Dtos.kt). */
+    private fun app.pulse.protocol.AutomationDto.toDomain(): Automation = Automation(
+        id = id,
+        conversationId = conversationId,
+        trigger = trigger,
+        reply = reply,
+        enabled = enabled,
+        hits = hits,
+        lastFiredAtIso = lastFiredAt,
+        createdAtIso = createdAt,
+        createdByName = createdBy?.name,
+    )
+
+    /** Wire webhook row → domain (WebhookDto/Room2Dtos.kt). */
+    private fun app.pulse.protocol.WebhookDto.toDomain(): Webhook = Webhook(
+        id = id,
+        name = name,
+        token = token,
+        avatarColor = avatarColor,
+        url = url,
+        createdAtIso = createdAt,
+        createdBy = createdBy,
+    )
 
     override suspend fun addGroupMembers(conversationId: String, userIds: List<String>): Result<List<String>> =
         when (val r = api.addMembers(conversationId, viewerId ?: "", userIds)) {
@@ -1348,7 +1465,14 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {
-        socket.emitTyping(recipients = emptyList(), conversationId, viewerId ?: "", userName = userName, isTyping = typing)
+        // R2-A — the relay fans typing out to `recipients` user rooms and DROPS
+        // empty recipient lists (pulse-socket/index.ts: recipients.length===0 →
+        // no relay). The web room computes members-minus-me (chat-room.tsx:1238)
+        // for this same payload; the cached conversation row supplies the ids.
+        val recipients = conversationDao.byId(conversationId)?.toDomain()?.memberIds
+            .orEmpty()
+            .filter { it != viewerId }
+        socket.emitTyping(recipients = recipients, conversationId, viewerId ?: "", userName = userName, isTyping = typing)
     }
 
     override suspend fun react(messageId: String, emoji: String): Result<Unit> {
@@ -1655,7 +1779,20 @@ class PulseRepositoryImpl @Inject constructor(
         }
 
     override suspend fun deleteMessage(messageId: String): Result<Unit> =
-        api.deleteMessage(messageId, viewerId ?: "").toResult()
+        when (val r = api.deleteMessage(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                // R2-C item 2 — the tombstone echoes back with its ORIGINAL
+                // createdAt, so a since= delta refetch can never re-fetch it:
+                // upsert the deleted row here (server truth) so "Message
+                // deleted" renders immediately (the VM's refetch then rides
+                // the delta path for anything genuinely newer).
+                r.value.toDomain().let { domain ->
+                    messageDao.upsertAll(listOf(MessageEntity.from(domain, reactionsJsonOf(domain))))
+                }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
 
     override suspend fun exportChat(conversationId: String): Result<String> = withContext(Dispatchers.IO) {
         runCatching {

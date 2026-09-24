@@ -204,6 +204,8 @@ data class ConversationSummaryDto(
     val slowModeSeconds: Int? = null,
     /** R38 Signal screen security (room-wide flag). */
     val screenPrivacy: Boolean? = null,
+    /** R42 per-VIEWER screen security (the personal veil flag; detail rows). */
+    val myScreenPrivacy: Boolean? = null,
 )
 
 // ── REM-A group governance + scheduling DTOs ─────────────────

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -150,6 +152,54 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(20.dp))
+
+        // R2-A item 10 — the wallet chip (web profile-tab.tsx:477-487:
+        // "Coins" pill with live balance; loading spinner, honest error row).
+        if (viewerId != null) {
+            LaunchedEffect(viewerId) { viewModel.loadWallet() }
+            val walletState by viewModel.wallet.collectAsStateWithLifecycle()
+            SettingCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Bolt, contentDescription = null, tint = PulsePalette.Amber, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Wallet", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            when {
+                                walletState.loading -> "Checking your balance…"
+                                walletState.error -> "Balance unavailable — pull to retry below"
+                                else -> "Pulse Coins available to spend in the Hub"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    when {
+                        walletState.loading -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        walletState.error -> TextButton(onClick = viewModel::loadWallet) { Text("Retry", color = PulsePalette.Emerald) }
+                        else -> Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "${walletState.coins ?: 0} PC",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = PulsePalette.Amber,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Surface(shape = RoundedCornerShape(999.dp), color = PulsePalette.Amber.copy(alpha = 0.14f)) {
+                                Text(
+                                    "Balance",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = PulsePalette.Amber,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+        }
 
         // Wave 6 — edit profile + blocked accounts (web #/profile-edit + settings parity)
         SettingCard {

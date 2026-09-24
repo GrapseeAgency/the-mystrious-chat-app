@@ -174,6 +174,36 @@ public enum PulseRemediationLogic {
         .init(cmd: "/help", args: "", help: "Show every command"),
     ]
 
+    /// R3-A — web slash-palette fuzzyMatch parity (slash-palette.tsx:127-140):
+    /// every needle character (whitespace stripped, case-insensitive) must
+    /// appear IN ORDER in the haystack, with total jump distance ≤ 6× the
+    /// needle length ("tolerate sloppy typing, keep ranking sane").
+    public static func slashFuzzyMatch(haystack: String, needle: String) -> Bool {
+        var compact = ""
+        for ch in needle.lowercased() where !ch.isWhitespace {
+            compact.append(ch)
+        }
+        if compact.isEmpty { return true }
+        let h = Array(haystack.lowercased())
+        var cursor = 0
+        var gap = 0
+        for ch in compact {
+            var foundAt: Int? = nil
+            var index = cursor
+            while index < h.count {
+                if h[index] == ch {
+                    foundAt = index
+                    break
+                }
+                index += 1
+            }
+            guard let at = foundAt else { return false }
+            gap += at - cursor
+            cursor = at + 1
+        }
+        return gap <= compact.count * 6
+    }
+
     /// applySlash outcome — the send-shaped results the room handles;
     /// sheet/tool commands surface as explicit intents.
     public enum SlashOutcome: Equatable {
@@ -183,6 +213,7 @@ public enum PulseRemediationLogic {
         case sheet(String) // poll | schedule | sticker | location | whiteboard | redpacket | kanban | events | game | stage | space | tournament
         case topic(String)
         case remind(String)
+        case recap
         case help
     }
 
@@ -225,6 +256,7 @@ public enum PulseRemediationLogic {
         case "poll": return .sheet("poll")
         case "schedule": return .sheet("schedule")
         case "remind": return .remind(rest)
+        case "recap": return .recap
         case "sticker": return .sheet("sticker")
         case "location": return .sheet("location")
         case "whiteboard", "redpacket", "kanban", "events", "game", "stage", "space", "tournament":

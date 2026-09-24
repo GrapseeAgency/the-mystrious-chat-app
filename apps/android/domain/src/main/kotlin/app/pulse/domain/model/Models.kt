@@ -427,10 +427,15 @@ data class GroupMeta(
     val slowModeSeconds: Int,
     /** Signal screen security (room-wide flag). */
     val screenPrivacy: Boolean,
+    /** R42 per-VIEWER screen security (the personal veil flag). */
+    val myScreenPrivacy: Boolean = false,
     /** Shareable join code — null = no active link. */
     val inviteCode: String?,
 ) {
     val isAdmin: Boolean get() = myRole == "admin"
+
+    /** R42 — the room veils when EITHER flag is on (web screenPrivacyOn parity). */
+    val screenPrivacyEffective: Boolean get() = screenPrivacy || myScreenPrivacy
 }
 
 /**
@@ -552,4 +557,40 @@ data class QuickPhrase(
     val id: String,
     val text: String,
     val position: Int = 0,
+)
+
+/**
+ * R39 — one keyword auto-reply rule (web `AutomationSummary`, types.ts:330).
+ * The send path lands the reply as a real machine-sent message server-side;
+ * native surfaces manage rows through /api/automations.
+ */
+data class Automation(
+    val id: String,
+    val conversationId: String,
+    /** 2-40 chars, matched as a standalone phrase. */
+    val trigger: String,
+    /** 1-500 chars. */
+    val reply: String,
+    val enabled: Boolean,
+    /** Lifetime fire count. */
+    val hits: Long = 0,
+    val lastFiredAtIso: String? = null,
+    val createdAtIso: String? = null,
+    /** Admin who authored the rule (also the author of fired replies). */
+    val createdByName: String? = null,
+)
+
+/**
+ * One Discord-style incoming webhook (web `WebhookItem`). `url` is the
+ * RELATIVE ingest path from the wire (`/api/webhooks/{token}`) — surfaces
+ * pair it with the configured server origin for copy/share.
+ */
+data class Webhook(
+    val id: String,
+    val name: String,
+    val token: String,
+    val avatarColor: String,
+    val url: String,
+    val createdAtIso: String? = null,
+    val createdBy: String = "",
 )

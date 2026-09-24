@@ -114,8 +114,36 @@ extension PulseTheme {
     /// Faint text — zinc-400 light, zinc-500 dark.
     static var textTertiary: Color { adaptive(zinc(400), zinc(500)) }
 
-    /// Emerald accent that brightens in dark mode (600 light / 400 dark).
-    static var accent: Color { adaptive(emerald600, emerald400) }
+    // ── R2-D — active design language (web ui-theme.ts R25 parity) ──────
+    // PulsePrefs owns the persisted selection; RootView mirrors it here so
+    // every PulseTheme-fed view swaps tokens without any screen redesign.
+    // Main-thread only (set at shell attach + on change).
+    static var activeUiTheme: PulseUiThemeId = .glass
+
+    /// THE accent token — theme-driven (glass emerald #10b981, kinetic ink
+    /// flipping to near-white in dark, minimal zinc, dynamic amber, aero
+    /// sky). Resolved per color-scheme trait at draw time.
+    static var accent: Color {
+        let id = activeUiTheme
+        let light = PulseUiTheme.tokens(for: id, dark: false).accent
+        let dark = PulseUiTheme.tokens(for: id, dark: true).accent
+        return adaptive(light.color, dark.color)
+    }
+
+    /// Theme secondary accent (glass sky #0ea5e9, kinetic rose, minimal
+    /// zinc-400, dynamic pink, aero indigo) — adaptive like accent.
+    static var accent2: Color {
+        let id = activeUiTheme
+        let light = PulseUiTheme.tokens(for: id, dark: false).accent2
+        let dark = PulseUiTheme.tokens(for: id, dark: true).accent2
+        return adaptive(light.color, dark.color)
+    }
+
+    /// Panel radius base for the active language (glass 28 base; kinetic 14,
+    /// minimal 22, dynamic 26, aero 24 — globals.css --ui-radius-panel).
+    static var radiusPanel: CGFloat {
+        PulseUiTheme.tokens(for: activeUiTheme, dark: false).radiusPanel
+    }
 
     /// Presence dot offline tint — zinc-300 light, zinc-600 dark.
     static var presenceOffline: Color { adaptive(zinc(300), zinc(600)) }
@@ -148,13 +176,27 @@ extension PulseTheme {
         )
     }
 
+    /// Auto-linked bubble URL color (R4-A item 1, web renderPlain :6885-6888):
+    /// text-emerald-700 light, text-emerald-400 dark (mine rows override to
+    /// white at the call site).
+    static var bubbleLink: Color {
+        adaptive(PulseUiThemeColor(hex: "#047857").color, emerald400)
+    }
+
     /// Dock/panel shadow strength — heavier in dark.
     static var panelShadowOpacity: Double { 0.14 }
 
     // ── gradients ────────────────────────────────────────────
-    /// Emerald→teal brand gradient (compose button, dock badge, glyph tiles).
+    /// Brand gradient — accent → accent2 of the ACTIVE design language
+    /// (glass keeps the emerald→teal feel via its sky secondary; kinetic
+    /// ink→rose, minimal zinc pair, dynamic amber→pink, aero sky→indigo).
     static var brandGradient: LinearGradient {
-        LinearGradient(colors: [emerald500, teal600], startPoint: .topLeading, endPoint: .bottomTrailing)
+        let id = activeUiTheme
+        let light = PulseUiTheme.tokens(for: id, dark: false)
+        let dark = PulseUiTheme.tokens(for: id, dark: true)
+        let start = adaptive(light.accent.color, dark.accent.color)
+        let end = adaptive(light.accent2.color, dark.accent2.color)
+        return LinearGradient(colors: [start, end], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     /// Active dock pill — emerald 500/20 → 500/6 top-to-bottom (dark: 400/16 → 5%).
@@ -258,5 +300,222 @@ extension PulseTheme {
 
     static func photoURL(_ path: String?) -> URL? {
         photoURL(path, base: PulseEndpoints.gatewayURL)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// R2-D — the five locked design languages, ported verbatim from
+// web src/lib/ui-theme.ts:35-76 (meta: label/tagline/detail/swatch/motion)
+// + the token blocks of src/app/globals.css:124-240 (accent pair, radius
+// panel, page/panel/border colors, blur, panel alpha per light+dark).
+// Persistence rides PulsePrefs under the web's exact key
+// `pulse.uiTheme.v2` with byte-identical values glass|kinetic|minimal|dynamic|aero.
+// ─────────────────────────────────────────────────────────────
+
+/// Theme ids — raw values are the wire strings (web UiThemeId).
+public enum PulseUiThemeId: String, CaseIterable, Sendable {
+    case glass, kinetic, minimal, dynamic, aero
+}
+
+/// One language's picker metadata (web UiThemeMeta — strings byte-same).
+public struct PulseUiThemeMeta: Equatable, Sendable {
+    public let id: PulseUiThemeId
+    public let label: String
+    public let tagline: String
+    /// one-line description for pickers
+    public let detail: String
+    /// preview accent pair (hex) for swatches — web swatch order preserved
+    public let swatch: [String]
+    /// motion personality — surfaces may pick springs by theme
+    public let motion: String
+}
+
+/// A decoded CSS color (hex + alpha) — pure value so tokens stay testable.
+public struct PulseUiThemeColor: Equatable, Sendable {
+    public let red: Double
+    public let green: Double
+    public let blue: Double
+    public let alpha: Double
+
+    /// "#RRGGBB" / "RRGGBB" (+ separate alpha, globals rgba). Junk input
+    /// degrades to opaque black — never crashes, never traps.
+    public init(hex: String, alpha: Double = 1.0) {
+        let digits = hex.filter { $0.isHexDigit }
+        let padded = digits.count >= 6
+            ? String(digits.prefix(6))
+            : digits + String(repeating: "0", count: 6 - digits.count)
+        let value = UInt64(padded, radix: 16) ?? 0
+        self.red = Double((value >> 16) & 0xFF) / 255.0
+        self.green = Double((value >> 8) & 0xFF) / 255.0
+        self.blue = Double(value & 0xFF) / 255.0
+        self.alpha = alpha
+    }
+
+    public var color: Color {
+        Color(red: red, green: green, blue: blue, opacity: alpha)
+    }
+}
+
+/// The resolved token set for one language + scheme (globals.css --ui-*).
+public struct PulseUiThemeTokens: Equatable, Sendable {
+    public let accent: PulseUiThemeColor
+    public let accent2: PulseUiThemeColor
+    /// 28pt base (glass); kinetic 14 · minimal 22 · dynamic 26 · aero 24.
+    public let radiusPanel: CGFloat
+    public let pageBg: PulseUiThemeColor
+    public let panelBg: PulseUiThemeColor
+    public let panelBorder: PulseUiThemeColor
+    /// --ui-blur (pt); 0 = the language renders hard edges (kinetic).
+    public let blur: CGFloat
+    /// --ui-panel-alpha == panelBg alpha (kept explicit for surfaces that
+    /// layer their own material under the wash).
+    public var panelAlpha: Double { panelBg.alpha }
+}
+
+public enum PulseUiTheme {
+
+    /// Web DEFAULT_UI_THEME.
+    public static let defaultId: PulseUiThemeId = .glass
+
+    /// The metadata table — web UI_THEMES verbatim (ui-theme.ts:35-76).
+    public static func meta(for id: PulseUiThemeId) -> PulseUiThemeMeta {
+        switch id {
+        case .glass:
+            return PulseUiThemeMeta(
+                id: .glass,
+                label: "Immersive Glass",
+                tagline: "Glassmorphic Chat UI",
+                detail: "Layered frosted glass, aurora backdrop, specular edges, elastic motion.",
+                swatch: ["#10b981", "#0ea5e9"],
+                motion: "elastic",
+            )
+        case .kinetic:
+            return PulseUiThemeMeta(
+                id: .kinetic,
+                label: "Kinetic",
+                tagline: "Kinetic UI",
+                detail: "High-contrast ink, sharp corners, bold type, whip-crack springs.",
+                swatch: ["#18181b", "#f43f5e"],
+                motion: "crisp",
+            )
+        case .minimal:
+            return PulseUiThemeMeta(
+                id: .minimal,
+                label: "Quiet Minimal",
+                tagline: "Motion-Driven Minimalist UI",
+                detail: "Hairlines and whitespace. Motion whispers, structure speaks.",
+                swatch: ["#52525b", "#a1a1aa"],
+                motion: "quiet",
+            )
+        case .dynamic:
+            return PulseUiThemeMeta(
+                id: .dynamic,
+                label: "Dynamic",
+                tagline: "Dynamic Minimalism",
+                detail: "Soft neutrals with vivid gradient accents and playful bounce.",
+                swatch: ["#f59e0b", "#ec4899"],
+                motion: "playful",
+            )
+        case .aero:
+            return PulseUiThemeMeta(
+                id: .aero,
+                label: "Aero Kinetic",
+                tagline: "Kinetic Minimalist Interface",
+                detail: "Frost-stroke panels on cool graphite, gliding inertia.",
+                swatch: ["#38bdf8", "#818cf8"],
+                motion: "glide",
+            )
+        }
+    }
+
+    public static func allMeta() -> [PulseUiThemeMeta] {
+        PulseUiThemeId.allCases.map { meta(for: $0) }
+    }
+
+    /// Tolerant decode — web isUiThemeId parity: anything outside the five
+    /// locked ids (nil, junk, legacy values) falls back to glass.
+    public static func parse(_ raw: String?) -> PulseUiThemeId {
+        guard let raw, !raw.isEmpty else { return defaultId }
+        return PulseUiThemeId(rawValue: raw) ?? defaultId
+    }
+
+    /// Token resolution (globals.css [data-ui='ui-*'] blocks, light+dark).
+    /// Kinetic is the only language whose accent flips in dark (ink → paper).
+    public static func tokens(for id: PulseUiThemeId, dark: Bool) -> PulseUiThemeTokens {
+        switch id {
+        case .glass:
+            // ui-glass — aurora wash over warm paper / near-black.
+            return PulseUiThemeTokens(
+                accent: PulseUiThemeColor(hex: "#10b981"),
+                accent2: PulseUiThemeColor(hex: "#0ea5e9"),
+                radiusPanel: 28,
+                pageBg: dark ? PulseUiThemeColor(hex: "#09090b") : PulseUiThemeColor(hex: "#f3f9f5"),
+                panelBg: dark
+                    ? PulseUiThemeColor(hex: "#ffffff", alpha: 0.08)
+                    : PulseUiThemeColor(hex: "#ffffff", alpha: 0.55),
+                panelBorder: dark
+                    ? PulseUiThemeColor(hex: "#ffffff", alpha: 0.14)
+                    : PulseUiThemeColor(hex: "#092a1f", alpha: 0.10),
+                blur: 28,
+            )
+        case .kinetic:
+            // ui-kinetic — ink on paper, hard edges, high contrast.
+            return PulseUiThemeTokens(
+                accent: dark ? PulseUiThemeColor(hex: "#fafafa") : PulseUiThemeColor(hex: "#18181b"),
+                accent2: PulseUiThemeColor(hex: "#f43f5e"),
+                radiusPanel: 14,
+                pageBg: dark ? PulseUiThemeColor(hex: "#111113") : PulseUiThemeColor(hex: "#f4f4f5"),
+                panelBg: dark ? PulseUiThemeColor(hex: "#101012") : PulseUiThemeColor(hex: "#ffffff"),
+                panelBorder: dark
+                    ? PulseUiThemeColor(hex: "#ffffff", alpha: 0.85)
+                    : PulseUiThemeColor(hex: "#000000", alpha: 0.82),
+                blur: 0,
+            )
+        case .minimal:
+            // ui-minimal — hairlines, whitespace, whisper motion.
+            return PulseUiThemeTokens(
+                accent: PulseUiThemeColor(hex: "#52525b"),
+                accent2: PulseUiThemeColor(hex: "#a1a1aa"),
+                radiusPanel: 22,
+                pageBg: dark ? PulseUiThemeColor(hex: "#0c0c0e") : PulseUiThemeColor(hex: "#fbfbfc"),
+                panelBg: dark
+                    ? PulseUiThemeColor(hex: "#141417", alpha: 0.9)
+                    : PulseUiThemeColor(hex: "#ffffff", alpha: 0.92),
+                panelBorder: dark
+                    ? PulseUiThemeColor(hex: "#ffffff", alpha: 0.07)
+                    : PulseUiThemeColor(hex: "#000000", alpha: 0.06),
+                blur: 14,
+            )
+        case .dynamic:
+            // ui-dynamic — soft neutrals + vivid gradient accents.
+            return PulseUiThemeTokens(
+                accent: PulseUiThemeColor(hex: "#f59e0b"),
+                accent2: PulseUiThemeColor(hex: "#ec4899"),
+                radiusPanel: 26,
+                pageBg: dark ? PulseUiThemeColor(hex: "#0c0b0d") : PulseUiThemeColor(hex: "#faf9f7"),
+                panelBg: dark
+                    ? PulseUiThemeColor(hex: "#18161a", alpha: 0.78)
+                    : PulseUiThemeColor(hex: "#ffffff", alpha: 0.82),
+                panelBorder: dark
+                    ? PulseUiThemeColor(hex: "#ffffff", alpha: 0.08)
+                    : PulseUiThemeColor(hex: "#000000", alpha: 0.06),
+                blur: 22,
+            )
+        case .aero:
+            // ui-aero — frost strokes on cool graphite.
+            return PulseUiThemeTokens(
+                accent: PulseUiThemeColor(hex: "#38bdf8"),
+                accent2: PulseUiThemeColor(hex: "#818cf8"),
+                radiusPanel: 24,
+                pageBg: dark ? PulseUiThemeColor(hex: "#0e1118") : PulseUiThemeColor(hex: "#eef1f6"),
+                panelBg: dark
+                    ? PulseUiThemeColor(hex: "#11151e", alpha: 0.6)
+                    : PulseUiThemeColor(hex: "#ffffff", alpha: 0.55),
+                panelBorder: dark
+                    ? PulseUiThemeColor(hex: "#818cf8", alpha: 0.2)
+                    : PulseUiThemeColor(hex: "#818cf8", alpha: 0.22),
+                blur: 34,
+            )
+        }
     }
 }

@@ -3,6 +3,8 @@ import SwiftUI
 /// Profile — identity management (native onboarding parity), appearance
 /// (dark override + the ambient FX picker with LIVE shader preview strips),
 /// and honest about-notes. All settings persist via PulsePrefs.
+/// R2-B — the hub wallet chip rides the REAL GET /api/hub/wallet (web
+/// profile-tab.tsx:149-153 parity: loading / honest "—" / coins amount).
 struct ProfileView: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
@@ -10,11 +12,16 @@ struct ProfileView: View {
     @State private var identitySheet = false
     // Wave 6 — the full profile editor (F-CP-04/09) via the real PATCH.
     @State private var editProfileOpen = false
+    // R2-B — hub wallet chip state (GET /api/hub/wallet?userId=).
+    enum WalletPhase: Equatable { case loading, loaded, failed }
+    @State private var walletPhase: WalletPhase = .loading
+    @State private var walletCoins: Int = 0
 
     var body: some View {
         NavigationStack {
             List {
                 identitySection
+                walletSection
                 statusSection
                 appearanceSection
                 motionSection
@@ -28,6 +35,68 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $editProfileOpen) {
             ProfileEditView(session: session, prefs: prefs)
+        }
+        .task { await loadWallet() }
+    }
+
+    // ── R2-B — hub wallet chip (real coins balance) ──
+
+    private func loadWallet() async {
+        // The route upserts a zero wallet and answers { wallet: { coins } }.
+        guard session.viewer != nil else {
+            walletPhase = .failed
+            return
+        }
+        do {
+            let wallet = try await session.api.wallet()
+            walletCoins = wallet.coins ?? 0
+            walletPhase = .loaded
+        } catch {
+            walletPhase = .failed
+        }
+    }
+
+    private var walletSection: some View {
+        Section("Wallet") {
+            Button {
+                // A failed fetch is honest — tap retries (web refetch parity).
+                guard walletPhase == .failed else { return }
+                walletPhase = .loading
+                Task { await loadWallet() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "coins")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(PulseTheme.amber)
+                    Text("Coin balance")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(PulseTheme.titleOnPanel)
+                    Spacer()
+                    switch walletPhase {
+                    case .loading:
+                        ProgressView().controlSize(.small)
+                    case .failed:
+                        Text("—")
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    case .loaded:
+                        HStack(spacing: 4) {
+                            Text("\(walletCoins)")
+                                .font(.subheadline.weight(.bold).monospacedDigit())
+                                .foregroundStyle(PulseTheme.titleOnPanel)
+                            Text("coins")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(walletPhase == .loaded
+                ? "Coin balance \(walletCoins)"
+                : "Coin balance loading")
+        } footer: {
+            Text("Earn coins from check-ins and tasks — spend them in the Hub.")
         }
     }
 

@@ -83,6 +83,93 @@ public enum PulseWallpaper: String, CaseIterable, Sendable {
     }
 }
 
+/// Where a navigation style lives visually (web NavStyleMeta.zone parity;
+/// the web's 'overlay' zone belongs to the excluded radial style).
+public enum PulseNavZone: Equatable, Sendable {
+    case bottom, top, side
+}
+
+/// R4-A item 3 — the 8 phone-feasible navigation architectures, ported
+/// from web src/lib/nav-registry.ts (:50-64; label + hint strings VERBATIM).
+/// Raw values are byte-same with the web store under the EXACT key
+/// "pulse.navStyle.v2". The five EXCLUDED web idioms (floating-dock,
+/// command-bar, radial, gesture, contextual-dock — desktop / keyboard /
+/// exotic gesture surfaces) deliberately have NO case: they still PARSE
+/// (→ capsule fallback) so a future widening is drop-in safe.
+public enum PulseNavStyle: String, CaseIterable, Sendable {
+    case capsule
+    case floatingTop = "floating-top"
+    case pill
+    case bottomBar = "bottom-bar"
+    case tabBar = "tab-bar"
+    case floatingTabBar = "floating-tab-bar"
+    case rail
+    case island
+
+    /// Web NavStyleMeta.label — byte-identical strings.
+    public var label: String {
+        switch self {
+        case .capsule: return "Floating Capsule"
+        case .floatingTop: return "Floating Top Nav"
+        case .pill: return "Pill Navigation"
+        case .bottomBar: return "Bottom Bar"
+        case .tabBar: return "Tab Bar"
+        case .floatingTabBar: return "Floating Tab Bar"
+        case .rail: return "Navigation Rail"
+        case .island: return "Island Navigation"
+        }
+    }
+
+    /// Web NavStyleMeta.hint — byte-identical strings.
+    public var hint: String {
+        switch self {
+        case .capsule: return "Detached glass capsule dock — the default"
+        case .floatingTop: return "Capsule bar floating beneath the top edge"
+        case .pill: return "Single segmented pill with sliding fill"
+        case .bottomBar: return "Classic edge-to-edge bottom bar"
+        case .tabBar: return "iOS-style tab bar with tinted squircles"
+        case .floatingTabBar: return "Detached card, elevated active tab"
+        case .rail: return "Persistent vertical side rail"
+        case .island: return "Dynamic-island pill that expands on tap"
+        }
+    }
+
+    /// Web NavStyleMeta.zone (overlay/radial excluded with its style).
+    public var zone: PulseNavZone {
+        switch self {
+        case .floatingTop: return .top
+        case .rail: return .side
+        default: return .bottom
+        }
+    }
+
+    /// SF Symbol glyph for the Appearance picker cards.
+    public var pickerIcon: String {
+        switch self {
+        case .capsule: return "capsule"
+        case .floatingTop: return "rectangle.topthird.inset.filled"
+        case .pill: return "switch.2"
+        case .bottomBar: return "rectangle.bottomthird.inset.filled"
+        case .tabBar: return "square.grid.2x2"
+        case .floatingTabBar: return "dock.rectangle"
+        case .rail: return "sidebar.left"
+        case .island: return "record.circle"
+        }
+    }
+
+    /// Web DEFAULT_NAV_STYLE.
+    public static let defaultValue: PulseNavStyle = .capsule
+
+    /// Tolerant decode — one of the 8 shipped ids parses through; EVERY
+    /// other token (the 5 excluded web ids, junk, legacy values, nil) falls
+    /// back to capsule so a stored future-style survives an app update and
+    /// a junk value never breaks the shell (web getNavStyleMeta parity).
+    public static func parse(_ raw: String?) -> PulseNavStyle {
+        guard let raw else { return .defaultValue }
+        return PulseNavStyle(rawValue: raw) ?? .defaultValue
+    }
+}
+
 /// Resolved (non-optional) preference values — the device-side mirror of
 /// web DEFAULT_PREFERENCES. PulseWave8Logic.mergedPrefs shallow-merges a
 /// server patch over a base of these (web mergePrefs parity).
@@ -163,6 +250,19 @@ public final class PulsePrefs: ObservableObject {
     /// SERVER copy rides the settings blob under the web's "chat.convThemes"
     /// key; this UserDefaults key follows the house "prefs." namespace).
     public static let convThemesKey = "prefs.convThemes"
+    /// R2-B R42 — local mirror of the per-conversation PERSONAL screen-
+    /// security veil (myScreenPrivacy). The server copy rides the dedicated
+    /// PATCH /api/conversations/[id]/screen-privacy route; this map is the
+    /// instant local write-through so the veil engages without a round-trip.
+    public static let screenPrivacyKey = "prefs.screenPrivacy"
+    /// R2-D — the design-language selection. Key AND values are byte-identical
+    /// to the web store (ui-theme.ts `pulse.uiTheme.v2`:
+    /// glass|kinetic|minimal|dynamic|aero) so the two platforms converge.
+    public static let uiThemeKey = "pulse.uiTheme.v2"
+    /// R4-A item 3 — the navigation architecture. Key AND values byte-identical
+    /// to the web store (nav-registry.ts `pulse.navStyle.v2`); the 5 excluded
+    /// web ids + junk decode to capsule via PulseNavStyle.parse.
+    public static let navStyleKey = "pulse.navStyle.v2"
 
     /// R1-W2G D46 — namespaced key builder for the durable last-position
     /// cache per space room ("space:lastpos:<roomId>"). The relay keeps the
@@ -219,6 +319,13 @@ public final class PulsePrefs: ObservableObject {
         // R1-W2B F-FX-05 — cached theme map (tolerant: bad JSON → empty map;
         // the server blob overwrites it on the next successful sync).
         convThemes = Self.readConvThemes(defaults)
+        // R2-B R42 — cached personal-veil map (tolerant: bad JSON → empty).
+        screenPrivacy = Self.readScreenPrivacy(defaults)
+        // R2-D — design language (tolerant: junk/legacy → glass, web parity).
+        uiTheme = PulseUiTheme.parse(defaults.string(forKey: Self.uiThemeKey))
+        // R4-A item 3 — nav architecture (tolerant: excluded ids/junk →
+        // capsule, web parity).
+        navStyle = PulseNavStyle.parse(defaults.string(forKey: Self.navStyleKey))
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
     }
 
@@ -249,6 +356,12 @@ public final class PulsePrefs: ObservableObject {
 
     // ── R1-W2B F-FX-05 — per-conversation themes (server-synced) ──
     @Published public private(set) var convThemes: [String: WireConvTheme]
+    // ── R2-B R42 — per-conversation PERSONAL screen-security veil ──
+    @Published public private(set) var screenPrivacy: [String: Bool]
+    // ── R2-D — the five locked design languages (ui-theme.ts parity) ──
+    @Published public private(set) var uiTheme: PulseUiThemeId
+    // ── R4-A item 3 — the navigation architecture (nav-registry parity) ──
+    @Published public private(set) var navStyle: PulseNavStyle
 
     public var hasIdentity: Bool { viewer != nil }
 
@@ -322,6 +435,22 @@ public final class PulsePrefs: ObservableObject {
         defaults.set(filter.rawValue, forKey: Self.chatsFilterKey)
     }
 
+    /// R2-D — pick a design language (glass | kinetic | minimal | dynamic |
+    /// aero). The raw value stored under "pulse.uiTheme.v2" is byte-identical
+    /// to the web's zustand-persist payload.
+    public func setUiTheme(_ theme: PulseUiThemeId) {
+        uiTheme = theme
+        defaults.set(theme.rawValue, forKey: Self.uiThemeKey)
+    }
+
+    /// R4-A item 3 — pick a navigation architecture (the raw value stored
+    /// under "pulse.navStyle.v2" is byte-identical to the web's payload;
+    /// RootView mirrors the change into the dock renderer).
+    public func setNavStyle(_ style: PulseNavStyle) {
+        navStyle = style
+        defaults.set(style.rawValue, forKey: Self.navStyleKey)
+    }
+
     /// W5-f — persist the voice captions toggle (L89-92 pattern).
     public func setVoiceCaptions(_ enabled: Bool) {
         voiceCaptions = enabled
@@ -361,6 +490,32 @@ public final class PulsePrefs: ObservableObject {
         convThemes = map
         if let data = try? JSONEncoder().encode(map) {
             defaults.set(data, forKey: Self.convThemesKey)
+        }
+    }
+
+    // ── R2-B R42 — personal screen-security veil ──
+
+    /// Instant local write-through for MY veil on one conversation; the
+    /// server mirror PATCH runs from the caller (GroupInfoView) and the
+    /// verdict lands via adoptServerScreenPrivacy.
+    public func setScreenPrivacy(conversationId: String, on: Bool) {
+        var map = screenPrivacy
+        map[conversationId] = on
+        storeScreenPrivacy(map)
+    }
+
+    /// Server truth landed (detail fetch or PATCH echo): the server value
+    /// wins for that conversation — the same shallow-merge contract as every
+    /// other server-backed blob field.
+    public func adoptServerScreenPrivacy(conversationId: String, on: Bool) {
+        guard screenPrivacy[conversationId] != on else { return }
+        setScreenPrivacy(conversationId: conversationId, on: on)
+    }
+
+    private func storeScreenPrivacy(_ map: [String: Bool]) {
+        screenPrivacy = map
+        if let data = try? JSONEncoder().encode(map) {
+            defaults.set(data, forKey: Self.screenPrivacyKey)
         }
     }
 
@@ -559,5 +714,11 @@ public final class PulsePrefs: ObservableObject {
     private static func readConvThemes(_ defaults: UserDefaults) -> [String: WireConvTheme] {
         guard let data = defaults.data(forKey: convThemesKey) else { return [:] }
         return (try? JSONDecoder().decode([String: WireConvTheme].self, from: data)) ?? [:]
+    }
+
+    /// Cached personal-veil map; anything unreadable degrades to an empty map.
+    private static func readScreenPrivacy(_ defaults: UserDefaults) -> [String: Bool] {
+        guard let data = defaults.data(forKey: screenPrivacyKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: Bool].self, from: data)) ?? [:]
     }
 }

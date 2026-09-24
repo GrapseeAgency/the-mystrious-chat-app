@@ -424,60 +424,77 @@ struct StickerPickerSheet: View {
 }
 
 /// F-MS-22 — the '/'-triggered command palette (web slash-palette.tsx
-/// PULSE_SLASH_COMMANDS verbatim, fuzzy prefix filter). Rendered right
-/// above the composer whenever the draft starts with '/'.
+/// PULSE_SLASH_COMMANDS verbatim, fuzzy filter + tap to run — R3-A wires it
+/// into the live composer: draft starts with '/' → palette; pick routes the
+/// outcome machine). Rendered right above the composer.
 struct SlashPaletteView: View {
     let draft: String
     let onPick: (PulseRemediationLogic.SlashCommand) -> Void
 
+    /// Web SlashPalette.matches parity: fuzzyMatch over "cmd args help",
+    /// ordered as the command table itself (no re-ranking), every match
+    /// rendered inside a bounded scroll (web max-h-64 ≈ 256pt).
     private var candidates: [PulseRemediationLogic.SlashCommand] {
         let token = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard token.hasPrefix("/"), token.count >= 2 else { return [] }
-        let needle = token.lowercased()
-        let visible = PulseRemediationLogic.slashCommands.filter {
-            $0.cmd.lowercased().hasPrefix(needle)
-                || $0.cmd.dropFirst().lowercased().contains(String(needle.dropFirst()))
+        return PulseRemediationLogic.slashCommands.filter { command in
+            let haystack = "\(command.cmd) \(command.args) \(command.help)"
+            return PulseRemediationLogic.slashFuzzyMatch(haystack: haystack, needle: token)
         }
-        return Array(visible.prefix(6))
     }
 
     var body: some View {
         if !candidates.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(candidates.enumerated()), id: \.element.id) { index, command in
-                    Button {
-                        PulseHaptics.tap()
-                        onPick(command)
-                    } label: {
-                        HStack(spacing: 10) {
-                            Text(command.cmd)
-                                .font(.system(size: 13.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(PulseTheme.emerald)
-                            if !command.args.isEmpty {
-                                Text(command.args)
-                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(candidates.enumerated()), id: \.element.id) { index, command in
+                            Button {
+                                PulseHaptics.tap()
+                                onPick(command)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Text(command.cmd)
+                                        .font(.system(size: 13.5, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(PulseTheme.emerald)
+                                    if !command.args.isEmpty {
+                                        Text(command.args)
+                                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text(command.help)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .contentShape(Rectangle())
                             }
-                            Spacer()
-                            Text(command.help)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            .buttonStyle(.plain)
+                            .background(index == 0 ? PulseTheme.emerald500.opacity(0.10) : Color.clear)
+                            .accessibilityLabel("\(command.cmd) — \(command.help)")
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .background(index == 0 ? PulseTheme.emerald500.opacity(0.10) : Color.clear)
-                    .accessibilityLabel("\(command.cmd) — \(command.help)")
                 }
+                .frame(maxHeight: 256)
+                Text("tap a command to run it · clear the draft to dismiss")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .overlay(alignment: .top) {
+                        Rectangle().fill(PulseTheme.hairlineSoft).frame(height: 1)
+                    }
             }
             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.regularMaterial))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
             .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
             .padding(.horizontal, 12)
             .padding(.bottom, 4)
+            .accessibilityLabel("Slash commands")
         }
     }
 }

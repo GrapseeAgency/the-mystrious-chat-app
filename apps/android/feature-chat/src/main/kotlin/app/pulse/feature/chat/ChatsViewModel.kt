@@ -83,6 +83,19 @@ class ChatsViewModel @Inject constructor(
     private val _searching = MutableStateFlow(false)
     val searching: StateFlow<Boolean> = _searching.asStateFlow()
 
+    /** R2-C item 7 — spotlight recent searches (last 5, web pulse.spotlight.recents.v1). */
+    val spotlightRecents: StateFlow<List<String>> = prefs.spotlightRecents
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Push on result-open (web pushRecent-on-select parity). */
+    fun pushSpotlightRecent(query: String) {
+        viewModelScope.launch { prefs.pushSpotlightRecent(query) }
+    }
+
+    fun clearSpotlightRecents() {
+        viewModelScope.launch { prefs.clearSpotlightRecents() }
+    }
+
     val chats: StateFlow<List<Conversation>> = repo.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

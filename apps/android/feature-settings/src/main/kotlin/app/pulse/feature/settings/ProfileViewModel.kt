@@ -62,6 +62,30 @@ class ProfileViewModel @Inject constructor(
     private val _probe = MutableStateFlow(ProbeState())
     val probe: StateFlow<ProbeState> = _probe.asStateFlow()
 
+    // R2-A item 10 — the wallet chip (web profile-tab.tsx:149-156: GET
+    // /api/hub/wallet → balance row with loading/error handling).
+    data class WalletUi(
+        val loading: Boolean = false,
+        val coins: Long? = null,
+        val error: Boolean = false,
+    )
+
+    private val _wallet = MutableStateFlow(WalletUi())
+    val wallet: StateFlow<WalletUi> = _wallet.asStateFlow()
+
+    /** Wallet chip refresh — viewer-less renders nothing (web parity). */
+    fun loadWallet() {
+        if (viewerId.value == null || _wallet.value.loading) return
+        _wallet.value = WalletUi(loading = true)
+        viewModelScope.launch {
+            val result: kotlin.Result<app.pulse.protocol.WalletPageDto> = repo.wallet()
+            _wallet.value = result.fold(
+                onSuccess = { page -> WalletUi(coins = page.wallet.coins) },
+                onFailure = { WalletUi(error = true) },
+            )
+        }
+    }
+
     init {
         refresh()
     }

@@ -63,6 +63,30 @@ struct ChatRoomView: View {
     }
 }
 
+/// R30-c — the unread divider (web chat-room.tsx:4418-4434 parity):
+/// emerald hairlines around a tracking-widest UNREAD capsule.
+struct UnreadDividerRow: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(PulseTheme.emerald.opacity(0.4))
+                .frame(height: 1)
+            Text("UNREAD")
+                .font(.system(size: 10, weight: .bold))
+                .kerning(1.6)
+                .foregroundStyle(PulseTheme.emerald)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(PulseTheme.emerald.opacity(0.10)))
+            Rectangle()
+                .fill(PulseTheme.emerald.opacity(0.4))
+                .frame(height: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Unread messages")
+    }
+}
+
 /// One river row — day chip + bubble + context menu + pagination trigger.
 /// Extracted from RoomContent so the Swift type-checker sees a bounded
 /// expression (Wave 1 row carries media/thread/flash wiring).
@@ -76,6 +100,8 @@ private struct RoomMessageRow: View {
     let colorOf: (String) -> Color
     /// Wave 8 — prefs bubble corner token (md/lg/pill).
     let bubbleRadius: PulseBubbleRadius
+    /// R30-c — the tap-time unread divider sits right above this row.
+    let showUnreadDivider: Bool
     let onOpenImage: (WireChatMessage) -> Void
     let onOpenFile: (WireChatMessage) -> Void
     let onOpenThread: (WireChatMessage) -> Void
@@ -85,9 +111,19 @@ private struct RoomMessageRow: View {
     let onViewOnce: (WireChatMessage) -> Void
     // ── Wave 7 — rich-object cards + message actions ──
     let wave7: Wave7RoomActions
+    // R3-A item 7 — roster names drive the @mention chips in bubble bodies.
+    let memberNames: [String]
+    // R3-A item 4 — tap a reaction chip → who-reacted roster sheet.
+    let onWhoReacted: (WireChatMessage, String) -> Void
 
     var body: some View {
         Group {
+            // R30-c — the unread divider anchors at the FIRST message newer
+            // than the frozen lastRead watermark (web buildItems parity).
+            if showUnreadDivider {
+                UnreadDividerRow()
+                    .padding(.vertical, 4)
+            }
             // Day chip when the calendar day changes between rows.
             if index == 0 || PulseFormat.dayLabel(previous?.createdAt) != PulseFormat.dayLabel(message.createdAt) {
                 CapsuleLabel(PulseFormat.dayLabel(message.createdAt))
@@ -121,6 +157,8 @@ private struct RoomMessageRow: View {
                 },
                 onViewOnceOpen: onViewOnce,
                 wave7: wave7,
+                memberNames: memberNames,
+                onReactionChip: onWhoReacted,
             )
             .contextMenu { contextMenu }
             .onAppear {
@@ -211,6 +249,18 @@ private struct RoomMessageRow: View {
                 Label("Add to board", systemImage: "square.stack.3d.up.fill")
             }
         }
+        // R3-A item 11 — Chanty-style direct conversion (web chat-room.tsx
+        // "Convert to task" :6372-6379: text rows only, not deleted, thread
+        // roots only — the message itself becomes the board card via the
+        // messageId POST, no form).
+        if message.kind == "text" && message.deletedAt == nil && message.parentId == nil
+            && !message.id.hasPrefix("local_") {
+            Button {
+                viewModel.convertMessageToTask(message, session: session)
+            } label: {
+                Label("Convert to task", systemImage: "checklist")
+            }
+        }
         Button {
             wave7.reminderAnchor = message
             wave7.remindersOpen = true
@@ -256,6 +306,9 @@ private struct RoomContent: View {
     // Wave 6 — DM safety-number sheet (F-CP-07/08) + the @-suggester (F-SM-04).
     @StateObject private var safetyBadges = PulseSafetyBadgeCache.shared
     @State private var safetyOpen = false
+    // R2-D ITEM 1 — the DM info surface (web header-menu parity: TTL, screen
+    // security, mute, theme + safety-number entries for DIRECT chats).
+    @State private var dmInfoOpen = false
 
     // ── REM-B — group admin / scheduled / reactions / stickers / who-reacted ──
     @State private var groupInfoOpen = false
@@ -267,12 +320,19 @@ private struct RoomContent: View {
     @State private var whoReactedMessage: WireChatMessage?
     @State private var whoReactedEmoji = ""
 
+    /// R3-A item 7 — roster display names for the @mention chips in bubble
+    /// bodies (web memberNames stable-list parity).
+    private var memberNames: [String] { conversation.members.map(\.name) }
+
     // ── R1-W2B — location share / conv themes / quick phrases ──
     @State private var locationOpen = false
     @State private var themeOpen = false
     @State private var phrasesOpen = false
     // R5-A Item 1 — composer emoji picker (draft-only; stickers send instantly).
     @State private var emojiPickerOpen = false
+
+    // R2-B — the veil reads the app scene (the native blur/hidden signal).
+    @Environment(\.scenePhase) private var scenePhase
 
     /// F-CH-04 — broadcast composer lock: broadcastMode on + the viewer is
     /// NOT an admin (server 403s the post; the web hides the composer too).
@@ -333,6 +393,16 @@ private struct RoomContent: View {
         }
     }
 
+    /// R3-A item 8 — the four effect names (web EFFECT set verbatim:
+    /// confetti/lasers/echo/sparkles) with SF glyphs for the attach-menu
+    /// Effects submenu. The pick routes the EXISTING sendWithEffect engine.
+    static let expressEffects: [(name: String, icon: String)] = [
+        ("confetti", "party.popper"),
+        ("lasers", "bolt"),
+        ("echo", "dot.radiowaves.left.and.right"),
+        ("sparkles", "sparkles"),
+    ]
+
     private var wallpaperWash: some View {
         Group {
             if let wash = effectiveWallpaper.wash(dark: colorScheme == .dark) {
@@ -382,10 +452,36 @@ private struct RoomContent: View {
             if searchOpen {
                 roomSearchPanel
             }
+            // R38/R42 — the veil covers ONLY the message river (header +
+            // composer stay untouched, web parity). Stable modifier chain so
+            // the scroll identity never resets across toggles.
             messagesList
+                .blur(radius: veilEngaged ? 24 : 0)
+                .overlay {
+                    if veilEngaged {
+                        veilCover
+                    }
+                }
+                .allowsHitTesting(!veilEngaged)
+            // R34-b — AI recap card pinned above the composer.
+            if viewModel.recap != nil {
+                recapCard
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             // F-SM-04 — @-suggester popover (roster, top-5 prefix match).
             if !mentionCandidates.isEmpty {
                 mentionPopover()
+            }
+            // R3-A item 1 — the live '/' palette (web SlashPalette parity:
+            // draft starts with '/', pick routes the outcome machine). The
+            // palette and the @-suggester never compete — a '/' draft carries
+            // no @-token at the tail.
+            if slashPaletteVisible {
+                SlashPaletteView(draft: viewModel.draft) { command in
+                    pickSlashCommand(command)
+                }
             }
             if !session.connected {
                 offlineStrip
@@ -470,6 +566,20 @@ private struct RoomContent: View {
                     .buttonStyle(PulseButtonStyle())
                     .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified — open safety number" : "Not verified — open safety number")
                 }
+                // R2-D ITEM 1 — DM info entry (web header-menu parity: the
+                // menu covers DMs with TTL + screen security + mute; iOS had
+                // NO privacy surface for DMs before this). Opens the compact
+                // RoomInfoSheet; groups keep their GroupInfoView branch.
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        PulseHaptics.tap()
+                        dmInfoOpen = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("Chat info")
+                }
             }
         }
         // R1-W2B F-FX-05 — per-conversation theme picker entry (web lives in
@@ -484,6 +594,18 @@ private struct RoomContent: View {
                 }
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Chat theme")
+            }
+            // R34-b — AI recap entry (web header-menu "Recap with AI" parity;
+            // the requestRecap ≥5 gate + 15 s auto-dismiss card handle the rest).
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    PulseHaptics.tap()
+                    viewModel.requestRecap(session: session)
+                } label: {
+                    Image(systemName: "sparkles")
+                }
+                .buttonStyle(PulseButtonStyle())
+                .accessibilityLabel("Recap with AI")
             }
             // R1-W2I F-PI-03 — the pop-out mini-chat toggle (web chat-room
             // header PictureInPicture2 button): opens/closes this room's pane.
@@ -508,6 +630,21 @@ private struct RoomContent: View {
                 SafetySheetView(session: session, peer: partner)
             }
         }
+        // R2-D ITEM 1 — the DM info sheet (groups keep GroupInfoView below;
+        // the onDetailUpdated handoff matches that sheet's veil plumbing).
+        .sheet(isPresented: $dmInfoOpen) {
+            if let partner = dmPartner {
+                RoomInfoSheet(
+                    conversation: conversation,
+                    partner: partner,
+                    session: session,
+                    prefs: prefs,
+                    onDetailUpdated: { detail in
+                        viewModel.roomScreenPrivacy = detail.screenPrivacy
+                    },
+                )
+            }
+        }
         .task {
             // Wave 6 — populate the verified-badge cache for this DM (one
             // quiet GET on room open; the header badge reads the cache).
@@ -520,6 +657,10 @@ private struct RoomContent: View {
             // R1-W2B F-MS-29 — the quick-phrase rail seeds on room open.
             viewModel.loadQuickPhrases(session: session)
         }
+        .task {
+            // R2-B R38/R42 — server truth for both veil flags on room open.
+            await viewModel.loadPrivacyState(session: session)
+        }
         .sheet(item: $threadRoot) { root in
             ThreadView(conversation: conversation, root: root, session: session)
         }
@@ -527,7 +668,7 @@ private struct RoomContent: View {
             ForwardSheet(source: source, session: session)
         }
         .sheet(item: $infoTarget) { message in
-            MessageInfoSheet(message: message, conversation: conversation)
+            MessageInfoSheet(message: message, conversation: conversation, viewerId: session.viewer?.id)
         }
         .sheet(isPresented: $pinsOpen) {
             pinsList
@@ -537,7 +678,16 @@ private struct RoomContent: View {
         }
         // ── REM-B sheet hosts ──
         .sheet(isPresented: $groupInfoOpen) {
-            GroupInfoView(conversation: conversation, session: session)
+            GroupInfoView(
+                conversation: conversation,
+                session: session,
+                prefs: prefs,
+                onDetailUpdated: { detail in
+                    // R38 — the room-wide veil flag rides the info-sheet's
+                    // fresh detail so the river re-veils without a refetch.
+                    viewModel.roomScreenPrivacy = detail.screenPrivacy
+                },
+            )
         }
         .sheet(isPresented: $scheduleOpen) {
             ScheduleSheet { date in
@@ -995,6 +1145,7 @@ private struct RoomContent: View {
                             viewModel: viewModel,
                             colorOf: colorOf,
                             bubbleRadius: prefs.bubbleRadius,
+                            showUnreadDivider: (unreadDividerIndex ?? -1) == index,
                             onOpenImage: { openLightbox($0) },
                             onOpenFile: { openFile($0) },
                             onOpenThread: { threadRoot = $0 },
@@ -1006,6 +1157,13 @@ private struct RoomContent: View {
                                 viewModel.revealViewOnce(message, session: session)
                             },
                             wave7: wave7,
+                            memberNames: memberNames,
+                            onWhoReacted: { message, emoji in
+                                // R3-A item 4 — chip tap → the who-reacted roster.
+                                whoReactedMessage = message
+                                whoReactedEmoji = emoji
+                                whoReactedOpen = true
+                            },
                         )
                     }
                     if viewModel.loadingOlder && !viewModel.messages.isEmpty {
@@ -1023,14 +1181,30 @@ private struct RoomContent: View {
                         .padding(.horizontal, 16)
                     }
                     Color.clear.frame(height: 4).id("tail")
+                        .onAppear {
+                            // R26 — the tail sentinel doubles as the native
+                            // nearBottomRef: visible = the viewer sits at the
+                            // bottom (didSet resets the missed badge).
+                            viewModel.isTailVisible = true
+                        }
+                        .onDisappear {
+                            viewModel.isTailVisible = false
+                        }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
             .defaultScrollAnchor(.bottom)
             .onChange(of: viewModel.messages.count) { _, _ in
-                withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
-                    proxy.scrollTo("tail", anchor: .bottom)
+                // R26 — the missed-badge machine + tail-id pill arming run
+                // on every river change; the auto-scroll only fires while
+                // the viewer sits at the bottom (web nearBottomRef parity —
+                // reading history is never yanked to the tail).
+                viewModel.noteRiverChanged()
+                if viewModel.isTailVisible {
+                    withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
+                        proxy.scrollTo("tail", anchor: .bottom)
+                    }
                 }
             }
             .onChange(of: viewModel.jumpTargetId) { _, target in
@@ -1040,7 +1214,169 @@ private struct RoomContent: View {
             .onAppear {
                 proxy.scrollTo("tail", anchor: .bottom)
             }
+            // R26 — Telegram-style jump-to-latest pill (web chat-room
+            // :4527-4568 parity): armed on off-screen arrivals, badge shows
+            // the missed count, tap lands on the tail.
+            .overlay(alignment: .bottom) {
+                jumpPill(proxy: proxy)
+            }
         }
+    }
+
+    // ── R2-B — jump pill · unread divider index · recap card · veil ──
+
+    /// The tap-time anchor (frozen in the view model) drives the divider
+    /// row index — nil when there is nothing unread or nothing qualifies.
+    private var unreadDividerIndex: Int? {
+        viewModel.unreadDividerRow(viewerId: session.viewer?.id)
+    }
+
+    @ViewBuilder
+    private func jumpPill(proxy: ScrollViewProxy) -> some View {
+        if viewModel.showJumpPill {
+            Button {
+                PulseHaptics.tap()
+                viewModel.jumpToLatest()
+                withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
+                    proxy.scrollTo("tail", anchor: .bottom)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text("New messages")
+                        .font(.caption.weight(.semibold))
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 11, weight: .bold))
+                    if viewModel.missedCount > 0 {
+                        Text(PulseRoomParityLogic.missedBadgeText(viewModel.missedCount))
+                            .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 18, minHeight: 18)
+                            .background(Circle().fill(.white))
+                            .foregroundStyle(PulseTheme.emerald)
+                    }
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 14)
+                .padding(.vertical, 8)
+                .foregroundStyle(.white)
+                .background(Capsule().fill(PulseTheme.emerald))
+                .shadow(color: PulseTheme.emerald.opacity(0.35), radius: 8, y: 3)
+            }
+            .buttonStyle(PulseButtonStyle())
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
+            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            .accessibilityLabel(viewModel.missedCount > 0
+                ? "Jump to newest messages — \(viewModel.missedCount) new"
+                : "Jump to newest messages")
+        } else {
+            Color.clear.frame(height: 0)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// R34-b — the recap card (web :4835-4905 parity): sparkles chip, the
+    /// "Summarizing…" loading state, the bullet summary with a copy button,
+    /// and a dismiss control; auto-dismiss is armed by the view model.
+    @ViewBuilder
+    private var recapCard: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(PulseTheme.violet700)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(PulseTheme.violet700.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("AI recap")
+                        .font(.caption.weight(.bold))
+                    Spacer()
+                    if case .ready(_, let basedOn)? = viewModel.recap {
+                        Text("Based on \(basedOn) messages")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Button {
+                            viewModel.copyRecap()
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .tint(PulseTheme.emerald)
+                        .accessibilityLabel("Copy recap")
+                    }
+                    Button {
+                        viewModel.dismissRecap()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss recap")
+                }
+                switch viewModel.recap {
+                case .loading:
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("Reading the room…")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                case .ready:
+                    Text(viewModel.recapText)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                case nil:
+                    EmptyView()
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.regularMaterial))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("AI recap")
+    }
+
+    /// R38/R42 — the veil engages when EITHER flag is on; on iOS the
+    /// "unfocused" state is scenePhase != .active (app switcher, another
+    /// app, lock — web blur/hidden parity).
+    private var veilEngaged: Bool {
+        let eitherOn = viewModel.roomScreenPrivacy == true
+            || (session.prefs?.screenPrivacy[conversation.id] == true)
+        return eitherOn && scenePhase != .active
+    }
+
+    private var veilCover: some View {
+        ZStack {
+            Rectangle().fill(.regularMaterial)
+            VStack(spacing: 10) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(PulseTheme.emerald)
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(PulseTheme.emerald.opacity(0.12)))
+                Text("Screen security is on")
+                    .font(.subheadline.weight(.semibold))
+                Text("Messages are hidden while Pulse is not focused")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(.thinMaterial))
+            .padding(28)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Screen security is on — messages are hidden while Pulse is not focused")
     }
 
     private func openLightbox(_ message: WireChatMessage) {
@@ -1132,6 +1468,23 @@ private struct RoomContent: View {
             if cameraDenied {
                 deniedNotice("Camera access is off — allow it to take photos for this chat.") { cameraDenied = false }
             }
+            // R2-D — the F-MS-20 slow-mode countdown: the chip appears the
+            // moment the server's 429 arms the lock, counts the honest wait
+            // down live (web chat-room.tsx slow-mode-chip parity) and
+            // collapses when the ticker clears the lock.
+            if viewModel.isSlowModeLocked {
+                slowModeChip
+            }
+            // R3-A item 5 — the incognito hint (web anon-pill parity,
+            // chat-room.tsx:4799-4833): groups only, X disarms the mask.
+            if conversation.isGroup && viewModel.anonOn {
+                incognitoPill
+            }
+            // R3-A item 3 — pending scheduled sends (web scheduledChip parity,
+            // chat-room.tsx:4726-4741) — tap opens the manager drawer.
+            if viewModel.scheduledCount > 0 {
+                scheduledChip
+            }
             if broadcastLocked {
                 // F-CH-04 — the broadcast lock replaces the composer row for
                 // non-admins (verbatim web copy; input is gone, not disabled).
@@ -1151,6 +1504,143 @@ private struct RoomContent: View {
                 composerRows
             }
         }
+    }
+
+    /// R2-D — slow-mode countdown chip (web chat-room.tsx:4758-4770 copy
+    /// verbatim, Gauge glyph + mm:ss countdown); role=status/live so the
+    /// remaining time is announced as it ticks.
+    private var slowModeChip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "gauge")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(PulseTheme.emerald)
+            Text("Slow mode — you can send again in \(PulseFormat.countdown(viewModel.slowModeRemainingSeconds))")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(PulseTheme.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(
+            Capsule()
+                .fill(PulseTheme.glassFill)
+                .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)),
+        )
+        .padding(.horizontal, 14)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Slow mode — you can send again in \(viewModel.slowModeRemainingSeconds) seconds")
+    }
+
+    /// R3-A item 5 — the incognito hint pill (web anon-pill :4809-4830 copy
+    /// verbatim): emerald wash + mask glyph + "hides your name" line + an X
+    /// that disarms. Only mounted while the mask is armed in a GROUP.
+    private var incognitoPill: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "theatermasks.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(PulseTheme.emerald)
+            Text("Incognito on — next message hides your name")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(PulseTheme.textSecondary)
+            Spacer(minLength: 0)
+            Button {
+                PulseHaptics.tap()
+                viewModel.anonOn = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(PulseTheme.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Turn off incognito")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(PulseTheme.emerald.opacity(0.12))
+                .overlay(Capsule().strokeBorder(PulseTheme.emerald.opacity(0.35), lineWidth: 1)),
+        )
+        .padding(.horizontal, 14)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// R3-A item 3 — pending scheduled sends (web scheduledChip :4726-4741
+    /// "N pending — tap to manage" parity; the web also stamps the next
+    /// dispatch time, the iOS count-only chip notes that divergence).
+    private var scheduledChip: some View {
+        Button {
+            PulseHaptics.tap()
+            scheduledManagerOpen = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(PulseTheme.amber)
+                Text("\(viewModel.scheduledCount) pending — tap to manage")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(PulseTheme.textSecondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(PulseTheme.glassFill)
+                    .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)),
+            )
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(PulseButtonStyle())
+        .padding(.horizontal, 14)
+        .padding(.bottom, 6)
+        .accessibilityLabel("\(viewModel.scheduledCount) scheduled messages — open the manager")
+    }
+
+    // ── R3-A item 1 — the '/' palette wiring ─────────────────
+
+    /// Web SlashPalette open-gate parity (chat-room.tsx:5200): the draft
+    /// starts with '/' while the composer is in normal send mode. The
+    /// @-suggester owns the popover slot when its candidates are visible.
+    private var slashPaletteVisible: Bool {
+        !broadcastLocked
+            && viewModel.editingTarget == nil
+            && !viewModel.isRecording
+            && mentionCandidates.isEmpty
+            && viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/")
+    }
+
+    /// Web runPaletteCommand parity (chat-room.tsx:3226-3330): the pick
+    /// stages "/cmd + any typed args"; commands that take arguments wait for
+    /// the send tap (the send path runs the SAME outcome machine), arg-less
+    /// commands fire immediately through interpretSlashDraft so EVERY
+    /// outcome (sheets / help / recap / remind / effects / errors) lands.
+    private func pickSlashCommand(_ command: PulseRemediationLogic.SlashCommand) {
+        let typedArgs = slashArgs(from: viewModel.draft)
+        viewModel.draft = typedArgs.isEmpty ? "\(command.cmd) " : "\(command.cmd) \(typedArgs)"
+        guard command.args.isEmpty else {
+            composerFocused = true
+            return
+        }
+        _ = viewModel.interpretSlashDraft(session: session)
+    }
+
+    /// The args after the leading "/token" (web replace(/^\/\S*\s*/, '')
+    /// parity) — no closure predicates, plain token walk.
+    private func slashArgs(from draft: String) -> String {
+        var pieces: [String] = []
+        var droppedFirst = false
+        for piece in draft.split(separator: " ") {
+            if !droppedFirst && piece.hasPrefix("/") {
+                droppedFirst = true
+                continue
+            }
+            pieces.append(String(piece))
+        }
+        return pieces.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     @ViewBuilder
@@ -1198,6 +1688,19 @@ private struct RoomContent: View {
                     .focused($composerFocused)
                     .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
                     .disabled(viewModel.staged != nil)
+                    // R2-D — the composer is VISIBLY locked while the
+                    // slow-mode window runs (web send/mic disabled parity).
+                    .disabled(viewModel.isSlowModeLocked)
+                    .opacity(viewModel.isSlowModeLocked ? 0.55 : 1)
+                    .overlay(alignment: .leading) {
+                        if viewModel.isSlowModeLocked {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(PulseTheme.textTertiary)
+                                .padding(.leading, 16)
+                                .transition(.opacity)
+                        }
+                    }
 
                     // R5-A Item 1 — Smile button (web composer row parity: the
                     // emoji popover sits between the input and the mic/send).
@@ -1216,6 +1719,10 @@ private struct RoomContent: View {
                 }
 
                 voiceSendSlot
+                    // R2-D — mic/send refuses touches while the slow-mode
+                    // window runs (web disabled={slowRemaining > 0} parity).
+                    .opacity(viewModel.isSlowModeLocked ? 0.45 : 1)
+                    .allowsHitTesting(!viewModel.isSlowModeLocked)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -1304,6 +1811,11 @@ private struct RoomContent: View {
         } else if viewModel.staged != nil {
             viewModel.sendStaged(session: session)
         } else {
+            // R3-A item 1 — the send tap is a LIVE slash trigger (web Enter
+            // parity: submit runs parseComposerInput first). A leading '/'
+            // command is consumed by the outcome machine; plain text falls
+            // through to the ordinary send.
+            if viewModel.interpretSlashDraft(session: session) { return }
             viewModel.send(session: session)
         }
     }
@@ -1371,6 +1883,19 @@ private struct RoomContent: View {
             } label: {
                 Label("Location", systemImage: "location.fill")
             }
+            // R3-A item 3 — scheduled sends UI: arm the draft (ScheduleSheet)
+            // and manage the pending rows (ScheduledManagerSheet: list +
+            // cancel). Web tray 'Schedule' + manager drawer parity.
+            Button {
+                scheduleOpen = true
+            } label: {
+                Label("Schedule send", systemImage: "calendar.badge.clock")
+            }
+            Button {
+                scheduledManagerOpen = true
+            } label: {
+                Label("Scheduled sends", systemImage: "clock.arrow.circlepath")
+            }
             Button {
                 pollBuilderOpen = true
             } label: {
@@ -1410,6 +1935,39 @@ private struct RoomContent: View {
                 wave7.kanbanOpen = true
             } label: {
                 Label("Kanban", systemImage: "square.stack.3d.up.fill")
+            }
+            // ── R3-A items 2/5/8 — the Express section (web tray 'Express'
+            // group parity): sticker packs, the effect-flagged sends and the
+            // incognito mask (groups only) — every former-dead surface now
+            // has a discoverable entry.
+            Section("Express") {
+                Button {
+                    stickerOpen = true
+                } label: {
+                    Label("Stickers", systemImage: "face.smiling")
+                }
+                Menu {
+                    ForEach(Self.expressEffects, id: \.name) { effect in
+                        Button {
+                            viewModel.sendEffect(effect: effect.name, session: session)
+                        } label: {
+                            Label(effect.name.capitalized, systemImage: effect.icon)
+                        }
+                    }
+                } label: {
+                    Label("Effects", systemImage: "sparkles")
+                }
+                if conversation.isGroup {
+                    Button {
+                        PulseHaptics.tap()
+                        viewModel.anonOn.toggle()
+                    } label: {
+                        Label(
+                            viewModel.anonOn ? "Incognito on — tap to send under your name" : "Incognito",
+                            systemImage: viewModel.anonOn ? "theatermasks.fill" : "theatermasks",
+                        )
+                    }
+                }
             }
         } label: {
             Image(systemName: viewModel.staged == nil ? "plus.circle.fill" : "minus.circle.fill")
@@ -1593,19 +2151,24 @@ private struct RoomContent: View {
 
 /// Wave 1 message info — seen-by watermarks (conversation members) + the
 /// reaction groups with member names. Read-only, native sheet.
+/// R2-D — the sheet mirrors the web/Android delivered split: "Seen by" =
+/// lastReadAt >= createdAt, "Delivered to" = the rest (viewer excluded).
 private struct MessageInfoSheet: View {
     let message: WireChatMessage
     let conversation: WireConversationSummary
+    /// R2-D — the viewer id (excluded from both receipt lists, web parity).
+    var viewerId: String? = nil
 
     @Environment(\.dismiss) private var dismiss
 
-    private var createdAt: Date { PulseFormat.date(message.createdAt) ?? .distantPast }
-
-    private var seenBy: [WireConversationMember] {
-        conversation.members.filter { member in
-            guard let stamp = member.lastReadAt, let date = PulseFormat.date(stamp) else { return false }
-            return date >= createdAt
-        }
+    private var receipts: PulseRoomParityLogic.ReceiptSplit {
+        PulseRoomParityLogic.receiptSplit(
+            members: conversation.members.map {
+                PulseRoomParityLogic.ReceiptMember(id: $0.id, lastReadAtIso: $0.lastReadAt)
+            },
+            viewerId: viewerId,
+            createdAtIso: message.createdAt,
+        )
     }
 
     var body: some View {
@@ -1626,24 +2189,33 @@ private struct MessageInfoSheet: View {
                         }
                     }
                 }
-                let seenTitle = "\(seenBy.count) seen"
+                let split = receipts
+                let seenTitle = "Seen by · \(split.seenBy.count)"
                 Section {
-                    if seenBy.isEmpty {
-                        Text("Nobody has seen this message yet")
+                    if split.seenBy.isEmpty {
+                        Text("No read receipts yet")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(seenBy, id: \.id) { member in
-                        HStack(spacing: 10) {
-                            PulseAvatar(name: member.name, color: PulseTheme.color(named: member.color), size: 30)
-                            Text(member.name).font(.subheadline)
-                            Spacer()
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(PulseTheme.emerald)
-                        }
+                    ForEach(split.seenBy, id: \.id) { member in
+                        receiptRow(member, seen: true)
                     }
                 } header: {
                     Text(seenTitle)
+                }
+                // R2-D — "Delivered to" = everyone who hasn't read it yet
+                // (web chat-room.tsx:5940-5957 + Android MessageSheets parity).
+                Section {
+                    if split.deliveredTo.isEmpty {
+                        Text("Everyone has seen this message")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(split.deliveredTo, id: \.id) { member in
+                        receiptRow(member, seen: false)
+                    }
+                } header: {
+                    Text("Delivered to · \(split.deliveredTo.count)")
                 }
                 if let reactions = message.reactions, !reactions.isEmpty {
                     Section("Reactions") {
@@ -1668,6 +2240,32 @@ private struct MessageInfoSheet: View {
             }
         }
         .presentationDetents([.medium])
+    }
+
+    /// One receipt row — read watermark stamp + the double-check (seen) or
+    /// plain check (delivered) glyph, web seen-by-sheet rhythm.
+    private func receiptRow(_ member: PulseRoomParityLogic.ReceiptMember, seen: Bool) -> some View {
+        let summary = conversation.members.first(where: { $0.id == member.id })
+        return HStack(spacing: 10) {
+            PulseAvatar(
+                name: summary?.name ?? "Member",
+                color: PulseTheme.color(named: summary?.color),
+                photoURL: PulseTheme.photoURL(summary?.avatar),
+                size: 30,
+            )
+            VStack(alignment: .leading, spacing: 1) {
+                Text(summary?.name ?? "Member")
+                    .font(.subheadline)
+                Text(seen
+                    ? "Read at \(PulseFormat.listStamp(member.lastReadAtIso))"
+                    : "Delivered")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: seen ? "checkmark.circle.fill" : "checkmark.circle")
+                .foregroundStyle(seen ? PulseTheme.emerald : PulseTheme.textTertiary)
+        }
     }
 }
 
@@ -1702,6 +2300,11 @@ struct BubbleView: View {
     var onViewOnceOpen: ((WireChatMessage) -> Void)? = nil
     // ── Wave 7 — rich-object cards (red packet / game / tournament) ──
     var wave7: Wave7RoomActions? = nil
+    // R3-A item 7 — roster names drive the @mention chips in body text.
+    var memberNames: [String] = []
+    // R3-A item 4 — tap a reaction chip → who-reacted roster sheet (web
+    // chat-room.tsx ReactionChip tap → reactionInfo parity). nil = decorative.
+    var onReactionChip: ((WireChatMessage, String) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1862,9 +2465,23 @@ struct BubbleView: View {
             case "location":
                 locationContent
             default:
-                Text(message.content)
-                    .font(.body)
-                    .textSelection(.enabled)
+                // R3-A items 6/7 — the web BubbleText outcome natively: jumbo
+                // solo-emoji rows render oversized plain text; everything else
+                // flows through the ported FORMAT_RE formatter + mention chips.
+                if PulseRemediationLogic.isJumboEmoji(message.content) {
+                    Text(message.content)
+                        .font(.system(size: 34))
+                        .lineSpacing(2)
+                        .textSelection(.enabled)
+                        .accessibilityLabel("Emoji message: \(message.content)")
+                } else {
+                    PulseBubbleBody(
+                        content: message.content,
+                        cacheKey: message.id,
+                        memberNames: memberNames,
+                        mine: mine,
+                    )
+                }
             }
         }
     }
@@ -2232,17 +2849,33 @@ struct BubbleView: View {
     private var reactionChips: some View {
         HStack(spacing: 4) {
             ForEach(reactions, id: \.emoji) { group in
-                HStack(spacing: 3) {
-                    Text(group.emoji).font(.caption)
-                    if group.count > 1 {
-                        Text("\(group.count)")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                // R3-A item 4 — the chip is a Button whenever the room wires
+                // the who-reacted sheet (web ReactionChip long-press → drawer
+                // parity, native affordance = tap). Without the callback the
+                // chip stays decorative (threads).
+                Button {
+                    PulseHaptics.tap()
+                    onReactionChip?(message, group.emoji)
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(group.emoji).font(.caption)
+                        if group.count > 1 {
+                            Text("\(group.count)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(.thinMaterial))
+                    .contentShape(Capsule())
                 }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(.thinMaterial))
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    onReactionChip == nil
+                        ? "\(group.count) reactions with \(group.emoji)"
+                        : "Who reacted with \(group.emoji) — \(group.count) people",
+                )
             }
         }
         .offset(y: 12)
@@ -2250,6 +2883,181 @@ struct BubbleView: View {
 
     private func reactionChipsHeight() -> CGFloat {
         reactions.isEmpty ? 0 : 14
+    }
+}
+
+/// R3-A items 6/7 — the web BubbleText outcome natively. Runs come from the
+/// tested pure logic (PulseBubbleTextLogic = buildMentionRuns + the ported
+/// FORMAT_RE parser + the R4-A splitUrlSegments composition); the renderer:
+///   • concatenates consecutive inline runs into ONE SwiftUI Text (perfect
+///     flow for the common bold/italic/code/mention cases),
+///   • renders ```pre``` blocks and ||spoiler|| runs as detached blocks —
+///     spoilers blur + tap-reveal (web SpoilerSpan :6804-6834 parity),
+///   • R4-A item 1 — url runs ride AttributedString `.link` so they render
+///     as tappable links INSIDE the composed text (web renderPlain anchors,
+///     :6873-6896). One attributed Text per inline chunk keeps every
+///     per-run attribute (including links) intact — Text-concatenation
+///     fragments cannot reliably carry per-run links.
+/// Performance: the parsed run list is NSCache'd per message id + roster
+/// signature (PulseBubbleTextLogic.cachedRuns) so LazyVStack re-renders
+/// never re-scan long bodies.
+struct PulseBubbleBody: View {
+    let content: String
+    let cacheKey: String
+    let memberNames: [String]
+    let mine: Bool
+
+    @State private var revealedSpoilers: Set<Int> = []
+
+    var body: some View {
+        let runs = PulseBubbleTextLogic.cachedRuns(key: cacheKey, content: content, memberNames: memberNames)
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(blocked(runs).enumerated()), id: \.offset) { _, block in
+                chunkView(block)
+            }
+        }
+        .textSelection(.enabled)
+    }
+
+    /// One rendered chunk: a pure inline run list → one attributed Text;
+    /// a pre/spoiler run → its dedicated block view.
+    @ViewBuilder
+    private func chunkView(_ chunk: [PulseBubbleTextLogic.Run]) -> some View {
+        if let first = chunk.first {
+            switch first.style {
+            case .pre:
+                preBlock(first.text)
+            case .spoiler:
+                spoilerBlock(first.text, id: spoilerId(first.text))
+            default:
+                inlineText(chunk)
+            }
+        }
+    }
+
+    /// R4-A item 1 — inline chunks assemble as ONE AttributedString so a
+    /// `.link` run stays tappable inside the composed Text (the previous
+    /// Text(a)+Text(b) fragments could not carry per-run links). Attribute
+    /// parity with the R3 styled() modifiers is preserved run-for-run.
+    private func inlineText(_ runs: [PulseBubbleTextLogic.Run]) -> Text {
+        var attributed = AttributedString()
+        for run in runs {
+            attributed += styled(run)
+        }
+        return Text(attributed)
+    }
+
+    /// Web run styling parity (BubbleText :6898-6967): bold/italic/underline/
+    /// strike, mono code chips, emerald mention chips — plus R4-A url runs
+    /// as real anchors (underline, mine = white, else emerald-700/400;
+    /// www. opens prefixed https:// exactly like the web href :6879). Run
+    /// backgrounds make the chips readable on BOTH bubble fills (web
+    /// bg-emerald-500/20).
+    private func styled(_ run: PulseBubbleTextLogic.Run) -> AttributedString {
+        var piece = AttributedString(run.text)
+        switch run.style {
+        case .plain:
+            break
+        case .bold:
+            piece.inlinePresentationIntent = .stronglyEmphasized
+        case .italic:
+            piece.inlinePresentationIntent = .emphasized
+        case .underline:
+            piece.underlineStyle = .single
+        case .strike:
+            piece.strikethroughStyle = .single
+        case .code:
+            piece.font = .system(.callout, design: .monospaced)
+            piece.backgroundColor = mine ? Color.white.opacity(0.20) : Color.primary.opacity(0.07)
+        case .pre:
+            break
+        case .spoiler:
+            break
+        case .mention:
+            piece.inlinePresentationIntent = .stronglyEmphasized
+            piece.foregroundColor = PulseTheme.emeraldDeep
+            piece.backgroundColor = PulseTheme.emerald.opacity(0.20)
+        case .url:
+            // Web renderPlain :6876-6891 — href https://-prefixes www.,
+            // underline, text-white on my bubbles / emerald-700 light and
+            // emerald-400 dark otherwise. A token the URL parser cannot
+            // promote to a URL degrades to styled text (honest, no crash).
+            piece.link = Self.linkURL(for: run.text)
+            piece.underlineStyle = .single
+            piece.foregroundColor = mine ? Color.white : PulseTheme.bubbleLink
+        }
+        return piece
+    }
+
+    /// Web anchor href parity: "www." tokens open as https://www.… (the
+    /// regex keeps scheme-less tokens only when they start with www.);
+    /// http(s):// tokens open as-is. Returns nil for unsalvageable tokens.
+    private static func linkURL(for value: String) -> URL? {
+        if value.hasPrefix("www.") {
+            return URL(string: "https://" + value)
+        }
+        return URL(string: value)
+    }
+
+    /// ```pre``` — block-level mono card (web :6917-6928).
+    private func preBlock(_ text: String) -> some View {
+        Text(text)
+            .font(.system(.callout, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(mine ? Color.black.opacity(0.20) : Color.primary.opacity(0.06)),
+            )
+            .accessibilityLabel("Code block")
+    }
+
+    /// ||spoiler|| — blur-reveal (web SpoilerSpan: 5px blur + wash, tap once).
+    private func spoilerBlock(_ text: String, id: Int) -> some View {
+        let revealed = revealedSpoilers.contains(id)
+        return Text(text)
+            .padding(.horizontal, 3)
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(revealed ? Color.clear : (mine ? Color.white.opacity(0.25) : Color.secondary.opacity(0.20))),
+            )
+            .blur(radius: revealed ? 0 : 5)
+            .onTapGesture {
+                guard !revealed else { return }
+                PulseHaptics.tap()
+                revealedSpoilers.insert(id)
+            }
+            .accessibilityLabel(revealed ? text : "Hidden spoiler — tap to reveal")
+    }
+
+    /// Spoiler ids must survive re-renders even when the SAME text appears
+    /// twice — key on the run text (revealed state is per-row @State anyway).
+    private func spoilerId(_ text: String) -> Int {
+        PulseTheme.hashString(text)
+    }
+
+    /// Groups consecutive runs so pre/spoiler split the flow into blocks and
+    /// everything else concatenates inline (web <p> semantics).
+    private func blocked(_ runs: [PulseBubbleTextLogic.Run]) -> [[PulseBubbleTextLogic.Run]] {
+        var blocks: [[PulseBubbleTextLogic.Run]] = []
+        var inline: [PulseBubbleTextLogic.Run] = []
+        for run in runs {
+            if run.style == .pre || run.style == .spoiler {
+                if !inline.isEmpty {
+                    blocks.append(inline)
+                    inline = []
+                }
+                blocks.append([run])
+            } else {
+                inline.append(run)
+            }
+        }
+        if !inline.isEmpty {
+            blocks.append(inline)
+        }
+        return blocks
     }
 }
 
@@ -2338,6 +3146,39 @@ final class RoomViewModel: ObservableObject {
     /// (server CRUD via /api/users/{id}/phrases; the manage sheet reloads
     /// this through loadQuickPhrases after every mutation).
     @Published private(set) var quickPhrases: [WireQuickPhrase] = []
+
+    // ── R2-B — unread divider · jump-pill missed count · AI recap · veil ──
+    /// R30-c — the tap-time unread anchor (web chats-tab.tsx:431-435 freeze):
+    /// MY lastReadAt from the route-carried summary when the row showed an
+    /// unread badge, else nil — nil means the divider never places.
+    private let unreadAnchorMs: Double?
+    /// R26 — off-screen arrivals badge on the jump-to-latest pill (the web
+    /// missedCountRef machine chat-room.tsx:1594-1612; the pure step lives
+    /// in PulseRoomParityLogic.missedStep).
+    @Published private(set) var missedCount = 0
+    private var lastSeenLen = 0
+    private var lastTailId: String?
+    /// The tail sentinel row is on-screen — the viewer sits at the bottom
+    /// (the native nearBottomRef). Reaching the bottom resets the badge.
+    @Published var isTailVisible = true {
+        didSet {
+            guard oldValue != isTailVisible, isTailVisible else { return }
+            missedCount = 0
+            lastSeenLen = messages.count
+            showJumpPill = false
+        }
+    }
+    /// Web showJump — armed when a new tail lands while scrolled away,
+    /// cleared at the bottom (never by the scroll position alone).
+    @Published private(set) var showJumpPill = false
+    /// R34-b — live recap card content; nil = no card. Loading while the
+    /// LLM summarizes, then the returned summary; auto-dismisses after 15 s.
+    enum RecapPhase: Equatable { case loading; case ready(text: String, basedOn: Int) }
+    @Published private(set) var recap: RecapPhase?
+    private var recapDismissTask: Task<Void, Never>?
+    /// R38 — the room-wide screen-security switch (server conversation flag;
+    /// nil = unknown / older relay → veil off).
+    @Published var roomScreenPrivacy: Bool?
 
     // Wave 2 — voice recording, playback, polls, transcription, topics.
     @Published private(set) var isRecording = false
@@ -2437,6 +3278,14 @@ final class RoomViewModel: ObservableObject {
         self.isGroupRoom = conversation.isGroup
         self.initialJumpMessageId = initialJumpMessageId
         self.voiceRate = VoicePlaybackManager.storedRate()
+        // R2-B R30-c — freeze the unread anchor from the list summary the
+        // route carried (web freezes the same values at tap time).
+        let viewerId = session.viewer?.id
+        self.unreadAnchorMs = PulseRoomParityLogic.unreadAnchorMs(
+            myLastReadAtIso: conversation.members.first(where: { $0.id == viewerId })?.lastReadAt,
+            unreadCount: conversation.unreadCount,
+        )
+        self.roomScreenPrivacy = conversation.screenPrivacy
         for member in conversation.members {
             if let stamp = member.lastReadAt {
                 memberWatermarks[member.id] = PulseFormat.date(stamp)
@@ -2593,9 +3442,18 @@ final class RoomViewModel: ObservableObject {
         }
         phase = messages.isEmpty ? .loading : phase
         do {
-            let page = try await session.api.messages(conversationId: conversationId)
-            messages = riverRows(from: page.messages)
-            hasMore = page.hasMore
+            // D47 delta sync — the route accepts `since=<ISO>` and answers
+            // with only the rows STRICTLY NEWER than the cursor (same shape).
+            // First load (no window on screen yet) keeps the full newest
+            // window; every later refresh fetches just the tail.
+            let deltaCursor = deltaSyncCursor
+            let page = try await session.api.messages(conversationId: conversationId, since: deltaCursor)
+            if deltaCursor != nil {
+                mergeDelta(page.messages)
+            } else {
+                messages = riverRows(from: page.messages)
+                hasMore = page.hasMore
+            }
             phase = .loaded
             errorText = nil
             try? session.store?.upsert(messages: page.messages)
@@ -2605,6 +3463,36 @@ final class RoomViewModel: ObservableObject {
             phase = .failed(RoomViewModel.describe(error))
             if messages.isEmpty { errorText = RoomViewModel.describe(error) }
         }
+    }
+
+    /// D47 — the delta-sync cursor: the newest REAL (non-optimistic) row's
+    /// wire createdAt ISO, exactly what the route's `since` expects. Local
+    /// `local_` rows are excluded — their client-side stamps must never gate
+    /// what the server considers "newer". Nil = no real rows → full load.
+    private var deltaSyncCursor: String? {
+        let real = messages.filter { !$0.id.hasPrefix("local_") }
+        guard let newest = real.max(by: {
+            let lhs = PulseFormat.date($0.createdAt) ?? .distantPast
+            let rhs = PulseFormat.date($1.createdAt) ?? .distantPast
+            return lhs < rhs
+        }) else { return nil }
+        return newest.createdAt
+    }
+
+    /// D47 — merges a delta page into the river: server rows the window
+    /// doesn't know yet are appended id-dedupe + re-sorted ascending (the
+    /// same rhythm loadOlder uses). Edits/deletes keep flowing through the
+    /// socket signals — this path only ever ADDS missing rows.
+    private func mergeDelta(_ fresh: [WireChatMessage]) {
+        let rows = riverRows(from: fresh)
+        guard !rows.isEmpty else { return }
+        let known = Set(messages.map(\.id))
+        let additions = rows.filter { !known.contains($0.id) }
+        guard !additions.isEmpty else { return }
+        for row in additions {
+            upsert(row)
+        }
+        noteRiverChanged()
     }
 
     /// The main river EXCLUDES thread replies (web parity) — they live in
@@ -2743,6 +3631,125 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
+    // ── R2-B — jump-pill missed machine + unread divider anchor ──
+
+    /// R26 — fed on EVERY river length change by the view (the web effects
+    /// on messages.data + lastMessageId, chat-room.tsx:1543-1612): the badge
+    /// grows while away, resets at the bottom, and the pill arms only when a
+    /// NEW tail lands while the viewer is scrolled away. History prepends
+    /// (load older) grow the badge silently without arming the pill — the
+    /// web's exact behavior (the pill show is tail-id driven).
+    func noteRiverChanged() {
+        let newLen = messages.count
+        if isTailVisible {
+            missedCount = 0
+            lastSeenLen = newLen
+        } else if newLen > lastSeenLen {
+            missedCount += newLen - lastSeenLen
+            lastSeenLen = newLen
+        } else if newLen < lastSeenLen {
+            // room switch / cache reset — badge drops
+            lastSeenLen = newLen
+            missedCount = 0
+        }
+        let tailId = messages.last?.id
+        if tailId != lastTailId {
+            let isArrival = lastTailId != nil
+            lastTailId = tailId
+            if isArrival, !isTailVisible {
+                showJumpPill = true
+                PulseHaptics.tap()
+            }
+        }
+    }
+
+    /// Pill tap — drop the badge, land on the tail (web jump button parity).
+    func jumpToLatest() {
+        showJumpPill = false
+        missedCount = 0
+        lastSeenLen = messages.count
+    }
+
+    /// R30-c — the index the unread divider row sits BEFORE (web
+    /// buildItems parity). Nil = anchor absent or nothing qualifies.
+    func unreadDividerRow(viewerId: String?) -> Int? {
+        PulseRoomParityLogic.unreadDividerIndex(
+            messages: messages,
+            viewerId: viewerId,
+            anchorMs: unreadAnchorMs,
+        )
+    }
+
+    // ── R2-B R34-b — AI recap ──
+
+    /// Web requestRecap parity: the ≥5-live-messages gate toasts locally,
+    /// then POST /api/ai/recap fills the card; failures surface verbatim.
+    func requestRecap(session: PulseSession) {
+        if case .loading = recap { return }
+        let liveCount = messages.filter { $0.deletedAt == nil }.count
+        guard PulseRoomParityLogic.recapGatePassed(liveCount: liveCount) else {
+            session.toasts.show("Recap needs at least 5 messages in this chat")
+            return
+        }
+        recap = .loading
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await session.api.aiRecap(conversationId: self.conversationId)
+                self.recap = .ready(text: result.recap, basedOn: result.basedOn ?? 0)
+                PulseHaptics.tap()
+                self.scheduleRecapDismiss()
+            } catch {
+                self.recap = nil
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
+    }
+
+    /// Auto-dismiss after 15 s so the card never outstays its welcome.
+    private func scheduleRecapDismiss() {
+        recapDismissTask?.cancel()
+        recapDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            withAnimation { self.recap = nil }
+        }
+    }
+
+    func dismissRecap() {
+        recapDismissTask?.cancel()
+        recapDismissTask = nil
+        withAnimation { recap = nil }
+    }
+
+    func copyRecap() {
+        if case .ready(let text, _)? = recap {
+            UIPasteboard.general.string = text
+            PulseHaptics.tap()
+            session?.toasts.show("Recap copied")
+        }
+    }
+
+    /// The returned summary once the card holds a result (nil while loading).
+    var recapText: String? {
+        if case .ready(let text, _)? = recap { return text }
+        return nil
+    }
+
+    // ── R2-B R38/R42 — screen security (veil) ──
+
+    /// One quiet detail GET on room open (web detail-query parity): refresh
+    /// the room-wide flag + adopt the server's per-viewer flag into the
+    /// prefs map. Local state stays authoritative until this lands.
+    func loadPrivacyState(session: PulseSession) async {
+        let viewerId = session.viewer?.id ?? ""
+        guard !viewerId.isEmpty, let detail = try? await session.api.conversationDetail(id: conversationId, userId: viewerId) else { return }
+        roomScreenPrivacy = detail.screenPrivacy
+        if let mine = detail.myScreenPrivacy {
+            session.prefs?.adoptServerScreenPrivacy(conversationId: conversationId, on: mine)
+        }
+    }
+
     // ── room search (server q= + local window filter) ───────
 
     private var searchTask: Task<Void, Never>?
@@ -2878,6 +3885,10 @@ final class RoomViewModel: ObservableObject {
         // REM-B F-MS-17 — groups only: armed mask + the server's deterministic
         // FNV-1a alias (the optimistic bubble shows the exact stored alias).
         let anonAlias = (isGroupRoom && anonOn) ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: conversationId) : nil
+        // R4-A item 2 — armed state captured AT SEND TIME (Android
+        // `anonArmed` parity) so an in-flight toggle can't desync the
+        // one-shot verdict.
+        let wasAnonArmed = anonAlias != nil
         let temp = TempMessages.make(
             conversationId: conversationId,
             viewer: viewer,
@@ -2913,6 +3924,15 @@ final class RoomViewModel: ObservableObject {
                 ) {
                     session.toasts.show(line)
                 }
+                // R4-A item 2 — ONE-SHOT incognito: a server-accepted send
+                // consumes the mask and the hint pill hides with it (web
+                // chat-room.tsx:1747-1751 onSuccess; Android R3-B one-shot
+                // disarm, ChatRoomViewModel.kt:566-570). Gated on the
+                // send-time arming like Android — a plain send never touches
+                // a mask the user armed mid-flight.
+                if wasAnonArmed {
+                    self.anonOn = PulseRoomParityLogic.anonDisarmAfterSend(armed: wasAnonArmed, serverAccepted: true)
+                }
                 session.particles.fire(kind: .burst, count: 22)
                 session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
                 // Wave 2 topics — own send bumps Topic.lastMessageAt server-side.
@@ -2938,9 +3958,28 @@ final class RoomViewModel: ObservableObject {
                     try? session.store?.deleteMessage(id: temp.id)
                     self.errorText = Self.describe(error)
                 } else {
-                    // Temp row stays (queued clock) — outbox flush reconciles.
-                    session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
-                    session.toasts.show("Message queued — sends when you're back online")
+                    // R4-A privacy repair (orchestrator) — an incognito send
+                    // NEVER rides the outbox: the queue payload is
+                    // content-only, so a later flush would post the text
+                    // UN-masked (identity leak). Android parity (R3-B
+                    // PulseRepositoryImpl :812-818): retract the optimistic
+                    // bubble, keep the draft, keep the mask armed — privacy
+                    // over delivery.
+                    if wasAnonArmed {
+                        self.messages.removeAll { $0.id == temp.id }
+                        try? session.store?.deleteMessage(id: temp.id)
+                        self.draft = body
+                        session.toasts.show("Incognito needs a live connection — message kept in the composer")
+                    } else {
+                        // Temp row stays (queued clock) — outbox flush reconciles.
+                        // R4-A item 2 — a QUEUED send is not a server-accepted
+                        // send: the mask stays armed (PulseRoomParityLogic
+                        // .anonDisarmAfterSend false branch — Android
+                        // :560-564 parity; the manual disarm path above the
+                        // composer still works).
+                        session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
+                        session.toasts.show("Message queued — sends when you're back online")
+                    }
                 }
             }
         }
@@ -2975,10 +4014,75 @@ final class RoomViewModel: ObservableObject {
         case .remind:
             session.toasts.show("Reminders ride \"Remind me…\" on any message")
             return true
+        case .recap:
+            // R34-b — /recap rides the same requestRecap as the header entry.
+            draft = ""
+            requestRecap(session: session)
+            return true
         case .effect(let name, let content):
             draft = ""
+            // R3-A item 8 — the web send path can never fire an effect with
+            // an empty body (its send button is disabled on empty input), so
+            // the machine mirrors that honestly instead of POSTing "".
+            guard !content.isEmpty else {
+                session.toasts.show("Type the message first — the effect rides your send")
+                return true
+            }
             sendWithEffect(effect: name, content: content, session: session)
             return true
+        }
+    }
+
+    /// R3-A item 8 — attach-menu Effects entry: the CURRENT draft rides the
+    /// EXISTING sendWithEffect engine (optimistic temp → payload {effect} →
+    /// particle burst). An empty draft surfaces the honest toast instead of
+    /// a silent no-op; reply/edit/staged state blocks like the plain send.
+    func sendEffect(effect: String, session: PulseSession) {
+        let body = draft.trimmingCharacters(in: .whitespaces)
+        guard !body.isEmpty else {
+            session.toasts.show("Type the message first — the effect rides your send")
+            return
+        }
+        guard editingTarget == nil, staged == nil else { return }
+        draft = ""
+        replyTarget = nil
+        typingStopTask?.cancel()
+        typingStopTask = nil
+        session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
+        sendWithEffect(effect: effect, content: body, session: session)
+    }
+
+    // ── R3-A item 11 — Chanty-style message → task conversion ──
+
+    /// Re-entry guard while a conversion POST is in flight (the context menu
+    /// has no spinner; a second tap inside the window is ignored).
+    private var convertingTaskIds: Set<String> = []
+
+    /// Web convertToTask parity (chat-room.tsx:2100-2122): the message itself
+    /// becomes a board card via POST /api/conversations/{id}/kanban with
+    /// { userId, messageId } — the server derives the title (first 80 chars)
+    /// and keeps sourceMessageId provenance. Honest toast on BOTH outcomes;
+    /// the success burst mirrors web fireParticles({kind:'burst',count:40}).
+    func convertMessageToTask(_ message: WireChatMessage, session: PulseSession) {
+        PulseHaptics.tap()
+        guard !convertingTaskIds.contains(message.id) else { return }
+        convertingTaskIds.insert(message.id)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.convertingTaskIds.remove(message.id) }
+            do {
+                let card = try await session.api.createKanbanCard(
+                    conversationId: conversationId,
+                    title: nil,
+                    column: nil,
+                    assigneeId: nil,
+                    messageId: message.id,
+                )
+                session.toasts.show("Task \"\(card.title ?? "")\" created from message")
+                session.particles.fire(kind: .burst, count: 40)
+            } catch {
+                session.toasts.show(Self.describe(error))
+            }
         }
     }
 

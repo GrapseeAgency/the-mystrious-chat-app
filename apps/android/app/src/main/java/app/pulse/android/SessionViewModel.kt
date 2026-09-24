@@ -103,6 +103,14 @@ class SessionViewModel @Inject constructor(
     val darkOverride: StateFlow<String> = prefs.darkOverride
         .stateIn(viewModelScope, SharingStarted.Eagerly, "system")
 
+    /** R2-C item 3 — design language (web pulse.uiTheme.v2 value string). */
+    val uiTheme: StateFlow<String> = prefs.uiTheme
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "glass")
+
+    /** R4-B item 3 — navigation architecture (web pulse.navStyle.v2 parity). */
+    val navStyle: StateFlow<app.pulse.protocol.PulseNavStyle> = prefs.navStyle
+        .stateIn(viewModelScope, SharingStarted.Eagerly, app.pulse.protocol.PulseNavStyle.CAPSULE)
+
     val reducedMotion: StateFlow<Boolean> = prefs.reducedMotion
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 

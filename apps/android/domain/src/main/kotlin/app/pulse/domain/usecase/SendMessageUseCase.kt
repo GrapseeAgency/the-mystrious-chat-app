@@ -13,11 +13,32 @@ class SendMessageUseCase(private val repo: PulseRepository) {
         parentId: String? = null,
         /** Wave 2 topic filing — the repo drops it on thread replies (spec §1 row 10). */
         topicId: String? = null,
+        /**
+         * R3-B item 4 — F-MS-17 incognito (groups only, server clamps).
+         * Rides the rich send path so the wire body carries anon:true; the
+         * alias is derived server-side (web parity — chat-room.tsx:1670).
+         * [anonAliasPreview] stamps the optimistic echo with the same
+         * deterministic alias (web anonAliasPreview parity).
+         */
+        anon: Boolean = false,
+        anonAliasPreview: String? = null,
     ): Result<SendReceipt> {
         val trimmed = body.trim()
         if (trimmed.isEmpty()) return Result.failure(IllegalArgumentException("Message body is empty"))
         if (trimmed.length > MAX_LENGTH) return Result.failure(IllegalArgumentException("Message exceeds $MAX_LENGTH chars"))
-        return repo.sendMessage(conversationId, trimmed, replyToId, parentId, topicId)
+        return if (anon) {
+            repo.sendRichMessage(
+                conversationId = conversationId,
+                body = trimmed,
+                replyToId = replyToId,
+                parentId = parentId,
+                topicId = topicId,
+                anon = true,
+                anonAliasPreview = anonAliasPreview,
+            )
+        } else {
+            repo.sendMessage(conversationId, trimmed, replyToId, parentId, topicId)
+        }
     }
 
     companion object {

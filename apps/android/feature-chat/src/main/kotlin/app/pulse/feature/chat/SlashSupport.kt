@@ -79,6 +79,8 @@ object PulseSlash {
         data class Sheet(val sheet: String) : Outcome
         data class Topic(val name: String) : Outcome
         data class Remind(val rest: String) : Outcome
+        /** R2-A item 5 — /recap runs the AI recap request (web runPaletteCommand). */
+        data object Recap : Outcome
         object Help : Outcome
     }
 
@@ -121,6 +123,8 @@ object PulseSlash {
             "poll" -> Outcome.Sheet("poll")
             "schedule" -> Outcome.Sheet("schedule")
             "remind" -> Outcome.Remind(rest)
+            // R2-A item 5 — /recap executes the AI recap (web chat-room.tsx:3260-3264).
+            "recap" -> Outcome.Recap
             "sticker" -> Outcome.Sheet("sticker")
             "location" -> Outcome.Sheet("location")
             "whiteboard", "redpacket", "kanban", "events", "game", "stage", "space", "tournament" ->

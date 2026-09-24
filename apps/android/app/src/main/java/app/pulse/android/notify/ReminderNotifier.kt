@@ -3,8 +3,11 @@ package app.pulse.android.notify
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -78,7 +81,13 @@ object ReminderNotifier {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
-    fun show(context: Context, reminderId: String, title: String, body: String) {
+    /**
+     * R2-C item 6 — [conversationId] (when known) arms the contentIntent:
+     * tapping the notification deep-links `pulse://room/<id>` (the Wave-6
+     * routing in MainActivity handles the rest — the notification opens the
+     * exact chat, web parity for reminder nudges).
+     */
+    fun show(context: Context, reminderId: String, title: String, body: String, conversationId: String? = null) {
         ensureChannel(context)
         if (!notificationsAllowed(context)) return
         // Wave 8 alert gate — server prefs (sound/vibrate) + LOCAL quiet hours:
@@ -90,6 +99,25 @@ object ReminderNotifier {
         builder.setContentTitle(title.take(64))
         builder.setContentText(body.take(178))
         builder.setAutoCancel(true)
+        if (!conversationId.isNullOrBlank()) {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pulse://room/$conversationId"))
+                .apply {
+                    // Confined to OUR pulse:// handler (the manifest VIEW
+                    // intent-filter) — never handed to another app.
+                    setPackage(context.packageName)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+            builder.setContentIntent(
+                PendingIntent.getActivity(
+                    context,
+                    reminderId.hashCode(),
+                    intent,
+                    // Immutable per Android-12+ rules; UPDATE so re-armed
+                    // reminders refresh the same tap target.
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+        }
         val notification = builder.build()
         NotificationManagerCompat.from(context).notify(BASE_NOTIFICATION_ID + reminderId.hashCode(), notification)
     }
@@ -97,11 +125,12 @@ object ReminderNotifier {
     private fun workName(reminderId: String) = "pulse-reminder-$reminderId"
 
     /** Schedule the offline-capable one-shot; replaces any pending copy of the same reminder. */
-    fun schedule(context: Context, reminderId: String, note: String, remindAtEpochMs: Long) {
+    fun schedule(context: Context, reminderId: String, note: String, remindAtEpochMs: Long, conversationId: String? = null) {
         if (remindAtEpochMs <= System.currentTimeMillis()) return
         val data = Data.Builder()
             .putString(KEY_ID, reminderId)
             .putString(KEY_NOTE, note)
+            .putString(KEY_CONVERSATION_ID, conversationId.orEmpty())
             .build()
         val request = OneTimeWorkRequestBuilder<ReminderWorker>()
             .setInitialDelay(remindAtEpochMs - System.currentTimeMillis(), TimeUnit.MILLISECONDS)
@@ -117,6 +146,7 @@ object ReminderNotifier {
 
     private const val KEY_ID = "reminderId"
     private const val KEY_NOTE = "note"
+    private const val KEY_CONVERSATION_ID = "conversationId"
 
     /**
      * Fires the local notification at remindAt (no network needed). Server
@@ -126,7 +156,8 @@ object ReminderNotifier {
         override suspend fun doWork(): Result {
             val id = inputData.getString(KEY_ID) ?: return Result.success()
             val note = inputData.getString(KEY_NOTE).orEmpty().ifBlank { "Reminder" }
-            show(applicationContext, id, note, "Reminder")
+            val conversationId = inputData.getString(KEY_CONVERSATION_ID).orEmpty().ifBlank { null }
+            show(applicationContext, id, note, "Reminder", conversationId)
             return Result.success()
         }
     }

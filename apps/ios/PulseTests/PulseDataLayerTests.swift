@@ -60,6 +60,36 @@ final class PulseDataLayerTests: XCTestCase {
         )
     }
 
+    // ── R2-D ITEM 2 — D47 delta-sync cursor (GET …&since=<ISO>) ──
+
+    func testMessagesPathSinceCursor() {
+        // Route contract: since is an ISO date validated by parseIsoDate and
+        // rides the newest-window branch — only rows STRICTLY NEWER come back.
+        XCTAssertEqual(
+            PulseAPIClient.messagesPath(conversationId: "c1", limit: 200, before: nil, query: nil, since: "2026-09-07T12:26:36.991Z"),
+            "/api/conversations/c1/messages?limit=200&since=2026-09-07T12:26:36.991Z",
+        )
+    }
+
+    func testMessagesPathBlankSinceIsOmitted() {
+        // No cursor yet (first load) must hit the FULL newest window.
+        XCTAssertEqual(
+            PulseAPIClient.messagesPath(conversationId: "c1", limit: 200, before: nil, query: nil, since: nil),
+            "/api/conversations/c1/messages?limit=200",
+        )
+        XCTAssertEqual(
+            PulseAPIClient.messagesPath(conversationId: "c1", limit: 200, before: nil, query: nil, since: "   "),
+            "/api/conversations/c1/messages?limit=200",
+        )
+    }
+
+    func testMessagesPathSinceCombinesWithTopicFilter() {
+        XCTAssertEqual(
+            PulseAPIClient.messagesPath(conversationId: "c1", limit: 200, before: nil, query: nil, topicId: "topic-1", since: "2026-09-07T12:26:36.991Z"),
+            "/api/conversations/c1/messages?limit=200&topicId=topic-1&since=2026-09-07T12:26:36.991Z",
+        )
+    }
+
     func testMessagesPathBlankTopicIdIsOmitted() {
         // General is the unfiltered room — a blank topicId must not hit the
         // wire (nil and whitespace both collapse to the bare path).

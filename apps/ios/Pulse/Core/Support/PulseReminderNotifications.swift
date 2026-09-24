@@ -31,12 +31,14 @@ public enum PulseReminderNotifications {
     }
 
     /// Schedule the offline-capable one-shot; replaces any pending copy.
-    public static func schedule(reminderId: String, note: String, remindAtEpochMs: Int64) {
+    /// R2-D — `conversationId` rides the userInfo so the tap routes to the
+    /// room (web reminder-tap parity); nil keeps the notification tapless.
+    public static func schedule(reminderId: String, note: String, remindAtEpochMs: Int64, conversationId: String? = nil) {
         let content = UNMutableNotificationContent()
         content.title = note.isEmpty ? "Reminder" : String(note.prefix(64))
         content.body = "Reminder"
         content.sound = .default
-        content.userInfo = ["reminderId": reminderId]
+        content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId)
 
         let fireDate = Date(timeIntervalSince1970: TimeInterval(remindAtEpochMs) / 1000)
         let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
@@ -59,17 +61,101 @@ public enum PulseReminderNotifications {
             .removePendingNotificationRequests(withIdentifiers: ["pulse-reminder-\(reminderId)"])
     }
 
-    public static func showNow(reminderId: String, note: String, body: String) {
+    public static func showNow(reminderId: String, note: String, body: String, conversationId: String? = nil) {
         let content = UNMutableNotificationContent()
         content.title = note.isEmpty ? "Reminder" : String(note.prefix(64))
         content.body = String(body.prefix(178))
         content.sound = .default
-        content.userInfo = ["reminderId": reminderId]
+        content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId)
         let request = UNNotificationRequest(
             identifier: "pulse-reminder-fired-\(reminderId)",
             content: content,
             trigger: nil,
         )
         UNUserNotificationCenter.current().add(request)
+    }
+
+    /// The reminder payload — reminderId + (R2-D) the conversationId the tap
+    /// deep-links into. Kept in one place so schedule/showNow stay in lockstep.
+    /// Internal (not private) so the tests can pin the exact payload shape.
+    static func userInfo(reminderId: String, conversationId: String?) -> [String: String] {
+        var info = ["reminderId": reminderId]
+        if let conversationId, !conversationId.isEmpty {
+            info["conversationId"] = conversationId
+        }
+        return info
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// R2-D — notification-tap routing (web reminder tap parity).
+//
+// willPresent keeps reminder alerts visible while the app is foregrounded
+// (the due-loop fires while the user is IN the app); didReceive maps the
+// tapped reminder to PulseDeepLink.room(conversationId) and hands it to the
+// RootView-assigned onOpenRoom closure. The delegate is registered once in
+// PulseApp.init; the last tapped room survives the cold-start window before
+// RootView.onAppear attaches (consumeLastTappedRoomId replays it).
+// ─────────────────────────────────────────────────────────────
+
+public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    public static let shared = PulseReminderNotificationDelegate()
+
+    /// RootView assigns — receives the deep link parsed from the tapped
+    /// notification (reminder taps produce PulseDeepLink.room).
+    public var onDeepLink: ((PulseDeepLink) -> Void)?
+
+    /// Cold-start handoff: a tap delivered before RootView attached its
+    /// closure is stored here and consumed on attach.
+    private var lastTappedRoomId: String?
+
+    public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void,
+    ) {
+        completionHandler([.banner, .list, .sound])
+    }
+
+    public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void,
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        if let link = Self.deepLink(from: userInfo), case .room(let conversationId) = link {
+            // The routing closure is formed on the main actor (RootView) —
+            // hop there before invoking so the session handoff is isolated.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.lastTappedRoomId = conversationId
+                self.onDeepLink?(link)
+            }
+        }
+        completionHandler()
+    }
+
+    /// Cold-start replay — returns (and clears) a tap that arrived before the
+    /// RootView closure was assigned. Nil when nothing is pending.
+    public func consumeLastTappedRoomId() -> String? {
+        let pending = lastTappedRoomId
+        lastTappedRoomId = nil
+        return pending
+    }
+
+    /// userInfo → deep link. Reminder notifications map to
+    /// PulseDeepLink.room(conversationId) — the exact value the pulse://room
+    /// scheme produces, so tap routing stays single-sourced with F-DL.
+    static func deepLink(from userInfo: [AnyHashable: Any]) -> PulseDeepLink? {
+        guard let conversationId = roomId(from: userInfo) else { return nil }
+        return PulseDeepLink.room(conversationId: conversationId)
+    }
+
+    /// Pure userInfo decode — "conversationId" must be a non-empty string.
+    static func roomId(from userInfo: [AnyHashable: Any]) -> String? {
+        guard let raw = userInfo["conversationId"] else { return nil }
+        guard let value = raw as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

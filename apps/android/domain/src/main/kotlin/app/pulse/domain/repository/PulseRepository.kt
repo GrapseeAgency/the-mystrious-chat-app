@@ -1,6 +1,7 @@
 package app.pulse.domain.repository
 
 import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.Automation
 import app.pulse.domain.model.BlockedAccount
 import app.pulse.domain.model.CallLogEntry
 // R1-W2F — per-conversation themes (F-FX-05).
@@ -33,6 +34,8 @@ import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
 import app.pulse.domain.model.UserProfile
 import app.pulse.domain.model.UserStats
+import app.pulse.domain.model.Webhook
+import app.pulse.protocol.AiRecapDto
 import app.pulse.protocol.PulseVoiceUser
 import app.pulse.protocol.AppCommunityDto
 import app.pulse.protocol.AppInstallResultDto
@@ -159,6 +162,47 @@ interface PulsePrefsStore {
     suspend fun setQuietHoursOn(value: Boolean)
     suspend fun setQuietStart(value: String)
     suspend fun setQuietEnd(value: String)
+
+    // ── R2-C — design language + spotlight + whiteboard draft ──────
+
+    /**
+     * R2-C item 3 — design-language selection. EXACTLY the web value strings
+     * (src/lib/ui-theme.ts): "glass" | "kinetic" | "minimal" | "dynamic" |
+     * "aero", persisted under the web key `pulse.uiTheme.v2`.
+     */
+    val uiTheme: Flow<String>
+    suspend fun setUiTheme(id: String)
+
+    /**
+     * R2-C item 7 — spotlight recent searches (web spotlight.tsx:50-73
+     * parity): last 5 queries, deduped case-insensitively, newest first,
+     * stored under the web key `pulse.spotlight.recents.v1`.
+     */
+    val spotlightRecents: Flow<List<String>>
+    suspend fun pushSpotlightRecent(query: String)
+    suspend fun clearSpotlightRecents()
+
+    /**
+     * R4-B item 3 — navigation architecture (web nav-registry.ts parity):
+     * one of the 8 phone-feasible PulseNavStyle ids, persisted under the
+     * web's EXACT key `pulse.navStyle.v2`; unreadable values (junk, the 5
+     * excluded ids) resolve to the capsule default on read.
+     */
+    val navStyle: Flow<app.pulse.protocol.PulseNavStyle>
+    suspend fun setNavStyle(style: app.pulse.protocol.PulseNavStyle)
+
+    /**
+     * R2-C item 4 — the whiteboard PENDING-stroke draft (iOS
+     * PulseWhiteboardDraft parity): per-conversation durable queue of
+     * unsynced strokes — write-through on draw, restore on sheet open,
+     * purge on the server verdict / board-reset path.
+     */
+    suspend fun whiteboardDraft(conversationId: String): List<app.pulse.protocol.WhiteboardStrokePostDto>
+    suspend fun appendWhiteboardDraft(conversationId: String, stroke: app.pulse.protocol.WhiteboardStrokePostDto)
+    suspend fun dropFirstWhiteboardDraft(conversationId: String, count: Int)
+    suspend fun dropLastWhiteboardDraft(conversationId: String)
+    suspend fun replaceAllWhiteboardDraft(conversationId: String, strokes: List<app.pulse.protocol.WhiteboardStrokePostDto>)
+    suspend fun clearWhiteboardDraft(conversationId: String)
 
     suspend fun setViewer(id: String?, name: String?, color: String? = null)
     suspend fun setFxMode(mode: String)
@@ -437,6 +481,44 @@ interface PulseRepository {
     /** PATCH /api/conversations/{id} { screenPrivacy } — any participant may toggle. */
     suspend fun setScreenPrivacy(conversationId: String, on: Boolean): Result<Unit>
 
+    // ── R2-A — round-2 parity (automations · webhooks · recap · privacy · photo) ──
+
+    /** PATCH /api/conversations/{id}/screen-privacy { userId, on } — R42 the per-VIEWER veil flag. */
+    suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit>
+
+    /** PATCH /api/conversations/{id} { photo } — admin-only; photo is an uploaded "/api/uploads/<file>" path. */
+    suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit>
+
+    /** GET /api/conversations/{id}/automations?userId= — the room's keyword auto-reply rules. */
+    suspend fun automations(conversationId: String): Result<List<Automation>>
+
+    /** POST /api/conversations/{id}/automations { trigger, reply } — admin-only. */
+    suspend fun createAutomation(conversationId: String, trigger: String, reply: String): Result<Automation>
+
+    /** PATCH /api/automations/{id} { enabled } — admin-only optimistic toggle. */
+    suspend fun setAutomationEnabled(automationId: String, enabled: Boolean): Result<Automation>
+
+    /** PATCH /api/automations/{id} { trigger } — R41 rename-in-place (admin-only). */
+    suspend fun setAutomationTrigger(automationId: String, trigger: String): Result<Automation>
+
+    /** DELETE /api/automations/{id} { userId } — admin-only remove. */
+    suspend fun deleteAutomation(automationId: String): Result<Unit>
+
+    /** GET /api/webhooks?conversationId=&requesterId= — Discord-style incoming hooks. */
+    suspend fun webhooks(conversationId: String): Result<List<Webhook>>
+
+    /** POST /api/webhooks { conversationId, name, requesterId } — admin-only. */
+    suspend fun createWebhook(conversationId: String, name: String): Result<Webhook>
+
+    /** DELETE /api/webhooks/{token}?requesterId= — admin-only. */
+    suspend fun deleteWebhook(token: String): Result<Unit>
+
+    /**
+     * POST /api/ai/recap { userId, conversationId } — LLM summary of the last
+     * ~30 rows → { recap, basedOn, cached } (server caches the latest recap).
+     */
+    suspend fun aiRecap(conversationId: String): Result<AiRecapDto>
+
     /** POST /api/conversations/{id}/members { userIds[] } — admin-only add → the ids actually added. */
     suspend fun addGroupMembers(conversationId: String, userIds: List<String>): Result<List<String>>
 
@@ -470,8 +552,15 @@ interface PulseRepository {
     /**
      * Rich TEXT-kind send — carries the incognito flag (group-only server-side)
      * and the sticker/effects payload blob (sticker {emoji,pack} · {effect}).
-     * Optimistic echo + outbox semantics match [sendMessage]. Returns the same
-     * [SendReceipt] (message + optional streak bump) as the plain send.
+     * Optimistic echo + outbox semantics match [sendMessage].
+     *
+     * R3-B item 4 — [anonAliasPreview] stamps the OPTIMISTIC echo with the
+     * deterministic "Adjective the Animal" alias (web anonAliasPreview parity,
+     * chat-room.tsx:1685-1715) so the queued/displayed row already wears the
+     * exact mask the server will store.
+     *
+     * R5 — returns the same [SendReceipt] (message + optional streak bump)
+     * as the plain send.
      */
     suspend fun sendRichMessage(
         conversationId: String,
@@ -479,6 +568,7 @@ interface PulseRepository {
         kind: String = "text",
         payload: String? = null,
         anon: Boolean = false,
+        anonAliasPreview: String? = null,
         replyToId: String? = null,
         parentId: String? = null,
         topicId: String? = null,
