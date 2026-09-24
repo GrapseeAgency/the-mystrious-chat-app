@@ -244,6 +244,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // R6 — M4: the incoming-attention gate is foreground-only (single
+        // activity → this is app-level truth).
+        app.pulse.android.notify.IncomingAttention.foreground = true
         // Foreground outbox trigger (Wave 0): whatever queued while the app
         // was dead/backgrounded drains the moment the surface is up.
         lifecycleScope.launch { runCatching { repository.flushOutbox() } }
@@ -278,6 +281,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        app.pulse.android.notify.IncomingAttention.foreground = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -683,6 +691,10 @@ private fun PulseShell(
                     ProfileScreen(
                         onEditProfile = { navController.navigate("profile/edit") },
                         onOpenBlocked = { navController.navigate("settings/blocked") },
+                        // R6 — M3: the durable sign-out. The app-level session VM
+                        // clears prefs + the encrypted vault + token; viewerId →
+                        // null unmounts the shell and PulseRoot shows onboarding.
+                        onForgetViewer = { session.forgetViewer() },
                     )
                 }
             }

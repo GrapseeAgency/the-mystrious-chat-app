@@ -159,6 +159,13 @@ private struct RoomMessageRow: View {
                 wave7: wave7,
                 memberNames: memberNames,
                 onReactionChip: onWhoReacted,
+                onDoubleTapHeart: {
+                    // R47 — double-tap bubble → ❤️ quick reaction (web
+                    // chat-room.tsx:7265-7268 onDoubleClick parity). The SAME
+                    // react path the 6-quick-reactions context menu uses; the
+                    // hearts burst rides the VM react (❤️ → .hearts fire).
+                    viewModel.react(message, emoji: "❤️", session: session)
+                },
             )
             .contextMenu { contextMenu }
             .onAppear {
@@ -342,9 +349,10 @@ private struct RoomContent: View {
         return role != "admin"
     }
 
-    /// F-SM-04 — the @-token active right now (draft tail), if any.
+    /// F-SM-04 — the @-token active right now (draft tail), if any. The R47
+    /// dead-end notice suppresses it too (the composer itself is replaced).
     private var mentionSuggestion: (token: String, atIndex: Int)? {
-        broadcastLocked ? nil : PulseMentions.activeToken(in: viewModel.draft)
+        (broadcastLocked || viewModel.dmBlocked) ? nil : PulseMentions.activeToken(in: viewModel.draft)
     }
 
     private var mentionCandidates: [WireConversationMember] {
@@ -607,6 +615,33 @@ private struct RoomContent: View {
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Recap with AI")
             }
+            // R30-b — room-header reminders entry (web chat-room.tsx:4054-4075
+            // parity): opens the existing Wave7 sheet (room-level — no message
+            // anchor); the emerald badge counts the viewer's unfired reminders.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    PulseHaptics.tap()
+                    wave7.reminderAnchor = nil
+                    wave7.remindersOpen = true
+                } label: {
+                    Image(systemName: "bell")
+                        .overlay(alignment: .topTrailing) {
+                            if viewModel.upcomingReminderCount > 0 {
+                                Text(PulseRoomParityLogic.reminderBadgeText(viewModel.upcomingReminderCount))
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .frame(minWidth: 16, minHeight: 16)
+                                    .background(Capsule().fill(PulseTheme.emerald500))
+                                    .offset(x: 8, y: -4)
+                            }
+                        }
+                }
+                .buttonStyle(PulseButtonStyle())
+                .accessibilityLabel(viewModel.upcomingReminderCount > 0
+                    ? "Reminders — \(viewModel.upcomingReminderCount) upcoming"
+                    : "Reminders")
+            }
             // R1-W2I F-PI-03 — the pop-out mini-chat toggle (web chat-room
             // header PictureInPicture2 button): opens/closes this room's pane.
             ToolbarItem(placement: .topBarTrailing) {
@@ -641,6 +676,8 @@ private struct RoomContent: View {
                     prefs: prefs,
                     onDetailUpdated: { detail in
                         viewModel.roomScreenPrivacy = detail.screenPrivacy
+                        // R47 — the dead-end flag rides the same fresh detail.
+                        viewModel.dmBlocked = !detail.isGroup && detail.dmBlockedNow
                     },
                 )
             }
@@ -686,6 +723,8 @@ private struct RoomContent: View {
                     // R38 — the room-wide veil flag rides the info-sheet's
                     // fresh detail so the river re-veils without a refetch.
                     viewModel.roomScreenPrivacy = detail.screenPrivacy
+                    // R47 — the dead-end flag rides along the same way.
+                    viewModel.dmBlocked = !detail.isGroup && detail.dmBlockedNow
                 },
             )
         }
@@ -845,6 +884,11 @@ private struct RoomContent: View {
                 onDelete: { id in wave7.deleteReminder(api: session.api, id: id) },
                 anchored: wave7.reminderAnchor,
             )
+        }
+        .onChange(of: wave7.remindersOpen) { _, open in
+            // R30-b — the header badge re-syncs after create/resolve/delete
+            // inside the sheet (its list fetch is the sheet's own).
+            if !open { viewModel.loadUpcomingReminderCount(session: session) }
         }
         .sheet(isPresented: $leaderboardOpen) {
             Wave7LeaderboardSheet(
@@ -1500,10 +1544,31 @@ private struct RoomContent: View {
                 .padding(.vertical, 12)
                 .background(.ultraThinMaterial)
                 .accessibilityElement(children: .combine)
+            } else if viewModel.dmBlocked {
+                dmBlockedNotice
             } else {
                 composerRows
             }
         }
+    }
+
+    /// R47 — blocked-pair DM dead-end notice (web chat-room.tsx:5035-5044
+    /// copy verbatim: rose Ban glyph on the deep-glass strip). The composer
+    /// is REPLACED, not disabled; the server's messages-POST 403 stays the
+    /// enforcement — this is UX only.
+    private var dmBlockedNotice: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "minus.circle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(PulseTheme.rose)
+            Text("You can no longer message this account")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(PulseTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .accessibilityElement(children: .combine)
     }
 
     /// R2-D — slow-mode countdown chip (web chat-room.tsx:4758-4770 copy
@@ -1607,6 +1672,7 @@ private struct RoomContent: View {
     /// @-suggester owns the popover slot when its candidates are visible.
     private var slashPaletteVisible: Bool {
         !broadcastLocked
+            && !viewModel.dmBlocked
             && viewModel.editingTarget == nil
             && !viewModel.isRecording
             && mentionCandidates.isEmpty
@@ -2269,6 +2335,21 @@ private struct MessageInfoSheet: View {
     }
 }
 
+/// R47 — conditional double-tap attachment: when `action` is nil NOTHING is
+/// attached (call sites keep their exact gesture graph). When present, the
+/// COUNT-2 tap is attached BEFORE any single-tap on the same view so the
+/// double-tap wins the disambiguation (SwiftUI higher-count-first rule).
+private extension View {
+    @ViewBuilder
+    func heartDoubleTapGesture(_ action: (() -> Void)?) -> some View {
+        if action != nil {
+            onTapGesture(count: 2) { action?() }
+        } else {
+            self
+        }
+    }
+}
+
 /// One message bubble — the web outcome with an iOS accent: asymmetric
 /// corner radius, gradient fill for the viewer, quote block, reaction chips,
 /// voice/image/file/system renderings, "Seen" under the viewer's tail.
@@ -2305,6 +2386,19 @@ struct BubbleView: View {
     // R3-A item 4 — tap a reaction chip → who-reacted roster sheet (web
     // chat-room.tsx ReactionChip tap → reactionInfo parity). nil = decorative.
     var onReactionChip: ((WireChatMessage, String) -> Void)? = nil
+    // R47 — double-tap bubble → ❤️ quick reaction (web chat-room.tsx:7265-7268
+    // onDoubleClick parity). nil = gesture NOT attached (threads stay nil;
+    // the hearts burst rides the VM react path, not here).
+    var onDoubleTapHeart: (() -> Void)? = nil
+
+    /// R47 — the double-tap action when the row is interactive (web
+    /// `interactive = !deleted && !pending`, chat-room.tsx:7212). nil when
+    /// no handler was wired — the gesture modifier is then never attached,
+    /// so thread rows and decorative uses keep their exact old behavior.
+    private var heartDoubleTapAction: (() -> Void)? {
+        guard onDoubleTapHeart != nil, !isDeleted, !isPending else { return nil }
+        return { onDoubleTapHeart?() }
+    }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -2352,6 +2446,7 @@ struct BubbleView: View {
                 HStack(alignment: .bottom, spacing: 4) {
                     if mine { Spacer(minLength: 44) }
                     bubble
+                        .heartDoubleTapGesture(heartDoubleTapAction)
                     if !mine { Spacer(minLength: 44) }
                 }
 
@@ -2608,6 +2703,7 @@ struct BubbleView: View {
                         ProgressView()
                     }
                 }
+                .heartDoubleTapGesture(heartDoubleTapAction)
                 .onTapGesture { onOpenImage?(message) }
             } else {
                 Label("Photo", systemImage: "photo.fill")
@@ -3179,6 +3275,10 @@ final class RoomViewModel: ObservableObject {
     /// R38 — the room-wide screen-security switch (server conversation flag;
     /// nil = unknown / older relay → veil off).
     @Published var roomScreenPrivacy: Bool?
+    /// R47 — DM blocked-pair dead-end (wire detail `dmBlocked`, a UserBlock
+    /// in EITHER direction; server 403 stays the enforcement — client is UX
+    /// only). False until the room-open detail GET says otherwise.
+    @Published private(set) var dmBlocked = false
 
     // Wave 2 — voice recording, playback, polls, transcription, topics.
     @Published private(set) var isRecording = false
@@ -3240,6 +3340,22 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
+    /// R30-b — header-badge count: the viewer's UNFIRED reminders (web
+    /// upcomingReminderCount chat-room.tsx:2311-2313 `firedAt === null`
+    /// parity — the GET is viewer-scoped, so this spans all rooms).
+    @Published private(set) var upcomingReminderCount = 0
+
+    /// R30-b — lightweight upcoming fetch on room open + after the reminders
+    /// sheet closes (the sheet loads its own list; the badge needs the count
+    /// only — loadPins pattern). A failed fetch keeps the last honest count.
+    func loadUpcomingReminderCount(session: PulseSession) {
+        Task { [weak self] in
+            guard let self else { return }
+            let page = try? await session.api.reminders(dueOnly: false)
+            self.upcomingReminderCount = PulseRoomParityLogic.upcomingReminderCount(page?.items ?? [])
+        }
+    }
+
     private var slowModeTicker: AnyCancellable?
 
     private func armSlowModeLock(seconds: Int) {
@@ -3298,6 +3414,8 @@ final class RoomViewModel: ObservableObject {
         loadTopics(session: session)
         // REM-B F-MS-18 — pending scheduled count for the composer banner.
         loadScheduled(session: session)
+        // R30-b — upcoming reminders for the header badge (one quiet GET).
+        loadUpcomingReminderCount(session: session)
         Task { await refresh(session: session) }
     }
 
@@ -3745,6 +3863,9 @@ final class RoomViewModel: ObservableObject {
         let viewerId = session.viewer?.id ?? ""
         guard !viewerId.isEmpty, let detail = try? await session.api.conversationDetail(id: conversationId, userId: viewerId) else { return }
         roomScreenPrivacy = detail.screenPrivacy
+        // R47 — the same detail GET carries the DM dead-end flag (either
+        // direction); groups always decode false here.
+        dmBlocked = !detail.isGroup && detail.dmBlockedNow
         if let mine = detail.myScreenPrivacy {
             session.prefs?.adoptServerScreenPrivacy(conversationId: conversationId, on: mine)
         }

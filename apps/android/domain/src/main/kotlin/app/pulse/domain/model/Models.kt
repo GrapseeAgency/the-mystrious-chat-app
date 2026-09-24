@@ -431,6 +431,11 @@ data class GroupMeta(
     val myScreenPrivacy: Boolean = false,
     /** Shareable join code — null = no active link. */
     val inviteCode: String?,
+    // R6 — M5: R47 DM dead-end (web detail `dmBlocked`) — a block in EITHER
+    // direction between the DM pair. The room swaps the composer for the
+    // "You can no longer message this account" notice; the server 403
+    // remains the real enforcement.
+    val dmBlocked: Boolean = false,
 ) {
     val isAdmin: Boolean get() = myRole == "admin"
 

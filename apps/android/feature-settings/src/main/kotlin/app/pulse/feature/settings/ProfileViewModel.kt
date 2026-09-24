@@ -178,11 +178,10 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    fun forgetIdentity() {
-        viewModelScope.launch {
-            // Wave 8 — a forgotten identity leaves NO credential behind.
-            runCatching { repo.clearSessionToken() }
-            prefs.setViewer(null, null)
-        }
-    }
+    // R6 — M3: ProfileViewModel.forgetIdentity was REMOVED — it cleared the
+    // prefs viewer but NOT the encrypted session vault, so SessionViewModel's
+    // cold-start re-seed resurrected the identity on the next launch. The
+    // ProfileScreen "Forget this viewer" row now routes to the app-level
+    // SessionViewModel.forgetViewer() (prefs + vault + token) via the
+    // onForgetViewer callback MainActivity provides.
 }

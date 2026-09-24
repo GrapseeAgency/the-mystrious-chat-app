@@ -275,6 +275,69 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertNil(legacy.myScreenPrivacy)
     }
 
+    // ── R47 — DM dead-end flag · reminders badge · profile share ──
+
+    func testConversationDetailCarriesDmBlockedFlag() throws {
+        // Blocked pair (either direction): the detail flags it and the
+        // composer is replaced by the dead-end notice (web
+        // chat-room.tsx:5035-5044; field mirrors serializers.ts:542).
+        let blocked = try decode(
+            WireConversationSummary.self,
+            #"{"id":"c1","isGroup":false,"members":[],"dmBlocked":true}"#,
+        )
+        XCTAssertTrue(blocked.dmBlockedNow)
+        // Groups never flag (the server hard-codes false for isGroup) and
+        // older relays / list summaries omit the key — both "not blocked".
+        let legacy = try decode(WireConversationSummary.self, #"{"id":"c2","isGroup":false,"members":[]}"#)
+        XCTAssertNil(legacy.dmBlocked)
+        XCTAssertFalse(legacy.dmBlockedNow)
+        let group = try decode(
+            WireConversationSummary.self,
+            #"{"id":"c3","isGroup":true,"members":[],"dmBlocked":false}"#,
+        )
+        XCTAssertFalse(group.dmBlockedNow)
+    }
+
+    func testUpcomingReminderCountIgnoresFiredRows() {
+        // Upcoming = firedAt === null (web chat-room.tsx:2311-2313).
+        let items = [
+            makeReminder(id: "r1", firedAt: nil),
+            makeReminder(id: "r2", firedAt: "2026-01-01T00:00:00.000Z"),
+            makeReminder(id: "r3", firedAt: nil),
+        ]
+        XCTAssertEqual(PulseRoomParityLogic.upcomingReminderCount(items), 2)
+        XCTAssertEqual(PulseRoomParityLogic.upcomingReminderCount([]), 0)
+        // The badge caps at 9 ("9+") — distinct rhythm from the 99+ jump pill.
+        XCTAssertEqual(PulseRoomParityLogic.reminderBadgeText(9), "9")
+        XCTAssertEqual(PulseRoomParityLogic.reminderBadgeText(10), "9+")
+    }
+
+    private func makeReminder(id: String, firedAt: String?) -> WireReminderItem {
+        WireReminderItem(
+            id: id,
+            conversationId: "c1",
+            messageId: nil,
+            note: "ping",
+            remindAt: "2026-01-01T09:00:00.000Z",
+            firedAt: firedAt,
+            createdAt: nil,
+            conversation: nil,
+            snippet: nil,
+        )
+    }
+
+    func testProfileShareMessageCarriesHandleAndDeepLink() {
+        // Verbatim web copy (profile-tab.tsx:270) + the pulse://user deep
+        // link that PulseDeepLink parses back out (user/{id} branch).
+        let text = ProfileView.shareMessage(handle: "ada", userId: "u42")
+        XCTAssertTrue(text.contains("Find me on Pulse — @ada"))
+        XCTAssertTrue(text.contains("pulse://user/u42"))
+        XCTAssertEqual(PulseDeepLink.parse(URL(string: "pulse://user/u42")!), .user(userId: "u42"))
+        // No id → the handle text still shares; the link line is absent.
+        let bare = ProfileView.shareMessage(handle: "ada", userId: nil)
+        XCTAssertFalse(bare.contains("pulse://"))
+    }
+
     // ── F-MS-22 — /recap rides the slash outcome ────────────
 
     func testSlashRecapOutcome() {

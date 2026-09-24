@@ -136,9 +136,42 @@ struct ProfileView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.vertical, 2)
+            // R47 — profile share (web profile-tab.tsx:258-278 parity): the
+            // OS share sheet via ShareLink (iOS 17 floor) with the verbatim
+            // web copy plus the pulse://user deep link. No handle → honest
+            // inert row (web toasts "Claim a handle first"; here the Edit
+            // button in the row above is how you claim one).
+            HStack(spacing: 10) {
+                if let handle = prefs.viewer?.username, !handle.isEmpty {
+                    ShareLink(item: Self.shareMessage(handle: handle, userId: prefs.viewer?.id)) {
+                        Label("Share profile", systemImage: "square.and.arrow.up")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .tint(PulseTheme.emerald)
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Share profile — Find me on Pulse at \(handle)")
+                } else {
+                    Label("Claim a @handle to share your profile", systemImage: "square.and.arrow.up")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.vertical, 2)
         } footer: {
             Text("Edit opens name, bio, avatar, color, @handle and status — saved to the server instantly.")
         }
+    }
+
+    /// R47 — the shared text: verbatim web copy (profile-tab.tsx:270) plus
+    /// the pulse://user/{id} deep link when the viewer id exists (the app
+    /// scheme registered in project.yml; PulseDeepLink routes it back in).
+    static func shareMessage(handle: String, userId: String?) -> String {
+        var text = "Find me on Pulse — @\(handle)"
+        if let userId, !userId.isEmpty {
+            text += "\n\(PulseDeepLink.scheme)://user/\(userId)"
+        }
+        return text
     }
 
     /// F-CP-09 — the viewer's status emoji + text, live from prefs.

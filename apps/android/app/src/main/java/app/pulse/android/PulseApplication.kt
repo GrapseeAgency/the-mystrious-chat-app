@@ -58,6 +58,28 @@ class PulseApplication : Application() {
             prefs.quietEnd.collect { app.pulse.android.notify.ReminderAlertPolicy.quietEnd = it }
         }
 
+        // R6 — M4: incoming-message attention (foreground ding/buzz honoring
+        // quiet hours + per-room mute + the Wave-8 sound/vibration prefs).
+        // Rides the SAME repository event bus the chats/room surfaces use;
+        // the sender/echo/mute gates live inside IncomingAttention.
+        appScope.launch {
+            repository.events().collect { event ->
+                if (event is app.pulse.domain.repository.PulseEvent.MessageReceived) {
+                    app.pulse.android.notify.IncomingAttention.onMessageReceived(
+                        this@PulseApplication,
+                        event.conversationId,
+                        event.message,
+                        repository.viewerId,
+                    )
+                }
+            }
+        }
+        appScope.launch {
+            repository.observeConversations().collect { list ->
+                app.pulse.android.notify.IncomingAttention.syncMutes(list)
+            }
+        }
+
         appScope.launch {
             val userBase = runCatching { prefs.serverBase.first() }.getOrNull()
             if (!userBase.isNullOrBlank()) {

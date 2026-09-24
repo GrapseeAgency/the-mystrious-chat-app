@@ -1,5 +1,7 @@
 package app.pulse.feature.settings
 
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,10 +29,12 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -93,6 +97,11 @@ private val SWATCHES = listOf("#10B981", "#14B8A6", "#8B5CF6", "#F59E0B", "#FB71
 fun ProfileScreen(
     onEditProfile: () -> Unit = {},
     onOpenBlocked: () -> Unit = {},
+    // R6 — M3: the durable sign-out — the app-level SessionViewModel
+    // clears prefs + the encrypted session vault (ProfileViewModel's old
+    // half-forget did NOT delete the vault, so the identity resurrected on
+    // the next launch). MainActivity wires this to session.forgetViewer().
+    onForgetViewer: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -103,6 +112,9 @@ fun ProfileScreen(
     val reduced by viewModel.reducedMotion.collectAsStateWithLifecycle()
 
     var identitySheet by remember { mutableStateOf(false) }
+    // R6 — M3: the forget confirmation (iOS IdentityPickerSheet "Forget this
+    // viewer" semantics — destructive, so it asks first).
+    var forgetConfirm by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -142,6 +154,14 @@ fun ProfileScreen(
                         Text(viewerName ?: "", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text("Signed in on this device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+                TextButton(onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    shareProfile(context, viewerId, state.users)
+                }) {
+                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(15.dp), tint = PulsePalette.Emerald)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Share", color = PulsePalette.Emerald)
                 }
                 TextButton(onClick = { identitySheet = true; haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }) {
                     Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp), tint = PulsePalette.Emerald)
@@ -404,17 +424,49 @@ fun ProfileScreen(
             Spacer(Modifier.height(14.dp))
             SettingCard {
                 Row(
-                    Modifier.fillMaxWidth().clickable { viewModel.forgetIdentity() },
+                    Modifier.fillMaxWidth().clickable { forgetConfirm = true },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Filled.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("Forget identity on this device", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                    Column(Modifier.weight(1f)) {
+                        Text("Forget this viewer (sign out)", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                        Text(
+                            "Clears the identity + stored session on this device",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
 
         Spacer(Modifier.height(28.dp))
+    }
+
+    // R6 — M3: the destructive confirm before the real forget.
+    if (forgetConfirm) {
+        AlertDialog(
+            onDismissRequest = { forgetConfirm = false },
+            title = { Text("Forget this viewer?") },
+            text = {
+                Text(
+                    "Signs you out on this device and clears the stored session. " +
+                        "You can pick (or create) an identity again from onboarding.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    forgetConfirm = false
+                    onForgetViewer()
+                }) {
+                    Text("Forget", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { forgetConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (identitySheet) {
@@ -522,6 +574,33 @@ private fun IdentitySheet(
             }
             Spacer(Modifier.height(30.dp))
         }
+    }
+}
+
+/**
+ * R6 — BE8: profile share via the OS share sheet (web profile-tab.tsx:258-278
+ * `shareProfile` parity): "Find me on Pulse — @handle". No handle yet → the
+ * web's honest info toast; a failed chooser → "Could not share right now".
+ */
+internal fun shareProfile(
+    context: android.content.Context,
+    viewerId: String?,
+    users: List<app.pulse.domain.model.User>,
+) {
+    val handle = users.firstOrNull { it.id == viewerId }?.handle
+    if (handle.isNullOrBlank()) {
+        Toast.makeText(context, "Claim a handle first — it is how people find you", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val text = "Find me on Pulse — @$handle"
+    runCatching {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(send, "Share your profile"))
+    }.onFailure {
+        Toast.makeText(context, "Could not share right now", Toast.LENGTH_SHORT).show()
     }
 }
 

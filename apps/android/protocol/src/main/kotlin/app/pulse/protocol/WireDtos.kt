@@ -206,6 +206,10 @@ data class ConversationSummaryDto(
     val screenPrivacy: Boolean? = null,
     /** R42 per-VIEWER screen security (the personal veil flag; detail rows). */
     val myScreenPrivacy: Boolean? = null,
+    // R6 — M5: R47 DM dead-end flag (detail rows, web chat-room.tsx `dmBlocked`):
+    // a UserBlock in EITHER direction between the DM pair. Detail-only —
+    // summaries tolerate the key (defaulted null) exactly like screenPrivacy.
+    val dmBlocked: Boolean? = null,
 )
 
 // ── REM-A group governance + scheduling DTOs ─────────────────

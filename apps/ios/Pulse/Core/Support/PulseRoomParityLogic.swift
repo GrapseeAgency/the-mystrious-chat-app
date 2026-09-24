@@ -90,6 +90,22 @@ public enum PulseRoomParityLogic {
         missed > 99 ? "99+" : String(missed)
     }
 
+    // ── R30-b — room-header reminders badge ─────────────────
+
+    /// The viewer's UNFIRED reminders = the header-badge count (web
+    /// upcomingReminderCount, chat-room.tsx:2311-2313 `firedAt === null`;
+    /// the GET is viewer-scoped so the count spans all rooms). Pure so the
+    /// VM fetch stays a one-liner and the rule is testable.
+    public static func upcomingReminderCount(_ items: [WireReminderItem]) -> Int {
+        items.filter { $0.firedAt == nil }.count
+    }
+
+    /// The reminders badge caps at 9 with a "9+" suffix (web
+    /// chat-room.tsx:4073 `upcomingReminderCount > 9 ? '9+'` parity).
+    public static func reminderBadgeText(_ count: Int) -> String {
+        count > 9 ? "9+" : String(count)
+    }
+
     // ── R39 — automation rule validation (server mirrors) ────
 
     /// Create/rename trigger bounds (automations route AUTOMATION_TRIGGER_*).

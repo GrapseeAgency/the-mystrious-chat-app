@@ -800,7 +800,40 @@ internal fun QuickPhrasesRail(
     onUse: (String) -> Unit,
     onManage: () -> Unit,
 ) {
-    if (phrases.isEmpty()) return
+    // R6 — M2: zero phrases no longer hides the rail entirely — the web shows
+    // a labeled "+ Quick phrase" pill as the manager entry (chat-room.tsx:
+    // 5089-5105); without it the manager was unreachable for fresh accounts.
+    if (phrases.isEmpty()) {
+        Surface(
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            modifier = Modifier
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .clickable(onClick = onManage)
+                .semantics { contentDescription = "Manage quick phrases" },
+        ) {
+            Row(
+                Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = null,
+                    tint = PulsePalette.Emerald,
+                    modifier = Modifier.size(13.dp),
+                )
+                Text(
+                    "Quick phrase",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        return
+    }
     Row(
         Modifier
             .fillMaxWidth()

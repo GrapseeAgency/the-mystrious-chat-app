@@ -1149,6 +1149,9 @@ class PulseRepositoryImpl @Inject constructor(
                         screenPrivacy = dto.screenPrivacy == true,
                         myScreenPrivacy = dto.myScreenPrivacy == true,
                         inviteCode = dto.inviteCode,
+                        // R6 — M5: the server computes dmBlocked for DM details
+                        // only (src/lib/serializers.ts buildConversationDetail).
+                        dmBlocked = dto.dmBlocked == true,
                     ),
                 )
             }

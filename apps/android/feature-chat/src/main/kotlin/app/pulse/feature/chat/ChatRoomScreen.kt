@@ -58,6 +58,8 @@ import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+// R6 — M5: the DM dead-end notice icon (web chat-room Ban).
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -243,6 +245,8 @@ fun ChatRoomScreen(
     // + composer chip); item 4 — the incognito arming; item 6 — task busy.
     val scheduledItems by viewModel.scheduled.collectAsStateWithLifecycle()
     val scheduledLoading by viewModel.scheduledLoading.collectAsStateWithLifecycle()
+    // R6 — BE7 — upcoming-reminder count for the room-header badge.
+    val remindersUpcoming by viewModel.remindersUpcoming.collectAsStateWithLifecycle()
     val anonNext by viewModel.anonNext.collectAsStateWithLifecycle()
     val taskPending by viewModel.taskPending.collectAsStateWithLifecycle()
     // R2-C item 5 — the R44 slow-mode countdown (armed by the 429 retryAfter;
@@ -289,7 +293,8 @@ fun ChatRoomScreen(
     // R3-B item 3 — scheduled sends manager sheet.
     var scheduledOpen by remember { mutableStateOf(false) }
     var helpOpen by remember { mutableStateOf(false) }
-    var phrasesOpen by remember { mutableStateOf(false) }
+    // R6 — M2: the quick-phrase manager now lives on the VM (viewModel.phrasesOpen)
+    // so the rail's "manage" chip reaches it — the screen-local flag was a dead end.
     // R5-B ITEM 1 — composer emoji picker (draft-EDIT engine, distinct from stickers).
     var emojiOpen by remember { mutableStateOf(false) }
     // R1-W2F — location share sheet (F-MD-07) + theme picker (F-FX-05).
@@ -307,6 +312,10 @@ fun ChatRoomScreen(
         if (isChannel) viewModel.loadComposerLock()
     }
     val composerLocked = isChannel && channelRole != "admin"
+    // R6 — M5: DM dead-end (web chat-room.tsx:5035-5044 `dmBlocked` from the
+    // conversation detail): a block in EITHER direction between the pair.
+    // The server still 403-enforces sends — this is the honest UX notice.
+    val dmBlocked = conversation?.kind == Conversation.Kind.DM && groupMeta?.dmBlocked == true
     // Wave 6 — DM safety entry: the only non-viewer member of a DM.
     val dmPeerId = conversation
         ?.takeIf { it.kind == Conversation.Kind.DM }
@@ -635,6 +644,8 @@ fun ChatRoomScreen(
         // R3-B item 3 — load the pending scheduled sends once on open (the
         // manager + composer chip re-arm after every schedule/cancel via the VM).
         viewModel.loadScheduled()
+        // R6 — BE7 — the header badge counts upcoming reminders once per open.
+        viewModel.loadRemindersUpcoming()
         while (true) {
             delay(15_000)
             viewModel.refreshTopics()
@@ -694,6 +705,9 @@ fun ChatRoomScreen(
             // R3-B item 3 — the scheduled sends manager (overflow entry).
             onOpenScheduled = { scheduledOpen = true },
             scheduledCount = scheduledItems.count { it.cancelledAtIso == null },
+            // R6 — BE7 — the reminders button (web header parity) + badge.
+            onOpenReminders = viewModel::openReminders,
+            remindersCount = remindersUpcoming,
         )
 
         // Wave 2 topic rail — GROUP rooms only (DMs have nothing to file into).
@@ -819,6 +833,26 @@ fun ChatRoomScreen(
                                 // D27 — long-press a reaction chip → who-reacted sheet.
                                 onWhoReacted = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                                     { emoji -> whoReactedFor = message to emoji }
+                                } else {
+                                    null
+                                },
+                                // R6 — M6 — double-tap bubble → ❤️ toggle + hearts
+                                // burst (web chat-room.tsx:7265-7268 + :7389-7394:
+                                // particles only when the tap ADDS the reaction).
+                                onDoubleClick = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
+                                    {
+                                        val addsHeart = message.reactions.none {
+                                            it.emoji == "❤️" && it.userId == viewerId
+                                        }
+                                        if (addsHeart) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            app.pulse.core.fx.PulseFx.fire(
+                                                app.pulse.core.fx.PulseFx.BurstKind.HEARTS,
+                                                count = 28,
+                                            )
+                                        }
+                                        viewModel.react(message.id, "❤️")
+                                    }
                                 } else {
                                     null
                                 },
@@ -1343,11 +1377,56 @@ fun ChatRoomScreen(
             }
         }
 
+        // ── R6 — M2: quick phrases rail (F-MS-29, web chat-room.tsx:5046-5060
+        // parity): composer-adjacent chips; tap appends the phrase to the
+        // draft (space-separated, then refocus — web insertQuickPhrase), the
+        // tail chip opens the manage sheet. Hidden while locked/blocked/
+        // recording/editing exactly like the web rail.
+        if (!composerLocked && !dmBlocked && !recording && state.editing == null) {
+            QuickPhrasesRail(
+                phrases = phrases,
+                onUse = { phrase ->
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    // Web insertQuickPhrase rule: empty → the phrase alone;
+                    // trailing whitespace → direct concat; else space-separated.
+                    draft = when {
+                        draft.isEmpty() -> phrase
+                        draft.endsWith(" ") -> draft + phrase
+                        else -> "$draft $phrase"
+                    }
+                    viewModel.onDraftChanged(draft)
+                    composerFocus.requestFocus()
+                },
+                onManage = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    viewModel.openPhrases()
+                },
+            )
+        }
+
         // Composer — the text side swaps to the record bar while recording;
         // the right slot (HoldRecordSlot) is ALWAYS mounted so the hold
         // gesture survives. Wave 6 — broadcast channel lock: non-admins get
         // the glass notice (web parity); the server still 403s non-admin posts.
-        if (composerLocked) {
+        // R6 — M5: a blocked DM pair gets the rose dead-end notice instead of
+        // the composer (web chat-room.tsx:5035-5044) — mic/send are gone with
+        // it; the server 403 stays the authoritative gate.
+        if (dmBlocked) {
+            Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Block, contentDescription = null, tint = PulsePalette.Rose)
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "You can no longer message this account",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        } else if (composerLocked) {
             Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
@@ -1648,6 +1727,19 @@ fun ChatRoomScreen(
         SlashHelpDialog(onDismiss = { helpOpen = false })
     }
 
+    // R6 — M2: quick-phrase manager (F-MS-29). Add/delete ride the VM funcs
+    // (repo.addPhrase/deletePhrase — GET/POST/DELETE /api/users/{id}/phrases);
+    // the rail refreshes through the same VM state the composer chips render.
+    if (viewModel.phrasesOpen) {
+        PhrasesSheet(
+            phrases = phrases,
+            busy = phrasesBusy,
+            onDismiss = { viewModel.closePhrases() },
+            onAdd = viewModel::addPhrase,
+            onDelete = viewModel::deletePhrase,
+        )
+    }
+
     // R1-W2F F-MD-07 — location confirm sheet (fix lives in the VM; dismissal
     // detaches any still-running one-shot listener).
     if (locationOpen) {
@@ -1901,6 +1993,25 @@ fun ChatRoomScreen(
             conversation = conversation,
             viewerId = viewerId,
             onDismiss = { infoTarget = null },
+        )
+    }
+
+    // R6 — M1: the reaction chip tap/long-press already armed `whoReactedFor`
+    // (D27); this host finally renders it. The toggle button rides the SAME
+    // VM react() toggle path as the quick-reaction grid (iOS WhoReactedSheet
+    // parity — the roster can toggle your own reaction from the list).
+    whoReactedFor?.let { (reactedMessage, reactedEmoji) ->
+        WhoReactedSheet(
+            message = reactedMessage,
+            conversation = conversation,
+            emoji = reactedEmoji,
+            viewerId = viewerId,
+            onDismiss = { whoReactedFor = null },
+            onToggle = { emoji ->
+                viewModel.react(reactedMessage.id, emoji)
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                whoReactedFor = null
+            },
         )
     }
 
@@ -2670,6 +2781,9 @@ private fun RoomHeader(
     // R3-B item 3 — the scheduled sends manager (overflow row + pending count).
     onOpenScheduled: () -> Unit = {},
     scheduledCount: Int = 0,
+    // R6 — BE7 — the room reminders entry (web header button + badge).
+    onOpenReminders: () -> Unit = {},
+    remindersCount: Int = 0,
 ) {
     Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
         Row(
@@ -2790,6 +2904,39 @@ private fun RoomHeader(
                     contentDescription = if (searchOpen) "Close search" else "Search in conversation",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            // R6 — BE7 — reminders (web chat-room header BellRing/Schedule
+            // parity): opens the existing RemindersSheet; the emerald badge
+            // shows the upcoming (unfired) count when non-zero.
+            Box {
+                IconButton(onClick = onOpenReminders) {
+                    Icon(
+                        Icons.Filled.EventRepeat,
+                        contentDescription = if (remindersCount > 0) {
+                            "Reminders — $remindersCount upcoming"
+                        } else {
+                            "Reminders"
+                        },
+                        tint = if (remindersCount > 0) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (remindersCount > 0) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 6.dp, end = 6.dp)
+                            .clip(CircleShape)
+                            .background(PulsePalette.Emerald)
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                    ) {
+                        Text(
+                            if (remindersCount > 99) "99+" else "$remindersCount",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
+                    }
+                }
             }
             // R1-W2F — the room overflow menu (new host; the header previously
             // had only icon buttons). F-FX-05's theme picker entry lives here;
@@ -2935,6 +3082,8 @@ private fun MessageRow(
     onTournamentFinish: (String) -> Unit = {},
     // D27 — long-press a reaction chip → who-reacted sheet (null = inert).
     onWhoReacted: ((String) -> Unit)? = null,
+    // R6 — M6 — double-tap the bubble → ❤️ quick reaction (null = inert).
+    onDoubleClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     bubbleCornerDp: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
@@ -3128,6 +3277,8 @@ private fun MessageRow(
                     flashing = flashing,
                     onLongPress = onLongPress,
                     onQuoteClick = onQuoteClick,
+                    // R6 — M6 — the ❤️ double-tap rides the text bubble.
+                    onDoubleClick = onDoubleClick,
                     voicePlayer = voicePlayer,
                     onTranscribe = onTranscribe,
                     transcribing = transcribing,
@@ -3315,6 +3466,9 @@ internal fun Bubble(
     flashing: Boolean,
     onLongPress: (() -> Unit)?,
     onQuoteClick: ((String) -> Unit)?,
+    // R6 — M6: double-tap → ❤️ toggle (text bubbles; media bubbles keep their
+    // own open-on-tap, matching the web interactive gate `!isImage && !isFile`).
+    onDoubleClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     voicePlayer: VoicePlayer? = null,
     onTranscribe: ((String) -> Unit)? = null,
@@ -3349,8 +3503,15 @@ internal fun Bubble(
         modifier = modifier
             .border(2.dp, PulsePalette.Amber.copy(alpha = flashAlpha), shape)
             .then(
-                if (onLongPress != null) {
-                    Modifier.combinedClickable(onClick = { }, onLongClick = onLongPress)
+                // R6 — M6: double-tap toggles the ❤️ quick reaction (web
+                // chat-room.tsx:7265-7268) — long-press keeps opening the
+                // action sheet, single tap stays inert exactly as before.
+                if (onLongPress != null || onDoubleClick != null) {
+                    Modifier.combinedClickable(
+                        onClick = { },
+                        onLongClick = onLongPress,
+                        onDoubleClick = onDoubleClick,
+                    )
                 } else {
                     Modifier
                 },

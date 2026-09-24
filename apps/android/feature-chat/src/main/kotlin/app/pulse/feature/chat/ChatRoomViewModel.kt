@@ -1335,6 +1335,21 @@ class ChatRoomViewModel @Inject constructor(
     fun openLeaderboard() { leaderboardOpen = true }
     fun openRedPacketDetail(id: String) { redPacketDetailId = id }
 
+    // ── R6 — BE7: room-header reminders badge (web header button + count) ──
+    /** Upcoming (not fired, remindAt in the future) reminder count for the header badge. */
+    private val _remindersUpcoming = MutableStateFlow(0)
+    val remindersUpcoming: StateFlow<Int> = _remindersUpcoming.asStateFlow()
+
+    fun loadRemindersUpcoming() {
+        viewModelScope.launch {
+            val page = runCatching { repo.reminders(dueOnly = false).getOrNull() }.getOrNull()
+            val now = System.currentTimeMillis()
+            _remindersUpcoming.value = page?.items.orEmpty().count { item ->
+                item.firedAt == null && PulseTime.epochMs(item.remindAt) > now
+            }
+        }
+    }
+
     /** POST /api/redpackets — honest 402/400 copy surfaces verbatim. */
     fun createRedPacket(total: Long, count: Int, note: String?) {
         viewModelScope.launch {
@@ -1467,7 +1482,10 @@ class ChatRoomViewModel @Inject constructor(
     fun createReminder(note: String, remindAtIso: String, anchoredMessageId: String? = null) {
         viewModelScope.launch {
             repo.createReminder(conversationId, anchoredMessageId, note, remindAtIso)
-                .onSuccess { remindersOpen = false }
+                .onSuccess {
+                    remindersOpen = false
+                    loadRemindersUpcoming() // R6 — BE7: keep the header badge honest
+                }
                 .onFailure { notify(it.message ?: "Could not set the reminder", isError = true) }
         }
     }
@@ -1609,14 +1627,19 @@ class ChatRoomViewModel @Inject constructor(
 
     fun resolveReminder(reminderId: String) {
         viewModelScope.launch {
-            repo.resolveReminder(reminderId).onFailure { notify(it.message ?: "Couldn't resolve the reminder", isError = true) }
+            repo.resolveReminder(reminderId)
+                .onSuccess { loadRemindersUpcoming() } // R6 — BE7: badge refresh
+                .onFailure { notify(it.message ?: "Couldn't resolve the reminder", isError = true) }
         }
     }
 
     fun deleteReminder(reminderId: String) {
         viewModelScope.launch {
             repo.deleteReminder(reminderId)
-                .onSuccess { notify("Reminder canceled") }
+                .onSuccess {
+                    notify("Reminder canceled")
+                    loadRemindersUpcoming() // R6 — BE7: badge refresh
+                }
                 .onFailure { notify(it.message ?: "Could not cancel the reminder", isError = true) }
         }
     }
@@ -1632,7 +1655,9 @@ class ChatRoomViewModel @Inject constructor(
     private val _phrasesBusy = MutableStateFlow(false)
     val phrasesBusy: StateFlow<Boolean> = _phrasesBusy.asStateFlow()
 
-    private var phrasesOpen by androidx.compose.runtime.mutableStateOf(false)
+    // R6 — M2: public (was private + zero callers → the manage sheet could
+    // never open). Hosted by ChatRoomScreen beside the other sheet flags.
+    var phrasesOpen by androidx.compose.runtime.mutableStateOf(false)
 
     fun openPhrases() { phrasesOpen = true }
     fun closePhrases() { phrasesOpen = false }

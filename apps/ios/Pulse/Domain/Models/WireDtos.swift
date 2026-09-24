@@ -517,6 +517,15 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     // summaries and older relays → nil (veil off).
     public var screenPrivacy: Bool? = nil
     public var myScreenPrivacy: Bool? = nil
+    // R47 — DM blocked-pair dead-end flag (serializers.ts:542 `dmBlocked`,
+    // DETAIL-only: a UserBlock in EITHER direction between the viewer and
+    // the other participant; groups always send false). Absent on list
+    // summaries and older relays → nil (not blocked).
+    public var dmBlocked: Bool? = nil
+
+    /// R47 — nil-coalescing helper: the DM dead-end notice flag (web
+    /// chat-room.tsx:2293 `detailData?.dmBlocked ?? false` parity).
+    public var dmBlockedNow: Bool { dmBlocked ?? false }
 
     /// Pin/mute state derived from the wire timestamps (web parity helpers —
     /// ChatsView swipe + context menus read these).
