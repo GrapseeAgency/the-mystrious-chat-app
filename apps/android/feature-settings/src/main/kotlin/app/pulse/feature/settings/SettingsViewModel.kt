@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -100,6 +101,15 @@ class SettingsViewModel @Inject constructor(
     /** Real-time & Voice — live relay truth. */
     val connected: StateFlow<Boolean> = repo.observeConnected()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /**
+     * R7 item 6 — "People online now" (web settings-screen.tsx:1419-1424):
+     * the SAME live presence flow the room presence chips consume, reduced to
+     * a count for the trailing badge.
+     */
+    val onlineCount: StateFlow<Int> = repo.observePresence()
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     init {
         viewModelScope.launch {

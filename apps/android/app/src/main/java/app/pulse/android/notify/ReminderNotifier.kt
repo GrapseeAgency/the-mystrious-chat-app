@@ -85,9 +85,18 @@ object ReminderNotifier {
      * R2-C item 6 — [conversationId] (when known) arms the contentIntent:
      * tapping the notification deep-links `pulse://room/<id>` (the Wave-6
      * routing in MainActivity handles the rest — the notification opens the
-     * exact chat, web parity for reminder nudges).
+     * exact chat, web parity for reminder nudges). R7 item 4 — [messageId]
+     * (when the reminder anchors a message) appends the `?jump=<mid>` payload
+     * so the room auto-jumps + flashes the anchored bubble on open.
      */
-    fun show(context: Context, reminderId: String, title: String, body: String, conversationId: String? = null) {
+    fun show(
+        context: Context,
+        reminderId: String,
+        title: String,
+        body: String,
+        conversationId: String? = null,
+        messageId: String? = null,
+    ) {
         ensureChannel(context)
         if (!notificationsAllowed(context)) return
         // Wave 8 alert gate — server prefs (sound/vibrate) + LOCAL quiet hours:
@@ -100,8 +109,10 @@ object ReminderNotifier {
         builder.setContentText(body.take(178))
         builder.setAutoCancel(true)
         if (!conversationId.isNullOrBlank()) {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pulse://room/$conversationId"))
-                .apply {
+            val intent = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(app.pulse.core.link.PulseDeepLink.roomUri(conversationId, messageId)),
+            ).apply {
                     // Confined to OUR pulse:// handler (the manifest VIEW
                     // intent-filter) — never handed to another app.
                     setPackage(context.packageName)
@@ -125,12 +136,20 @@ object ReminderNotifier {
     private fun workName(reminderId: String) = "pulse-reminder-$reminderId"
 
     /** Schedule the offline-capable one-shot; replaces any pending copy of the same reminder. */
-    fun schedule(context: Context, reminderId: String, note: String, remindAtEpochMs: Long, conversationId: String? = null) {
+    fun schedule(
+        context: Context,
+        reminderId: String,
+        note: String,
+        remindAtEpochMs: Long,
+        conversationId: String? = null,
+        messageId: String? = null,
+    ) {
         if (remindAtEpochMs <= System.currentTimeMillis()) return
         val data = Data.Builder()
             .putString(KEY_ID, reminderId)
             .putString(KEY_NOTE, note)
             .putString(KEY_CONVERSATION_ID, conversationId.orEmpty())
+            .putString(KEY_MESSAGE_ID, messageId.orEmpty())
             .build()
         val request = OneTimeWorkRequestBuilder<ReminderWorker>()
             .setInitialDelay(remindAtEpochMs - System.currentTimeMillis(), TimeUnit.MILLISECONDS)
@@ -147,6 +166,7 @@ object ReminderNotifier {
     private const val KEY_ID = "reminderId"
     private const val KEY_NOTE = "note"
     private const val KEY_CONVERSATION_ID = "conversationId"
+    private const val KEY_MESSAGE_ID = "messageId"
 
     /**
      * Fires the local notification at remindAt (no network needed). Server
@@ -157,7 +177,8 @@ object ReminderNotifier {
             val id = inputData.getString(KEY_ID) ?: return Result.success()
             val note = inputData.getString(KEY_NOTE).orEmpty().ifBlank { "Reminder" }
             val conversationId = inputData.getString(KEY_CONVERSATION_ID).orEmpty().ifBlank { null }
-            show(applicationContext, id, note, "Reminder", conversationId)
+            val messageId = inputData.getString(KEY_MESSAGE_ID).orEmpty().ifBlank { null }
+            show(applicationContext, id, note, "Reminder", conversationId, messageId)
             return Result.success()
         }
     }

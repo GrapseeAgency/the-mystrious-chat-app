@@ -10,14 +10,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -27,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +42,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,6 +55,7 @@ import app.pulse.protocol.RedPacketDetailDto
 import app.pulse.protocol.TournamentSummaryDto
 import app.pulse.ui.PulsePalette
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Wave 7 in-bubble rich-object cards (F-RO-02 red packet, F-RO-07 tic-tac-toe,
@@ -194,6 +204,10 @@ fun TicTacToeCard(
     load: suspend () -> GameDetailDto?,
     onMove: (Int) -> Unit,
     onJoin: () -> Unit,
+    // R7 item 3 — rematch (web game-tictactoe-card.tsx:213-236 + 452-476):
+    // posts a fresh challenge against the ORIGINAL opponent; the new invite
+    // message arrives via the normal message stream.
+    onRematch: suspend (GameMatchDto) -> Unit = {},
 ) {
     var detail by remember(matchId) { mutableStateOf(initial) }
 
@@ -310,6 +324,53 @@ fun TicTacToeCard(
                 Text("Take the O seat")
             }
         }
+        // R7 item 3 — "Rematch" (web verbatim): finished match + I'm a player
+        // + both seats filled. Emerald tinted pill (border-emerald-500/30 on
+        // bg-emerald-500/10), spinner + disabled while the POST is in flight.
+        val finished = m.status != "active"
+        if (finished && mySide != null && m.playerOId != null) {
+            var rematching by remember(matchId) { mutableStateOf(false) }
+            val rematchScope = rememberCoroutineScope()
+            // R7 item 3 — web rematch() fires haptic(6) before the POST
+            // (game-tictactoe-card.tsx:217); the native TextHandleMove tick
+            // rides the SAME tap the in-flight disable arms on.
+            val haptics = LocalHapticFeedback.current
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    if (rematching) return@Button
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    rematchScope.launch {
+                        rematching = true
+                        try {
+                            onRematch(m)
+                        } finally {
+                            rematching = false
+                        }
+                    }
+                },
+                enabled = !rematching,
+                shape = RoundedCornerShape(999.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PulsePalette.Emerald.copy(alpha = 0.10f),
+                    contentColor = PulsePalette.Emerald,
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, PulsePalette.Emerald.copy(alpha = 0.30f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (rematching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = PulsePalette.Emerald,
+                    )
+                } else {
+                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+                Text("Rematch", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
@@ -326,7 +387,16 @@ fun TournamentCard(
     onFinish: () -> Unit,
 ) {
     var t by remember(tournamentId) { mutableStateOf<TournamentSummaryDto?>(null) }
-    LaunchedEffect(tournamentId) { load()?.let { t = it } }
+    // R7 item 9 — standings poll every 15s while the card is visible
+    // (web tournament-card.tsx:29 POLL_MS + :76-77 refetchInterval while
+    // running). The LaunchedEffect lives exactly as long as the bubble is
+    // composed, so off-screen tournaments cost nothing.
+    LaunchedEffect(tournamentId) {
+        while (true) {
+            load()?.let { t = it }
+            delay(15_000)
+        }
+    }
 
     val joined = t?.entries?.any { it.userId == viewerId } == true
     val running = t?.status == "running"
@@ -347,13 +417,58 @@ fun TournamentCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        t?.entries?.take(3)?.forEachIndexed { i, e ->
+        // R7 item 9 — ALL standings entries (web tournament-card.tsx:183 maps
+        // every entry), scrollable like the web's max-h-56 list, with the
+        // podium colors on the top-3 rank (web MEDALS: 1 amber / 2 zinc /
+        // 3 orange) and the emerald "· you" marker on the viewer's row.
+        val entries = t?.entries.orEmpty()
+        if (entries.isEmpty()) {
             Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${i + 1}.", color = PulsePalette.Emerald, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Spacer(Modifier.width(6.dp))
-                Text(e.name, Modifier.weight(1f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${e.points} pts · ${e.wins}W ${e.losses}L ${e.draws}D", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "No players yet — be the first",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 224.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            entries.forEachIndexed { i, e ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${i + 1}.",
+                        color = when (i) {
+                            0 -> Color(0xFFF59E0B) // amber-500
+                            1 -> Color(0xFF9CA3AF) // zinc-400
+                            2 -> Color(0xFFFB923C) // orange-400
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        e.name + if (e.userId == viewerId) "  · you" else "",
+                        Modifier.weight(1f),
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (e.userId == viewerId) PulsePalette.Emerald else Color.Unspecified,
+                    )
+                    Text(
+                        "${e.points} pts · ${e.wins}W ${e.losses}L ${e.draws}D",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(8.dp))

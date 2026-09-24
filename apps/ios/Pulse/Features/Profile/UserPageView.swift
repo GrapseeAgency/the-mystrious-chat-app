@@ -301,7 +301,7 @@ struct UserPageView: View {
 
                     Button {
                         PulseHaptics.tap()
-                        withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { model.reportOpen.toggle() }
+                        withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { model.reportOpen.toggle() }
                     } label: {
                         Text(model.reportOpen ? "Hide report" : "Report")
                             .font(.system(size: 13, weight: .semibold))

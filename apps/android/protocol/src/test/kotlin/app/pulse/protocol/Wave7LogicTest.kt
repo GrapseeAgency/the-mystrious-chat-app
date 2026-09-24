@@ -262,4 +262,24 @@ class Wave7LogicTest {
         assertEquals("", PulseWave7Logic.relativeStamp(null, now))
         assertEquals("", PulseWave7Logic.relativeStamp("not-a-date", now))
     }
+
+    // ── R7 item 4 — reminder rows carry the anchored message id (the Jump
+    // action + the room route ?jump= arg are dead without it on the wire) ──
+
+    @Test
+    fun `reminder item decodes messageId present and absent`() {
+        val withId = PulseJson.decodeFromString(
+            RemindersPageDto.serializer(),
+            """{"items":[{"id":"r1","conversationId":"c1","messageId":"m9","note":"check this",
+                "remindAt":"2026-01-20T09:00:00.000Z","firedAt":null,
+                "conversation":{"id":"c1","name":"Lounge","isGroup":true}}]}""",
+        )
+        assertEquals("m9", withId.items.single().messageId)
+        // legacy relays that never sent the field keep decoding (null = no Jump row).
+        val withoutId = PulseJson.decodeFromString(
+            RemindersPageDto.serializer(),
+            """{"items":[{"id":"r2","conversationId":"c1","note":"plain","remindAt":"2026-01-20T09:00:00.000Z"}]}""",
+        )
+        assertNull(withoutId.items.single().messageId)
+    }
 }

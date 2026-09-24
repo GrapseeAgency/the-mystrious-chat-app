@@ -674,6 +674,9 @@ fun RemindersSheet(
     onCreate: (note: String, remindAtIso: String, anchoredMessageId: String?) -> Unit,
     onResolve: (id: String) -> Unit,
     onDelete: (id: String) -> Unit,
+    // R7 item 4 — web REMINDER_JUMP_EVENT parity: rows anchored to a message
+    // offer Jump (host dismisses the sheet + jumps/flash-engines there).
+    onJump: (item: app.pulse.protocol.ReminderItemDto) -> Unit = {},
     anchoredMessageId: String?,
     onDismiss: () -> Unit,
 ) {
@@ -747,6 +750,21 @@ fun RemindersSheet(
                             (if (due) "DUE NOW — " else "") + formatEventTime(r.remindAt) + (r.conversation.name.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
                             fontSize = 12.sp,
                             color = if (due) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (r.messageId != null && r.firedAt == null) {
+                        // R7 item 4 — jump to the anchored message (web row tap
+                        // parity, reminders-sheet.tsx jump()); the host closes
+                        // the sheet and routes the jump.
+                        Text(
+                            "Jump",
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onJump(r) }
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            color = PulsePalette.Emerald,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
                         )
                     }
                     if (r.firedAt == null) {

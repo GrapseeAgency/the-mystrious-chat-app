@@ -54,4 +54,38 @@ class PulseDeepLinkTest {
     fun `scheme is case-insensitive and keys keep their case`() {
         assertEquals(PulseDeepLink.Room("C1"), PulseDeepLink.parse("PULSE://room/C1"))
     }
+
+    // ── R7 item 4 — reminder jump payload on room deep links ──
+
+    @Test
+    fun `roomUri builds the jump payload only when a message id is present`() {
+        assertEquals("pulse://room/c1", PulseDeepLink.roomUri("c1"))
+        assertEquals("pulse://room/c1?jump=m1", PulseDeepLink.roomUri("c1", "m1"))
+        assertEquals("pulse://room/c1", PulseDeepLink.roomUri("c1", ""))
+        assertEquals("pulse://room/c1", PulseDeepLink.roomUri("c1", null))
+    }
+
+    @Test
+    fun `parses the jump query param on both wire shapes`() {
+        assertEquals(
+            PulseDeepLink.Room("c1", "m1"),
+            PulseDeepLink.parse("pulse://room/c1?jump=m1"),
+        )
+        assertEquals(
+            PulseDeepLink.Room("c9", "m9"),
+            PulseDeepLink.parse("pulse:chat/c9?jump=m9"),
+        )
+        // Round-trip: builder → parser keeps the anchored message.
+        assertEquals(
+            PulseDeepLink.Room("c1", "m1"),
+            PulseDeepLink.parse(PulseDeepLink.roomUri("c1", "m1")),
+        )
+    }
+
+    @Test
+    fun `other query params and non-room kinds ignore jump`() {
+        assertEquals(PulseDeepLink.Room("c1"), PulseDeepLink.parse("pulse://room/c1?x=1"))
+        assertEquals(PulseDeepLink.Room("c1", "m1"), PulseDeepLink.parse("pulse://room/c1?x=1&jump=m1"))
+        assertEquals(PulseDeepLink.User("u1"), PulseDeepLink.parse("pulse://user/u1?jump=m1"))
+    }
 }

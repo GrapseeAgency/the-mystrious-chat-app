@@ -80,6 +80,8 @@ class BootReceiver : BroadcastReceiver() {
                     item.note.ifBlank { "Reminder" },
                     remindAtMs,
                     item.conversationId.ifBlank { null },
+                    // R7 item 4 — the anchored message keeps its jump payload.
+                    item.messageId,
                 )
             } else if (item.firedAt == null) {
                 // Came due while the device was off — nudge now, converge after.
@@ -89,6 +91,8 @@ class BootReceiver : BroadcastReceiver() {
                     item.note.ifBlank { "Reminder" },
                     item.snippet ?: item.conversation.name,
                     item.conversationId.ifBlank { null },
+                    // R7 item 4 — the anchored message keeps its jump payload.
+                    item.messageId,
                 )
                 runCatching { repository.resolveReminder(item.id) }
             }

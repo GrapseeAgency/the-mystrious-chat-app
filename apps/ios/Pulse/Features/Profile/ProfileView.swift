@@ -12,6 +12,9 @@ struct ProfileView: View {
     @State private var identitySheet = false
     // Wave 6 — the full profile editor (F-CP-04/09) via the real PATCH.
     @State private var editProfileOpen = false
+    // R7 bonus — the saved-messages library in the profile tab (web hosts it
+    // here; iOS only exposed it through the dock-More menu).
+    @State private var savedOpen = false
     // R2-B — hub wallet chip state (GET /api/hub/wallet?userId=).
     enum WalletPhase: Equatable { case loading, loaded, failed }
     @State private var walletPhase: WalletPhase = .loading
@@ -22,6 +25,7 @@ struct ProfileView: View {
             List {
                 identitySection
                 walletSection
+                savedSection
                 statusSection
                 appearanceSection
                 motionSection
@@ -35,6 +39,16 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $editProfileOpen) {
             ProfileEditView(session: session, prefs: prefs)
+        }
+        .sheet(isPresented: $savedOpen) {
+            // R7 bonus — the EXISTING SavedLibraryView route (RootView mounts
+            // the same sheet from dock-More). "Open original" hands the room
+            // + jump target to the session bridge; the Chats tab consumes it
+            // (Published replay) on next activation.
+            SavedLibraryView(session: session) { conversation, messageId in
+                savedOpen = false
+                session.requestOpenRoom(conversation, jumpMessageId: messageId)
+            }
         }
         .task { await loadWallet() }
     }
@@ -97,6 +111,31 @@ struct ProfileView: View {
                 : "Coin balance loading")
         } footer: {
             Text("Earn coins from check-ins and tasks — spend them in the Hub.")
+        }
+    }
+
+    /// R7 bonus — "Saved messages" row (web copy verbatim) → the library
+    /// sheet. Same bookmark row language as the wallet row above.
+    private var savedSection: some View {
+        Section {
+            Button {
+                savedOpen = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "bookmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(PulseTheme.emerald)
+                    Text("Saved messages")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(PulseTheme.titleOnPanel)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Saved messages")
         }
     }
 

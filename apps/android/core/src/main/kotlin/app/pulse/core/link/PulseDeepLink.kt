@@ -15,10 +15,31 @@ package app.pulse.core.link
 sealed interface PulseDeepLink {
     data class Invite(val code: String) : PulseDeepLink
     data class User(val userId: String) : PulseDeepLink
-    data class Room(val conversationId: String) : PulseDeepLink
+
+    /**
+     * R7 item 4 — [jumpMessageId] optionally carries a reminder's anchored
+     * message: the notification deep-link becomes `pulse://room/<id>?jump=<mid>`
+     * and the room auto-jumps + flashes on open (web REMINDER_JUMP_EVENT parity).
+     */
+    data class Room(val conversationId: String, val jumpMessageId: String? = null) : PulseDeepLink
 
     companion object {
         const val SCHEME = "pulse"
+
+        /**
+         * Pure route builder for room deep links — `pulse://room/<id>` with an
+         * optional `?jump=<messageId>` payload (ReminderNotifier uses it).
+         */
+        fun roomUri(conversationId: String, jumpMessageId: String? = null): String =
+            buildString {
+                append(SCHEME)
+                append("://room/")
+                append(conversationId)
+                if (!jumpMessageId.isNullOrBlank()) {
+                    append("?jump=")
+                    append(jumpMessageId)
+                }
+            }
 
         /** Parse a URI handed over by the system (onCreate/onNewIntent). */
         fun parse(rawUri: String?): PulseDeepLink? {
@@ -30,11 +51,30 @@ sealed interface PulseDeepLink {
                 runCatching { java.net.URLDecoder.decode(segment, "UTF-8") }.getOrNull()
                     ?.takeIf { it.isNotBlank() }
 
+            // R7 item 4 — the `jump` query param rides along (first one wins).
+            // NOTE: java.net.URI marks the bare-ssp shape (pulse:chat/c9?jump=m9,
+            // no "//") OPAQUE — rawQuery is null there and the query lives inside
+            // the scheme-specific part, so fall back to the substring after '?'.
+            val query = uri.rawQuery
+                ?: uri.rawSchemeSpecificPart?.takeIf { it.contains('?') }?.substringAfter('?')
+            val jump = query
+                ?.split('&')
+                ?.mapNotNull { segment ->
+                    val eq = segment.indexOf('=')
+                    if (eq <= 0) return@mapNotNull null
+                    val key = decode(segment.substring(0, eq)) ?: return@mapNotNull null
+                    val value = decode(segment.substring(eq + 1)) ?: return@mapNotNull null
+                    key.lowercase() to value
+                }
+                ?.firstOrNull { it.first == "jump" }
+                ?.second
+
             // pulse://invite/abc → authority "invite" + path "/abc";
             // pulse:invite/abc   → no authority, the ssp IS "invite/abc".
             val parts = buildList {
                 uri.host?.takeIf { it.isNotBlank() }?.let { add(it.lowercase()) }
-                val tail = if (uri.host.isNullOrBlank()) uri.rawSchemeSpecificPart else uri.rawPath
+                val tail = (if (uri.host.isNullOrBlank()) uri.rawSchemeSpecificPart else uri.rawPath)
+                    ?.substringBefore('?')
                 tail?.split('/')?.forEach { segment -> decode(segment)?.let(::add) }
             }
             if (parts.size < 2) return null
@@ -43,7 +83,7 @@ sealed interface PulseDeepLink {
             return when (parts[0]) {
                 "invite", "join", "group" -> Invite(code = key)
                 "user", "u" -> User(userId = key)
-                "room", "chat", "conversation" -> Room(conversationId = key)
+                "room", "chat", "conversation" -> Room(conversationId = key, jumpMessageId = jump)
                 else -> null
             }
         }

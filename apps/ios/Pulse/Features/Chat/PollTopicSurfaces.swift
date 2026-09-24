@@ -152,7 +152,7 @@ struct PollCard: View {
         }
         .buttonStyle(PulseButtonStyle())
         .disabled(!canVote)
-        .animation(.pulse(.pulseSoft, reduceMotion: false), value: totalVotes)
+        .animation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion), value: totalVotes)
         .accessibilityHint(canVote ? "Vote for this option" : isPicked ? "Your vote" : "Voting unavailable")
     }
 }
@@ -304,7 +304,7 @@ struct TopicBar: View {
                         }
                     }
                     Button {
-                        withAnimation(.pulse(.pulseSnappy, reduceMotion: false)) { creating.toggle() }
+                        withAnimation(.pulse(.pulseSnappy, reduceMotion: PulseMotion.reduceMotion)) { creating.toggle() }
                     } label: {
                         Image(systemName: "plus")
                             .font(.caption.weight(.bold))
@@ -366,7 +366,7 @@ struct TopicBar: View {
                 .buttonStyle(PulseButtonStyle())
                 .disabled(draftName.trimmingCharacters(in: .whitespaces).isEmpty)
                 Button {
-                    withAnimation(.pulse(.pulseSnappy, reduceMotion: false)) { creating = false }
+                    withAnimation(.pulse(.pulseSnappy, reduceMotion: PulseMotion.reduceMotion)) { creating = false }
                     draftName = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")

@@ -102,6 +102,11 @@ private struct RoomMessageRow: View {
     let bubbleRadius: PulseBubbleRadius
     /// R30-c — the tap-time unread divider sits right above this row.
     let showUnreadDivider: Bool
+    // R7 — web buildItems cluster verdict for THIS row: head rows carry the
+    // sender name (web MessageRow `head` gate), non-head rows tighten the
+    // stack gap by `clusterTighten` (web mt-px/mt-0.5 parity).
+    let cluster: PulseCluster.Flags
+    let clusterTighten: CGFloat
     let onOpenImage: (WireChatMessage) -> Void
     let onOpenFile: (WireChatMessage) -> Void
     let onOpenThread: (WireChatMessage) -> Void
@@ -166,7 +171,19 @@ private struct RoomMessageRow: View {
                     // hearts burst rides the VM react (❤️ → .hearts fire).
                     viewModel.react(message, emoji: "❤️", session: session)
                 },
+                isClusterHead: cluster.head,
+                onSwipeReply: {
+                    // R7 — swipe past 28pt → the SAME reply path the context
+                    // menu "Reply" uses (web beginReply parity).
+                    viewModel.beginReply(to: message)
+                },
             )
+            // R7 — non-head clustered rows pull the bubble up (negative top
+            // padding inside the LazyVStack gap): cozy 6→2, compact 2→1 — the
+            // web's mt-px/mt-0.5 clustered rhythm vs the mt-2.5 head gap.
+            // Attached to the bubble only (a Group modifier would also hit the
+            // optional divider/day-chip children).
+            .padding(.top, cluster.head ? 0 : -clusterTighten)
             .contextMenu { contextMenu }
             .onAppear {
                 // Oldest rendered row reaching the viewport = page older
@@ -882,6 +899,28 @@ private struct RoomContent: View {
                 },
                 onResolve: { id in wave7.resolveReminder(api: session.api, id: id) },
                 onDelete: { id in wave7.deleteReminder(api: session.api, id: id) },
+                onJump: { item in
+                    // R7 — web onReminderJump parity (chat-room.tsx:1093-1103):
+                    // close the sheet first; a reminder anchored in THIS room
+                    // jumps + flashes, another room navigates there with the
+                    // jump target riding the established requestOpenRoom bridge
+                    // (saved-library "open original" parity).
+                    wave7.remindersOpen = false
+                    guard let messageId = item.messageId else { return }
+                    if item.conversationId == nil || item.conversationId == conversation.id {
+                        viewModel.jumpTo(messageId)
+                    } else {
+                        let targetId = item.conversationId ?? ""
+                        let targetName = item.conversation?.name ?? "another chat"
+                        Task {
+                            if let conv = try? await session.api.conversationDetail(id: targetId, userId: session.api.userId) {
+                                session.requestOpenRoom(conv, jumpMessageId: messageId)
+                            } else {
+                                session.toasts.show("That reminder lives in \(targetName) — open it to see the message")
+                            }
+                        }
+                    }
+                },
                 anchored: wave7.reminderAnchor,
             )
         }
@@ -926,6 +965,11 @@ private struct RoomContent: View {
             wave7.cardGrab = { id in wave7.grabRedPacket(api: session.api, packetId: id) }
             wave7.cardMove = { matchId, cell in wave7.moveGame(api: session.api, matchId: matchId, cell: cell) }
             wave7.cardJoinGame = { matchId in wave7.joinGame(api: session.api, matchId: matchId) }
+            // R7 — rematch: card hands the opponent id, the room supplies
+            // conversation.id + api (in-flight spinner + toast ride wave7).
+            wave7.cardRematch = { opponentId in
+                wave7.rematchGame(api: session.api, conversationId: conversation.id, opponentId: opponentId)
+            }
             wave7.cardJoinTournament = { tid in wave7.joinTournament(api: session.api, tournamentId: tid) }
             wave7.cardFinishTournament = { tid in wave7.finishTournament(api: session.api, tournamentId: tid) }
             wave7.cardOpenDetail = { id in wave7.redPacketDetailId = id }
@@ -1168,7 +1212,17 @@ private struct RoomContent: View {
 
     // ── messages ─────────────────────────────────────────────
     private var messagesList: some View {
-        ScrollViewReader { proxy in
+        // R7 — cluster verdicts computed ONCE per river build (web buildItems
+        // parity, chat-room.tsx:1367-1424): sender name renders on head rows
+        // only and clustered rows tighten. Pure kernel → no memo cache needed;
+        // the map pass is O(n) like the row build itself.
+        let clusterFlags = PulseCluster.clusterFlags(
+            createdAtMs: viewModel.messages.map { (PulseFormat.date($0.createdAt)?.timeIntervalSince1970 ?? 0) * 1000 },
+            senderIds: viewModel.messages.map(\.senderId),
+            anon: viewModel.messages.map { $0.anon ?? false },
+            anonAliases: viewModel.messages.map(\.anonAlias),
+        )
+        return ScrollViewReader { proxy in
             ScrollView {
                 // Wave 8 — prefs density: cozy keeps the Wave-0 rhythm,
                 // compact tightens the river (web chat-room density parity).
@@ -1190,6 +1244,11 @@ private struct RoomContent: View {
                             colorOf: colorOf,
                             bubbleRadius: prefs.bubbleRadius,
                             showUnreadDivider: (unreadDividerIndex ?? -1) == index,
+                            // R7 — this row's web buildItems cluster verdict
+                            // + the density-scaled gap tighten for non-head
+                            // rows (web mt-0.5/mt-px parity).
+                            cluster: clusterFlags[index],
+                            clusterTighten: prefs.density == .cozy ? 4 : 1,
                             onOpenImage: { openLightbox($0) },
                             onOpenFile: { openFile($0) },
                             onOpenThread: { threadRoot = $0 },
@@ -1524,10 +1583,14 @@ private struct RoomContent: View {
             if conversation.isGroup && viewModel.anonOn {
                 incognitoPill
             }
-            // R3-A item 3 — pending scheduled sends (web scheduledChip parity,
-            // chat-room.tsx:4726-4741) — tap opens the manager drawer.
-            if viewModel.scheduledCount > 0 {
-                scheduledChip
+            // R7 — topic filing pill (web chat-room.tsx:4663-4690): persistent
+            // emerald pill above the composer while a topic view is active and
+            // the composer is not editing — X stops filing (back to General).
+            if conversation.isGroup,
+               viewModel.activeTopicId != nil,
+               viewModel.editingTarget == nil,
+               let filingName = viewModel.topics.first(where: { $0.id == viewModel.activeTopicId })?.name {
+                topicFilingPill(name: filingName)
             }
             if broadcastLocked {
                 // F-CH-04 — the broadcast lock replaces the composer row for
@@ -1633,36 +1696,41 @@ private struct RoomContent: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// R3-A item 3 — pending scheduled sends (web scheduledChip :4726-4741
-    /// "N pending — tap to manage" parity; the web also stamps the next
-    /// dispatch time, the iOS count-only chip notes that divergence).
-    private var scheduledChip: some View {
-        Button {
-            PulseHaptics.tap()
-            scheduledManagerOpen = true
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "clock")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(PulseTheme.amber)
-                Text("\(viewModel.scheduledCount) pending — tap to manage")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(PulseTheme.textSecondary)
-                Spacer(minLength: 0)
+    /// R7 — topic filing pill (web chat-room.tsx:4663-4690 copy verbatim:
+    /// "Filing to #<name>", MessagesSquare glyph, X → back to General with
+    /// haptic). Same glass style as the sibling incognito pill.
+    private func topicFilingPill(name: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "bubble.left.and.bubble.right.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(PulseTheme.emerald)
+            Text("Filing to #\(name)")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(PulseTheme.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Button {
+                // setActiveTopic already haptics (web pill X parity) — no
+                // second tap here.
+                viewModel.setActiveTopic(nil, session: session)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(PulseTheme.textTertiary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(PulseTheme.glassFill)
-                    .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)),
-            )
-            .frame(maxWidth: .infinity)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop filing to this topic — back to General")
         }
-        .buttonStyle(PulseButtonStyle())
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(PulseTheme.emerald.opacity(0.12))
+                .overlay(Capsule().strokeBorder(PulseTheme.emerald.opacity(0.35), lineWidth: 1)),
+        )
         .padding(.horizontal, 14)
         .padding(.bottom, 6)
-        .accessibilityLabel("\(viewModel.scheduledCount) scheduled messages — open the manager")
+        .frame(maxWidth: .infinity)
     }
 
     // ── R3-A item 1 — the '/' palette wiring ─────────────────
@@ -2348,6 +2416,18 @@ private extension View {
             self
         }
     }
+
+    /// R7 — conditional drag attachment: when `active` is false NOTHING is
+    /// attached (call sites keep their exact gesture graph) — the swipe-to-
+    /// reply twin of heartDoubleTapGesture above.
+    @ViewBuilder
+    func swipeReplyDrag<G: Gesture>(_ gesture: G, active: Bool) -> some View {
+        if active {
+            self.gesture(gesture)
+        } else {
+            self
+        }
+    }
 }
 
 /// One message bubble — the web outcome with an iOS accent: asymmetric
@@ -2390,6 +2470,18 @@ struct BubbleView: View {
     // onDoubleClick parity). nil = gesture NOT attached (threads stay nil;
     // the hearts burst rides the VM react path, not here).
     var onDoubleTapHeart: (() -> Void)? = nil
+    // R7 — web buildItems cluster verdict: sender name renders on HEAD rows
+    // only (chat-room.tsx:7289 `!mine && isGroup && head` parity). Default
+    // true keeps thread/decorative uses rendering exactly as before.
+    var isClusterHead: Bool = true
+    // R7 — swipe-bubble-to-reply (web chat-room.tsx:7248-7263): horizontal
+    // drag past 28pt toward the reply side → beginReply. nil = gesture NOT
+    // attached (threads/decorative uses keep their exact gesture graph).
+    var onSwipeReply: (() -> Void)? = nil
+
+    // R7 — live horizontal offset of the bubble during the reply swipe
+    // (clamped ±64, spring-snapped back on release, web dragConstraints).
+    @State private var swipeX: CGFloat = 0
 
     /// R47 — the double-tap action when the row is interactive (web
     /// `interactive = !deleted && !pending`, chat-room.tsx:7212). nil when
@@ -2398,6 +2490,33 @@ struct BubbleView: View {
     private var heartDoubleTapAction: (() -> Void)? {
         guard onDoubleTapHeart != nil, !isDeleted, !isPending else { return nil }
         return { onDoubleTapHeart?() }
+    }
+
+    // R7 — the swipe signal along the NATURAL reply direction (web towardX:
+    // mine ? -x : x) — dragging "the wrong way" keeps the hint at opacity 0.
+    private var swipeToward: CGFloat { mine ? -swipeX : swipeX }
+
+    /// R7 — the horizontal reply drag (web chat-room.tsx:7248-7263):
+    /// minimumDistance 14 keeps vertical scrolling AND the long-press
+    /// contextMenu recognizing (the drag only claims predominantly horizontal
+    /// moves); the count-2 double-tap still wins — it needs no 14pt travel.
+    /// Clamp ±64 (web dragConstraints), toward > 28 → haptic + the wired
+    /// reply path, then the bubble spring-snaps home (web dragSnapToOrigin).
+    private var swipeReplyGesture: some Gesture {
+        DragGesture(minimumDistance: 14)
+            .onChanged { value in
+                swipeX = max(-64, min(64, value.translation.width))
+            }
+            .onEnded { value in
+                let toward = mine ? -value.translation.width : value.translation.width
+                if toward > 28 {
+                    PulseHaptics.tap()
+                    onSwipeReply?()
+                }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                    swipeX = 0
+                }
+            }
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -2433,7 +2552,10 @@ struct BubbleView: View {
                 CapsuleLabel(message.content)
                     .padding(.vertical, 4)
             } else {
-                if groupChat && !mine, let sender = message.sender {
+                // R7 — sender name renders on HEAD rows of incoming group
+                // messages only (web chat-room.tsx:7289 head gate; the little
+                // color dot is the row's avatar stand-in — gated with it).
+                if groupChat && !mine, isClusterHead, let sender = message.sender {
                     HStack(spacing: 5) {
                         Circle().fill(PulseTheme.color(named: sender.color)).frame(width: 6, height: 6)
                         Text(sender.name)
@@ -2446,8 +2568,24 @@ struct BubbleView: View {
                 HStack(alignment: .bottom, spacing: 4) {
                     if mine { Spacer(minLength: 44) }
                     bubble
+                        .offset(x: swipeX)
                         .heartDoubleTapGesture(heartDoubleTapAction)
+                        .swipeReplyDrag(swipeReplyGesture, active: onSwipeReply != nil)
                     if !mine { Spacer(minLength: 44) }
+                }
+                .overlay(alignment: mine ? .trailing : .leading) {
+                    // R7 — reply-arrow hint while dragging (web hintOpacity =
+                    // clamp((toward-4)/24, 0…1); both sides share one signal,
+                    // so dragging "the wrong way" keeps the hint invisible).
+                    if swipeX != 0 {
+                        Image(systemName: mine ? "arrowshape.turn.up.right.fill" : "arrowshape.turn.up.left.fill")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(PulseTheme.emerald)
+                            .padding(7)
+                            .background(Circle().fill(PulseTheme.emerald.opacity(0.12)))
+                            .opacity(min(1, max(0, (swipeToward - 4) / 24)))
+                            .allowsHitTesting(false)
+                    }
                 }
 
                 // Wave 1 — "N replies ↳" chip opens the thread sheet.
@@ -2608,6 +2746,9 @@ struct BubbleView: View {
                 load: { id in await wave7.cardGameLoad(id) },
                 onMove: { cell in wave7.cardMove(gp.matchId, cell) },
                 onJoin: { wave7.cardJoinGame(gp.matchId) },
+                // R7 — rematch POSTs /api/games against the finished match's
+                // opponent; toast + carrier message ride the wave7 hub.
+                wave7: wave7,
             )
         } else {
             Text(message.content).font(.body)

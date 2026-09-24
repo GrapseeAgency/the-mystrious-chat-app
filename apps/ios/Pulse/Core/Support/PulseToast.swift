@@ -13,13 +13,13 @@ public final class ToastCenter: ObservableObject {
 
     public func show(_ text: String) {
         hideTask?.cancel()
-        withAnimation(.pulse(.pulseSnappy, reduceMotion: false)) {
+        withAnimation(.pulse(.pulseSnappy, reduceMotion: PulseMotion.reduceMotion)) {
             message = text
         }
         hideTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_600_000_000)
             guard !Task.isCancelled, let self else { return }
-            withAnimation(.pulse(.pulseSnappy, reduceMotion: false)) {
+            withAnimation(.pulse(.pulseSnappy, reduceMotion: PulseMotion.reduceMotion)) {
                 self.message = nil
             }
         }
@@ -58,6 +58,6 @@ struct ToastHostView: View {
             }
         }
         .allowsHitTesting(false)
-        .animation(.pulse(.pulseSnappy, reduceMotion: false), value: center.message)
+        .animation(.pulse(.pulseSnappy, reduceMotion: PulseMotion.reduceMotion), value: center.message)
     }
 }

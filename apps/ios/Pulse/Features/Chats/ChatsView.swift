@@ -2042,7 +2042,7 @@ private struct ChatActionSheet: View {
                 }
             } else {
                 sheetRow(icon: "bell.slash", tint: PulseTheme.textPrimary, label: "Mute notifications", trailing: "chevron.right") {
-                    withAnimation(.pulse(.pulseSnappy, reduceMotion: false)) { view = .mute }
+                    withAnimation(.pulse(.pulseSnappy, reduceMotion: PulseMotion.reduceMotion)) { view = .mute }
                 }
             }
             Divider().background(PulseTheme.hairlineSoft).padding(.vertical, 6)
@@ -2069,7 +2069,7 @@ private struct ChatActionSheet: View {
                 mutePreset("Always", until: "always")
             }
             sheetRow(icon: "chevron.left", tint: PulseTheme.textPrimary, label: "Back") {
-                withAnimation(.pulse(.pulseSnappy, reduceMotion: false)) { view = .actions }
+                withAnimation(.pulse(.pulseSnappy, reduceMotion: PulseMotion.reduceMotion)) { view = .actions }
             }
         }
     }
@@ -2812,7 +2812,7 @@ final class ChatsViewModel: ObservableObject {
     }
 
     func selectFolder(_ id: String?) {
-        withAnimation(.pulse(.pulseSoft, reduceMotion: false)) {
+        withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) {
             activeFolderId = id
             entranceGeneration += 1
         }

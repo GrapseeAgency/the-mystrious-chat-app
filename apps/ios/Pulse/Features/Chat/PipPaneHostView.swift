@@ -106,6 +106,13 @@ struct PipPaneHostView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: .black.opacity(0.28), radius: 18, y: 10)
+        .onAppear {
+            // R7 — the expanded window is the reading surface: mark the pane
+            // seen LOCALLY (web pip-chat.tsx:255-259 onSeen parity — no server
+            // /read call; the store's 1s guard absorbs repeat appearances and
+            // the pill badges read this watermark).
+            pip.markSeen(pane.conversationId, at: Date().timeIntervalSince1970 * 1000)
+        }
         .offset(x: baseX + dragOffset.width, y: baseY + dragOffset.height)
         .gesture(
             DragGesture(minimumDistance: 4)
@@ -139,6 +146,7 @@ struct PipPaneHostView: View {
             ForEach(pills, id: \.conversationId) { pane in
                 PipPanePill(
                     conversation: cachedConversation(pane.conversationId),
+                    lastSeenAt: pane.lastSeenAt,
                     onClose: { pip.closePane(pane.conversationId) },
                     onTap: {
                         PulseHaptics.tap()
@@ -262,8 +270,22 @@ private struct PipPaneComposer: View {
 
 private struct PipPanePill: View {
     let conversation: PulseConversation?
+    /// R7 — the pane's local seen watermark (ms epoch): the badge counts only
+    /// rows newer than it (web usePaneUnread parity) — the expanded card's
+    /// markSeen onAppear clears the pill's stale badge.
+    let lastSeenAt: Double
     let onClose: () -> Void
     let onTap: () -> Void
+
+    /// unreadCount > 0 AND the cached row's last activity is newer than the
+    /// seen watermark (a missing activity stamp keeps the legacy badge).
+    private var showsUnreadBadge: Bool {
+        guard let unread = conversation?.unreadCount, unread > 0 else { return false }
+        guard let iso = conversation?.lastActivityAt,
+              let activityMs = PulseFormat.date(iso).map({ $0.timeIntervalSince1970 * 1000 })
+        else { return true }
+        return activityMs > lastSeenAt
+    }
 
     var body: some View {
         Button(action: onTap) {
@@ -279,7 +301,7 @@ private struct PipPanePill: View {
                             .font(.system(size: 16, weight: .bold))
                             .foregroundStyle(PulseTheme.emerald)
                     )
-                if let unread = conversation?.unreadCount, unread > 0 {
+                if showsUnreadBadge, let unread = conversation?.unreadCount {
                     Text(unread > 9 ? "9+" : "\(unread)")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.white)

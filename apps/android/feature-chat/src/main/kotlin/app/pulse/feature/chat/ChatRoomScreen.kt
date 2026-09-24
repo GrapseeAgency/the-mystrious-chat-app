@@ -10,11 +10,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,6 +30,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -96,6 +100,7 @@ import androidx.compose.material.icons.filled.ScheduleSend
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SentimentSatisfied
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Topic
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -137,6 +142,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -183,6 +189,14 @@ import kotlinx.coroutines.launch
  * action surface, pinned banner, room search + jump, staged media sends and
  * the honest offline strip. Threads open [ThreadScreen] via onOpenThread.
  */
+
+// R7 item 2 — web swipe-to-reply constants (chat-room.tsx:7261-7263, 7357-7361):
+// dragConstraints ±64 with elastic 0.12, threshold toward > 28 → beginReply,
+// hint opacity fades in between 4 → 28 (all in web CSS px ≈ dp here).
+private val REPLY_DRAG_LIMIT = 64.dp
+private val REPLY_DRAG_THRESHOLD = 28.dp
+private val REPLY_HINT_START = 4.dp
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ChatRoomScreen(
@@ -205,6 +219,9 @@ fun ChatRoomScreen(
     // automations/webhooks managers, the screen-security toggles and the
     // photo edit; groups/channels only (web room-info-page parity).
     onOpenRoomInfo: (String) -> Unit = {},
+    // R7 item 4 — reminder jump for OTHER rooms (web REMINDER_JUMP_EVENT):
+    // navigates to room/{id}?jump={messageId} so that room auto-flashes.
+    onJumpToRoom: (conversationId: String, messageId: String) -> Unit = { _, _ -> },
 ) {
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
@@ -329,6 +346,12 @@ fun ChatRoomScreen(
         buildTimelineRows(messages, unreadAnchorMs, viewerId)
     }
     val rowsReversed = remember(rows) { rows.asReversed() }
+    // R7 item 1 — cluster rhythm (web chat-room.tsx:7275-7278: cozy head
+    // mt-2.5 / non-head mt-0.5, compact mt-1 / mt-px). The list spacing drops
+    // to the web's subtle non-head gap; HEAD rows (and day/unread dividers)
+    // carry the difference as top padding so only clustered rows tighten.
+    val clusterBaseGap = if (prefs.density == "compact") 1.dp else 2.dp
+    val clusterHeadGap = densityGap - clusterBaseGap
     val lastMineId = remember(messages, viewerId) {
         messages.lastOrNull { it.authorId == viewerId && !it.isDeleted }?.id
     }
@@ -778,12 +801,12 @@ fun ChatRoomScreen(
                 reverseLayout = true,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(densityGap),
+                verticalArrangement = Arrangement.spacedBy(clusterBaseGap),
             ) {
                 items(rowsReversed, key = { it.key }) { row ->
                     when (row) {
-                        is TimelineRow.Day -> DaySeparator(row.label)
-                        is TimelineRow.Unread -> UnreadDivider()
+                        is TimelineRow.Day -> DaySeparator(row.label, modifier = Modifier.padding(top = clusterHeadGap))
+                        is TimelineRow.Unread -> UnreadDivider(modifier = Modifier.padding(top = clusterHeadGap))
                         is TimelineRow.Msg -> {
                             val message = row.message
                             MessageRow(
@@ -807,6 +830,8 @@ fun ChatRoomScreen(
                                 onGameMove = { matchId, cell -> viewModel.gameMove(matchId, cell) },
                                 onGameJoin = { matchId -> viewModel.joinGame(matchId) },
                                 onGameLoad = { matchId -> viewModel.gameDetail(matchId) },
+                                // R7 item 3 — rematch POSTs a fresh challenge.
+                                onGameRematch = { match -> viewModel.rematch(match) },
                                 onRedPacketLoad = { id -> viewModel.redPacketDetail(id) },
                                 onRedPacketGrab = { id -> viewModel.grabRedPacket(id) },
                                 onRedPacketOpen = { id -> viewModel.openRedPacketDetail(id) },
@@ -856,11 +881,64 @@ fun ChatRoomScreen(
                                 } else {
                                     null
                                 },
-                                modifier = Modifier.animateItem(),
+                                head = row.head,
+                                tail = row.tail,
+                                // R7 item 2 — swipe the bubble toward the
+                                // trailing edge to reply (web beginReply).
+                                onReply = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
+                                    {
+                                        viewModel.setReplyTo(message)
+                                    }
+                                } else {
+                                    null
+                                },
+                                modifier = Modifier
+                                    .animateItem()
+                                    .then(
+                                        // R7 item 1 — head rows restore the
+                                        // room's normal rhythm above the bubble.
+                                        if (row.head) Modifier.padding(top = clusterHeadGap) else Modifier,
+                                    ),
                             )
                         }
                     }
                 }
+            }
+
+            // R7 item 1(c) — pinned day chip (web `sticky top-1`,
+            // chat-room.tsx:4406-4417): the OLDEST visible day pins to the top
+            // edge whenever its natural chip has scrolled away. LazyListScope's
+            // stickyHeader pins to the reverseLayout START edge (the bottom) —
+            // the wrong edge for web semantics — so the pin derives from the
+            // visible window instead.
+            val pinnedDayChip by remember(rowsReversed) {
+                derivedStateOf {
+                    var label: String? = null
+                    for (info in listState.layoutInfo.visibleItemsInfo.sortedByDescending { it.index }) {
+                        when (val row = rowsReversed.getOrNull(info.index)) {
+                            is TimelineRow.Msg -> {
+                                label = PulseTime.dayChip(row.message.createdAt)
+                                break
+                            }
+                            is TimelineRow.Day -> {
+                                label = null
+                                break
+                            }
+                            else -> continue
+                        }
+                    }
+                    label
+                }
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = pinnedDayChip != null,
+                enter = fadeIn() + scaleIn(initialScale = 0.96f, animationSpec = PulseMotion.soft()),
+                exit = fadeOut() + scaleOut(targetScale = 0.96f, animationSpec = tween(120)),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 6.dp),
+            ) {
+                pinnedDayChip?.let { DaySeparator(it) }
             }
 
             // R2-A item 4 — jump-to-latest pill (web chat-room.tsx:4527-4565):
@@ -1404,6 +1482,57 @@ fun ChatRoomScreen(
             )
         }
 
+        // ── R7 item 5 — topic filing pill (web chat-room.tsx:4663-4690) ──
+        // While a topic is active and not editing: persistent emerald pill
+        // ABOVE the composer — MessagesSquare icon, "Filing to #<name>", X
+        // stops filing and returns to General (setActiveTopicId(null)).
+        val activeTopic = topics.firstOrNull { it.id == activeTopicId }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = activeTopic != null,
+            enter = fadeIn() + androidx.compose.animation.expandVertically(animationSpec = PulseMotion.soft()),
+            exit = fadeOut() + androidx.compose.animation.shrinkVertically(animationSpec = tween(120)),
+        ) {
+            activeTopic?.let { topic ->
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = PulsePalette.Emerald.copy(alpha = 0.14f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                ) {
+                    Row(
+                        Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Topic,
+                            contentDescription = null,
+                            tint = PulsePalette.Emerald,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Filing to #${topic.name}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = PulsePalette.Emerald,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { viewModel.setActiveTopic(null) }) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Stop filing to this topic — back to General",
+                                tint = PulsePalette.Emerald,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Composer — the text side swaps to the record bar while recording;
         // the right slot (HoldRecordSlot) is ALWAYS mounted so the hold
         // gesture survives. Wave 6 — broadcast channel lock: non-admins get
@@ -1854,6 +1983,19 @@ fun ChatRoomScreen(
             onCreate = { note, iso, anchor -> viewModel.createReminder(note, iso, anchor) },
             onResolve = { id -> viewModel.resolveReminder(id) },
             onDelete = { id -> viewModel.deleteReminder(id) },
+            // R7 item 4 — web REMINDER_JUMP_EVENT parity (reminders-sheet.tsx
+            // jump()): dismiss the sheet, then jump to the anchored message —
+            // this room's engine (flash + bounded expansion) or another room
+            // via the jump-payload nav route.
+            onJump = { r ->
+                viewModel.remindersOpen = false
+                val mid = r.messageId
+                when {
+                    mid.isNullOrBlank() -> {}
+                    r.conversationId == viewModel.conversationId -> viewModel.jumpTo(mid)
+                    else -> onJumpToRoom(r.conversationId, mid)
+                }
+            },
             anchoredMessageId = viewModel.reminderAnchor.value,
             onDismiss = { viewModel.remindersOpen = false },
         )
@@ -2062,8 +2204,16 @@ internal sealed interface TimelineRow {
         override val key: String get() = "unread-divider"
     }
 
-    /** A river message (thread replies never reach this list). */
-    data class Msg(val message: Message) : TimelineRow {
+    /**
+     * A river message (thread replies never reach this list).
+     * R7 item 1 — [head] opens a visual cluster (sender label renders only
+     * here), [tail] closes one (web chat-room.tsx:1376-1393 cluster parity).
+     */
+    data class Msg(
+        val message: Message,
+        val head: Boolean = true,
+        val tail: Boolean = true,
+    ) : TimelineRow {
         override val key: String get() = message.id
     }
 }
@@ -2083,6 +2233,21 @@ internal fun buildTimelineRows(
     val rows = mutableListOf<TimelineRow>()
     var lastIso: String? = null
     var dividerPlaced = unreadAnchorMs == null
+    // R7 item 1 — the pure clustering kernel (web chat-room.tsx:1376-1393):
+    // head = sender-label row, tail = closes the run. Thread replies are
+    // already excluded upstream (ChatRoomViewModel filters threadRootId !=
+    // null — web `parentId !== null` filter parity), deleted rows stay.
+    val clusterFlags = app.pulse.protocol.PulseClusterKernel.flags(
+        messages.map { m ->
+            app.pulse.protocol.PulseClusterKernel.Entry(
+                id = m.id,
+                senderId = m.authorId,
+                createdAtMs = PulseTime.epochMs(m.createdAt),
+                anon = m.anon,
+                anonAlias = m.anonAlias,
+            )
+        },
+    )
     for (message in messages) {
         val t = PulseTime.parse(message.createdAt)
         val iso = t?.atZoneSameInstant(java.time.ZoneId.systemDefault())?.toLocalDate()?.toString()
@@ -2099,14 +2264,15 @@ internal fun buildTimelineRows(
             rows += TimelineRow.Unread
             dividerPlaced = true
         }
-        rows += TimelineRow.Msg(message)
+        val flags = clusterFlags[message.id]
+        rows += TimelineRow.Msg(message, head = flags?.head ?: true, tail = flags?.tail ?: true)
     }
     return rows
 }
 
 @Composable
-private fun DaySeparator(label: String) {
-    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+private fun DaySeparator(label: String, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
         Text(
             label,
             fontSize = 11.sp,
@@ -2122,9 +2288,11 @@ private fun DaySeparator(label: String) {
 
 /** R2-A item 4 — the emerald unread divider (web chat-room.tsx UnreadDivider). */
 @Composable
-private fun UnreadDivider() {
+private fun UnreadDivider(modifier: Modifier = Modifier) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -3074,6 +3242,8 @@ private fun MessageRow(
     onGameMove: (String, Int) -> Unit = { _, _ -> },
     onGameJoin: (String) -> Unit = {},
     onGameLoad: suspend (String) -> app.pulse.protocol.GameDetailDto? = { null },
+    // R7 item 3 — rematch on finished matches (web game-tictactoe-card.tsx).
+    onGameRematch: suspend (app.pulse.protocol.GameMatchDto) -> Unit = {},
     onRedPacketLoad: suspend (String) -> app.pulse.protocol.RedPacketDetailDto? = { null },
     onRedPacketGrab: (String) -> Unit = {},
     onRedPacketOpen: (String) -> Unit = {},
@@ -3084,6 +3254,13 @@ private fun MessageRow(
     onWhoReacted: ((String) -> Unit)? = null,
     // R6 — M6 — double-tap the bubble → ❤️ quick reaction (null = inert).
     onDoubleClick: (() -> Unit)? = null,
+    // R7 item 1 — cluster position (web chat-room.tsx:1376-1393): the sender
+    // label renders ONLY on head rows; non-head rows tuck up tight.
+    head: Boolean = true,
+    tail: Boolean = true,
+    // R7 item 2 — swipe-bubble-to-reply (web drag="x" onDragEnd toward > 28;
+    // null = inert: deleted rows + queued local_ echoes keep web's gate).
+    onReply: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     bubbleCornerDp: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
@@ -3106,7 +3283,8 @@ private fun MessageRow(
         // Group sender label above their first bubble run — incognito rows
         // (R3-B item 4) mask the real name behind the server alias with a
         // neutral zinc dot (web anonMasked parity, chat-room.tsx:7232-7235).
-        if (!mine && conversation?.isGroupish == true) {
+        // R7 item 1 — head-only (web chat-room.tsx:7313 `head && !deleted`).
+        if (!mine && head && conversation?.isGroupish == true) {
             val anonMasked = message.anon && message.anonAlias != null
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)) {
                 Box(
@@ -3131,7 +3309,82 @@ private fun MessageRow(
             }
         }
 
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // ── R7 item 2 — swipe-bubble-to-reply (web chat-room.tsx:7248-7373) ──
+        // Horizontal drag with a ±64dp clamp, spring snap-back on release,
+        // reply when the toward-trailing-edge offset (toward = mine ? -x : x)
+        // passes 28dp. The static reply-arrow hint chip fades 0→1 between 4
+        // and 28 at the OUTER edge (left for others' bubbles, right for mine)
+        // exactly like the web's absolute motion.span. The drag detector sits
+        // OUTSIDE the bubble's combinedClickable so tap / long-press /
+        // double-tap keep working; vertical list scrolling is untouched
+        // (horizontal-only slop).
+        val haptics = LocalHapticFeedback.current
+        val dragX = remember(message.id) { Animatable(0f) }
+        val dragScope = rememberCoroutineScope()
+        val density = LocalDensity.current
+        val dragLimitPx = with(density) { REPLY_DRAG_LIMIT.toPx() }
+        val thresholdPx = with(density) { REPLY_DRAG_THRESHOLD.toPx() }
+        val hintStartPx = with(density) { REPLY_HINT_START.toPx() }
+        Box {
+            if (onReply != null) {
+                Box(
+                    Modifier
+                        .align(if (mine) Alignment.CenterEnd else Alignment.CenterStart)
+                        .graphicsLayer {
+                            val toward = if (mine) -dragX.value else dragX.value
+                            alpha = ((toward - hintStartPx) / (thresholdPx - hintStartPx)).coerceIn(0f, 1f)
+                        }
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(PulsePalette.Emerald.copy(alpha = 0.10f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Reply,
+                        contentDescription = null,
+                        tint = PulsePalette.Emerald,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .graphicsLayer { translationX = dragX.value }
+                    .then(
+                        if (onReply != null) {
+                            Modifier.pointerInput(message.id) {
+                                detectHorizontalDragGestures(
+                                    onDragEnd = {
+                                        val toward = if (mine) -dragX.value else dragX.value
+                                        dragScope.launch {
+                                            dragX.animateTo(
+                                                0f,
+                                                spring(stiffness = Spring.StiffnessMediumLow),
+                                            )
+                                        }
+                                        if (toward > thresholdPx) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onReply?.invoke()
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        dragScope.launch {
+                                            dragX.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                                        }
+                                    },
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    val next = (dragX.value + dragAmount).coerceIn(-dragLimitPx, dragLimitPx)
+                                    dragScope.launch { dragX.snapTo(next) }
+                                }
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
             // Wave 2 view-once gate (spec §1 row 6): only the RECEIVER is
             // gated — the sender always sees their own photo normally.
             val viewOncePhoto = message.viewOnce && message.imagePath != null
@@ -3178,6 +3431,8 @@ private fun MessageRow(
                             load = { onGameLoad(gp?.matchId ?: "") },
                             onMove = { cell -> onGameMove(gp?.matchId ?: "", cell) },
                             onJoin = { onGameJoin(gp?.matchId ?: "") },
+                            // R7 item 3 — the loaded match drives the rematch POST.
+                            onRematch = { match -> onGameRematch(match) },
                         )
                     },
                 )
@@ -3290,6 +3545,7 @@ private fun MessageRow(
                     modifier = Modifier.widthIn(max = 300.dp),
                     bubbleCornerDp = bubbleCornerDp,
                 )
+            }
             }
         }
 

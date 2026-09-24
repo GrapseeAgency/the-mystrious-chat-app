@@ -191,6 +191,8 @@ public enum PulseRoomParityLogic {
         return ReceiptSplit(seenBy: seen, deliveredTo: delivered)
     }
 
+    // ── R7 — message clustering lives in PulseCluster (file scope below) ──
+
     // ── R4-A item 2 — one-shot incognito (web + Android parity) ──
 
     /// The web disarms the mask after a SERVER-ACCEPTED send
@@ -205,5 +207,65 @@ public enum PulseRoomParityLogic {
     public static func anonDisarmAfterSend(armed: Bool, serverAccepted: Bool) -> Bool {
         if armed && serverAccepted { return false }
         return armed
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// R7 — message clustering kernel (web buildItems, chat-room.tsx:1367-1424).
+// A row is a HEAD when it is the first visible row, OR the calendar day
+// changed, OR the sender changed, OR the incognito mask (anon/anonAlias)
+// changed, OR the gap to the previous row exceeds 5 minutes. A row is a
+// TAIL when it is the last row OR the NEXT row is a head (web :1420).
+// Inputs are parallel arrays in river order (oldest → newest) with ms
+// timestamps so the kernel stays deterministic under test; the day
+// comparison uses the SAME `Calendar.current` start-of-day rule the day
+// chip (PulseFormat.dayLabel) already uses.
+// ─────────────────────────────────────────────────────────────────
+public enum PulseCluster {
+    /// Web chat-room.tsx:277 `CLUSTER_WINDOW_MS = 5 * 60 * 1000`.
+    public static let clusterWindowMs: Double = 5 * 60 * 1000
+
+    /// One row's cluster verdict. `head` opens a cluster (sender name renders
+    /// only there, web MessageRow `head` gate); `tail` closes one (the next
+    /// row is a head — spacing relaxes after it).
+    public struct Flags: Equatable, Sendable {
+        public let head: Bool
+        public let tail: Bool
+
+        public init(head: Bool, tail: Bool) {
+            self.head = head
+            self.tail = tail
+        }
+    }
+
+    public static func clusterFlags(
+        createdAtMs: [Double],
+        senderIds: [String],
+        anon: [Bool],
+        anonAliases: [String?],
+    ) -> [Flags] {
+        let count = min(min(createdAtMs.count, senderIds.count), min(anon.count, anonAliases.count))
+        guard count > 0 else { return [] }
+
+        var heads = [Bool](repeating: true, count: count)
+        for i in 0..<count {
+            if i == 0 { continue }
+            let dayBreak = !Calendar.current.isDate(
+                Date(timeIntervalSince1970: createdAtMs[i] / 1000),
+                inSameDayAs: Date(timeIntervalSince1970: createdAtMs[i - 1] / 1000),
+            )
+            heads[i] = dayBreak
+                || senderIds[i] != senderIds[i - 1]
+                || anon[i] != anon[i - 1]
+                || anonAliases[i] != anonAliases[i - 1]
+                || createdAtMs[i] - createdAtMs[i - 1] > clusterWindowMs
+        }
+
+        var flags: [Flags] = []
+        flags.reserveCapacity(count)
+        for i in 0..<count {
+            flags.append(Flags(head: heads[i], tail: i == count - 1 || heads[i + 1]))
+        }
+        return flags
     }
 }

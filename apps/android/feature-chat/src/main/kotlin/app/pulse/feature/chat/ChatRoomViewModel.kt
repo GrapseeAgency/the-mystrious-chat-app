@@ -1373,6 +1373,27 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
+    // ── R7 item 3 — game rematch (web game-tictactoe-card.tsx:213-236) ──
+    /**
+     * Finished match + I'm a player → POST the SAME create flow the attach
+     * sheet uses against the ORIGINAL opponent (mySide == 'X' → playerOId,
+     * else playerXId). The fresh challenge message rides the normal message
+     * stream (repo.createGame upserts the response message — the Android
+     * analogue of web's GAME_EXTERNAL_MESSAGE_EVENT hand-off). Toast copy
+     * verbatim; the card disables itself while the POST is in flight.
+     */
+    fun rematch(match: app.pulse.protocol.GameMatchDto) {
+        if (match.status == "active") return
+        val mySide = app.pulse.protocol.PulseWave7Logic.sideOf(match, viewerId) ?: return
+        val opponentId = if (mySide == 'X') match.playerOId else match.playerXId
+        if (opponentId.isNullOrBlank()) return
+        viewModelScope.launch {
+            repo.createGame(match.conversationId.ifBlank { conversationId }, opponentId)
+                .onSuccess { notify("Rematch sent — new challenge in the chat.") }
+                .onFailure { notify(it.message ?: "Rematch failed — try again.", isError = true) }
+        }
+    }
+
     fun createTournament(name: String) {
         viewModelScope.launch {
             repo.createTournament(conversationId, name.trim())

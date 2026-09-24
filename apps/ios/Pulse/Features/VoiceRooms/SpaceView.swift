@@ -242,8 +242,8 @@ private struct SpaceMap: View {
                 }
                 selfDot
                     .position(x: targetX * size.width, y: targetY * size.height)
-                    .animation(.pulse(.pulseBouncy, reduceMotion: false), value: targetX)
-                    .animation(.pulse(.pulseBouncy, reduceMotion: false), value: targetY)
+                    .animation(.pulse(.pulseBouncy, reduceMotion: PulseMotion.reduceMotion), value: targetX)
+                    .animation(.pulse(.pulseBouncy, reduceMotion: PulseMotion.reduceMotion), value: targetY)
             }
             .frame(width: size.width, height: size.height)
             .contentShape(Rectangle())

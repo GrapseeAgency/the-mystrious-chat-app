@@ -59,7 +59,7 @@ struct ChannelsView: View {
                     if mode == .create {
                         Button("Back") {
                             PulseHaptics.tap()
-                            withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { mode = .directory }
+                            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .directory }
                         }
                     }
                 }
@@ -67,12 +67,12 @@ struct ChannelsView: View {
                     if mode == .create {
                         Button("Cancel") {
                             PulseHaptics.tap()
-                            withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { mode = .directory }
+                            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .directory }
                         }
                     } else {
                         Button {
                             PulseHaptics.tap()
-                            withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { mode = .create }
+                            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .create }
                         } label: {
                             Image(systemName: "plus")
                         }
@@ -450,7 +450,7 @@ struct ChannelsView: View {
             descriptionText = ""
             photoPath = nil
             await reload()
-            withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { mode = .directory }
+            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .directory }
             if let conversationId = channel.conversationId,
                let conv = try? await session.api.conversationDetail(id: conversationId, userId: session.api.userId) {
                 onOpenConversation(conv)

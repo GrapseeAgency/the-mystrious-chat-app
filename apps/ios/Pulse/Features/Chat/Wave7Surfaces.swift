@@ -45,6 +45,11 @@ final class Wave7RoomActions: ObservableObject {
     var cardJoinTournament: (String) -> Void = { _ in }
     var cardFinishTournament: (String) -> Void = { _ in }
     var cardOpenDetail: (String) -> Void = { _ in }
+    // R7 — rematch (web game-tictactoe-card.tsx:213-236): the card hands the
+    // opponent id; the room wires conversation.id + api. rematchInFlight
+    // disables the card button while the POST /api/games round-trip runs.
+    var cardRematch: (String) -> Void = { _ in }
+    @Published var rematchInFlight = false
 
     func toast(_ text: String, isError: Bool = false) {
         toast = text
@@ -111,6 +116,25 @@ final class Wave7RoomActions: ObservableObject {
         Task { @MainActor in
             do { _ = try await api.joinGame(matchId) }
             catch { toast(describe(error), isError: true) }
+        }
+    }
+
+    /// R7 — rematch (web game-tictactoe-card.tsx:213-236): POST /api/games
+    /// with the finished match's opponent; the fresh challenge message rides
+    /// the carrier-message sink exactly like createGame. Web copy verbatim:
+    /// "Rematch sent — new challenge in the chat."
+    func rematchGame(api: PulseAPIClient, conversationId: String, opponentId: String) {
+        guard !rematchInFlight else { return }
+        rematchInFlight = true
+        Task { @MainActor in
+            defer { rematchInFlight = false }
+            do {
+                let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
+                if let message = result.message { onCarrierMessage?(message) }
+                toast("Rematch sent — new challenge in the chat.")
+            } catch {
+                toast(describe(error), isError: true)
+            }
         }
     }
 
@@ -486,6 +510,9 @@ struct Wave7TicTacToeCard: View {
     let load: (String) async -> WireGameDetail?
     let onMove: (Int) -> Void
     let onJoin: () -> Void
+    // R7 — rematch (web game-tictactoe-card.tsx:452-476): the hub carries the
+    // in-flight spinner/toast and the cardRematch sink the room wires.
+    var wave7: Wave7RoomActions? = nil
 
     @State private var detail: WireGameDetail?
 
@@ -508,6 +535,30 @@ struct Wave7TicTacToeCard: View {
             if openSeat {
                 Button("Take the O seat", action: onJoin)
                     .buttonStyle(.bordered)
+            }
+            // R7 — finished match with the viewer as a player → rematch offer
+            // (web game-tictactoe-card.tsx:452-476). Disabled while the POST
+            // round-trip runs; the new challenge arrives via the message stream.
+            if finished, mySide != nil, let opponentId = rematchOpponentId {
+                Button {
+                    wave7?.cardRematch(opponentId)
+                } label: {
+                    HStack(spacing: 6) {
+                        if wave7?.rematchInFlight == true {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                        }
+                        Text("Rematch")
+                    }
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(PulseTheme.emerald)
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .background(Capsule().fill(PulseTheme.emerald.opacity(0.10)))
+                    .overlay(Capsule().strokeBorder(PulseTheme.emerald.opacity(0.30)))
+                }
+                .buttonStyle(PulseButtonStyle())
+                .disabled(wave7?.rematchInFlight == true)
             }
         }
         .padding(12)
@@ -535,6 +586,18 @@ struct Wave7TicTacToeCard: View {
     private var myTurn: Bool { PulseWave7Logic.isMyTurn(match, viewerId) }
     private var openSeat: Bool {
         match.status == "active" && match.playerOId == nil && mySide == nil
+    }
+
+    // R7 — web isFinished parity (`status !== 'active'`, match present): the
+    // empty fallback match has a nil status → NOT finished (no premature pill).
+    private var finished: Bool {
+        match.status != nil && match.status != "active"
+    }
+
+    /// R7 — the other seat's player (web :215 `mySide === 'X' ? playerOId : playerXId`).
+    private var rematchOpponentId: String? {
+        guard mySide != nil else { return nil }
+        return mySide == "X" ? match.playerOId : match.playerXId
     }
 
     private var headline: String {
@@ -1207,6 +1270,10 @@ struct Wave7RemindersSheet: View {
     let onCreate: (String, String, WireChatMessage?) -> Void
     let onResolve: (String) -> Void
     let onDelete: (String) -> Void
+    // R7 — web reminders-sheet.tsx:337-343 parity: rows anchored to a message
+    // offer a jump ("View", the web's action label) — same room jumps +
+    // flashes; other rooms navigate there.
+    let onJump: (WireReminderItem) -> Void
     let anchored: WireChatMessage?
     @Environment(\.dismiss) private var dismiss
 
@@ -1263,6 +1330,13 @@ struct Wave7RemindersSheet: View {
                                     .foregroundStyle(isDue(item) ? PulseTheme.color(named: "emerald") : Color.secondary)
                             }
                             Spacer()
+                            if item.messageId != nil, item.firedAt == nil {
+                                // R7 — "View" = the web's jump action label
+                                // (due-toast :231); fired rows stay inert
+                                // exactly like web `disabled={fired}`.
+                                Button { onJump(item) } label: { Text("View").foregroundStyle(PulseTheme.color(named: "emerald")) }
+                                    .buttonStyle(.borderless)
+                            }
                             if item.firedAt == nil {
                                 Button { onResolve(item.id) } label: { Text("✓").foregroundStyle(PulseTheme.color(named: "emerald")) }
                                     .buttonStyle(.borderless)

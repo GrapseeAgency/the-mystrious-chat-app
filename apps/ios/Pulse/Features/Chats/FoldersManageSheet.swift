@@ -76,13 +76,13 @@ struct FoldersManageSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if mode == .create {
-                        Button("Back") { withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { mode = .list } }
+                        Button("Back") { withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .list } }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(mode == .create ? "Cancel" : "Done") {
                         if mode == .create {
-                            withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { mode = .list }
+                            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .list }
                         } else {
                             dismiss()
                         }
@@ -115,7 +115,7 @@ struct FoldersManageSheet: View {
                     .font(.system(size: 12))
                     .foregroundStyle(PulseTheme.textSecondary)
                 Button {
-                    withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { mode = .create }
+                    withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .create }
                 } label: {
                     Text("Create a folder")
                         .font(.system(size: 13, weight: .bold))
@@ -139,7 +139,7 @@ struct FoldersManageSheet: View {
             }
             Button {
                 PulseHaptics.tap()
-                withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { mode = .create }
+                withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .create }
             } label: {
                 Label("New folder", systemImage: "plus")
                     .font(.system(size: 13.5, weight: .bold))
@@ -463,7 +463,7 @@ struct FoldersManageSheet: View {
             session.toasts.show("\(folder.emoji ?? newEmoji) Folder “\(folder.name)” created")
             newName = ""
             newEmoji = "📂"
-            withAnimation(.pulse(.pulseSoft, reduceMotion: false)) { mode = .list }
+            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .list }
             await reload()
             onChanged()
         } catch {

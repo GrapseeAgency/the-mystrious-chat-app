@@ -37,7 +37,7 @@ public struct PulseAvatar: View {
         .overlay(
             Circle()
                 .strokeBorder(online ? PulseTheme.emerald : Color.clear, lineWidth: 2.5)
-                .animation(.pulse(.pulseBouncy, reduceMotion: false), value: online)
+                .animation(.pulse(.pulseBouncy, reduceMotion: PulseMotion.reduceMotion), value: online)
         )
     }
 

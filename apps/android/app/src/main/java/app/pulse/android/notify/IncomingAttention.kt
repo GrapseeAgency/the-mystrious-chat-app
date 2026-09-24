@@ -33,6 +33,15 @@ object IncomingAttention {
     @Volatile
     var foreground: Boolean = false
 
+    /**
+     * R7 item 7 — notifPreviews mirror (Wave-8 server blob). ON → the
+     * attention toast shows the full preview ("Sender: body", 80-char cap);
+     * OFF → the honest generic "New message". PulseApplication keeps it live
+     * alongside the ReminderAlertPolicy mirrors.
+     */
+    @Volatile
+    var previewsOn: Boolean = true
+
     /** conversationId → mutedUntil epoch-ms (only future windows are kept). */
     private val mutedUntilMs = ConcurrentHashMap<String, Long>()
 
@@ -52,6 +61,18 @@ object IncomingAttention {
         if (message.isDeleted) return
         if (ReminderAlertPolicy.quietNow()) return
         if ((mutedUntilMs[conversationId] ?: 0L) > System.currentTimeMillis()) return
+        // R7 item 7 — the preview line the settings row promises ("Message
+        // text in notification-style toasts."): notification-banner semantics
+        // with the notifPreviews gate — body preview when ON, generic "New
+        // message" when OFF (PulseWave8Logic.incomingPreviewText, the helper
+        // that used to have zero callers). Quiet-hours + mute gates unchanged.
+        runCatching {
+            android.widget.Toast.makeText(
+                context,
+                app.pulse.protocol.PulseWave8Logic.incomingPreviewText(previewsOn, message.authorName, message.body),
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+        }
         if (ReminderAlertPolicy.soundOn) playPing(context)
         if (ReminderAlertPolicy.vibrateOn) buzz(context)
     }

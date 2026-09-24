@@ -272,7 +272,10 @@ class MainActivity : ComponentActivity() {
                                 item.note.ifBlank { "Reminder" },
                                 item.snippet ?: item.conversation.name,
                                 // R2-C item 6 — the tap deep-links into the chat.
+                                // R7 item 4 — the anchored message rides along so
+                                // the room auto-jumps + flashes on open.
                                 item.conversationId.ifBlank { null },
+                                item.messageId,
                             )
                             runCatching { repository.resolveReminder(item.id) }
                         }
@@ -353,6 +356,11 @@ fun PulseRoot(
     // Boot the live layer (REST refresh + socket join) as soon as identity exists.
     LaunchedEffect(viewerId) { session.bootstrap(viewerId) }
 
+    // R7 item 8 — the session-rotated re-login notice (SessionViewModel sets
+    // it when the stored token was rejected) finally reaches the onboarding
+    // screen it was always meant for.
+    val sessionNotice by session.sessionNotice.collectAsStateWithLifecycle()
+
     // Web parity: no viewer identity → the onboarding IS the app (name →
     // live @handle picker). Wait for prefs hydration to avoid a flash.
     val onboarding = hydrated && viewerId == null
@@ -374,7 +382,7 @@ fun PulseRoot(
             )
 
             if (onboarding) {
-                OnboardingScreen()
+                OnboardingScreen(sessionNotice = sessionNotice)
             } else {
                 PulseShell(viewerId = viewerId, session = session, deepLink = deepLink, onConsumeDeepLink = onConsumeDeepLink)
             }
@@ -452,8 +460,16 @@ private fun PulseShell(
     LaunchedEffect(deepLink, viewerId) {
         if (viewerId == null || deepLink == null) return@LaunchedEffect
         when (deepLink) {
-            is app.pulse.core.link.PulseDeepLink.Room ->
-                navController.navigate("room/${deepLink.conversationId}")
+            is app.pulse.core.link.PulseDeepLink.Room -> {
+                // R7 item 4 — the jump payload (reminder anchor) routes through
+                // the ?jump= nav arg so ChatRoomScreen auto-jumps + flashes.
+                val jump = deepLink.jumpMessageId
+                if (jump.isNullOrBlank()) {
+                    navController.navigate("room/${deepLink.conversationId}")
+                } else {
+                    navController.navigate("room/${deepLink.conversationId}?jump=$jump")
+                }
+            }
             is app.pulse.core.link.PulseDeepLink.User ->
                 navController.navigate("user/${deepLink.userId}")
             is app.pulse.core.link.PulseDeepLink.Invite -> {
@@ -804,6 +820,9 @@ private fun PulseShell(
                     jumpMessageId = entry.arguments?.getString("jump"),
                     onBack = { navController.popBackStack() },
                     onOpenThread = { id, rootId -> navController.navigate("room/$id/thread/$rootId") },
+                    // R7 item 4 — cross-room reminder jumps (web
+                    // REMINDER_JUMP_EVENT) land on the room + jump arg.
+                    onJumpToRoom = { id, msgId -> navController.navigate("room/$id?jump=$msgId") },
                     // Wave 5 voice room entry — header mic + "Voice · N live"
                     // pill, opening the overlay the same way calls open.
                     voiceJoined = voiceState.joined && voiceState.conversationId == conversationId,

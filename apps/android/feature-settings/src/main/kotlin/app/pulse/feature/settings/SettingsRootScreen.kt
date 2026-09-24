@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
@@ -662,6 +663,10 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
 fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val connected by viewModel.connected.collectAsStateWithLifecycle()
     val probe by viewModel.probe.collectAsStateWithLifecycle()
+    // R7 item 6 — web ctx.onlineCount (settings-screen.tsx:1423): the live
+    // presence flow (repo onlineIds — socket Joined/PresenceSnapshot truth,
+    // PulseRepositoryImpl.observePresence) reduced to a count.
+    val onlineCount by viewModel.onlineCount.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.probeGateway() }
     SectionScaffold("Real-time & Voice", onBack) {
         Card(
@@ -697,6 +702,43 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                     Spacer(Modifier.weight(1f))
                     TextButton(onClick = { viewModel.probeGateway() }, enabled = !probe.running) { Text("Test") }
                 }
+            }
+        }
+        // R7 item 6 — web StaticRow parity (settings-screen.tsx:1419-1424):
+        // "People online now" / "Live presence snapshot from the socket
+        // server." with the count in a zinc info-tone StatusBadge pill.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Group,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("People online now", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    "Live presence snapshot from the socket server.",
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f),
+            ) {
+                Text(
+                    "$onlineCount",
+                    Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         Spacer(Modifier.height(20.dp))

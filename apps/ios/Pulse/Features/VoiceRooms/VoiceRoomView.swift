@@ -248,7 +248,7 @@ struct PeerTile: View {
                     Circle()
                         .strokeBorder(PulseTheme.emerald400.opacity(speaking ? 0.9 : 0), lineWidth: 2.5)
                         .shadow(color: PulseTheme.emerald500.opacity(speaking ? 0.55 : 0), radius: 9)
-                        .animation(.pulse(.pulseBouncy, reduceMotion: false), value: speaking),
+                        .animation(.pulse(.pulseBouncy, reduceMotion: PulseMotion.reduceMotion), value: speaking),
                 )
             Text(name)
                 .font(.caption.weight(.medium))
@@ -316,7 +316,7 @@ struct PTTButton: View {
                 .opacity(model.canTransmit ? 1 : 0.45)
                 .contentShape(Circle())
                 .gesture(pushToTalkGesture)
-                .animation(.pulse(.pulseBouncy, reduceMotion: false), value: transmitting)
+                .animation(.pulse(.pulseBouncy, reduceMotion: PulseMotion.reduceMotion), value: transmitting)
                 .accessibilityLabel(transmitting ? "Stop talking" : "Push to talk")
                 .accessibilityHint("Hold to talk, tap to latch")
                 .accessibilityAddTraits(model.canTransmit ? [] : .isButton)

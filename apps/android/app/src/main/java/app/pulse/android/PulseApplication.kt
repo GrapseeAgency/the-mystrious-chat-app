@@ -46,6 +46,9 @@ class PulseApplication : Application() {
             repository.pulsePrefs.collect { p ->
                 app.pulse.android.notify.ReminderAlertPolicy.soundOn = p.notifSound ?: true
                 app.pulse.android.notify.ReminderAlertPolicy.vibrateOn = p.notifVibrate ?: false
+                // R7 item 7 — the notifPreviews gate finally rides the
+                // incoming-attention path (toast preview vs generic line).
+                app.pulse.android.notify.IncomingAttention.previewsOn = p.notifPreviews ?: true
             }
         }
         appScope.launch {
