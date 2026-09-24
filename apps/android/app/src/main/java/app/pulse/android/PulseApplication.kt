@@ -24,6 +24,13 @@ class PulseApplication : Application() {
     @Inject
     lateinit var repository: app.pulse.domain.repository.PulseRepository
 
+    // R8 Task 3-c — OS call integration + group calls start with the process.
+    @Inject
+    lateinit var telecomCallController: app.pulse.feature.calls.TelecomCallController
+
+    @Inject
+    lateinit var groupCallEngine: app.pulse.feature.calls.GroupCallEngine
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -39,6 +46,24 @@ class PulseApplication : Application() {
         //      when present — ops can publish a live origin without a rebuild.
         //   4. Still nothing → stay offline-first, honestly.
         PulseEndpoints.applyBase(null)
+
+        // R8 Task 3-c — remote push: fail-closed Firebase init (feature stays
+        // OFF with empty credentials), then the honest notification channels.
+        app.pulse.android.push.PulsePush.init(this)
+        app.pulse.android.push.PulsePush.ensureChannels(this)
+
+        // R8 Task 3-c — Telecom self-managed PhoneAccount registration at app
+        // start (idempotent; a refusal is logged and the call paths fall back
+        // to the in-app ring + full-screen-notification idiom).
+        if (app.pulse.feature.calls.TelecomRegistrar.register(this)) {
+            telecomCallController.start()
+        } else {
+            android.util.Log.i("PulseApp", "Telecom unavailable — calls stay in-app with the notification fallback")
+        }
+
+        // R8 Task 3-c — the group-call engine's event collectors live for the
+        // whole process (same pattern as the 1:1 CallEngine's init block).
+        groupCallEngine.start()
 
         // Wave 8 — mirror alert prefs for the notification path (quiet hours,
         // reminder sound/vibration). Cheap flow collection, evaluated live.

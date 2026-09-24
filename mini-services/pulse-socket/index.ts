@@ -610,6 +610,116 @@ function dropCallSession(
 }
 
 // ---------------------------------------------------------------------------
+// Group calls (mesh signaling — signal only, media stays peer-to-peer).
+//
+// ONE live group call per conversation, keyed by conversationId. The JOINER
+// offers to every existing member (deterministic direction, no glare);
+// signaling is targeted per-peer via `roomOf(userId)` so the conversation
+// room itself never carries a flood. Rings travel through Next's HTTP relay
+// (`/notify` event `gcall:ring`) so the ring also reaches members who are
+// merely in another room, and push fanout (Next side) covers OFFLINE users.
+// ---------------------------------------------------------------------------
+const MAX_GROUP_CALL_PARTICIPANTS = 8
+const GCALL_SDP_MAX_CHARS = CALL_SDP_MAX_CHARS
+const GCALL_ICE_MAX_CHARS = CALL_ICE_MAX_CHARS
+
+interface GroupCallMember {
+  userId: string
+  name: string
+  color: string
+  avatar: string | null
+  joinedAt: number
+}
+
+interface GroupCallSession {
+  callId: string
+  conversationId: string
+  kind: 'voice' | 'video'
+  hostId: string
+  createdAt: number
+  members: Map<string, GroupCallMember> // userId -> member
+}
+
+/** conversationId -> live group call */
+const groupCalls = new Map<string, GroupCallSession>()
+/** userId -> conversationId of the group call the user is in (one per user) */
+const groupCallByUser = new Map<string, string>()
+
+const gcallRoomName = (conversationId: string) => `gcall:${conversationId}`
+
+function gcallStatePayload(conversationId: string): Record<string, unknown> | null {
+  const call = groupCalls.get(conversationId)
+  if (!call) return null
+  const members = Array.from(call.members.values())
+    .sort((a, b) => a.joinedAt - b.joinedAt)
+    .map((m) => ({ id: m.userId, name: m.name, color: m.color, avatar: m.avatar }))
+  return {
+    callId: call.callId,
+    conversationId: call.conversationId,
+    kind: call.kind,
+    hostId: call.hostId,
+    startedAt: call.createdAt,
+    members,
+  }
+}
+
+/** Broadcast the current roster to everyone in the call's room. */
+function broadcastGcallState(conversationId: string): void {
+  const payload = gcallStatePayload(conversationId)
+  if (payload) io.to(gcallRoomName(conversationId)).emit('gcall:state', payload)
+}
+
+/** Tear down the whole group call (host left or last member departed). */
+function dropGroupCall(conversationId: string, reason: string): void {
+  const call = groupCalls.get(conversationId)
+  if (!call) return
+  for (const userId of call.members.keys()) {
+    if (groupCallByUser.get(userId) === conversationId) groupCallByUser.delete(userId)
+  }
+  groupCalls.delete(conversationId)
+  io.to(gcallRoomName(conversationId)).emit('gcall:ended', {
+    conversationId,
+    callId: call.callId,
+    reason,
+  })
+  console.log(`[gcall] drop conv=${conversationId} members=${call.members.size} reason=${reason}`)
+}
+
+/** Remove one user from their group call (leave/disconnect path). */
+function leaveGroupCall(userId: string, reason: string): void {
+  const conversationId = groupCallByUser.get(userId)
+  if (!conversationId) return
+  const call = groupCalls.get(conversationId)
+  if (!call) {
+    groupCallByUser.delete(userId)
+    return
+  }
+  call.members.delete(userId)
+  groupCallByUser.delete(userId)
+  if (call.members.size === 0) {
+    dropGroupCall(conversationId, reason)
+    return
+  }
+  broadcastGcallState(conversationId)
+  console.log(`[gcall] leave conv=${conversationId} user=${userId} remaining=${call.members.size}`)
+}
+
+function asGroupMember(value: unknown): GroupCallMember | null {
+  if (typeof value !== 'object' || value === null) return null
+  const v = value as Record<string, unknown>
+  const id = asTrimmedString(v.id).slice(0, 64)
+  if (!id) return null
+  return {
+    userId: id,
+    name: asTrimmedString(v.name).slice(0, 64) || 'Someone',
+    color: asTrimmedString(v.color).slice(0, 24) || 'emerald',
+    avatar:
+      typeof v.avatar === 'string' && v.avatar.length > 0 && v.avatar.length <= 256 ? v.avatar : null,
+    joinedAt: 0,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Payload helpers
 // ---------------------------------------------------------------------------
 function asTrimmedString(value: unknown): string {
@@ -657,7 +767,7 @@ function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unkno
 // ---------------------------------------------------------------------------
 // Internal HTTP relay endpoints (called by Next.js API routes)
 // ---------------------------------------------------------------------------
-const NOTIFY_EVENTS = new Set(['message:new', 'message:deleted', 'message:read', 'message:react', 'message:edited', 'message:pinned', 'message:viewed', 'poll:voted', 'link:preview', 'translation:added', 'conversation:updated'])
+const NOTIFY_EVENTS = new Set(['message:new', 'message:deleted', 'message:read', 'message:react', 'message:edited', 'message:pinned', 'message:viewed', 'poll:voted', 'link:preview', 'translation:added', 'conversation:updated', 'gcall:ring'])
 
 type NotifyBody = { event?: unknown; recipients?: unknown; payload?: unknown }
 
@@ -801,6 +911,23 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return
   }
 
+  // 3b. online probe — Next.js push fanout subtracts these ids before
+  // sending remote pushes (an online socket already hears realtime events).
+  if (req.method === 'GET' && pathname === '/online') {
+    const snapshot = await visibleOnlineIds()
+    sendJson(res, 200, { ok: true, onlineUserIds: snapshot })
+    return
+  }
+
+  // 3c. group-call probe — clients ask "is there a live group call in this
+  // conversation?" so a late-opening room can show the Join affordance even
+  // after the original ring scrolled away. Unknown conversation → null state.
+  if (req.method === 'GET' && pathname === '/gcall') {
+    const conversationId = asTrimmedString(searchParams.get('conversationId')).slice(0, 128)
+    sendJson(res, 200, { ok: true, state: conversationId ? gcallStatePayload(conversationId) : null })
+    return
+  }
+
   // 4. everything else (incl GET /) -> health probe friendly identity JSON
   sendJson(res, 200, {
     ok: true,
@@ -811,6 +938,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     stageRooms: stageRooms.size,
     spaceRooms: spaceRooms.size,
     callSessions: callSessions.size,
+    groupCalls: groupCalls.size,
     uptimeSec: Math.round(process.uptime()),
   })
 }
@@ -1534,6 +1662,135 @@ io.on('connection', (socket: Socket) => {
     dropCallSession(callId, 'hangup', from)
   })
 
+  // ── group call signaling (mesh) ───────────────────────────
+
+  /**
+   * gcall:join { conversationId, kind, user: {id,name,color,avatar} } —
+   * Identity-gated: user.id must equal the socket's registered user. Creates
+   * or joins the conversation's ONE live group call; rebroadcasts `gcall:state`.
+   * The caller POSTs /api/conversations/[id]/calls/ring separately so rings
+   * (and pushes) reach members outside this socket room.
+   */
+  socket.on('gcall:join', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const kind = callKindOf(data.kind)
+    const me = asGroupMember(data.user)
+    if (!conversationId || !kind || !me) return
+    if (socketUser.get(socket.id) !== me.userId) return
+
+    // One group call per user: re-joining the same conversation is idempotent;
+    // joining a DIFFERENT one first leaves the old call (single-writer honesty).
+    const currentConv = groupCallByUser.get(me.userId)
+    if (currentConv && currentConv !== conversationId) {
+      leaveGroupCall(me.userId, 'switch')
+    }
+
+    let call = groupCalls.get(conversationId)
+    if (!call) {
+      call = {
+        callId: `gcall-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+        conversationId,
+        kind,
+        hostId: me.userId,
+        createdAt: Date.now(),
+        members: new Map(),
+      }
+      groupCalls.set(conversationId, call)
+      console.log(`[gcall] create conv=${conversationId} call=${call.callId} kind=${kind} host=${me.userId}`)
+    }
+    if (!call.members.has(me.userId)) {
+      if (call.members.size >= MAX_GROUP_CALL_PARTICIPANTS) {
+        socket.emit('gcall:full', { conversationId, callId: call.callId, max: MAX_GROUP_CALL_PARTICIPANTS })
+        console.log(`[gcall] join rejected (full) conv=${conversationId} user=${me.userId}`)
+        return
+      }
+      call.members.set(me.userId, { ...me, joinedAt: Date.now() })
+    }
+    socket.join(gcallRoomName(conversationId))
+    groupCallByUser.set(me.userId, conversationId)
+    broadcastGcallState(conversationId)
+    console.log(`[gcall] join conv=${conversationId} user=${me.userId} members=${call.members.size}`)
+  })
+
+  /** gcall:leave { conversationId } — explicit exit; roster rebroadcast. */
+  socket.on('gcall:leave', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const me = asTrimmedString(data.from).slice(0, 64)
+    if (!conversationId || !me) return
+    if (socketUser.get(socket.id) !== me) return
+    if (groupCallByUser.get(me) !== conversationId) return
+    socket.leave(gcallRoomName(conversationId))
+    leaveGroupCall(me, 'leave')
+  })
+
+  /**
+   * gcall:offer { conversationId, to, sdp, kind } — joiner → existing member
+   * (identity-gated; relayed ONLY to the targeted peer's room).
+   */
+  socket.on('gcall:offer', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const from = asTrimmedString(data.from).slice(0, 64)
+    const to = asTrimmedString(data.to).slice(0, 64)
+    const sdp =
+      typeof data.sdp === 'string' && data.sdp.length > 0 && data.sdp.length <= GCALL_SDP_MAX_CHARS
+        ? data.sdp
+        : null
+    const kind = callKindOf(data.kind)
+    if (!conversationId || !from || !to || from === to || !sdp || !kind) return
+    if (socketUser.get(socket.id) !== from) return
+    const call = groupCalls.get(conversationId)
+    if (!call || !call.members.has(from) || !call.members.has(to)) return
+    io.to(roomOf(to)).emit('gcall:offer', { conversationId, callId: call.callId, from, to, kind, sdp })
+  })
+
+  /** gcall:answer { conversationId, to, sdp } — existing member → joiner. */
+  socket.on('gcall:answer', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const from = asTrimmedString(data.from).slice(0, 64)
+    const to = asTrimmedString(data.to).slice(0, 64)
+    const sdp =
+      typeof data.sdp === 'string' && data.sdp.length > 0 && data.sdp.length <= GCALL_SDP_MAX_CHARS
+        ? data.sdp
+        : null
+    if (!conversationId || !from || !to || from === to || !sdp) return
+    if (socketUser.get(socket.id) !== from) return
+    const call = groupCalls.get(conversationId)
+    if (!call || !call.members.has(from) || !call.members.has(to)) return
+    io.to(roomOf(to)).emit('gcall:answer', { conversationId, callId: call.callId, from, to, sdp })
+  })
+
+  /** gcall:ice { conversationId, to, candidate, sdpMid, sdpMLineIndex } — targeted relay. */
+  socket.on('gcall:ice', (raw: unknown) => {
+    const data = (raw ?? {}) as Record<string, unknown>
+    const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
+    const from = asTrimmedString(data.from).slice(0, 64)
+    const to = asTrimmedString(data.to).slice(0, 64)
+    const candidate =
+      typeof data.candidate === 'string' && data.candidate.length > 0 && data.candidate.length <= GCALL_ICE_MAX_CHARS
+        ? data.candidate
+        : null
+    if (!conversationId || !from || !to || from === to || !candidate) return
+    if (socketUser.get(socket.id) !== from) return
+    const call = groupCalls.get(conversationId)
+    if (!call || !call.members.has(from) || !call.members.has(to)) return
+    io.to(roomOf(to)).emit('gcall:ice', {
+      conversationId,
+      callId: call.callId,
+      from,
+      to,
+      candidate,
+      sdpMid: typeof data.sdpMid === 'string' ? data.sdpMid : null,
+      sdpMLineIndex:
+        typeof data.sdpMLineIndex === 'number' && Number.isFinite(data.sdpMLineIndex)
+          ? Math.floor(data.sdpMLineIndex)
+          : null,
+    })
+  })
+
   socket.on('error', (error) => {
     console.error(`[ws] socket error (${socket.id}):`, error instanceof Error ? error.message : error)
   })
@@ -1550,6 +1807,8 @@ io.on('connection', (socket: Socket) => {
     if (departedUserId) {
       const callId = callByUser.get(departedUserId)
       if (callId) dropCallSession(callId, 'timeout', departedUserId)
+      // Group calls: the departed member drops out; last one out ends the call.
+      leaveGroupCall(departedUserId, `disconnect:${reason}`)
     }
     const wentOffline = dropPresence(socket.id)
     if (wentOffline) {

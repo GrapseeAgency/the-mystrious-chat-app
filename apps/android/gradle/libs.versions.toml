@@ -17,6 +17,7 @@ datastore = "1.1.1"
 coreKtx = "1.15.0"
 coil = "2.7.0"
 webrtc = "1.3.10"
+firebaseMessaging = "24.1.1"
 junitJupiter = "5.11.4"
 desugar = "2.1.5"
 turbine = "1.2.0"
@@ -73,6 +74,7 @@ socketio-client = { module = "io.socket:socket.io-client", version.ref = "socket
 
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 stream-webrtc = { module = "io.getstream:stream-webrtc-android", version.ref = "webrtc" }
+firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebaseMessaging" }
 
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junitJupiter" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }

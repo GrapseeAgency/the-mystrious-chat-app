@@ -8,9 +8,13 @@ import SwiftUI
 /// PATCH /api/settings, quiet hours gate incoming pings + haptics locally,
 /// the gateway probe hits the API, drafts/outbox read the GRDB tables, the
 /// footprint measures the real SQLite file.
+/// Account · Appearance · Chat · Notifications · Privacy & Security ·
+@MainActor
 struct SettingsView: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
+    // 3-d — the honest remote-push registration state (Notifications card).
+    @ObservedObject private var pushCenter = PulsePushRegistrationCenter.shared
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var systemScheme
@@ -569,6 +573,52 @@ struct SettingsView: View {
             Text("Plays the incoming pop and fires a buzz, honoring the toggles above and quiet hours.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
+
+            // 3-d — REMOTE push (R8-web transport parity): the honest
+            // registration state. The rows above are all in-app surfaces;
+            // this one is the only thing that reaches a CLOSED app. Tapping
+            // (re)runs activation — authorization ask-once, then APNs, then
+            // the token POST. Failures (simulator, unsigned build, denied,
+            // no gateway) surface VERBATIM — never a fake success.
+            Divider().padding(.vertical, 4)
+            Button {
+                PulsePushNotifications.activate()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 6) {
+                            Text("Remote push")
+                                .font(.system(size: 14.5, weight: .medium))
+                                .foregroundStyle(PulseTheme.titleOnPanel)
+                            Text(pushCenter.statusLabel)
+                                .font(.system(size: 10.5, weight: .bold))
+                                .tracking(0.6)
+                                .textCase(.uppercase)
+                                .foregroundStyle(pushCenter.status == .registered ? PulseTheme.emerald : PulseTheme.textSecondary)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(PulseTheme.emerald.opacity(0.10)))
+                        }
+                        Text(pushCenter.statusNote)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Remote push: \(pushCenter.statusLabel). \(pushCenter.statusNote)")
         }
     }
 

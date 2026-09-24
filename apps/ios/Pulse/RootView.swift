@@ -214,6 +214,19 @@ struct RootView: View {
                     .ignoresSafeArea()
             }
 
+            // 3-d — the GROUP (mesh) call surface: same full-screen grammar,
+            // mounted beside the 1:1 overlay (web mounts the group overlay at
+            // SHELL level, main-shell.tsx — engine-not-idle drives it).
+            if let groupEngine = session.groupCallEngine {
+                GroupCallOverlayHostView(engine: groupEngine, viewer: prefs.viewer)
+                    .ignoresSafeArea()
+                // 3-d — the shell-level ring banner + the 'Ongoing group
+                // call · N in call — Join' discovery banner (web
+                // GroupCallRingBanner parity). Suppressed while CallKit
+                // owns the incoming presentation (no double-ring).
+                GroupCallBannerHostView(engine: groupEngine)
+            }
+
             // W5-f — the rooms surfaces (voice/stage/space) present through
             // ONE fullScreenCover driven by the session model's surface
             // state; hosted at the root so room membership survives chat
@@ -230,6 +243,10 @@ struct RootView: View {
             // Wave 8 — prefs handoff: incoming attention gate, settings PATCH
             // funnel, quiet-gate refresh (idempotent, closures attach once).
             session.attach(prefs: prefs)
+            // 3-d — push handoff: the registration center reads the live API
+            // client through this closure (rebuilt per gateway override +
+            // identity). attach re-arms any pending token → server POST.
+            PulsePushRegistrationCenter.shared.attach { [weak session] in session?.api }
             // R4-A item 3 — mirror the nav style on attach (onChange below
             // keeps the mirror live after Appearance picks).
             navStyle = prefs.navStyle

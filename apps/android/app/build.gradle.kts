@@ -123,6 +123,13 @@ dependencies {
     // OutboxWorker (Wave 0 offline core) — the expedited flusher lives in :app.
     implementation(libs.androidx.work.runtime)
 
+    // R8 Task 3-c — FCM remote push (client wiring). The google-services
+    // plugin is INTENTIONALLY absent: the build stays green with no
+    // google-services.json. FirebaseApp is initialized ONLY when the
+    // pulse_fcm_* string credentials exist (fail-closed, feature-disabled
+    // otherwise) — see PulseApplication + PulseMessagingService.
+    implementation(libs.firebase.messaging)
+
     androidTestImplementation(libs.androidx.test.core.ktx)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

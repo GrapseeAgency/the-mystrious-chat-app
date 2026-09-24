@@ -118,6 +118,13 @@ public final class PulseCallEngine: ObservableObject {
     public func startOutgoing(to peer: CallPeer, conversationId: String, kind: CallKind = .voice) {
         guard case .idle = machine.state else { return }
         guard !viewer.id.isEmpty, !peer.id.isEmpty, peer.id != viewer.id, !conversationId.isEmpty else { return }
+        // 3-d — cross-engine exclusion (mirror of the group engine's
+        // voiceCallBusy gate): a live GROUP call owns the audio session —
+        // honest refusal, never two fighting call surfaces.
+        if PulseGroupCallEngine.active?.isBusy == true {
+            toasts.show("Finish your current call first")
+            return
+        }
         guard kind == .video else {
             beginOutgoing(to: peer, conversationId: conversationId, kind: kind)
             return
@@ -127,6 +134,7 @@ public final class PulseCallEngine: ObservableObject {
             let cameraOk = await self.media.requestCameraPermission() && self.media.canCaptureVideo()
             // Something else (another call) took over while the prompt was up.
             guard case .idle = self.machine.state else { return }
+            if PulseGroupCallEngine.active?.isBusy == true { return }
             if !cameraOk {
                 self.toasts.show("Camera unavailable — starting a voice call")
             }
@@ -345,6 +353,9 @@ public final class PulseCallEngine: ObservableObject {
 
     /// The wire kind of the live call (CallView status line parity).
     public var activeKind: CallKind? { machine.call?.kind }
+
+    /// 3-d — the conversation of the live call (CallKit bookkeeping).
+    public var activeCallConversationId: String? { machine.call?.conversationId }
 
     /// Speaker toggle → AVAudioSession.overrideOutputAudioPort (earpiece ⇄
     /// loudspeaker). Hardware-gated: real routes need a physical device.

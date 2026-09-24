@@ -37,6 +37,9 @@ public final class PulseSocketClient {
         case spaceState(conversationId: String, raw: [String: Any])
         // Call signaling (generic — includes call:reject).
         case callSignal(event: String, raw: [String: Any])
+        // 3-d — GROUP call signaling (gcall:* family, mesh). Same envelope
+        // shape as callSignal; the session routes it to the group engine.
+        case groupCallSignal(event: String, raw: [String: Any])
         /// Wave 8 — the relay refused our join because the PRESENTED session
         /// token failed verification (invalid/rotated). The server disconnects
         /// right after emitting this; the session layer reacts (clears the
@@ -232,6 +235,19 @@ public final class PulseSocketClient {
             }
         }
 
+        // ── 3-d — group call signaling (mesh) ────────────────────
+        // gcall:ring/state/offer/answer/ice/leave/ended/full. The relay
+        // emits offer/answer/ice TARGETED (roomOf(to)); state/ring/ended/
+        // full broadcast to the call room / user rooms. gcall:leave is
+        // C→S only — the handler below simply never fires against the
+        // current relay (kept for symmetry + forward tolerance).
+        for event in ["gcall:ring", "gcall:state", "gcall:offer", "gcall:answer", "gcall:ice", "gcall:leave", "gcall:ended", "gcall:full"] {
+            socket.on(event) { [weak self] data, _ in
+                guard let obj = data.first as? [String: Any] else { return }
+                self?.signals?(.groupCallSignal(event: event, raw: obj))
+            }
+        }
+
         socket.connect()
     }
 
@@ -265,10 +281,12 @@ public final class PulseSocketClient {
     }
 
     /// W3-b — emit one C→S call signaling event (call:offer / call:answer /
-    /// call:ice / call:reject / call:cancel / call:hangup). The payload shape
-    /// is built by CallWire (unit-tested against the relay's validation).
-    /// Emits made while disconnected are buffered by socket.io and flushed on
-    /// the next reconnect (same semantics the join re-emit relies on).
+    /// call:ice / call:reject / call:cancel / call:hangup — and, 3-d, the
+    /// gcall:* family; the emit path is the same generic funnel). The payload
+    /// shape is built by CallWire / GroupCallWire (unit-tested against the
+    /// relay's validation). Emits made while disconnected are buffered by
+    /// socket.io and flushed on the next reconnect (same semantics the join
+    /// re-emit relies on).
     public func emitCallSignal(event: String, payload: [String: Any]) {
         socket.emit(event, payload)
     }

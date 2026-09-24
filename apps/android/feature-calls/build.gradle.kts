@@ -20,6 +20,8 @@ android {
 
 dependencies {
     implementation(project(":domain"))
+    // R8 Task 3-c — the gcall:* wire DTOs + pure mesh kernels (GroupCallMesh).
+    implementation(project(":protocol"))
     implementation(project(":core"))
     implementation(project(":ui"))
 

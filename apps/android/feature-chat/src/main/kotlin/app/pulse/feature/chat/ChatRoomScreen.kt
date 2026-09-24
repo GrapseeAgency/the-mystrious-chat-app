@@ -72,6 +72,7 @@ import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.EventRepeat
@@ -97,8 +98,9 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ScheduleSend
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SentimentSatisfied
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Topic
 import androidx.compose.material.icons.filled.Verified
@@ -170,6 +172,7 @@ import app.pulse.core.media.PulseMedia
 import app.pulse.core.time.PulseTime
 // R1-W2F — per-conversation themes (F-FX-05).
 import app.pulse.domain.model.ConvTheme
+import app.pulse.domain.model.CallKind
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.LinkPreviewInfo
 import app.pulse.domain.model.Message
@@ -222,6 +225,12 @@ fun ChatRoomScreen(
     // R7 item 4 — reminder jump for OTHER rooms (web REMINDER_JUMP_EVENT):
     // navigates to room/{id}?jump={messageId} so that room auto-flashes.
     onJumpToRoom: (conversationId: String, messageId: String) -> Unit = { _, _ -> },
+    // R8 Task 3-c — group calls (mesh WebRTC): the room reports activation
+    // (id + display title → the shell-level session's probe/banner identity)
+    // and dials NEW group calls through the ONE shell session. The 1:1
+    // header buttons dial the same way through onCall — one live call.
+    onRoomActivated: (String, String) -> Unit = { _, _ -> },
+    onStartGroupCall: (CallKind, String) -> Unit = { _, _ -> },
 ) {
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
@@ -573,6 +582,48 @@ fun ChatRoomScreen(
         if (cancelled) viewModel.cancelRecording() else viewModel.stopAndSend()
     }
 
+    // ── R8 Task 3-c — group call dial gates (contacts-screen idiom) ──
+    // RECORD_AUDIO is the hard gate for BOTH kinds (the honest mic-denied
+    // card inside the engine is the second net); video also asks for CAMERA
+    // in one prompt — camera denial degrades to a voice call in the engine,
+    // never blocking the join. The dial rides the ONE shell-level session.
+    var groupCallDial by remember { mutableStateOf<Pair<CallKind, String>?>(null) }
+    val groupMicLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val dial = groupCallDial
+        groupCallDial = null
+        if (granted && dial != null) onStartGroupCall(dial.first, dial.second)
+    }
+    val groupVideoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val dial = groupCallDial
+        groupCallDial = null
+        if (grants[Manifest.permission.RECORD_AUDIO] == true && dial != null) onStartGroupCall(dial.first, dial.second)
+    }
+    val dialGroupCall: (CallKind) -> Unit = { wanted ->
+        val title = conversation?.title.orEmpty()
+        val micGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        when {
+            !micGranted -> {
+                groupCallDial = wanted to title
+                groupMicLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            wanted == CallKind.VIDEO &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED -> {
+                groupCallDial = wanted to title
+                groupVideoLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA))
+            }
+            else -> onStartGroupCall(wanted, title)
+        }
+    }
+
+    // R8 Task 3-c — report room activation (id + display title) so the shell
+    // session probes THIS conversation and banners carry the right title
+    // (web openConversationId parity). Idempotent — the shell also sets the
+    // bare id on room enter.
+    LaunchedEffect(conversation?.id, conversation?.title) {
+        if (conversation != null) onRoomActivated(conversationId, conversation?.title.orEmpty())
+    }
+
     // ── R1-W2F F-MD-07 — ACCESS_COARSE_LOCATION runtime gate for pin share.
     // Mirrors the D30 camera gate: denial is an inline explainer INSIDE the
     // location sheet (no crash, no dead end).
@@ -731,6 +782,15 @@ fun ChatRoomScreen(
             // R6 — BE7 — the reminders button (web header parity) + badge.
             onOpenReminders = viewModel::openReminders,
             remindersCount = remindersUpcoming,
+            // R8 Task 3-c — GROUP call dials (web chat-room header Phone/Video
+            // group buttons, chat-room.tsx:4026-4053): voice always, video
+            // beside it; groups only, permission gates live in the screen.
+            onStartGroupVoice = if (conversation?.isGroupish == true) {
+                { dialGroupCall(CallKind.VOICE) }
+            } else null,
+            onStartGroupVideo = if (conversation?.isGroupish == true) {
+                { dialGroupCall(CallKind.VIDEO) }
+            } else null,
         )
 
         // Wave 2 topic rail — GROUP rooms only (DMs have nothing to file into).
@@ -2952,6 +3012,9 @@ private fun RoomHeader(
     // R6 — BE7 — the room reminders entry (web header button + badge).
     onOpenReminders: () -> Unit = {},
     remindersCount: Int = 0,
+    // R8 Task 3-c — GROUP call dials (null = not a group / no shell session).
+    onStartGroupVoice: (() -> Unit)? = null,
+    onStartGroupVideo: (() -> Unit)? = null,
 ) {
     Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
         Row(
@@ -3056,6 +3119,32 @@ private fun RoomHeader(
                     contentDescription = null,
                     tint = if (voiceJoined) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            // R8 Task 3-c — group voice/video call buttons (web chat-room
+            // header parity, aria "Start group voice/video call").
+            if (onStartGroupVoice != null) {
+                IconButton(
+                    onClick = onStartGroupVoice,
+                    modifier = Modifier.semantics { contentDescription = "Start group voice call" },
+                ) {
+                    Icon(
+                        Icons.Filled.Call,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (onStartGroupVideo != null) {
+                IconButton(
+                    onClick = onStartGroupVideo,
+                    modifier = Modifier.semantics { contentDescription = "Start group video call" },
+                ) {
+                    Icon(
+                        Icons.Filled.Videocam,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             onOpenLeaderboard?.let {
                 IconButton(onClick = it) {

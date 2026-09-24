@@ -584,6 +584,7 @@ export function ChatRoom({
   unreadAnchorMs: unreadAnchorMsProp = null,
   initialJumpMessageId: initialJumpMessageIdProp = null,
   onStartCall,
+  onStartGroupCall,
   onClose,
 }: {
   me: AppUser
@@ -595,6 +596,9 @@ export function ChatRoom({
   /** R35-b: dial through the shell's single call session + overlay
       (omitted by hosts without the shell mount → call buttons hide) */
   onStartCall?: (call: { conversationId: string; peer: CallPeer; kind: CallKind }) => void
+  /** Group calls: dial through the shell's single GROUP call session
+      (omitted by hosts without the shell mount → group call button hides) */
+  onStartGroupCall?: (call: { conversationId: string; kind: CallKind; title: string }) => void
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -4010,6 +4014,36 @@ export function ChatRoom({
                   peer: { id: other.id, name: other.name, color: other.color, avatar: other.avatar },
                   kind: 'video',
                 })
+              }}
+              className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+            >
+              <Video className="size-5" aria-hidden />
+            </Button>
+          </>
+        ) : null}
+
+        {/* Group call buttons (mesh) — same shell-dial contract, one session. */}
+        {isGroup && onStartGroupCall ? (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Start group voice call${displayName ? ` in ${displayName}` : ''}`}
+              onClick={() => {
+                haptic(10)
+                onStartGroupCall({ conversationId, kind: 'voice', title: displayName || 'Group call' })
+              }}
+              className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+            >
+              <Phone className="size-5" aria-hidden />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Start group video call${displayName ? ` in ${displayName}` : ''}`}
+              onClick={() => {
+                haptic(10)
+                onStartGroupCall({ conversationId, kind: 'video', title: displayName || 'Group call' })
               }}
               className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
             >

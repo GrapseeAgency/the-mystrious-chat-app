@@ -46,11 +46,24 @@ struct ChatRoomView: View {
             session.roomVisible = true
             // Wave 8 — the incoming-attention gate treats THIS room as read.
             session.activeRoomId = conversation.id
+            // 3-d — the group-call engine tracks the OPEN room: this drives
+            // the 20s ongoing-call probe + the 'Ongoing group call' banner
+            // (web useGroupCallSession options.conversationId parity). Groups
+            // only — DMs never host group calls.
+            if conversation.isGroup {
+                session.groupCallEngine?.setActiveConversation(conversation.id)
+            }
         }
         .onDisappear {
             session.roomVisible = false
             if session.activeRoomId == conversation.id {
                 session.activeRoomId = nil
+            }
+            // 3-d — room closed: the probe + banner stand down for THIS room
+            // (the engine keeps an in-flight call alive regardless).
+            if conversation.isGroup,
+               session.groupCallEngine?.activeConversationId == conversation.id {
+                session.groupCallEngine?.setActiveConversation(nil)
             }
         }
     }
@@ -348,6 +361,16 @@ private struct RoomContent: View {
     /// bodies (web memberNames stable-list parity).
     private var memberNames: [String] { conversation.members.map(\.name) }
 
+    /// 3-d — the group-call dial title (web `displayName || 'Group call'`
+    /// parity, chat-room.tsx :4034): the conversation name, then the partner
+    /// name, then any member, then the honest generic.
+    private var groupCallTitle: String {
+        conversation.name
+            ?? conversation.members.first(where: { $0.id != session.viewer?.id })?.name
+            ?? conversation.members.first?.name
+            ?? "Group call"
+    }
+
     // ── R1-W2B — location share / conv themes / quick phrases ──
     @State private var locationOpen = false
     @State private var themeOpen = false
@@ -529,6 +552,32 @@ private struct RoomContent: View {
                 // live" pill shows when joined + surface closed.
                 if let rooms = session.voiceRooms {
                     VoiceRoomChatEntry(model: rooms, conversationId: conversation.id)
+                }
+            }
+            // 3-d — GROUP call buttons (mesh, web chat-room.tsx :4026-4053
+            // parity: same shell-dial contract, one session). Groups only;
+            // the engine owns every gate (1:1-call exclusion, offline toast,
+            // mic/camera permission asks, camera→voice degrade).
+            if conversation.isGroup, let groupEngine = session.groupCallEngine {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        PulseHaptics.tap()
+                        groupEngine.startCall(kind: .voice, conversationId: conversation.id, title: groupCallTitle)
+                    } label: {
+                        Image(systemName: "phone")
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("Start group voice call in \(groupCallTitle)")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        PulseHaptics.tap()
+                        groupEngine.startCall(kind: .video, conversationId: conversation.id, title: groupCallTitle)
+                    } label: {
+                        Image(systemName: "video")
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("Start group video call in \(groupCallTitle)")
                 }
             }
             // Wave 7 F-RO-09 — room leaderboard (web group-info-sheet parity).

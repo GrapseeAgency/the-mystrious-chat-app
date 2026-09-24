@@ -22,6 +22,7 @@ import app.pulse.protocol.GameDetailDto
 import app.pulse.protocol.GameMatchCreateResultDto
 import app.pulse.protocol.GamesPageDto
 import app.pulse.protocol.GroupEventDto
+import app.pulse.protocol.GroupCallStatePayload
 import app.pulse.protocol.GroupMutationAckDto
 import app.pulse.protocol.HubLogsPageDto
 import app.pulse.protocol.HubTaskDto
@@ -849,6 +850,56 @@ class PulseApi(
                 put("durationSec", durationSec)
             },
         ) { PulseJson.decodeFromString(CallLogCreatedDto.serializer(), it) }
+
+    // ── R8 Task 3-c — group calls + remote push (web R8 parity) ──
+
+    /**
+     * POST /api/conversations/{id}/calls/ring { userId, kind } — group-call
+     * ring fanout: the starting member calls this AFTER gcall:join; online
+     * members get the `gcall:ring` relay, offline ones the push. Fire-and-
+     * forget for the caller UX — only validation errors matter here.
+     */
+    suspend fun postGroupCallRing(
+        conversationId: String,
+        userId: String,
+        kind: String,
+    ): PulseResult<Unit> =
+        post(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/calls/ring",
+            buildJsonObject {
+                put("userId", userId)
+                put("kind", kind)
+            },
+        )
+
+    /**
+     * GET /api/group-call-state?conversationId= — probe for an ONGOING group
+     * call (late room open). Response = { callId, kind, startedAt, members }
+     * or the honest empty { members: [] } — GroupCallStatePayload defaults
+     * tolerate both shapes.
+     */
+    suspend fun groupCallState(conversationId: String): PulseResult<GroupCallStatePayload> =
+        get("/api/group-call-state?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8")) {
+            PulseJson.decodeFromString(GroupCallStatePayload.serializer(), it)
+        }
+
+    /** POST /api/push/register { userId, platform: 'android', token } — upsert the FCM token. */
+    suspend fun registerPushToken(userId: String, token: String): PulseResult<Unit> =
+        post(
+            "/api/push/register",
+            buildJsonObject {
+                put("userId", userId)
+                put("platform", "android")
+                put("token", token)
+            },
+        )
+
+    /** DELETE /api/push/register { token } — unregister on rotation/sign-out. */
+    suspend fun unregisterPushToken(token: String): PulseResult<Unit> =
+        deleteWithJson(
+            "/api/push/register",
+            buildJsonObject { put("token", token) },
+        )
 
     // ── Wave 5 voice rooms — live-caption transcription ─────────
 

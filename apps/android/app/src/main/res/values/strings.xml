@@ -6,4 +6,14 @@
     <string name="tab_contacts">Contacts</string>
     <string name="tab_profile">Profile</string>
     <string name="cd_open_calls">Open calls</string>
+
+    <!-- R8 Task 3-c — FCM credential knobs (fail-closed). These stay EMPTY in
+         the repo: dropping real values in (or baking them via a CI-only
+         overlay) is what arms remote push. Empty = FirebaseApp is never
+         initialized, the messaging service never fires, and the build stays
+         green with NO google-services.json / google-services plugin. -->
+    <string name="pulse_fcm_google_app_id" translatable="false" />
+    <string name="pulse_fcm_api_key" translatable="false" />
+    <string name="pulse_fcm_project_id" translatable="false" />
+    <string name="pulse_fcm_gcm_sender_id" translatable="false" />
 </resources>

@@ -854,6 +854,40 @@ public struct PulseAPIClient: Sendable {
         return try WireCallLogEnvelope.extract(from: data)
     }
 
+    // ── 3-d — push registration + group calls ────────────────
+
+    /// POST /api/push/register { userId, platform: 'ios', token } → { ok, id }.
+    /// Upsert keyed by the unique token — re-registrations rebind the user.
+    public func registerPushToken(userId: String, platform: String, token: String) async throws {
+        _ = try await postRaw("/api/push/register", body: [
+            "userId": userId,
+            "platform": platform,
+            "token": token,
+        ])
+    }
+
+    /// DELETE /api/push/register { token } → { ok } (idempotent server-side).
+    public func unregisterPushToken(token: String) async throws {
+        try await deleteEmpty("/api/push/register", body: ["token": token])
+    }
+
+    /// POST /api/conversations/{id}/calls/ring { userId, kind } — after the
+    /// socket gcall:join: rings ONLINE members through the relay (gcall:ring)
+    /// and pushes OFFLINE ones (APNs/FCM fanout). Fire-and-forget upstream;
+    /// failures surface the honest ring toast.
+    public func ringGroupCall(conversationId: String, userId: String, kind: CallKind) async throws {
+        _ = try await postRaw("/api/conversations/\(q(conversationId))/calls/ring", body: [
+            "userId": userId,
+            "kind": kind.rawValue,
+        ])
+    }
+
+    /// GET /api/group-call-state?conversationId= → { callId, kind, startedAt,
+    /// members } or { members: [] } (honest empty — socket down / no call).
+    public func groupCallState(conversationId: String) async throws -> PulseGroupCallStateSnapshot {
+        try await get("/api/group-call-state?conversationId=\(q(conversationId))")
+    }
+
     // ── Wave 7 — collaboration & hub (F-RO / F-HB) ───────────
 
     private func q(_ id: String) -> String {

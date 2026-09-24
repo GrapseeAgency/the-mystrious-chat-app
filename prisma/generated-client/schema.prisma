@@ -776,3 +776,22 @@ model UploadedFile {
   size      Int
   createdAt DateTime @default(now())
 }
+
+// ── Remote push (device transport registry) ──────────────────
+// One row per device endpoint the push transport can reach:
+//   • web     → Web Push subscription endpoint (VAPID; browser tab closed OK)
+//   • android → FCM registration token (Firebase project credential-gated)
+//   • ios     → APNs device token (Apple signing credential-gated)
+// Tokens are opaque server-side; delivery failures prune the row so the
+// registry self-heals. Sender identity comes from the caller's userId.
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  platform  String // web|android|ios
+  token     String   @unique
+  endpoint  String? // Web Push endpoint URL (web platform only)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}

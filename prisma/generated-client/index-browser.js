@@ -564,6 +564,16 @@ exports.Prisma.UploadedFileScalarFieldEnum = {
   createdAt: 'createdAt'
 };
 
+exports.Prisma.PushTokenScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  platform: 'platform',
+  token: 'token',
+  endpoint: 'endpoint',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -617,7 +627,8 @@ exports.Prisma.ModelName = {
   KanbanCard: 'KanbanCard',
   GroupEvent: 'GroupEvent',
   EventRsvp: 'EventRsvp',
-  UploadedFile: 'UploadedFile'
+  UploadedFile: 'UploadedFile',
+  PushToken: 'PushToken'
 };
 
 /**

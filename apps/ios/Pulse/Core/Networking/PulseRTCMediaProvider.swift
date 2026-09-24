@@ -98,11 +98,63 @@ public protocol PulseCallMediaProviding: AnyObject {
     func makePeerConnection(delegate: (any PulseCallPeerDelegate)?) -> (any PulseCallPeerConnecting)?
 }
 
+// ── 3-d — GROUP mesh media surface ──────────────────────────
+
+/// One mesh peer connection: the 1:1 surface (PulseCallPeerConnecting)
+/// PLUS the ability to attach the ONE shared local track. The mesh engine
+/// attaches the same acquired track to every peer connection (web parity:
+/// one local MediaStream feeding all RTCPeerConnections —
+/// group-call-overlay.tsx ensurePeerConnection :239-240).
+public protocol PulseGroupCallPeerConnecting: PulseCallPeerConnecting {
+    /// Attach one SHARED local track to this peer connection. The same
+    /// RTCAudioTrack/RTCVideoTrack instance may be attached to every mesh
+    /// peer — one acquisition, N connections (track-level enabled flips
+    /// then affect all peers at once, exactly like the web stream).
+    func attachSharedTrack(_ track: RTCMediaStreamTrack, streamId: String)
+}
+
+/// The GROUP engine's media layer (fake-able in tests): bare peer
+/// connections with NO local tracks + the ONE shared mic/camera acquisition.
+@MainActor
+public protocol PulseGroupCallMediaProviding: AnyObject {
+    func requestMicPermission() async -> Bool
+    func requestCameraPermission() async -> Bool
+    /// Sync capability probe: camera authorized AND ≥1 capture device.
+    func canCaptureVideo() -> Bool
+    /// A peer connection with NO local tracks — the engine attaches the
+    /// shared tracks itself (attachSharedTrack) BEFORE the SDP dance.
+    func makeMeshPeerConnection(delegate: (any PulseCallPeerDelegate)?) -> (any PulseGroupCallPeerConnecting)?
+    /// The ONE shared mic track (lazily created once per acquisition).
+    func makeSharedAudioTrack() -> RTCAudioTrack?
+    /// Start the ONE shared camera capturer (front camera default). nil =
+    /// no usable camera (web camera-unavailable degrade path).
+    func startSharedVideoCapture() -> RTCVideoTrack?
+    /// Stops + releases the shared camera (call teardown).
+    func stopSharedVideoCapture()
+    /// Track-level toggles — one flip feeds every mesh peer (web
+    /// track.enabled parity on the single local stream).
+    func setSharedAudioEnabled(_ enabled: Bool)
+    func setSharedVideoEnabled(_ enabled: Bool)
+    /// Front ⇄ back camera flip on the shared capturer.
+    func switchSharedCamera()
+}
+
 // ── real provider ────────────────────────────────────────────
 
+/// The real provider — the ONE WebRTC factory for the whole process. It
+/// feeds BOTH engines (3-d): the 1:1 engine through PulseCallMediaProviding
+/// and the mesh group engine through PulseGroupCallMediaProviding (the
+/// shared-track methods below satisfy the latter).
 @MainActor
-public final class PulseRTCMediaProvider: PulseCallMediaProviding {
+public final class PulseRTCMediaProvider: PulseCallMediaProviding, PulseGroupCallMediaProviding {
     private let factory: RTCPeerConnectionFactory
+
+    // ── 3-d — shared mesh media state (ONE acquisition, N peer connections)
+    private var sharedAudio: RTCAudioTrack?
+    private var sharedVideoSource: RTCVideoSource?
+    private var sharedVideoCapturer: RTCCameraVideoCapturer?
+    private var sharedVideo: RTCVideoTrack?
+    private var sharedDevice: AVCaptureDevice?
 
     public init() {
         PulseRTCBootstrap.initialize
@@ -137,6 +189,112 @@ public final class PulseRTCMediaProvider: PulseCallMediaProviding {
     public func makePeerConnection(delegate: (any PulseCallPeerDelegate)?) -> (any PulseCallPeerConnecting)? {
         PulseRTCPeerAdapter(factory: factory, delegate: delegate)
     }
+
+    // ── 3-d — PulseGroupCallMediaProviding ───────────────────
+
+    public func makeMeshPeerConnection(delegate: (any PulseCallPeerDelegate)?) -> (any PulseGroupCallPeerConnecting)? {
+        // Bare adapter — NO internal audio track; the engine attaches the
+        // shared tracks (web addTrack-at-creation parity).
+        PulseRTCPeerAdapter(factory: factory, delegate: delegate, attachLocalAudio: false)
+    }
+
+    public func makeSharedAudioTrack() -> RTCAudioTrack? {
+        if let sharedAudio { return sharedAudio }
+        let source = factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
+        let track = factory.audioTrack(with: source, trackId: "pulse-gaudio0")
+        sharedAudio = track
+        return track
+    }
+
+    public func startSharedVideoCapture() -> RTCVideoTrack? {
+        if let sharedVideo { return sharedVideo }
+        let devices = RTCCameraVideoCapturer.captureDevices()
+        let device = devices.first(where: { $0.position == .front })
+            ?? devices.first(where: { $0.position == .back })
+            ?? devices.first
+        guard let device else { return nil }
+        guard let format = PulseRTCVideoFormats.best(for: device) else { return nil }
+        let source = factory.videoSource()
+        let capturer = RTCCameraVideoCapturer(delegate: source)
+        let track = factory.videoTrack(with: source, trackId: "pulse-gvideo0")
+        sharedDevice = device
+        sharedVideoSource = source
+        sharedVideoCapturer = capturer
+        sharedVideo = track
+        let fps = max(1, min(Int(CallVideoConstants.targetFps), Int(PulseRTCVideoFormats.fpsCeiling(of: format))))
+        capturer.startCapture(with: device, format: format, fps: fps) { error in
+            if let error {
+                NSLog("[gcall] shared startCapture failed: %@", error.localizedDescription)
+            }
+        }
+        return track
+    }
+
+    public func stopSharedVideoCapture() {
+        sharedVideoCapturer?.stopCapture()
+        sharedVideoCapturer = nil
+        sharedVideoSource = nil
+        sharedVideo = nil
+        sharedDevice = nil
+    }
+
+    public func setSharedAudioEnabled(_ enabled: Bool) {
+        sharedAudio?.isEnabled = enabled
+    }
+
+    public func setSharedVideoEnabled(_ enabled: Bool) {
+        sharedVideo?.isEnabled = enabled
+    }
+
+    public func switchSharedCamera() {
+        // Same flip mechanism as the 1:1 adapter: stop, then re-start the
+        // capturer on the opposite-position device.
+        guard let capturer = sharedVideoCapturer else { return }
+        let devices = RTCCameraVideoCapturer.captureDevices()
+        let current = sharedDevice
+        let next = devices.first(where: { $0.position == .front && current?.position != .front })
+            ?? devices.first(where: { $0.position == .back && current?.position != .back })
+        guard let device = next, let format = PulseRTCVideoFormats.best(for: device) else { return }
+        sharedDevice = device
+        capturer.stopCapture()
+        let fps = max(1, min(Int(CallVideoConstants.targetFps), Int(PulseRTCVideoFormats.fpsCeiling(of: format))))
+        capturer.startCapture(with: device, format: format, fps: fps) { error in
+            if let error {
+                NSLog("[gcall] shared camera flip failed: %@", error.localizedDescription)
+            }
+        }
+    }
+}
+
+// ── shared video-format selection (1:1 adapter + mesh provider) ──
+
+/// Closest-to-target format + fps helpers extracted from the adapter so the
+/// shared (mesh) capturer selects IDENTICAL formats (web ideal 1280×720@30).
+enum PulseRTCVideoFormats {
+    static func best(for device: AVCaptureDevice) -> AVCaptureDevice.Format? {
+        let formats = RTCCameraVideoCapturer.supportedFormats(for: device)
+        return formats.min { lhs, rhs in
+            let (lw, lh) = dimensions(lhs)
+            let (rw, rh) = dimensions(rhs)
+            let dl = abs(lw - CallVideoConstants.targetWidth) + abs(lh - CallVideoConstants.targetHeight)
+            let dr = abs(rw - CallVideoConstants.targetWidth) + abs(rh - CallVideoConstants.targetHeight)
+            if dl != dr { return dl < dr }
+            return abs(fpsCeiling(of: lhs) - Double(CallVideoConstants.targetFps))
+                < abs(fpsCeiling(of: rhs) - Double(CallVideoConstants.targetFps))
+        }
+    }
+
+    /// Highest frame rate the format supports (first range wins — all ranges
+    /// of a live format share the ceiling in practice).
+    static func fpsCeiling(of format: AVCaptureDevice.Format) -> Double {
+        format.videoSupportedFrameRateRanges.first?.maxFrameRate ?? Double(CallVideoConstants.targetFps)
+    }
+
+    private static func dimensions(_ format: AVCaptureDevice.Format) -> (Int, Int) {
+        // formatDescription is non-optional in the current SDK surface.
+        let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        return (Int(dims.width), Int(dims.height))
+    }
 }
 
 // ── real peer adapter ────────────────────────────────────────
@@ -169,7 +327,7 @@ enum PulseRTCError: Error {
 /// didGenerate: legacy) — whichever the pinned framework build declares, one
 /// witness matches and neither can fail to compile (delegate members are
 /// @optional Obj-C, extra methods are inert).
-final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallPeerConnecting {
+final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallPeerConnecting, PulseGroupCallPeerConnecting {
     private let pc: RTCPeerConnection
     private let factory: RTCPeerConnectionFactory
     private let audioTrack: RTCAudioTrack?
@@ -185,7 +343,17 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     /// main-actor-confined call flow in practice).
     static var currentDevice: AVCaptureDevice?
 
-    init?(factory: RTCPeerConnectionFactory, delegate: (any PulseCallPeerDelegate)?) {
+    /// 1:1 call adapter — local mic track attached at creation (video rides
+    /// enableLocalVideoCapture on the same connection). Delegates to the
+    /// full initializer with the legacy attachLocalAudio: true behavior.
+    convenience init?(factory: RTCPeerConnectionFactory, delegate: (any PulseCallPeerDelegate)?) {
+        self.init(factory: factory, delegate: delegate, attachLocalAudio: true)
+    }
+
+    /// Full initializer. `attachLocalAudio: false` produces the BARE mesh
+    /// adapter (3-d): no local tracks at construction — the group engine
+    /// attaches the ONE shared audio/video track pair instead.
+    init?(factory: RTCPeerConnectionFactory, delegate: (any PulseCallPeerDelegate)?, attachLocalAudio: Bool) {
         box = PulseRTCDelegateBox(delegate)
         self.factory = factory
 
@@ -218,10 +386,14 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
 
         // Audio-only: one sendrecv audio transceiver carries the whole call
         // (the offer's m-line is sendrecv, so both sides both send + receive).
-        let source = factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
-        let track = factory.audioTrack(with: source, trackId: "pulse-audio0")
-        pc.add(track, streamIds: ["pulse-stream0"])
-        audioTrack = track
+        // Mesh adapters (attachLocalAudio: false) skip this — the engine
+        // attaches the shared track before the SDP dance.
+        if attachLocalAudio {
+            let source = factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
+            let track = factory.audioTrack(with: source, trackId: "pulse-audio0")
+            pc.add(track, streamIds: ["pulse-stream0"])
+            audioTrack = track
+        }
 
         super.init()
         pc.delegate = self
@@ -303,6 +475,12 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         }
     }
 
+    /// 3-d — mesh attach: ONE shared local track onto THIS peer connection
+    /// (the same track instance can be attached to every mesh peer).
+    func attachSharedTrack(_ track: RTCMediaStreamTrack, streamId: String) {
+        pc.add(track, streamIds: [streamId])
+    }
+
     func setAudioEnabled(_ enabled: Bool) {
         audioTrack?.isEnabled = enabled
     }
@@ -377,31 +555,14 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     }
 
     /// Closest-to-target format (web ideal 1280×720), then closest fps (30).
-    /// AVCaptureDevice.Format carries NO single frameRate — the supported
-    /// ranges (videoSupportedFrameRateRanges) supply the ceiling.
+    /// Delegates to the shared PulseRTCVideoFormats helpers (the mesh
+    /// capturer selects identical formats).
     private static func bestVideoFormat(for device: AVCaptureDevice) -> AVCaptureDevice.Format? {
-        let formats = RTCCameraVideoCapturer.supportedFormats(for: device)
-        return formats.min { lhs, rhs in
-            let (lw, lh) = dimensions(lhs)
-            let (rw, rh) = dimensions(rhs)
-            let dl = abs(lw - CallVideoConstants.targetWidth) + abs(lh - CallVideoConstants.targetHeight)
-            let dr = abs(rw - CallVideoConstants.targetWidth) + abs(rh - CallVideoConstants.targetHeight)
-            if dl != dr { return dl < dr }
-            return abs(fpsCeiling(of: lhs) - Double(CallVideoConstants.targetFps))
-                < abs(fpsCeiling(of: rhs) - Double(CallVideoConstants.targetFps))
-        }
+        PulseRTCVideoFormats.best(for: device)
     }
 
-    /// Highest frame rate the format supports (first range wins — all ranges
-    /// of a live format share the ceiling in practice).
     private static func fpsCeiling(of format: AVCaptureDevice.Format) -> Double {
-        format.videoSupportedFrameRateRanges.first?.maxFrameRate ?? Double(CallVideoConstants.targetFps)
-    }
-
-    private static func dimensions(_ format: AVCaptureDevice.Format) -> (Int, Int) {
-        // formatDescription is non-optional in the current SDK surface.
-        let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-        return (Int(dims.width), Int(dims.height))
+        PulseRTCVideoFormats.fpsCeiling(of: format)
     }
 
     func close() {

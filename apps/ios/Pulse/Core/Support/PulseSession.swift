@@ -63,6 +63,10 @@ public final class PulseSession: ObservableObject {
     /// W3-b — Wave 3 call engine (nil before identity exists). RootView hosts
     /// the full-screen overlay; surfaces call startOutgoing/accept/decline.
     @Published public private(set) var callEngine: PulseCallEngine?
+    /// 3-d — the GROUP (mesh) call engine (nil before identity exists).
+    /// RootView hosts the group overlay + ring/ongoing banners; group rooms
+    /// dial through startCall(kind:conversationId:title:).
+    @Published public private(set) var groupCallEngine: PulseGroupCallEngine?
     /// W4 — Wave 4 stories feed owner (nil before identity exists). Tray,
     /// dock sheet, viewer and composer share this one instance.
     @Published public private(set) var stories: StoriesSessionModel?
@@ -180,6 +184,7 @@ public final class PulseSession: ObservableObject {
         outbox = nil
         PulseOutboxEngine.active = nil
         callEngine = nil
+        groupCallEngine = nil
         stories = nil
         voiceRooms = nil
         connected = false
@@ -204,6 +209,15 @@ public final class PulseSession: ObservableObject {
         startStories(viewer: viewer)
         startVoiceRooms(viewer: viewer)
         startReminderDueLoop(viewer: viewer)
+
+        // 3-d — remote push activates with EVERY identity start (bootstrap,
+        // onboarding, identity switch): notification authorization (ask-once
+        // per install) → APNs registration → the hex token POSTs to
+        // /api/push/register platform 'ios'. Honest verdicts only — a
+        // simulator / unsigned build surfaces the registration failure, it
+        // is never faked (PulsePushRegistrationCenter.status).
+        PulsePushRegistrationCenter.shared.noteViewerChanged()
+        PulsePushNotifications.activate()
 
         // Realtime bootstraps asynchronously: the manifest override must land
         // BEFORE the socket (and API rebinding) — non-blocking for first paint.
@@ -278,21 +292,47 @@ public final class PulseSession: ObservableObject {
 
     // ── calls (W3-b — Wave 3 native calls) ───────────────
 
-    /// Builds the call engine (real WebRTC provider + session-bound signaling)
-    /// and drains any queued single-writer call-log rows from a previous
-    /// offline session (app-start flush trigger).
+    /// Builds the call engines (real WebRTC provider + session-bound
+    /// signaling) and drains any queued single-writer call-log rows from a
+    /// previous offline session (app-start flush trigger).
+    ///
+    /// 3-d — BOTH engines share ONE PulseRTCMediaProvider (one WebRTC peer
+    /// connection factory for the whole process) and the same signaling
+    /// funnel. Cross-engine exclusion: the 1:1 engine checks
+    /// PulseGroupCallEngine.active?.isBusy before dialing; the group engine
+    /// gets a voiceCallBusy closure over this session's 1:1 engine.
     private func startCalls(viewer: PulseViewer) {
         guard let store else { return }
+        let media = PulseRTCMediaProvider()
         let engine = PulseCallEngine(
             store: store,
             viewer: viewer,
             signaling: PulseSessionCallSignaling(session: self),
-            media: PulseRTCMediaProvider(),
+            media: media,
             apiProvider: { [weak self] in self?.api },
             toasts: toasts,
         )
         callEngine = engine
         Task { await engine.flushCallLogQueue() }
+
+        let groupEngine = PulseGroupCallEngine(
+            viewer: viewer,
+            signaling: PulseSessionCallSignaling(session: self),
+            media: media,
+            apiProvider: { [weak self] in self?.api },
+            connectedProvider: { [weak self] in self?.connected ?? false },
+            voiceCallBusy: { [weak self] in self?.callEngine?.isBusy ?? false },
+            toasts: toasts,
+        )
+        groupCallEngine = groupEngine
+
+        // 3-d — CallKit OS-call integration: the coordinator observes BOTH
+        // engines and reports every call to the system CXProvider (incoming
+        // ring, dial, answer/end/mute actions drive the engines back).
+        // attach/attachGroup are idempotent per instance — identity restarts
+        // build fresh engines and re-attach here.
+        PulseCallKitCoordinator.shared.attach(engine: engine)
+        PulseCallKitCoordinator.shared.attachGroup(engine: groupEngine)
     }
 
     // ── stories (W4 — Wave 4 native stories) ─────────────────
@@ -459,6 +499,11 @@ public final class PulseSession: ObservableObject {
                 flushOutbox()
                 // W3-b — same trigger for the queued single-writer call rows.
                 callEngine?.flushCallLogQueueOnReconnect()
+            } else {
+                // 3-d — a live mesh is dead once the relay drops us (media
+                // flowing to a socket that stopped routing). Honest teardown
+                // instead of ghosting audio after a suspension.
+                groupCallEngine?.handleSocketDisconnected()
             }
             // W5-f — the rooms owner consumes connect/reconnect too (voice
             // re-join VR-8, stage resync ST-8, space attempts FIX #5).
@@ -482,6 +527,10 @@ public final class PulseSession: ObservableObject {
             // (machine + WebRTC + single-writer log). Also relayed to feature
             // subscribers below.
             callEngine?.handleCallSignal(event: event, raw: raw)
+        case .groupCallSignal(let event, let raw):
+            // 3-d — gcall:ring/state/offer/answer/ice/ended/full → the mesh
+            // group call engine (roster, deterministic offers, probe state).
+            groupCallEngine?.handleGroupCallSignal(event: event, raw: raw)
         case .voiceRoster, .voicePtt, .voiceChunk, .voiceTranscript,
              .stageState, .stageEnded, .spaceState:
             // W5-f — the rooms owner consumes the 7 rooms signals (they

@@ -316,6 +316,14 @@ class FlushOutboxUseCaseTest {
         override suspend fun writeCallLog(entry: app.pulse.domain.model.CallLogEntry) = Result.success(Unit)
         override suspend fun flushCallLogQueue(): Result<Int> = Result.success(0)
         override suspend fun emitCall(signal: app.pulse.domain.model.CallSignalOut) {}
+        // R8 Task 3-c — group calls + push registration (unused here).
+        override suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut) {}
+        override suspend fun postGroupCallRing(conversationId: String, kind: app.pulse.domain.model.CallKind): Result<Unit> =
+            Result.failure(IllegalStateException("unavailable in fake"))
+        override suspend fun probeGroupCallState(conversationId: String): Result<app.pulse.domain.model.GroupCallProbe?> =
+            Result.success(null)
+        override suspend fun registerPushToken(userId: String, token: String): Result<Unit> = Result.success(Unit)
+        override suspend fun unregisterPushToken(token: String): Result<Unit> = Result.success(Unit)
         // Wave 5 voice rooms / stage / space — the fakes never emit; recorded only where a test needs it.
         override suspend fun emitVoiceJoin(conversationId: String, user: app.pulse.protocol.PulseVoiceUser) {}
         override suspend fun emitVoiceLeave(conversationId: String) {}

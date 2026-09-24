@@ -2,6 +2,17 @@ package app.pulse.data.remote
 
 import android.util.Log
 import app.pulse.core.PulseEndpoints
+import app.pulse.protocol.GroupCallAnswerDto
+import app.pulse.protocol.GroupCallEndedPayload
+import app.pulse.protocol.GroupCallEvents
+import app.pulse.protocol.GroupCallFullPayload
+import app.pulse.protocol.GroupCallIceDto
+import app.pulse.protocol.GroupCallOfferDto
+import app.pulse.protocol.GroupCallRingPayload
+import app.pulse.protocol.GroupCallStatePayload
+import app.pulse.protocol.groupCallJoinPayload
+import app.pulse.protocol.groupCallLeavePayload
+import app.pulse.protocol.GroupCallMemberDto
 import app.pulse.protocol.CallAnswerDto
 import app.pulse.protocol.CallCancelDto
 import app.pulse.protocol.CallHangupDto
@@ -99,6 +110,22 @@ class PulseSocketClient(
          * `CallSignal` would resolve to the nested class itself).
          */
         data class CallSignal(val signal: app.pulse.data.remote.PulseSocketClient.CallSignal) : Signal
+
+        // ── R8 Task 3-c — group call (mesh) signals ─────────────────
+        /** S→C gcall:state — the join-ordered roster after every join/leave. */
+        data class GroupCallState(val payload: GroupCallStatePayload) : Signal
+        /** S→C gcall:offer — a member with a smaller id is offering me. */
+        data class GroupCallOffer(val dto: GroupCallOfferDto) : Signal
+        /** S→C gcall:answer — my offer was answered. */
+        data class GroupCallAnswer(val dto: GroupCallAnswerDto) : Signal
+        /** S→C gcall:ice — a peer's candidate triple. */
+        data class GroupCallIce(val dto: GroupCallIceDto) : Signal
+        /** S→C gcall:ring — HTTP-relayed ring (online members). */
+        data class GroupCallRing(val payload: GroupCallRingPayload) : Signal
+        /** S→C gcall:ended — the call was torn down. */
+        data class GroupCallEnded(val payload: GroupCallEndedPayload) : Signal
+        /** S→C gcall:full — join rejected (8 max). */
+        data class GroupCallFull(val payload: GroupCallFullPayload) : Signal
 
         /**
          * Wave 8 — the relay refused our join because the PRESENTED token is
@@ -296,6 +323,29 @@ class PulseSocketClient(
             decode<CallHangupDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Hangup(it))) }
         }
 
+        // ── R8 Task 3-c — group call (mesh) S→C handlers ────────────
+        sock.on(GroupCallEvents.STATE) { args ->
+            decode<GroupCallStatePayload>(args)?.let { _signals.tryEmit(Signal.GroupCallState(it)) }
+        }
+        sock.on(GroupCallEvents.OFFER) { args ->
+            decode<GroupCallOfferDto>(args)?.let { _signals.tryEmit(Signal.GroupCallOffer(it)) }
+        }
+        sock.on(GroupCallEvents.ANSWER) { args ->
+            decode<GroupCallAnswerDto>(args)?.let { _signals.tryEmit(Signal.GroupCallAnswer(it)) }
+        }
+        sock.on(GroupCallEvents.ICE) { args ->
+            decode<GroupCallIceDto>(args)?.let { _signals.tryEmit(Signal.GroupCallIce(it)) }
+        }
+        sock.on(GroupCallEvents.RING) { args ->
+            decode<GroupCallRingPayload>(args)?.let { _signals.tryEmit(Signal.GroupCallRing(it)) }
+        }
+        sock.on(GroupCallEvents.ENDED) { args ->
+            decode<GroupCallEndedPayload>(args)?.let { _signals.tryEmit(Signal.GroupCallEnded(it)) }
+        }
+        sock.on(GroupCallEvents.FULL) { args ->
+            decode<GroupCallFullPayload>(args)?.let { _signals.tryEmit(Signal.GroupCallFull(it)) }
+        }
+
         socket = sock
         sock.connect()
     }
@@ -356,6 +406,35 @@ class PulseSocketClient(
     private fun emitCall(event: String, payload: kotlinx.serialization.json.JsonObject) {
         val sock = socket ?: return
         sock.emit(event, JSONObject(payload.toString()))
+    }
+
+    // ── R8 Task 3-c — group call (mesh) emission ─────────────────
+    // Best-effort like every emit: a disconnected socket is a no-op (the
+    // engine tears down honestly on disconnect instead).
+
+    /** gcall:join — creates/joins the conversation's ONE live group call. */
+    fun emitGroupCallJoin(conversationId: String, kind: String, user: GroupCallMemberDto) {
+        emitRoomEvent(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user))
+    }
+
+    /** gcall:offer — joiner → existing member (targeted relay). */
+    fun emitGroupCallOffer(payload: GroupCallOfferDto) {
+        emitRoomEvent(GroupCallEvents.OFFER, payload.toJsonObject())
+    }
+
+    /** gcall:answer — the targeted peer answers. */
+    fun emitGroupCallAnswer(payload: GroupCallAnswerDto) {
+        emitRoomEvent(GroupCallEvents.ANSWER, payload.toJsonObject())
+    }
+
+    /** gcall:ice — flat candidate triple, targeted relay. */
+    fun emitGroupCallIce(payload: GroupCallIceDto) {
+        emitRoomEvent(GroupCallEvents.ICE, payload.toJsonObject())
+    }
+
+    /** gcall:leave — explicit exit (roster rebroadcast; last member ends the call). */
+    fun emitGroupCallLeave(conversationId: String, from: String) {
+        emitRoomEvent(GroupCallEvents.LEAVE, groupCallLeavePayload(conversationId, from))
     }
 
     // ── Wave-5 voice/stage/space emission (wire-perfect payloads) ─────

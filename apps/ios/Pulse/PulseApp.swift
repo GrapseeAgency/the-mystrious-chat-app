@@ -14,6 +14,11 @@ struct PulseApp: App {
 
     @Environment(\.scenePhase) private var scenePhase
 
+    // 3-d — the SwiftUI-lifecycle AppDelegate captures the APNs token
+    // lifecycle (didRegisterForRemoteNotificationsWithDeviceToken /
+    // didFailToRegister…) and arms the PushKit VoIP registry at launch.
+    @UIApplicationDelegateAdaptor(PulseAppDelegate.self) private var appDelegate
+
     init() {
         // R2-D — the notification-tap delegate (reminder taps → room).
         // Registered once at process start so cold-start taps are captured

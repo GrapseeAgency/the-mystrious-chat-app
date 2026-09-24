@@ -32,6 +32,7 @@ import { ProfileTab } from '@/components/chat/profile-tab'
 import { HubTab } from '@/components/hub/hub-tab'
 import { ChatRoom } from '@/components/chat/chat-room'
 import { CallOverlay, useCallSession, type CallPeer } from '@/components/chat/call-overlay'
+import { GroupCallOverlay, GroupCallRingBanner, useGroupCallSession } from '@/components/chat/group-call-overlay'
 import type { CallKind } from '@/lib/call-types'
 import { PipChat } from '@/components/chat/pip-chat'
 import { NewChatSheet } from '@/components/chat/new-chat-sheet'
@@ -220,6 +221,43 @@ export function MainShell({ me }: { me: AppUser }) {
       toast.error('Finish the current call first')
     }
   }, [callTarget, callSession.state, callSession.startCall])
+
+  // ── Group calls (mesh): the SAME shell-level contract — one session + one
+  // overlay, rings surface anywhere, the open group room dials through
+  // onStartGroupCall. joinOngoing/joinCall never re-ring (ring already sent).
+  const [groupCallTarget, setGroupCallTarget] = useState<{
+    conversationId: string
+    kind: CallKind
+    title: string
+  } | null>(null)
+  const groupDialedRef = useRef<object | null>(null)
+  const [groupCallTitle, setGroupCallTitle] = useState('')
+  const groupSession = useGroupCallSession({
+    meId: me.id,
+    meName: me.name,
+    meColor: me.color,
+    meAvatar: me.avatar,
+    conversationId: openConversationId ?? '',
+    enabled: true,
+  })
+  // Dial handler: event-time state (title), then the dial effect fires the ring.
+  const handleGroupDial = useCallback(
+    (call: { conversationId: string; kind: CallKind; title: string }) => {
+      setGroupCallTitle(call.title)
+      setGroupCallTarget(call)
+    },
+    [],
+  )
+  useEffect(() => {
+    if (groupCallTarget === null) return
+    if (groupDialedRef.current === groupCallTarget) return // one dial per request
+    groupDialedRef.current = groupCallTarget
+    if (groupSession.state === 'idle' && callSession.state === 'idle') {
+      groupSession.startCall(groupCallTarget.kind)
+    } else {
+      toast.error('Finish the current call first')
+    }
+  }, [groupCallTarget, groupSession.state, groupSession.startCall, callSession.state])
 
   // ⌘K / Ctrl+K toggles Spotlight from anywhere in the shell
   useEffect(() => {
@@ -422,6 +460,7 @@ export function MainShell({ me }: { me: AppUser }) {
               unreadAnchorMs={openConversationAnchorMs}
               initialJumpMessageId={jumpMessageId}
               onStartCall={setCallTarget}
+              onStartGroupCall={handleGroupDial}
               onClose={() => setOpenConversationId(null)}
             />
           ) : null}
@@ -508,6 +547,19 @@ export function MainShell({ me }: { me: AppUser }) {
           surface on any screen, outgoing dials come from the room's
           header buttons through onStartCall above. */}
       <CallOverlay session={callSession} />
+
+      {/* Group calls — ring/ongoing banner floats above content, the mesh
+          overlay is the SINGLE app-wide group call surface (z-95). */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[85] flex justify-center px-2">
+        <div className="pointer-events-auto w-full max-w-md">
+          <GroupCallRingBanner session={groupSession} />
+        </div>
+      </div>
+      <GroupCallOverlay
+        session={groupSession}
+        title={groupSession.ring?.title || groupCallTitle || 'Group call'}
+        me={{ name: me.name, color: me.color, avatar: me.avatar }}
+      />
 
       {/* Spotlight — global search palette (z-90, above everything incl. the dock) */}
       <AnimatePresence>

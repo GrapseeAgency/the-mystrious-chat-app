@@ -25,6 +25,7 @@ import {
 import { XP_DAILY_CAP, XP_PER_MESSAGE } from '@/lib/xp'
 import { maybeAiReply } from '@/lib/ai-bot'
 import { botWillRespond, maybeBotReply } from '@/lib/bot-engine'
+import { fanoutPush } from '@/lib/push/transport'
 
 export const dynamic = 'force-dynamic'
 
@@ -626,6 +627,81 @@ export async function POST(req: Request, { params }: RouteCtx) {
     recipientIds: recipients,
     conversationId: id,
   })
+
+  // Remote push (registry-gated): members whose apps are closed hear about
+  // the message via Web Push / FCM / APNs. Fire-and-forget — never fails or
+  // slows the send. Per-RECEIVER privacy: muted members get nothing, and a
+  // receiver with notifPreviews off gets a generic body, never the content.
+  void (async () => {
+    try {
+      const now = new Date()
+      const [memberRows, mutedRows, senderRow, convRow] = await Promise.all([
+        db.user.findMany({
+          where: { id: { in: recipients } },
+          select: { id: true, preferences: true },
+        }),
+        db.conversationParticipant.findMany({
+          where: { conversationId: id, mutedUntil: { gt: now } },
+          select: { userId: true },
+        }),
+        db.user.findUnique({ where: { id: senderId }, select: { name: true } }),
+        db.conversation.findUnique({ where: { id }, select: { isGroup: true, name: true } }),
+      ])
+      const mutedIds = new Set(mutedRows.map((row) => row.userId))
+      const pushTargets = recipients.filter((memberId) => !mutedIds.has(memberId))
+      if (pushTargets.length === 0) return
+      const senderName = senderRow?.name ?? 'Someone'
+      const isGroupConv = convRow?.isGroup ?? false
+      const groupName = convRow?.name ?? ''
+      // Per-kind preview line (never the full rich payload — honest snippets).
+      const previewBase =
+        kind === 'text'
+          ? content.trim().slice(0, 140)
+          : kind === 'image'
+            ? '📷 Photo'
+            : kind === 'audio'
+              ? '🎙️ Voice message'
+              : kind === 'sticker'
+                ? `Sticker ${(() => {
+                    try {
+                      const p = payload ? (JSON.parse(payload) as { emoji?: string }) : null
+                      return p?.emoji ?? ''
+                    } catch {
+                      return ''
+                    }
+                  })()}`.trim()
+                : kind === 'file'
+                  ? '📎 Document'
+                  : '📍 Location'
+      const prefsByUser = new Map<string, boolean>()
+      for (const row of memberRows) {
+        let previews = true
+        try {
+          const parsed = row.preferences ? (JSON.parse(row.preferences) as { notifPreviews?: unknown }) : null
+          if (parsed && typeof parsed.notifPreviews === 'boolean') previews = parsed.notifPreviews
+        } catch {
+          // unparsable prefs fall back to default (previews on)
+        }
+        prefsByUser.set(row.id, previews)
+      }
+      const title = isGroupConv && groupName ? `${senderName} · ${groupName}` : senderName
+      await fanoutPush(pushTargets, {
+        kind: 'message',
+        title,
+        body: isGroupConv ? `${senderName}: ${previewBase}` : previewBase,
+        conversationId: id,
+        messageId: message.id,
+      }, {
+        bodyFor: (userId) => {
+          const previews = prefsByUser.get(userId) ?? true
+          const generic = 'New message'
+          return previews ? (isGroupConv ? `${senderName}: ${previewBase}` : previewBase) : generic
+        },
+      })
+    } catch {
+      // push must never surface as a send failure
+    }
+  })()
 
   // Pulse AI companion: fire-and-forget evaluation (DMs + @mentions in groups).
   // Stands down when the deterministic bot engine owns this message, so a

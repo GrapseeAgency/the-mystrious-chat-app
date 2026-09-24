@@ -8,6 +8,10 @@ import app.pulse.domain.model.CallLogEntry
 import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.CallSignalData
 import app.pulse.domain.model.CallSignalOut
+import app.pulse.domain.model.CallKind
+import app.pulse.domain.model.GroupCallProbe
+import app.pulse.domain.model.GroupCallSignalData
+import app.pulse.domain.model.GroupCallSignalOut
 import app.pulse.domain.model.Channel
 import app.pulse.domain.model.FlushReport
 import app.pulse.domain.model.FolderSummary
@@ -109,6 +113,10 @@ sealed interface PulseEvent {
     // ── native 1:1 calls (Wave 3) ──────────────────────────────
     /** A call:* relay signal reached this device (offer/answer/ice/reject/cancel/hangup). */
     data class CallSignal(val signal: CallSignalData) : PulseEvent
+
+    // ── R8 Task 3-c — group calls (mesh WebRTC) ────────────────
+    /** A gcall:* relay signal reached this device (state/offer/answer/ice/ring/ended/full). */
+    data class GroupCallSignal(val signal: app.pulse.domain.model.GroupCallSignalData) : PulseEvent
 
     // ── voice rooms / stage / space (Wave 5) ──────────────────
     /** S→C voice:roster — wholesale roster replace (joiners + leavers). */
@@ -657,6 +665,32 @@ interface PulseRepository {
 
     /** Emit one call:* signaling payload (offer/answer/ice/reject/cancel/hangup). */
     suspend fun emitCall(signal: CallSignalOut)
+
+    // ── R8 Task 3-c — group calls (mesh WebRTC) ────────────────
+
+    /** Emit one gcall:* signaling payload (join/offer/answer/ice/leave). */
+    suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut)
+
+    /**
+     * POST /api/conversations/{id}/calls/ring { userId, kind } — the starting
+     * member calls this AFTER gcall:join; rings online members + pushes the
+     * offline ones (fire-and-forget on the web).
+     */
+    suspend fun postGroupCallRing(conversationId: String, kind: CallKind): Result<Unit>
+
+    /**
+     * GET /api/group-call-state?conversationId= — probe for an ONGOING call
+     * (late open/reload). Success with an EMPTY members list = no live call.
+     */
+    suspend fun probeGroupCallState(conversationId: String): Result<app.pulse.domain.model.GroupCallProbe?>
+
+    // ── R8 Task 3-c — remote push registration (FCM, credential-gated) ────
+
+    /** POST /api/push/register { userId, platform: 'android', token } — upsert the FCM token. */
+    suspend fun registerPushToken(userId: String, token: String): Result<Unit>
+
+    /** DELETE /api/push/register { token } — unregister (token rotation/sign-out). */
+    suspend fun unregisterPushToken(token: String): Result<Unit>
 
     // ── Wave 5 voice rooms / stage / space (all best-effort emits) ─────
     /** voice:join — registers this device's voice seat; re-emitted on reconnect. */

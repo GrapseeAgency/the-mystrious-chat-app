@@ -68,6 +68,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -110,6 +111,9 @@ import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.PulseNavStyle
 import app.pulse.feature.calls.CallOverlay
 import app.pulse.feature.calls.CallViewModel
+import app.pulse.feature.calls.GroupCallBanner
+import app.pulse.feature.calls.GroupCallOverlay
+import app.pulse.feature.calls.GroupCallViewModel
 import app.pulse.feature.calls.CallsView
 import app.pulse.feature.calls.ContactsScreen
 import app.pulse.feature.chat.ArchivedScreen
@@ -308,7 +312,11 @@ class MainActivity : ComponentActivity() {
             ),
         )
         setContent {
-            PulseRoot(deepLink = deepLinks.collectAsStateWithLifecycle().value, onConsumeDeepLink = { deepLinks.value = null })
+            PulseRoot(
+                deepLink = deepLinks.collectAsStateWithLifecycle().value,
+                onConsumeDeepLink = { deepLinks.value = null },
+                repository = repository,
+            )
         }
     }
 
@@ -323,6 +331,9 @@ class MainActivity : ComponentActivity() {
 fun PulseRoot(
     deepLink: app.pulse.core.link.PulseDeepLink? = null,
     onConsumeDeepLink: () -> Unit = {},
+    // R8 Task 3-c — the repository rides down to the shell so the FCM
+    // registration can sync the moment a viewer identity exists.
+    repository: app.pulse.domain.repository.PulseRepository,
     session: SessionViewModel = hiltViewModel(),
 ) {
     val viewerId by session.viewerId.collectAsStateWithLifecycle()
@@ -384,7 +395,13 @@ fun PulseRoot(
             if (onboarding) {
                 OnboardingScreen(sessionNotice = sessionNotice)
             } else {
-                PulseShell(viewerId = viewerId, session = session, deepLink = deepLink, onConsumeDeepLink = onConsumeDeepLink)
+                PulseShell(
+                    viewerId = viewerId,
+                    session = session,
+                    deepLink = deepLink,
+                    onConsumeDeepLink = onConsumeDeepLink,
+                    repository = repository,
+                )
             }
 
             ParticleBurstHost(
@@ -405,6 +422,8 @@ private fun PulseShell(
     session: SessionViewModel,
     deepLink: app.pulse.core.link.PulseDeepLink? = null,
     onConsumeDeepLink: () -> Unit = {},
+    // R8 Task 3-c — FCM push registration syncs against the viewer identity.
+    repository: app.pulse.domain.repository.PulseRepository,
 ) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
@@ -413,6 +432,9 @@ private fun PulseShell(
     // Wave 3 — activity-scoped call surface. The engine is a @Singleton; this
     // VM just exposes it to every screen + the root overlay.
     val callVm: CallViewModel = hiltViewModel()
+    // R8 Task 3-c — the group-call overlay rides the exact same pattern: the
+    // mesh engine is a @Singleton, this VM is the bridge (one session).
+    val groupCallVm: GroupCallViewModel = hiltViewModel()
     // Wave 5 — the voice-rooms overlay rides the exact same pattern: the
     // engine is a @Singleton (rooms outlive surfaces), the VM is the bridge.
     val voiceVm: VoiceRoomsViewModel = hiltViewModel()
@@ -432,10 +454,20 @@ private fun PulseShell(
 
     // Identity adoption for the voice/stage/space wire payloads (the calls
     // surface receives the same values through callPeer's caller args).
+    // R8 Task 3-c — the group-call mesh needs the same identity, and the FCM
+    // registration syncs as soon as a viewer identity exists (retried here on
+    // every login/identity change; no-op while push is unarmed).
     LaunchedEffect(viewerId, viewerName, viewerColor) {
         voiceVm.setIdentity(viewerId, viewerName, viewerColor)
+        groupCallVm.setIdentity(viewerId, viewerName, viewerColor)
+        groupCallVm.start()
+        if (viewerId != null) {
+            runCatching { app.pulse.android.push.PulsePush.syncRegistration(repository) }
+        }
     }
 
+    // R8 Task 3-c — one-shot group-call notices (web toasts) ride the shell
+    // snackbar host (declared below honest()).
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -482,6 +514,11 @@ private fun PulseShell(
 
     fun honest(message: String) {
         scope.launch { snackbar.showSnackbar(message, withDismissAction = false) }
+    }
+
+    // R8 Task 3-c — group-call one-shot notices (web toast parity).
+    LaunchedEffect(groupCallVm) {
+        groupCallVm.notices.collect { message -> honest(message) }
     }
 
     // Dock visibility: tabs + the archived sub-page keep the chrome (web keeps
@@ -814,6 +851,13 @@ private fun PulseShell(
                 ),
             ) { entry ->
                 val conversationId = entry.arguments?.getString("conversationId").orEmpty()
+                // R8 Task 3-c — the OPEN conversation is the group-call probe
+                // target + outsider-banner gate (web openConversationId parity);
+                // cleared when the room leaves composition.
+                DisposableEffect(conversationId) {
+                    groupCallVm.setActiveConversation(conversationId)
+                    onDispose { groupCallVm.setActiveConversation(null) }
+                }
                 ChatRoomScreen(
                     conversationId = conversationId,
                     viewerId = viewerId,
@@ -830,6 +874,12 @@ private fun PulseShell(
                     onOpenVoiceRoom = { voiceVm.openVoice(conversationId) },
                     // R2-A item 6/7/8/9 — the room-menu "Room info" entry.
                     onOpenRoomInfo = { id -> navController.navigate("room-info/$id") },
+                    // R8 Task 3-c — group calls (mesh): the header voice/video
+                    // buttons (permission-gated inside the room) dial through
+                    // the ONE shell-level session; the room also reports its
+                    // display title for the probe/banner identity.
+                    onRoomActivated = { id, title -> groupCallVm.setActiveConversation(id, title) },
+                    onStartGroupCall = { kind, title -> groupCallVm.startCall(kind, title) },
                 )
             }
             composable(
@@ -1069,6 +1119,18 @@ private fun PulseShell(
         // is not idle (ringing/connecting/connected/ended). Renders above the
         // dock and every tab — one call, one surface.
         CallOverlay(callVm)
+
+        // R8 Task 3-c — the group-call ring/ongoing banner floats above every
+        // tab (web main-shell mounts GroupCallRingBanner at shell level), and
+        // the group overlay owns the whole screen once the session leaves idle
+        // (the engine refuses to run both call kinds at once).
+        GroupCallBanner(
+            groupCallVm,
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = dockSpace + 6.dp),
+        )
+        GroupCallOverlay(groupCallVm)
 
         // Wave 5 — the voice rooms overlay (voice room / stage / space) sits
         // next to the call overlay; one room surface at a time, engine-owned.

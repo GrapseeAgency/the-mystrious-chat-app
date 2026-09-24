@@ -18,20 +18,29 @@ import SwiftUI
 // ─────────────────────────────────────────────────────────────
 
 /// Hosted by RootView (topmost ZStack layer) — mounts the overlay whenever
-/// the engine is not idle.
+/// the engine is not idle. 3-d — no double-ring: while CallKit presents the
+/// incoming call (PulseCallKitCoordinator), the in-app INCOMING ring stays
+/// hidden; every other state (connecting/connected/ended, and the fallback
+/// when CallKit refuses the report) renders normally.
+@MainActor
 struct CallOverlayHostView: View {
     @ObservedObject var engine: PulseCallEngine
+    @ObservedObject private var callKit = PulseCallKitCoordinator.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var suppressedIncoming: Bool {
+        callKit.ownsIncomingPresentation && engine.state == .incomingRinging
+    }
 
     var body: some View {
         ZStack {
-            if engine.state != .idle {
+            if engine.state != .idle, !suppressedIncoming {
                 CallView(engine: engine)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     .zIndex(10)
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: engine.state != .idle)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: engine.state != .idle && !suppressedIncoming)
     }
 }
 
@@ -346,8 +355,9 @@ private struct HaloPulse: ViewModifier {
     }
 }
 
-/// Round glass action button (web CallButton parity).
-private struct CallActionButton: View {
+/// Round glass action button (web CallButton parity). Internal since 3-d —
+/// the GroupCallView footer reuses the exact same control grammar.
+struct CallActionButton: View {
     enum Tone {
         case neutral
         case danger
@@ -415,7 +425,7 @@ private struct CallActionButton: View {
 }
 
 /// Call-button press feedback (scale 0.9 spring, web whileTap parity).
-private struct CallPressStyle: ButtonStyle {
+struct CallPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.9 : 1)

@@ -15,6 +15,13 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- R1-W2H D45: re-arm reminder one-shots after reboot (BootReceiver). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- R8 Task 3-c — Telecom self-managed calls: own-call management for the
+         ConnectionService (self-managed PhoneAccounts need MANAGE_OWN_CALLS;
+         BIND_TELECOM_CONNECTION_SERVICE rides the service declaration). -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <!-- R8 Task 3-c — incoming-call ring fallback: full-screen-intent high-
+         priority call notifications (FCM push + Telecom-unavailable path). -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <application
         android:name=".PulseApplication"
@@ -78,6 +85,31 @@
             android:name="app.pulse.feature.voice.VoiceForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- R8 Task 3-c — Telecom self-managed ConnectionService (1:1 calls
+             mirror into the system call UIs). BIND_TELECOM_CONNECTION_SERVICE
+             is the required system binding permission; MANAGE_OWN_CALLS is
+             declared above. -->
+        <service
+            android:name="app.pulse.feature.calls.PulseConnectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <!-- R8 Task 3-c — FCM entry point. Registered unconditionally but
+             DORMANT without Firebase credentials (PulsePush.init is
+             fail-closed), so the build stays green with no
+             google-services.json / google-services plugin. -->
+        <service
+            android:name="app.pulse.android.push.PulseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <!-- R1-W2H D45: after reboot the reminder WorkManager one-shots have no
              guarantee of being re-armed in time — BootReceiver re-schedules

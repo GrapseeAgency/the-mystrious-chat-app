@@ -76,6 +76,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Smartphone,
+  BellRing,
   Sparkles,
   SquareStack,
   Star,
@@ -104,6 +105,12 @@ import { usePulseSession } from '@/lib/pulse-store'
 import { pulseOutboxStore } from '@/lib/pulse-outbox'
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
 import { promptPwaInstall, usePulsePwa } from '@/lib/pwa-store'
+import {
+  checkWebPushSubscription,
+  registerWebPush,
+  unregisterWebPush,
+  type WebPushStatus,
+} from '@/lib/push-client'
 import {
   haptic,
   isQuietHoursNow,
@@ -386,12 +393,14 @@ function ToggleRow({
   description,
   checked,
   onCheckedChange,
+  disabled,
 }: {
   Icon: LucideIcon
   title: string
   description: string
   checked: boolean
   onCheckedChange: (v: boolean) => void
+  disabled?: boolean
 }) {
   const reduced = useReducedMotion()
   return (
@@ -410,6 +419,7 @@ function ToggleRow({
       </span>
       <Switch
         checked={checked}
+        disabled={disabled}
         onCheckedChange={(v) => {
           haptic(10)
           onCheckedChange(v)
@@ -1103,7 +1113,7 @@ function ChatSection({ ctx }: { ctx: SectionCtx }) {
 // ── Notifications — real alert gates + quiet hours ───────────
 
 function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
-  const { prefs, save } = ctx
+  const { prefs, save, user } = ctx
   const soundOn = pulseSettingsStore((s) => s.soundOn)
   const setSoundOn = pulseSettingsStore((s) => s.setSoundOn)
   const quietHoursOn = pulseSettingsStore((s) => s.quietHoursOn)
@@ -1112,6 +1122,38 @@ function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
   const setQuietStart = pulseSettingsStore((s) => s.setQuietStart)
   const quietEnd = pulseSettingsStore((s) => s.quietEnd)
   const setQuietEnd = pulseSettingsStore((s) => s.setQuietEnd)
+
+  // Remote push (Web Push / VAPID) — registers this browser with the server
+  // transport so notifications arrive with every tab closed.
+  const [pushStatus, setPushStatus] = useState<WebPushStatus | 'checking'>('checking')
+  const [pushBusy, setPushBusy] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void checkWebPushSubscription().then((status) => {
+      if (!cancelled) setPushStatus(status)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  const toggleWebPush = async () => {
+    if (!user || pushBusy) return
+    setPushBusy(true)
+    try {
+      const next =
+        pushStatus === 'subscribed'
+          ? await unregisterWebPush()
+          : await registerWebPush({ id: user.id })
+      setPushStatus(next)
+      if (next === 'subscribed') toast.success('Remote push enabled for this device')
+      else if (next === 'denied') toast.error('Notifications are blocked in the browser settings')
+      else if (next === 'unsupported') toast.error('This browser does not support push')
+      else if (next === 'no-key') toast.error('Push is not configured on the server')
+      else if (next === 'error') toast.error('Could not update the push registration')
+    } finally {
+      setPushBusy(false)
+    }
+  }
 
   const quietNow = isQuietHoursNow({ quietHoursOn, quietStart, quietEnd })
 
@@ -1148,6 +1190,22 @@ function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
           description="Buzz on incoming messages, where the device supports it."
           checked={prefs.notifVibrate}
           onCheckedChange={(v) => save({ notifVibrate: v })}
+        />
+        <ToggleRow
+          Icon={BellRing}
+          title="Remote push"
+          description={
+            pushStatus === 'subscribed'
+              ? 'This device receives pushes even with the app closed.'
+              : pushStatus === 'denied'
+                ? 'Blocked — allow notifications in the browser settings first.'
+                : pushStatus === 'unsupported'
+                  ? 'Not supported by this browser/device.'
+                  : 'Deliver notifications to this device via the server (works app-closed).'
+          }
+          checked={pushStatus === 'subscribed'}
+          disabled={pushStatus === 'checking' || pushBusy || pushStatus === 'unsupported' || pushStatus === 'denied'}
+          onCheckedChange={() => void toggleWebPush()}
         />
       </Group>
 

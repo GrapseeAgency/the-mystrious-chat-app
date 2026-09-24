@@ -42,6 +42,8 @@ import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.FlushReport
 import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.GroupLeave
+import app.pulse.domain.model.GroupCallMember
+import app.pulse.domain.model.GroupCallProbe
 import app.pulse.domain.model.GroupMeta
 import app.pulse.domain.model.HandleCheck
 import app.pulse.domain.model.InviteJoinOutcome
@@ -100,6 +102,13 @@ import app.pulse.protocol.GameDetailDto
 import app.pulse.protocol.GameMatchCreateResultDto
 import app.pulse.protocol.GamesPageDto
 import app.pulse.protocol.GroupEventDto
+import app.pulse.protocol.GroupCallAnswerDto
+import app.pulse.protocol.GroupCallEvents
+import app.pulse.protocol.GroupCallIceDto
+import app.pulse.protocol.GroupCallMemberDto
+import app.pulse.protocol.GroupCallOfferDto
+import app.pulse.protocol.GroupCallRingPayload
+import app.pulse.protocol.GroupCallStatePayload
 import app.pulse.protocol.HubLogDto
 import app.pulse.protocol.HubLogsPageDto
 import app.pulse.protocol.HubTaskDto
@@ -406,6 +415,42 @@ class PulseRepositoryImpl @Inject constructor(
                     is PulseSocketClient.Signal.CallSignal -> eventsBus.tryEmit(
                         PulseEvent.CallSignal(callSignalToDomain(signal.signal)),
                     )
+                    // ── R8 Task 3-c — group call (mesh) signals → domain events ──
+                    is PulseSocketClient.Signal.GroupCallState -> eventsBus.tryEmit(
+                        PulseEvent.GroupCallSignal(signal.payload.toDomainSignal(app.pulse.protocol.GroupCallEvents.STATE)),
+                    )
+                    is PulseSocketClient.Signal.GroupCallOffer -> eventsBus.tryEmit(
+                        PulseEvent.GroupCallSignal(signal.dto.toDomainSignal(app.pulse.protocol.GroupCallEvents.OFFER)),
+                    )
+                    is PulseSocketClient.Signal.GroupCallAnswer -> eventsBus.tryEmit(
+                        PulseEvent.GroupCallSignal(signal.dto.toDomainSignal(app.pulse.protocol.GroupCallEvents.ANSWER)),
+                    )
+                    is PulseSocketClient.Signal.GroupCallIce -> eventsBus.tryEmit(
+                        PulseEvent.GroupCallSignal(signal.dto.toDomainSignal(app.pulse.protocol.GroupCallEvents.ICE)),
+                    )
+                    is PulseSocketClient.Signal.GroupCallRing -> eventsBus.tryEmit(
+                        PulseEvent.GroupCallSignal(signal.payload.toDomainRingSignal()),
+                    )
+                    is PulseSocketClient.Signal.GroupCallEnded -> eventsBus.tryEmit(
+                        PulseEvent.GroupCallSignal(
+                            app.pulse.domain.model.GroupCallSignalData(
+                                event = app.pulse.protocol.GroupCallEvents.ENDED,
+                                conversationId = signal.payload.conversationId,
+                                callId = signal.payload.callId,
+                                reason = signal.payload.reason,
+                            ),
+                        ),
+                    )
+                    is PulseSocketClient.Signal.GroupCallFull -> eventsBus.tryEmit(
+                        PulseEvent.GroupCallSignal(
+                            app.pulse.domain.model.GroupCallSignalData(
+                                event = app.pulse.protocol.GroupCallEvents.FULL,
+                                conversationId = signal.payload.conversationId,
+                                callId = signal.payload.callId,
+                                max = signal.payload.max,
+                            ),
+                        ),
+                    )
                 }
             }
         }
@@ -452,6 +497,47 @@ class PulseRepositoryImpl @Inject constructor(
                 durationSec = s.dto.durationSec,
             )
         }
+
+    // ── R8 Task 3-c — gcall:* socket union → the domain envelope ──
+
+    private fun GroupCallStatePayload.toDomainSignal(event: String) = app.pulse.domain.model.GroupCallSignalData(
+        event = event,
+        callId = callId, conversationId = conversationId,
+        kind = app.pulse.domain.model.CallKind.of(kind),
+        hostId = hostId.takeIf { it.isNotBlank() },
+        startedAt = startedAt,
+        members = members.map { app.pulse.domain.model.GroupCallMember(it.id, it.name, it.color, it.avatar) },
+    )
+
+    private fun GroupCallOfferDto.toDomainSignal(event: String) = app.pulse.domain.model.GroupCallSignalData(
+        event = event,
+        callId = callId, conversationId = conversationId,
+        from = from, to = to, kind = app.pulse.domain.model.CallKind.of(kind), sdp = sdp,
+    )
+
+    private fun GroupCallAnswerDto.toDomainSignal(event: String) = app.pulse.domain.model.GroupCallSignalData(
+        event = event,
+        callId = callId, conversationId = conversationId,
+        from = from, to = to, sdp = sdp,
+    )
+
+    private fun GroupCallIceDto.toDomainSignal(event: String) = app.pulse.domain.model.GroupCallSignalData(
+        event = event,
+        callId = callId, conversationId = conversationId,
+        from = from, to = to,
+        candidate = candidate, sdpMid = sdpMid, sdpMLineIndex = sdpMLineIndex,
+    )
+
+    private fun GroupCallRingPayload.toDomainRingSignal() = app.pulse.domain.model.GroupCallSignalData(
+        event = app.pulse.protocol.GroupCallEvents.RING,
+        conversationId = conversationId,
+        kind = app.pulse.domain.model.CallKind.of(kind),
+        title = title,
+        from = caller?.id ?: "",
+        callerName = caller?.name ?: "Someone",
+        callerColor = caller?.color ?: "emerald",
+        callerAvatar = caller?.avatar,
+    )
 
     /**
      * Every message:* envelope carries the authoritative row — upsert it and
@@ -2115,6 +2201,77 @@ class PulseRepositoryImpl @Inject constructor(
                     from = signal.from, to = signal.to, kind = signal.kind.wire, durationSec = signal.durationSec,
                 ),
             )
+        }
+    }
+
+    override suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut) {
+        when (signal.event) {
+            app.pulse.protocol.GroupCallEvents.JOIN -> socket.emitGroupCallJoin(
+                signal.conversationId,
+                signal.kind.wire,
+                GroupCallMemberDto(
+                    id = signal.user?.id ?: "",
+                    name = signal.user?.name ?: "",
+                    color = signal.user?.color ?: "emerald",
+                    avatar = signal.user?.avatar,
+                ),
+            )
+            app.pulse.protocol.GroupCallEvents.OFFER -> socket.emitGroupCallOffer(
+                GroupCallOfferDto(
+                    conversationId = signal.conversationId, callId = signal.callId,
+                    from = signal.from, to = signal.to, kind = signal.kind.wire, sdp = signal.sdp ?: "",
+                ),
+            )
+            app.pulse.protocol.GroupCallEvents.ANSWER -> socket.emitGroupCallAnswer(
+                GroupCallAnswerDto(
+                    conversationId = signal.conversationId, callId = signal.callId,
+                    from = signal.from, to = signal.to, sdp = signal.sdp ?: "",
+                ),
+            )
+            app.pulse.protocol.GroupCallEvents.ICE -> socket.emitGroupCallIce(
+                GroupCallIceDto(
+                    conversationId = signal.conversationId, callId = signal.callId,
+                    from = signal.from, to = signal.to,
+                    candidate = signal.candidate ?: "", sdpMid = signal.sdpMid, sdpMLineIndex = signal.sdpMLineIndex,
+                ),
+            )
+            app.pulse.protocol.GroupCallEvents.LEAVE -> socket.emitGroupCallLeave(signal.conversationId, signal.from)
+        }
+    }
+
+    override suspend fun postGroupCallRing(conversationId: String, kind: CallKind): Result<Unit> {
+        val id = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
+        return when (val r = api.postGroupCallRing(conversationId, id, kind.wire)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException(r.message ?: "Could not ring other members"))
+        }
+    }
+
+    override suspend fun probeGroupCallState(conversationId: String): Result<GroupCallProbe?> {
+        return when (val r = api.groupCallState(conversationId)) {
+            is PulseResult.Success -> Result.success(
+                GroupCallProbe(
+                    callId = r.value.callId.takeIf { it.isNotBlank() },
+                    kind = CallKind.of(r.value.kind),
+                    startedAt = r.value.startedAt,
+                    members = r.value.members.map { GroupCallMember(it.id, it.name, it.color, it.avatar) },
+                ),
+            )
+            is PulseResult.Failure -> Result.failure(IllegalStateException(r.message ?: "probe failed"))
+        }
+    }
+
+    override suspend fun registerPushToken(userId: String, token: String): Result<Unit> {
+        return when (val r = api.registerPushToken(userId, token)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException(r.message ?: "push register failed"))
+        }
+    }
+
+    override suspend fun unregisterPushToken(token: String): Result<Unit> {
+        return when (val r = api.unregisterPushToken(token)) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(IllegalStateException(r.message ?: "push unregister failed"))
         }
     }
 
