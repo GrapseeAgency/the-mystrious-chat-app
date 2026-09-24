@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import app.pulse.core.PulseEndpoints
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.UserProfile
+import app.pulse.domain.model.UserStats
 import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.PulseWave8Logic
@@ -253,6 +254,44 @@ class SettingsViewModel @Inject constructor(
 
     private fun java.io.File.walkBytes(): Long =
         walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+    // ── Data & Storage — "Your footprint" live tiles (web settings-screen.tsx
+    //    :1496-1571) — the SAME repo stats path the user page consumes
+    //    (GET /api/users/{id}/stats), evaluated for the VIEWER. ──────────
+
+    data class FootprintStats(
+        val loading: Boolean = false,
+        val stats: UserStats? = null,
+        /** Honest failure — the UI offers a retry instead of fake zeros. */
+        val error: String? = null,
+    )
+
+    private val _footprintStats = MutableStateFlow(FootprintStats())
+
+    /** Viewer stats for the footprint tiles: messages/photos/voice/chats/groups/days. */
+    val footprintStats: StateFlow<FootprintStats> = _footprintStats.asStateFlow()
+
+    fun refreshFootprintStats() {
+        val viewer = viewerId.value
+        if (viewer.isNullOrBlank()) {
+            _footprintStats.value = FootprintStats(loading = false, stats = null, error = "Sign in to see your stats.")
+            return
+        }
+        viewModelScope.launch {
+            _footprintStats.value = _footprintStats.value.copy(loading = true, error = null)
+            repo.userStats(viewer).fold(
+                onSuccess = { stats ->
+                    _footprintStats.value = FootprintStats(loading = false, stats = stats, error = null)
+                },
+                onFailure = { t ->
+                    _footprintStats.value = _footprintStats.value.copy(
+                        loading = false,
+                        error = t.message ?: "Couldn't load your stats.",
+                    )
+                },
+            )
+        }
+    }
 
     // ── Real-time & Voice — live probe (timed real GET) ──────────
 

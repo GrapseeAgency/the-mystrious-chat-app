@@ -7,6 +7,8 @@ import app.pulse.domain.model.Message
 import app.pulse.domain.model.OutboxDeliveryException
 import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.OutboxFailureClass
+// R5-B — send receipt type (message + optional streak bump).
+import app.pulse.domain.model.SendReceipt
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -77,7 +79,7 @@ class FlushOutboxUseCaseTest {
             replyToId: String?,
             parentId: String?,
             topicId: String?,
-        ): Result<Message> =
+        ): Result<SendReceipt> =
             Result.failure(UnsupportedOperationException())
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
         override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {}
@@ -243,7 +245,7 @@ class FlushOutboxUseCaseTest {
             replyToId: String?,
             parentId: String?,
             topicId: String?,
-        ): Result<Message> = Result.failure(UnsupportedOperationException())
+        ): Result<SendReceipt> = Result.failure(UnsupportedOperationException())
 
         // ── Wave 2 messaging depth (unused by the outbox policy) ──
         override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =

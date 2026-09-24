@@ -202,4 +202,64 @@ class Wave7LogicTest {
         assertEquals(1, t.entries.size)
         assertEquals(3, t.entries[0].points)
     }
+
+    // ── R5-B — send envelope + streak nudge (web chat-room.tsx:1736-1751) ──
+
+    @Test
+    fun `send envelope decodes message streak and xpAwarded`() {
+        val body = """
+        {"message":{"id":"m1","conversationId":"c1","senderId":"u1","content":"gm",
+         "createdAt":"2026-01-15T04:00:00.000Z"},
+         "streak":{"count":3,"best":7,"continued":true},"xpAwarded":15}
+        """.trimIndent()
+        val env = decodeMessageSend(body)
+        assertEquals("m1", env.message?.id)
+        assertNotNull(env.streak)
+        assertEquals(3, env.streak?.count)
+        assertEquals(7, env.streak?.best)
+        assertEquals(true, env.streak?.continued)
+        assertEquals(15, env.xpAwarded)
+    }
+
+    @Test
+    fun `send envelope without streak decodes null and bare row still unwraps`() {
+        val envelope = decodeMessageSend(
+            """{"message":{"id":"m2","conversationId":"c1","senderId":"u1","content":"hi",
+                "createdAt":"2026-01-15T04:00:00.000Z"},"xpAwarded":15}""",
+        )
+        assertNull(envelope.streak)
+        assertEquals("m2", envelope.message?.id)
+        // legacy/alternate gateways that reply with a bare row still decode
+        val bare = decodeMessageSend(
+            """{"id":"m3","conversationId":"c1","senderId":"u1","content":"yo",
+                "createdAt":"2026-01-15T04:00:00.000Z"}""",
+        )
+        assertEquals("m3", bare.message?.id)
+        assertNull(bare.streak)
+    }
+
+    @Test
+    fun `streak nudge fires only when grown second-or-later day`() {
+        // web fire-condition verbatim: continued && count >= 2
+        assertEquals(null, MessageStreakDto(count = 1, best = 1, continued = false).nudgeText()) // restart
+        assertEquals(null, MessageStreakDto(count = 1, best = 4, continued = true).nudgeText()) // first day
+        assertEquals(null, MessageStreakDto(count = 5, best = 9, continued = false).nudgeText()) // restart w/ history
+        assertEquals(null, (null as MessageStreakDto?).nudgeText()) // same-day resend / no bump
+        assertEquals("2-day streak — keep it alive", MessageStreakDto(count = 2, best = 2, continued = true).nudgeText())
+        assertEquals("7-day streak", MessageStreakDto(count = 7, best = 9, continued = true).nudgeText())
+    }
+
+    // ── R5-B — hub connector relative stamp (web app-detail-sheet.tsx:97-108) ──
+
+    @Test
+    fun `relative stamp mirrors web formatRelative branches`() {
+        val now = java.time.Instant.parse("2026-01-15T12:00:00Z").toEpochMilli()
+        assertEquals("just now", PulseWave7Logic.relativeStamp("2026-01-15T11:59:40Z", now))
+        assertEquals("3m ago", PulseWave7Logic.relativeStamp("2026-01-15T11:57:00Z", now))
+        assertEquals("3h ago", PulseWave7Logic.relativeStamp("2026-01-15T09:00:00Z", now))
+        assertEquals("2d ago", PulseWave7Logic.relativeStamp("2026-01-13T12:00:00Z", now))
+        assertTrue(PulseWave7Logic.relativeStamp("2025-06-01T00:00:00Z", now).isNotEmpty()) // ≥7d → date
+        assertEquals("", PulseWave7Logic.relativeStamp(null, now))
+        assertEquals("", PulseWave7Logic.relativeStamp("not-a-date", now))
+    }
 }

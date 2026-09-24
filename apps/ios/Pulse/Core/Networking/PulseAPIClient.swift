@@ -207,6 +207,48 @@ public struct PulseAPIClient: Sendable {
         payload: [String: Any]? = nil,
         anon: Bool? = nil
     ) async throws -> WireChatMessage {
+        try await sendMessageWithStreak(
+            conversationId: conversationId,
+            content: content,
+            replyToId: replyToId,
+            parentId: parentId,
+            imagePath: imagePath,
+            audioPath: audioPath,
+            durationMs: durationMs,
+            filePath: filePath,
+            fileName: fileName,
+            fileSize: fileSize,
+            kind: kind,
+            viewOnce: viewOnce,
+            topicId: topicId,
+            payload: payload,
+            anon: anon,
+        ).message
+    }
+
+    /// R5-A Item 5 — the same POST /api/conversations/{id}/messages wire call,
+    /// returning the FULL send response: { message, streak?, xpAwarded }. The
+    /// streak sibling rides ONLY when this send changed the streak (route.ts
+    /// :678-706) — the room's text-send path toasts from it (web chat-room
+    /// sendMessage.onSuccess parity); every other send path keeps the plain
+    /// sendMessage wrapper above.
+    public func sendMessageWithStreak(
+        conversationId: String,
+        content: String,
+        replyToId: String? = nil,
+        parentId: String? = nil,
+        imagePath: String? = nil,
+        audioPath: String? = nil,
+        durationMs: Double? = nil,
+        filePath: String? = nil,
+        fileName: String? = nil,
+        fileSize: Int? = nil,
+        kind: String? = nil,
+        viewOnce: Bool? = nil,
+        topicId: String? = nil,
+        payload: [String: Any]? = nil,
+        anon: Bool? = nil
+    ) async throws -> PulseSendResult {
         var body: [String: Any] = ["senderId": userId, "content": content, "kind": kind ?? "text"]
         if let replyToId { body["replyToId"] = replyToId }
         if let parentId { body["parentId"] = parentId }
@@ -227,7 +269,7 @@ public struct PulseAPIClient: Sendable {
         if let payload { body["payload"] = payload }
         if anon == true { body["anon"] = true }
         let data = try await postRaw("/api/conversations/\(conversationId)/messages", body: body)
-        return try WireMessageEnvelope.extract(from: data)
+        return try WireMessageEnvelope.extractSendResult(from: data)
     }
 
     public func markRead(conversationId: String) async throws {

@@ -98,6 +98,61 @@ data class SavedToggleDto(
     val saved: Boolean = false,
 )
 
+// ── R5-B: POST /api/conversations/[id]/messages response envelope ──────────
+// Server truth (messages/route.ts:704-708): { message, streak?, xpAwarded } —
+// streak rides ONLY when THIS send bumped the ConversationStreak row
+// (same-day re-sends omit it; restarts carry continued=false, count=1).
+
+/**
+ * { count, best, continued } — the streak state AFTER the send. `continued`
+ * is true when the row existed with lastDay == yesterdayUTC (the streak
+ * GREW); a restart after a gap lands continued=false, count=1.
+ */
+@Serializable
+data class MessageStreakDto(
+    val count: Int = 0,
+    val best: Int = 0,
+    val continued: Boolean = false,
+)
+
+/**
+ * Tolerant send envelope — `message` unwraps from `{message:{…}}` when
+ * present and falls back to the ROOT for legacy bare-row bodies (the same
+ * contract as [unwrapOrRoot]; an envelope with a non-object message fails
+ * loudly instead of decoding an empty row — iOS R5 lesson mirrored).
+ */
+@Serializable
+data class MessageSendEnvelopeDto(
+    val message: ChatMessageDto? = null,
+    val streak: MessageStreakDto? = null,
+    val xpAwarded: Int? = null,
+)
+
+/** Decode a POST /messages body: `{message, streak?, xpAwarded}` or a bare row. */
+fun decodeMessageSend(json: String): MessageSendEnvelopeDto {
+    val root = PulseJson.parseToJsonElement(json)
+    val message = PulseJson.decodeFromJsonElement(ChatMessageDto.serializer(), root.unwrapOrRoot("message"))
+    val obj = root as? JsonObject
+    val streak = obj?.get("streak")?.takeIf { it is JsonObject }?.let {
+        PulseJson.decodeFromJsonElement(MessageStreakDto.serializer(), it)
+    }
+    val xpAwarded = (obj?.get("xpAwarded") as? kotlinx.serialization.json.JsonPrimitive)
+        ?.content?.toIntOrNull()
+    return MessageSendEnvelopeDto(message = message, streak = streak, xpAwarded = xpAwarded)
+}
+
+/**
+ * Web-verbatim streak nudge (chat-room.tsx:1736-1745): fires ONLY when THIS
+ * send GREW the streak — `continued && count >= 2`. Same-day re-sends never
+ * reach the client (no streak key) and restarts (continued=false) stay
+ * silent. Copy is byte-identical to the web toast (count === 2 keeps the
+ * "keep it alive" variant).
+ */
+fun MessageStreakDto?.nudgeText(): String? {
+    if (this == null || !continued || count < 2) return null
+    return if (count == 2) "2-day streak — keep it alive" else "$count-day streak"
+}
+
 /** POST /api/uploads { dataUrl } → 201 { filePath, imagePath } — NOT multipart. */
 @Serializable
 data class UploadResultDto(

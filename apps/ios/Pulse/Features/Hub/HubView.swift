@@ -40,6 +40,14 @@ final class HubViewModel: ObservableObject {
     @Published var logs: [WireHubLog] = []
     @Published var swap: WireSwapPage?
     @Published var installs: [String: WireAppInstallState] = [:]
+    // R5-A Item 3 — install-state honesty: the fan-out marks which app ids
+    // failed to load (the detail sheet shows a Retry state instead of
+    // pretending "0 connected").
+    @Published var installStateFailed: Set<String> = []
+    // R5-A Item 3 — per-app community state (memberCount/joined/roster) for
+    // the detail sheet's Community tab (GET /api/hub/apps/{id}/community).
+    @Published var communities: [String: WireAppCommunity] = [:]
+    @Published var communityFailed: Set<String> = []
     @Published var toast: String?
     @Published var toastIsError = false
 
@@ -48,6 +56,9 @@ final class HubViewModel: ObservableObject {
     init(session: PulseSession) {
         self.session = session
     }
+
+    /// R5-A Item 3 — the viewer id for the connectors roster "(you)" marks.
+    var viewerId: String? { session.viewer?.id }
 
     private var api: PulseAPIClient? { session.api }
 
@@ -276,8 +287,28 @@ final class HubViewModel: ObservableObject {
     func loadInstallState(appId: String) {
         Task { @MainActor in
             guard let api = api else { return }
-            if let state = try? await api.appInstallState(appId: appId) {
-                installs[appId] = state
+            do {
+                installs[appId] = try await api.appInstallState(appId: appId)
+                installStateFailed.remove(appId)
+            } catch {
+                // Honest failure — the sheet shows "Connection stats
+                // unavailable" + Retry instead of a fake zero.
+                installStateFailed.insert(appId)
+            }
+        }
+    }
+
+    /// R5-A Item 3 — community state for the detail sheet's Community tab
+    /// (member count badge, roster, joined pill). Failures are marked so the
+    /// tab can honestly offer a retry.
+    func loadAppCommunity(appId: String) {
+        Task { @MainActor in
+            guard let api = api else { return }
+            do {
+                communities[appId] = try await api.appCommunity(appId: appId)
+                communityFailed.remove(appId)
+            } catch {
+                communityFailed.insert(appId)
             }
         }
     }
@@ -404,7 +435,7 @@ struct HubView: View {
             HubAppDetailSheet(
                 app: target.app,
                 vm: vm,
-                tagline: catalog.taglines[String(target.app.n)],
+                catalog: catalog,
                 onOpenCommunity: { app in
                     vm.joinCommunity(app) { conversation in
                         expandedApp = nil
@@ -412,9 +443,6 @@ struct HubView: View {
                     }
                 },
             )
-        }
-        .task(id: expandedApp?.n) {
-            if let app = expandedApp { vm.loadInstallState(appId: String(app.n)) }
         }
     }
 
@@ -885,50 +913,665 @@ private struct HubAppsList: View {
     }
 }
 
+// ─────────────────────────────────────────────────────────────
+// R5-A Item 3 — app detail at web depth (web app-detail-sheet.tsx
+// parity): Overview | Community | Connectors tab bar with count
+// badges, the installer stack (≤6 most-recent real users + "+N"
+// overflow, hidden when empty like the web InstallerStack), the
+// related-apps rail (same-category apps from the bundled
+// hub_catalog.json, tap swaps the sheet's detail in place), the
+// CountUp-style installs figure and the web field labels. The wire
+// DTO (WireAppInstallState) already decodes installed/status/
+// installedAt/installs/installers — unknown keys stay tolerated.
+// ─────────────────────────────────────────────────────────────
 private struct HubAppDetailSheet: View {
-    let app: HubCatalogApp
     @ObservedObject var vm: HubViewModel
-    let tagline: String?
+    let catalog: HubCatalog
     let onOpenCommunity: (HubCatalogApp) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var currentApp: HubCatalogApp
+    @State private var tab: DetailTab = .overview
 
-    private var appId: String { String(app.n) }
+    private enum DetailTab: String, CaseIterable {
+        case overview, community, connectors
+    }
+
+    init(app: HubCatalogApp, vm: HubViewModel, catalog: HubCatalog, onOpenCommunity: @escaping (HubCatalogApp) -> Void) {
+        _currentApp = State(initialValue: app)
+        self.vm = vm
+        self.catalog = catalog
+        self.onOpenCommunity = onOpenCommunity
+    }
+
+    private var appId: String { String(currentApp.n) }
+    private var tagline: String? { catalog.taglines[appId] }
+    private var installState: WireAppInstallState? { vm.installs[appId] }
+    private var installed: Bool { installState?.installed == true }
+    private var installs: Int { installState?.installs ?? 0 }
+    private var community: WireAppCommunity? { vm.communities[appId] }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    HStack {
-                        Text(String(app.name.prefix(1)))
-                            .font(.title.weight(.bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .background(PulseTheme.emerald, in: Circle())
-                        VStack(alignment: .leading) {
-                            Text(app.name).font(.headline)
-                            Text("\(app.category ?? "") · \(vm.installs[appId]?.installs ?? 0) connected")
-                                .font(.caption)
+            VStack(spacing: 0) {
+                tabBar
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        switch tab {
+                        case .overview: overviewPanel
+                        case .community: communityPanel
+                        case .connectors: connectorsPanel
+                        }
+                    }
+                    .padding(16)
+                    .padding(.bottom, 28)
+                }
+            }
+            .background(Color(.systemBackground))
+            .navigationTitle(currentApp.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            // Load (and re-load on related-app swaps) the install state +
+            // community state for the current app (web useAppInstallStatus /
+            // useAppCommunity parity).
+            .task(id: currentApp.n) {
+                vm.loadInstallState(appId: appId)
+                vm.loadAppCommunity(appId: appId)
+            }
+        }
+    }
+
+    // ── tab bar (web DetailTabBar: label + count badge + underline) ──
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            tabButton(.overview, label: "Overview", badge: 0)
+            tabButton(.community, label: "Community", badge: max(0, community?.memberCount ?? 0))
+            tabButton(.connectors, label: "Connectors", badge: max(0, installs))
+        }
+        .frame(height: 44)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private func tabButton(_ id: DetailTab, label: String, badge: Int) -> some View {
+        Button {
+            PulseHaptics.tap()
+            tab = id
+        } label: {
+            HStack(spacing: 5) {
+                Text(label)
+                    .font(.system(size: 12.5, weight: .semibold))
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 10, weight: .bold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color(uiColor: .secondarySystemBackground)))
+                }
+            }
+            .foregroundStyle(tab == id ? PulseTheme.emerald : Color.secondary)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .bottom) {
+            if tab == id {
+                Capsule()
+                    .fill(PulseTheme.emerald)
+                    .frame(width: 44, height: 2.5)
+                    .offset(y: 1)
+            }
+        }
+        .accessibilityLabel("\(label) tab\(badge > 0 ? ", \(badge)" : "")")
+        .accessibilityAddTraits(tab == id ? [.isSelected] : [])
+    }
+
+    // ── shared bits ──────────────────────────────────────────
+
+    /// The app icon tile (first letter over emerald — existing hub style).
+    private var iconTile: some View {
+        Text(String(currentApp.name.prefix(1)))
+            .font(.title3.weight(.bold))
+            .foregroundStyle(.white)
+            .frame(width: 48, height: 48)
+            .background(PulseTheme.emerald, in: Circle())
+    }
+
+    /// Web InstallerStack (:102-125) — up to 6 most-recent installer
+    /// avatars + "+N" overflow chip; hidden entirely when the list is
+    /// empty (web returns null for zero installers).
+    @ViewBuilder
+    private var installerStack: some View {
+        let people = installState?.installers ?? []
+        if !people.isEmpty {
+            HStack(spacing: -8) {
+                ForEach(Array(people.prefix(6).enumerated()), id: \.offset) { _, person in
+                    PulseAvatar(
+                        name: person.name ?? "?",
+                        color: PulseTheme.color(named: person.color),
+                        size: 26,
+                    )
+                    .overlay(Circle().strokeBorder(Color(.systemBackground), lineWidth: 2))
+                }
+                let extra = max(0, installs - min(people.count, 6))
+                if extra > 0 {
+                    Text("+\(extra)")
+                        .font(.system(size: 9, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Color(uiColor: .secondarySystemBackground)))
+                        .overlay(Circle().strokeBorder(Color(.systemBackground), lineWidth: 2))
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Recently connected: \(people.prefix(6).compactMap(\.name).joined(separator: ", "))\(installs > min(people.count, 6) ? " and \(installs - min(people.count, 6)) more" : "")")
+        }
+    }
+
+    /// Live install stats: CountUp-style figure + "member(s) connected"
+    /// (web hero stats block), stack at the trailing edge, honest states.
+    private var installStatsBlock: some View {
+        HStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 2) {
+                if vm.installStateFailed.contains(appId) {
+                    Text("Connection stats unavailable")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(PulseTheme.rose)
+                } else if installState == nil {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading connection stats")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("\(installs)")
+                        .font(.system(size: 24, weight: .black, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(PulseTheme.emerald)
+                        .contentTransition(.numericText())
+                        .animation(.default, value: installs)
+                    Text("member\(installs == 1 ? "" : "s") connected")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            installerStack
+        }
+    }
+
+    private var connectButton: some View {
+        Button {
+            vm.toggleInstall(currentApp)
+        } label: {
+            HStack(spacing: 6) {
+                if installed {
+                    Image(systemName: "checkmark")
+                    Text("Connected")
+                } else {
+                    Image(systemName: "plus")
+                    Text("Connect")
+                }
+            }
+            .font(.system(size: 13.5, weight: .bold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 11)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(installed ? PulseTheme.emerald.opacity(0.12) : PulseTheme.emerald),
+            )
+            .foregroundStyle(installed ? PulseTheme.emerald : Color.white)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(installed ? "Disconnect from \(currentApp.name)" : "Connect to \(currentApp.name)")
+        .accessibilityAddTraits(installed ? [.isSelected] : [])
+    }
+
+    private var communityButton: some View {
+        Button {
+            onOpenCommunity(currentApp)
+        } label: {
+            Text("Open community chat")
+                .font(.system(size: 13.5, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemBackground)),
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open the \(currentApp.name) community chat")
+    }
+
+    // ── Overview tab ─────────────────────────────────────────
+
+    private var overviewPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    iconTile
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(currentApp.name).font(.headline)
+                        if let tagline {
+                            Text(tagline)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 6) {
+                            if let category = currentApp.category {
+                                Text(category)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(Color(uiColor: .secondarySystemBackground)))
+                            }
+                            Text(String(format: "#%03d", currentApp.n))
+                                .font(.system(size: 10, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    if let tagline {
-                        Text(tagline).font(.subheadline)
-                    }
-                    if let nav = app.nav { Text("Nav: \(nav)").font(.caption).foregroundStyle(.secondary) }
-                    if let input = app.input { Text("Input: \(input)").font(.caption).foregroundStyle(.secondary) }
-                    if let secret = app.secret { Text("Secret: \(secret)").font(.caption).foregroundStyle(.secondary) }
                 }
-                Section {
-                    Button(vm.installs[appId]?.installed == true ? "Disconnect" : "Install / Connect") {
-                        vm.toggleInstall(app)
-                    }
-                    Button("Community") { onOpenCommunity(app) }
+                installStatsBlock
+                if installed, let stamp = installState?.installedAt {
+                    // Web: "Connected on {formatDay}" (per-viewer truth).
+                    Text("Connected on \(PulseFormat.hubDayStamp(stamp))")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(PulseTheme.emerald)
+                }
+                HStack(spacing: 8) {
+                    connectButton
+                    communityButton
                 }
             }
-            .navigationTitle(app.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+            )
+
+            // Real matrix fields (web OverviewPanel labels).
+            if let nav = currentApp.nav { fieldCard(label: "Mobile nav style", value: nav) }
+            if let input = currentApp.input { fieldCard(label: "Input toolkit", value: input) }
+            if let secret = currentApp.secret {
+                fieldCard(label: "Secret UI architecture feature", value: secret, accent: true)
+            }
+
+            relatedRail
         }
+    }
+
+    private func fieldCard(label: String, value: String, accent: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .textCase(.uppercase)
+                .foregroundStyle(accent ? PulseTheme.emerald : Color.secondary)
+            Text(value)
+                .font(.system(size: 13.5, weight: .medium))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+        )
+    }
+
+    // ── related-apps rail (same category, bundled catalog) ──
+
+    @ViewBuilder
+    private var relatedRail: some View {
+        let related = catalog.apps
+            .filter { $0.category == currentApp.category && $0.n != currentApp.n }
+            .prefix(10)
+        if !related.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                // Web header: "More in {category first ' /' segment}".
+                Text("More in \(currentApp.category?.components(separatedBy: "/").first?.trimmingCharacters(in: .whitespaces) ?? "")")
+                    .font(.system(size: 11, weight: .bold))
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(related), id: \.n) { relatedApp in
+                            Button {
+                                PulseHaptics.tap()
+                                // Web navigates to the app page — the sheet
+                                // swaps its detail in place (same catalog,
+                                // fresh state per id via .task(id:)).
+                                currentApp = relatedApp
+                                tab = .overview
+                            } label: {
+                                VStack(spacing: 5) {
+                                    Text(String(relatedApp.name.prefix(1)))
+                                        .font(.system(size: 17, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 40, height: 40)
+                                        .background(PulseTheme.emerald, in: Circle())
+                                    Text(relatedApp.name)
+                                        .font(.system(size: 11.5, weight: .bold))
+                                        .foregroundStyle(PulseTheme.titleOnPanel)
+                                        .lineLimit(1)
+                                    Text(String(format: "#%03d", relatedApp.n))
+                                        .font(.system(size: 9.5, weight: .semibold))
+                                        .monospacedDigit()
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(width: 104)
+                                .padding(.vertical, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Open \(relatedApp.name) page")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    // ── Community tab ────────────────────────────────────────
+
+    private var communityPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if community == nil && vm.communityFailed.contains(appId) {
+                honestRetryCard(message: "Could not load the community.") {
+                    vm.loadAppCommunity(appId: appId)
+                }
+            } else if community == nil {
+                loadingCard("Loading community")
+            } else if let state = community, state.conversation == nil {
+                // Web founder moment — nobody has provisioned the group yet.
+                VStack(spacing: 8) {
+                    Image(systemName: "person.3")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.secondary)
+                    Text("Be the first to start the community")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("No members yet — the room gets created on first join. You'll be the founding admin.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button {
+                        onOpenCommunity(currentApp)
+                    } label: {
+                        Label("Found the community", systemImage: "sparkles")
+                            .font(.system(size: 13, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(PulseTheme.emerald))
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+                )
+            } else if let state = community, let conversation = state.conversation {
+                let memberCount = state.memberCount ?? conversation.members.count
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        iconTile
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(conversation.name ?? currentApp.name)
+                                .font(.system(size: 13.5, weight: .bold))
+                                .lineLimit(1)
+                            Text("\(memberCount) member\(memberCount == 1 ? "" : "s")")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(state.joined == true ? "Member" : "Not joined")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(state.joined == true ? PulseTheme.emerald.opacity(0.12) : Color(uiColor: .secondarySystemBackground)))
+                            .foregroundStyle(state.joined == true ? PulseTheme.emerald : Color.secondary)
+                    }
+                    communityButton
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+                )
+
+                // Real participant roster, ≤8 rows (web CommunityPanel).
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Members")
+                        .font(.system(size: 11, weight: .bold))
+                        .textCase(.uppercase)
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                        .padding(12)
+                    Divider()
+                    ForEach(Array(conversation.members.prefix(8).enumerated()), id: \.offset) { _, member in
+                        HStack(spacing: 10) {
+                            PulseAvatar(name: member.name, color: PulseTheme.color(named: member.color), size: 30)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(member.name + (member.id == vm.viewerId ? " (you)" : ""))
+                                    .font(.system(size: 12.5, weight: .semibold))
+                                    .lineLimit(1)
+                                Text(member.username.map { "@\($0)" } ?? "Pulse member")
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            if member.role == "admin" {
+                                Label("Admin", systemImage: "crown.fill")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(PulseTheme.emerald)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        if member.id != conversation.members.prefix(8).last?.id {
+                            Divider()
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+                )
+            }
+        }
+    }
+
+    // ── Connectors tab ───────────────────────────────────────
+
+    private var connectorsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Viewer's own connect-state card (web ConnectorsPanel).
+            HStack(spacing: 10) {
+                Text(String(currentApp.name.prefix(1)))
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(PulseTheme.emerald, in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Your connection")
+                        .font(.system(size: 13, weight: .bold))
+                    Text(connectionStatusLine)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    vm.toggleInstall(currentApp)
+                } label: {
+                    Text(installed ? "Connected" : "Connect")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(
+                            Capsule().fill(installed ? PulseTheme.emerald.opacity(0.12) : PulseTheme.emerald),
+                        )
+                        .foregroundStyle(installed ? PulseTheme.emerald : Color.white)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(installed ? "Disconnect from \(currentApp.name)" : "Connect to \(currentApp.name)")
+                .accessibilityAddTraits(installed ? [.isSelected] : [])
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+            )
+
+            if vm.installStateFailed.contains(appId) {
+                honestRetryCard(message: "Could not load connectors.") {
+                    vm.loadInstallState(appId: appId)
+                }
+            } else if installState == nil {
+                loadingCard("Loading connectors")
+            } else if (installState?.installers ?? []).isEmpty {
+                // Web empty state, verbatim copy.
+                VStack(spacing: 6) {
+                    Image(systemName: "cable.connector")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary)
+                    Text("No connectors yet")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Be the first to connect \(currentApp.name).")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+                )
+            } else {
+                let people = installState?.installers ?? []
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Connected members")
+                            .font(.system(size: 11, weight: .bold))
+                            .textCase(.uppercase)
+                            .tracking(0.8)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(installs)")
+                            .font(.system(size: 12, weight: .black, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(PulseTheme.emerald)
+                            .contentTransition(.numericText())
+                            .animation(.default, value: installs)
+                    }
+                    .padding(12)
+                    Divider()
+                    ForEach(Array(people.enumerated()), id: \.offset) { index, person in
+                        let isViewer = person.id != nil && person.id == vm.viewerId
+                        HStack(spacing: 10) {
+                            PulseAvatar(name: person.name ?? "?", color: PulseTheme.color(named: person.color), size: 30)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text((person.name ?? "?") + (isViewer ? " (you)" : ""))
+                                    .font(.system(size: 12.5, weight: .semibold))
+                                    .lineLimit(1)
+                                Text(person.username.map { "@\($0)" } ?? "Pulse member")
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text("connected")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                // installedAt is per-viewer truth — others
+                                // get no invented date (web rule verbatim).
+                                if isViewer, installed, let stamp = installState?.installedAt {
+                                    Text(PulseFormat.hubRelativeStamp(stamp))
+                                        .font(.system(size: 9.5))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        if index != people.count - 1 {
+                            Divider()
+                        }
+                    }
+                    // Web "+N more connected" footer for the ≤6 window.
+                    let extra = max(0, installs - people.count)
+                    if extra > 0 {
+                        Divider()
+                        Text("+\(extra) more connected")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+                )
+            }
+        }
+    }
+
+    private var connectionStatusLine: String {
+        if installState == nil { return "Checking…" }
+        if installed, let stamp = installState?.installedAt {
+            return "Connected on \(PulseFormat.hubDayStamp(stamp))"
+        }
+        return "Not connected yet"
+    }
+
+    private func loadingCard(_ label: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+        )
+        .accessibilityLabel(label)
+    }
+
+    private func honestRetryCard(message: String, retry: @escaping () -> Void) -> some View {
+        VStack(spacing: 8) {
+            Text(message)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(.secondary)
+            Button {
+                retry()
+            } label: {
+                Label("Try again", systemImage: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemBackground).opacity(0.5)),
+        )
+        .accessibilityElement(children: .contain)
     }
 }
 

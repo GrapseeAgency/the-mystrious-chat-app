@@ -1,7 +1,10 @@
 package app.pulse.feature.calls
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -42,13 +46,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
@@ -61,12 +71,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Videocam
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 
 /**
  * Contacts tab — native directory of Pulse accounts with live presence,
  * one-tap DM creation, and safety actions (block/report) in native menus.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ContactsScreen(
     onOpenRoom: (String) -> Unit,
@@ -81,6 +92,7 @@ fun ContactsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val presence by viewModel.presence.collectAsStateWithLifecycle()
     val dmResult by viewModel.dmResult.collectAsStateWithLifecycle()
+    val haptics = LocalHapticFeedback.current
 
     var filter by remember { mutableStateOf("") }
     var safetyTarget by remember { mutableStateOf<User?>(null) }
@@ -167,30 +179,101 @@ fun ContactsScreen(
                     }
                 }
             }
-            else -> LazyColumn(
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 6.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(visible, key = { it.id }) { user ->
-                    ContactRow(
-                        user = user,
-                        online = presence.contains(user.id),
-                        onMessage = { viewModel.openDm(user) },
-                        onCall = { callTarget = user; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
-                        onVideoCall = {
-                            videoCallTarget = user
-                            videoLauncher.launch(
-                                arrayOf(
-                                    android.Manifest.permission.RECORD_AUDIO,
-                                    android.Manifest.permission.CAMERA,
-                                ),
-                            )
-                        },
-                        onSafety = { safetyTarget = user },
-                        onOpenProfile = { onOpenUser(user.id) },
-                    )
+            else -> {
+                // R5-B ITEM 2 — web contacts-tab.tsx parity: A–Z sections with
+                // STICKY letter headers + a right-edge index rail. While a
+                // search filter is active the list stays flat (web behavior).
+                val searching = filter.isNotBlank()
+                val sections = remember(visible, searching) { if (searching) emptyList() else groupContactsByLetter(visible) }
+                val scope = rememberCoroutineScope()
+                val listState = rememberLazyListState()
+                // Flattened item index of each sticky header (tap/drag targets).
+                val headerIndexes = remember(sections) {
+                    var idx = 0
+                    val map = LinkedHashMap<String, Int>()
+                    sections.forEach { section ->
+                        map[section.letter] = idx
+                        idx += 1 + section.people.size
+                    }
+                    map
                 }
-                item { Spacer(Modifier.height(20.dp)) }
+                var activeLetter by remember { mutableStateOf<String?>(null) }
+                LaunchedEffect(listState, headerIndexes) {
+                    snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
+                        activeLetter = headerIndexes.entries.lastOrNull { it.value <= index }?.key
+                    }
+                }
+                val jumpTo: (String) -> Unit = { letter ->
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    headerIndexes[letter]?.let { target ->
+                        scope.launch { listState.animateScrollToItem(target) }
+                    }
+                }
+                Box(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (searching) {
+                            items(visible, key = { it.id }) { user ->
+                                ContactRow(
+                                    user = user,
+                                    online = presence.contains(user.id),
+                                    onMessage = { viewModel.openDm(user) },
+                                    onCall = { callTarget = user; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
+                                    onVideoCall = {
+                                        videoCallTarget = user
+                                        videoLauncher.launch(
+                                            arrayOf(
+                                                android.Manifest.permission.RECORD_AUDIO,
+                                                android.Manifest.permission.CAMERA,
+                                            ),
+                                        )
+                                    },
+                                    onSafety = { safetyTarget = user },
+                                    onOpenProfile = { onOpenUser(user.id) },
+                                )
+                            }
+                        } else {
+                            sections.forEach { section ->
+                                stickyHeader(key = "section_${section.letter}") {
+                                    LetterHeader(section.letter, section.people.size)
+                                }
+                                items(section.people, key = { it.id }) { user ->
+                                    ContactRow(
+                                        user = user,
+                                        online = presence.contains(user.id),
+                                        onMessage = { viewModel.openDm(user) },
+                                        onCall = { callTarget = user; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
+                                        onVideoCall = {
+                                            videoCallTarget = user
+                                            videoLauncher.launch(
+                                                arrayOf(
+                                                    android.Manifest.permission.RECORD_AUDIO,
+                                                    android.Manifest.permission.CAMERA,
+                                                ),
+                                            )
+                                        },
+                                        onSafety = { safetyTarget = user },
+                                        onOpenProfile = { onOpenUser(user.id) },
+                                    )
+                                }
+                            }
+                        }
+                        item { Spacer(Modifier.height(20.dp)) }
+                    }
+                    // Kinetic index rail — web hides it while ≤1 letter section
+                    // exists and while searching (flat results).
+                    if (!searching && sections.size > 1) {
+                        IndexRail(
+                            letters = sections.map { it.letter },
+                            activeLetter = activeLetter,
+                            onJump = jumpTo,
+                            modifier = Modifier.align(Alignment.CenterEnd),
+                        )
+                    }
+                }
             }
         }
     }
@@ -323,6 +406,93 @@ private fun ContactRow(
                     DropdownMenuItem(text = { Text("Block / report") }, onClick = { menuOpen = false; onSafety() })
                 }
             }
+        }
+    }
+}
+
+/**
+ * R5-B ITEM 2 — the sticky glass letter header (web contacts-tab.tsx:301-309):
+ * uppercase letter + a per-section count chip.
+ */
+@Composable
+private fun LetterHeader(letter: String, count: Int) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+        modifier = Modifier.padding(vertical = 4.dp),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                letter,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.4.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                count.toString(),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+    }
+}
+
+/**
+ * R5-B ITEM 2 — the kinetic index rail (web contacts-tab.tsx:330-373):
+ * sticky letter bubbles pinned to the right edge. TAP a letter jumps to its
+ * section; DRAGGING along the rail keeps jumping live across letters
+ * (pointerInput vertical-drag maps the pointer Y onto the letter list).
+ * The active letter lights up emerald, mirroring the web's bubble.
+ */
+@Composable
+private fun IndexRail(
+    letters: List<String>,
+    activeLetter: String?,
+    onJump: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var railHeightPx by remember { mutableStateOf(0) }
+    fun letterAt(y: Float): String? {
+        if (railHeightPx <= 0 || letters.isEmpty()) return null
+        val index = ((y / railHeightPx) * letters.size).toInt().coerceIn(0, letters.size - 1)
+        return letters[index]
+    }
+    Column(
+        modifier
+            .onSizeChanged { railHeightPx = it.height }
+            .pointerInput(letters) {
+                // tap → jump
+                detectTapGestures { offset -> letterAt(offset.y)?.let(onJump) }
+            }
+            .pointerInput(letters) {
+                // drag along the rail → live jump across letters
+                detectVerticalDragGestures { change, _ ->
+                    change.consume()
+                    letterAt(change.position.y)?.let(onJump)
+                }
+            }
+            .padding(horizontal = 3.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        letters.forEach { letter ->
+            val active = letter == activeLetter
+            Text(
+                letter,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (active) PulsePalette.Emerald else MaterialTheme.colorScheme.outline,
+                modifier = Modifier
+                    .padding(vertical = 0.5.dp)
+                    .semantics {
+                        contentDescription = "Jump to contacts under $letter"
+                    },
+            )
         }
     }
 }

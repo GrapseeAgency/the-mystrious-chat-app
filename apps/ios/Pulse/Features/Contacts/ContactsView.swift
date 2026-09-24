@@ -15,6 +15,10 @@ struct ContactsView: View {
     @State private var path = NavigationPath()
     @State private var addContactOpen = false
     @StateObject private var safetyBadges = PulseSafetyBadgeCache.shared
+    // R5-A Item 2 — the A–Z index rail (web contacts-tab.tsx:141-172):
+    // active letter highlight + drag-live-jump tracking.
+    @State private var activeLetter: String?
+    @State private var railDragging = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -101,61 +105,203 @@ struct ContactsView: View {
         }
     }
 
+    /// R5-A Item 2 — search REPLACES the A–Z sections with flat results
+    /// (web contacts-add/search behavior; the rail hides while filtering).
+    private var isFiltering: Bool {
+        !viewModel.query.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// A–Z sections from the display name (case-insensitive, "#" last) —
+    /// the pure grouping kernel lives in PulseAZIndex (tested).
+    private var sections: [PulseAZIndex.Section<WireUser>] {
+        PulseAZIndex.sections(filtered, nameOf: { $0.name })
+    }
+
     private var list: some View {
-        List {
-            Section {
-                ForEach(filtered) { user in
-                    ContactRow(
-                        user: user,
-                        online: session.isOnline(user.id),
-                        isViewer: user.id == session.viewer?.id,
-                        safetyVerified: safetyBadges.isVerified(user.id),
-                        onOpenProfile: {
-                            // Wave 6 — rows push the FULL user page (stats,
-                            // block/unblock, report, safety). Chat stays a button.
-                            path.append(UserRoute(userId: user.id, name: user.name))
-                        },
-                        onMessage: {
-                            viewModel.openDM(user, session: session)
-                        },
-                    )
-                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                        Button {
-                            viewModel.call(user, session: session)
-                        } label: {
-                            Label("Call", systemImage: "phone.fill")
+        ScrollViewReader { proxy in
+            List {
+                if isFiltering {
+                    Section {
+                        ForEach(filtered) { user in
+                            contactRow(user)
                         }
-                        .tint(PulseTheme.emerald)
-                        // Wave R1-W2D — real video call entry (wire kind 'video').
-                        Button {
-                            viewModel.callVideo(user, session: session)
-                        } label: {
-                            Label("Video", systemImage: "video.fill")
-                        }
-                        .tint(PulseTheme.emerald)
+                    } footer: {
+                        listFooter
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            Task { await viewModel.block(user, session: session) }
-                        } label: {
-                            Label("Block", systemImage: "hand.raised.fill")
+                } else {
+                    ForEach(sections, id: \.letter) { section in
+                        Section {
+                            ForEach(section.items) { user in
+                                contactRow(user)
+                                    // Scroll anchor: the first row of each
+                                    // section carries the rail's jump id.
+                                    .id(user.id == section.items.first?.id ? "az-\(section.letter)" : user.id)
+                            }
+                        } header: {
+                            sectionHeader(section)
                         }
-                        Button {
-                            reportTarget = user
-                        } label: {
-                            Label("Report", systemImage: "flag.fill")
-                        }
-                        .tint(.orange)
+                    }
+                    Section {
+                    } footer: {
+                        listFooter
                     }
                 }
-            } header: {
-                Text("\(session.onlineUserIds.count) online · \(filtered.count) people")
-            } footer: {
-                Text("Tap a row for the full profile — stats, safety number, block and report live there.")
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .overlay(alignment: .trailing) {
+                indexRail(proxy)
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+    }
+
+    private var listFooter: some View {
+        Text("\(session.onlineUserIds.count) online · \(filtered.count) people — tap a row for the full profile; stats, safety number, block and report live there.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    /// Sticky glass letter pill (web contacts-tab.tsx:301-309: letter +
+    /// people count). The .plain list style pins it while the section
+    /// scrolls, matching the web sticky header.
+    private func sectionHeader(_ section: PulseAZIndex.Section<WireUser>) -> some View {
+        HStack(spacing: 6) {
+            Text(section.letter)
+                .font(.caption.weight(.bold))
+                .tracking(1)
+            Text("\(section.items.count)")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear {
+            // Live active-letter tracking while scrolling (web
+            // trackActiveLetter parity — the honest List-native analog).
+            if !railDragging { activeLetter = section.letter }
+        }
+    }
+
+    /// R5-A Item 2 — the right-edge A–Z rail (web :330-373): tap a letter →
+    /// scroll to that section; DRAG along the rail → live jump letter by
+    /// letter. Hidden while filtering and when there's one section or fewer
+    /// (web hides at letters.length ≤ 1).
+    @ViewBuilder
+    private func indexRail(_ proxy: ScrollViewProxy) -> some View {
+        let letters = sections.map(\.letter)
+        if !isFiltering && letters.count > 1 {
+            // Letters are fixed 17pt rows + 6pt top/bottom padding — the
+            // drag math uses that height directly (no geometry needed).
+            VStack(spacing: 0) {
+                ForEach(letters, id: \.self) { letter in
+                    Text(letter)
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(activeLetter == letter ? PulseTheme.emerald : Color.secondary)
+                        .frame(width: 20, height: 17)
+                        .background {
+                            // The active letter's emerald bubble (web
+                            // layoutId="contacts-rail-bubble" analog).
+                            if activeLetter == letter {
+                                Capsule().fill(PulseTheme.emerald.opacity(0.18))
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { jump(to: letter, proxy: proxy) }
+                }
+            }
+            .padding(.vertical, 6)
+            .background(Capsule().fill(.ultraThinMaterial))
+            // Gesture scope = the capsule strip ONLY — the full-width
+            // frames below are pure layout and must stay swipe/tap
+            // transparent to the rows beneath.
+            .contentShape(Rectangle())
+            .gesture(railDrag(letters: letters, railHeight: CGFloat(letters.count) * 17 + 12, proxy: proxy))
+            .frame(maxHeight: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 2)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Contact index")
+        }
+    }
+
+    private func jump(to letter: String, proxy: ScrollViewProxy) {
+        PulseHaptics.tap()
+        activeLetter = letter
+        withAnimation(.easeOut(duration: 0.18)) {
+            proxy.scrollTo("az-\(letter)", anchor: .top)
+        }
+    }
+
+    /// Drag along the rail → live jump: the touch Y position maps onto the
+    /// letter stack (web kinetic rail parity), with a tap haptic per new
+    /// letter and the matching section scrolled into view immediately.
+    private func railDrag(letters: [String], railHeight: CGFloat, proxy: ScrollViewProxy) -> some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                guard !letters.isEmpty, railHeight > 0 else { return }
+                railDragging = true
+                let fraction = min(max(value.location.y / railHeight, 0), 0.999)
+                let index = Int(fraction * CGFloat(letters.count))
+                let letter = letters[index]
+                if letter != activeLetter {
+                    jump(to: letter, proxy: proxy)
+                }
+            }
+            .onEnded { _ in
+                railDragging = false
+            }
+    }
+
+    private func contactRow(_ user: WireUser) -> some View {
+        ContactRow(
+            user: user,
+            online: session.isOnline(user.id),
+            isViewer: user.id == session.viewer?.id,
+            safetyVerified: safetyBadges.isVerified(user.id),
+            onOpenProfile: {
+                // Wave 6 — rows push the FULL user page (stats,
+                // block/unblock, report, safety). Chat stays a button.
+                path.append(UserRoute(userId: user.id, name: user.name))
+            },
+            onMessage: {
+                viewModel.openDM(user, session: session)
+            },
+        )
+        // The rail strip stays usable — rows keep clear of the right edge
+        // (the phone-app index-rail pattern).
+        .padding(.trailing, 18)
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                viewModel.call(user, session: session)
+            } label: {
+                Label("Call", systemImage: "phone.fill")
+            }
+            .tint(PulseTheme.emerald)
+            // Wave R1-W2D — real video call entry (wire kind 'video').
+            Button {
+                viewModel.callVideo(user, session: session)
+            } label: {
+                Label("Video", systemImage: "video.fill")
+            }
+            .tint(PulseTheme.emerald)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                Task { await viewModel.block(user, session: session) }
+            } label: {
+                Label("Block", systemImage: "hand.raised.fill")
+            }
+            Button {
+                reportTarget = user
+            } label: {
+                Label("Report", systemImage: "flag.fill")
+            }
+            .tint(.orange)
+        }
     }
 }
 

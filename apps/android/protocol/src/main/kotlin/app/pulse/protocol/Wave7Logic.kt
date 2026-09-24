@@ -158,4 +158,33 @@ object PulseWave7Logic {
 
     /** Streak bonus display rule: +2/day capped +20 on the 25 PC base (server checkin:44-51). */
     fun checkinReward(streakAfter: Int): Long = 25 + minOf((streakAfter - 1).coerceAtLeast(0) * 2L, 20L)
+
+    // ── R5-B — hub app-detail relative stamp (web app-detail-sheet.tsx:92-108) ──
+
+    /** "Jan 15, 2026" — web formatDay (toLocaleDateString month short, day, year). */
+    fun formatDay(iso: String): String = runCatching {
+        val d = java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        val month = d.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())
+        "$month ${d.dayOfMonth}, ${d.year}"
+    }.getOrDefault("")
+
+    /**
+     * Relative stamp for the viewer's OWN connector row ("3h ago") — web
+     * formatRelative verbatim: <1min "just now", <60m "Xm ago", <24h "Xh ago",
+     * <7d "Xd ago", else the [formatDay] date. Non-finite/unparsable → "".
+     */
+    fun relativeStamp(iso: String?, nowEpochMs: Long): String {
+        if (iso.isNullOrBlank()) return ""
+        val then = runCatching { java.time.Instant.parse(iso).toEpochMilli() }.getOrNull() ?: return ""
+        val ms = nowEpochMs - then
+        if (ms < 0) return ""
+        val mins = ms / 60_000
+        if (mins < 1) return "just now"
+        if (mins < 60) return "${mins}m ago"
+        val hours = mins / 60
+        if (hours < 24) return "${hours}h ago"
+        val days = hours / 24
+        if (days < 7) return "${days}d ago"
+        return formatDay(iso)
+    }
 }

@@ -3,6 +3,7 @@ package app.pulse.domain.usecase
 import app.pulse.domain.model.Message
 // R1-W2F — per-conversation themes (F-FX-05) in the FakeRepo stubs.
 import app.pulse.domain.model.ConvTheme
+import app.pulse.domain.model.SendReceipt
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -40,7 +41,7 @@ class SendMessageUseCaseTest {
             replyToId: String?,
             parentId: String?,
             topicId: String?,
-        ): Result<Message> {
+        ): Result<SendReceipt> {
             val m = Message(
                 id = "m1", conversationId = conversationId, authorId = "a", authorName = "n",
                 kind = Message.Kind.TEXT, body = body, createdAt = "t", replyToId = replyToId,
@@ -49,7 +50,7 @@ class SendMessageUseCaseTest {
             sent += m
             lastReplyToId = replyToId
             lastParentId = parentId
-            return Result.success(m)
+            return Result.success(SendReceipt(m))
         }
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
         override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {}
@@ -217,7 +218,7 @@ class SendMessageUseCaseTest {
             replyToId: String?,
             parentId: String?,
             topicId: String?,
-        ): Result<Message> = Result.failure(UnsupportedOperationException())
+        ): Result<SendReceipt> = Result.failure(UnsupportedOperationException())
 
         // ── Wave 2 messaging depth (stubs — the send path is the subject here) ──
         override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =
@@ -345,7 +346,7 @@ class SendMessageUseCaseTest {
         val repo = FakeRepo()
         val result = SendMessageUseCase(repo)(conversationId = "c1", body = "  hello pulse  ")
         assertTrue(result.isSuccess)
-        assertEquals("hello pulse", result.getOrNull()?.body)
+        assertEquals("hello pulse", result.getOrNull()?.message?.body)
         assertEquals(1, repo.sent.size)
     }
 
@@ -379,8 +380,8 @@ class SendMessageUseCaseTest {
         assertTrue(result.isSuccess)
         assertEquals("root-1", repo.lastParentId)
         assertNull(repo.lastReplyToId)
-        assertEquals("root-1", result.getOrNull()?.threadRootId)
-        assertNull(result.getOrNull()?.replyToId)
+        assertEquals("root-1", result.getOrNull()?.message?.threadRootId)
+        assertNull(result.getOrNull()?.message?.replyToId)
     }
 
     @Test

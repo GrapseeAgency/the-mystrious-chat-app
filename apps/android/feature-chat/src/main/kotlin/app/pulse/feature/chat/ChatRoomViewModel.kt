@@ -19,6 +19,7 @@ import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.ScheduledItem
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.protocol.GameDetailDto
+import app.pulse.protocol.nudgeText
 import app.pulse.protocol.WirePulsePrefs
 import app.pulse.protocol.KanbanPageDto
 import app.pulse.protocol.LeaderboardPageDto
@@ -528,8 +529,8 @@ class ChatRoomViewModel @Inject constructor(
             // Quote replies DO file to the active topic (only THREAD replies
             // are excluded — the repo drops topicId on parentId sends).
             sendUseCase(conversationId, body, replyId, topicId = _activeTopicId.value)
-                .onSuccess { message ->
-                    if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
+                .onSuccess { receipt ->
+                    if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         // Network-class failure → queued in the outbox. The
                         // composer text has left for the queue — clear the
                         // draft and let the pending bubble + banner tell it.
@@ -538,7 +539,11 @@ class ChatRoomViewModel @Inject constructor(
                         app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
                         repo.setTyping(conversationId, viewerName(), false)
                         runCatching { repo.clearDraft(conversationId) }
-                        afterOwnSend(message)
+                        afterOwnSend(receipt.message)
+                        // R31-a parity — the web-verbatim streak nudge (fires
+                        // only when THIS send GREW the streak, second-or-later
+                        // consecutive day).
+                        maybeStreakNudge(receipt.streak)
                     }
                 }
                 .onFailure { failure ->
@@ -578,15 +583,16 @@ class ChatRoomViewModel @Inject constructor(
                 replyToId = replyId,
                 topicId = _activeTopicId.value,
             )
-                .onSuccess { message ->
-                    if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
+                .onSuccess { receipt ->
+                    if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         runCatching { repo.clearDraft(conversationId) }
                     } else {
                         fxKind?.let { kind -> app.pulse.core.fx.PulseFx.fire(kind, count = 26) }
                         repo.setTyping(conversationId, viewerName(), false)
                         runCatching { repo.clearDraft(conversationId) }
-                        afterOwnSend(message)
-                        onDelivered?.invoke(message)
+                        afterOwnSend(receipt.message)
+                        onDelivered?.invoke(receipt.message)
+                        maybeStreakNudge(receipt.streak)
                     }
                 }
                 .onFailure { failure ->
@@ -610,6 +616,23 @@ class ChatRoomViewModel @Inject constructor(
         _activeTopicId.value?.let { topicId ->
             viewModelScope.launch { runCatching { repo.refreshMessages(conversationId, topicId) } }
         }
+    }
+
+    /**
+     * R31-a streak nudge — web chat-room.tsx:1736-1745 verbatim. Fires ONLY
+     * when THIS send GREW the streak (second-or-later consecutive day):
+     * same-day re-sends carry no streak, restarts stay silent (continued
+     * false). The fire-condition + copy live in the pure protocol kernel
+     * ([app.pulse.protocol.nudgeText]) so the JVM tests pin the web parity.
+     */
+    private fun maybeStreakNudge(streak: app.pulse.domain.model.StreakSnapshot?) {
+        if (streak == null) return
+        val dto = app.pulse.protocol.MessageStreakDto(
+            count = streak.count,
+            best = streak.best,
+            continued = streak.continued,
+        )
+        dto.nudgeText()?.let { notify(it) }
     }
 
     /** PATCH edit — online-only by design (spec row 4); failure is an honest toast. */

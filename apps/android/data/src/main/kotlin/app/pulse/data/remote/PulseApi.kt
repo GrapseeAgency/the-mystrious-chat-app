@@ -302,6 +302,10 @@ class PulseApi(
      * (spec §1.1): thread replies ride `parentId`, inline quotes `replyToId`,
      * media rides imagePath/audioPath/filePath — only non-null keys are sent.
      * `kind` whitelist: text|image|audio|sticker|location|file.
+     *
+     * R5-B — the response is the server envelope `{ message, streak?, xpAwarded }`
+     * (messages/route.ts:704-708); [app.pulse.protocol.decodeMessageSend]
+     * unwraps it (bare-row bodies from alternate gateways still decode).
      */
     suspend fun sendMessage(
         conversationId: String,
@@ -322,7 +326,7 @@ class PulseApi(
         anon: Boolean? = null,
         /** Rich payload blob — sticker {emoji,pack} · location {lat,lng,label} · effects {effect}. */
         payload: JsonObject? = null,
-    ): PulseResult<ChatMessageDto> =
+    ): PulseResult<app.pulse.protocol.MessageSendEnvelopeDto> =
         post(
             "/api/conversations/$conversationId/messages",
             buildJsonObject {
@@ -342,7 +346,7 @@ class PulseApi(
                 if (anon == true) put("anon", true)
                 if (payload != null) put("payload", payload)
             },
-        ) { PulseJson.decodeFromString(ChatMessageDto.serializer(), it) }
+        ) { app.pulse.protocol.decodeMessageSend(it) }
 
     /** POST /api/conversations { creatorId, memberIds, isGroup } → tolerant conversation. */
     suspend fun createConversation(creatorId: String, memberIds: List<String>, isGroup: Boolean, name: String?): PulseResult<ConversationSummaryDto> =

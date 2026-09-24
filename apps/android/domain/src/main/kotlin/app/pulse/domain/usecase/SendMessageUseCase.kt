@@ -1,6 +1,6 @@
 package app.pulse.domain.usecase
 
-import app.pulse.domain.model.Message
+import app.pulse.domain.model.SendReceipt
 import app.pulse.domain.repository.PulseRepository
 
 /** Send a text message (inline quote via replyToId, thread reply via parentId — spec §1.1). */
@@ -13,7 +13,7 @@ class SendMessageUseCase(private val repo: PulseRepository) {
         parentId: String? = null,
         /** Wave 2 topic filing — the repo drops it on thread replies (spec §1 row 10). */
         topicId: String? = null,
-    ): Result<Message> {
+    ): Result<SendReceipt> {
         val trimmed = body.trim()
         if (trimmed.isEmpty()) return Result.failure(IllegalArgumentException("Message body is empty"))
         if (trimmed.length > MAX_LENGTH) return Result.failure(IllegalArgumentException("Message exceeds $MAX_LENGTH chars"))

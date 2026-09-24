@@ -143,6 +143,33 @@ public struct WireMessageEnvelope: Codable, Sendable {
         }
         return try? JSONDecoder().decode(WireChatMessage.self, from: data)
     }
+
+    /// R5-A Item 5 — send-result variant: carries the streak sibling when the
+    /// server includes it ({ message, streak?, xpAwarded }), falls back to the
+    /// bare message row (streak = nil) for older relays.
+    public static func extractSendResult(from data: Data) throws -> PulseSendResult {
+        if let wrapped = try? JSONDecoder().decode(WireSendResponse.self, from: data),
+           let message = wrapped.message {
+            return PulseSendResult(message: message, streak: wrapped.streak)
+        }
+        return PulseSendResult(message: try JSONDecoder().decode(WireChatMessage.self, from: data), streak: nil)
+    }
+}
+
+/// R5-A Item 5 — full send response shape:
+/// { message, streak?: {count,best,continued} | null, xpAwarded }.
+public struct WireSendResponse: Codable, Sendable {
+    public let message: WireChatMessage?
+    public let streak: WireStreak?
+    public let xpAwarded: Int?
+}
+
+/// R5-A Item 5 — decoded send outcome: the message row plus the streak
+/// verdict (nil when this send did not change the streak / older relays
+/// answer the bare row).
+public struct PulseSendResult: Sendable {
+    public let message: WireChatMessage
+    public let streak: WireStreak?
 }
 
 public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
@@ -429,21 +456,32 @@ public struct WireConversationMember: Codable, Hashable, Sendable {
 
 /// Streak fields arrive as `{"count": n}` objects on the live wire (sometimes
 /// enriched with labels); decode flexibly so int/object forms both parse.
+/// R5-A Item 5 — the messages-POST streak additionally carries best +
+/// continued (route.ts:678-706); conversation summaries ride {count} only,
+/// so both new fields stay optional and tolerant.
 public struct WireStreak: Codable, Hashable, Sendable {
     public let count: Int?
+    public let best: Int?
+    public let continued: Bool?
 
     public init(from decoder: Decoder) throws {
         if let obj = try? decoder.container(keyedBy: CodingKeys.self) {
             count = try obj.decodeIfPresent(Int.self, forKey: .count)
+            best = try obj.decodeIfPresent(Int.self, forKey: .best)
+            continued = try obj.decodeIfPresent(Bool.self, forKey: .continued)
         } else if let single = try? decoder.singleValueContainer(),
                   let value = try? single.decode(Int.self) {
             count = value
+            best = nil
+            continued = nil
         } else {
             count = nil
+            best = nil
+            continued = nil
         }
     }
 
-    enum CodingKeys: String, CodingKey { case count }
+    enum CodingKeys: String, CodingKey { case count, best, continued }
 }
 
 public struct WireConversationSummary: Codable, Hashable, Sendable {

@@ -58,10 +58,12 @@ import app.pulse.domain.model.Reaction
 import app.pulse.domain.model.SavedItem
 import app.pulse.domain.model.SafetyState
 import app.pulse.domain.model.ScheduledItem
+import app.pulse.domain.model.SendReceipt
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.model.StoryItem
 import app.pulse.domain.model.StoryUser
 import app.pulse.domain.model.StoryViewer
+import app.pulse.domain.model.StreakSnapshot
 import app.pulse.domain.model.Topic
 import app.pulse.domain.model.TranscribeOutcome
 import app.pulse.domain.model.User
@@ -674,7 +676,7 @@ class PulseRepositoryImpl @Inject constructor(
         replyToId: String?,
         parentId: String?,
         topicId: String?,
-    ): Result<Message> {
+    ): Result<SendReceipt> {
         // Optimistic echo FIRST (spec §2 row 2): the bubble appears on the very
         // keystroke-to-send beat, not after the round-trip. The same clientId
         // then either reconciles with the real row, rides the outbox, or is
@@ -708,11 +710,12 @@ class PulseRepositoryImpl @Inject constructor(
             topicId = if (parentId == null) topicId else null,
         )) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
+                val receipt = r.value.toReceipt()
+                val message = receipt.message
                 messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
                 dedupeTempEchoes(message)
                 scheduleConversationsRefresh()
-                Result.success(message)
+                Result.success(receipt)
             }
             is PulseResult.Failure ->
                 // Network-class failure → the optimistic offline core: the temp
@@ -730,7 +733,7 @@ class PulseRepositoryImpl @Inject constructor(
                     )
                     outboxDao.trimBeyond(MAX_OUTBOX)
                     eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
-                    Result.success(temp)
+                    Result.success(SendReceipt(message = temp, streak = null))
                 } else {
                     messageDao.deleteById(temp.id)
                     Result.failure(apiExceptionOf(r))
@@ -752,7 +755,7 @@ class PulseRepositoryImpl @Inject constructor(
         replyToId: String?,
         parentId: String?,
         topicId: String?,
-    ): Result<Message> {
+    ): Result<SendReceipt> {
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
@@ -788,11 +791,12 @@ class PulseRepositoryImpl @Inject constructor(
             )
         ) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
+                val receipt = r.value.toReceipt()
+                val message = receipt.message
                 messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
                 dedupeTempEchoes(message)
                 scheduleConversationsRefresh()
-                Result.success(message)
+                Result.success(receipt)
             }
             is PulseResult.Failure ->
                 if (r.kind == PulseResult.Failure.Kind.NETWORK && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
@@ -806,7 +810,7 @@ class PulseRepositoryImpl @Inject constructor(
                     )
                     outboxDao.trimBeyond(MAX_OUTBOX)
                     eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
-                    Result.success(temp)
+                    Result.success(SendReceipt(message = temp, streak = null))
                 } else {
                     messageDao.deleteById(temp.id)
                     Result.failure(apiExceptionOf(r))
@@ -821,6 +825,21 @@ class PulseRepositoryImpl @Inject constructor(
         status = f.status,
         retryAfter = f.retryAfter,
     )
+
+    // ── R5-B — send-envelope mapping (server { message, streak?, xpAwarded }) ──
+
+    /** Envelope → domain receipt: the real row + the streak bump when present. */
+    private fun app.pulse.protocol.MessageSendEnvelopeDto.toReceipt(): SendReceipt = SendReceipt(
+        message = messageOrThrow(),
+        streak = streak?.let { StreakSnapshot(count = it.count, best = it.best, continued = it.continued) },
+    )
+
+    /**
+     * The envelope's message row — null must fail loudly (VALIDATION), never
+     * decode as an empty success (iOS R5 lesson: envelope-nil ≠ bare row).
+     */
+    private fun app.pulse.protocol.MessageSendEnvelopeDto.messageOrThrow(): Message =
+        message?.toDomain() ?: throw IllegalStateException("VALIDATION: send response carried no message")
 
     // ── Wave 1 messaging surface (spec §1.1 — every route exists today) ──
 
@@ -859,7 +878,9 @@ class PulseRepositoryImpl @Inject constructor(
             )
         ) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
+                // R5-B — media sends ride the same envelope; the streak bump is
+                // not surfaced here (web only toasts on the room-composer path).
+                val message = r.value.messageOrThrow()
                 messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
                 scheduleConversationsRefresh()
                 Result.success(message)
@@ -1011,7 +1032,7 @@ class PulseRepositoryImpl @Inject constructor(
             )
         ) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
+                val message = r.value.messageOrThrow()
                 messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
                 scheduleConversationsRefresh()
                 Result.success(message)
@@ -1224,7 +1245,7 @@ class PulseRepositoryImpl @Inject constructor(
     /** ONE POST attempt — classification rides on OutboxDeliveryException. */
     override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> =
         when (val r = api.sendMessage(entry.conversationId, viewerId ?: "", entry.content)) {
-            is PulseResult.Success -> Result.success(r.value.toDomain())
+            is PulseResult.Success -> Result.success(r.value.messageOrThrow())
             is PulseResult.Failure -> {
                 val classification = when (r.kind) {
                     PulseResult.Failure.Kind.VALIDATION,

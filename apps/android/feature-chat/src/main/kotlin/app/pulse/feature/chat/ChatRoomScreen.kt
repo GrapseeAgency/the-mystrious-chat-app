@@ -85,6 +85,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SentimentSatisfied
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
@@ -110,6 +111,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -218,6 +221,8 @@ fun ChatRoomScreen(
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
+    // R5-B ITEM 1 — emoji appends re-focus the composer through this handle.
+    val composerFocus = remember { FocusRequester() }
 
     var draft by remember { mutableStateOf("") }
     var caption by remember { mutableStateOf("") }
@@ -241,6 +246,8 @@ fun ChatRoomScreen(
     var scheduleOpen by remember { mutableStateOf(false) }
     var helpOpen by remember { mutableStateOf(false) }
     var phrasesOpen by remember { mutableStateOf(false) }
+    // R5-B ITEM 1 — composer emoji picker (draft-EDIT engine, distinct from stickers).
+    var emojiOpen by remember { mutableStateOf(false) }
     // R1-W2F — location share sheet (F-MD-07) + theme picker (F-FX-05).
     var locationOpen by remember { mutableStateOf(false) }
     var locationDenied by remember { mutableStateOf(false) }
@@ -861,6 +868,7 @@ fun ChatRoomScreen(
                                 cursorBrush = SolidColor(PulsePalette.Emerald),
                                 modifier = Modifier
                                     .weight(1f)
+                                    .focusRequester(composerFocus)
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(22.dp))
                                     .padding(horizontal = 16.dp, vertical = 11.dp),
                                 decorationBox = { inner ->
@@ -876,6 +884,35 @@ fun ChatRoomScreen(
                                     }
                                 },
                             )
+                            // R5-B ITEM 1 — the smile button (web chat-room.tsx:5384-5390):
+                            // opens the draft-append emoji popup, never sends.
+                            Box {
+                                IconButton(
+                                    onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        emojiOpen = !emojiOpen
+                                    },
+                                    modifier = Modifier.clip(CircleShape),
+                                ) {
+                                    Icon(
+                                        Icons.Filled.SentimentSatisfied,
+                                        contentDescription = "Insert emoji",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                if (emojiOpen) {
+                                    EmojiPickerPopup(
+                                        onPick = { emoji ->
+                                            // Append at cursor end + keep the composer
+                                            // focused (web: setInput(prev + emoji) → refocus).
+                                            draft += emoji
+                                            viewModel.onDraftChanged(draft)
+                                            composerFocus.requestFocus()
+                                        },
+                                        onDismiss = { emojiOpen = false },
+                                    )
+                                }
+                            }
                         }
                     }
                 }

@@ -28,6 +28,12 @@ struct SettingsView: View {
     @State private var queuedCount = 0
     @State private var copiedUserId = false
     @State private var footprintBytes: Int64?
+    // R5-A Item 4 — "Your footprint" live stats (web settings-screen.tsx
+    // DataSection): the viewer's real counts from GET /api/users/{id}/stats —
+    // the same endpoint the user pages call. Loading + honest failure states.
+    @State private var footprintStats: WireUserStats?
+    @State private var footprintLoading = false
+    @State private var footprintFailed = false
 
     private enum ProbeResult: Equatable {
         case ok(String)
@@ -92,7 +98,10 @@ struct SettingsView: View {
         .sheet(isPresented: $editProfileOpen) {
             ProfileEditView(session: session, prefs: prefs)
         }
-        .onAppear { refreshLocalCounts() }
+        .onAppear {
+            refreshLocalCounts()
+            Task { await loadFootprintStats() }
+        }
         .onChange(of: draftsOutboxOpen) { _, open in
             if !open { refreshLocalCounts() }
         }
@@ -624,8 +633,127 @@ struct SettingsView: View {
 
     // ── Data & Storage ───────────────────────────────────────
 
+    /// R5-A Item 4 — the viewer's live footprint (web StatTile row parity:
+    /// messages / photos / voice notes / chats / groups / days active).
+    /// Signed-out renders the honest notice; a failed fetch shows Try again.
+    private func loadFootprintStats() async {
+        guard let viewerId = session.viewer?.id ?? prefs.viewer?.id else { return }
+        footprintLoading = true
+        footprintFailed = false
+        defer { footprintLoading = false }
+        do {
+            footprintStats = try await session.api.userStats(viewerId)
+        } catch {
+            footprintFailed = true
+        }
+    }
+
+    /// Web StatTile twin: icon over the value over the label.
+    private func footprintTile(icon: String, value: Int?, label: String) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(PulseTheme.accent)
+            Text("\(value ?? 0)")
+                .font(.system(size: 17, weight: .black, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(PulseTheme.titleOnPanel)
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, minHeight: 74)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemBackground).opacity(0.55)),
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value ?? 0)")
+    }
+
+    @ViewBuilder
+    private var footprintSection: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "chart.bar.xaxis")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Your footprint")
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .foregroundStyle(PulseTheme.titleOnPanel)
+                Text("Straight from the Pulse database.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                PulseHaptics.tap()
+                Task { await loadFootprintStats() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(footprintLoading ? 360 : 0))
+                    .animation(footprintLoading ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default, value: footprintLoading)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Refresh stats")
+        }
+
+        if session.viewer == nil && prefs.viewer == nil {
+            Text("Sign in to see your stats.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+        } else if footprintLoading && footprintStats == nil {
+            // Loading — six honest placeholder tiles (web Skeleton grid).
+            HStack(spacing: 0) {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                Text("Counting your messages, photos, voice notes, chats, groups and days…")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else if footprintFailed && footprintStats == nil {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Couldn't load your stats.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                Button {
+                    Task { await loadFootprintStats() }
+                } label: {
+                    Label("Try again", systemImage: "arrow.clockwise")
+                        .font(.system(size: 12.5, weight: .semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        } else if let stats = footprintStats {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                footprintTile(icon: "text.bubble", value: stats.messages, label: "Messages sent")
+                footprintTile(icon: "photo", value: stats.photos, label: "Photos")
+                footprintTile(icon: "mic.fill", value: stats.voiceNotes, label: "Voice notes")
+                footprintTile(icon: "person.fill", value: stats.chats, label: "Chats")
+                footprintTile(icon: "person.2.fill", value: stats.groups, label: "Groups")
+                footprintTile(icon: "calendar", value: stats.days, label: "Days active")
+            }
+        }
+    }
+
     private var dataCard: some View {
         settingsCard(title: "Data & Storage", icon: "externaldrive.fill") {
+            // R5-A Item 4 — the footprint tiles sit ABOVE the SQLite line
+            // (web order: "Your footprint" section, then the local-data rows).
+            footprintSection
+
+            Divider().padding(.vertical, 2)
+
             settingsRow(
                 icon: "cylinder",
                 label: "Local database",

@@ -104,6 +104,28 @@ public enum PulseFormat {
         return joined.isEmpty ? "?" : joined.uppercased()
     }
 
+    /// R5-A Item 3 — web app-detail-sheet formatDay parity
+    /// ("Aug 27, 2025"); pinned en_US_POSIX so tests stay deterministic.
+    public static func hubDayStamp(_ iso: String?) -> String {
+        guard let date = date(iso) else { return "" }
+        return Self.hubDay.string(from: date)
+    }
+
+    /// R5-A Item 3 — web formatRelative parity ("3h ago" family, app
+    /// detail sheet :83-93): <1m "just now" · <1h "Nm ago" · <24h "Nh ago"
+    /// · <7d "Nd ago" · else the hubDayStamp.
+    public static func hubRelativeStamp(_ iso: String?, now: Date = Date()) -> String {
+        guard let date = date(iso) else { return "" }
+        let minutes = Int(now.timeIntervalSince(date) / 60)
+        if minutes < 1 { return "just now" }
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h ago" }
+        let days = hours / 24
+        if days < 7 { return "\(days)d ago" }
+        return hubDayStamp(iso)
+    }
+
     private static let clock: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
@@ -122,6 +144,12 @@ public enum PulseFormat {
     private static let separator: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
+        return f
+    }()
+    private static let hubDay: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMM d, yyyy"
         return f
     }()
 }

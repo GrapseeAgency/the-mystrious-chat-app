@@ -65,6 +65,7 @@ import androidx.lifecycle.viewModelScope
 import app.pulse.core.fx.PulseFx
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.HubLogDto
+import app.pulse.protocol.HubLogUserDto
 import app.pulse.protocol.HubTaskDto
 import app.pulse.protocol.HubTasksPageDto
 import app.pulse.protocol.LedgerEntryDto
@@ -150,11 +151,25 @@ class HubViewModel @Inject constructor(
         val stale: Boolean = false,
         val error: String? = null,
     )
-
     private val _wallet = MutableStateFlow(WalletUi())
     val wallet: StateFlow<WalletUi> = _wallet.asStateFlow()
 
-    data class AppInstallRow(val appId: String, val installed: Boolean, val installs: Int)
+    /**
+     * R5-B ITEM 3 — the per-app install truth now carries the full GET
+     * /api/hub/apps/[appId]/install payload: installedAt (viewer's own connect
+     * day) + installers (≤6 most-recent REAL connected users) + status.
+     */
+    data class AppInstallRow(
+        val appId: String,
+        val installed: Boolean,
+        val installs: Int,
+        val status: String? = null,
+        val installedAt: String? = null,
+        val installers: List<HubLogUserDto> = emptyList(),
+    )
+
+    /** R5-B ITEM 3 — viewer id for "(you)" marks + the own-row relative stamp. */
+    val viewerId: String? get() = repo.viewerId
 
     private val _installs = MutableStateFlow<Map<String, AppInstallRow>>(emptyMap())
     val installs: StateFlow<Map<String, AppInstallRow>> = _installs.asStateFlow()
@@ -346,7 +361,16 @@ class HubViewModel @Inject constructor(
     fun loadInstallState(appId: String) {
         viewModelScope.launch {
             repo.appInstallState(appId).onSuccess { v ->
-                _installs.value = _installs.value + (appId to AppInstallRow(appId, v.installed, v.installs))
+                _installs.value = _installs.value + (
+                    appId to AppInstallRow(
+                        appId = appId,
+                        installed = v.installed,
+                        installs = v.installs,
+                        status = v.status,
+                        installedAt = v.installedAt,
+                        installers = v.installers,
+                    )
+                    )
             }
         }
     }
@@ -393,7 +417,16 @@ class HubViewModel @Inject constructor(
             val ids = catalog.apps.take(24).map { it.n.toString() }
             val rows = ids.map { id -> async { id to runCatching { repo.appInstallState(id).getOrNull() }.getOrNull() } }.awaitAll()
             val map = rows.mapNotNull { (id, state) ->
-                state?.let { id to AppInstallRow(id, it.installed, it.installs) }
+                state?.let {
+                    id to AppInstallRow(
+                        appId = id,
+                        installed = it.installed,
+                        installs = it.installs,
+                        status = it.status,
+                        installedAt = it.installedAt,
+                        installers = it.installers,
+                    )
+                }
             }.toMap()
             _installs.value = _installs.value + map
         }
@@ -1030,43 +1063,18 @@ private fun AppsSheet(
     }
 
     expanded?.let { app ->
-        val appId = app.n.toString()
-        LaunchedEffect(appId) { vm.loadInstallState(appId) }
-        val installed = installs[appId]?.installed == true
-        ModalBottomSheet(onDismissRequest = { expanded = null }, sheetState = rememberModalBottomSheetState()) {
-            Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(44.dp).clip(CircleShape)
-                            .background(Brush.linearGradient(listOf(PulsePalette.Emerald, Color(0xFF0B3B2C)))),
-                        contentAlignment = Alignment.Center,
-                    ) { Text(app.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text(app.name, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                        Text("${app.category} · ${installs[appId]?.installs ?: 0} connected", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                catalog.taglines[appId]?.let { Text(it, fontSize = 13.sp) }
-                Spacer(Modifier.height(6.dp))
-                Text("Nav: ${app.nav}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Input: ${app.input}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Secret: ${app.secret}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { if (installed) vm.uninstallApp(appId, app.name) else vm.installApp(appId, app.name) },
-                        modifier = Modifier.weight(1f),
-                    ) { Text(if (installed) "Disconnect" else "Install / Connect") }
-                    OutlinedButton(
-                        onClick = { onOpenCommunity(appId, app.name) },
-                        modifier = Modifier.weight(1f),
-                    ) { Text("Community") }
-                }
-                Spacer(Modifier.height(24.dp))
-            }
-        }
+        // R5-B ITEM 3 — the deep app-detail sheet (Overview | Community |
+        // Connectors + installer stack + related rail). Same mutations,
+        // same community handoff; tapping a related app swaps the detail.
+        AppDetailSheet(
+            app = app,
+            catalog = catalog,
+            installs = installs,
+            vm = vm,
+            onDismiss = { expanded = null },
+            onOpenCommunity = onOpenCommunity,
+            onOpenRelated = { relatedApp -> expanded = relatedApp },
+        )
     }
 }
 

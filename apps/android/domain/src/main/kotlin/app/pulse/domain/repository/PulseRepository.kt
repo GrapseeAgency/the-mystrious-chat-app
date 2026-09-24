@@ -24,6 +24,7 @@ import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.SavedItem
 import app.pulse.domain.model.SafetyState
 import app.pulse.domain.model.ScheduledItem
+import app.pulse.domain.model.SendReceipt
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.model.StoryItem
 import app.pulse.domain.model.StoryViewer
@@ -261,7 +262,7 @@ interface PulseRepository {
         parentId: String? = null,
         /** Wave 2 topic filing — dropped on thread replies (spec §1 row 10). */
         topicId: String? = null,
-    ): Result<Message>
+    ): Result<SendReceipt>
     suspend fun markRead(conversationId: String): Result<Unit>
     suspend fun setTyping(conversationId: String, userName: String, typing: Boolean)
     suspend fun react(messageId: String, emoji: String): Result<Unit>
@@ -469,7 +470,8 @@ interface PulseRepository {
     /**
      * Rich TEXT-kind send — carries the incognito flag (group-only server-side)
      * and the sticker/effects payload blob (sticker {emoji,pack} · {effect}).
-     * Optimistic echo + outbox semantics match [sendMessage].
+     * Optimistic echo + outbox semantics match [sendMessage]. Returns the same
+     * [SendReceipt] (message + optional streak bump) as the plain send.
      */
     suspend fun sendRichMessage(
         conversationId: String,
@@ -480,7 +482,7 @@ interface PulseRepository {
         replyToId: String? = null,
         parentId: String? = null,
         topicId: String? = null,
-    ): Result<Message>
+    ): Result<SendReceipt>
 
     // ── Wave 2 messaging depth (spec WAVE2 §0 — all routes exist on the wire) ──
 

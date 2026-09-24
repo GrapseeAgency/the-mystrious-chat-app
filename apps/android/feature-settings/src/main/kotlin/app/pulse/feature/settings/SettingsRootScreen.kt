@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -84,6 +85,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -588,11 +590,123 @@ fun AccessibilitySection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
 @Composable
 fun DataSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val footprint by viewModel.footprint.collectAsStateWithLifecycle()
+    val footprintStats by viewModel.footprintStats.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    LaunchedEffect(Unit) { viewModel.refreshFootprint() }
+    LaunchedEffect(Unit) {
+        viewModel.refreshFootprint()
+        viewModel.refreshFootprintStats()
+    }
     SectionScaffold("Data & Storage", onBack) {
+        // ── R5-B ITEM 4 — "Your footprint" live tiles (web settings-screen.tsx
+        // :1496-1571): messages / photos / voice notes / chats / groups / days
+        // — the same stats route the user page consumes, evaluated for the
+        // VIEWER. Loading skeletons + honest failure with a retry. ──
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.padding(vertical = 8.dp),
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Your footprint", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Live counts straight from the Pulse database.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(
+                        onClick = { viewModel.refreshFootprintStats() },
+                        modifier = Modifier.semantics { contentDescription = "Refresh stats" },
+                    ) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                val fs = footprintStats
+                when {
+                    fs.error != null && fs.stats == null -> Column {
+                        Text(
+                            fs.error ?: "Couldn't load your stats.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        TextButton(onClick = { viewModel.refreshFootprintStats() }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Try again")
+                        }
+                    }
+                    else -> {
+                        val stats = fs.stats
+                        val tiles = listOf(
+                            "Messages sent" to (stats?.messages ?: 0),
+                            "Photos" to (stats?.photos ?: 0),
+                            "Voice notes" to (stats?.voiceNotes ?: 0),
+                            "Chats" to (stats?.chats ?: 0),
+                            "Groups" to (stats?.groups ?: 0),
+                            "Days active" to (stats?.days ?: 0),
+                        )
+                        if (fs.loading && stats == null) {
+                            // loading — 6 skeleton tiles in the same 3-col grid
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                repeat(2) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        repeat(3) {
+                                            Box(
+                                                Modifier
+                                                    .weight(1f)
+                                                    .height(64.dp)
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                tiles.chunked(3).forEach { row ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        row.forEach { (label, value) ->
+                                            Surface(
+                                                Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .semantics { contentDescription = "$label: $value" },
+                                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                            ) {
+                                                Column(Modifier.padding(10.dp)) {
+                                                    Text(
+                                                        if (fs.loading) "…" else value.toString(),
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 16.sp,
+                                                    )
+                                                    Text(
+                                                        label,
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        if (row.size < 3) Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
             shape = RoundedCornerShape(16.dp),

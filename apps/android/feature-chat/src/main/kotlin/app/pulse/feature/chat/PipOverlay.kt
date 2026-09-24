@@ -231,8 +231,8 @@ class PipOverlayViewModel @Inject constructor(
     fun sendFromPane(conversationId: String, body: String, onResult: (PipSendResult) -> Unit) {
         viewModelScope.launch {
             sendUseCase(conversationId, body)
-                .onSuccess { message ->
-                    if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
+                .onSuccess { receipt ->
+                    if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         onResult(PipSendResult.Queued)
                     } else {
                         onResult(PipSendResult.Delivered)

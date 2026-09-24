@@ -271,6 +271,8 @@ private struct RoomContent: View {
     @State private var locationOpen = false
     @State private var themeOpen = false
     @State private var phrasesOpen = false
+    // R5-A Item 1 — composer emoji picker (draft-only; stickers send instantly).
+    @State private var emojiPickerOpen = false
 
     /// F-CH-04 — broadcast composer lock: broadcastMode on + the viewer is
     /// NOT an admin (server 403s the post; the web hides the composer too).
@@ -555,6 +557,16 @@ private struct RoomContent: View {
             StickerPickerSheet { emoji, pack in
                 viewModel.sendSticker(emoji: emoji, pack: pack, session: session)
             }
+        }
+        // R5-A Item 1 — emoji picker (web chat-room.tsx:5385-5412 parity):
+        // tap APPENDS to the draft (web setInput(prev => prev + emoji)) and
+        // the focus hand-back on dismiss keeps the keyboard up (web
+        // requestAnimationFrame(textareaRef.focus) parity).
+        .sheet(isPresented: $emojiPickerOpen) {
+            EmojiPickerSheet { emoji in
+                viewModel.draft = viewModel.draft + emoji
+            }
+            .onDisappear { composerFocused = true }
         }
         .sheet(isPresented: $whoReactedOpen) {
             if let target = whoReactedMessage {
@@ -1085,6 +1097,33 @@ private struct RoomContent: View {
     // still lands where the finger went down.
     private var composer: some View {
         VStack(spacing: 0) {
+            // R5-A Item 6 — the scheduled chip above the composer (web
+            // chat-room.tsx:4726-4744): "{next} · {count} pending — tap to
+            // manage", tap opens the manager sheet (the dead manager entry
+            // point now has a real affordance too).
+            if let chipText = viewModel.scheduledChipText {
+                Button {
+                    PulseHaptics.tap()
+                    scheduledManagerOpen = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar.badge.clock")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(chipText)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                            .multilineTextAlignment(.leading)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(PulseTheme.amber.opacity(0.10))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(PulseTheme.amber)
+                .accessibilityLabel("Scheduled sends: \(chipText)")
+            }
             if micDenied {
                 deniedNotice(
                     "Microphone access is off — voice notes need it. Hold-to-record unlocks once it's on.",
@@ -1159,6 +1198,21 @@ private struct RoomContent: View {
                     .focused($composerFocused)
                     .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
                     .disabled(viewModel.staged != nil)
+
+                    // R5-A Item 1 — Smile button (web composer row parity: the
+                    // emoji popover sits between the input and the mic/send).
+                    Button {
+                        PulseHaptics.tap()
+                        emojiPickerOpen = true
+                    } label: {
+                        Image(systemName: "face.smiling")
+                            .font(.system(size: 22))
+                            .foregroundStyle(Color.secondary)
+                            .frame(width: 30, height: 42)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Insert emoji")
                 }
 
                 voiceSendSlot
@@ -2251,9 +2305,25 @@ final class RoomViewModel: ObservableObject {
     @Published private(set) var uploading = false
 
     // ── REM-B — scheduled / slow-mode / incognito / slash ──
-    /// F-MS-18 — the viewer's pending scheduled rows for THIS room (count
+    /// F-MS-18 — the viewer's pending scheduled rows for THIS room (the list
     /// feeds the composer banner chip; the manager sheet lists details).
-    @Published private(set) var scheduledCount = 0
+    /// R5-A Item 6 — the chip now also surfaces the SOONEST non-cancelled
+    /// row's relative stamp (web scheduledChip parity), so the full list
+    /// replaces the bare count.
+    @Published private(set) var scheduledItems: [WireScheduledItem] = []
+    /// F-MS-18 — pending-row count for the chip (R5-A: derived from the list).
+    var scheduledCount: Int { scheduledItems.count }
+    /// R5-A Item 6 — web scheduledChip parity: "{next} · {count} pending —
+    /// tap to manage" where next = the soonest non-cancelled row's stamp
+    /// (web formatListStamp(items[0]); the API sorts pending soonest-first).
+    var scheduledChipText: String? {
+        guard !scheduledItems.isEmpty else { return nil }
+        let next = PulseFormat.listStamp(PulseScheduledChip.nextIso(in: scheduledItems))
+        if next.isEmpty {
+            return "\(scheduledCount) pending — tap to manage"
+        }
+        return "\(next) · \(scheduledCount) pending — tap to manage"
+    }
     /// F-MS-20 — slow-mode lockout: after a 429 the composer refuses sends
     /// until the server-suggested window elapses (countdown chip in the UI).
     @Published private(set) var slowModeLockUntil: Date?
@@ -2321,11 +2391,11 @@ final class RoomViewModel: ObservableObject {
         (slowModeLockUntil ?? .distantPast) > Date()
     }
 
-    /// F-MS-18 — scheduled-row count refresh (open + after arming/cancelling).
+    /// F-MS-18 — scheduled-row refresh (open + after arming/cancelling).
     func loadScheduled(session: PulseSession) {
         Task { [weak self] in
             guard let self else { return }
-            self.scheduledCount = (try? await session.api.scheduledMessages(conversationId: conversationId))?.count ?? 0
+            self.scheduledItems = (try? await session.api.scheduledMessages(conversationId: conversationId)) ?? []
         }
     }
 
@@ -2823,15 +2893,26 @@ final class RoomViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let message = try await session.api.sendMessage(
+                let result = try await session.api.sendMessageWithStreak(
                     conversationId: conversationId,
                     content: body,
                     replyToId: replyId,
                     topicId: activeTopicId,
                     anon: anonAlias != nil,
                 )
-                self.swapTemp(temp.id, for: message, session: session)
+                self.swapTemp(temp.id, for: result.message, session: session)
                 self.clearDraft(session: session)
+                // R5-A Item 5 — streak nudge (web chat-room.tsx:1736-1751):
+                // fires ONLY when THIS send GREW the streak (second-or-later
+                // consecutive day). Same-day re-sends carry no streak sibling
+                // and restarts carry continued=false — both stay silent here,
+                // mirrored from PulseStreakVerdict.
+                if let line = PulseStreakVerdict.toastLine(
+                    count: result.streak?.count,
+                    continued: result.streak?.continued,
+                ) {
+                    session.toasts.show(line)
+                }
                 session.particles.fire(kind: .burst, count: 22)
                 session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
                 // Wave 2 topics — own send bumps Topic.lastMessageAt server-side.
@@ -2840,7 +2921,7 @@ final class RoomViewModel: ObservableObject {
                 // client triggers /unfurl once, fire-and-forget, ignoring the
                 // result (nil is valid = nothing link-ish / host unreachable).
                 if UnfurlTrigger.matches(body) {
-                    self.triggerUnfurl(for: message, viewerId: viewer.id, session: session)
+                    self.triggerUnfurl(for: result.message, viewerId: viewer.id, session: session)
                 }
             } catch {
                 // REM-B F-MS-20 — slow mode: 429 + retryAfter arms the
@@ -3034,9 +3115,11 @@ final class RoomViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                _ = try await session.api.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
+                // R5-A Item 6 — the returned row joins the cached list (no
+                // refetch) so the chip count + next-dispatch stamp update.
+                let item = try await session.api.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
                 self.draft = ""
-                self.scheduledCount += 1
+                self.scheduledItems.append(item)
                 try? session.store?.deleteDraft(conversationId: conversationId)
                 PulseHaptics.success()
                 session.toasts.show("Scheduled — \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")

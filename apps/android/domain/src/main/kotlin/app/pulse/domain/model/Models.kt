@@ -304,6 +304,27 @@ data class UserStats(
     val lastSeenIso: String? = null,
 )
 
+/**
+ * R5-B — the conversation-streak state AFTER a send (server `streak` field,
+ * messages/route.ts:678-706). `continued` mirrors the server's `lastDay ==
+ * yesterdayUTC` growth check; a restart lands continued=false, count=1.
+ */
+data class StreakSnapshot(
+    val count: Int = 0,
+    val best: Int = 0,
+    val continued: Boolean = false,
+)
+
+/**
+ * R5-B — receipt of a DELIVERED send: the real row PLUS the streak bump the
+ * server attached (null when the send didn't change today's streak —
+ * same-day re-sends). The room fires the web-verbatim nudge from it.
+ */
+data class SendReceipt(
+    val message: Message,
+    val streak: StreakSnapshot? = null,
+)
+
 /** Safety-number pair state (GET /api/users/{id}/safety?userId=). */
 data class SafetyState(
     val peerId: String,
