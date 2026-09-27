@@ -113,7 +113,7 @@ function BootGate() {
       {status !== 'checking' ? (
         <PhoneFrame>
           {status === 'onboarding' ? <OnboardingScreen /> : user ? <MainShell me={user} /> : null}
-          {/* TEMP QA MOUNT (R27-a) — removed after E2E */}
+          {/* hash-routed user pages (#/u/…) mount beside the shell */}
           <UserRoutePage />
         </PhoneFrame>
       ) : null}

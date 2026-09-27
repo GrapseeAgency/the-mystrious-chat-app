@@ -580,6 +580,40 @@ private struct RoomContent: View {
                     .accessibilityLabel("Start group video call in \(groupCallTitle)")
                 }
             }
+            // R9 — 1:1 dial entry (web chat-room.tsx :3988-4012 parity: the DM
+            // room header carries voice + video dials). The engine owns every
+            // gate (idle check, group-call exclusion, offline toast, mic/
+            // camera permission asks) — the room only hands it the peer, the
+            // same contract the group buttons above use for the mesh engine.
+            if !conversation.isGroup, let engine = session.callEngine, let partner = dmPartner {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        PulseHaptics.tap()
+                        engine.startOutgoing(
+                            to: CallPeer(id: partner.id, name: partner.name, color: partner.color, avatar: partner.avatar),
+                            conversationId: conversation.id
+                        )
+                    } label: {
+                        Image(systemName: "phone")
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("Start voice call with \(partner.name)")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        PulseHaptics.tap()
+                        engine.startOutgoing(
+                            to: CallPeer(id: partner.id, name: partner.name, color: partner.color, avatar: partner.avatar),
+                            conversationId: conversation.id,
+                            kind: .video
+                        )
+                    } label: {
+                        Image(systemName: "video")
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("Start video call with \(partner.name)")
+                }
+            }
             // Wave 7 F-RO-09 — room leaderboard (web group-info-sheet parity).
             if conversation.isGroup {
                 ToolbarItem(placement: .topBarTrailing) {

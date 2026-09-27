@@ -51,6 +51,12 @@ class PulseApplication : Application() {
         // OFF with empty credentials), then the honest notification channels.
         app.pulse.android.push.PulsePush.init(this)
         app.pulse.android.push.PulsePush.ensureChannels(this)
+        // R9 — the Settings → Notifications "Remote push" row re-runs the FCM
+        // registration sync through this domain seam (feature-settings cannot
+        // see :app where PulsePush lives).
+        app.pulse.domain.push.PulsePushStatus.resyncHook = {
+            app.pulse.android.push.PulsePush.syncRegistration(repository)
+        }
 
         // R8 Task 3-c — Telecom self-managed PhoneAccount registration at app
         // start (idempotent; a refusal is logged and the call paths fall back

@@ -9,6 +9,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.domain.push.PulsePushStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,6 +45,22 @@ object PulsePush {
     @Volatile
     var token: String? = null
 
+    /**
+     * R9 — publish the honest device state for the Settings → Notifications
+     * "Remote push" row. Called at every state transition below; never faked
+     * (an unarmed build publishes armed=false, period).
+     */
+    private fun publishStatus(viewerBound: Boolean) {
+        PulsePushStatus.publish(
+            PulsePushStatus.Snapshot(
+                armed = armed,
+                hasToken = !token.isNullOrBlank(),
+                viewerBound = viewerBound,
+                checkedAtMs = System.currentTimeMillis(),
+            ),
+        )
+    }
+
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -55,6 +72,7 @@ object PulsePush {
         if (FirebaseApp.getApps(context).isNotEmpty()) {
             armed = true
             Log.i(TAG, "Firebase already initialized — push armed")
+            publishStatus(viewerBound = false)
             return
         }
         val res = context.resources
@@ -71,6 +89,7 @@ object PulsePush {
                 "Remote push DISABLED — pulse_fcm_* credentials are empty " +
                     "(fail-closed: no google-services config shipped)",
             )
+            publishStatus(viewerBound = false)
             return
         }
         runCatching {
@@ -83,8 +102,10 @@ object PulsePush {
             FirebaseApp.initializeApp(context, options)
             armed = true
             Log.i(TAG, "Firebase initialized from baked credentials — push armed")
+            publishStatus(viewerBound = false)
         }.onFailure {
             Log.w(TAG, "Firebase init failed — push stays disabled (honest)", it)
+            publishStatus(viewerBound = false)
         }
     }
 
@@ -114,8 +135,13 @@ object PulsePush {
      * identity exists.
      */
     fun syncRegistration(repository: PulseRepository) {
-        if (!armed) return
-        val viewer = repository.viewerId ?: return
+        if (!armed) {
+            publishStatus(viewerBound = false)
+            return
+        }
+        val viewer = repository.viewerId
+        publishStatus(viewerBound = viewer != null)
+        if (viewer == null) return
         val tokenNow = token
         if (tokenNow != null) {
             register(repository, viewer, tokenNow)
@@ -128,6 +154,7 @@ object PulsePush {
                     if (task.isSuccessful && !fetched.isNullOrBlank()) {
                         token = fetched
                         register(repository, viewer, fetched)
+                        publishStatus(viewerBound = true)
                     } else {
                         Log.w(TAG, "token fetch failed: ${task.exception?.message}")
                     }
@@ -139,6 +166,7 @@ object PulsePush {
     fun onNewToken(repository: PulseRepository, fresh: String) {
         token = fresh
         val viewer = repository.viewerId
+        publishStatus(viewerBound = viewer != null)
         if (!armed || viewer == null) {
             Log.i(TAG, "token stored pending identity (armed=$armed, viewer=${viewer != null})")
             return
@@ -165,6 +193,7 @@ object PulsePush {
     fun signOut(repository: PulseRepository) {
         val stored = token
         token = null
+        publishStatus(viewerBound = false)
         if (!armed || stored.isNullOrBlank()) {
             Log.i(
                 TAG,

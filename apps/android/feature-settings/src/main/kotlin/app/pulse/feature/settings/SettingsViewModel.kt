@@ -69,6 +69,26 @@ class SettingsViewModel @Inject constructor(
     val hapticsOn: StateFlow<Boolean> = prefs.hapticsOn
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    // ── remote push status (R9 — honest device state, mirrors the iOS row) ──
+    // Device state, not a preference: :app publishes snapshots into the domain
+    // holder at every push-wiring transition (init / sync / new-token /
+    // sign-out). An unarmed build reports Off — nothing is faked.
+
+    private val _pushStatus = MutableStateFlow(app.pulse.domain.push.PulsePushStatus.snapshot())
+
+    val pushStatus: StateFlow<app.pulse.domain.push.PulsePushStatus.Snapshot> = _pushStatus.asStateFlow()
+
+    /** Re-read the device snapshot (cheap — settings screen entry + back). */
+    fun refreshPushStatus() {
+        _pushStatus.value = app.pulse.domain.push.PulsePushStatus.snapshot()
+    }
+
+    /** Re-run the FCM registration sync via the :app hook, then re-read. */
+    fun resyncPush() {
+        app.pulse.domain.push.PulsePushStatus.requestResync()
+        _pushStatus.value = app.pulse.domain.push.PulsePushStatus.snapshot()
+    }
+
     val quietHoursOn: StateFlow<Boolean> = prefs.quietHoursOn
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 

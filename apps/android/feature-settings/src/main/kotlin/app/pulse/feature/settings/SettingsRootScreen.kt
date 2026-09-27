@@ -585,6 +585,10 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
     val quietStart by viewModel.quietStart.collectAsStateWithLifecycle()
     val quietEnd by viewModel.quietEnd.collectAsStateWithLifecycle()
     val quietNow = viewModel.isQuietNow()
+    val pushStatus by viewModel.pushStatus.collectAsStateWithLifecycle()
+    // re-read the device snapshot on every section entry (cheap; the snapshot
+    // only changes when the :app push wiring itself transitions)
+    LaunchedEffect(Unit) { viewModel.refreshPushStatus() }
     SectionScaffold("Notifications", onBack) {
         RowToggle("Show message previews", "Message text in notification-style toasts.", prefs.notifPreviews == true, viewModel::setNotifPreviews)
         RowToggle("Play a soft pop", "Incoming message sound.", prefs.notifSound == true, viewModel::setNotifSound)
@@ -602,7 +606,53 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
                 color = if (quietNow) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        // R9 — honest device state (web parity: settings-screen.tsx Remote-push
+        // toggle row; iOS parity: SettingsView status row). Device state, not a
+        // preference — an unarmed build says Off instead of pretending.
+        RemotePushStatusRow(pushStatus, onResync = { viewModel.resyncPush() })
         Spacer(Modifier.height(20.dp))
+    }
+}
+
+@Composable
+private fun RemotePushStatusRow(
+    status: app.pulse.domain.push.PulsePushStatus.Snapshot,
+    onResync: () -> Unit,
+) {
+    val (badge, note, on) = when {
+        !status.armed -> Triple("Off", "This build carries no push credentials — delivery stays disabled.", false)
+        !status.hasToken -> Triple("Armed", "Credentials present — the device registers on the next sign-in.", false)
+        !status.viewerBound -> Triple("Token ready", "Waiting for sign-in to bind push to your account.", false)
+        else -> Triple("On", "This device is registered for push delivery.", true)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Remote push", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+            Text(note, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(
+            badge,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (on) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (status.armed) {
+            Text(
+                "Re-check",
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = PulsePalette.Emerald,
+                modifier = Modifier
+                    .padding(start = 12.dp)
+                    .clickable(onClick = onResync),
+            )
+        }
     }
 }
 

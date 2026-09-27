@@ -103,7 +103,15 @@ export function MainShell({ me }: { me: AppUser }) {
   const [navStyle] = useNavStyle()
   const navZone = zoneFor(navStyle)
   const [uiTheme] = useUiTheme()
-  const [openConversationId, setOpenConversationId] = useState<string | null>(null)
+  const [openConversationId, setOpenConversationId] = useState<string | null>(() => {
+    // R9 — push tap-through: a notificationclick that found NO live Pulse tab
+    // opens a fresh window on /?conversation=<id> (sw-push.js). Lifting the
+    // param straight into the initial open-room state means the room mounts
+    // with the shell — no setState-in-effect anywhere on this path.
+    if (typeof window === 'undefined') return null
+    const deepLink = new URLSearchParams(window.location.search).get('conversation')?.trim() ?? ''
+    return deepLink.length > 0 && deepLink.length <= 64 ? deepLink : null
+  })
   /** frozen pre-open read watermark for the open conversation (unread divider) */
   const [openConversationAnchorMs, setOpenConversationAnchorMs] = useState<number | null>(null)
   /** message to scroll-to + flash once the room's history is rendered (global-search hit) */
@@ -161,6 +169,34 @@ export function MainShell({ me }: { me: AppUser }) {
     const code = new URLSearchParams(window.location.search).get('join')?.trim().toUpperCase() ?? ''
     return code.length > 0 ? code.slice(0, 16) : null
   })
+  // R9 — push tap-through (focused-tab path): notificationclick focuses THIS
+  // tab and posts { type:'pulse:open-conversation', conversationId } — route
+  // it into the same open-room flow from inside the event callback (never
+  // the effect body). No service worker controlling the page → no-op.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+    const onSwPushTap = (event: MessageEvent) => {
+      const data = event.data as { type?: string; conversationId?: unknown } | null
+      if (data?.type !== 'pulse:open-conversation') return
+      const id = typeof data.conversationId === 'string' ? data.conversationId.trim() : ''
+      if (id.length === 0 || id.length > 64) return
+      setOpenConversationAnchorMs(null)
+      setJumpMessageId(null)
+      setOpenConversationId(id)
+    }
+    navigator.serviceWorker.addEventListener('message', onSwPushTap)
+    return () => navigator.serviceWorker.removeEventListener('message', onSwPushTap)
+  }, [])
+
+  // R9 — strip ?conversation= once captured into open-room state (mount-only
+  // history edit, no setState — a refresh after this never re-opens the room)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has('conversation')) return
+    params.delete('conversation')
+    const rest = params.toString()
+    window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''))
+  }, [])
 
   // strip ?join= from the URL once the sheet is up (history-only side
   // effect — no setState here, so refresh never re-prompts)
