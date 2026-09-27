@@ -3706,3 +3706,38 @@ Stage Summary:
 - Web tap-through: FIXED + browser-verified end-to-end (both paths).
 - Android push row + iOS DM dial: code-complete, awaiting compile gates (SDK re-provisioning).
 - Audit verdict corrected for the record: every software-portable web feature family now has a verified wired chain on BOTH natives; the only R8 residue claim (transcription strips) was already closed in R8 code.
+---
+Task ID: R9-CLOSE
+Agent: orchestrator (Z.ai Code)
+Task: fifth parity re-audit closed + R9 fixes committed/pushed + FINAL DEVICE AUDIT (user-mandated position: at the very end).
+
+Work Log:
+- Fixed the typo from the interim entry ("SANDBOX WIKE" → sandbox WIPE) for the record; content unchanged.
+- Commit 055c102 pushed to GitHub main (288d136..055c102, fast-forward). Verified: git ls-remote main == 055c102; fresh clone (github.com/GrapseeAgency/the-mystrious-chat-app) tree hash 6f9bfaae1c8341e5535a4aea7cc44a3dc1dee93f == local HEAD^{tree} 6f9bfaae1c8341e5535a4aea7cc44a3dc1dee93f — byte-identical, 1379 tracked files, zero loss, one-command restore.
+- Final smoke after everything: 3000=200, 3003=200, /api/push/vapid-public=200; web lint clean.
+- Sandbox toolchain note for future waves: JDK21 full tarball re-provisioned at /home/z/jdk-21 (Adoptium); Android SDK re-provisioned at /home/z/android-sdk (cmdline-tools 11076708 + platforms;android-35 + build-tools;35.0.0) with local.properties written; backgrounded processes GET REAPED by this sandbox — run long Gradle tasks in FOREGROUND with timeout; daemon OOM fix: -Dorg.gradle.jvmargs="-Xmx1100m -XX:+UseSerialGC".
+- Review cron replaced: jobs 418693/411400 (both disabled by exec limits) deleted; new pulse-dev-review-15min-r9 created (job 419285, fixed_rate 900s, webDevReview).
+
+DEVICE AUDIT — FINAL (evidence-pinned; updates the R8 audit: the three ❌ rows are now addressed in code and compile-gated)
+
+1. REMOTE PUSH — was ❌ MISSING ON ALL 3 → now implemented everywhere, arms on credentials:
+   • Web: LIVE end-to-end. VAPID keys in git-ignored .env.local; public/sw-push.js (push render + pushsubscriptionchange + notificationclick whose tap-through NOW WORKS — R9: main-shell.tsx SW-message listener + /?conversation= deep link, browser-verified both paths via agent-browser); /api/push/register + /api/push/vapid-public (200); src/lib/push/transport.ts fanout (online-suppression via :3003 /online, per-receiver notifPreviews + mute gates, dead-endpoint pruning — R8 verified incl. real FCM 410); message-send hook; Settings toggle.
+   • Android: code-complete + compile-gated (618/618 today). PulsePush fail-closed (FirebaseApp only when pulse_fcm_* strings baked), PulseMessagingService in manifest (MESSAGING_EVENT), token→POST /api/push/register, sign-out unregisters (forgetViewer + invalidated-token collector). NEW R9: Settings → Notifications "Remote push" row — honest Off/Armed/Token ready/On + Re-check (domain PulsePushStatus + resyncHook).
+   • iOS: code-complete. @UIApplicationDelegateAdaptor → didRegister → noteDeviceToken → registerCurrentToken → /api/push/register; activate() per identity start, deactivate() on sign-out (PulseSession.stop); UIBackgroundModes [remote-notification, voip] (project.yml:49); Settings row; tap routing PulseReminderNotifications.
+   • Server: FCM HTTP v1 + APNs ES256 (p8) fail-closed transports on PULSE_FCM_* / PULSE_APNS_* env.
+   • EXTERNAL (cannot be coded here, honest): real delivery needs Firebase console creds + Apple p8 key + aps-environment entitlement on signed builds + device with Play services. Code cannot mint credentials.
+2. OS CALL INTEGRATION — was ❌ ABSENT (foreground in-app ring only) → now OS-level:
+   • Android: TelecomRegistrar self-managed PhoneAccount at app start (PulseApplication:61-66); PulseConnectionService (incoming/outgoing connections); TelecomCallController fallback ring notifier in EVERY refusal path + cancelFallbackRing; fullScreenIntent CallRingNotifier; manifest MANAGE_OWN_CALLS + BIND_TELECOM_CONNECTION_SERVICE + USE_FULL_SCREEN_INTENT. Compile-gated today.
+   • iOS: PulseCallKitProvider — CXProvider/CXCallController, reportNewIncomingCall driven by engine state changes (PulseSession:339 attach → engineStateChanged :125/:232), actions wired back to engines (:312-343), double-ring suppression (ownsIncomingPresentation consumed by CallView:31-33, lifts on refusal :236-243); PulseVoIPRegistry (PKPushRegistry, :454+) armed, dormant until server VoIP transport exists. Compile-gated by GitHub CI (no Xcode here).
+   • EXTERNAL: system ring UI/audio-session behavior + OEM Telecom policies need real-device soak (code-verified only).
+3. GROUP CALLS — was ❌ MISSING EVERYWHERE → now on all 3 platforms, live signaling:
+   • Contract: socket gcall:* mesh (join/state/offer/answer/ice/leave/ended/full), deterministic lower-id-offers, join-ordered roster, 8-cap, per-conversation+user exclusivity, disconnect cleanup; gcall:ring relay; /gcall + /online probes; ended delivered via user-room snapshots.
+   • Web: GroupCallOverlay + useGroupCallSession at shell level (main-shell), group header voice/video buttons, ring/ongoing banners, 20s probe. RE-VERIFIED TODAY: contract E2E 16/16 + Caddy gateway-path E2E 3/3.
+   • Android: ChatRoomScreen:789/792 → MainActivity:882 → GroupCallViewModel:40 → GroupCallEngine:271 → PulseSocketClient:415-437; overlay + banner at :1127/:1133; GroupCallDtos mesh kernels (:189/:204/:221, MAX=8). JVM green.
+   • iOS: ChatRoomView:561-580 → engine.startCall → gcall:join :363 + starter-only ring POST :378; listeners socket:244-249 → session :535-538 → engine :511-605; PulseGroupCallPolicy (shouldOffer:51, rosterPlan:74); GroupCallView mounted RootView:221/:227; 22-assertion XCTest in CI.
+4. Device surfaces unchanged from the R8 evidence-pinned inventory (all implemented, per-platform): camera (natives ahead of web), mic, location, haptics, media recording, FLAG_SECURE (Android) vs in-app veil (iOS honest limit), KeyStore/Keychain/sessionStorage, background execution (WorkManager+BootReceiver+FG services / BGTask+NWPathMonitor / SW heal), local reminder notifications + channels, pulse:// deep links, permissions inventory.
+5. Real-device QA list (unchanged + push/call interplay): CallKit/Telecom presentation while backgrounded once push armed, WebRTC 1:1 + mesh audio/video soak on ≥2 devices, iOS link-tap vs swipe-reply/contextMenu, Android swipe vs OEM edge gestures, OEM notification channels, glass-accent light mode, rail popover.
+
+Stage Summary:
+- The quoted line is now defensible with evidence: every software-runnable web feature family has a grep-verified WIRED chain on both natives (zero dead code, zero missing families — fifth independent audit); the three device-audit ❌ rows are implemented and compile-gated; remaining gaps are strictly external (console credentials, signed builds) or real-device soak — none writable from this sandbox.
+- Push integrity: remote main 055c102, fresh-clone tree-hash identical, nothing lost.
