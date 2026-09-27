@@ -3612,3 +3612,24 @@ Stage Summary:
 - iOS now has all three R8 device gaps closed in code, mirroring the frozen contracts: APNs push client (authorization → registration → hex token → POST /api/push/register platform 'ios', tap routing through the existing reminder-delegate deep-link bridge, honest status surfaced in Settings), OS call integration (CallKit CXProvider/CXCallController driving the existing 1:1 engine AND the mesh group engine, PushKit path present and armed only at the VoIP-push branch), and mesh group calls (web-verbatim lower-lex-id offers, per-peer ICE queues, shared-track mesh media, roster/probe/ring/banner parity, group room dial buttons).
 - Honest credential-gated gaps: (1) APNs DELIVERY is UNVERIFIABLE here — needs the aps-environment entitlement + a signed build + Apple developer console setup + the server's PULSE_APNS_* env (R8-web's transport is fail-closed without them); simulator/unsigned builds surface the honest didFail registration error and the Settings row shows the failure verbatim — no fake state anywhere. (2) PushKit VoIP delivery additionally needs the voips entitlement + a server VoIP transport that does NOT exist yet (the alert path is the live one); the VoIP token is deliberately NOT posted to /api/push/register (it would poison the alert registry) and the report-a-call branch runs only when a real VoIP push arrives (Apple policy). (3) CallKit presentation/audio-session/system mute-hold interplay is CODE-VERIFIED ONLY — CI compiles it, only a physical handset can soak it (same gate as the 1:1 engine and Android Telecom). (4) In-app mute does not push a CXCallAction update into the system UI (reportUpdatedMute left out — device-soak item). (5) Web↔iOS group-call interop was not exercised live (needs ≥2 simultaneous clients on real hardware) — the wire payloads are pinned against the relay contract by tests.
 - Nothing outside apps/ios/** touched; nothing committed (orchestrator commits). Services untouched: gateway 3000, :3003, /api/group-call-state, /api/push/* remain the R8-web deployment.
+
+---
+Task ID: R8-CLOSE
+Agent: orchestrator (Z.ai Code)
+Task: close the three device gaps end-to-end, re-audit parity with grep-verified call chains, device audit at the very end.
+
+Work Log:
+- Web group calls + push + transport implemented and E2E-verified (16/16 socket contract, 3/3 through the Caddy gateway path after the gate fix).
+- Android (3-c): FCM fail-closed client + Telecom self-managed ConnectionService + GroupCallEngine/Overlay; gates: :app:compileDebugKotlin green, JVM 436/436 (20 new GroupCallMeshTest cases). Telecom fallback ring notifier wired in every refusal path.
+- iOS (3-d): PulseCallKitProvider (CXProvider/CXCallController + PushKit path, no-double-ring suppression), PulsePushNotifications (UNUserNotificationCenter + token→/api/push/register + deep links, delegate attached via @UIApplicationDelegateAdaptor), PulseGroupCallEngine/GroupCallView/PulseGroupCallPolicy + 22-assertion XCTest; project.yml globs verified, UIBackgroundModes added.
+- Audit (5-a/5-b/5-c, read-only): web push chain PASS; Android 4/4 chains PASS + zero missing families; iOS 4/4 chains PASS + glob coverage confirmed. CRITICAL catch: web pulse-realtime-provider gates admitted only 'call:' — every gcall:* was dropped browser-side; fixed both gates, gateway-path E2E green.
+- Privacy fix (5-d): unregisterPushToken wired into real sign-out paths on both natives (Android forgetViewer + invalidated-token collector; iOS PulseSession.stop → deactivate()); Android recompile green (JDK21+SDK re-provisioned by the agent after sandbox wipe).
+- Fixed undeliverable gcall:ended (member snapshot passed to dropGroupCall → user-room copies).
+- Push integrity: amended 5c3baaf proven a strict superset of the pushed f15324d (worklog diff pure additions); force-push + fresh-clone byte-identical (a6d537b, 1377 files); follow-up commit efd0567 pushed.
+
+Stage Summary:
+- Remote push: LIVE on web (VAPID in git-ignored .env.local, sw-push.js, settings toggle, fanout with online-suppression + per-receiver notifPreviews + mute + pruning — verified end-to-end incl. real FCM 410 prune). Android/iOS: full client + server transport code, arms purely on credentials.
+- OS calls: Telecom + CallKit implemented and compile-gated; system-UI behavior needs device QA (honest).
+- Group calls: web+Android+iOS mesh (lower-id-offers, 8-cap) over live signaling; web path verified browser-equivalent.
+- Remaining honestly-portable-only: voice-note transcription strips (API exists; natives call the voice-room captions engine, not the per-message transcribe endpoint).
+- Web-idiom (by design, not gaps): ⌘K hotkey, hash-router sub-pages, PWA install/offline shell, WebGL ambient modes, multi-window.
