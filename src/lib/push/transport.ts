@@ -54,7 +54,10 @@ async function webPushSender(): Promise<typeof import('web-push') | null> {
       webPushConfigured = false
       return null
     }
-    const lib = (await import('web-push')).default as unknown as typeof import('web-push')
+    // Bundler interop: web-push is CJS — `.default` may be undefined under
+    // webpack/turbopack; fall back to the namespace itself.
+    const mod = await import('web-push')
+    const lib = ((mod as { default?: typeof mod }).default ?? mod) as typeof import('web-push')
     lib.setVapidDetails(
       process.env.VAPID_SUBJECT || 'mailto:push@pulse.chat',
       publicKey,
@@ -63,7 +66,11 @@ async function webPushSender(): Promise<typeof import('web-push') | null> {
     webPushLib = lib
     webPushConfigured = true
     return lib
-  } catch {
+  } catch (err) {
+    console.warn(
+      '[push] web: sender init failed (fail-closed):',
+      err instanceof Error ? err.message : err,
+    )
     return null
   }
 }
@@ -210,10 +217,21 @@ type SendResult = { ok: boolean; pruneToken: boolean; skipped?: boolean }
 async function sendWeb(token: string, payload: PushPayload): Promise<SendResult> {
   const lib = await webPushSender()
   if (!lib) return { ok: false, pruneToken: false, skipped: true }
+  // Registry stores the FULL PushSubscription JSON (endpoint + keys.p256dh/auth).
+  // Payload encryption needs the keys; a keys-less row still gets a payload-less
+  // notification (the service worker renders a default message — never silent).
+  let subscription: { endpoint?: string; keys?: Record<string, string> } | null = null
   try {
-    await lib.sendNotification(
-      token,
-      JSON.stringify({
+    const parsed = JSON.parse(token) as { endpoint?: string; keys?: Record<string, string> }
+    if (parsed && typeof parsed.endpoint === 'string') subscription = parsed
+  } catch {
+    subscription = null
+  }
+  if (!subscription) subscription = { endpoint: token }
+  if (!subscription.endpoint) return { ok: false, pruneToken: true }
+  const hasKeys = Boolean(subscription.keys?.p256dh && subscription.keys?.auth)
+  const body = hasKeys
+    ? JSON.stringify({
         kind: payload.kind,
         title: payload.title,
         body: payload.body,
@@ -221,13 +239,21 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
         messageId: payload.messageId ?? null,
         callKind: payload.callKind ?? null,
         callerName: payload.callerName ?? null,
-      }),
-      { TTL: 3600, urgency: payload.kind === 'message' ? 'normal' : 'high' },
-    )
+      })
+    : undefined
+  try {
+    await lib.sendNotification(subscription as { endpoint: string; keys?: Record<string, string> }, body, {
+      TTL: 3600,
+      urgency: payload.kind === 'message' ? 'normal' : 'high',
+    })
     return { ok: true, pruneToken: false }
   } catch (err) {
     const statusCode = (err as { statusCode?: number }).statusCode
     const prune = statusCode === 404 || statusCode === 410
+    console.warn(
+      `[push] web: delivery failed status=${statusCode ?? 'none'} prune=${prune}:`,
+      err instanceof Error ? err.message.slice(0, 120) : err,
+    )
     return { ok: false, pruneToken: prune }
   }
 }

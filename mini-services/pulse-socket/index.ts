@@ -670,18 +670,26 @@ function broadcastGcallState(conversationId: string): void {
 }
 
 /** Tear down the whole group call (host left or last member departed). */
-function dropGroupCall(conversationId: string, reason: string): void {
+function dropGroupCall(
+  conversationId: string,
+  reason: string,
+  notifyUserIds: Iterable<string> = [],
+): void {
   const call = groupCalls.get(conversationId)
   if (!call) return
   for (const userId of call.members.keys()) {
     if (groupCallByUser.get(userId) === conversationId) groupCallByUser.delete(userId)
   }
   groupCalls.delete(conversationId)
-  io.to(gcallRoomName(conversationId)).emit('gcall:ended', {
-    conversationId,
-    callId: call.callId,
-    reason,
-  })
+  const payload = { conversationId, callId: call.callId, reason }
+  // Room broadcast + per-member user rooms: the departing last member has
+  // already left the socket room AND the roster by the time this runs, so the
+  // user-room copies (from the caller's member snapshot) are the ONLY
+  // guaranteed delivery — without them `gcall:ended` is undeliverable.
+  io.to(gcallRoomName(conversationId)).emit('gcall:ended', payload)
+  for (const userId of new Set(notifyUserIds)) {
+    io.to(roomOf(userId)).emit('gcall:ended', payload)
+  }
   console.log(`[gcall] drop conv=${conversationId} members=${call.members.size} reason=${reason}`)
 }
 
@@ -694,10 +702,13 @@ function leaveGroupCall(userId: string, reason: string): void {
     groupCallByUser.delete(userId)
     return
   }
+  // Snapshot BEFORE mutation — dropGroupCall needs everyone who was in the
+  // call (including the leaver) to receive `gcall:ended` on their user room.
+  const memberSnapshot = Array.from(call.members.keys())
   call.members.delete(userId)
   groupCallByUser.delete(userId)
   if (call.members.size === 0) {
-    dropGroupCall(conversationId, reason)
+    dropGroupCall(conversationId, reason, memberSnapshot)
     return
   }
   broadcastGcallState(conversationId)
