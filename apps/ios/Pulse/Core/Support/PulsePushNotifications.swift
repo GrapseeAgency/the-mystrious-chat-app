@@ -41,6 +41,18 @@ public enum PulsePushNotifications {
     public static func activate() {
         PulsePushRegistrationCenter.shared.beginAuthorization()
     }
+
+    /// Identity teardown (Task 5-d) — the mirror of [activate()]: on
+    /// sign-out / "Forget this viewer" the registry row (token → THAT user)
+    /// must die with the identity, or the device keeps receiving the
+    /// signed-out account's pushes. Unregisters the stored APNs token
+    /// (DELETE /api/push/register { token }) fire-and-forget + clears the
+    /// stored token. Called from PulseSession.stop() — the only path where
+    /// the viewer becomes nil. @MainActor: same center, same rules.
+    @MainActor
+    public static func deactivate() {
+        PulsePushRegistrationCenter.shared.deactivate()
+    }
 }
 
 /// The SwiftUI-lifecycle AppDelegate — captures the APNs token lifecycle
@@ -220,6 +232,46 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         scheduleRegistration()
     }
 
+    /// Task 5-d — identity teardown (sign-out). Order matters and is the
+    /// point: the stored token is cleared SYNCHRONOUSLY (so a racing
+    /// registration can never re-bind the stale token after a re-login —
+    /// the next activation fetches a fresh APNs token), then the
+    /// DELETE /api/push/register { token } fires fire-and-forget. Sign-out
+    /// NEVER blocks on the network and NEVER fails because of it — failures
+    /// are logged, honestly (fail-closed in the privacy-safe direction:
+    /// local state is dead either way; a failed DELETE can only leave the
+    /// SERVER row behind, which the next successful register upserts away).
+    public func deactivate() {
+        registrationTask?.cancel()
+        registrationTask = nil
+        let hex = deviceTokenHex
+        deviceTokenHex = nil
+        lastRegisteredUserId = nil
+        lastRegisteredToken = nil
+        UserDefaults.standard.removeObject(forKey: Self.tokenKey)
+        status = .idle
+        guard let hex, !hex.isEmpty else {
+            NSLog("Pulse push: deactivate — no stored token, nothing to unregister")
+            return
+        }
+        guard PulseEndpoints.isConfigured else {
+            NSLog("Pulse push: deactivate — no server configured; a stale registry row (if any) cannot be removed from here")
+            return
+        }
+        guard let api = apiProvider?() else {
+            NSLog("Pulse push: deactivate — no API client attached; a stale registry row (if any) cannot be removed from here")
+            return
+        }
+        Task {
+            do {
+                try await api.unregisterPushToken(token: hex)
+                NSLog("Pulse push: device token unregistered (sign-out)")
+            } catch {
+                NSLog("Pulse push: unregister DELETE failed — the server row may linger until the next register: %@", error.localizedDescription)
+            }
+        }
+    }
+
     private func scheduleRegistration() {
         registrationTask?.cancel()
         registrationTask = Task { [weak self] in
@@ -247,11 +299,27 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         status = .registering
         do {
             try await api.registerPushToken(userId: userId, platform: "ios", token: hex)
+            if Task.isCancelled {
+                // Task 5-d — deactivate() (sign-out) or a re-schedule
+                // superseded this run AFTER the request may have landed: the
+                // server row may exist again, but the identity it belonged to
+                // is gone. Log the residue honestly, never fake a
+                // "registered" state for a signed-out device — the next
+                // successful register rebinds, the next sign-out deletes.
+                NSLog("Pulse push: register landed after cancellation — server row may exist; local state stays reset")
+                return
+            }
             lastRegisteredUserId = userId
             lastRegisteredToken = hex
             status = .registered
             NSLog("Pulse push: device registered for user %@", userId)
         } catch {
+            if Task.isCancelled {
+                // Superseded/deactivated mid-flight — no state writes after
+                // deactivate() has already reset everything.
+                NSLog("Pulse push: register cancelled (superseded/deactivated)")
+                return
+            }
             status = .failed("Push registration failed: \(PulsePushRegistrationCenter.describe(error))")
             NSLog("Pulse push: register POST failed %@", error.localizedDescription)
         }

@@ -146,6 +146,41 @@ object PulsePush {
         register(repository, viewer, fresh)
     }
 
+    /**
+     * Sign-out / identity teardown (Task 5-d — the privacy wire): the
+     * registry row (token → THAT viewer) must die with the identity, or the
+     * device keeps receiving the signed-out account's pushes. Fires
+     * DELETE /api/push/register { token } — token-only body, no identity
+     * needed — FIRE-AND-FORGET on the IO scope: sign-out NEVER blocks on it
+     * and NEVER fails because of it (failures are logged, honestly). The
+     * stored token is cleared SYNCHRONOUSLY first so a stale token cannot be
+     * re-registered after a re-login before a fresh one arrives — the next
+     * [syncRegistration] fetches from Firebase instead.
+     *
+     * Honest residue: DELETE removes OUR registry row only. If the call
+     * fails (offline, server down) the row lingers server-side and FCM may
+     * still deliver until the next successful register rebinds it — logged,
+     * never faked as success.
+     */
+    fun signOut(repository: PulseRepository) {
+        val stored = token
+        token = null
+        if (!armed || stored.isNullOrBlank()) {
+            Log.i(
+                TAG,
+                "sign-out: nothing to unregister (armed=$armed, hadToken=${!stored.isNullOrBlank()})",
+            )
+            return
+        }
+        io.launch {
+            runCatching { repository.unregisterPushToken(stored) }
+                .onSuccess { Log.i(TAG, "push token unregistered on sign-out") }
+                .onFailure {
+                    Log.w(TAG, "push unregister failed — server row may linger until the next register", it)
+                }
+        }
+    }
+
     /** Best-effort upsert — failures are logged, never surfaced as success. */
     private fun register(repository: PulseRepository, viewer: String, token: String) {
         io.launch {

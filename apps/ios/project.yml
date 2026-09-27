@@ -43,6 +43,10 @@ targets:
       # convention (v0.4.0-native was tag-only; Android carries versionName).
       CFBundleShortVersionString: 0.10.0-native
       UILaunchScreen: {}
+      # R8 push/callkit readiness — UIBackgroundModes lets the signed app
+      # receive remote-notification + voip pushes (PushKit/CallKit path);
+      # delivery still arms only when the Apple credentials exist.
+      UIBackgroundModes: [remote-notification, voip]
       UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
       NSMicrophoneUsageDescription: Pulse uses the microphone for voice notes, voice rooms and calls.
       # Wave R1-W2D — video calls capture the camera through WebRTC; the

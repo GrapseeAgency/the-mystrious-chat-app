@@ -669,8 +669,10 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     }
 
     // R33-a: fan every `call:*` event out to the call channel subscribers.
+    // R8: group calls ride the same channel with the `gcall:` prefix — the
+    // gate must admit BOTH or the whole mesh signaling silently dies.
     const onAnyCall = (event: string, ...args: unknown[]) => {
-      if (!event.startsWith('call:')) return
+      if (!event.startsWith('call:') && !event.startsWith('gcall:')) return
       const payload = args[0]
       for (const listener of callListenersRef.current) {
         try {
@@ -747,7 +749,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
 
   const emitCallEvent = useCallback((event: string, payload: unknown) => {
     const sock = socketRef.current
-    if (!sock || !event.startsWith('call:')) return
+    if (!sock || (!event.startsWith('call:') && !event.startsWith('gcall:'))) return
     sock.emit(event, payload)
   }, [])
 

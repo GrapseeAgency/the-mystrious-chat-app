@@ -178,6 +178,11 @@ public final class PulseSession: ObservableObject {
     /// (it belongs to the store, not the session) and flushes again once a
     /// new identity starts.
     public func stop() {
+        // Task 5-d — the viewer becomes nil here (the ONLY identity-teardown
+        // path): the push registry row (token → THIS viewer) must not
+        // outlive it. Fire-and-forget DELETE /api/push/register { token } +
+        // the stored token cleared synchronously — sign-out never blocks.
+        PulsePushNotifications.deactivate()
         viewer = nil
         socket?.disconnect()
         socket = nil

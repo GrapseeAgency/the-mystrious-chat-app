@@ -7,6 +7,7 @@ import app.pulse.core.PulseEndpoints
 import app.pulse.data.local.SecureSessionStore
 import app.pulse.data.local.SessionTokenStore
 import app.pulse.data.local.SessionVault
+import app.pulse.android.push.PulsePush
 import app.pulse.data.remote.ManifestEndpoints
 import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
@@ -60,6 +61,10 @@ class SessionViewModel @Inject constructor(
                 if (invalid && prefs.viewerId.first() != null) {
                     _sessionNotice.value =
                         "Your session ended. Log in again to reclaim your identity."
+                    // Task 5-d — the identity is going away here too (401 /
+                    // join:error teardown): the push registry row must not
+                    // outlive it. Fire-and-forget, never blocks the clear.
+                    runCatching { PulsePush.signOut(repo) }
                     prefs.setViewer(null, null)
                     runCatching { secureSessionStore.delete() }
                 }
@@ -129,6 +134,12 @@ class SessionViewModel @Inject constructor(
 
     fun forgetViewer() {
         viewModelScope.launch {
+            // Task 5-d — BEFORE the identity is cleared: DELETE /api/push/register
+            // { token } with the stored FCM token (token-only body, no userId
+            // needed), fire-and-forget — sign-out never blocks or fails on it.
+            // PulsePush also clears its stored token so a stale one is not
+            // re-registered after a re-login before a fresh token arrives.
+            runCatching { PulsePush.signOut(repo) }
             runCatching { repo.clearSessionToken() }
             prefs.setViewer(null, null)
             secureSessionStore.delete()
