@@ -122,42 +122,44 @@ struct GroupInfoView: View {
     // ── content ──────────────────────────────────────────────
 
     private func content(_ detail: WireConversationSummary) -> some View {
-        groupContentStyled3
+        return groupContentStyled3(detail)
     }
 
-    // GroupInfoView.content — R12 type-check decomposition: the original single builder
-    // expression exceeded Swift’s type-check budget; VERBATIM tree, split only.
-    private var groupContentStyled_view: some View {
+    // GroupInfoView.content — R12 type-check decomposition: the original
+    // single builder expression exceeded Swift’s type-check budget; the
+    // view tree is VERBATIM, split only (funcs thread the detail param —
+    // it shadows the optional stored `detail` property).
+    private func groupContentStyled_view(_ detail: WireConversationSummary) -> some View {
         List {
-            groupContentPart0
-            groupContentPart1
-            groupContentPart2
-            groupContentPart3
-            groupContentPart4
-            groupContentPart5
-            groupContentPart6
-            groupContentPart7
-            groupContentPart8
-            groupContentPart9
-            groupContentPart10
-            groupContentPart11
-            groupContentPart12
-            groupContentPart13
-            groupContentPart14
-            groupContentPart15
-            groupContentPart16
-            groupContentPart17
-            groupContentPart18
-            groupContentPart19
-            groupContentPart20
-            groupContentPart21
-            groupContentPart22
-            groupContentPart23
+            groupContentPart0(detail)
+            groupContentPart1(detail)
+            groupContentPart2(detail)
+            groupContentPart3(detail)
+            groupContentPart4(detail)
+            groupContentPart5(detail)
+            groupContentPart6(detail)
+            groupContentPart7(detail)
+            groupContentPart8(detail)
+            groupContentPart9(detail)
+            groupContentPart10(detail)
+            groupContentPart11(detail)
+            groupContentPart12(detail)
+            groupContentPart13(detail)
+            groupContentPart14(detail)
+            groupContentPart15(detail)
+            groupContentPart16(detail)
+            groupContentPart17(detail)
+            groupContentPart18(detail)
+            groupContentPart19(detail)
+            groupContentPart20(detail)
+            groupContentPart21(detail)
+            groupContentPart22(detail)
+            groupContentPart23(detail)
         }
     }
 
     @ViewBuilder
-    private var groupContentPart0: some View {
+    private func groupContentPart0(_ detail: WireConversationSummary) -> some View {
             Section {
                 HStack(spacing: 12) {
                     RowAvatar(
@@ -205,12 +207,12 @@ struct GroupInfoView: View {
     }
 
     @ViewBuilder
-    private var groupContentPart1: some View {
+    private func groupContentPart1(_ detail: WireConversationSummary) -> some View {
             // ── admin group settings ──
     }
 
     @ViewBuilder
-    private var groupContentPart2: some View {
+    private func groupContentPart2(_ detail: WireConversationSummary) -> some View {
             if isAdmin {
                 Section("Group settings") {
                     Button {
@@ -255,27 +257,27 @@ struct GroupInfoView: View {
     }
 
     @ViewBuilder
-    private var groupContentPart3: some View {
+    private func groupContentPart3(_ detail: WireConversationSummary) -> some View {
             // ── R38/R42 — screen security (comfort setting, deliberately
     }
 
     @ViewBuilder
-    private var groupContentPart4: some View {
+    private func groupContentPart4(_ detail: WireConversationSummary) -> some View {
             // NOT admin-gated — web parity): the personal veil frosts MY
     }
 
     @ViewBuilder
-    private var groupContentPart5: some View {
+    private func groupContentPart5(_ detail: WireConversationSummary) -> some View {
             // view; the room-wide switch frosts every member's view. Both
     }
 
     @ViewBuilder
-    private var groupContentPart6: some View {
+    private func groupContentPart6(_ detail: WireConversationSummary) -> some View {
             // flags OR together inside the room.
     }
 
     @ViewBuilder
-    private var groupContentPart7: some View {
+    private func groupContentPart7(_ detail: WireConversationSummary) -> some View {
             Section {
                 Toggle(isOn: Binding(
                     get: { prefs.screenPrivacy[conversation.id] ?? false },
@@ -309,12 +311,12 @@ struct GroupInfoView: View {
     }
 
     @ViewBuilder
-    private var groupContentPart8: some View {
+    private func groupContentPart8(_ detail: WireConversationSummary) -> some View {
             // ── invite (admin; web room-info-page parity) ──
     }
 
     @ViewBuilder
-    private var groupContentPart9: some View {
+    private func groupContentPart9(_ detail: WireConversationSummary) -> some View {
             if isAdmin {
                 Section("Invite link") {
                     if let code = inviteCode {
@@ -354,12 +356,12 @@ struct GroupInfoView: View {
     }
 
     @ViewBuilder
-    private var groupContentPart10: some View {
+    private func groupContentPart10(_ detail: WireConversationSummary) -> some View {
             // ── members ──
     }
 
     @ViewBuilder
-    private var groupContentPart11: some View {
+    private func groupContentPart11(_ detail: WireConversationSummary) -> some View {
             Section {
                 // R2-D ITEM 9 — the search pill (web shows it past 8 members:
                 // room-info-page.tsx:1425-1459, "Search members" placeholder).
@@ -412,7 +414,7 @@ struct GroupInfoView: View {
     }
 
     @ViewBuilder
-    private var groupContentPart12: some View {
+    private func groupContentPart12(_ detail: WireConversationSummary) -> some View {
             if isAdmin {
                 Section {
                     Button {
@@ -426,27 +428,27 @@ struct GroupInfoView: View {
     }
 
     @ViewBuilder
-    private var groupContentPart13: some View {
+    private func groupContentPart13(_ detail: WireConversationSummary) -> some View {
             // ── R39 — Automations (keyword-triggered auto-replies). One
     }
 
     @ViewBuilder
-    private var groupContentPart14: some View {
+    private func groupContentPart14(_ detail: WireConversationSummary) -> some View {
             // section (rows + optimistic switch + honest delete + create
     }
 
     @ViewBuilder
-    private var groupContentPart15: some View {
+    private func groupContentPart15(_ detail: WireConversationSummary) -> some View {
             // sheet live in RoomIntegrationsSurfaces.swift). Admins manage;
     }
 
     @ViewBuilder
-    private var groupContentPart16: some View {
+    private func groupContentPart16(_ detail: WireConversationSummary) -> some View {
             // members read rows or the honest manage caption (web parity).
     }
 
     @ViewBuilder
-    private var groupContentPart17: some View {
+    private func groupContentPart17(_ detail: WireConversationSummary) -> some View {
             AutomationsSection(
                 conversationId: conversation.id,
                 viewerId: viewerId,
@@ -457,22 +459,22 @@ struct GroupInfoView: View {
     }
 
     @ViewBuilder
-    private var groupContentPart18: some View {
+    private func groupContentPart18(_ detail: WireConversationSummary) -> some View {
             // ── R2-B — Webhooks (Discord-style incoming integrations, web
     }
 
     @ViewBuilder
-    private var groupContentPart19: some View {
+    private func groupContentPart19(_ detail: WireConversationSummary) -> some View {
             // group-info-sheet parity): everyone copies ingest URLs, admins
     }
 
     @ViewBuilder
-    private var groupContentPart20: some View {
+    private func groupContentPart20(_ detail: WireConversationSummary) -> some View {
             // create/delete.
     }
 
     @ViewBuilder
-    private var groupContentPart21: some View {
+    private func groupContentPart21(_ detail: WireConversationSummary) -> some View {
             WebhooksSection(
                 conversationId: conversation.id,
                 viewerId: viewerId,
@@ -483,12 +485,12 @@ struct GroupInfoView: View {
     }
 
     @ViewBuilder
-    private var groupContentPart22: some View {
+    private func groupContentPart22(_ detail: WireConversationSummary) -> some View {
             // ── leave ──
     }
 
     @ViewBuilder
-    private var groupContentPart23: some View {
+    private func groupContentPart23(_ detail: WireConversationSummary) -> some View {
             Section {
                 Button(role: .destructive) {
                     leaveOpen = true
@@ -500,8 +502,8 @@ struct GroupInfoView: View {
             }
     }
 
-    private var groupContentStyled0: some View {
-        groupContentStyled_view
+    private func groupContentStyled0(_ detail: WireConversationSummary) -> some View {
+        groupContentStyled_view(detail)
         .listStyle(.insetGrouped)
         .scrollDismissesKeyboard(.immediately)
         .onChange(of: photoItem) { _, item in
@@ -513,8 +515,8 @@ struct GroupInfoView: View {
         }
     }
 
-    private var groupContentStyled1: some View {
-        groupContentStyled0
+    private func groupContentStyled1(_ detail: WireConversationSummary) -> some View {
+        groupContentStyled0(detail)
         .alert("Rename group", isPresented: $renameOpen) {
             TextField("Group name", text: $renameDraft)
             Button("Save") { rename() }
@@ -546,8 +548,8 @@ struct GroupInfoView: View {
         }
     }
 
-    private var groupContentStyled2: some View {
-        groupContentStyled1
+    private func groupContentStyled2(_ detail: WireConversationSummary) -> some View {
+        groupContentStyled1(detail)
         .confirmationDialog(
             "Slow mode",
             isPresented: $slowModeOpen,
@@ -590,8 +592,8 @@ struct GroupInfoView: View {
         }
     }
 
-    private var groupContentStyled3: some View {
-        groupContentStyled2
+    private func groupContentStyled3(_ detail: WireConversationSummary) -> some View {
+        groupContentStyled2(detail)
         .sheet(isPresented: $addMembersOpen) {
             GroupMemberAddSheet(
                 conversationId: conversation.id,

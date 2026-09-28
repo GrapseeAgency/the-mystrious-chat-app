@@ -899,9 +899,9 @@ private struct RoomContent: View {
                     session: session,
                     prefs: prefs,
                     onDetailUpdated: { detail in
-                        viewModel.roomScreenPrivacy = detail.screenPrivacy
-                        // R47 — the dead-end flag rides the same fresh detail.
-                        viewModel.dmBlocked = !detail.isGroup && detail.dmBlockedNow
+                        // R38/R47 — one mutator adopts both flags from the
+                        // sheet's fresh detail (dmBlocked is private(set)).
+                        viewModel.applyFreshDetail(detail)
                     },
                 )
             }
@@ -956,11 +956,9 @@ private struct RoomContent: View {
                 session: session,
                 prefs: prefs,
                 onDetailUpdated: { detail in
-                    // R38 — the room-wide veil flag rides the info-sheet's
-                    // fresh detail so the river re-veils without a refetch.
-                    viewModel.roomScreenPrivacy = detail.screenPrivacy
-                    // R47 — the dead-end flag rides along the same way.
-                    viewModel.dmBlocked = !detail.isGroup && detail.dmBlockedNow
+                    // R38/R47 — one mutator adopts both flags from the
+                    // info-sheet's fresh detail (dmBlocked is private(set)).
+                    viewModel.applyFreshDetail(detail)
                 },
             )
         }
@@ -4256,6 +4254,14 @@ final class RoomViewModel: ObservableObject {
     }
 
     // ── R2-B R38/R42 — screen security (veil) ──
+
+    /// R38/R47 — view surfaces hand back a fresh detail after a successful
+    /// PATCH (privacy sheet, DM-block toggle): the river re-veils without a
+    /// refetch. Same adoption rules as loadPrivacyState.
+    func applyFreshDetail(_ detail: WireConversationSummary) {
+        roomScreenPrivacy = detail.screenPrivacy
+        dmBlocked = !detail.isGroup && detail.dmBlockedNow
+    }
 
     /// One quiet detail GET on room open (web detail-query parity): refresh
     /// the room-wide flag + adopt the server's per-viewer flag into the
