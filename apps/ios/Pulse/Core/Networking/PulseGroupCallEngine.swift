@@ -538,7 +538,7 @@ public final class PulseGroupCallEngine: ObservableObject {
                 // attaches media for the cross-device case; joinedConv is
                 // only ever set by the local join pipeline).
                 ongoingElsewhere = false
-                applyRoster(roster, conv)
+                applyRoster(roster, rosterConvId: conv)
             } else if uiState == .idle, joinedConv == nil {
                 if !roster.isEmpty {
                     ongoingKind = CallKind(wireValue: raw["kind"] as? String)
@@ -642,8 +642,8 @@ public final class PulseGroupCallEngine: ObservableObject {
         }
         // The local ring guard — group rings have no server-side timeout;
         // a stuck incoming surface is worse than a missed ring.
-        if ring != nil, let ringArrivedAt,
-           Date().timeIntervalSince(ringArrivedAt) >= PulseGroupCallPolicy.ringTimeoutSec {
+        if ring != nil, let arrivedAt = ringArrivedAt,
+           Date().timeIntervalSince(arrivedAt) >= PulseGroupCallPolicy.ringTimeoutSec {
             ring = nil
             ringArrivedAt = nil
         }

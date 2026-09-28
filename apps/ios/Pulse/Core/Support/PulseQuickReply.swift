@@ -60,7 +60,7 @@ public enum PulseQuickReply {
             intentIdentifiers: [],
             options: []
         )
-        UNUserNotificationCenter.current().setCategories([category])
+        UNUserNotificationCenter.current().setNotificationCategories([category])
     }
 
     /// Whether a posting that carries this conversationId may carry the
