@@ -3815,3 +3815,25 @@ Stage Summary:
 - Release-page publishing is credential-gated only (wipe ate ~/.git-credentials; no token anywhere in env/history/project) — one push command away once creds return.
 - Honest artifact caveat: local release APK is the non-minified variant (R8 infeasible in 4GB sandbox); CI's tag build produces the R8-minified canonical APK with identical signature.
 - All services healthy post-build; tree clean except worklog.
+
+---
+Task ID: R13
+Agent: Z.ai Code (main)
+Task: User supplied a GitHub PAT — ship everything: push main + tag, CI builds the R8-minified signed APK and the .app, release page goes live.
+
+Work Log:
+- Token seeded to ~/.git-credentials (600), validated as login Grapsee-Official; repo is PUBLIC (Actions free).
+- Pushed main (c57636b) + tag v0.11.2-native; Android CI (tag) + iOS CI (tag) + web CI all fired; release ladder v0.8.0→v0.11.1 already exists remotely.
+- ANDROID: tag run ran JVM tests + emulator (instrumented ✓) but the assemble step hung 3h on GitHub runners — cancelled; the tag will be re-pointed after iOS converges and Android re-runs + publishes via softprops (idempotent on existing releases).
+- iOS CI discovered BROKEN BEFORE this session (v0.11.1 runs failed at 05:21 AND 10:52): batch-mode SwiftCompile died with ZERO diagnostics on macos-15-arm64. Fix path: singlefile + COMPILER_INDEX_STORE_ENABLE=NO (b + archive -Onone) — un-suppressed real diagnostics; first pin attempt (Xcode_16.2) failed fast because its iOS 18.2 platform is absent from the image → keep image-default Xcode 16.4 (16F6) and rely on compile modes.
+- REAL compile errors surfaced wave-by-wave (all fixed, pushed, CI-verified iteratively): PulseQuickReply setCategories→setNotificationCategories; PulseGroupCallEngine ring-timeout guard assigned to its own 'if let' shadow + missing rosterConvId: label; PulseRTCMediaProvider audioTrack let→var (definite-init); CallKit PushKit property API (desiredPushTypes = [PKPushType.voIP]) + String? guard-unwraps; ProfileView nonexistent Section(title){}footer: hybrid → content/header/footer; NavDockStyles width+minHeight mixed frame overloads → width:40,height:44; RootView ~280-line body type-check timeout → decomposed (tabPanels/authenticatedShell/pipOverlay/callSurfaces) + pip reserves Int→CGFloat; ChatRoomView 637-line body → 22 verbatim parts + recapText ?? "—" + CGFloat-typed swipe opacity; GroupInfoView 343-line content List → 34 verbatim parts.
+- Decomposition done by a line-range splice script with string-aware brace matching (first naive pass corrupted ref lines — caught by spot-check, reverted, redone cleanly; both files brace-balanced with decl/ref counts 22/22 and 34/34).
+
+Stage Summary:
+- main is now a chain of CI-verified fixes (c08edc8, fa2cac8, 5de11a8, e63b329, 87a0f7e, 8323bb9); iOS CI on 8323bb9 compiling deep (past all previous failure points) at the time of this note.
+- Once iOS main is green: re-point tag v0.11.2-native to the fix HEAD, force-push it → Android CI publishes the release-page APK, iOS CI builds the .app + unsigned archive.
+- Lesson recorded: iOS "CI green" claims before v0.11.2 were unverified — batch mode masked real errors; singlefile is now the compile mode of record for gate fidelity.
+- CHAIN HANG ROOT-CAUSED + SHIPPED: the 3h Android assemble "hang" was gradle.properties' 1536m daemon cap GC-thrashing R8+desugar (>3.4GB needed, measured in-sandbox) — android-ci.yml assemble now runs -Dorg.gradle.jvmargs="-Xmx6g" (97e4a92); tag re-pointed to the full fix chain.
+- TEST ROUND ADJUDICATED: first real iOS unit-test run of the era — 455 executed, 5 assertions failed, all resolved against web parity: cluster fixture gap == window (suite pins web '>'), roster-plan expectation contradicted its own cited me<member.id rule (b owns b–d), spotlight re-push adopts new casing (web pushRecent prepends verbatim), reminder userInfo trims whitespace-only conversation ids (impl fix).
+- FINAL STATE (all verified via API): tag v0.11.2-native @ 97e4a92 — Android CI SUCCESS (instrumented ✓ JVM tests ✓ R8-minified signed APK ✓ Release published ✓); iOS CI SUCCESS (build-test 455 tests + launch smoke ✓, archive ✓) with artifacts pulse-ios-simulator-build (.app 30.3MB) + pulse-ios-xcarchive (24.8MB) + launch screenshot.
+- RELEASE PAGE LIVE: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.11.2-native — asset Pulse-v0.11.2-native.apk (24.2MB, committed LiveUpdate keystore → overwrite-install continuity with every prior release).
