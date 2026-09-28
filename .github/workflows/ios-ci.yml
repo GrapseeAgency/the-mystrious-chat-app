@@ -21,22 +21,18 @@ jobs:
         run: brew install xcodegen
 
       # R12 fix — the macos-15 image rotated its default Xcode and the new
-      # toolchain killed SwiftCompile batches with zero diagnostics (both
-      # x86_64 and arm64 units, deterministic across runs). Pin to the oldest
-      # mature Xcode present, falling forward to newer ones if pruned.
-      - name: Pin Xcode (image-drift guard)
+      # toolchain killed SwiftCompile batches with zero diagnostics. Do NOT
+      # xcode-select a different Xcode: its matching simulator platform is
+      # not installed ("iOS 18.2 is not installed" destination failure), so
+      # we stay on the image default (platforms guaranteed present) and
+      # dodge the crasher via singlefile compilation + no index store.
+      - name: Xcode info (image-drift observability)
         run: |
           set -euo pipefail
-          for XC in Xcode_16.2 Xcode_16.3 Xcode_16.4 Xcode_26.0; do
-            if [ -d "/Applications/$XC.app" ]; then
-              sudo xcode-select -s "/Applications/$XC.app"
-              echo "Pinned: $XC"
-              break
-            fi
-          done
+          ls /Applications | grep '^Xcode' || true
           xcode-select -p
           xcodebuild -version
-          swift --version | head -2
+          swift --version
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -142,16 +138,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Pin Xcode (image-drift guard)
+      - name: Xcode info (image-drift observability)
         run: |
           set -euo pipefail
-          for XC in Xcode_16.2 Xcode_16.3 Xcode_16.4 Xcode_26.0; do
-            if [ -d "/Applications/$XC.app" ]; then
-              sudo xcode-select -s "/Applications/$XC.app"
-              echo "Pinned: $XC"
-              break
-            fi
-          done
           xcode-select -p
           xcodebuild -version
 
