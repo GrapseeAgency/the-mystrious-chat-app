@@ -46,6 +46,8 @@ class PulsePrefsStoreImpl @Inject constructor(
         val QUIET_HOURS_ON = booleanPreferencesKey("pulse.settings.quietHoursOn")
         val QUIET_START = stringPreferencesKey("pulse.settings.quietStart")
         val QUIET_END = stringPreferencesKey("pulse.settings.quietEnd")
+        // R10-a — biometric App lock (device-local; never rides the server blob).
+        val APP_LOCK_ON = booleanPreferencesKey("pulse.settings.appLockOn")
     }
 
     override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
@@ -65,6 +67,10 @@ class PulsePrefsStoreImpl @Inject constructor(
     override val quietStart: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_START] ?: "22:00" }
     override val quietEnd: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_END] ?: "07:00" }
 
+    // R10-a — App lock defaults OFF (an honest opt-in; enabling runs one
+    // confirmation BiometricPrompt in Settings).
+    override val appLockEnabled: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.APP_LOCK_ON] ?: false }
+
     override suspend fun setHapticsOn(value: Boolean) {
         context.pulsePrefs.edit { it[Keys.HAPTICS_ON] = value }
     }
@@ -79,6 +85,10 @@ class PulsePrefsStoreImpl @Inject constructor(
 
     override suspend fun setQuietEnd(value: String) {
         context.pulsePrefs.edit { it[Keys.QUIET_END] = value }
+    }
+
+    override suspend fun setAppLockEnabled(value: Boolean) {
+        context.pulsePrefs.edit { it[Keys.APP_LOCK_ON] = value }
     }
 
     override suspend fun setViewer(id: String?, name: String?, color: String?) {

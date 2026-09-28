@@ -118,6 +118,14 @@ class SettingsViewModel @Inject constructor(
     val navStyle: StateFlow<app.pulse.protocol.PulseNavStyle> = prefs.navStyle
         .stateIn(viewModelScope, SharingStarted.Eagerly, app.pulse.protocol.PulseNavStyle.CAPSULE)
 
+    /**
+     * R10-a — biometric App lock (device-local DataStore flag, same block as
+     * haptics/quiet-hours; never the server blob). The MainActivity lock gate
+     * reads the SAME flow through [app.pulse.android.security.PulseAppLock].
+     */
+    val appLockEnabled: StateFlow<Boolean> = prefs.appLockEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     /** Real-time & Voice — live relay truth. */
     val connected: StateFlow<Boolean> = repo.observeConnected()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -206,6 +214,15 @@ class SettingsViewModel @Inject constructor(
     /** R4-B item 3 — navigation-style swap; the shell re-reads it live. */
     fun setNavStyle(style: app.pulse.protocol.PulseNavStyle) {
         viewModelScope.launch { prefs.setNavStyle(style) }
+    }
+
+    /**
+     * R10-a — App lock persistence. The caller (PrivacySection) runs the
+     * one-shot confirmation BiometricPrompt BEFORE this lands, so a device
+     * without biometrics/screen lock never keeps the flag on.
+     */
+    fun setAppLockEnabled(value: Boolean) {
+        viewModelScope.launch { prefs.setAppLockEnabled(value) }
     }
 
     /** Quiet-hours math (verbatim web port) evaluated against the CURRENT inputs. */

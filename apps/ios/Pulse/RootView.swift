@@ -22,9 +22,15 @@ enum PulseTab: Int, CaseIterable {
 /// is gone; exactly one panel is mounted at a time (web AnimatePresence
 /// parity). Every style renders over the same shared dock context; the
 /// floating-top bar and the side rail ride their own safe-area channels.
+/// @MainActor — the R10-b app-lock singleton feeds an eager @ObservedObject
+/// (same shape as SettingsView's pushCenter).
+@MainActor
 struct RootView: View {
     @StateObject private var session = PulseSession()
     @StateObject private var prefs = PulsePrefs()
+    // R10-b — the biometric app lock (singleton owns needsLock; the
+    // fullScreenCover gate below presents it when the scene is active).
+    @ObservedObject private var appLock = PulseAppLock.shared
     @State private var didBootstrap = false
     @State private var tab: PulseTab = .chats
     @State private var navDirection = 0
@@ -239,6 +245,13 @@ struct RootView: View {
         }
         .tint(PulseTheme.emerald)
         .preferredColorScheme(colorScheme)
+        // R10-b — the app-lock gate. Armed on scenePhase → .background (when
+        // enabled); presenting the moment the scene is active again. Layered
+        // at the very root like the call/rooms full-screen surfaces so it
+        // covers everything (onboarding included).
+        .fullScreenCover(isPresented: $appLock.needsLock) {
+            PulseAppLockView()
+        }
         .onAppear {
             // Wave 8 — prefs handoff: incoming attention gate, settings PATCH
             // funnel, quiet-gate refresh (idempotent, closures attach once).
@@ -247,6 +260,14 @@ struct RootView: View {
             // client through this closure (rebuilt per gateway override +
             // identity). attach re-arms any pending token → server POST.
             PulsePushRegistrationCenter.shared.attach { [weak session] in session?.api }
+            // R10-b — quick-reply handoff: the coordinator reads the live
+            // session through the SAME seam the push registration center
+            // uses, and opens rooms through the standard linked-room bridge
+            // (pendingLinkedRoomId → openLinkedRoom below).
+            PulseQuickReplyCoordinator.shared.attach { [weak session] in session }
+            PulseQuickReplyCoordinator.shared.onOpenRoom = { [weak session] conversationId in
+                session?.pendingLinkedRoomId = conversationId
+            }
             // R4-A item 3 — mirror the nav style on attach (onChange below
             // keeps the mirror live after Appearance picks).
             navStyle = prefs.navStyle
@@ -297,6 +318,10 @@ struct RootView: View {
                 session.flushOutbox()
             case .background:
                 PulseApp.scheduleOutboxRefresh()
+                // R10-b — arm the app lock while leaving the foreground
+                // (when the toggle is on). The fullScreenCover gate presents
+                // when the scene is active again.
+                appLock.appDidEnterBackground(appLockEnabled: prefs.appLockEnabled)
             default:
                 break
             }
@@ -308,6 +333,23 @@ struct RootView: View {
             guard let conversationId = pending else { return }
             session.pendingLinkedRoomId = nil
             openLinkedRoom(conversationId)
+        }
+        // R10-b — home-screen quick actions: cold launch replays the
+        // pending route through this subscription (@Published replays the
+        // current value on attach); warm launches publish on tap.
+        .onReceive(PulseQuickActions.shared.$pendingRoute) { pending in
+            guard let route = pending else { return }
+            PulseQuickActions.shared.consume()
+            switch route {
+            case .openChats:
+                switchTab(.chats)
+            case .newMessage:
+                // Never compose under the lock cover (invisible UI) — the
+                // guard keeps the tap honest while the gate is up.
+                guard prefs.viewer != nil, !appLock.needsLock else { break }
+                PulseHaptics.tap()
+                newChatOpen = true
+            }
         }
     }
 
@@ -407,6 +449,10 @@ struct RootView: View {
             session.requestOpenUser(userId, name: nil)
         case .room(let conversationId):
             openLinkedRoom(conversationId)
+        case .compose:
+            // R10-b — pulse://new (the quick-action destination parity).
+            PulseHaptics.tap()
+            newChatOpen = true
         }
     }
 

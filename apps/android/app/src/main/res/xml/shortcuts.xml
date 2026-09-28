@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- R10-a — static launcher shortcuts. Every intent carries ONLY the custom
+     app.pulse.android.action.SHORTCUT action — the implicit intent resolves
+     against the publishing app's own manifest (MainActivity is the only
+     declared handler), so no package name is baked in and the debug
+     applicationIdSuffix stays valid. MainActivity.handleIntent receives it:
+       · chats       → pulse.shortcut.tab = "chats" (tab jump, existing dock nav)
+       · new-message → pulse.shortcut.action = "new_message" (the shell-hosted
+                       NewChatSheet — the dock FAB's own screen)
+       · search      → pulse.shortcut.action = "search" (chats search focus —
+                       the dock search button's own path) -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="chats"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_chats"
+        android:shortcutShortLabel="@string/shortcut_chats_short"
+        android:shortcutLongLabel="@string/shortcut_chats_long">
+        <intent android:action="app.pulse.android.action.SHORTCUT">
+            <extra android:name="pulse.shortcut.tab" android:value="chats" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="new-message"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_compose"
+        android:shortcutShortLabel="@string/shortcut_new_message_short"
+        android:shortcutLongLabel="@string/shortcut_new_message_long">
+        <intent android:action="app.pulse.android.action.SHORTCUT">
+            <extra android:name="pulse.shortcut.action" android:value="new_message" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="search"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_search"
+        android:shortcutShortLabel="@string/shortcut_search_short"
+        android:shortcutLongLabel="@string/shortcut_search_long">
+        <intent android:action="app.pulse.android.action.SHORTCUT">
+            <extra android:name="pulse.shortcut.action" android:value="search" />
+        </intent>
+    </shortcut>
+</shortcuts>

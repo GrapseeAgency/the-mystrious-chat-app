@@ -104,6 +104,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     implementation(libs.androidx.core.ktx)
+    // R10-a — BiometricPrompt app lock (BIOMETRIC_WEAK | DEVICE_CREDENTIAL).
+    implementation(libs.androidx.biometric)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime)
@@ -129,6 +131,9 @@ dependencies {
     // pulse_fcm_* string credentials exist (fail-closed, feature-disabled
     // otherwise) — see PulseApplication + PulseMessagingService.
     implementation(libs.firebase.messaging)
+
+    // R10-a — the quick-reply payload parser is pinned by a pure JVM test.
+    testImplementation(libs.junit4)
 
     androidTestImplementation(libs.androidx.test.core.ktx)
     androidTestImplementation(libs.androidx.test.ext.junit)

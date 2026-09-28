@@ -221,6 +221,32 @@ struct SettingsView: View {
         }
     }
 
+    // ── R10-b — app lock enable/disable ──────────────────────
+
+    /// Disable: persisted immediately and any pending gate clears (the
+    /// toggle can only be reached while the app is unlocked, so this is
+    /// belt-and-braces). Enable: one no-UI availability probe, then ONE
+    /// real evaluatePolicy — success persists the toggle, any failure
+    /// surfaces the honest reason through the toast and keeps the stored
+    /// value off (the toggle visually reverts by itself).
+    private func confirmAppLock(_ enable: Bool) async {
+        guard enable else {
+            prefs.setAppLockEnabled(false)
+            PulseAppLock.shared.needsLock = false
+            return
+        }
+        if let problem = PulseAppLock.availabilityProblem() {
+            session.toasts.show(problem)
+            return
+        }
+        if await PulseAppLock.shared.runEnableConfirmation() {
+            prefs.setAppLockEnabled(true)
+            session.toasts.show("App lock is on — Pulse locks when backgrounded.")
+        } else {
+            session.toasts.show(PulseAppLock.shared.statusMessage ?? "App lock needs Face ID, Touch ID or the device passcode.")
+        }
+    }
+
     // ── Appearance ───────────────────────────────────────────
 
     private var appearanceCard: some View {
@@ -665,6 +691,21 @@ struct SettingsView: View {
             toggleRow(icon: "pencil.line", title: "Typing indicator", description: "Show others when you're typing.", isOn: prefs.typingVisible) {
                 prefs.setTypingVisible($0)
             }
+
+            Divider().padding(.vertical, 4)
+
+            // R10-b — biometric app lock (LAContext.deviceOwnerAuthentication).
+            // Enabling runs ONE real evaluatePolicy confirmation first — a
+            // device that cannot enforce the lock never keeps the toggle on.
+            // The persisted value is only written on success, so a failure
+            // leaves the toggle visually off (the honest revert) with the
+            // reason surfaced through the session toast.
+            toggleRow(icon: "faceid", title: "App lock", description: "Ask for Face ID, Touch ID or the passcode when returning to Pulse.", isOn: prefs.appLockEnabled) { newValue in
+                Task { await self.confirmAppLock(newValue) }
+            }
+            Text("App lock guards this device only — it never syncs to your account.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
 
             Divider().padding(.vertical, 4)
 

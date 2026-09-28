@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -60,8 +61,10 @@ import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Whatshot
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -104,6 +107,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.core.view.WindowCompat
+import androidx.fragment.app.FragmentActivity
 import app.pulse.android.ui.AmbientField
 import app.pulse.android.ui.FxMode
 import app.pulse.android.ui.ParticleBurstHost
@@ -199,6 +203,19 @@ private val DOCK_TABS = listOf(
     DockTab("profile", "Profile", Icons.Filled.AccountCircle, Icons.Outlined.AccountCircle),
 )
 
+/**
+ * R10-a — launcher-shortcut request. [tab] is a validated TAB_ROUTES entry;
+ * [action] is one of the SHORTCUT_ACTION_* ids (or null for plain tab jumps).
+ */
+data class ShortcutRequest(val tab: String? = null, val action: String? = null)
+
+/** R10-a — extras + actions shared with res/xml/shortcuts.xml. */
+const val ACTION_SHORTCUT = "app.pulse.android.action.SHORTCUT"
+const val EXTRA_SHORTCUT_TAB = "pulse.shortcut.tab"
+const val EXTRA_SHORTCUT_ACTION = "pulse.shortcut.action"
+const val SHORTCUT_ACTION_NEW_MESSAGE = "new_message"
+const val SHORTCUT_ACTION_SEARCH = "search"
+
 /** Dock-scoped state — live unread total for the Chats badge (web useUnread). */
 @HiltViewModel
 class ShellViewModel @Inject constructor(
@@ -230,12 +247,21 @@ class ShellViewModel @Inject constructor(
 }
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     @Inject lateinit var repository: app.pulse.domain.repository.PulseRepository
 
+    /** R10-a — biometric App lock: state holder + prompt presenter. */
+    @Inject lateinit var appLock: app.pulse.android.security.PulseAppLock
+
     /** Wave 6 — pulse:// deep links (invite/user/room); consumed by the shell. */
     private val deepLinks = MutableStateFlow<app.pulse.core.link.PulseDeepLink?>(null)
+
+    /** R10-a — the share-in payload forwarded by ShareInActivity (null = none). */
+    private val shareIn = MutableStateFlow<ShareInPayload?>(null)
+
+    /** R10-a — launcher-shortcut tab/action requests (null = none pending). */
+    private val shortcutRequest = MutableStateFlow<ShortcutRequest?>(null)
 
     /** Wave 7 — POST_NOTIFICATIONS launcher (must register before STARTED). */
     private val notificationPermission =
@@ -295,9 +321,17 @@ class MainActivity : ComponentActivity() {
         app.pulse.android.notify.IncomingAttention.foreground = false
     }
 
+    override fun onResume() {
+        super.onResume()
+        // R10-a — App lock: whenever Pulse reaches the foreground while the
+        // toggle is on and this session hasn't unlocked, the BiometricPrompt
+        // goes up over everything (the Compose gate overlay backs it up).
+        appLock.onHostResume(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        deepLinks.value = app.pulse.core.link.PulseDeepLink.parse(intent?.dataString)
+        handleIntent(intent)
         // True edge-to-edge with NO system scrims: the app surface (ambient field)
         // shows behind the status bar AND the navigation bar — the default
         // enableEdgeToEdge() nav scrim is what painted a gray band over the dock.
@@ -316,6 +350,13 @@ class MainActivity : ComponentActivity() {
                 deepLink = deepLinks.collectAsStateWithLifecycle().value,
                 onConsumeDeepLink = { deepLinks.value = null },
                 repository = repository,
+                // R10-a — lock gate + share-in + shortcut requests.
+                appLock = appLock,
+                onRequestUnlock = { appLock.presentPrompt(this) },
+                shareInFlow = shareIn,
+                onConsumeShareIn = { shareIn.value = null },
+                shortcutFlow = shortcutRequest,
+                onConsumeShortcut = { shortcutRequest.value = null },
             )
         }
     }
@@ -323,7 +364,45 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        deepLinks.value = app.pulse.core.link.PulseDeepLink.parse(intent.dataString)
+        handleIntent(intent)
+    }
+
+    /**
+     * R10-a — one landing place for every external intent shape: pulse://
+     * deep links (Wave 6), the share-in hand-off from ShareInActivity, and
+     * the launcher-shortcut tab/action extras. Unknown shapes stay no-ops.
+     */
+    private fun handleIntent(intent: android.content.Intent?) {
+        deepLinks.value = app.pulse.core.link.PulseDeepLink.parse(intent?.dataString)
+        when (intent?.action) {
+            ShareInActivity.ACTION_SHARE_IN -> {
+                val text = intent.getStringExtra(ShareInActivity.EXTRA_SHARE_TEXT)
+                val stream = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(ShareInActivity.EXTRA_SHARE_STREAM, android.net.Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(ShareInActivity.EXTRA_SHARE_STREAM) as? android.net.Uri
+                }
+                shareIn.value = if (text.isNullOrBlank() && stream == null) {
+                    // Unreadable payload — say so and close, no half state.
+                    android.widget.Toast.makeText(
+                        this,
+                        "Couldn't read the shared content",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                    null
+                } else {
+                    ShareInPayload(text = text?.takeIf { it.isNotBlank() }, stream = stream)
+                }
+            }
+
+            ACTION_SHORTCUT -> {
+                shortcutRequest.value = ShortcutRequest(
+                    tab = intent.getStringExtra(EXTRA_SHORTCUT_TAB)?.takeIf { it in TAB_ROUTES },
+                    action = intent.getStringExtra(EXTRA_SHORTCUT_ACTION),
+                )
+            }
+        }
     }
 }
 
@@ -335,6 +414,15 @@ fun PulseRoot(
     // registration can sync the moment a viewer identity exists.
     repository: app.pulse.domain.repository.PulseRepository,
     session: SessionViewModel = hiltViewModel(),
+    // R10-a — biometric App lock gate (covers onboarding, the shell and the
+    // share-in sheet alike — the whole UI sits behind it while locked).
+    appLock: app.pulse.android.security.PulseAppLock,
+    onRequestUnlock: () -> Unit,
+    // R10-a — share-in payload + launcher-shortcut requests from the activity.
+    shareInFlow: StateFlow<ShareInPayload?>,
+    onConsumeShareIn: () -> Unit,
+    shortcutFlow: StateFlow<ShortcutRequest?>,
+    onConsumeShortcut: () -> Unit,
 ) {
     val viewerId by session.viewerId.collectAsStateWithLifecycle()
     val hydrated by session.hydrated.collectAsStateWithLifecycle()
@@ -401,6 +489,10 @@ fun PulseRoot(
                     deepLink = deepLink,
                     onConsumeDeepLink = onConsumeDeepLink,
                     repository = repository,
+                    shareIn = shareInFlow.collectAsStateWithLifecycle().value,
+                    onConsumeShareIn = onConsumeShareIn,
+                    shortcutRequest = shortcutFlow.collectAsStateWithLifecycle().value,
+                    onConsumeShortcut = onConsumeShortcut,
                 )
             }
 
@@ -408,6 +500,12 @@ fun PulseRoot(
                 Modifier.fillMaxSize(),
                 reducedMotion = reduced,
             )
+
+            // R10-a — the App lock gate draws LAST: a full-screen overlay over
+            // onboarding/shell/particles so nothing behind it is reachable.
+            if (appLock.locked.collectAsStateWithLifecycle().value) {
+                AppLockGate(appLock = appLock, onRequestUnlock = onRequestUnlock)
+            }
         }
     }
 }
@@ -424,6 +522,11 @@ private fun PulseShell(
     onConsumeDeepLink: () -> Unit = {},
     // R8 Task 3-c — FCM push registration syncs against the viewer identity.
     repository: app.pulse.domain.repository.PulseRepository,
+    // R10-a — share-in sheet + launcher-shortcut tab/action requests.
+    shareIn: ShareInPayload? = null,
+    onConsumeShareIn: () -> Unit = {},
+    shortcutRequest: ShortcutRequest? = null,
+    onConsumeShortcut: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
@@ -510,6 +613,29 @@ private fun PulseShell(
             }
         }
         onConsumeDeepLink()
+    }
+
+    // R10-a — launcher shortcuts: Chats (tab jump), New message (the
+    // shell-hosted composer), Search (the chats surface raises its search
+    // field — the SAME path the dock's search button drives). Pending
+    // requests hold until a viewer identity exists (same idiom as the
+    // deep links above); anything unrecognized consumes as a no-op.
+    LaunchedEffect(shortcutRequest, viewerId) {
+        val request = shortcutRequest ?: return@LaunchedEffect
+        if (viewerId != null) {
+            when (request.action) {
+                SHORTCUT_ACTION_NEW_MESSAGE -> {
+                    switchTab("chats")
+                    newChatOpen = true
+                }
+                SHORTCUT_ACTION_SEARCH -> {
+                    if (navController.currentDestination?.route != "chats") switchTab("chats")
+                    shell.requestSearch()
+                }
+                else -> request.tab?.let { tab -> switchTab(tab) }
+            }
+        }
+        onConsumeShortcut()
     }
 
     fun honest(message: String) {
@@ -1071,6 +1197,17 @@ private fun PulseShell(
                     navController.navigate("room/$id")
                 },
                 onNotice = { honest(it) },
+            )
+        }
+
+        // R10-a — the share-in sheet (system "Share into Pulse" target):
+        // pick a conversation, the payload goes through the SAME send
+        // paths the surfaces use, then the room opens on the result.
+        shareIn?.let { payload ->
+            ShareInSheet(
+                payload = payload,
+                onDismiss = onConsumeShareIn,
+                onOpenRoom = { id -> navController.navigate("room/$id") },
             )
         }
 
@@ -2229,6 +2366,91 @@ private fun IslandDock(
                         onDeferred = {},
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * R10-a — the App lock gate overlay: a full-screen Compose surface that
+ * covers EVERYTHING (onboarding, shell, rooms, the share-in sheet) while
+ * [PulseAppLock.locked] is true. The system BiometricPrompt is the real
+ * gate — this overlay is the honest fallback surface (prompt dismissed,
+ * backoff countdown, or a device that lost its credentials), never a fake
+ * unlock.
+ */
+@Composable
+private fun AppLockGate(
+    appLock: app.pulse.android.security.PulseAppLock,
+    onRequestUnlock: () -> Unit,
+) {
+    val notice by appLock.failureNotice.collectAsStateWithLifecycle()
+    val backoffUntilMs by appLock.backoffUntilMs.collectAsStateWithLifecycle()
+    val unlockImpossible by appLock.unlockImpossible.collectAsStateWithLifecycle()
+    val dark = isPulseDarkTheme()
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    // Live countdown while the post-failure backoff runs.
+    LaunchedEffect(backoffUntilMs) {
+        while (System.currentTimeMillis() < backoffUntilMs) {
+            delay(500)
+            nowMs = System.currentTimeMillis()
+        }
+        nowMs = System.currentTimeMillis()
+    }
+    val backingOff = nowMs < backoffUntilMs
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(if (dark) Color(0xF509090B) else Color(0xF5FAFAFA))
+            .statusBarsPadding()
+            .padding(28.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Filled.Lock,
+                contentDescription = "Pulse is locked",
+                tint = PulsePalette.Emerald,
+                modifier = Modifier.size(44.dp),
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Pulse is locked",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (dark) Color.White else Color(0xFF18181B),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Unlock with your fingerprint, face, or screen lock.",
+                fontSize = 13.sp,
+                color = if (dark) Color(0xFFA1A1AA) else Color(0xFF71717A),
+            )
+            notice?.let { message ->
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    message,
+                    fontSize = 13.sp,
+                    color = if (unlockImpossible || backingOff) Color(0xFFB91C1C) else MaterialTheme.colorScheme.error,
+                )
+            }
+            Spacer(Modifier.height(22.dp))
+            when {
+                // The device has NO credential to verify with — no prompt can
+                // ever succeed, so the gate offers the honest way out instead.
+                unlockImpossible -> Button(onClick = { appLock.disableWithoutCredentials() }) {
+                    Text("Turn off App lock")
+                }
+                // Max attempts (or a system lockout) — wait out the backoff.
+                backingOff -> {
+                    val secondsLeft = ((backoffUntilMs - nowMs) / 1000).coerceAtLeast(0)
+                    Button(onClick = {}, enabled = false) {
+                        Text("Try again in ${secondsLeft + 1}s")
+                    }
+                }
+                // Normal path: re-present the system prompt.
+                else -> Button(onClick = onRequestUnlock) { Text("Unlock") }
             }
         }
     }

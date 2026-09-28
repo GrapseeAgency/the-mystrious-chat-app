@@ -25,6 +25,13 @@ struct PulseApp: App {
         // even before RootView attaches its routing closure.
         UNUserNotificationCenter.current().delegate = PulseReminderNotificationDelegate.shared
 
+        // R10-b — the notification quick-reply category ("Reply" text-input
+        // action on message-bound notifications). Registered once at process
+        // start so cold-start banners already offer it; the same delegate
+        // routes UNTextInputNotificationResponse to
+        // PulseQuickReplyCoordinator (session send or honest fallback).
+        PulseQuickReply.registerCategory()
+
         // BGAppRefreshTask for the outbox. Registration returns false (and
         // logs) on the simulator / when the identifier is missing from the
         // Info.plist — tolerated, foreground flushing still covers it.

@@ -39,6 +39,13 @@ public enum PulseReminderNotifications {
         content.body = "Reminder"
         content.sound = .default
         content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId)
+        // R10-b — conversation-bound postings carry the quick-reply category
+        // ("Reply" text-input action → PulseQuickReplyCoordinator). Tapless
+        // postings stay tapless — a Reply control without a routable room
+        // would be a dead control.
+        if PulseQuickReply.applies(toConversationId: conversationId) {
+            content.categoryIdentifier = PulseQuickReply.categoryId
+        }
 
         let fireDate = Date(timeIntervalSince1970: TimeInterval(remindAtEpochMs) / 1000)
         let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
@@ -67,6 +74,10 @@ public enum PulseReminderNotifications {
         content.body = String(body.prefix(178))
         content.sound = .default
         content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId)
+        // R10-b — same category stamp as schedule() (see above).
+        if PulseQuickReply.applies(toConversationId: conversationId) {
+            content.categoryIdentifier = PulseQuickReply.categoryId
+        }
         let request = UNNotificationRequest(
             identifier: "pulse-reminder-fired-\(reminderId)",
             content: content,
@@ -122,6 +133,22 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void,
     ) {
+        // R10-b — quick reply: a text-input response on the PULSE_MSG
+        // category carries the typed message. Route it to the coordinator
+        // (live-session send, or the honest open-room fallback — never a
+        // fake send). Any other response keeps the tap routing below.
+        if let textResponse = response as? UNTextInputNotificationResponse,
+           response.actionIdentifier == PulseQuickReply.replyActionId {
+            let userInfo = response.notification.request.content.userInfo
+            if let conversationId = Self.roomId(from: userInfo) {
+                let text = textResponse.userText
+                Task { @MainActor in
+                    PulseQuickReplyCoordinator.shared.handle(text: text, conversationId: conversationId)
+                }
+                completionHandler()
+                return
+            }
+        }
         let userInfo = response.notification.request.content.userInfo
         if let link = Self.deepLink(from: userInfo), case .room(let conversationId) = link {
             // The routing closure is formed on the main actor (RootView) —

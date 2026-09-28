@@ -12,6 +12,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -684,10 +688,34 @@ private fun OutlinedField(label: String, value: String, onChange: (String) -> Un
 @Composable
 fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
+    val appLockOn by viewModel.appLockEnabled.collectAsStateWithLifecycle()
+    // R10-a — read ONCE in composable context; the App-lock callback below is
+    // a plain (Boolean) -> Unit, so it can't touch LocalContext itself.
+    val context = LocalContext.current
     SectionScaffold("Privacy & Security", onBack) {
         RowToggle("Last seen & online", "Everyone can see when you were last active. Server-enforced.", prefs.lastSeenVisible == true, viewModel::setLastSeenVisible)
         RowToggle("Read receipts", "Send and request read receipts.", prefs.readReceipts == true, viewModel::setReadReceipts)
         RowToggle("Typing indicator", "Broadcast when you type. Server-enforced.", prefs.typingVisible == true, viewModel::setTypingVisible)
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        // R10-a — biometric App lock (device-local). Turning it ON runs ONE
+        // confirmation BiometricPrompt right here: only a device that can
+        // actually verify keeps the flag — anything else is an honest revert.
+        RowToggle(
+            "App lock",
+            "Lock Pulse behind biometrics or your device screen lock.",
+            appLockOn,
+        ) { want ->
+            val activity = context as? FragmentActivity
+            when {
+                !want -> viewModel.setAppLockEnabled(false)
+                activity == null -> Toast.makeText(
+                    context,
+                    "App lock needs the app's main screen — try again from a chat tab.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+                else -> confirmAppLock(activity) { viewModel.setAppLockEnabled(true) }
+            }
+        }
         HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
         Row(
             Modifier
@@ -1019,4 +1047,43 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
         }
         Spacer(Modifier.height(20.dp))
     }
+}
+
+/**
+ * R10-a — the App lock enable-confirmation: ONE BiometricPrompt runs right
+ * now. Availability first — a device with no biometrics/screen lock gets the
+ * honest toast and the toggle stays off (the caller never persists). Success
+ * is the only path that persists the flag.
+ */
+private fun confirmAppLock(activity: FragmentActivity, onConfirmed: () -> Unit) {
+    val authenticators =
+        BiometricManager.Authenticators.BIOMETRIC_WEAK or
+            BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    if (BiometricManager.from(activity).canAuthenticate(authenticators) !=
+        BiometricManager.BIOMETRIC_SUCCESS
+    ) {
+        Toast.makeText(
+            activity,
+            "No biometrics or screen lock set on this device",
+            Toast.LENGTH_SHORT,
+        ).show()
+        return
+    }
+    val prompt = BiometricPrompt(
+        activity,
+        ContextCompat.getMainExecutor(activity),
+        object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                onConfirmed()
+            }
+            // Failure / dismissal persist NOTHING — the toggle stays off and
+            // the user can try again. No silent half-enabled state.
+        },
+    )
+    val info = BiometricPrompt.PromptInfo.Builder()
+        .setTitle("Confirm App lock")
+        .setSubtitle("Verify it's you to require unlock when Pulse opens")
+        .setAllowedAuthenticators(authenticators)
+        .build()
+    prompt.authenticate(info)
 }

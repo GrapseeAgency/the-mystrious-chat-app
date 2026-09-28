@@ -56,10 +56,23 @@ targets:
       NSLocationWhenInUseUsageDescription: Pulse uses your location once to share a map pin in a chat.
       # Wave 0 — outbox background refresh (matches PulseApp.outboxTaskID).
       BGTaskSchedulerPermittedIdentifiers: ["app.pulse.chat.outbox"]
-      # Wave 6 — pulse:// deep links (invite / user / room), F-DL.
+      # Wave 6 — pulse:// deep links (invite / user / room / R10-b new), F-DL.
       CFBundleURLTypes:
         - CFBundleURLName: app.pulse.chat
           CFBundleURLSchemes: ["pulse"]
+      # R10-b — home-screen quick actions (static UIApplicationShortcutItems).
+      # The type strings MUST stay byte-identical with the
+      # PulseQuickActionRoute.openType/.composeType constants (PulseQuickActions.swift);
+      # delivery: PulseAppDelegate configurationForConnecting → PulseSceneDelegate
+      # → PulseQuickActions.pendingRoute → RootView consumption.
+      UIApplicationShortcutItems:
+        - UIApplicationShortcutItemType: app.pulse.shortcut.open
+          UIApplicationShortcutItemTitle: Open Pulse
+          UIApplicationShortcutItemSubtitle: Chats
+          UIApplicationShortcutItemIconSymbolName: bubble.left.and.bubble.right
+        - UIApplicationShortcutItemType: app.pulse.shortcut.compose
+          UIApplicationShortcutItemTitle: New message
+          UIApplicationShortcutItemIconSymbolName: square.and.pencil
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.pulse.chat

@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import app.pulse.core.link.PulseDeepLink
+import app.pulse.android.notify.PulseReplyPayload
 import app.pulse.feature.calls.CallRingNotifier
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -111,10 +112,37 @@ class PulseMessagingService : FirebaseMessagingService() {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(contentPi)
             .setAutoCancel(true)
-            .build()
+        // R10-a — quick reply (RemoteInput): the action routes through
+        // PulseReplyReceiver → SendMessageUseCase — the SAME send path the
+        // room composer uses, so offline replies queue in the outbox.
+        if (!conversationId.isNullOrBlank()) {
+            val remoteInput = androidx.core.app.RemoteInput.Builder(PulseReplyPayload.KEY_REPLY_TEXT)
+                .setLabel(getString(app.pulse.android.R.string.reply_action))
+                .build()
+            val replyIntent = Intent(this, app.pulse.android.notify.PulseReplyReceiver::class.java).apply {
+                putExtra(PulseReplyPayload.EXTRA_CONVERSATION_ID, conversationId)
+            }
+            val replyPi = PendingIntent.getBroadcast(
+                this,
+                PulseReplyPayload.notificationId(conversationId),
+                replyIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            notification.addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.sym_action_chat,
+                    getString(app.pulse.android.R.string.reply_action),
+                    replyPi,
+                )
+                    .addRemoteInput(remoteInput)
+                    .setAllowGeneratedReplies(true)
+                    .build(),
+            )
+        }
+        val built = notification.build()
         runCatching {
             val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-            nm.notify((conversationId ?: "pulse").hashCode().and(0x3FFFFFFF), notification)
+            nm.notify((conversationId ?: "pulse").hashCode().and(0x3FFFFFFF), built)
         }.onFailure { Log.w(TAG, "message notification failed", it) }
     }
 

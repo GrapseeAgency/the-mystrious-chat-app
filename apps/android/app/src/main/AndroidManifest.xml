@@ -47,6 +47,43 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="pulse" />
             </intent-filter>
+            <!-- R10-a — launcher shortcuts fire this custom action with
+                 tab/action extras (res/xml/shortcuts.xml); the handler is
+                 MainActivity.handleIntent → the shell's tab/search/composer
+                 state. -->
+            <intent-filter>
+                <action android:name="app.pulse.android.action.SHORTCUT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- R10-a — static launcher shortcuts: Chats / New message / Search. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- R10-a — system share target ("Share into Pulse"): a thin hop that
+             validates the ACTION_SEND payload, forwards it to MainActivity as
+             the pulse.share_in.* extras and finishes. exported=true because the
+             SYSTEM must reach it; the translucent theme keeps the hop
+             invisible and excludeFromRecents keeps it out of the task list. -->
+        <activity
+            android:name=".ShareInActivity"
+            android:exported="true"
+            android:label="Share into Pulse"
+            android:excludeFromRecents="true"
+            android:allowTaskReparenting="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
 
         <!-- LiveUpdate: read-only URI for the system installer on cacheDir/liveupdate. -->
@@ -125,5 +162,12 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <!-- R10-a — notification quick-reply hand-off. The system (not any
+             other app) delivers the RemoteInput result here; exported=false. -->
+        <receiver
+            android:name="app.pulse.android.notify.PulseReplyReceiver"
+            android:enabled="true"
+            android:exported="false" />
     </application>
 </manifest>

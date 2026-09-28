@@ -308,6 +308,13 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
         aps: {
           alert: { title: payload.title, body: payload.body },
           sound: 'default',
+          // R10 — remote message pushes render the OS quick-reply action: the
+          // iOS client registers the PULSE_MSG category (PulseQuickReply.
+          // registerCategory, UNTextInputNotificationAction) and the system
+          // attaches its Reply control to banners carrying this aps.category.
+          // Message pushes always carry conversationId; calls/reminders stay
+          // action-less (a Reply on a call banner would be a dead control).
+          ...(payload.kind === 'message' && payload.conversationId ? { category: 'PULSE_MSG' } : {}),
           ...(payload.kind === 'message' ? {} : { 'interruption-level': 'time-sensitive' }),
         },
         kind: payload.kind,

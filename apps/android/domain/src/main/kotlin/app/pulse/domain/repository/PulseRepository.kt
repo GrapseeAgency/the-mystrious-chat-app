@@ -166,10 +166,18 @@ interface PulsePrefsStore {
     /** Quiet window end 'HH:mm' 24h LOCAL time — may be < start → overnight (default 07:00). */
     val quietEnd: Flow<String>
 
+    /**
+     * R10-a — biometric App lock (device-local, never rides the server blob):
+     * ON → the app presents a BiometricPrompt gate (BIOMETRIC_WEAK |
+     * DEVICE_CREDENTIAL) before any Pulse surface is reachable.
+     */
+    val appLockEnabled: Flow<Boolean>
+
     suspend fun setHapticsOn(value: Boolean)
     suspend fun setQuietHoursOn(value: Boolean)
     suspend fun setQuietStart(value: String)
     suspend fun setQuietEnd(value: String)
+    suspend fun setAppLockEnabled(value: Boolean)
 
     // ── R2-C — design language + spotlight + whiteboard draft ──────
 

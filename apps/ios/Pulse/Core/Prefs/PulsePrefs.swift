@@ -263,6 +263,11 @@ public final class PulsePrefs: ObservableObject {
     /// to the web store (nav-registry.ts `pulse.navStyle.v2`); the 5 excluded
     /// web ids + junk decode to capsule via PulseNavStyle.parse.
     public static let navStyleKey = "pulse.navStyle.v2"
+    /// R10-b — the biometric app lock (PulseAppLock). LOCAL-only device
+    /// security: there is no web/account equivalent to sync with (same
+    /// precedent as the screenPrivacy veil), so this stays a direct-defaults
+    /// key outside the server-synced blob.
+    public static let appLockEnabledKey = "pulse.appLock.enabled"
 
     /// R1-W2G D46 — namespaced key builder for the durable last-position
     /// cache per space room ("space:lastpos:<roomId>"). The relay keeps the
@@ -326,6 +331,8 @@ public final class PulsePrefs: ObservableObject {
         // R4-A item 3 — nav architecture (tolerant: excluded ids/junk →
         // capsule, web parity).
         navStyle = PulseNavStyle.parse(defaults.string(forKey: Self.navStyleKey))
+        // R10-b — biometric app lock (local-only device security).
+        appLockEnabled = defaults.bool(forKey: Self.appLockEnabledKey)
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
     }
 
@@ -362,6 +369,8 @@ public final class PulsePrefs: ObservableObject {
     @Published public private(set) var uiTheme: PulseUiThemeId
     // ── R4-A item 3 — the navigation architecture (nav-registry parity) ──
     @Published public private(set) var navStyle: PulseNavStyle
+    // ── R10-b — biometric app lock (local-only, PulseAppLock gate) ──
+    @Published public private(set) var appLockEnabled: Bool
 
     public var hasIdentity: Bool { viewer != nil }
 
@@ -455,6 +464,14 @@ public final class PulsePrefs: ObservableObject {
     public func setVoiceCaptions(_ enabled: Bool) {
         voiceCaptions = enabled
         defaults.set(enabled, forKey: Self.voiceCaptionsKey)
+    }
+
+    /// R10-b — persist the app-lock toggle. The enable path in SettingsView
+    /// only calls this AFTER the LAContext confirmation passed, so a device
+    /// that cannot enforce the lock never stores `true`.
+    public func setAppLockEnabled(_ enabled: Bool) {
+        appLockEnabled = enabled
+        defaults.set(enabled, forKey: Self.appLockEnabledKey)
     }
 
     // ── R1-W2B F-FX-05 — per-conversation theme setters ──

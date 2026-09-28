@@ -5,6 +5,9 @@ import Foundation
 ///   pulse://invite/{code}   → JoinGroupSheet parity (#/join handled via ?join=)
 ///   pulse://user/{id}       → the full user page (#/user/:id)
 ///   pulse://room/{id}       → open the conversation
+///   pulse://new             → the dock compose sheet (R10-b: the
+///                             "New message" home-screen quick action
+///                             shares this destination)
 /// Percent-encoded path segments decode here so hand-built NFC/QR links
 /// behave exactly like in-app taps. Pure + total: anything unparseable is
 /// `.none` (the caller ignores it — no crash, no half-state).
@@ -12,6 +15,8 @@ public enum PulseDeepLink: Equatable {
     case invite(code: String)
     case user(userId: String)
     case room(conversationId: String)
+    /// R10-b — the argument-less compose route (pulse://new).
+    case compose
 
     public static let scheme = "pulse"
 
@@ -28,8 +33,13 @@ public enum PulseDeepLink: Equatable {
         parts.append(contentsOf: pathSegments.compactMap { segment in
             segment.removingPercentEncoding
         })
-        guard parts.count >= 2 else { return nil }
+        guard !parts.isEmpty else { return nil }
         let kind = parts[0].lowercased()
+        // R10-b — the argument-less compose route: pulse://new (and the
+        // pulse://compose spelling) carry no key segment. Every other
+        // family needs the key below.
+        if kind == "new" || kind == "compose" { return .compose }
+        guard parts.count >= 2 else { return nil }
         let key = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return nil }
         switch kind {

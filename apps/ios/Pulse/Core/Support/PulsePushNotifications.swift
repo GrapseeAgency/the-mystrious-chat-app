@@ -73,6 +73,24 @@ public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
+    /// R10-b — home-screen quick actions: install PulseSceneDelegate so the
+    /// shortcut delivery hooks exist (cold launch reads
+    /// connectionOptions.shortcutItem, warm launch rides
+    /// windowScene(_:performActionFor:)). The delegate owns NO window —
+    /// SwiftUI's WindowGroup keeps providing the UI — it only observes the
+    /// shortcuts into PulseQuickActions.pendingRoute, which RootView
+    /// consumes. This is the minimal scene-configuration touch that keeps
+    /// the SwiftUI lifecycle intact.
+    public func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = PulseSceneDelegate.self
+        return configuration
+    }
+
     /// The APNs device token — converted to the lowercase hex string the
     /// server transport addresses pushes with (transport.ts sendIos).
     public func application(
