@@ -46,9 +46,11 @@ final class PulseSpotlightRecentsTests: XCTestCase {
         store.push("party plans")
         XCTAssertEqual(store.read(), ["party plans", "contracts"])
 
-        // Re-pushing an existing query (any case) moves it to the front.
+        // Re-pushing an existing query (any case) moves it to the front and
+        // adopts the new casing — web pushRecent prepends the trimmed query
+        // verbatim (spotlight.tsx pushRecent).
         store.push("CONTRACTS")
-        XCTAssertEqual(store.read(), ["contracts", "party plans"])
+        XCTAssertEqual(store.read(), ["CONTRACTS", "party plans"])
     }
 
     func testPushIgnoresBlankQueries() {

@@ -91,7 +91,8 @@ public enum PulseReminderNotifications {
     /// Internal (not private) so the tests can pin the exact payload shape.
     static func userInfo(reminderId: String, conversationId: String?) -> [String: String] {
         var info = ["reminderId": reminderId]
-        if let conversationId, !conversationId.isEmpty {
+        // Whitespace-only ids count as blank — a tap would deep-link nowhere.
+        if let conversationId, !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             info["conversationId"] = conversationId
         }
         return info

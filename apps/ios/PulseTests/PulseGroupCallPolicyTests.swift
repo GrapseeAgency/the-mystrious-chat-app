@@ -69,16 +69,17 @@ final class PulseGroupCallPolicyTests: XCTestCase {
 
     func testRosterPlanSkipsConnectedMembersAndHigherIds() {
         // 'a' already connected (offer/answer in flight or it offered us),
-        // 'c' already connected too; 'd' sorts above me — d offers ME.
-        // Only 'd' stays: it is unconnected but I must NOT offer upward.
+        // 'c' already connected too; 'd' sorts above me — the deterministic
+        // rule is `me < member.id` (web applyRoster :287), so I own the
+        // b–d offer and d is the only unconnected peer left to offer.
         let plan = PulseGroupCallPolicy.rosterPlan(
             myId: "b",
             rosterIds: ["a", "b", "c", "d"],
             connectedPeerIds: ["a", "c"],
         )
         XCTAssertEqual(plan.departing, [])
-        // a + c: connected (skip). d: sorts ABOVE me — d offers ME. → nothing.
-        XCTAssertEqual(plan.toOffer, [])
+        // a + c: connected (skip). d: unconnected and above me → I offer.
+        XCTAssertEqual(plan.toOffer, ["d"])
     }
 
     func testRosterPlanStillOffersToLowerUnconnectedMember() {

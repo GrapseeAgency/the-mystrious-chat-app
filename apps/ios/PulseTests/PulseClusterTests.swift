@@ -101,8 +101,11 @@ final class PulseClusterTests: XCTestCase {
     }
 
     func testTailOnLastRowAndBeforeHeads() {
+        // Gaps: 1min inside cluster one, then 5min+1ms (past the window —
+        // the boundary-equals case is pinned by testWindowBoundaryIsStrictlyGreaterThan),
+        // then 1min inside cluster two.
         let out = flags(
-            [baseMs, baseMs + minute, baseMs + 6 * minute, baseMs + 7 * minute],
+            [baseMs, baseMs + minute, baseMs + 6 * minute + 1, baseMs + 7 * minute + 1],
             senders: ["a", "a", "a", "a"],
         )
         XCTAssertEqual(out.map(\.head), [true, false, true, false])
