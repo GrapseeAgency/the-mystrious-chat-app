@@ -20,6 +20,24 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      # R12 fix — the macos-15 image rotated its default Xcode and the new
+      # toolchain killed SwiftCompile batches with zero diagnostics (both
+      # x86_64 and arm64 units, deterministic across runs). Pin to the oldest
+      # mature Xcode present, falling forward to newer ones if pruned.
+      - name: Pin Xcode (image-drift guard)
+        run: |
+          set -euo pipefail
+          for XC in Xcode_16.2 Xcode_16.3 Xcode_16.4 Xcode_26.0; do
+            if [ -d "/Applications/$XC.app" ]; then
+              sudo xcode-select -s "/Applications/$XC.app"
+              echo "Pinned: $XC"
+              break
+            fi
+          done
+          xcode-select -p
+          xcodebuild -version
+          swift --version | head -2
+
       - name: Generate Xcode project
         run: xcodegen generate
 
@@ -49,6 +67,7 @@ jobs:
           set -o pipefail
           xcodebuild -project Pulse.xcodeproj -scheme Pulse \
             -destination 'generic/platform=iOS Simulator' build \
+            SWIFT_COMPILATION_MODE=singlefile COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO | xcbeautify
 
       # SocketRoundTripTests target: the iOS SDK has no Process, so the node
@@ -76,6 +95,7 @@ jobs:
           set -o pipefail
           xcodebuild -project Pulse.xcodeproj -scheme Pulse \
             -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.device }}" test \
+            SWIFT_COMPILATION_MODE=singlefile COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO | xcbeautify
 
       - name: Upload simulator app artifact
@@ -122,15 +142,31 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Pin Xcode (image-drift guard)
+        run: |
+          set -euo pipefail
+          for XC in Xcode_16.2 Xcode_16.3 Xcode_16.4 Xcode_26.0; do
+            if [ -d "/Applications/$XC.app" ]; then
+              sudo xcode-select -s "/Applications/$XC.app"
+              echo "Pinned: $XC"
+              break
+            fi
+          done
+          xcode-select -p
+          xcodebuild -version
+
       - name: Generate Xcode project
         run: xcodegen generate
 
       - name: Archive (unsigned, generic iOS device)
         run: |
           set -o pipefail
+          # Wave-0 structure proof: -Onone + singlefile keeps the compile
+          # inside the runner's memory envelope; the archive stays valid.
           xcodebuild archive -project Pulse.xcodeproj -scheme Pulse \
             -destination 'generic/platform=iOS' \
             -archivePath /tmp/Pulse.xcarchive \
+            SWIFT_OPTIMIZATION_LEVEL=-Onone SWIFT_COMPILATION_MODE=singlefile COMPILER_INDEX_STORE_ENABLE=NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | xcbeautify
 
       - name: Verify archive structure
