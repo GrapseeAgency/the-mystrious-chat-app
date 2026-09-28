@@ -469,75 +469,28 @@ private struct RoomContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Wave 2 topics — group rooms only (General = whole room, spec §1 row 9).
-            if conversation.isGroup {
-                TopicBar(
-                    topics: viewModel.topics,
-                    activeTopicId: viewModel.activeTopicId,
-                    onSelect: { viewModel.setActiveTopic($0, session: session) },
-                    onCreate: { name, emoji in
-                        viewModel.createTopic(name: name, emoji: emoji, session: session)
-                    },
-                )
-            }
-            pinnedBanner
-            // REM-B F-MS-19 — header TTL chip when disappearing is on.
-            if (conversation.ttlSeconds ?? 0) > 0 {
-                HStack(spacing: 6) {
-                    Image(systemName: "timer")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(PulseTheme.emerald)
-                    Text("Disappearing · \(GroupInfoView.ttlLabel(conversation.ttlSeconds))")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 5)
-                .background(PulseTheme.emerald.opacity(0.08))
-                .accessibilityLabel("Disappearing messages enabled")
-            }
-            if searchOpen {
-                roomSearchPanel
-            }
-            // R38/R42 — the veil covers ONLY the message river (header +
-            // composer stay untouched, web parity). Stable modifier chain so
-            // the scroll identity never resets across toggles.
-            messagesList
-                .blur(radius: veilEngaged ? 24 : 0)
-                .overlay {
-                    if veilEngaged {
-                        veilCover
-                    }
-                }
-                .allowsHitTesting(!veilEngaged)
-            // R34-b — AI recap card pinned above the composer.
-            if viewModel.recap != nil {
-                recapCard
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 4)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-            // F-SM-04 — @-suggester popover (roster, top-5 prefix match).
-            if !mentionCandidates.isEmpty {
-                mentionPopover()
-            }
-            // R3-A item 1 — the live '/' palette (web SlashPalette parity:
-            // draft starts with '/', pick routes the outcome machine). The
-            // palette and the @-suggester never compete — a '/' draft carries
-            // no @-token at the tail.
-            if slashPaletteVisible {
-                SlashPaletteView(draft: viewModel.draft) { command in
-                    pickSlashCommand(command)
-                }
-            }
-            if !session.connected {
-                offlineStrip
-            }
-            if let error = viewModel.errorText {
-                errorStrip(error)
-            }
-            composer
+            chatBodyPart0
+            chatBodyPart1
+            chatBodyPart2
+            chatBodyPart3
+            chatBodyPart4
+            chatBodyPart5
+            chatBodyPart6
+            chatBodyPart7
+            chatBodyPart8
+            chatBodyPart9
+            chatBodyPart10
+            chatBodyPart11
+            chatBodyPart12
+            chatBodyPart13
+            chatBodyPart14
+            chatBodyPart15
+            chatBodyPart16
+            chatBodyPart17
+            chatBodyPart18
+            chatBodyPart19
+            chatBodyPart20
+            chatBodyPart21
         }
         .background(alignment: .top) {
             // Wave 8 — prefs wallpaper behind the whole room (web chat-room
@@ -1105,6 +1058,166 @@ private struct RoomContent: View {
         }
     }
 
+    // ChatRoomView.body — R12 type-check decomposition: the original builder exceeded
+    // Swift’s type-check budget; the view tree is VERBATIM, split only.
+    @ViewBuilder
+    private var chatBodyPart0: some View {
+            // Wave 2 topics — group rooms only (General = whole room, spec §1 row 9).
+    }
+
+    @ViewBuilder
+    private var chatBodyPart1: some View {
+            if conversation.isGroup {
+                TopicBar(
+                    topics: viewModel.topics,
+                    activeTopicId: viewModel.activeTopicId,
+                    onSelect: { viewModel.setActiveTopic($0, session: session) },
+                    onCreate: { name, emoji in
+                        viewModel.createTopic(name: name, emoji: emoji, session: session)
+                    },
+                )
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart2: some View {
+            pinnedBanner
+    }
+
+    @ViewBuilder
+    private var chatBodyPart3: some View {
+            // REM-B F-MS-19 — header TTL chip when disappearing is on.
+    }
+
+    @ViewBuilder
+    private var chatBodyPart4: some View {
+            if (conversation.ttlSeconds ?? 0) > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "timer")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PulseTheme.emerald)
+                    Text("Disappearing · \(GroupInfoView.ttlLabel(conversation.ttlSeconds))")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PulseTheme.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 5)
+                .background(PulseTheme.emerald.opacity(0.08))
+                .accessibilityLabel("Disappearing messages enabled")
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart5: some View {
+            if searchOpen {
+                roomSearchPanel
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart6: some View {
+            // R38/R42 — the veil covers ONLY the message river (header +
+    }
+
+    @ViewBuilder
+    private var chatBodyPart7: some View {
+            // composer stay untouched, web parity). Stable modifier chain so
+    }
+
+    @ViewBuilder
+    private var chatBodyPart8: some View {
+            // the scroll identity never resets across toggles.
+    }
+
+    @ViewBuilder
+    private var chatBodyPart9: some View {
+            messagesList
+                .blur(radius: veilEngaged ? 24 : 0)
+                .overlay {
+                    if veilEngaged {
+                        veilCover
+                    }
+                }
+                .allowsHitTesting(!veilEngaged)
+    }
+
+    @ViewBuilder
+    private var chatBodyPart10: some View {
+            // R34-b — AI recap card pinned above the composer.
+    }
+
+    @ViewBuilder
+    private var chatBodyPart11: some View {
+            if viewModel.recap != nil {
+                recapCard
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart12: some View {
+            // F-SM-04 — @-suggester popover (roster, top-5 prefix match).
+    }
+
+    @ViewBuilder
+    private var chatBodyPart13: some View {
+            if !mentionCandidates.isEmpty {
+                mentionPopover()
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart14: some View {
+            // R3-A item 1 — the live '/' palette (web SlashPalette parity:
+    }
+
+    @ViewBuilder
+    private var chatBodyPart15: some View {
+            // draft starts with '/', pick routes the outcome machine). The
+    }
+
+    @ViewBuilder
+    private var chatBodyPart16: some View {
+            // palette and the @-suggester never compete — a '/' draft carries
+    }
+
+    @ViewBuilder
+    private var chatBodyPart17: some View {
+            // no @-token at the tail.
+    }
+
+    @ViewBuilder
+    private var chatBodyPart18: some View {
+            if slashPaletteVisible {
+                SlashPaletteView(draft: viewModel.draft) { command in
+                    pickSlashCommand(command)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart19: some View {
+            if !session.connected {
+                offlineStrip
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart20: some View {
+            if let error = viewModel.errorText {
+                errorStrip(error)
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart21: some View {
+            composer
+    }
+
+
     @State private var showPhotoPicker = false
 
     /// Wave 6 — the DM partner (safety entry + verified badge are DM-only,
@@ -1511,7 +1624,7 @@ private struct RoomContent: View {
                             .foregroundStyle(.secondary)
                     }
                 case .ready:
-                    Text(viewModel.recapText)
+                    Text(viewModel.recapText ?? "—")
                         .font(.caption)
                         .foregroundStyle(.primary)
                         .lineSpacing(3)
@@ -2666,7 +2779,7 @@ struct BubbleView: View {
                             .foregroundStyle(PulseTheme.emerald)
                             .padding(7)
                             .background(Circle().fill(PulseTheme.emerald.opacity(0.12)))
-                            .opacity(min(1, max(0, (swipeToward - 4) / 24)))
+                            .opacity(min(CGFloat(1), max(CGFloat(0), (swipeToward - 4) / 24)))
                             .allowsHitTesting(false)
                     }
                 }

@@ -123,254 +123,40 @@ struct GroupInfoView: View {
 
     private func content(_ detail: WireConversationSummary) -> some View {
         List {
-            Section {
-                HStack(spacing: 12) {
-                    RowAvatar(
-                        name: detail.name ?? "Group",
-                        colorName: "violet",
-                        photoPath: detail.photo,
-                        size: 56,
-                        groupID: detail.id,
-                    )
-                    .overlay(alignment: .bottomTrailing) {
-                        // R33-b — "Edit photo" overlay for admins of ANY group
-                        // (channels and plain groups alike; the PATCH route has
-                        // always accepted photo for every group) — opens the
-                        // real upload chain (pick → /api/uploads → PATCH photo).
-                        if isAdmin {
-                            PhotosPicker(selection: $photoItem, matching: .images) {
-                                Image(systemName: photoBusy ? "hourglass" : "pencil")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 22, height: 22)
-                                    .background(Circle().fill(PulseTheme.emerald))
-                                    .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
-                            }
-                            .disabled(photoBusy)
-                            .accessibilityLabel(detail.photo == nil ? "Add group photo" : "Edit group photo")
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(detail.name ?? "Group")
-                            .font(.headline)
-                            .lineLimit(1)
-                        Text("\(detail.members.count) members")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if detail.broadcastMode == true {
-                            Label("Announcement mode", systemImage: "megaphone.fill")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(PulseTheme.amber)
-                        }
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-
-            // ── admin group settings ──
-            if isAdmin {
-                Section("Group settings") {
-                    Button {
-                        renameDraft = detail.name ?? ""
-                        renameOpen = true
-                    } label: {
-                        Label("Rename group", systemImage: "pencil")
-                    }
-                    Button {
-                        broadcastOpen = true
-                    } label: {
-                        Label(
-                            detail.broadcastMode == true ? "Turn off announcement mode" : "Turn on announcement mode",
-                            systemImage: "megaphone",
-                        )
-                    }
-                    Button {
-                        ttlOpen = true
-                    } label: {
-                        HStack {
-                            Label("Disappearing messages", systemImage: "timer")
-                            Spacer()
-                            Text(Self.ttlLabel(detail.ttlSeconds))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Button {
-                        slowModeOpen = true
-                    } label: {
-                        HStack {
-                            Label("Slow mode", systemImage: "tortoise")
-                            Spacer()
-                            Text(Self.slowModeLabel(detail.slowModeSeconds ?? 0))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-
-            // ── R38/R42 — screen security (comfort setting, deliberately
-            // NOT admin-gated — web parity): the personal veil frosts MY
-            // view; the room-wide switch frosts every member's view. Both
-            // flags OR together inside the room.
-            Section {
-                Toggle(isOn: Binding(
-                    get: { prefs.screenPrivacy[conversation.id] ?? false },
-                    set: { setMyScreenPrivacy($0) },
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("Screen security", systemImage: "eye.slash")
-                            .font(.subheadline.weight(.medium))
-                        Text("Blur messages when Pulse loses focus — just for you")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .accessibilityLabel("Screen security for you")
-                Toggle(isOn: Binding(
-                    get: { detail?.screenPrivacy ?? false },
-                    set: { setRoomScreenPrivacy($0) },
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("Screen security for everyone", systemImage: "shield.lefthalf.filled")
-                            .font(.subheadline.weight(.medium))
-                        Text("Applies to every member of this chat")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(detail == nil)
-                .accessibilityLabel("Screen security for everyone")
-            }
-
-            // ── invite (admin; web room-info-page parity) ──
-            if isAdmin {
-                Section("Invite link") {
-                    if let code = inviteCode {
-                        LabeledContent("Code", value: code)
-                        Button {
-                            UIPasteboard.general.string = "pulse://invite/\(code)"
-                            session.toasts.show("Invite link copied")
-                            PulseHaptics.tap()
-                        } label: {
-                            Label("Copy pulse://invite/\(code)", systemImage: "doc.on.doc")
-                        }
-                        Button {
-                            rotateInvite(regenerate: true)
-                        } label: {
-                            if inviteBusy {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Label("Regenerate link", systemImage: "arrow.triangle.2.circlepath")
-                            }
-                        }
-                        .disabled(inviteBusy)
-                    } else {
-                        Button {
-                            rotateInvite(regenerate: false)
-                        } label: {
-                            if inviteBusy {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Label("Create invite link", systemImage: "link.badge.plus")
-                            }
-                        }
-                        .disabled(inviteBusy)
-                    }
-                }
-            }
-
-            // ── members ──
-            Section {
-                // R2-D ITEM 9 — the search pill (web shows it past 8 members:
-                // room-info-page.tsx:1425-1459, "Search members" placeholder).
-                if detail.members.count > 8 {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                        TextField("Search members", text: $memberQuery)
-                            .font(.system(size: 13))
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .accessibilityLabel("Search members")
-                        if !memberQuery.isEmpty {
-                            Button {
-                                memberQuery = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Clear member search")
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-                ForEach(visibleMembers(detail), id: \.id) { member in
-                    memberRow(member, detail: detail)
-                }
-                // R2-D ITEM 9 — the honest empty state (web :1604-1609 copy).
-                if detail.members.count > 8, visibleMembers(detail).isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.caption)
-                        Text("No members match \u{201C}\(memberQuery.trimmingCharacters(in: .whitespaces))\u{201D}")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
-                }
-            } header: {
-                Text("Members")
-            } footer: {
-                if isAdmin {
-                    Text("Tap a member for admin actions — promote, demote or remove.")
-                }
-            }
-
-            if isAdmin {
-                Section {
-                    Button {
-                        addMembersOpen = true
-                    } label: {
-                        Label("Add members", systemImage: "person.badge.plus")
-                    }
-                }
-            }
-
-            // ── R39 — Automations (keyword-triggered auto-replies). One
-            // section (rows + optimistic switch + honest delete + create
-            // sheet live in RoomIntegrationsSurfaces.swift). Admins manage;
-            // members read rows or the honest manage caption (web parity).
-            AutomationsSection(
-                conversationId: conversation.id,
-                viewerId: viewerId,
-                isAdmin: isAdmin,
-                session: session,
-            )
-
-            // ── R2-B — Webhooks (Discord-style incoming integrations, web
-            // group-info-sheet parity): everyone copies ingest URLs, admins
-            // create/delete.
-            WebhooksSection(
-                conversationId: conversation.id,
-                viewerId: viewerId,
-                isAdmin: isAdmin,
-                session: session,
-            )
-
-            // ── leave ──
-            Section {
-                Button(role: .destructive) {
-                    leaveOpen = true
-                } label: {
-                    Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-            } footer: {
-                Text("If you are the last admin, the longest-standing member is promoted automatically.")
-            }
+            groupContentPart0
+            groupContentPart1
+            groupContentPart2
+            groupContentPart3
+            groupContentPart4
+            groupContentPart5
+            groupContentPart6
+            groupContentPart7
+            groupContentPart8
+            groupContentPart9
+            groupContentPart10
+            groupContentPart11
+            groupContentPart12
+            groupContentPart13
+            groupContentPart14
+            groupContentPart15
+            groupContentPart16
+            groupContentPart17
+            groupContentPart18
+            groupContentPart19
+            groupContentPart20
+            groupContentPart21
+            groupContentPart22
+            groupContentPart23
+            groupContentPart24
+            groupContentPart25
+            groupContentPart26
+            groupContentPart27
+            groupContentPart28
+            groupContentPart29
+            groupContentPart30
+            groupContentPart31
+            groupContentPart32
+            groupContentPart33
         }
         .listStyle(.insetGrouped)
         .scrollDismissesKeyboard(.immediately)
@@ -464,6 +250,393 @@ struct GroupInfoView: View {
             }
         }
     }
+
+    // GroupInfoView.content — R12 type-check decomposition: the original builder exceeded
+    // Swift’s type-check budget; the view tree is VERBATIM, split only.
+    @ViewBuilder
+    private var groupContentPart0: some View {
+            Section {
+                HStack(spacing: 12) {
+                    RowAvatar(
+                        name: detail.name ?? "Group",
+                        colorName: "violet",
+                        photoPath: detail.photo,
+                        size: 56,
+                        groupID: detail.id,
+                    )
+                    .overlay(alignment: .bottomTrailing) {
+                        // R33-b — "Edit photo" overlay for admins of ANY group
+                        // (channels and plain groups alike; the PATCH route has
+                        // always accepted photo for every group) — opens the
+                        // real upload chain (pick → /api/uploads → PATCH photo).
+                        if isAdmin {
+                            PhotosPicker(selection: $photoItem, matching: .images) {
+                                Image(systemName: photoBusy ? "hourglass" : "pencil")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 22, height: 22)
+                                    .background(Circle().fill(PulseTheme.emerald))
+                                    .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+                            }
+                            .disabled(photoBusy)
+                            .accessibilityLabel(detail.photo == nil ? "Add group photo" : "Edit group photo")
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(detail.name ?? "Group")
+                            .font(.headline)
+                            .lineLimit(1)
+                        Text("\(detail.members.count) members")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if detail.broadcastMode == true {
+                            Label("Announcement mode", systemImage: "megaphone.fill")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(PulseTheme.amber)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+    }
+
+    @ViewBuilder
+    private var groupContentPart1: some View {
+            // ── admin group settings ──
+    }
+
+    @ViewBuilder
+    private var groupContentPart2: some View {
+            if isAdmin {
+                Section("Group settings") {
+                    Button {
+                        renameDraft = detail.name ?? ""
+                        renameOpen = true
+                    } label: {
+                        Label("Rename group", systemImage: "pencil")
+                    }
+                    Button {
+                        broadcastOpen = true
+                    } label: {
+                        Label(
+                            detail.broadcastMode == true ? "Turn off announcement mode" : "Turn on announcement mode",
+                            systemImage: "megaphone",
+                        )
+                    }
+                    Button {
+                        ttlOpen = true
+                    } label: {
+                        HStack {
+                            Label("Disappearing messages", systemImage: "timer")
+                            Spacer()
+                            Text(Self.ttlLabel(detail.ttlSeconds))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Button {
+                        slowModeOpen = true
+                    } label: {
+                        HStack {
+                            Label("Slow mode", systemImage: "tortoise")
+                            Spacer()
+                            Text(Self.slowModeLabel(detail.slowModeSeconds ?? 0))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+    }
+
+    @ViewBuilder
+    private var groupContentPart3: some View {
+            // ── R38/R42 — screen security (comfort setting, deliberately
+    }
+
+    @ViewBuilder
+    private var groupContentPart4: some View {
+            // NOT admin-gated — web parity): the personal veil frosts MY
+    }
+
+    @ViewBuilder
+    private var groupContentPart5: some View {
+            // view; the room-wide switch frosts every member's view. Both
+    }
+
+    @ViewBuilder
+    private var groupContentPart6: some View {
+            // flags OR together inside the room.
+    }
+
+    @ViewBuilder
+    private var groupContentPart7: some View {
+            Section {
+                Toggle(isOn: Binding(
+                    get: { prefs.screenPrivacy[conversation.id] ?? false },
+                    set: { setMyScreenPrivacy($0) },
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Screen security", systemImage: "eye.slash")
+                            .font(.subheadline.weight(.medium))
+                        Text("Blur messages when Pulse loses focus — just for you")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityLabel("Screen security for you")
+                Toggle(isOn: Binding(
+                    get: { detail?.screenPrivacy ?? false },
+                    set: { setRoomScreenPrivacy($0) },
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Screen security for everyone", systemImage: "shield.lefthalf.filled")
+                            .font(.subheadline.weight(.medium))
+                        Text("Applies to every member of this chat")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(detail == nil)
+                .accessibilityLabel("Screen security for everyone")
+            }
+
+    }
+
+    @ViewBuilder
+    private var groupContentPart8: some View {
+            // ── invite (admin; web room-info-page parity) ──
+    }
+
+    @ViewBuilder
+    private var groupContentPart9: some View {
+            if isAdmin {
+                Section("Invite link") {
+                    if let code = inviteCode {
+                        LabeledContent("Code", value: code)
+                        Button {
+                            UIPasteboard.general.string = "pulse://invite/\(code)"
+                            session.toasts.show("Invite link copied")
+                            PulseHaptics.tap()
+                        } label: {
+                            Label("Copy pulse://invite/\(code)", systemImage: "doc.on.doc")
+                        }
+                        Button {
+                            rotateInvite(regenerate: true)
+                        } label: {
+                            if inviteBusy {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Regenerate link", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                        }
+                        .disabled(inviteBusy)
+                    } else {
+                        Button {
+                            rotateInvite(regenerate: false)
+                        } label: {
+                            if inviteBusy {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Create invite link", systemImage: "link.badge.plus")
+                            }
+                        }
+                        .disabled(inviteBusy)
+                    }
+                }
+            }
+
+    }
+
+    @ViewBuilder
+    private var groupContentPart10: some View {
+            // ── members ──
+    }
+
+    @ViewBuilder
+    private var groupContentPart11: some View {
+            Section {
+                // R2-D ITEM 9 — the search pill (web shows it past 8 members:
+                // room-info-page.tsx:1425-1459, "Search members" placeholder).
+                if detail.members.count > 8 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                        TextField("Search members", text: $memberQuery)
+                            .font(.system(size: 13))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .accessibilityLabel("Search members")
+                        if !memberQuery.isEmpty {
+                            Button {
+                                memberQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear member search")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                ForEach(visibleMembers(detail), id: \.id) { member in
+                    memberRow(member, detail: detail)
+                }
+                // R2-D ITEM 9 — the honest empty state (web :1604-1609 copy).
+                if detail.members.count > 8, visibleMembers(detail).isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption)
+                        Text("No members match \u{201C}\(memberQuery.trimmingCharacters(in: .whitespaces))\u{201D}")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
+                }
+            } header: {
+                Text("Members")
+            } footer: {
+                if isAdmin {
+                    Text("Tap a member for admin actions — promote, demote or remove.")
+                }
+            }
+
+    }
+
+    @ViewBuilder
+    private var groupContentPart12: some View {
+            if isAdmin {
+                Section {
+                    Button {
+                        addMembersOpen = true
+                    } label: {
+                        Label("Add members", systemImage: "person.badge.plus")
+                    }
+                }
+            }
+
+    }
+
+    @ViewBuilder
+    private var groupContentPart13: some View {
+            // ── R39 — Automations (keyword-triggered auto-replies). One
+    }
+
+    @ViewBuilder
+    private var groupContentPart14: some View {
+            // section (rows + optimistic switch + honest delete + create
+    }
+
+    @ViewBuilder
+    private var groupContentPart15: some View {
+            // sheet live in RoomIntegrationsSurfaces.swift). Admins manage;
+    }
+
+    @ViewBuilder
+    private var groupContentPart16: some View {
+            // members read rows or the honest manage caption (web parity).
+    }
+
+    @ViewBuilder
+    private var groupContentPart17: some View {
+            AutomationsSection(
+    }
+
+    @ViewBuilder
+    private var groupContentPart18: some View {
+                conversationId: conversation.id,
+    }
+
+    @ViewBuilder
+    private var groupContentPart19: some View {
+                viewerId: viewerId,
+    }
+
+    @ViewBuilder
+    private var groupContentPart20: some View {
+                isAdmin: isAdmin,
+    }
+
+    @ViewBuilder
+    private var groupContentPart21: some View {
+                session: session,
+    }
+
+    @ViewBuilder
+    private var groupContentPart22: some View {
+            )
+
+    }
+
+    @ViewBuilder
+    private var groupContentPart23: some View {
+            // ── R2-B — Webhooks (Discord-style incoming integrations, web
+    }
+
+    @ViewBuilder
+    private var groupContentPart24: some View {
+            // group-info-sheet parity): everyone copies ingest URLs, admins
+    }
+
+    @ViewBuilder
+    private var groupContentPart25: some View {
+            // create/delete.
+    }
+
+    @ViewBuilder
+    private var groupContentPart26: some View {
+            WebhooksSection(
+    }
+
+    @ViewBuilder
+    private var groupContentPart27: some View {
+                conversationId: conversation.id,
+    }
+
+    @ViewBuilder
+    private var groupContentPart28: some View {
+                viewerId: viewerId,
+    }
+
+    @ViewBuilder
+    private var groupContentPart29: some View {
+                isAdmin: isAdmin,
+    }
+
+    @ViewBuilder
+    private var groupContentPart30: some View {
+                session: session,
+    }
+
+    @ViewBuilder
+    private var groupContentPart31: some View {
+            )
+
+    }
+
+    @ViewBuilder
+    private var groupContentPart32: some View {
+            // ── leave ──
+    }
+
+    @ViewBuilder
+    private var groupContentPart33: some View {
+            Section {
+                Button(role: .destructive) {
+                    leaveOpen = true
+                } label: {
+                    Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+            } footer: {
+                Text("If you are the last admin, the longest-standing member is promoted automatically.")
+            }
+    }
+
 
     private func memberRow(_ member: WireConversationMember, detail: WireConversationSummary) -> some View {
         Button {
