@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-// Pulse Navigation Registry (R25) — twelve swappable navigation
-// architectures. The old 4-style system is deleted; these twelve
+// Pulse Navigation Registry (R25) — thirteen swappable navigation
+// architectures. The old 4-style system is deleted; these thirteen
 // are the only nav languages the app ships:
 //
 //   capsule         · Floating Capsule Navigation Bar  (DEFAULT)

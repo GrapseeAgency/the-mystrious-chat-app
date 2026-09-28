@@ -183,9 +183,6 @@ data class KanbanCardDto(
 @Serializable
 data class KanbanPageDto(val cards: List<KanbanCardDto> = emptyList())
 
-@Serializable
-data class KanbanCardEnvelopeDto(val card: KanbanCardDto? = null)
-
 // ── Events (F-RO-05) ─────────────────────────────────────────────────────
 
 @Serializable
@@ -220,9 +217,6 @@ data class GroupEventDto(
 
 @Serializable
 data class EventsPageDto(val events: List<GroupEventDto> = emptyList())
-
-@Serializable
-data class EventEnvelopeDto(val event: GroupEventDto? = null)
 
 @Serializable
 data class RsvpResultDto(
@@ -272,9 +266,6 @@ data class ReminderItemDto(
 
 @Serializable
 data class RemindersPageDto(val items: List<ReminderItemDto> = emptyList())
-
-@Serializable
-data class ReminderEnvelopeDto(val item: ReminderItemDto? = null)
 
 // ── Quick phrases (F-MS-29) — GET/POST/DELETE /api/users/{id}/phrases ─────
 
@@ -382,9 +373,6 @@ data class TournamentEntryDto(
 
 @Serializable
 data class TournamentsPageDto(val tournaments: List<TournamentSummaryDto> = emptyList())
-
-@Serializable
-data class TournamentEnvelopeDto(val tournament: TournamentSummaryDto? = null)
 
 @Serializable
 data class TournamentCreateResultDto(
@@ -511,9 +499,6 @@ data class HubTaskDto(
 data class HubTasksPageDto(val tasks: List<HubTaskDto> = emptyList())
 
 @Serializable
-data class HubTaskEnvelopeDto(val task: HubTaskDto? = null)
-
-@Serializable
 data class MarketSellerDto(
     val id: String = "",
     val name: String = "",
@@ -538,9 +523,6 @@ data class MarketListingDto(
 
 @Serializable
 data class MarketPageDto(val listings: List<MarketListingDto> = emptyList())
-
-@Serializable
-data class MarketListingEnvelopeDto(val listing: MarketListingDto? = null)
 
 @Serializable
 data class MarketBuyResultDto(
