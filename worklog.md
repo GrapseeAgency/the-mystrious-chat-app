@@ -3741,3 +3741,57 @@ DEVICE AUDIT — FINAL (evidence-pinned; updates the R8 audit: the three ❌ row
 Stage Summary:
 - The quoted line is now defensible with evidence: every software-runnable web feature family has a grep-verified WIRED chain on both natives (zero dead code, zero missing families — fifth independent audit); the three device-audit ❌ rows are implemented and compile-gated; remaining gaps are strictly external (console credentials, signed builds) or real-device soak — none writable from this sandbox.
 - Push integrity: remote main 055c102, fresh-clone tree-hash identical, nothing lost.
+---
+Task ID: R11
+Agent: orchestrator (Z.ai Code) + 3 Explore crews
+Task: seventh parity audit demanded by owner ("1000000...% confirmed, no confusion") — fresh 3-way grep-verified differential + residue closure.
+
+Work Log:
+- WEB CREW (63 families, fresh inventory, zero worklog trust): every family mapped UI→API/socket→persistence with file:line; browser-idioms isolated (⌘K, PWA shell/SW, multi-window PiP panes, canvas/WebGL FX, sessionStorage mechanism, localStorage drafts/outbox mechanism — portable via local DB equivalents on natives). Verified transport.ts aps.category PULSE_MSG stamp intact (message+conversationId guard, brace-balance clean). Findings: translate API exists with NO web UI caller (API-only, natives also have none — parity holds); offline outbox retract is bulk-only on web; nav-registry.ts:2 stale "twelve" (real count 13); 2 dead components (nav-style-picker.tsx, ui-language-picker.tsx — zero importers).
+- ANDROID CREW: 24/24 families WIRED hop-by-hop (file:line chains for all: messaging core incl. edit/delete/typing/seen/drafts/pins/linkify; threads/reactions/mentions; voice notes+transcription; media/camera/files/stickers; location; slash+bot; recap; polls/events/kanban+convert/whiteboard/redpacket; games+rematch/tournaments; reminders+WorkManager+deep-link; automations/topics; scheduled/incognito(anon never queued un-masked :909)/view-once/TTL; slow-mode/archive/folders/channels/mute; invites/group-info/leaderboard/themes; search+A-Z; 1:1 calls WebRTC+Telecom+fallback ring; gcall mesh 8-cap; push register/service/settings-row/sign-out; voice rooms/stories/hub; contacts block/report/safety/phrases/stats/saved; settings all rows + 8 nav styles rendered; clustering/swipe-reply/streaks/footprint; R10 quick-reply/app-lock/share-in/shortcuts). Dead-code sweep: ONE cluster — 6 zero-reference envelope DTOs in protocol Wave7Dtos.kt. R10 files: all caller-backed.
+- iOS CREW: 25/25 families WIRED hop-by-hop (same families incl. CallKit+PushKit+double-ring suppression, group-call policy engine, push lifecycle activate/deactivate, 8 nav dock renderers, 41 files calling PulseHaptics, R10 powers). project.yml glob coverage 145/145 .swift (109 app + 36 tests), 0 orphans. Dead code: NONE. iOS share-IN extension = documented external (Apple-portal signed target), share-OUT ShareLink present.
+- RESIDUES CLOSED (commit 713e0dc): deleted nav-style-picker.tsx + ui-language-picker.tsx (zero importers, verified by rg before deletion); fixed nav-registry.ts:2 twelve→thirteen; deleted 6 dead protocol DTOs (KanbanCard/Event/Reminder/Tournament/HubTask/MarketListing EnvelopeDto — zero refs verified). Note: translate is API-only everywhere (no UI on any platform) — documented, not a parity break.
+- Sandbox wiped JDK+SDK again: re-provisioned Adoptium JDK21 (/home/z/jdk-21 via API tarball, javac 21.0.12.1), cmdline-tools 11076708 + platforms;android-35 + build-tools;35.0.0 (/home/z/android-sdk), local.properties rewritten. Gradle memory protocol refined: KILL leftover daemon JVMs first (a zombie 1GB daemon caused an OOM kill), then --no-daemon -Xmx1400m -XX:+UseSerialGC -Dorg.gradle.workers.max=2.
+- Gates after cleanup: web lint clean; :app:compileDebugKotlin green; :protocol:test green; 3000=200/3003=200. Pushed d1e6158..713e0dc; fresh-clone tree-hash 260163f59a92 == local — byte-identical. Two local-only junk auto-commits (dev.pid churn, c9cb2d1/4d3322b) reset away before push — remote history clean.
+
+Stage Summary:
+- SEVENTH-WAVE VERDICT: web 63 families ↔ Android 24/24 WIRED ↔ iOS 25/25 WIRED; 0 MISSING, 0 PARTIAL, 0 dead code remaining on any platform; documented exclusions = browser idioms (⌘K, PWA shell, 5 desktop-only nav styles, WebGL FX, PiP panes) + external gates (console credentials, signed builds, iOS share-in extension, real-device soak).
+- Honest residuals for the record: web translate endpoint API-only (no UI anywhere); web outbox retract bulk-only; FCM/APNs live delivery + Telecom/CallKit system presentation + WebRTC ≥2-device soak + quick-action cold/warm delivery = real-device QA.
+---
+Task ID: R10-b (RESTORED — the uncommitted worklog tail was eaten by a git reset --hard during the R11 junk-commit cleanup; re-appended verbatim-faithful from the crew's final report)
+Agent: general-purpose (iOS native powers)
+Task: iOS native powers — quick-reply category, LAContext app lock, home-screen quick actions.
+
+Work Log:
+- Created (under Pulse/** globs): Pulse/Core/Support/PulseQuickReply.swift, PulseAppLock.swift, PulseQuickActions.swift, PulseTests/PulseQuickActionTests.swift. Edited: PulseApp.swift (registerCategory at init), PulsePushNotifications.swift (configurationForConnecting → PulseSceneDelegate), PulseReminderNotifications.swift (categoryIdentifier on conversation-bound postings + delegate routing to PulseQuickReplyCoordinator), PulseDeepLink.swift (.compose / pulse://new), PulsePrefs.swift (pulse.appLock.enabled key), RootView.swift (fullScreenCover lock gate + quick-action consumption + coordinator attach), SettingsView.swift (App-lock row :703 with confirmAppLock one real evaluatePolicy before persisting), project.yml (UIApplicationShortcutItems).
+- Chains: quick-reply → PulseReminderNotifications:140-151 → PulseQuickReplyCoordinator:122 session.api.sendMessage (same POST as ChatRoomView) with outbox/draft/open-room honest fallbacks; app lock → scenePhase .background arms → fullScreenCover gate → LAContext .deviceOwnerAuthentication; quick actions → scene delegate → pendingRoute → RootView:340-352 → Chats/NewChatSheet.
+- Honest limits: remote pushes render Reply only once server stamps aps.category (done in R10-CLOSE); scene-delegate quick-action delivery needs device QA; app lock arms on .background only; quick-reply refuses under lock (fallback opens the room).
+
+Stage Summary:
+- All three features wired end-to-end; brace/paren balance verified, zero trailing commas; CI compiles (no local Xcode).
+---
+Task ID: R10-a (RESTORED — see R10-b note)
+Agent: general-purpose (interrupted mid-run — orchestrator completed + verified)
+Task: Android native powers — RemoteInput quick-reply, BiometricPrompt app lock, share-in target, launcher shortcuts.
+
+Work Log:
+- The subagent wrote ALL files (9 new + 12 edited) but died before its worklog entry; every file was audited line-by-line by the orchestrator: manifest (PulseReplyReceiver exported=false; ShareInActivity ACTION_SEND text/plain+image/*; shortcuts meta-data), MainActivity +228 (handleIntent; FragmentActivity base; AppLockGate with backoff countdown + honest no-credential escape hatch), PulseMessagingService RemoteInput action (shared notification-id scheme), domain PulsePrefsStore.appLockEnabled + DataStore APP_LOCK_ON, Settings→Privacy App-lock toggle with one confirmation prompt before persisting, androidx.biometric:1.1.0, res/xml/shortcuts.xml (Chats/New message/Search → existing state), vector icons, PulseReplyReceiverTest (5 assertions).
+- Symbol audit greps all PASS (SendMessageUseCase, viewerId, MESSAGES_CHANNEL_ID, OutboxWorker.enqueue, TAB_ROUTES/requestSearch/newChatOpen/switchTab, repo.sendMessage/uploadMedia/sendMediaMessage, MediaSupport.imageToDataUrl).
+
+Stage Summary:
+- Gates: :app:compileDebugKotlin GREEN; PulseReplyReceiverTest 5/5/0. Zero dead code — every manifest component has a real handler.
+---
+Task ID: R10-CLOSE (RESTORED — see R10-b note)
+Agent: orchestrator (Z.ai Code)
+Task: R10 closed — iOS crew verified, server aps.category enabler, push integrity, cron.
+
+Work Log:
+- iOS crew report verified against source: every referenced API grep-verified (api.sendMessage PulseAPIClient:203, Failure.message, toasts.show, enqueueOutbox PulseSession:435, saveDraft PulseStore:699, isDroppable PulseOutboxEngine:314, pendingLinkedRoomId). Brace-balance re-checked with comment stripping (naive scan false-positived on string interpolation).
+- SERVER ENABLER: src/lib/push/transport.ts sendIos stamps aps.category=PULSE_MSG on message-kind pushes (guarded on conversationId) — remote APNs banners render Reply with no further client change.
+- Commit d1e6158 (33 files, +1914) pushed; fresh-clone tree-hash identical at the time. Review cron recreated (job 420182) after sandbox reset wiped all jobs.
+
+DEVICE AUDIT — POST-R10 (evidence-pinned; native-powers layer on top of the unchanged R9 inventory)
+1. NATIVE-ONLY POWERS (new, absent on web by design): notification quick-reply ✓ both (Android RemoteInput→SendMessageUseCase offline→outbox / iOS PULSE_MSG category incl. remote aps.category; refuses under app lock); biometric app lock ✓ both (BiometricPrompt BIOMETRIC_WEAK|DEVICE_CREDENTIAL + backoff + honest escape hatch / LAContext deviceOwnerAuthentication; gates cover everything incl. share-in and banners); share INTO app ✓ Android (ShareInActivity→ShareInSheet→repo send/staging; iOS inbound = signed extension target, Apple-portal external — documented here; share-OUT exists both); launcher quick actions ✓ both (shortcuts.xml → existing tab/composer/search state / UIApplicationShortcutItems → scene delegate → Chats/NewChatSheet).
+2. Unchanged device surfaces (R9 inventory stands): camera (iOS CameraPicker ChatRoomView:1076/:2079, Android TakePicture + Camera2 WebRTC), mic, location, haptics, FLAG_SECURE vs in-app veil, KeyStore/Keychain/sessionStorage, background execution (WorkManager+BootReceiver / BGTask+NWPathMonitor / SW heal), pulse:// deep links, OS call integration, push transports, group-call mesh on all 3.
+3. Honest externals: FCM/APNs delivery needs console creds + signed builds; Telecom/CallKit presentation, WebRTC ≥2-device soak, OEM channels, quick-action cold/warm delivery = real-device QA.
+4. Real-device QA list (+3): quick-reply round-trip from a backgrounded banner, app-lock interplay with call banners + share-in, quick actions cold vs warm.
