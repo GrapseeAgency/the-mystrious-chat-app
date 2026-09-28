@@ -34,7 +34,12 @@ jobs:
         run: ./gradlew :domain:test :protocol:test :core:build :data:testDebugUnitTest :feature-stories:testDebugUnitTest :feature-voice:testDebugUnitTest
 
       - name: Assemble signed release APK (committed LiveUpdate keystore)
-        run: ./gradlew :app:assembleRelease
+        # R12 — the repo gradle.properties caps the daemon at 1536m, but this
+        # app's R8 + dex-desugar pass needs >3.4GB (measured in-sandbox);
+        # under-capped it GC-thrashes forever instead of failing (the 3h
+        # assemble "hang" on the first tag build). Real headroom on the
+        # 7GB runner, single-objective daemon selection via -D.
+        run: ./gradlew :app:assembleRelease -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseParallelGC" -Dorg.gradle.workers.max=2
 
       - name: Rename APK with release tag
         if: startsWith(github.ref, 'refs/tags/v')
