@@ -68,178 +68,20 @@ struct RootView: View {
         prefs.appearance == "dark" || (prefs.appearance == "system" && systemScheme == .dark)
     }
 
+    // R12 — the monolithic body exceeded Swift's type-check budget in
+    // release batches; the view tree is unchanged, but each layer now
+    // type-checks as its own small expression (body → shell → panels).
+
     var body: some View {
         ZStack {
             AmbientFieldView(mode: prefs.ambientMode, dark: isDark)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if prefs.viewer != nil {
-                // Tab panels — exactly one mounted at a time (web §1):
-                // 220ms crossfade with a ±24pt horizontal slide whose sign
-                // follows the travel direction; reduced motion → fade only.
-                ZStack {
-                    switch tab {
-                    case .chats:
-                        ChatsView(
-                            session: session,
-                            prefs: prefs,
-                            onGoContacts: { switchTab(.contacts) },
-                            onGoProfile: { switchTab(.profile) },
-                            isActive: tab == .chats,
-                        )
-                        .transition(panelTransition)
-                    case .hub:
-                        HubView(session: session, onOpenRoom: { conversation in
-                            switchTab(.chats)
-                            session.requestOpenRoom(conversation)
-                        })
-                        .transition(panelTransition)
-                    case .contacts:
-                        ContactsView(session: session)
-                            .transition(panelTransition)
-                    case .profile:
-                        ProfileView(session: session, prefs: prefs)
-                            .transition(panelTransition)
-                    }
-                }
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: tab)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    // Reserve the dock's footprint so lists always clear it
-                    // (zero while a chat room owns the screen — dock hidden;
-                    // zero for top/side styles — they reserve their own
-                    // R4-A channels below).
-                    Color.clear.frame(height: dockBottomReserve)
-                }
-                // R4-A item 3 — the floating-top channel: the glass bar
-                // lives IN the top inset so every screen (lists, room
-                // chrome) clears it through the same mechanism the bottom
-                // dock reserve uses. Zero while a room owns the screen.
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if !session.roomVisible, navStyle.zone == .top {
-                        FloatingTopDock(context: dockContext, active: tab)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                    } else {
-                        Color.clear.frame(height: 0)
-                    }
-                }
-                // R4-A item 3 — the rail channel: a persistent left rail;
-                // all content insets right of it. Zero while a room owns
-                // the screen (dock auto-hide in room, unchanged).
-                .safeAreaInset(edge: .leading, spacing: 0) {
-                    if !session.roomVisible, navStyle.zone == .side {
-                        RailDock(context: dockContext, active: tab)
-                            .transition(.move(edge: .leading).combined(with: .opacity))
-                    } else {
-                        Color.clear.frame(width: 0, height: 0)
-                    }
-                }
-                .overlay(alignment: .bottom) {
-                    if !session.roomVisible {
-                        bottomDock
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: session.roomVisible)
-                .animation(reduceMotion ? nil : .pulse(.pulseSoft, reduceMotion: reduceMotion), value: navStyle)
-                .overlay {
-                    ToastHostView(center: session.toasts)
-                }
-                .sheet(isPresented: $newChatOpen) {
-                    NewChatSheet(session: session) { conv in
-                        newChatOpen = false
-                        switchTab(.chats)
-                        session.requestOpenRoom(conv)
-                    }
-                }
-                .sheet(isPresented: $settingsOpen) {
-                    SettingsView(session: session, prefs: prefs)
-                }
-                .sheet(isPresented: $storiesOpen) {
-                    StoriesView(session: session)
-                }
-                // R3-A item 9 — the dock More → Calls page. Row taps ride the
-                // EXISTING linked-room bridge (pendingLinkedRoomId → fetch →
-                // Chats tab → open room), identical to the chats-header entry.
-                .sheet(isPresented: $callsOpen) {
-                    CallsHistoryView(session: session, onOpenConversation: { conversationId in
-                        callsOpen = false
-                        session.pendingLinkedRoomId = conversationId
-                    })
-                }
-                .sheet(isPresented: $savedLibraryOpen) {
-                    SavedLibraryView(session: session) { conversation, messageId in
-                        savedLibraryOpen = false
-                        switchTab(.chats)
-                        session.requestOpenRoom(conversation, jumpMessageId: messageId)
-                    }
-                }
-                .sheet(item: $pendingInvite) { target in
-                    JoinInviteSheet(session: session, code: target.code) { conversation in
-                        pendingInvite = nil
-                        switchTab(.chats)
-                        session.requestOpenRoom(conversation)
-                    }
-                }
-                .onOpenURL { url in
-                    handleDeepLink(url)
-                }
-            } else {
-                // Gate on identity exactly like the web onboarding — the
-                // two-step screen replaces the shell (not a modal sheet).
-                OnboardingView(session: session, prefs: prefs, onPicked: { didBootstrap = true })
-            }
+            authenticatedShell
 
-            // R1-W2I — the PiP pane overlay (F-PI-01..03): floats above the
-            // tab chrome and pushed rooms, below the call/rooms overlays
-            // (Android mounts the same instance shape at its root). The host
-            // self-gates on the store being open and observes it directly.
-            if prefs.viewer != nil {
-                PipPaneHostView(
-                    session: session,
-                    pip: session.pip,
-                    onOpenRoom: { conversationId in
-                        openLinkedRoom(conversationId)
-                    },
-                )
-                // R4-A item 3 — the PiP host rides the SAME nav channels:
-                // panes keep their internal top/bottom reserves but must
-                // also clear the floating-top bar and the rail (the dock
-                // drives the geometry, the host follows).
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    Color.clear.frame(height: pipTopReserve)
-                }
-                .safeAreaInset(edge: .leading, spacing: 0) {
-                    Color.clear.frame(width: pipLeadingReserve)
-                }
-            }
+            pipOverlay
 
-            // Wave 3 — the native call surface owns the WHOLE screen whenever
-            // the engine is not idle (ringing/connecting/connected/ended).
-            if let engine = session.callEngine {
-                CallOverlayHostView(engine: engine)
-                    .ignoresSafeArea()
-            }
-
-            // 3-d — the GROUP (mesh) call surface: same full-screen grammar,
-            // mounted beside the 1:1 overlay (web mounts the group overlay at
-            // SHELL level, main-shell.tsx — engine-not-idle drives it).
-            if let groupEngine = session.groupCallEngine {
-                GroupCallOverlayHostView(engine: groupEngine, viewer: prefs.viewer)
-                    .ignoresSafeArea()
-                // 3-d — the shell-level ring banner + the 'Ongoing group
-                // call · N in call — Join' discovery banner (web
-                // GroupCallRingBanner parity). Suppressed while CallKit
-                // owns the incoming presentation (no double-ring).
-                GroupCallBannerHostView(engine: groupEngine)
-            }
-
-            // W5-f — the rooms surfaces (voice/stage/space) present through
-            // ONE fullScreenCover driven by the session model's surface
-            // state; hosted at the root so room membership survives chat
-            // navigation (VR-1) exactly like the call overlay does.
-            if let rooms = session.voiceRooms {
-                VoiceRoomsSurfaceHost(model: rooms)
-            }
+            callSurfaces
 
             ParticleOverlayView(bus: session.particles)
         }
@@ -350,6 +192,185 @@ struct RootView: View {
                 PulseHaptics.tap()
                 newChatOpen = true
             }
+        }
+    }
+
+    // ── R12 body decomposition ──────────────────────────────
+
+    /// Tab panels — exactly one mounted at a time (web §1): 220ms crossfade
+    /// with a ±24pt horizontal slide whose sign follows the travel direction;
+    /// reduced motion → fade only.
+    private var tabPanels: some View {
+        ZStack {
+            switch tab {
+            case .chats:
+                ChatsView(
+                    session: session,
+                    prefs: prefs,
+                    onGoContacts: { switchTab(.contacts) },
+                    onGoProfile: { switchTab(.profile) },
+                    isActive: tab == .chats,
+                )
+                .transition(panelTransition)
+            case .hub:
+                HubView(session: session, onOpenRoom: { conversation in
+                    switchTab(.chats)
+                    session.requestOpenRoom(conversation)
+                })
+                .transition(panelTransition)
+            case .contacts:
+                ContactsView(session: session)
+                    .transition(panelTransition)
+            case .profile:
+                ProfileView(session: session, prefs: prefs)
+                    .transition(panelTransition)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: tab)
+    }
+
+    @ViewBuilder
+    private var authenticatedShell: some View {
+        if prefs.viewer != nil {
+            ZStack {
+                tabPanels
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // Reserve the dock's footprint so lists always clear it
+                // (zero while a chat room owns the screen — dock hidden;
+                // zero for top/side styles — they reserve their own
+                // R4-A channels below).
+                Color.clear.frame(height: dockBottomReserve)
+            }
+            // R4-A item 3 — the floating-top channel: the glass bar lives
+            // IN the top inset so every screen (lists, room chrome) clears
+            // it through the same mechanism the bottom dock reserve uses.
+            // Zero while a room owns the screen.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !session.roomVisible, navStyle.zone == .top {
+                    FloatingTopDock(context: dockContext, active: tab)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                } else {
+                    Color.clear.frame(height: 0)
+                }
+            }
+            // R4-A item 3 — the rail channel: a persistent left rail; all
+            // content insets right of it. Zero while a room owns the screen
+            // (dock auto-hide in room, unchanged).
+            .safeAreaInset(edge: .leading, spacing: 0) {
+                if !session.roomVisible, navStyle.zone == .side {
+                    RailDock(context: dockContext, active: tab)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                } else {
+                    Color.clear.frame(width: 0, height: 0)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !session.roomVisible {
+                    bottomDock
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: session.roomVisible)
+            .animation(reduceMotion ? nil : .pulse(.pulseSoft, reduceMotion: reduceMotion), value: navStyle)
+            .overlay {
+                ToastHostView(center: session.toasts)
+            }
+            .sheet(isPresented: $newChatOpen) {
+                NewChatSheet(session: session) { conv in
+                    newChatOpen = false
+                    switchTab(.chats)
+                    session.requestOpenRoom(conv)
+                }
+            }
+            .sheet(isPresented: $settingsOpen) {
+                SettingsView(session: session, prefs: prefs)
+            }
+            .sheet(isPresented: $storiesOpen) {
+                StoriesView(session: session)
+            }
+            // R3-A item 9 — the dock More → Calls page. Row taps ride the
+            // EXISTING linked-room bridge (pendingLinkedRoomId → fetch →
+            // Chats tab → open room), identical to the chats-header entry.
+            .sheet(isPresented: $callsOpen) {
+                CallsHistoryView(session: session, onOpenConversation: { conversationId in
+                    callsOpen = false
+                    session.pendingLinkedRoomId = conversationId
+                })
+            }
+            .sheet(isPresented: $savedLibraryOpen) {
+                SavedLibraryView(session: session) { conversation, messageId in
+                    savedLibraryOpen = false
+                    switchTab(.chats)
+                    session.requestOpenRoom(conversation, jumpMessageId: messageId)
+                }
+            }
+            .sheet(item: $pendingInvite) { target in
+                JoinInviteSheet(session: session, code: target.code) { conversation in
+                    pendingInvite = nil
+                    switchTab(.chats)
+                    session.requestOpenRoom(conversation)
+                }
+            }
+            .onOpenURL { url in
+                handleDeepLink(url)
+            }
+        } else {
+            // Gate on identity exactly like the web onboarding — the
+            // two-step screen replaces the shell (not a modal sheet).
+            OnboardingView(session: session, prefs: prefs, onPicked: { didBootstrap = true })
+        }
+    }
+
+    /// R1-W2I — the PiP pane overlay (F-PI-01..03): floats above the tab
+    /// chrome and pushed rooms, below the call/rooms overlays. The host
+    /// self-gates on the store being open and observes it directly.
+    @ViewBuilder
+    private var pipOverlay: some View {
+        if prefs.viewer != nil {
+            PipPaneHostView(
+                session: session,
+                pip: session.pip,
+                onOpenRoom: { conversationId in
+                    openLinkedRoom(conversationId)
+                },
+            )
+            // R4-A item 3 — the PiP host rides the SAME nav channels: panes
+            // keep their internal top/bottom reserves but must also clear
+            // the floating-top bar and the rail.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: pipTopReserve)
+            }
+            .safeAreaInset(edge: .leading, spacing: 0) {
+                Color.clear.frame(width: pipLeadingReserve)
+            }
+        }
+    }
+
+    /// Wave 3 — the call surfaces own the WHOLE screen whenever their engine
+    /// is not idle; mounted beside each other at shell level (web
+    /// main-shell.tsx parity).
+    @ViewBuilder
+    private var callSurfaces: some View {
+        if let engine = session.callEngine {
+            CallOverlayHostView(engine: engine)
+                .ignoresSafeArea()
+        }
+        // 3-d — the GROUP (mesh) call surface + the shell-level ring banner
+        // and the 'Ongoing group call · N in call — Join' discovery banner
+        // (web GroupCallRingBanner parity). Suppressed while CallKit owns
+        // the incoming presentation (no double-ring).
+        if let groupEngine = session.groupCallEngine {
+            GroupCallOverlayHostView(engine: groupEngine, viewer: prefs.viewer)
+                .ignoresSafeArea()
+            GroupCallBannerHostView(engine: groupEngine)
+        }
+        // W5-f — the rooms surfaces (voice/stage/space) present through ONE
+        // fullScreenCover driven by the session model's surface state;
+        // hosted at the root so room membership survives chat navigation
+        // (VR-1).
+        if let rooms = session.voiceRooms {
+            VoiceRoomsSurfaceHost(model: rooms)
         }
     }
 
