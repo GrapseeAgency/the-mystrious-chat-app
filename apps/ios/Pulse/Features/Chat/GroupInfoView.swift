@@ -293,7 +293,7 @@ struct GroupInfoView: View {
                 }
                 .accessibilityLabel("Screen security for you")
                 Toggle(isOn: Binding(
-                    get: { detail?.screenPrivacy ?? false },
+                    get: { detail.screenPrivacy ?? false },
                     set: { setRoomScreenPrivacy($0) },
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
