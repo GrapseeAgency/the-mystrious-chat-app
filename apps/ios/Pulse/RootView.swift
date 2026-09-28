@@ -410,12 +410,12 @@ struct RootView: View {
 
     /// PiP clearances — mirror the visible nav channels so panes never
     /// slide under the floating-top bar or the rail.
-    private var pipTopReserve: Int {
-        (!session.roomVisible && navStyle.zone == .top) ? Int(PulseDockMetrics.topBarHeight) : 0
+    private var pipTopReserve: CGFloat {
+        (!session.roomVisible && navStyle.zone == .top) ? PulseDockMetrics.topBarHeight : 0
     }
 
-    private var pipLeadingReserve: Int {
-        (!session.roomVisible && navStyle.zone == .side) ? Int(PulseDockMetrics.railWidth) : 0
+    private var pipLeadingReserve: CGFloat {
+        (!session.roomVisible && navStyle.zone == .side) ? PulseDockMetrics.railWidth : 0
     }
 
     /// The bottom-zone dock host — capsule stays byte-as-is (brief), the
