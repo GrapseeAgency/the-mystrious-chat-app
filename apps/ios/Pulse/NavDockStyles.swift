@@ -427,7 +427,7 @@ struct PillNavDock: View {
             Image(systemName: "ellipsis")
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(PulseTheme.textSecondary)
-                .frame(width: 40, minHeight: 44)
+                .frame(width: 40, height: 44)
                 .contentShape(Capsule())
         }
         .buttonStyle(PulseButtonStyle())

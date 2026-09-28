@@ -71,7 +71,7 @@ struct ProfileView: View {
     }
 
     private var walletSection: some View {
-        Section("Wallet") {
+        Section {
             Button {
                 // A failed fetch is honest — tap retries (web refetch parity).
                 guard walletPhase == .failed else { return }
@@ -109,6 +109,8 @@ struct ProfileView: View {
             .accessibilityLabel(walletPhase == .loaded
                 ? "Coin balance \(walletCoins)"
                 : "Coin balance loading")
+        } header: {
+            Text("Wallet")
         } footer: {
             Text("Earn coins from check-ins and tasks — spend them in the Hub.")
         }

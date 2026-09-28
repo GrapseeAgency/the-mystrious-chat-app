@@ -126,21 +126,21 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
         guard let engine else { return }
         switch state {
         case .incomingRinging:
-            guard live == nil, let peer = engine.activePeer else { return }
+            guard live == nil, let peer = engine.activePeer, let convId = engine.activeCallConversationId else { return }
             reportIncoming(
                 callerName: peer.name,
                 hasVideo: engine.activeKind == .video,
                 isGroup: false,
-                conversationId: engine.activeCallConversationId,
+                conversationId: convId,
                 outgoing: false,
             )
         case .outgoingRinging:
-            guard live == nil, let peer = engine.activePeer else { return }
+            guard live == nil, let peer = engine.activePeer, let convId = engine.activeCallConversationId else { return }
             startOutgoingReport(
                 callerName: peer.name,
                 hasVideo: engine.activeKind == .video,
                 isGroup: false,
-                conversationId: engine.activeCallConversationId,
+                conversationId: convId,
             )
         case .connecting:
             guard let info = live else { return }
@@ -466,7 +466,7 @@ public final class PulseVoIPRegistry: NSObject, PKPushRegistryDelegate {
         guard !armed else { return }
         armed = true
         registry.delegate = self
-        registry.setDesiredPushTypes([.voIP])
+        registry.desiredPushTypes = [PKPushType.voIP]
     }
 
     public func pushRegistry(
