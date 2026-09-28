@@ -468,6 +468,12 @@ private struct RoomContent: View {
     }
 
     var body: some View {
+        chatBodyStyled14
+    }
+
+    // ChatRoomView.body — R12 type-check decomposition: the original single builder
+    // expression exceeded Swift’s type-check budget; VERBATIM tree, split only.
+    private var chatBodyStyled_view: some View {
         VStack(spacing: 0) {
             chatBodyPart0
             chatBodyPart1
@@ -492,6 +498,167 @@ private struct RoomContent: View {
             chatBodyPart20
             chatBodyPart21
         }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart0: some View {
+            // Wave 2 topics — group rooms only (General = whole room, spec §1 row 9).
+    }
+
+    @ViewBuilder
+    private var chatBodyPart1: some View {
+            if conversation.isGroup {
+                TopicBar(
+                    topics: viewModel.topics,
+                    activeTopicId: viewModel.activeTopicId,
+                    onSelect: { viewModel.setActiveTopic($0, session: session) },
+                    onCreate: { name, emoji in
+                        viewModel.createTopic(name: name, emoji: emoji, session: session)
+                    },
+                )
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart2: some View {
+            pinnedBanner
+    }
+
+    @ViewBuilder
+    private var chatBodyPart3: some View {
+            // REM-B F-MS-19 — header TTL chip when disappearing is on.
+    }
+
+    @ViewBuilder
+    private var chatBodyPart4: some View {
+            if (conversation.ttlSeconds ?? 0) > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "timer")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PulseTheme.emerald)
+                    Text("Disappearing · \(GroupInfoView.ttlLabel(conversation.ttlSeconds))")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PulseTheme.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 5)
+                .background(PulseTheme.emerald.opacity(0.08))
+                .accessibilityLabel("Disappearing messages enabled")
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart5: some View {
+            if searchOpen {
+                roomSearchPanel
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart6: some View {
+            // R38/R42 — the veil covers ONLY the message river (header +
+    }
+
+    @ViewBuilder
+    private var chatBodyPart7: some View {
+            // composer stay untouched, web parity). Stable modifier chain so
+    }
+
+    @ViewBuilder
+    private var chatBodyPart8: some View {
+            // the scroll identity never resets across toggles.
+    }
+
+    @ViewBuilder
+    private var chatBodyPart9: some View {
+            messagesList
+                .blur(radius: veilEngaged ? 24 : 0)
+                .overlay {
+                    if veilEngaged {
+                        veilCover
+                    }
+                }
+                .allowsHitTesting(!veilEngaged)
+    }
+
+    @ViewBuilder
+    private var chatBodyPart10: some View {
+            // R34-b — AI recap card pinned above the composer.
+    }
+
+    @ViewBuilder
+    private var chatBodyPart11: some View {
+            if viewModel.recap != nil {
+                recapCard
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart12: some View {
+            // F-SM-04 — @-suggester popover (roster, top-5 prefix match).
+    }
+
+    @ViewBuilder
+    private var chatBodyPart13: some View {
+            if !mentionCandidates.isEmpty {
+                mentionPopover()
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart14: some View {
+            // R3-A item 1 — the live '/' palette (web SlashPalette parity:
+    }
+
+    @ViewBuilder
+    private var chatBodyPart15: some View {
+            // draft starts with '/', pick routes the outcome machine). The
+    }
+
+    @ViewBuilder
+    private var chatBodyPart16: some View {
+            // palette and the @-suggester never compete — a '/' draft carries
+    }
+
+    @ViewBuilder
+    private var chatBodyPart17: some View {
+            // no @-token at the tail.
+    }
+
+    @ViewBuilder
+    private var chatBodyPart18: some View {
+            if slashPaletteVisible {
+                SlashPaletteView(draft: viewModel.draft) { command in
+                    pickSlashCommand(command)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart19: some View {
+            if !session.connected {
+                offlineStrip
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart20: some View {
+            if let error = viewModel.errorText {
+                errorStrip(error)
+            }
+    }
+
+    @ViewBuilder
+    private var chatBodyPart21: some View {
+            composer
+    }
+
+    private var chatBodyStyled0: some View {
+        chatBodyStyled_view
         .background(alignment: .top) {
             // Wave 8 — prefs wallpaper behind the whole room (web chat-room
             // layered wallpaper parity; 'none' keeps the plain wash).
@@ -713,6 +880,10 @@ private struct RoomContent: View {
                 .accessibilityLabel("Pop out mini chat")
             }
         }
+    }
+
+    private var chatBodyStyled1: some View {
+        chatBodyStyled0
         .sheet(isPresented: $safetyOpen) {
             if let partner = dmPartner {
                 SafetySheetView(session: session, peer: partner)
@@ -743,6 +914,10 @@ private struct RoomContent: View {
                 safetyBadges.mark(partner.id, verified: state.verified)
             }
         }
+    }
+
+    private var chatBodyStyled2: some View {
+        chatBodyStyled1
         .task {
             // R1-W2B F-MS-29 — the quick-phrase rail seeds on room open.
             viewModel.loadQuickPhrases(session: session)
@@ -754,6 +929,10 @@ private struct RoomContent: View {
         .sheet(item: $threadRoot) { root in
             ThreadView(conversation: conversation, root: root, session: session)
         }
+    }
+
+    private var chatBodyStyled3: some View {
+        chatBodyStyled2
         .sheet(item: $forwardSource) { source in
             ForwardSheet(source: source, session: session)
         }
@@ -763,6 +942,10 @@ private struct RoomContent: View {
         .sheet(isPresented: $pinsOpen) {
             pinsList
         }
+    }
+
+    private var chatBodyStyled4: some View {
+        chatBodyStyled3
         .sheet(isPresented: $pollBuilderOpen) {
             PollBuilderSheet(viewModel: viewModel, session: session)
         }
@@ -786,6 +969,10 @@ private struct RoomContent: View {
                 viewModel.scheduleDraft(for: date, session: session)
             }
         }
+    }
+
+    private var chatBodyStyled5: some View {
+        chatBodyStyled4
         .sheet(isPresented: $scheduledManagerOpen) {
             ScheduledManagerSheet(conversationId: conversation.id, session: session)
                 .onDisappear { viewModel.loadScheduled(session: session) }
@@ -804,6 +991,10 @@ private struct RoomContent: View {
         // tap APPENDS to the draft (web setInput(prev => prev + emoji)) and
         // the focus hand-back on dismiss keeps the keyboard up (web
         // requestAnimationFrame(textareaRef.focus) parity).
+    }
+
+    private var chatBodyStyled6: some View {
+        chatBodyStyled5
         .sheet(isPresented: $emojiPickerOpen) {
             EmojiPickerSheet { emoji in
                 viewModel.draft = viewModel.draft + emoji
@@ -827,6 +1018,10 @@ private struct RoomContent: View {
                 viewModel.sendLocation(lat: lat, lng: lng, label: label, session: session)
             }
         }
+    }
+
+    private var chatBodyStyled7: some View {
+        chatBodyStyled6
         .sheet(isPresented: $themeOpen) {
             ConvThemeSheet(conversationId: conversation.id, prefs: prefs)
         }
@@ -861,6 +1056,10 @@ private struct RoomContent: View {
             }
         }
         // ── Wave 7 sheet hosts ──
+    }
+
+    private var chatBodyStyled8: some View {
+        chatBodyStyled7
         .sheet(isPresented: $wave7.redPacketCreateOpen) {
             Wave7RedPacketCreateSheet { total, count, note in
                 wave7.createRedPacket(api: session.api, conversationId: conversation.id, total: total, count: count, note: note)
@@ -881,6 +1080,10 @@ private struct RoomContent: View {
                 wave7.createTournament(api: session.api, conversationId: conversation.id, name: name)
             }
         }
+    }
+
+    private var chatBodyStyled9: some View {
+        chatBodyStyled8
         .sheet(isPresented: $wave7.kanbanOpen) {
             Wave7KanbanSheet(
                 conversationId: conversation.id,
@@ -927,6 +1130,10 @@ private struct RoomContent: View {
                 onDelete: { eventId in wave7.deleteEvent(api: session.api, eventId: eventId) },
             )
         }
+    }
+
+    private var chatBodyStyled10: some View {
+        chatBodyStyled9
         .sheet(isPresented: $wave7.remindersOpen) {
             Wave7RemindersSheet(
                 loadReminders: { try? await session.api.reminders(dueOnly: false).items },
@@ -971,6 +1178,10 @@ private struct RoomContent: View {
                 loadGlobal: { try? await session.api.leaderboard(conversationId: nil) },
             )
         }
+    }
+
+    private var chatBodyStyled11: some View {
+        chatBodyStyled10
         .sheet(item: Binding(
             get: { wave7.redPacketDetailId.map { Wave7PacketTarget(id: $0) } },
             set: { wave7.redPacketDetailId = $0?.id },
@@ -1010,6 +1221,10 @@ private struct RoomContent: View {
             wave7.cardFinishTournament = { tid in wave7.finishTournament(api: session.api, tournamentId: tid) }
             wave7.cardOpenDetail = { id in wave7.redPacketDetailId = id }
         }
+    }
+
+    private var chatBodyStyled12: some View {
+        chatBodyStyled11
         .fullScreenCover(item: $lightbox) { target in
             MediaLightboxView(url: target.url, caption: target.caption)
         }
@@ -1022,6 +1237,10 @@ private struct RoomContent: View {
             // outlive the room (roomVisible off / conversation change).
             viewModel.handleRoomDisappeared()
         }
+    }
+
+    private var chatBodyStyled13: some View {
+        chatBodyStyled12
         .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
         // D30 camera capture — the shot flows through stageImage → the SAME
         // ≤1280px JPEG staged pipeline as the photo picker (web parity).
@@ -1047,6 +1266,10 @@ private struct RoomContent: View {
                 viewModel.stageDocument(url: url)
             }
         }
+    }
+
+    private var chatBodyStyled14: some View {
+        chatBodyStyled13
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             photoItem = nil
@@ -1056,165 +1279,6 @@ private struct RoomContent: View {
                 }
             }
         }
-    }
-
-    // ChatRoomView.body — R12 type-check decomposition: the original builder exceeded
-    // Swift’s type-check budget; the view tree is VERBATIM, split only.
-    @ViewBuilder
-    private var chatBodyPart0: some View {
-            // Wave 2 topics — group rooms only (General = whole room, spec §1 row 9).
-    }
-
-    @ViewBuilder
-    private var chatBodyPart1: some View {
-            if conversation.isGroup {
-                TopicBar(
-                    topics: viewModel.topics,
-                    activeTopicId: viewModel.activeTopicId,
-                    onSelect: { viewModel.setActiveTopic($0, session: session) },
-                    onCreate: { name, emoji in
-                        viewModel.createTopic(name: name, emoji: emoji, session: session)
-                    },
-                )
-            }
-    }
-
-    @ViewBuilder
-    private var chatBodyPart2: some View {
-            pinnedBanner
-    }
-
-    @ViewBuilder
-    private var chatBodyPart3: some View {
-            // REM-B F-MS-19 — header TTL chip when disappearing is on.
-    }
-
-    @ViewBuilder
-    private var chatBodyPart4: some View {
-            if (conversation.ttlSeconds ?? 0) > 0 {
-                HStack(spacing: 6) {
-                    Image(systemName: "timer")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(PulseTheme.emerald)
-                    Text("Disappearing · \(GroupInfoView.ttlLabel(conversation.ttlSeconds))")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 5)
-                .background(PulseTheme.emerald.opacity(0.08))
-                .accessibilityLabel("Disappearing messages enabled")
-            }
-    }
-
-    @ViewBuilder
-    private var chatBodyPart5: some View {
-            if searchOpen {
-                roomSearchPanel
-            }
-    }
-
-    @ViewBuilder
-    private var chatBodyPart6: some View {
-            // R38/R42 — the veil covers ONLY the message river (header +
-    }
-
-    @ViewBuilder
-    private var chatBodyPart7: some View {
-            // composer stay untouched, web parity). Stable modifier chain so
-    }
-
-    @ViewBuilder
-    private var chatBodyPart8: some View {
-            // the scroll identity never resets across toggles.
-    }
-
-    @ViewBuilder
-    private var chatBodyPart9: some View {
-            messagesList
-                .blur(radius: veilEngaged ? 24 : 0)
-                .overlay {
-                    if veilEngaged {
-                        veilCover
-                    }
-                }
-                .allowsHitTesting(!veilEngaged)
-    }
-
-    @ViewBuilder
-    private var chatBodyPart10: some View {
-            // R34-b — AI recap card pinned above the composer.
-    }
-
-    @ViewBuilder
-    private var chatBodyPart11: some View {
-            if viewModel.recap != nil {
-                recapCard
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 4)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-    }
-
-    @ViewBuilder
-    private var chatBodyPart12: some View {
-            // F-SM-04 — @-suggester popover (roster, top-5 prefix match).
-    }
-
-    @ViewBuilder
-    private var chatBodyPart13: some View {
-            if !mentionCandidates.isEmpty {
-                mentionPopover()
-            }
-    }
-
-    @ViewBuilder
-    private var chatBodyPart14: some View {
-            // R3-A item 1 — the live '/' palette (web SlashPalette parity:
-    }
-
-    @ViewBuilder
-    private var chatBodyPart15: some View {
-            // draft starts with '/', pick routes the outcome machine). The
-    }
-
-    @ViewBuilder
-    private var chatBodyPart16: some View {
-            // palette and the @-suggester never compete — a '/' draft carries
-    }
-
-    @ViewBuilder
-    private var chatBodyPart17: some View {
-            // no @-token at the tail.
-    }
-
-    @ViewBuilder
-    private var chatBodyPart18: some View {
-            if slashPaletteVisible {
-                SlashPaletteView(draft: viewModel.draft) { command in
-                    pickSlashCommand(command)
-                }
-            }
-    }
-
-    @ViewBuilder
-    private var chatBodyPart19: some View {
-            if !session.connected {
-                offlineStrip
-            }
-    }
-
-    @ViewBuilder
-    private var chatBodyPart20: some View {
-            if let error = viewModel.errorText {
-                errorStrip(error)
-            }
-    }
-
-    @ViewBuilder
-    private var chatBodyPart21: some View {
-            composer
     }
 
 

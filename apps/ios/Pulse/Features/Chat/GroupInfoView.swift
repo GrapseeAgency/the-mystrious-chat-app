@@ -122,6 +122,12 @@ struct GroupInfoView: View {
     // ── content ──────────────────────────────────────────────
 
     private func content(_ detail: WireConversationSummary) -> some View {
+        groupContentStyled3
+    }
+
+    // GroupInfoView.content — R12 type-check decomposition: the original single builder
+    // expression exceeded Swift’s type-check budget; VERBATIM tree, split only.
+    private var groupContentStyled_view: some View {
         List {
             groupContentPart0
             groupContentPart1
@@ -147,112 +153,9 @@ struct GroupInfoView: View {
             groupContentPart21
             groupContentPart22
             groupContentPart23
-            groupContentPart24
-            groupContentPart25
-            groupContentPart26
-            groupContentPart27
-            groupContentPart28
-            groupContentPart29
-            groupContentPart30
-            groupContentPart31
-            groupContentPart32
-            groupContentPart33
-        }
-        .listStyle(.insetGrouped)
-        .scrollDismissesKeyboard(.immediately)
-        .onChange(of: photoItem) { _, item in
-            // R33-b — the picked photo flows through the avatar square
-            // pipeline → /api/uploads → PATCH conversation photo.
-            guard let item else { return }
-            photoItem = nil
-            Task { await uploadPhoto(item) }
-        }
-        .alert("Rename group", isPresented: $renameOpen) {
-            TextField("Group name", text: $renameDraft)
-            Button("Save") { rename() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("1–32 characters.")
-        }
-        .confirmationDialog(
-            "Announcement mode",
-            isPresented: $broadcastOpen,
-            titleVisibility: .visible,
-        ) {
-            Button(detail.broadcastMode == true ? "Turn off" : "Turn on") { toggleBroadcast() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Only admins can post while announcement mode is on.")
-        }
-        .confirmationDialog(
-            "Disappearing messages",
-            isPresented: $ttlOpen,
-            titleVisibility: .visible,
-        ) {
-            ForEach(Self.ttlPresets, id: \.seconds) { preset in
-                Button(preset.label) { setTtl(preset.seconds) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("New messages in this group disappear after the selected time.")
-        }
-        .confirmationDialog(
-            "Slow mode",
-            isPresented: $slowModeOpen,
-            titleVisibility: .visible,
-        ) {
-            ForEach(Self.slowModePresets, id: \.seconds) { preset in
-                Button(preset.label) { setSlowMode(preset.seconds) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Limits how often members can send (admins are exempt).")
-        }
-        .confirmationDialog(
-            confirmAction?.kind.dialogTitle(confirmAction?.memberName ?? "") ?? "",
-            isPresented: Binding(
-                get: { confirmAction != nil },
-                set: { if !$0 { confirmAction = nil } },
-            ),
-            titleVisibility: .visible,
-        ) {
-            switch confirmAction?.kind {
-            case .promote:
-                Button("Promote to admin") { runMemberAction() }
-            case .demote:
-                Button("Demote to member", role: .destructive) { runMemberAction() }
-            case .kick:
-                Button("Remove \(confirmAction?.memberName ?? "")", role: .destructive) { runMemberAction() }
-            default:
-                EmptyView()
-            }
-            Button("Cancel", role: .cancel) { confirmAction = nil }
-        } message: {
-            Text(confirmAction?.kind.dialogMessage ?? "")
-        }
-        .alert("Leave \"\(detail.name ?? "group")\"?", isPresented: $leaveOpen) {
-            Button("Leave group", role: .destructive) { leave() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You will stop receiving messages from this group. Chat history stays for the others.")
-        }
-        .sheet(isPresented: $addMembersOpen) {
-            GroupMemberAddSheet(
-                conversationId: conversation.id,
-                existing: detail.members.map(\.id),
-                session: session,
-            ) { added in
-                Task {
-                    await load()
-                    session.toasts.show("Added \(added) member\(added == 1 ? "" : "s")")
-                    session.noteInboxChanged()
-                }
-            }
         }
     }
 
-    // GroupInfoView.content — R12 type-check decomposition: the original builder exceeded
-    // Swift’s type-check budget; the view tree is VERBATIM, split only.
     @ViewBuilder
     private var groupContentPart0: some View {
             Section {
@@ -545,87 +448,47 @@ struct GroupInfoView: View {
     @ViewBuilder
     private var groupContentPart17: some View {
             AutomationsSection(
+                conversationId: conversation.id,
+                viewerId: viewerId,
+                isAdmin: isAdmin,
+                session: session,
+            )
+
     }
 
     @ViewBuilder
     private var groupContentPart18: some View {
-                conversationId: conversation.id,
-    }
-
-    @ViewBuilder
-    private var groupContentPart19: some View {
-                viewerId: viewerId,
-    }
-
-    @ViewBuilder
-    private var groupContentPart20: some View {
-                isAdmin: isAdmin,
-    }
-
-    @ViewBuilder
-    private var groupContentPart21: some View {
-                session: session,
-    }
-
-    @ViewBuilder
-    private var groupContentPart22: some View {
-            )
-
-    }
-
-    @ViewBuilder
-    private var groupContentPart23: some View {
             // ── R2-B — Webhooks (Discord-style incoming integrations, web
     }
 
     @ViewBuilder
-    private var groupContentPart24: some View {
+    private var groupContentPart19: some View {
             // group-info-sheet parity): everyone copies ingest URLs, admins
     }
 
     @ViewBuilder
-    private var groupContentPart25: some View {
+    private var groupContentPart20: some View {
             // create/delete.
     }
 
     @ViewBuilder
-    private var groupContentPart26: some View {
+    private var groupContentPart21: some View {
             WebhooksSection(
-    }
-
-    @ViewBuilder
-    private var groupContentPart27: some View {
                 conversationId: conversation.id,
-    }
-
-    @ViewBuilder
-    private var groupContentPart28: some View {
                 viewerId: viewerId,
-    }
-
-    @ViewBuilder
-    private var groupContentPart29: some View {
                 isAdmin: isAdmin,
-    }
-
-    @ViewBuilder
-    private var groupContentPart30: some View {
                 session: session,
-    }
-
-    @ViewBuilder
-    private var groupContentPart31: some View {
             )
 
     }
 
     @ViewBuilder
-    private var groupContentPart32: some View {
+    private var groupContentPart22: some View {
             // ── leave ──
     }
 
     @ViewBuilder
-    private var groupContentPart33: some View {
+    private var groupContentPart23: some View {
             Section {
                 Button(role: .destructive) {
                     leaveOpen = true
@@ -635,6 +498,113 @@ struct GroupInfoView: View {
             } footer: {
                 Text("If you are the last admin, the longest-standing member is promoted automatically.")
             }
+    }
+
+    private var groupContentStyled0: some View {
+        groupContentStyled_view
+        .listStyle(.insetGrouped)
+        .scrollDismissesKeyboard(.immediately)
+        .onChange(of: photoItem) { _, item in
+            // R33-b — the picked photo flows through the avatar square
+            // pipeline → /api/uploads → PATCH conversation photo.
+            guard let item else { return }
+            photoItem = nil
+            Task { await uploadPhoto(item) }
+        }
+    }
+
+    private var groupContentStyled1: some View {
+        groupContentStyled0
+        .alert("Rename group", isPresented: $renameOpen) {
+            TextField("Group name", text: $renameDraft)
+            Button("Save") { rename() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("1–32 characters.")
+        }
+        .confirmationDialog(
+            "Announcement mode",
+            isPresented: $broadcastOpen,
+            titleVisibility: .visible,
+        ) {
+            Button(detail.broadcastMode == true ? "Turn off" : "Turn on") { toggleBroadcast() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Only admins can post while announcement mode is on.")
+        }
+        .confirmationDialog(
+            "Disappearing messages",
+            isPresented: $ttlOpen,
+            titleVisibility: .visible,
+        ) {
+            ForEach(Self.ttlPresets, id: \.seconds) { preset in
+                Button(preset.label) { setTtl(preset.seconds) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("New messages in this group disappear after the selected time.")
+        }
+    }
+
+    private var groupContentStyled2: some View {
+        groupContentStyled1
+        .confirmationDialog(
+            "Slow mode",
+            isPresented: $slowModeOpen,
+            titleVisibility: .visible,
+        ) {
+            ForEach(Self.slowModePresets, id: \.seconds) { preset in
+                Button(preset.label) { setSlowMode(preset.seconds) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Limits how often members can send (admins are exempt).")
+        }
+        .confirmationDialog(
+            confirmAction?.kind.dialogTitle(confirmAction?.memberName ?? "") ?? "",
+            isPresented: Binding(
+                get: { confirmAction != nil },
+                set: { if !$0 { confirmAction = nil } },
+            ),
+            titleVisibility: .visible,
+        ) {
+            switch confirmAction?.kind {
+            case .promote:
+                Button("Promote to admin") { runMemberAction() }
+            case .demote:
+                Button("Demote to member", role: .destructive) { runMemberAction() }
+            case .kick:
+                Button("Remove \(confirmAction?.memberName ?? "")", role: .destructive) { runMemberAction() }
+            default:
+                EmptyView()
+            }
+            Button("Cancel", role: .cancel) { confirmAction = nil }
+        } message: {
+            Text(confirmAction?.kind.dialogMessage ?? "")
+        }
+        .alert("Leave \"\(detail.name ?? "group")\"?", isPresented: $leaveOpen) {
+            Button("Leave group", role: .destructive) { leave() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You will stop receiving messages from this group. Chat history stays for the others.")
+        }
+    }
+
+    private var groupContentStyled3: some View {
+        groupContentStyled2
+        .sheet(isPresented: $addMembersOpen) {
+            GroupMemberAddSheet(
+                conversationId: conversation.id,
+                existing: detail.members.map(\.id),
+                session: session,
+            ) { added in
+                Task {
+                    await load()
+                    session.toasts.show("Added \(added) member\(added == 1 ? "" : "s")")
+                    session.noteInboxChanged()
+                }
+            }
+        }
     }
 
 
