@@ -330,7 +330,7 @@ enum PulseRTCError: Error {
 final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallPeerConnecting, PulseGroupCallPeerConnecting {
     private let pc: RTCPeerConnection
     private let factory: RTCPeerConnectionFactory
-    private let audioTrack: RTCAudioTrack?
+    private var audioTrack: RTCAudioTrack?
     private let box: PulseRTCDelegateBox
 
     // ── video handles (Wave R1-W2D — REAL camera path) ──
