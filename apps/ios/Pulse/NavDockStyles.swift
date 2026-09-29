@@ -1310,7 +1310,7 @@ struct RadialDock: View {
                     .lineLimit(1)
             }
             .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
-            .frame(width: 58, minHeight: 46)
+            .frame(width: 58, height: 46)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1331,7 +1331,7 @@ struct RadialDock: View {
                     .lineLimit(1)
             }
             .foregroundStyle(PulseTheme.textSecondary)
-            .frame(width: 58, minHeight: 46)
+            .frame(width: 58, height: 46)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1600,7 +1600,7 @@ struct ContextualDock: View {
                     .minimumScaleFactor(0.8)
             }
             .foregroundStyle(.white)
-            .frame(width: 64, minHeight: 50)
+            .frame(width: 64, height: 50)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(PulseTheme.brandGradient),
