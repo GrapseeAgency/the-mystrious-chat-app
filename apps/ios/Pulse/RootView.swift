@@ -17,7 +17,7 @@ enum PulseTab: Int, CaseIterable {
 /// field renders behind the tab chrome, the particle overlay above it, and
 /// the onboarding (name → live @handle picker, web design parity) IS the app
 /// until a viewer exists. Color scheme follows prefs (system/light/dark).
-/// Tab chrome is the R4-A 8-style navigation registry (web nav-registry.ts
+/// Tab chrome is the R4-A 13-style navigation registry (web nav-registry.ts
 /// parity; default = the floating capsule dock, web §12) — the stock TabView
 /// is gone; exactly one panel is mounted at a time (web AnimatePresence
 /// parity). Every style renders over the same shared dock context; the
@@ -51,6 +51,9 @@ struct RootView: View {
     // Wave 6 — pulse:// deep links (F-DL): invite previews join, user opens
     // the full user page (Contacts tab), room opens the conversation.
     @State private var pendingInvite: InviteLinkTarget?
+    // R14 5-b — the ?login= handoff (web /?login=Name parity): the deep
+    // link's display-name prefill + auto-lookup target for OnboardingView.
+    @State private var pendingLoginName: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var systemScheme
@@ -87,6 +90,12 @@ struct RootView: View {
         }
         .tint(PulseTheme.emerald)
         .preferredColorScheme(colorScheme)
+        // R14 5-b — deep links now mount at the ROOT (the login route must
+        // reach the app pre-identity; every other route re-checks the viewer
+        // inside handleDeepLink exactly like before).
+        .onOpenURL { url in
+            handleDeepLink(url)
+        }
         // R10-b — the app-lock gate. Armed on scenePhase → .background (when
         // enabled); presenting the moment the scene is active again. Layered
         // at the very root like the call/rooms full-screen surfaces so it
@@ -124,6 +133,14 @@ struct RootView: View {
             if !didBootstrap, let viewer = prefs.viewer {
                 didBootstrap = true
                 session.start(as: viewer)
+                // R14 5-b — boot identity probe (web app-root.tsx BootGate):
+                // a stored identity the server no longer knows (404) wipes
+                // the session and lands on onboarding. Network flakes keep
+                // it — the identical optimistic contract.
+                session.validateStoredIdentity { [weak session] name in
+                    session?.prefs?.setViewer(nil)
+                    session?.toasts.show("“\(name)” no longer exists on this Pulse — sign in or create an identity.")
+                }
             }
             // R2-D — reminder-notification taps route like pulse://room: the
             // delegate (registered in PulseApp.init) parses the userInfo into
@@ -226,7 +243,34 @@ struct RootView: View {
                     .transition(panelTransition)
             }
         }
+        // R14 5-b — edge-swipe tab switching (web main-shell.tsx :337-377):
+        // horizontal drags move one tab in the drag direction. The
+        // simultaneous attachment (never highPriority) keeps scrollables,
+        // carousels and the room's swipe-reply in control of their own
+        // gestures; rooms opt out entirely inside the gesture.
+        .simultaneousGesture(edgeSwipeGesture)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: tab)
+    }
+
+    /// R14 5-b — the swipe verdict: vertical-cancel (±45pt) + a real
+    /// horizontal travel (>60pt — a notch above the web's 56 so scroll-
+    /// flicks stay list-owned) → prev/next, clamped at the registry edges
+    /// (web main-shell.tsx :337-372 parity; the 24pt edge anchor becomes a
+    /// whole-shell gesture here — simultaneous, never hijacking). Rooms and
+    /// the app-lock cover never participate.
+    private var edgeSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 50)
+            .onEnded { value in
+                guard !reduceMotion, !session.roomVisible, !appLock.needsLock else { return }
+                guard abs(value.translation.height) < 45,
+                      abs(value.translation.width) > 60 else { return }
+                let order = PulseTab.allCases
+                guard let index = order.firstIndex(of: tab) else { return }
+                let next = value.translation.width < 0 ? index + 1 : index - 1
+                guard order.indices.contains(next) else { return }
+                PulseHaptics.tap()
+                switchTab(order[next])
+            }
     }
 
     @ViewBuilder
@@ -248,7 +292,7 @@ struct RootView: View {
             // Zero while a room owns the screen.
             .safeAreaInset(edge: .top, spacing: 0) {
                 if !session.roomVisible, navStyle.zone == .top {
-                    FloatingTopDock(context: dockContext, active: tab)
+                    topDock
                         .transition(.move(edge: .top).combined(with: .opacity))
                 } else {
                     Color.clear.frame(height: 0)
@@ -284,7 +328,12 @@ struct RootView: View {
                 }
             }
             .sheet(isPresented: $settingsOpen) {
-                SettingsView(session: session, prefs: prefs)
+                SettingsView(session: session, prefs: prefs, onOpenHub: {
+                    // R14 5-b — the Hub link row: dismiss, then select the hub
+                    // tab (web onOpenHub parity).
+                    settingsOpen = false
+                    switchTab(.hub)
+                })
             }
             .sheet(isPresented: $storiesOpen) {
                 StoriesView(session: session)
@@ -312,13 +361,17 @@ struct RootView: View {
                     session.requestOpenRoom(conversation)
                 }
             }
-            .onOpenURL { url in
-                handleDeepLink(url)
-            }
         } else {
             // Gate on identity exactly like the web onboarding — the
             // two-step screen replaces the shell (not a modal sheet).
-            OnboardingView(session: session, prefs: prefs, onPicked: { didBootstrap = true })
+            // R14 5-b — a pending ?login= deep link prefills the name and
+            // runs the live lookup (the "That's me" affordance) on appear.
+            OnboardingView(
+                session: session,
+                prefs: prefs,
+                deepLinkLoginName: pendingLoginName,
+                onPicked: { didBootstrap = true },
+            )
         }
     }
 
@@ -402,10 +455,14 @@ struct RootView: View {
 
     /// Bottom-zone styles reserve the dock's footprint (the R3-era 74);
     /// floating-top and rail reserve nothing at the bottom — they occupy
-    /// their own top/leading channels instead.
+    /// their own top/leading channels instead. Radial is the overlay FAB:
+    /// it floats above the bottom edge, so the SAME footprint applies.
     private var dockBottomReserve: CGFloat {
         if session.roomVisible { return 0 }
-        return navStyle.zone == .bottom ? 74 : 0
+        switch navStyle.zone {
+        case .bottom, .overlay: return 74
+        default: return 0
+        }
     }
 
     /// PiP clearances — mirror the visible nav channels so panes never
@@ -418,8 +475,23 @@ struct RootView: View {
         (!session.roomVisible && navStyle.zone == .side) ? PulseDockMetrics.railWidth : 0
     }
 
+    /// R14 5-b — the top-zone channel dispatch: the floating-top bar stays
+    /// byte-as-is; the command-bar strip joins it (both live in the top
+    /// inset so every screen clears them through the same mechanism).
+    @ViewBuilder
+    private var topDock: some View {
+        switch navStyle {
+        case .commandBar:
+            CommandBarDock(context: dockContext, active: tab)
+        default:
+            FloatingTopDock(context: dockContext, active: tab)
+        }
+    }
+
     /// The bottom-zone dock host — capsule stays byte-as-is (brief), the
     /// other bottom styles are the R4-A renderers over the shared context.
+    /// R14 5-b — floating-dock / radial / gesture / contextual-dock join as
+    /// the honest mobile adaptations of the remaining web idioms.
     @ViewBuilder
     private var bottomDock: some View {
         switch navStyle {
@@ -436,9 +508,11 @@ struct RootView: View {
                 onStories: { storiesOpen = true },
                 onCalls: { callsOpen = true },
             )
-        case .floatingTop, .rail:
+        case .floatingTop, .commandBar, .rail:
             // Top/side styles render in their own inset channels.
             Color.clear.frame(height: 0)
+        case .floatingDock:
+            FloatingDockDock(context: dockContext, active: tab)
         case .pill:
             PillNavDock(context: dockContext, active: tab)
         case .bottomBar:
@@ -449,29 +523,44 @@ struct RootView: View {
             FloatingTabBarDock(context: dockContext, active: tab)
         case .island:
             IslandDock(context: dockContext, active: tab)
+        case .radial:
+            RadialDock(context: dockContext, active: tab)
+        case .gesture:
+            GestureDock(context: dockContext, active: tab)
+        case .contextualDock:
+            ContextualDock(context: dockContext, active: tab)
         }
     }
 
     // ── Wave 6 deep links (F-DL) ─────────────────────────────
 
     /// pulse://invite/{code} → JoinGroupSheet parity · pulse://user/{id} →
-    /// UserPage via the Contacts tab · pulse://room/{id} → open conversation.
-    /// Links arriving before identity exist are IGNORED (the web requires
-    /// login too — no half-onboarded limbo).
+    /// UserPage via the Contacts tab · pulse://room/{id} → open conversation
+    /// · R14 5-b — pulse://login/{name} → the web /?login= onboarding
+    /// prefill (identity-less apps ONLY). Links arriving while signed in
+    /// are IGNORED (the web requires login too — no half-onboarded limbo).
     private func handleDeepLink(_ url: URL) {
-        guard prefs.viewer != nil, let link = PulseDeepLink.parse(url) else { return }
+        guard let link = PulseDeepLink.parse(url) else { return }
         switch link {
+        case .login(let name):
+            guard prefs.viewer == nil else { return }
+            PulseHaptics.tap()
+            pendingLoginName = name
         case .invite(let code):
+            guard prefs.viewer != nil else { return }
             PulseHaptics.tap()
             pendingInvite = InviteLinkTarget(code: code)
         case .user(let userId):
+            guard prefs.viewer != nil else { return }
             PulseHaptics.tap()
             switchTab(.contacts)
             session.requestOpenUser(userId, name: nil)
         case .room(let conversationId):
+            guard prefs.viewer != nil else { return }
             openLinkedRoom(conversationId)
         case .compose:
             // R10-b — pulse://new (the quick-action destination parity).
+            guard prefs.viewer != nil else { return }
             PulseHaptics.tap()
             newChatOpen = true
         }

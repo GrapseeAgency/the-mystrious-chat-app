@@ -83,6 +83,14 @@ public enum PulseFormat {
         return Self.separator.string(from: date)
     }
 
+    /// R14 5-b — the member-since stamp (web formatMemberSince parity,
+    /// pulse-utils.ts :280-283 — `month: 'long', year: 'numeric'`):
+    /// "June 2024". Empty string on unparseable input (callers omit the line).
+    public static func monthYear(_ iso: String?) -> String {
+        guard let date = date(iso) else { return "" }
+        return Self.monthYearFormatter.string(from: date)
+    }
+
     public static func clockTime(_ iso: String?) -> String {
         guard let date = date(iso) else { return "" }
         return Self.clock.string(from: date)
@@ -157,6 +165,13 @@ public enum PulseFormat {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MMM d, yyyy"
+        return f
+    }()
+    // R14 5-b — the member-since stamp (web monthYearFormatter parity).
+    private static let monthYearFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMMM yyyy"
         return f
     }()
 }

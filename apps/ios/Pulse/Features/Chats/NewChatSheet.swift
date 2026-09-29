@@ -199,6 +199,14 @@ struct NewChatSheet: View {
             if !picked.isEmpty {
                 chipsRow
             }
+            // R14 5-b — the live member caption (web new-chat-sheet.tsx
+            // :277-280): "N members selected" once the 3+ gate passes,
+            // otherwise the honest "N of 3+ members picked" nudge.
+            Text(groupCaption)
+                .font(.system(size: 11.5, weight: groupValid ? .medium : .semibold))
+                .foregroundStyle(groupValid ? Color.secondary : PulseTheme.emeraldDeep)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
             HStack(spacing: 10) {
                 groupNameField
                 createButton
@@ -209,6 +217,18 @@ struct NewChatSheet: View {
         .padding(.top, 8)
         .background(composerPanel)
         .animation(reduceMotion ? nil : .pulse(.pulseSnappy, reduceMotion: reduceMotion), value: picked)
+    }
+
+    /// R14 5-b — selected + me (web totalMembers = selectedIds.size + 1).
+    private var totalMembers: Int { picked.count + 1 }
+    /// The web groupValid gate: yourself plus at least 2 people.
+    private var groupValid: Bool { totalMembers >= 3 }
+
+    private var groupCaption: String {
+        let noun = totalMembers == 1 ? "member" : "members"
+        return groupValid
+            ? "\(totalMembers) \(noun) selected · include yourself plus at least 2 people"
+            : "\(totalMembers) of 3+ members picked · include yourself plus at least 2 people"
     }
 
     private var chipsRow: some View {
@@ -295,7 +315,9 @@ struct NewChatSheet: View {
 
     // ── actions ──────────────────────────────────────────────
 
-    private var canCreateGroup: Bool { !groupName.trimmingCharacters(in: .whitespaces).isEmpty && !picked.isEmpty }
+    /// R14 5-b — the Create gate now carries the web 3+ member rule
+    /// (new-chat-sheet.tsx :119 groupValid) alongside the name requirement.
+    private var canCreateGroup: Bool { groupValid && !groupName.trimmingCharacters(in: .whitespaces).isEmpty }
 
     private func load() async {
         do {

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.pulse.core.PulseEndpoints
 import app.pulse.core.fx.PulseFx
 import app.pulse.domain.model.User
+import app.pulse.domain.model.UserStats
 import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -82,6 +83,35 @@ class ProfileViewModel @Inject constructor(
             _wallet.value = result.fold(
                 onSuccess = { page -> WalletUi(coins = page.wallet.coins) },
                 onFailure = { WalletUi(error = true) },
+            )
+        }
+    }
+
+    /**
+     * R14 gap 7a — profile stats row (web profile-tab.tsx:466-491):
+     * Messages / Rooms / Coins / Member since via GET /api/users/{id}/stats —
+     * the SAME loader pattern SettingsViewModel.refreshFootprintStats uses
+     * (reuse, not duplication); Coins rides the existing wallet source.
+     */
+    data class StatsUi(
+        val loading: Boolean = false,
+        val stats: UserStats? = null,
+        val error: String? = null,
+    )
+
+    private val _stats = MutableStateFlow(StatsUi())
+    val stats: StateFlow<StatsUi> = _stats.asStateFlow()
+
+    fun loadStats() {
+        val viewer = viewerId.value
+        if (viewer.isNullOrBlank() || _stats.value.loading) return
+        viewModelScope.launch {
+            _stats.value = _stats.value.copy(loading = true, error = null)
+            repo.userStats(viewer).fold(
+                onSuccess = { _stats.value = StatsUi(loading = false, stats = it) },
+                onFailure = {
+                    _stats.value = _stats.value.copy(loading = false, error = it.message ?: "Couldn't load your stats.")
+                },
             )
         }
     }

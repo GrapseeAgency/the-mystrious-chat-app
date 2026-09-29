@@ -24,8 +24,11 @@ import java.util.concurrent.ConcurrentHashMap
  *  3. LOCAL quiet hours (ReminderAlertPolicy.quietNow — the same window the
  *     reminder notifier honors)
  *  4. per-room mute (the conversation's mutedUntil window is in the future)
- *  then: sound if prefs notifSound, vibration if prefs notifVibrate (the
- *  same Wave-8 blob ReminderAlertPolicy mirrors).
+ *  then: ding if the DEVICE soundOn master AND the account notifSound pop
+ *  are both on (web gate chain pulse-realtime-provider.tsx:602-605 —
+ *  !muted && !quiet → playIncomingPing [device soundOn] + haptic [haptics]);
+ *  vibration if prefs notifVibrate (the same Wave-8 blob ReminderAlertPolicy
+ *  mirrors).
  */
 object IncomingAttention {
 
@@ -73,8 +76,30 @@ object IncomingAttention {
                 android.widget.Toast.LENGTH_SHORT,
             ).show()
         }
-        if (ReminderAlertPolicy.soundOn) playPing(context)
+        if (ReminderAlertPolicy.deviceSoundOn && ReminderAlertPolicy.soundOn) playPing(context)
         if (ReminderAlertPolicy.vibrateOn) buzz(context)
+    }
+
+    /**
+     * R14 — Settings → Notifications "Preview alert" (web settings-screen.tsx
+     * Test group, :1258-1275): the REAL ding/buzz path honoring the toggles —
+     * quiet hours silences honestly, the ding obeys the device soundOn master
+     * (playIncomingPing parity) and the buzz obeys the haptics toggle
+     * (haptic(30) parity).
+     */
+    fun previewAlert(context: Context, hapticsOn: Boolean) {
+        if (ReminderAlertPolicy.quietNow()) {
+            runCatching {
+                android.widget.Toast.makeText(
+                    context,
+                    "Quiet hours active — the alert would be silenced right now.",
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            }
+            return
+        }
+        if (ReminderAlertPolicy.deviceSoundOn) playPing(context)
+        if (hapticsOn) buzz(context)
     }
 
     /** Default notification sound, played on the NOTIFICATION usage route. */

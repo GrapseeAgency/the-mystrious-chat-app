@@ -200,6 +200,30 @@ public final class PulseSession: ObservableObject {
         api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL)
     }
 
+    /// R14 5-b — boot identity probe (web app-root.tsx:88-105 parity): a
+    /// restored session is validated against GET /api/users/{id}; a 404
+    /// means the identity no longer exists on this Pulse → stop the live
+    /// layer and hand the wipe to the caller (prefs.setViewer(nil) lands on
+    /// onboarding). Network flakes and every other error proceed
+    /// optimistically — same contract as the web BootGate. Offline-created
+    /// `local_` identities never probe (they are honest offline accounts,
+    /// not stale server rows).
+    public func validateStoredIdentity(onWiped: @escaping (String) -> Void) {
+        guard let viewer, !viewer.id.hasPrefix("local_") else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await self.api.user(viewer.id)
+            } catch let failure as PulseAPIClient.Failure where failure.kind == .notFound {
+                self.stop()
+                onWiped(viewer.name)
+            } catch {
+                // Offline / unknown gateway — keep the session (web parity:
+                // validation.isError && !404 → status .ready).
+            }
+        }
+    }
+
     // ── lifecycle ────────────────────────────────────────────
     public func start(as viewer: PulseViewer) {
         self.viewer = viewer
@@ -565,7 +589,10 @@ public final class PulseSession: ObservableObject {
               message.parentId == nil,
               activeRoomId != conversationId else { return }
         guard !(prefs?.isQuietHoursNow ?? false) else { return } // quiet — stay silent
-        if prefs?.notifSound == true {
+        // R14 5-b — the web gate chain (pulse-realtime-provider.tsx :602-605):
+        // device soundOn AND quiet hours AND the per-account notifSound all
+        // pass before the pop plays.
+        if prefs?.soundOn == true, prefs?.notifSound == true {
             PulseSounds.incoming()
         }
         if prefs?.notifVibrate == true {

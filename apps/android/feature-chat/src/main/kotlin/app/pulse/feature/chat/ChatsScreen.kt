@@ -234,6 +234,8 @@ fun ChatsScreen(
     val searchRunning by viewModel.searching.collectAsStateWithLifecycle()
     // R2-C item 7 — recent searches for the search bar (last 5).
     val spotlightRecents by viewModel.spotlightRecents.collectAsStateWithLifecycle()
+    // R14 gap 14 — the spotlight check-in flight flag (Actions block).
+    val checkin by viewModel.checkin.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
 
     var search by remember { mutableStateOf(false) }
@@ -470,6 +472,15 @@ fun ChatsScreen(
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
                             onOpenRoom(hit.conversationId, hit.id)
                         },
+                        // R14 gap 14 — the Actions block atop the empty-query
+                        // surface (web spotlight.tsx:237-291).
+                        checkinPending = checkin.pending,
+                        onNewChat = {
+                            search = false
+                            onOpenNewChat()
+                        },
+                        onCheckin = viewModel::checkinToHub,
+                        onToggleTheme = onCycleTheme,
                     )
                     all.isEmpty() -> EmptyStateCard(
                         title = "No conversations yet",
@@ -2052,9 +2063,52 @@ private fun SearchResults(
     recents: List<String> = emptyList(),
     onPickRecent: (String) -> Unit = {},
     onClearRecents: () -> Unit = {},
+    // R14 gap 14 — the Actions block (web spotlight.tsx:237-291: New chat /
+    // Check in to Hub via POST /api/hub/wallet/checkin / Toggle theme).
+    checkinPending: Boolean = false,
+    onNewChat: () -> Unit = {},
+    onCheckin: () -> Unit = {},
+    onToggleTheme: () -> Unit = {},
 ) {
     val q = query.trim()
+    val darkSurface = isPulseDarkTheme()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 128.dp)) {
+        // R14 gap 14 — ACTIONS (web runs this block atop the search results;
+        // on the empty-query surface it sits above Recents, like the web's
+        // actions-before-recents flatten order).
+        if (q.isEmpty()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = 12.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("ACTIONS", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp, color = Zinc400)
+            }
+            SpotlightActionRow(
+                icon = Icons.Filled.Create,
+                label = "New chat",
+                hint = "Pick someone to message",
+                tint = Emerald600,
+                onClick = onNewChat,
+            )
+            SpotlightActionRow(
+                icon = Icons.Filled.LocalFireDepartment,
+                label = if (checkinPending) "Checking in…" else "Check in to Hub",
+                hint = "Daily Pulse Coins reward",
+                tint = Emerald600,
+                enabled = !checkinPending,
+                onClick = onCheckin,
+            )
+            SpotlightActionRow(
+                icon = if (darkSurface) Icons.Filled.LightMode else Icons.Filled.DarkMode,
+                label = if (darkSurface) "Switch to light theme" else "Switch to dark theme",
+                hint = "Appearance",
+                tint = Emerald600,
+                onClick = onToggleTheme,
+            )
+        }
         // R2-C item 7 — recent searches surface while the query is EMPTY
         // (last 5, deduped, newest first; tap refills the field, Clear wipes).
         if (q.isEmpty() && recents.isNotEmpty()) {
@@ -2143,6 +2197,46 @@ private fun SearchResults(
                 )
             }
         }
+    }
+}
+
+/**
+ * R14 gap 14 — one row of the spotlight Actions block (web spotlight.tsx
+ * SpotlightRow 'action' rendering): icon tile + label + hint, tap to run.
+ */
+@Composable
+private fun SpotlightActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    hint: String,
+    tint: Color,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Emerald500.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(hint, fontSize = 11.5.sp, color = Zinc400)
+        }
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Zinc400, modifier = Modifier.size(16.dp))
     }
 }
 

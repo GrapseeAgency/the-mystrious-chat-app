@@ -81,6 +81,7 @@ struct ChatsView: View {
     @StateObject private var viewModel = ChatsViewModel()
     @State private var path = NavigationPath()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     // Wave 4 — full-screen stories surfaces (rail is the entry point).
     @State private var storiesViewerPresent = false
     @State private var storiesViewerStart: String?
@@ -90,6 +91,8 @@ struct ChatsView: View {
     // (the SAME NewChatSheet the dock's compose button hosts).
     @State private var callsOpen = false
     @State private var newChatOpen = false
+    // R14 5-b — the spotlight actions block's check-in pending flag.
+    @State private var spotlightCheckinPending = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -503,9 +506,104 @@ struct ChatsView: View {
 
     // ── search results (§10) ─────────────────────────────────
 
+    /// R14 5-b — the resolved dark verdict for the spotlight theme toggle
+    /// (web resolvedTheme parity).
+    private var spotlightIsDark: Bool {
+        prefs.appearance == "dark" || (prefs.appearance == "system" && colorScheme == .dark)
+    }
+
+    /// R14 5-b — one spotlight action row (the recents-row visual language:
+    /// leading glyph, label, tertiary hint, full-row tap).
+    private func spotlightActionRow(
+        icon: String,
+        label: String,
+        hint: String,
+        action: @escaping () -> Void,
+    ) -> some View {
+        Button {
+            PulseHaptics.tap()
+            action()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundStyle(PulseTheme.accent)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(PulseTheme.titleOnWash)
+                        .lineLimit(1)
+                    Text(hint)
+                        .font(.system(size: 11))
+                        .foregroundStyle(PulseTheme.textTertiary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(label) — \(hint)")
+    }
+
+    /// R14 5-b — the real daily check-in (web spotlight runCheckin →
+    /// POST /api/hub/wallet/checkin parity; the toast + haptic + confetti
+    /// match the HubView check-in response handling exactly).
+    private func runSpotlightCheckin() {
+        guard !spotlightCheckinPending else { return }
+        spotlightCheckinPending = true
+        Task {
+            defer { spotlightCheckinPending = false }
+            do {
+                let result = try await session.api.checkinWallet()
+                let streak = result.streak ?? 1
+                session.particles.fire(kind: .confetti, count: 60)
+                PulseHaptics.success()
+                session.toasts.show("Checked in — +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
+            } catch {
+                session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Check-in failed")
+            }
+        }
+    }
+
     private var searchResults: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
+                // R14 5-b — the ACTIONS block (web spotlight.tsx :260-291):
+                // New chat · Check in to Hub (the real POST
+                // /api/hub/wallet/checkin with the HubView response
+                // handling) · theme toggle. Shown on the empty query exactly
+                // like the web (the query filter drops them as you type).
+                if viewModel.query.isEmpty {
+                    SectionHeader(label: "ACTIONS", count: 3)
+                    spotlightActionRow(
+                        icon: "square.and.pencil",
+                        label: "New chat",
+                        hint: "Pick someone to message",
+                    ) {
+                        newChatOpen = true
+                    }
+                    spotlightActionRow(
+                        icon: "flame",
+                        label: spotlightCheckinPending ? "Checking in…" : "Check in to Hub",
+                        hint: "Daily Pulse Coins reward",
+                    ) {
+                        runSpotlightCheckin()
+                    }
+                    spotlightActionRow(
+                        icon: spotlightIsDark ? "sun.max" : "moon",
+                        label: spotlightIsDark ? "Switch to light theme" : "Switch to dark theme",
+                        hint: "Appearance",
+                    ) {
+                        // Web setTheme(resolved) parity — resolved light/dark,
+                        // system keeps resolving like every other surface.
+                        prefs.setAppearance(spotlightIsDark ? "light" : "dark")
+                    }
+                }
+
                 // R2-D ITEM 8 — the recent-searches rail (web spotlight.tsx
                 // Recents section + footer "Clear recents"): last 5 used
                 // queries, newest first, tap re-runs the query.

@@ -105,6 +105,8 @@ class ProfileEditViewModel @Inject constructor(
         val error: String? = null,
         val handleCheck: HandleCheck = HandleCheck("idle"),
         val uploading: Boolean = false,
+        /** R14 gap 8 — the remove-photo PATCH in flight. */
+        val removing: Boolean = false,
     )
 
     private val _state = MutableStateFlow(State())
@@ -186,6 +188,32 @@ class ProfileEditViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     _state.value = _state.value.copy(uploading = false, error = e.message ?: "Upload failed — try again")
+                }
+        }
+    }
+
+    /**
+     * R14 gap 8 — "Remove photo" (web avatar-editor.tsx runRemovePhoto):
+     * an immediate PATCH /api/users/{id} with avatar:"" — the server nulls
+     * the column — with the same optimistic-preview + rollback contract the
+     * set/replace path honors (failure restores the previous avatar).
+     */
+    fun removeAvatar() {
+        val s = _state.value
+        if (s.userId == null || s.saving || s.removing || s.uploading) return
+        val previous = s.avatar
+        viewModelScope.launch {
+            _state.value = s.copy(removing = true, error = null, avatar = null)
+            repo.patchProfile(ProfilePatch(avatar = ""))
+                .onSuccess {
+                    _state.value = _state.value.copy(removing = false, notice = "Profile photo removed")
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        removing = false,
+                        avatar = previous,
+                        error = e.message ?: "Could not remove your photo",
+                    )
                 }
         }
     }
@@ -312,6 +340,16 @@ fun ProfileEditScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                 )
+                // R14 gap 8 — "Remove photo" (web avatar-editor remove branch):
+                // only while a photo exists; immediate PATCH avatar:"".
+                if (state.avatar != null) {
+                    TextButton(
+                        onClick = viewModel::removeAvatar,
+                        enabled = !state.removing && !state.uploading && !state.saving,
+                    ) {
+                        Text("Remove photo", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
         Spacer(Modifier.height(16.dp))

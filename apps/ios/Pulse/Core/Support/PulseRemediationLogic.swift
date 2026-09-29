@@ -304,12 +304,15 @@ public enum PulseRemediationLogic {
     // ── F-MS-23 — incoming effect → ParticleBus mapping ──────
 
     /// Web EFFECT_PARTICLES: confetti→confetti · sparkles→stars ·
-    /// lasers/echo→burst. Unknown/absent effects → nil (no burst).
+    /// R14 5-b — lasers/echo now carry their OWN canvas kinds (web
+    /// message-effects.tsx distinct visuals) instead of the generic burst.
+    /// Unknown/absent effects → nil (no burst).
     public static func particleKind(forEffect effect: String?) -> String? {
         switch effect {
         case "confetti": return "confetti"
         case "sparkles": return "stars"
-        case "lasers", "echo": return "burst"
+        case "lasers": return "lasers"
+        case "echo": return "echo"
         default: return nil
         }
     }

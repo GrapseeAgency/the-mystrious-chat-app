@@ -57,6 +57,12 @@ class PulseApplication : Application() {
         app.pulse.domain.push.PulsePushStatus.resyncHook = {
             app.pulse.android.push.PulsePush.syncRegistration(repository)
         }
+        // R14 gap 2 — the Settings "Preview alert" row runs the REAL ding/buzz
+        // path (same domain seam as the push row above: feature-settings
+        // cannot see :app where IncomingAttention lives).
+        app.pulse.domain.notify.PreviewAlertHook.play = { hapticsOn ->
+            app.pulse.android.notify.IncomingAttention.previewAlert(this, hapticsOn)
+        }
 
         // R8 Task 3-c — Telecom self-managed PhoneAccount registration at app
         // start (idempotent; a refusal is logged and the call paths fall back
@@ -84,6 +90,11 @@ class PulseApplication : Application() {
         }
         appScope.launch {
             prefs.quietHoursOn.collect { app.pulse.android.notify.ReminderAlertPolicy.quietHoursOn = it }
+        }
+        // R14 — the device-local ding master rides the SAME mirror pattern
+        // (web pulse.settings.v1 soundOn — the incoming-ding gate).
+        appScope.launch {
+            prefs.soundOn.collect { app.pulse.android.notify.ReminderAlertPolicy.deviceSoundOn = it }
         }
         appScope.launch {
             prefs.quietStart.collect { app.pulse.android.notify.ReminderAlertPolicy.quietStart = it }

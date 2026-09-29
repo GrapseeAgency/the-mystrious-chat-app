@@ -56,7 +56,10 @@ import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -283,12 +286,36 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                 PulseAvatar(name = profile?.name ?: viewerName ?: "?", colorHex = profile?.color, size = 44.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(profile?.name ?: viewerName ?: "—", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    // R14 gap 7b — status glyph rides the name line (web
+                    // settings-screen.tsx:815-831) + honest member-since line.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(profile?.name ?: viewerName ?: "—", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        val glyph = profile?.statusEmoji
+                        if (!glyph.isNullOrBlank()) {
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            ) {
+                                Text(glyph, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
+                        }
+                    }
                     Text(
                         profile?.handle?.let { "@$it" } ?: "No handle yet",
                         fontSize = 12.5.sp,
                         color = PulsePalette.Emerald,
                     )
+                    if (viewerId != null) {
+                        memberSinceLine(profile?.createdAtIso)?.let { formatted ->
+                            Text(
+                                "Member since $formatted",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -322,6 +349,36 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
             Spacer(Modifier.width(12.dp))
             Text("Edit profile", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
         }
+        // R14 gap 4 — the session-scope row (web settings-screen.tsx:858-863):
+        // the session lives in the device's encrypted SecureSessionStore vault
+        // ("session.vault"), so the honest Android copy says device — not tab.
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Session scope", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    "Signed in on this device only (encrypted session vault) — other devices keep their own sessions.",
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = if (viewerId != null) PulsePalette.Emerald.copy(alpha = 0.14f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.10f),
+            ) {
+                Text(
+                    if (viewerId != null) "Active" else "None",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (viewerId != null) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+        }
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -346,20 +403,25 @@ private val UI_THEME_ROW_2 = listOf(
 )
 
 /**
- * R4-B item 3 — the 8 phone-feasible navigation architectures with the web
- * nav-registry.ts:51-63 label + hint strings VERBATIM (only the web's
- * floating-dock / command-bar / radial / gesture / contextual-dock are
- * left out — desktop/keyboard/exotic idioms, see protocol PulseNavStyle).
+ * R4-B item 3 / R14 — ALL 13 navigation architectures with the web
+ * nav-registry.ts:51-63 label + hint strings VERBATIM (floating-dock /
+ * command-bar / radial / gesture / contextual-dock now ship as honest
+ * mobile adaptations — see the MainActivity renderer comments).
  */
 private val NAV_STYLE_CARDS = listOf(
     Triple(app.pulse.protocol.PulseNavStyle.CAPSULE, "Floating Capsule", "Detached glass capsule dock — the default"),
     Triple(app.pulse.protocol.PulseNavStyle.FLOATING_TOP, "Floating Top Nav", "Capsule bar floating beneath the top edge"),
+    Triple(app.pulse.protocol.PulseNavStyle.FLOATING_DOCK, "Floating Dock", "Desktop-style dock with magnifying icons"),
     Triple(app.pulse.protocol.PulseNavStyle.PILL, "Pill Navigation", "Single segmented pill with sliding fill"),
     Triple(app.pulse.protocol.PulseNavStyle.BOTTOM_BAR, "Bottom Bar", "Classic edge-to-edge bottom bar"),
     Triple(app.pulse.protocol.PulseNavStyle.TAB_BAR, "Tab Bar", "iOS-style tab bar with tinted squircles"),
     Triple(app.pulse.protocol.PulseNavStyle.FLOATING_TAB_BAR, "Floating Tab Bar", "Detached card, elevated active tab"),
+    Triple(app.pulse.protocol.PulseNavStyle.COMMAND_BAR, "Command Bar", "Compact text command strip with search"),
     Triple(app.pulse.protocol.PulseNavStyle.RAIL, "Navigation Rail", "Persistent vertical side rail"),
     Triple(app.pulse.protocol.PulseNavStyle.ISLAND, "Island Navigation", "Dynamic-island pill that expands on tap"),
+    Triple(app.pulse.protocol.PulseNavStyle.RADIAL, "Radial Navigation", "FAB fanning destinations in an arc"),
+    Triple(app.pulse.protocol.PulseNavStyle.GESTURE, "Gesture Navigation", "Edge swipes + gesture pill quick switcher"),
+    Triple(app.pulse.protocol.PulseNavStyle.CONTEXTUAL_DOCK, "Contextual Dock", "Dock that adapts to the active tab"),
 )
 
 @Composable
@@ -402,12 +464,10 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
-        // R4-B item 3 — the navigation-architecture picker (web
-        // nav-registry.ts labels/hints verbatim for the 8 phone-feasible
-        // styles): 2-column card grid, selection ring like the wallpaper
-        // swatches. The value strings ride the SAME `pulse.navStyle.v2` key
-        // the web persists; the web's 5 excluded architectures are
-        // documented on protocol PulseNavStyle (they parse to capsule).
+        // R4-B item 3 / R14 — the navigation-architecture picker (web
+        // nav-registry.ts labels/hints verbatim, now ALL 13 styles): 2-column
+        // card grid, selection ring like the wallpaper swatches. The value
+        // strings ride the SAME `pulse.navStyle.v2` key the web persists.
         val haptics = LocalHapticFeedback.current
         Text(
             "Navigation style",
@@ -481,7 +541,6 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
                 }
             }
         }
-        SegPicker("Color mode", listOf("system" to "System", "dark" to "Dark", "light" to "Light"), darkOverride, viewModel::setDarkOverride)
         // R2-A item 11 — the FULL six-mode set (web WEBGL_MODES: off · aurora ·
         // caustics · mesh · stars · liquid); two 3-wide rows keep the labels legible.
         Text("Ambient FX", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
@@ -515,8 +574,17 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
     val drafts by viewModel.drafts.collectAsStateWithLifecycle()
     val outbox by viewModel.outbox.collectAsStateWithLifecycle()
+    // R14 gap 10 — the default list filter (web settings-screen.tsx:1065-1083
+    // "Default list filter" picker): same device key the chats chips write.
+    val listFilter by viewModel.chatsListFilter.collectAsStateWithLifecycle()
     val haptics = LocalHapticFeedback.current
     SectionScaffold("Chat", onBack) {
+        SegPicker(
+            "Default list filter",
+            listOf("all" to "All", "unread" to "Unread", "groups" to "Groups"),
+            listFilter,
+            viewModel::setChatsListFilter,
+        )
         SegPicker(
             "Bubble corners",
             listOf("md" to "Rounded", "lg" to "Soft", "pill" to "Pill"),
@@ -585,6 +653,10 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
 @Composable
 fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
+    // R14 gap 1 — the device-local ding master (web "Incoming sound" row) and
+    // the haptics toggle the Preview alert honors, both from pulse.settings.v1.
+    val soundOn by viewModel.soundOn.collectAsStateWithLifecycle()
+    val hapticsOn by viewModel.hapticsOn.collectAsStateWithLifecycle()
     val quietOn by viewModel.quietHoursOn.collectAsStateWithLifecycle()
     val quietStart by viewModel.quietStart.collectAsStateWithLifecycle()
     val quietEnd by viewModel.quietEnd.collectAsStateWithLifecycle()
@@ -594,8 +666,9 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
     // only changes when the :app push wiring itself transitions)
     LaunchedEffect(Unit) { viewModel.refreshPushStatus() }
     SectionScaffold("Notifications", onBack) {
+        RowToggle("Incoming sound", "Master ding gate on this device — the web soundOn toggle.", soundOn, viewModel::setSoundOn)
         RowToggle("Show message previews", "Message text in notification-style toasts.", prefs.notifPreviews == true, viewModel::setNotifPreviews)
-        RowToggle("Play a soft pop", "Incoming message sound.", prefs.notifSound == true, viewModel::setNotifSound)
+        RowToggle("Play a soft pop", "Per-account pop sound for incoming messages.", prefs.notifSound == true, viewModel::setNotifSound)
         RowToggle("Vibrate", "Where the device supports it.", prefs.notifVibrate == true, viewModel::setNotifVibrate)
         HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
         RowToggle("Quiet hours", "Silence pings and haptics inside the window.", quietOn, viewModel::setQuietHoursOn)
@@ -615,6 +688,29 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
         // toggle row; iOS parity: SettingsView status row). Device state, not a
         // preference — an unarmed build says Off instead of pretending.
         RemotePushStatusRow(pushStatus, onResync = { viewModel.resyncPush() })
+        // R14 gap 2 — the "Preview alert" test row (web settings-screen.tsx
+        // Test group :1258-1275): plays the REAL incoming ding through
+        // IncomingAttention — honoring soundOn, haptics and quiet hours.
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        Text("Test", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
+        Button(
+            // R14 gap 2 — the REAL :app IncomingAttention path through the
+            // domain seam (feature modules cannot see app-module code).
+            onClick = { app.pulse.domain.notify.PreviewAlertHook.playPreview(hapticsOn) },
+            enabled = !quietNow,
+            modifier = Modifier.fillMaxWidth().height(44.dp),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Preview alert", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Text(
+            "Plays the real incoming ding and fires a haptic buzz, honoring the toggles above.",
+            fontSize = 11.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp),
+        )
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -819,6 +915,30 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                 )
             }
         }
+        // R14 gap 5 — the voice-rooms info row (web settings-screen.tsx
+        // :1495-1500 StaticRow, caption verbatim).
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Mic,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Voice rooms", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    "Studio capture with echo cancellation, noise suppression and auto gain. Quality presets are not configurable yet.",
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -858,7 +978,7 @@ fun AccessibilitySection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
 // ── Data & Storage ───────────────────────────────────────────
 
 @Composable
-fun DataSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
+fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: SettingsViewModel = hiltViewModel()) {
     val footprint by viewModel.footprint.collectAsStateWithLifecycle()
     val footprintStats by viewModel.footprintStats.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -1005,6 +1125,32 @@ fun DataSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                 }) { Text("Check for updates", color = PulsePalette.Emerald) }
             }
         }
+        // R14 gap 6 — "The Hub" explore row (web settings-screen.tsx:1676-1686):
+        // lands on the Hub tab through the shell's switchTab (which pops the
+        // settings back stack to the start destination — the sheet closes).
+        if (onOpenHub != null) {
+            Text("Explore", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenHub)
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("The Hub", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                    Text("Wallet · Tasks · Market · Swap · Apps · Logs", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(
+                    "Open",
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PulsePalette.Emerald,
+                )
+            }
+        }
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -1015,6 +1161,21 @@ private fun formatBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
+/**
+ * R14 gap 7b — the web formatMemberSince (pulse-utils.ts:280): "August 2026"
+ * — null when the profile row carries no birth timestamp.
+ */
+internal fun memberSinceLine(iso: String?): String? {
+    if (iso.isNullOrBlank()) return null
+    return runCatching {
+        val parsed = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(iso.take(19))
+            ?: java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(iso.take(10))
+        parsed?.let {
+            java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.US).format(it)
+        }
+    }.getOrNull()
+}
+
 // ── About ────────────────────────────────────────────────────
 
 @Composable
@@ -1022,6 +1183,9 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
     val context = LocalContext.current
     val uri = LocalUriHandler.current
     val pm = remember { context.packageManager.getPackageInfo(context.packageName, 0) }
+    // R14 gap 3 — the Realtime row carries the LIVE socket truth (the same
+    // repo.observeConnected flow the Real-time section header uses).
+    val connected by viewModel.connected.collectAsStateWithLifecycle()
     SectionScaffold("About", onBack) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
@@ -1030,10 +1194,19 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
         ) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Pulse", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("Real-time chat with a built-in economy", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("versionName ${pm.versionName} · versionCode ${pm.longVersionCode}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Native Android build — Kotlin + Compose.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        AboutInfoRow("Version", "${pm.versionName} · Stable")
+        AboutInfoRow("Framework", "Kotlin + Jetpack Compose (native Android)")
+        AboutInfoRow(
+            "Realtime",
+            if (connected) "socket.io relay — connected live" else "socket.io relay — offline, polling fallback",
+            live = connected,
+        )
+        AboutInfoRow("Data", "Prisma + SQLite · zero mock data")
         Row(
             Modifier
                 .fillMaxWidth()
@@ -1043,9 +1216,44 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
         ) {
             Icon(Icons.Filled.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(12.dp))
-            Text("GitHub project", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+            Column(Modifier.weight(1f)) {
+                Text("GitHub repository", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                Text("GrapseeAgency/the-mystrious-chat-app", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        // R14 gap 3 — the footer (web settings-screen.tsx:1755-1763).
+        Column(
+            Modifier.fillMaxWidth().padding(top = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(Icons.Filled.Favorite, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
+            Text("Made with Pulse", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+            Text(
+                "Version ${pm.versionName} · chats, hub economy and settings sync live",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         Spacer(Modifier.height(20.dp))
+    }
+}
+
+/** R14 gap 3 — one static Build row of the About section. */
+@Composable
+private fun AboutInfoRow(label: String, value: String, live: Boolean = false) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(88.dp))
+        Text(
+            value,
+            fontSize = 12.sp,
+            color = if (live) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (live) FontWeight.SemiBold else FontWeight.Normal,
+        )
     }
 }
 

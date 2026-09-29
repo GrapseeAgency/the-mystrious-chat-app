@@ -69,6 +69,10 @@ class SettingsViewModel @Inject constructor(
     val hapticsOn: StateFlow<Boolean> = prefs.hapticsOn
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    /** R14 — device ding master (web pulse.settings.v1 soundOn, default true). */
+    val soundOn: StateFlow<Boolean> = prefs.soundOn
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     // ── remote push status (R9 — honest device state, mirrors the iOS row) ──
     // Device state, not a preference: :app publishes snapshots into the domain
     // holder at every push-wiring transition (init / sync / new-token /
@@ -172,6 +176,18 @@ class SettingsViewModel @Inject constructor(
         updatePrefs(WirePulsePrefs(reducedMotion = value))
     }
 
+    /**
+     * R14 gap 9 — Ambient FX — dual-write EXACTLY like reduced motion above:
+     * the LOCAL device pref drives the AGSL shaders immediately, and the
+     * server blob now ALSO gets the patch (the wire builder already carried
+     * the "fx.webglMode" key — Wave8Dtos.toPatchJson — it was simply never
+     * sent).
+     */
+    fun setFxMode(value: String) {
+        viewModelScope.launch { prefs.setFxMode(value) }
+        updatePrefs(WirePulsePrefs(fxWebglMode = value))
+    }
+
     private fun updatePrefs(patch: WirePulsePrefs) {
         viewModelScope.launch {
             repo.updatePulsePrefs(patch)
@@ -184,6 +200,11 @@ class SettingsViewModel @Inject constructor(
 
     fun setHapticsOn(value: Boolean) {
         viewModelScope.launch { prefs.setHapticsOn(value) }
+    }
+
+    /** R14 — the device ding master (local-only; the web keeps it in pulse.settings.v1). */
+    fun setSoundOn(value: Boolean) {
+        viewModelScope.launch { prefs.setSoundOn(value) }
     }
 
     fun setQuietHoursOn(value: Boolean) {
@@ -202,8 +223,12 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { prefs.setDarkOverride(value) }
     }
 
-    fun setFxMode(value: String) {
-        viewModelScope.launch { prefs.setFxMode(value) }
+    /** R14 gap 10 — the default chats-list filter (SAME device key the chats chips write). */
+    val chatsListFilter: StateFlow<String> = prefs.chatsListFilter
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "all")
+
+    fun setChatsListFilter(value: String) {
+        viewModelScope.launch { prefs.setChatsListFilter(value) }
     }
 
     /** R2-C item 3 — design-language swap; the shell re-reads it live. */

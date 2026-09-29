@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Profile — identity management (native onboarding parity), appearance
 /// (dark override + the ambient FX picker with LIVE shader preview strips),
@@ -19,11 +20,19 @@ struct ProfileView: View {
     enum WalletPhase: Equatable { case loading, loaded, failed }
     @State private var walletPhase: WalletPhase = .loading
     @State private var walletCoins: Int = 0
+    // R14 5-b — the activity stats row (GET /api/users/{id}/stats — the
+    // same endpoint the Settings footprint + user pages call).
+    @State private var stats: WireUserStats?
+    @State private var statsFailed = false
+    // R14 5-b — the @handle chip's copy confirmation (web handleCopied).
+    @State private var handleCopied = false
 
     var body: some View {
         NavigationStack {
             List {
+                heroSection
                 identitySection
+                statsSection
                 walletSection
                 savedSection
                 statusSection
@@ -50,10 +59,130 @@ struct ProfileView: View {
                 session.requestOpenRoom(conversation, jumpMessageId: messageId)
             }
         }
-        .task { await loadWallet() }
+        .task {
+            await loadWallet()
+            await loadStats()
+        }
     }
 
-    // ── R2-B — hub wallet chip (real coins balance) ──
+    // ── R14 5-b — the hero cover + activity stats (web profile-tab.tsx
+    // :307-528 parity) ────────────────────────────────────────
+
+    /// The gradient cover: the identity gradient + 1-2 blurred orb overlays
+    /// (web hero cover :313-337 — orbs breathe under reduced-motion off).
+    private var heroSection: some View {
+        Section {
+            ZStack {
+                LinearGradient(
+                    colors: [PulseTheme.gradient(named: prefs.viewer?.color ?? "emerald"), PulseTheme.emeraldDeep],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing,
+                )
+                Circle()
+                    .fill(Color.white.opacity(0.16))
+                    .frame(width: 150, height: 150)
+                    .blur(radius: 26)
+                    .offset(x: 96, y: -46)
+                Circle()
+                    .fill(Color.black.opacity(0.10))
+                    .frame(width: 120, height: 120)
+                    .blur(radius: 24)
+                    .offset(x: -104, y: 52)
+            }
+            .frame(height: 112)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .accessibilityHidden(true)
+        }
+        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 0, trailing: 0))
+        .listRowBackground(Color.clear)
+    }
+
+    /// The stats row: Messages / Rooms / Coins / Member since — real data
+    /// only (stats endpoint + the wallet balance already loaded; failures
+    /// render the honest em dash).
+    private var statsSection: some View {
+        Section {
+            HStack(spacing: 8) {
+                profileStatTile(
+                    value: stats.map { "\($0.messages ?? 0)" } ?? (statsFailed ? "—" : "…"),
+                    label: "Messages",
+                )
+                profileStatTile(
+                    value: stats.map { "\($0.chats ?? 0)" } ?? (statsFailed ? "—" : "…"),
+                    label: "Rooms",
+                )
+                profileStatTile(
+                    value: walletPhase == .loaded ? "\(walletCoins)" : (walletPhase == .failed ? "—" : "…"),
+                    label: "Coins",
+                    accent: true,
+                )
+                profileStatTile(value: memberSinceShort ?? "—", label: "Member since")
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    /// Web StatTile twin — value over the label in a soft tile.
+    private func profileStatTile(value: String, label: String, accent: Bool = false) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 16, weight: .black, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(accent ? PulseTheme.emerald : PulseTheme.titleOnPanel)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, minHeight: 56)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemBackground).opacity(0.55)),
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value)")
+    }
+
+    /// The short member-since stamp (web memberSinceShort parity) — the
+    /// stats joinedAt (server-derived createdAt), month-year format
+    /// (web formatMemberSince, pulse-utils.ts :280-283); omitted when unknown.
+    private var memberSinceShort: String? {
+        guard let joined = stats?.joinedAt else { return nil }
+        let text = PulseFormat.monthYear(joined)
+        return text.isEmpty ? nil : text
+    }
+
+    private func loadStats() async {
+        guard let viewerId = session.viewer?.id else {
+            statsFailed = true
+            return
+        }
+        do {
+            stats = try await session.api.userStats(viewerId)
+        } catch {
+            statsFailed = true
+        }
+    }
+
+    /// R14 5-b — the @handle chip tap → clipboard + haptic (web copyHandle
+    /// :243-251). No handle → opens the editor (web opens the handle sheet).
+    private func copyHandle() {
+        guard let handle = prefs.viewer?.username, !handle.isEmpty else {
+            editProfileOpen = true
+            return
+        }
+        UIPasteboard.general.string = "@\(handle)"
+        PulseHaptics.success()
+        handleCopied = true
+        Task {
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            handleCopied = false
+        }
+    }
 
     private func loadWallet() async {
         // The route upserts a zero wallet and answers { wallet: { coins } }.
@@ -149,14 +278,47 @@ struct ProfileView: View {
                     name: prefs.viewer?.name ?? "You",
                     color: PulseTheme.color(named: prefs.viewer?.color),
                     photoURL: PulseTheme.photoURL(prefs.viewer?.avatar),
+                    online: session.isOnline(prefs.viewer?.id ?? ""),
                     size: 52,
                 )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(prefs.viewer?.name ?? "No identity")
-                        .font(.body.weight(.semibold))
-                    Text(prefs.viewer?.username.map { "@\($0)" } ?? "Signed in on this device")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    // R14 5-b — name + the registered-member badge (web
+                    // BadgeCheck :398-408).
+                    HStack(spacing: 4) {
+                        Text(prefs.viewer?.name ?? "No identity")
+                            .font(.body.weight(.semibold))
+                            .lineLimit(1)
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(PulseTheme.emerald)
+                            .accessibilityLabel("Registered member")
+                    }
+                    // R14 5-b — the @handle chip is tap-to-copy (web
+                    // copyHandle :243-251); no handle → opens the editor.
+                    Button {
+                        copyHandle()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: handleCopied ? "checkmark" : "at")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(handleCopied ? "Copied" : (prefs.viewer?.username.map { "@\($0)" } ?? "Set your handle"))
+                                .font(.footnote.weight(.semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(PulseTheme.emerald)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(PulseTheme.emerald.opacity(0.10)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(handleCopied ? "Handle copied" : "Copy handle")
+                    // R14 5-b — the member-since caption (web :429-435).
+                    if let joined = memberSinceShort {
+                        Text("Member since \(joined)")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
                 Button {
@@ -177,6 +339,12 @@ struct ProfileView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.vertical, 2)
+            // R14 5-b — the bio render (web bio block :415-423, fallback
+            // "No bio yet").
+            Text(prefs.viewerAbout?.isEmpty == false ? prefs.viewerAbout! : "No bio yet")
+                .font(.footnote)
+                .foregroundStyle(prefs.viewerAbout?.isEmpty == false ? Color.primary : Color.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             // R47 — profile share (web profile-tab.tsx:258-278 parity): the
             // OS share sheet via ShareLink (iOS 17 floor) with the verbatim
             // web copy plus the pulse://user deep link. No handle → honest

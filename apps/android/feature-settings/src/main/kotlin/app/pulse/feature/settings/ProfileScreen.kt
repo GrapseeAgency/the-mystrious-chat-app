@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -131,6 +132,41 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(16.dp))
 
+        // R14 gap 7c — the hero (web profile-tab.tsx:307-367): gradient cover
+        // from the identity emerald + two soft orbs + (on the card below) the
+        // registered-member badge. Kept cheap: static alpha circles, no live
+        // blur — reduce-motion needs no special case.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(112.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(PulsePalette.Emerald, PulsePalette.Teal),
+                    ),
+                ),
+        ) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 24.dp, y = (-30).dp)
+                    .size(130.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.14f)),
+            )
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = (-18).dp, y = 22.dp)
+                    .size(96.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.10f)),
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
+
         // Identity card
         Surface(
             shape = RoundedCornerShape(24.dp),
@@ -151,7 +187,18 @@ fun ProfileScreen(
                         Text("No identity", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text("Pick who you are to light up Pulse", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
-                        Text(viewerName ?: "", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        // R14 gap 7c — name + registered-member badge (web
+                        // profile-tab.tsx:359-367 BadgeCheck = "Registered member").
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(viewerName ?: "", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.width(5.dp))
+                            Icon(
+                                Icons.Filled.Verified,
+                                contentDescription = "Registered member",
+                                tint = PulsePalette.Emerald,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                         Text("Signed in on this device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -172,6 +219,32 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(20.dp))
+
+        // R14 gap 7a — the REAL stats row (web profile-tab.tsx:466-491):
+        // Messages / Rooms / Coins / Member since — stats via
+        // GET /api/users/{id}/stats (ProfileViewModel.loadStats, the
+        // SettingsViewModel loader pattern) + Coins from the wallet source.
+        if (viewerId != null) {
+            LaunchedEffect(viewerId) {
+                viewModel.loadStats()
+            }
+            val statsState by viewModel.stats.collectAsStateWithLifecycle()
+            val stats = statsState.stats
+            val coins by viewModel.wallet.collectAsStateWithLifecycle()
+            SettingCard {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    ProfileStatCell("Messages", stats?.messages?.toString() ?: if (statsState.loading) "…" else "—")
+                    ProfileStatCell("Rooms", stats?.chats?.toString() ?: if (statsState.loading) "…" else "—")
+                    ProfileStatCell("Coins", coins.coins?.toString() ?: if (coins.loading) "…" else "—")
+                    ProfileStatCell(
+                        "Member since",
+                        stats?.joinedAtIso?.let { memberSinceShort(it) }
+                            ?: if (statsState.loading) "…" else "—",
+                    )
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+        }
 
         // R2-A item 10 — the wallet chip (web profile-tab.tsx:477-487:
         // "Coins" pill with live balance; loading spinner, honest error row).
@@ -612,6 +685,29 @@ private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector,
         Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+/** R14 gap 7a — one stat cell of the profile stats row (web StatTile). */
+@Composable
+private fun ProfileStatCell(label: String, value: String) {
+    Column(Modifier.padding(horizontal = 4.dp)) {
+        Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * R14 gap 7a — the web profile-tab memberSinceShort ("Sep 2025", month short
+ * + year): null when the stats row carries no joinedAt timestamp.
+ */
+internal fun memberSinceShort(iso: String): String? = runCatching {
+    val parsed = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(iso.take(19))
+        ?: java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(iso.take(10))
+    parsed?.let { java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.US).format(it) }
+}.getOrNull()
 
 @Composable
 private fun SettingCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {

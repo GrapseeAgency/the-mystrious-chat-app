@@ -158,6 +158,34 @@ final class OnboardingViewModel: ObservableObject {
         }
     }
 
+    /// R14 5-b — the ?login= AUTO-sign-in (web onboarding-screen.tsx
+    /// :161-182 parity): the web looks the name up and setUser()s straight
+    /// from the hit — no confirm tap. iOS sessions hold a Keychain token, so
+    /// the same auto path runs the token-issuing login POST the moment the
+    /// lookup lands. A miss / 404 / network error keeps the name as the
+    /// signup prefill and surfaces the notice — the web contract verbatim.
+    func deepLinkLogin(onSuccess: @escaping (WireUser, String?) -> Void) {
+        guard validName, !signingIn, !confirming else { return }
+        signingIn = true
+        notice = nil
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.signingIn = false }
+            do {
+                guard (try await self.api.lookupUserByName(self.trimmedName)) != nil else {
+                    self.notice = "No Pulse account with that name."
+                    return
+                }
+                let envelope = try await self.api.login(name: self.trimmedName)
+                onSuccess(envelope.user, envelope.token)
+            } catch let failure as PulseAPIClient.Failure where failure.status == 404 {
+                self.notice = failure.message ?? "No identity with that name on this Pulse."
+            } catch {
+                self.notice = Self.message(of: error)
+            }
+        }
+    }
+
     /// Wave 8 — reclaim confirm: POST /api/users/login { name }. 200 → the
     /// token lands in the Keychain (A-1) and the session starts. Honest
     /// 404 copy verbatim; the confirm step collapses on any failure.
@@ -290,16 +318,25 @@ final class OnboardingViewModel: ObservableObject {
 struct OnboardingView: View {
     let session: PulseSession
     let prefs: PulsePrefs
+    /// R14 5-b — the ?login= deep link (web onboarding-screen.tsx :161-182
+    /// parity): a non-nil name prefills the display-name field and runs the
+    /// SAME live lookup the "That's me — log in instead" affordance uses
+    /// (one-shot; the confirm card stays the explicit sign-in gate because
+    /// the login rotates the session token).
+    var deepLinkLoginName: String?
     var onPicked: () -> Void
 
     @StateObject private var viewModel: OnboardingViewModel
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var glowUp = false
+    /// guards the one-shot ?login= auto-lookup (web deepLinkHandled parity)
+    @State private var deepLinkHandled = false
 
-    init(session: PulseSession, prefs: PulsePrefs, onPicked: @escaping () -> Void) {
+    init(session: PulseSession, prefs: PulsePrefs, deepLinkLoginName: String? = nil, onPicked: @escaping () -> Void) {
         self.session = session
         self.prefs = prefs
+        self.deepLinkLoginName = deepLinkLoginName
         self.onPicked = onPicked
         _viewModel = StateObject(wrappedValue: OnboardingViewModel(api: session.api))
     }
@@ -341,6 +378,22 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.87), value: viewModel.step)
+        .onAppear {
+            handleDeepLinkLogin()
+        }
+    }
+
+    /// R14 5-b — ?login= prefill + one-shot AUTO-sign-in (web
+    /// onboarding-screen.tsx :161-182 — found → signed in + welcome; miss →
+    /// the name stays as the signup prefill and onboarding continues
+    /// normally with the notice line up).
+    private func handleDeepLinkLogin() {
+        guard !deepLinkHandled, let name = deepLinkLoginName?.trimmingCharacters(in: .whitespaces),
+              !name.isEmpty else { return }
+        deepLinkHandled = true
+        guard viewModel.name.isEmpty else { return }
+        viewModel.name = String(name.prefix(OnboardingViewModel.nameMax))
+        viewModel.deepLinkLogin(onSuccess: complete)
     }
 
     // ── hero + wordmark ──────────────────────────────────────

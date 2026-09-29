@@ -84,39 +84,51 @@ public enum PulseWallpaper: String, CaseIterable, Sendable {
 }
 
 /// Where a navigation style lives visually (web NavStyleMeta.zone parity;
-/// the web's 'overlay' zone belongs to the excluded radial style).
+/// 'overlay' belongs to the radial FAB — RootView reserves the bottom
+/// footprint for it exactly like the bottom zone).
 public enum PulseNavZone: Equatable, Sendable {
-    case bottom, top, side
+    case bottom, top, side, overlay
 }
 
-/// R4-A item 3 — the 8 phone-feasible navigation architectures, ported
-/// from web src/lib/nav-registry.ts (:50-64; label + hint strings VERBATIM).
-/// Raw values are byte-same with the web store under the EXACT key
-/// "pulse.navStyle.v2". The five EXCLUDED web idioms (floating-dock,
-/// command-bar, radial, gesture, contextual-dock — desktop / keyboard /
-/// exotic gesture surfaces) deliberately have NO case: they still PARSE
-/// (→ capsule fallback) so a future widening is drop-in safe.
+/// R4-A item 3 — the navigation architectures, ported from web
+/// src/lib/nav-registry.ts (:50-64; label + hint strings VERBATIM). Raw
+/// values are byte-same with the web store under the EXACT key
+/// "pulse.navStyle.v2". R14 5-b — the registry is 13/13: the five
+/// previously-excluded web idioms ship as honest mobile adaptations
+/// (floating-dock = magnify-emphasis dock, command-bar = top text strip,
+/// radial = FAB arc overlay, gesture = drag pill switcher, contextual-dock
+/// = per-tab trailing chip — web nav-router.tsx CONTEXT_ACTION parity).
 public enum PulseNavStyle: String, CaseIterable, Sendable {
     case capsule
     case floatingTop = "floating-top"
+    case floatingDock = "floating-dock"
     case pill
     case bottomBar = "bottom-bar"
     case tabBar = "tab-bar"
     case floatingTabBar = "floating-tab-bar"
+    case commandBar = "command-bar"
     case rail
     case island
+    case radial
+    case gesture
+    case contextualDock = "contextual-dock"
 
     /// Web NavStyleMeta.label — byte-identical strings.
     public var label: String {
         switch self {
         case .capsule: return "Floating Capsule"
         case .floatingTop: return "Floating Top Nav"
+        case .floatingDock: return "Floating Dock"
         case .pill: return "Pill Navigation"
         case .bottomBar: return "Bottom Bar"
         case .tabBar: return "Tab Bar"
         case .floatingTabBar: return "Floating Tab Bar"
+        case .commandBar: return "Command Bar"
         case .rail: return "Navigation Rail"
         case .island: return "Island Navigation"
+        case .radial: return "Radial Navigation"
+        case .gesture: return "Gesture Navigation"
+        case .contextualDock: return "Contextual Dock"
         }
     }
 
@@ -125,20 +137,26 @@ public enum PulseNavStyle: String, CaseIterable, Sendable {
         switch self {
         case .capsule: return "Detached glass capsule dock — the default"
         case .floatingTop: return "Capsule bar floating beneath the top edge"
+        case .floatingDock: return "Desktop-style dock with magnifying icons"
         case .pill: return "Single segmented pill with sliding fill"
         case .bottomBar: return "Classic edge-to-edge bottom bar"
         case .tabBar: return "iOS-style tab bar with tinted squircles"
         case .floatingTabBar: return "Detached card, elevated active tab"
+        case .commandBar: return "Compact text command strip with search"
         case .rail: return "Persistent vertical side rail"
         case .island: return "Dynamic-island pill that expands on tap"
+        case .radial: return "FAB fanning destinations in an arc"
+        case .gesture: return "Edge swipes + gesture pill quick switcher"
+        case .contextualDock: return "Dock that adapts to the active tab"
         }
     }
 
-    /// Web NavStyleMeta.zone (overlay/radial excluded with its style).
+    /// Web NavStyleMeta.zone (radial is the 'overlay' FAB style).
     public var zone: PulseNavZone {
         switch self {
-        case .floatingTop: return .top
+        case .floatingTop, .commandBar: return .top
         case .rail: return .side
+        case .radial: return .overlay
         default: return .bottom
         }
     }
@@ -148,22 +166,27 @@ public enum PulseNavStyle: String, CaseIterable, Sendable {
         switch self {
         case .capsule: return "capsule"
         case .floatingTop: return "rectangle.topthird.inset.filled"
+        case .floatingDock: return "menubar.rectangle"
         case .pill: return "switch.2"
         case .bottomBar: return "rectangle.bottomthird.inset.filled"
         case .tabBar: return "square.grid.2x2"
         case .floatingTabBar: return "dock.rectangle"
+        case .commandBar: return "chevron.left.forwardslash.chevron.right"
         case .rail: return "sidebar.left"
         case .island: return "record.circle"
+        case .radial: return "scope"
+        case .gesture: return "hand.draw"
+        case .contextualDock: return "rectangle.and.pencil.and.ellipsis"
         }
     }
 
     /// Web DEFAULT_NAV_STYLE.
     public static let defaultValue: PulseNavStyle = .capsule
 
-    /// Tolerant decode — one of the 8 shipped ids parses through; EVERY
-    /// other token (the 5 excluded web ids, junk, legacy values, nil) falls
-    /// back to capsule so a stored future-style survives an app update and
-    /// a junk value never breaks the shell (web getNavStyleMeta parity).
+    /// Tolerant decode — every shipped id parses through; EVERY other
+    /// token (junk, legacy values, nil) falls back to capsule so a stored
+    /// future-style survives an app update and a junk value never breaks
+    /// the shell (web getNavStyleMeta parity).
     public static func parse(_ raw: String?) -> PulseNavStyle {
         guard let raw else { return .defaultValue }
         return PulseNavStyle(rawValue: raw) ?? .defaultValue
@@ -246,6 +269,12 @@ public final class PulsePrefs: ObservableObject {
     public static let quietStartKey = "quiet.start"
     public static let quietEndKey = "quiet.end"
     public static let hapticsOnKey = "haptics.on"
+    /// R14 5-b — the device-local MASTER ding gate (web pulse-settings.ts
+    /// `pulse.settings.v1.soundOn`, default true). Sits ABOVE the per-account
+    /// notifSound toggle in the gate chain (soundOn AND quiet AND notifSound
+    /// for the incoming pop) and, exactly like quiet hours + haptics, is
+    /// deliberately NOT part of the server-synced prefs blob.
+    public static let soundOnKey = "sound.on"
     /// R1-W2B F-FX-05 — local mirror of the per-conversation theme map (the
     /// SERVER copy rides the settings blob under the web's "chat.convThemes"
     /// key; this UserDefaults key follows the house "prefs." namespace).
@@ -321,6 +350,8 @@ public final class PulsePrefs: ObservableObject {
         quietStart = defaults.string(forKey: Self.quietStartKey) ?? "22:00"
         quietEnd = defaults.string(forKey: Self.quietEndKey) ?? "07:00"
         hapticsOn = Self.bool(defaults, Self.hapticsOnKey, default: true)
+        // R14 5-b — the local master ding gate (web soundOn default true).
+        soundOn = Self.bool(defaults, Self.soundOnKey, default: true)
         // R1-W2B F-FX-05 — cached theme map (tolerant: bad JSON → empty map;
         // the server blob overwrites it on the next successful sync).
         convThemes = Self.readConvThemes(defaults)
@@ -360,6 +391,8 @@ public final class PulsePrefs: ObservableObject {
     @Published public private(set) var quietStart: String
     @Published public private(set) var quietEnd: String
     @Published public private(set) var hapticsOn: Bool
+    // ── R14 5-b — LOCAL master ding gate (web soundOn) ──────
+    @Published public private(set) var soundOn: Bool
 
     // ── R1-W2B F-FX-05 — per-conversation themes (server-synced) ──
     @Published public private(set) var convThemes: [String: WireConvTheme]
@@ -627,6 +660,13 @@ public final class PulsePrefs: ObservableObject {
         hapticsOn = enabled
         defaults.set(enabled, forKey: Self.hapticsOnKey)
         Self.applyHapticGate(enabled: enabled, quietNow: isQuietHoursNow)
+    }
+
+    /// R14 5-b — the master ding gate (web pulseSettingsStore.setSoundOn
+    /// parity). Local-only: no PATCH, no server round-trip.
+    public func setSoundOn(_ enabled: Bool) {
+        soundOn = enabled
+        defaults.set(enabled, forKey: Self.soundOnKey)
     }
 
     /// Wave 8 — the haptic gate lives in PulseHaptics (evaluated at call

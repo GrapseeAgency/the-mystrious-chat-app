@@ -43,6 +43,8 @@ class PulsePrefsStoreImpl @Inject constructor(
         val VOICE_CAPTIONS = booleanPreferencesKey("voice.captions")
         // ── Wave 8 — LOCAL settings (web pulse.settings.v1 parity) ──
         val HAPTICS_ON = booleanPreferencesKey("pulse.settings.hapticsOn")
+        /** R14 — device-local master ding gate (web soundOn, default true). */
+        val SOUND_ON = booleanPreferencesKey("pulse.settings.soundOn")
         val QUIET_HOURS_ON = booleanPreferencesKey("pulse.settings.quietHoursOn")
         val QUIET_START = stringPreferencesKey("pulse.settings.quietStart")
         val QUIET_END = stringPreferencesKey("pulse.settings.quietEnd")
@@ -63,6 +65,10 @@ class PulsePrefsStoreImpl @Inject constructor(
 
     // Wave 8 — local-only settings: web defaults off/22:00/07:00, haptics true.
     override val hapticsOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.HAPTICS_ON] ?: true }
+
+    // R14 — the device ding master (web pulse-settings.ts soundOn: default true).
+    override val soundOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.SOUND_ON] ?: true }
+
     override val quietHoursOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.QUIET_HOURS_ON] ?: false }
     override val quietStart: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_START] ?: "22:00" }
     override val quietEnd: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_END] ?: "07:00" }
@@ -73,6 +79,10 @@ class PulsePrefsStoreImpl @Inject constructor(
 
     override suspend fun setHapticsOn(value: Boolean) {
         context.pulsePrefs.edit { it[Keys.HAPTICS_ON] = value }
+    }
+
+    override suspend fun setSoundOn(value: Boolean) {
+        context.pulsePrefs.edit { it[Keys.SOUND_ON] = value }
     }
 
     override suspend fun setQuietHoursOn(value: Boolean) {

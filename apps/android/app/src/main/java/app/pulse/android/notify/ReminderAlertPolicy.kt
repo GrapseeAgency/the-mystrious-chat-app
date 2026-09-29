@@ -27,6 +27,17 @@ object ReminderAlertPolicy {
     @Volatile
     var quietEnd: String = "07:00"
 
+    /**
+     * R14 — device-local master ding gate (web pulse.settings.v1 soundOn,
+     * default true). [soundOn] above mirrors the server notifSound blob; the
+     * web keeps the incoming ding gated by the DEVICE store (pulse-settings.ts
+     * playIncomingPing) and the per-account "Message pop" separately, so the
+     * incoming path consults BOTH (device master AND account pop), while the
+     * reminder notifier keeps its existing notifSound-only gate.
+     */
+    @Volatile
+    var deviceSoundOn: Boolean = true
+
     /** Evaluated at notification time, not cached — the window moves. */
     fun quietNow(): Boolean = PulseWave8Logic.isQuietHoursNow(quietHoursOn, quietStart, quietEnd)
 }

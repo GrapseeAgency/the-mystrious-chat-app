@@ -74,10 +74,10 @@ class PulsePrefsLocalStore @Inject constructor(
     // ── R4-B item 3 — navigation style (pulse.navStyle.v2) ──
 
     /**
-     * Live navigation style — one of the 8 phone-feasible [PulseNavStyle]
-     * ids (the web value strings verbatim); the web's 5 excluded ids, junk
-     * and wrong-case values all fall back to the capsule default (the same
-     * resolve the web's getNavStyleMeta fallback performs).
+     * Live navigation style — one of the 13 [PulseNavStyle] ids (the web
+     * value strings verbatim); junk and wrong-case values fall back to the
+     * capsule default (the same resolve the web's getNavStyleMeta fallback
+     * performs).
      */
     val navStyle: Flow<app.pulse.protocol.PulseNavStyle> = context.pulsePrefs.data.map { p ->
         app.pulse.protocol.PulseNavStyle.fromPersisted(p[Keys.NAV_STYLE])

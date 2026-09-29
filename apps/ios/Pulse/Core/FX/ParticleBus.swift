@@ -9,6 +9,9 @@ import SwiftUI
 public final class ParticleBus: ObservableObject {
     public enum Kind: String {
         case confetti, hearts, stars, burst
+        // R14 5-b — the distinct message-effect canvases (web
+        // message-effects.tsx): sweeping rotating beams / expanding rings.
+        case lasers, echo
     }
 
     public struct Particle {
@@ -90,6 +93,11 @@ public final class ParticleBus: ObservableObject {
         case .confetti: return [Color(red: 0.063, green: 0.725, blue: 0.506), Color(red: 0.078, green: 0.722, blue: 0.651), Color(red: 0.545, green: 0.365, blue: 0.965), Color(red: 0.961, green: 0.620, blue: 0.043)]
         case .stars: return [Color(red: 0.92, green: 0.98, blue: 1.0), Color(red: 0.078, green: 0.722, blue: 0.651)]
         case .burst: return [Color(red: 0.063, green: 0.725, blue: 0.506), Color(red: 0.078, green: 0.722, blue: 0.651), Color(red: 0.92, green: 0.98, blue: 1.0)]
+        // R14 5-b — the web effect palettes (message-effects.tsx lasers
+        // :121-128 "greens → ambers → pinks → violets, no blues" / echo
+        // emerald rings :131-133 + paintEcho's rgba(16,185,129)).
+        case .lasers: return [Color(red: 0.063, green: 0.725, blue: 0.506), Color(red: 0.961, green: 0.620, blue: 0.043), Color(red: 0.984, green: 0.445, blue: 0.522), Color(red: 0.545, green: 0.365, blue: 0.965)]
+        case .echo: return [Color(red: 0.063, green: 0.725, blue: 0.506), Color(red: 0.078, green: 0.722, blue: 0.651)]
         }
     }
 }
@@ -145,6 +153,44 @@ public struct ParticleOverlayView: View {
                 item.rotate(by: .radians(particle.rotation + particle.angularVelocity * t))
                 spin.origin = CGPoint(x: -spin.width / 2, y: -spin.height / 2)
                 item.fill(Path(spin), with: .color(bus.color(for: particle)))
+            case .lasers:
+                // R14 5-b — sweeping beams (web message-effects.tsx lasers
+                // :121-129 + paintLasers :240-262): each particle is one beam
+                // through the origin, sweeping over the effect life.
+                let angle = particle.rotation + t * 0.85
+                let length = hypot(size.width, size.height)
+                let dx = CGFloat(cos(angle)) * length / 2
+                let dy = CGFloat(sin(angle)) * length / 2
+                let thickness = particle.size * 0.9 * (0.4 + 0.6 * fade)
+                var beam = Path()
+                beam.move(to: CGPoint(x: (particle.x * size.width) - dx, y: (particle.y * size.height) - dy))
+                beam.addLine(to: CGPoint(x: (particle.x * size.width) + dx, y: (particle.y * size.height) + dy))
+                item.stroke(
+                    beam,
+                    with: .color(bus.color(for: particle)),
+                    style: StrokeStyle(lineWidth: max(thickness, 1.5), lineCap: .round),
+                )
+            case .echo:
+                // R14 5-b — expanding rings (web message-effects.tsx echo
+                // :131-133 + paintEcho :264-286): 2-3 staggered circles
+                // growing from the origin, stroke thinning as they fade.
+                // colorSeed staggers the starts.
+                let delay = Double(particle.colorSeed % 3) * 0.14
+                let ringT = t - delay
+                guard ringT > 0 else { break }
+                let progress = min(ringT / max(particle.life, 0.001), 1)
+                let radius = (0.12 + 0.38 * progress) * min(size.width, size.height)
+                let ring = Path(ellipseIn: CGRect(
+                    x: (particle.x * size.width) - radius,
+                    y: (particle.y * size.height) - radius,
+                    width: radius * 2,
+                    height: radius * 2,
+                ))
+                item.stroke(
+                    ring,
+                    with: .color(bus.color(for: particle).opacity(Double(1 - progress))),
+                    style: StrokeStyle(lineWidth: max(5 * (1 - progress), 0.8), lineCap: .round),
+                )
             default:
                 item.fill(Path(ellipseIn: rect), with: .color(bus.color(for: particle)))
             }

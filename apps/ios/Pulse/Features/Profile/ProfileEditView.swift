@@ -150,6 +150,21 @@ struct ProfileEditView: View {
                     }
                 }
                 .tint(PulseTheme.accent)
+                // R14 5-b — the remove branch (web avatar-editor.tsx
+                // runRemovePhoto): shown only while a photo exists, PATCHes
+                // { avatar: "" } — the server nulls the column.
+                if viewer?.avatar != nil {
+                    if avatarUploading {
+                        EmptyView()
+                    } else {
+                        Button(role: .destructive) {
+                            Task { await removePhoto() }
+                        } label: {
+                            Text("Remove photo")
+                                .font(.footnote.weight(.semibold))
+                        }
+                    }
+                }
             }
             TextField("Display name", text: $name)
                 .maxLength($name, max: Self.nameMax)
@@ -409,6 +424,30 @@ struct ProfileEditView: View {
                 handleState.available = nil
             }
             handleState.checking = false
+        }
+    }
+
+    /// R14 5-b — the remove branch (web avatar-editor.tsx runRemovePhoto
+    /// :141-163): PATCH { avatar: "" } (the server nulls the column) with an
+    /// optimistic viewer mirror + honest rollback on failure.
+    private func removePhoto() async {
+        guard let viewer, !avatarUploading else { return }
+        avatarUploading = true
+        defer { avatarUploading = false }
+        let snapshot = viewer
+        // Optimistic local clear (the viewer mirror drives every surface).
+        prefs.setViewer(PulseViewer(id: viewer.id, name: viewer.name, username: viewer.username, color: viewer.color, avatar: nil))
+        do {
+            let user = try await session.api.updateProfile(userId: viewer.id, body: ["avatar": ""])
+            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar))
+            adopt(user)
+            avatarPreview = nil
+            PulseHaptics.success()
+            session.toasts.show("Profile photo removed")
+        } catch {
+            // Roll back the optimistic mirror; the form keeps its fields.
+            prefs.setViewer(snapshot)
+            notice = ChatsViewModel.describe(error)
         }
     }
 

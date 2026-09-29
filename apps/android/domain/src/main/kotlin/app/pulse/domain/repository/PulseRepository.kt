@@ -159,6 +159,12 @@ interface PulsePrefsStore {
 
     /** Haptic feedback master toggle (web hapticsOn, default true). */
     val hapticsOn: Flow<Boolean>
+    /**
+     * R14 — device-local master ding gate (web pulse.settings.v1 soundOn,
+     * default true): SEPARATE from the server notifSound blob, exactly like
+     * the web splits playIncomingPing's gate from the "Message pop" pref.
+     */
+    val soundOn: Flow<Boolean>
     /** Quiet hours — silence incoming pings/haptics inside the window. */
     val quietHoursOn: Flow<Boolean>
     /** Quiet window start 'HH:mm' 24h LOCAL time (default 22:00). */
@@ -174,6 +180,7 @@ interface PulsePrefsStore {
     val appLockEnabled: Flow<Boolean>
 
     suspend fun setHapticsOn(value: Boolean)
+    suspend fun setSoundOn(value: Boolean)
     suspend fun setQuietHoursOn(value: Boolean)
     suspend fun setQuietStart(value: String)
     suspend fun setQuietEnd(value: String)
@@ -199,10 +206,10 @@ interface PulsePrefsStore {
     suspend fun clearSpotlightRecents()
 
     /**
-     * R4-B item 3 — navigation architecture (web nav-registry.ts parity):
-     * one of the 8 phone-feasible PulseNavStyle ids, persisted under the
-     * web's EXACT key `pulse.navStyle.v2`; unreadable values (junk, the 5
-     * excluded ids) resolve to the capsule default on read.
+     * R4-B item 3 / R14 — navigation architecture (web nav-registry.ts
+     * parity): one of the 13 PulseNavStyle ids, persisted under the web's
+     * EXACT key `pulse.navStyle.v2`; unreadable values (junk, wrong case)
+     * resolve to the capsule default on read.
      */
     val navStyle: Flow<app.pulse.protocol.PulseNavStyle>
     suspend fun setNavStyle(style: app.pulse.protocol.PulseNavStyle)

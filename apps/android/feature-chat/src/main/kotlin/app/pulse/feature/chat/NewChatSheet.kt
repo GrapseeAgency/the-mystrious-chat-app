@@ -1,5 +1,9 @@
 package app.pulse.feature.chat
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +27,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -58,6 +63,7 @@ import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
+import coil.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,6 +81,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class NewChatViewModel @Inject constructor(
     private val repo: PulseRepository,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
 
     data class UiState(
@@ -82,6 +89,10 @@ class NewChatViewModel @Inject constructor(
         val loading: Boolean = false,
         val creating: Boolean = false,
         val error: String? = null,
+        /** R14 gap 11 — the staged channel photo (uploaded "/api/uploads/…" path). */
+        val channelPhoto: String? = null,
+        /** The pick → convert → upload chain in flight. */
+        val channelPhotoBusy: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -158,10 +169,13 @@ class NewChatViewModel @Inject constructor(
         if (_state.value.creating) return
         _state.value = _state.value.copy(creating = true)
         viewModelScope.launch {
+            // R14 gap 11 — the staged channel photo rides the create (web
+            // new-chat-sheet.tsx:282-381: POST /api/uploads then create with
+            // photo; the route validates "/api/uploads/<file>").
             val result: kotlin.Result<app.pulse.domain.model.Channel> = repo.createChannel(
                 name = name,
                 description = description.ifBlank { null },
-                photo = null,
+                photo = _state.value.channelPhoto,
             )
             result
                 .onSuccess { channel ->
@@ -176,6 +190,38 @@ class NewChatViewModel @Inject constructor(
                     notify(failure.message ?: "Could not create the channel")
                 }
         }
+    }
+
+    /**
+     * R14 gap 11 — the optional channel photo (web new-chat-sheet.tsx
+     * handleChannelPhotoPicked): pick → MediaSupport data-url conversion →
+     * the REAL /api/uploads chain at pick time → the validated path is held
+     * until the create call. Honest failure via the existing notice channel.
+     */
+    fun uploadChannelPhoto(uri: Uri) {
+        if (_state.value.channelPhotoBusy) return
+        _state.value = _state.value.copy(channelPhotoBusy = true)
+        viewModelScope.launch {
+            app.pulse.feature.chat.MediaSupport.imageToDataUrl(appContext, uri)
+                .onSuccess { dataUrl ->
+                    repo.uploadMedia(dataUrl)
+                        .onSuccess { path ->
+                            _state.value = _state.value.copy(channelPhotoBusy = false, channelPhoto = path)
+                        }
+                        .onFailure {
+                            _state.value = _state.value.copy(channelPhotoBusy = false)
+                            notify("Could not upload that photo")
+                        }
+                }
+                .onFailure {
+                    _state.value = _state.value.copy(channelPhotoBusy = false)
+                    notify("Could not prepare that photo")
+                }
+        }
+    }
+
+    fun clearChannelPhoto() {
+        _state.value = _state.value.copy(channelPhoto = null)
     }
 }
 
@@ -208,6 +254,10 @@ fun NewChatSheet(
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var channelName by remember { mutableStateOf("") }
     var channelDescription by remember { mutableStateOf("") }
+    // R14 gap 11 — the optional channel photo (web R33-b round glass tile).
+    val channelPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let(viewModel::uploadChannelPhoto)
+    }
 
     LaunchedEffect(Unit) { viewModel.loadUsers() }
     // Create outcomes ride the host's snackbar (web toast parity) — the sheet
@@ -327,6 +377,58 @@ fun NewChatSheet(
                     )
                 }
                 NewChatMode.CHANNEL -> Column {
+                    // R14 gap 11 — round glass photo tile (web :289-350): the
+                    // upload runs at PICK time; the create call only carries
+                    // the validated "/api/uploads/<file>" path.
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                        Box(
+                            Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                                .clickable(enabled = !state.channelPhotoBusy) {
+                                    channelPhotoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val photo = state.channelPhoto
+                            if (photo != null) {
+                                AsyncImage(
+                                    model = app.pulse.core.PulseEndpoints.http(photo),
+                                    contentDescription = "Channel photo preview",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.size(56.dp).clip(CircleShape),
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Filled.PhotoCamera,
+                                    contentDescription = if (photo == null) "Add a channel photo" else "Replace channel photo",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                            if (state.channelPhotoBusy) {
+                                Box(
+                                    Modifier.size(56.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f)),
+                                    contentAlignment = Alignment.Center,
+                                ) { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = androidx.compose.ui.graphics.Color.White) }
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Channel photo", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (state.channelPhoto != null) "Uploaded — shown everywhere" else "Optional — you can add one later from the channel info",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (state.channelPhoto != null) {
+                            IconButton(onClick = viewModel::clearChannelPhoto) {
+                                Icon(Icons.Filled.Close, contentDescription = "Remove channel photo", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = channelName,
                         onValueChange = { if (it.length <= CHANNEL_NAME_MAX) channelName = it },

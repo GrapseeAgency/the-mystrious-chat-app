@@ -8,6 +8,8 @@ import Foundation
 ///   pulse://new             → the dock compose sheet (R10-b: the
 ///                             "New message" home-screen quick action
 ///                             shares this destination)
+///   pulse://login/{name}    → the web /?login=Name onboarding prefill
+///                             (R14 5-b; identity-less apps only)
 /// Percent-encoded path segments decode here so hand-built NFC/QR links
 /// behave exactly like in-app taps. Pure + total: anything unparseable is
 /// `.none` (the caller ignores it — no crash, no half-state).
@@ -17,6 +19,10 @@ public enum PulseDeepLink: Equatable {
     case room(conversationId: String)
     /// R10-b — the argument-less compose route (pulse://new).
     case compose
+    /// R14 5-b — the login prefill route (pulse://login/<name>); the web
+    /// /?login= query equivalent (only the pulse scheme is registered, so
+    /// https hosts are out of scope by registration).
+    case login(name: String)
 
     public static let scheme = "pulse"
 
@@ -49,6 +55,10 @@ public enum PulseDeepLink: Equatable {
             return .user(userId: key)
         case "room", "chat", "conversation":
             return .room(conversationId: key)
+        case "login":
+            // R14 5-b — the /?login=Name parity: the display name is the
+            // key (percent-decoded above, capped at the onboarding limit).
+            return .login(name: String(key.prefix(32)))
         default:
             return nil
         }

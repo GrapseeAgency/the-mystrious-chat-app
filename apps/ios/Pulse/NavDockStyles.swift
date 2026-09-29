@@ -1,23 +1,22 @@
 import SwiftUI
 
 // ─────────────────────────────────────────────────────────────
-// R4-A item 3 — the 8 phone-feasible navigation architectures.
+// R4-A item 3 — the navigation architectures (R14 5-b: all 13 web idioms).
 // Web ground truth: src/lib/nav-registry.ts (:50-64 meta — labels/hints
 // byte-verbatim, ported into PulseNavStyle in PulsePrefs.swift) +
 // src/components/chat/nav-router.tsx renderers:
 //   FloatingTopNav :466 · PillNav :563 · BottomBar :617 · TabBarNav :664 ·
 //   FloatingTabBar :719 · RailNav :873 · IslandNav :925.
 // The current default capsule dock STAYS in RootView.swift untouched
-// (brief: keep as-is) — the seven styles below are layout renderers over
+// (brief: keep as-is) — the styles below are layout renderers over
 // the SAME shared state/actions (PulseDockContext = web TabProps +
 // onContextAction parity): one tab registry (PulseNavDestinations ≙
 // NAV_ITEMS :68-73), one unread badge (≙ UnreadBadge :105-122, 99+ cap),
 // one More menu (≙ NavOverflowButton rows).
-// EXCLUDED on purpose (desktop / keyboard / exotic idioms a phone pane
-// cannot carry honestly): floating-dock (hover magnification), command-bar
-// (⌘-strip), radial (arc overlay), gesture (edge-swipe quick switcher),
-// contextual-dock (per-tab morphing). Their ids still PARSE → capsule
-// fallback (PulseNavStyle.parse) so a future widening is drop-in.
+// R14 5-b — the five previously-excluded web idioms now ship as honest
+// mobile adaptations (floating-dock = magnify-emphasis dock :floating-dock,
+// command-bar = top text strip, radial = FAB arc overlay, gesture = drag
+// pill quick switcher, contextual-dock = per-tab trailing chip).
 // iOS deviations, both deliberate and documented: compose rides only the
 // capsule (all other styles keep the Chats-header compose entry), and every
 // style carries a More affordance because the dock menu is the ONLY
@@ -1042,6 +1041,586 @@ struct IslandDock: View {
             )
             .overlay(
                 Capsule()
+                    .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+            )
+            .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)
+    }
+}
+
+// ── 3 · floating-dock — desktop dock, mobile magnify emphasis ──
+// (web FloatingDock :507-559 is a hover-magnifying desktop dock; phones
+// have no hover, so the honest adaptation keeps the roomy tile dock and
+// applies the magnification to the ACTIVE destination instead. R14 5-b.)
+
+struct FloatingDockDock: View {
+    let context: PulseDockContext
+    let active: PulseTab
+
+    @State private var moreOpen = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ForEach(PulseNavDestinations.all) { item in
+                floatingDockTab(item)
+            }
+            floatingDockMore
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(floatingDockPanel)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottomTrailing) {
+            if moreOpen {
+                PulseNavMenuHost(anchor: .bottomTrailing, context: context) {
+                    moreOpen = false
+                }
+                .offset(y: -84)
+            }
+        }
+        .animation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion), value: active)
+    }
+
+    private func floatingDockTab(_ item: PulseNavDestination) -> some View {
+        let isActive = active == item.tab
+        return Button {
+            PulseHaptics.tap()
+            context.onTab(item.tab)
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: isActive ? item.filled : item.icon)
+                    .font(.system(size: 24, weight: .medium))
+                    // The magnify emphasis — the active tile grows while the
+                    // rest stay dock-sized (web hover-magnify parity).
+                    .scaleEffect(isActive ? 1.3 : 1.0)
+                    .overlay(alignment: .topTrailing) {
+                        if item.tab == PulseNavDestinations.chats.tab {
+                            PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
+                                .offset(x: 10, y: -6)
+                        }
+                    }
+                Text(item.label)
+                    .font(.system(size: 9.5, weight: isActive ? .bold : .medium))
+                    .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textTertiary)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .frame(minWidth: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel(item.label)
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
+    }
+
+    private var floatingDockMore: some View {
+        Button {
+            PulseHaptics.tap()
+            withAnimation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion)) { moreOpen.toggle() }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(PulseTheme.textSecondary)
+                .frame(width: 36, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel("More options")
+    }
+
+    private var floatingDockPanel: some View {
+        RoundedRectangle(cornerRadius: 26, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+            )
+            .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)
+    }
+}
+
+// ── 8 · command-bar — compact text command strip with search ──
+// (web CommandBar :817-869: a TOP text strip — brand, text tab commands,
+// then the search + settings glyphs inline. R14 5-b.)
+
+struct CommandBarDock: View {
+    let context: PulseDockContext
+    let active: PulseTab
+
+    var body: some View {
+        HStack(spacing: 2) {
+            // web :825 — the brand tile leads the strip.
+            Text("P")
+                .font(.system(size: 12, weight: .black))
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(PulseTheme.brandGradient))
+                .padding(.trailing, 6)
+                .accessibilityHidden(true)
+
+            ForEach(PulseNavDestinations.all) { item in
+                commandTab(item)
+            }
+
+            Spacer(minLength: 0)
+
+            commandButton("magnifyingglass", "Search") {
+                context.onSearch()
+            }
+            commandButton("gearshape", "Settings") {
+                context.onSettings()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(Rectangle().fill(context.dark ? PulseTheme.zinc(950).opacity(0.80) : Color.white.opacity(0.80)))
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70))
+                        .frame(height: 0.5)
+                }
+                .ignoresSafeArea(edges: .top)
+        }
+        .frame(height: PulseDockMetrics.topBarHeight, alignment: .bottom)
+    }
+
+    private func commandTab(_ item: PulseNavDestination) -> some View {
+        let isActive = active == item.tab
+        return Button {
+            PulseHaptics.tap()
+            context.onTab(item.tab)
+        } label: {
+            Text(item.label)
+                .font(.system(size: 12, weight: isActive ? .bold : .medium))
+                .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 36)
+                .background {
+                    if isActive {
+                        Capsule().fill(PulseTheme.emerald500.opacity(0.14))
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if item.tab == PulseNavDestinations.chats.tab {
+                        PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
+                            .offset(x: 8, y: 2)
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel(item.label)
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
+    }
+
+    private func commandButton(_ icon: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            PulseHaptics.tap()
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(PulseTheme.textSecondary)
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel(label)
+    }
+}
+
+// ── 11 · radial — center FAB fanning destinations in an arc ──
+// (web RadialNav :1046-1103: a FAB overlay; tap fans the destinations in
+// an arc above it. Reduced motion → instant placement. R14 5-b.)
+
+struct RadialDock: View {
+    let context: PulseDockContext
+    let active: PulseTab
+
+    @State private var expanded = false
+
+    private var activeItem: PulseNavDestination {
+        let match = PulseNavDestinations.all.first { $0.tab == active }
+        return match ?? PulseNavDestinations.all[0]
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if expanded {
+                // The veil: a tap anywhere collapses the fan.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion)) { expanded = false }
+                    }
+                    .accessibilityLabel("Close navigation")
+                radialFan
+                    .transition(.opacity)
+            }
+            radialFab
+        }
+        .padding(.bottom, 14)
+        .animation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion), value: expanded)
+    }
+
+    /// The arc — destinations fan out above the FAB, left to right, with
+    /// labels; the active one arrives highlighted.
+    private var radialFan: some View {
+        HStack(spacing: 14) {
+            ForEach(PulseNavDestinations.all) { item in
+                radialLeaf(item)
+            }
+            radialLeafButton("gearshape", label: "Settings") {
+                context.onSettings()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(PulseNavMenuPanel(dark: context.dark))
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .offset(y: -68)
+    }
+
+    private func radialLeaf(_ item: PulseNavDestination) -> some View {
+        let isActive = active == item.tab
+        return Button {
+            PulseHaptics.tap()
+            context.onTab(item.tab)
+            withAnimation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion)) { expanded = false }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: isActive ? item.filled : item.icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .overlay(alignment: .topTrailing) {
+                        if item.tab == PulseNavDestinations.chats.tab {
+                            PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
+                                .offset(x: 8, y: -6)
+                        }
+                    }
+                Text(item.label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .frame(width: 58, minHeight: 46)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.label)
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
+    }
+
+    private func radialLeafButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            PulseHaptics.tap()
+            action()
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(PulseTheme.textSecondary)
+            .frame(width: 58, minHeight: 46)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private var radialFab: some View {
+        Button {
+            PulseHaptics.tap()
+            withAnimation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion)) { expanded.toggle() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: expanded ? "xmark" : activeItem.filled)
+                    .font(.system(size: 18, weight: .bold))
+                if !expanded {
+                    Text(activeItem.label)
+                        .font(.system(size: 12, weight: .bold))
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(height: 54)
+            .padding(.horizontal, 20)
+            .background(Capsule().fill(PulseTheme.brandGradient))
+            .shadow(color: PulseTheme.emerald500.opacity(0.65), radius: 12, y: 6)
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel(expanded ? "Close navigation" : "Navigation — \(activeItem.label), tap to fan out")
+    }
+}
+
+// ── 12 · gesture — minimal bar + draggable quick-switcher pill ──
+// (web GestureNav :1107-1160: a minimal bar whose pill drags between tabs
+// and opens the quick switcher. R14 5-b — the shell already carries the
+// edge-swipe route change; the pill adds the in-dock drag + switcher.)
+
+struct GestureDock: View {
+    let context: PulseDockContext
+    let active: PulseTab
+
+    @State private var switcherOpen = false
+
+    private var activeItem: PulseNavDestination {
+        let match = PulseNavDestinations.all.first { $0.tab == active }
+        return match ?? PulseNavDestinations.all[0]
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if switcherOpen {
+                switcherPanel
+                    .transition(.scale(scale: 0.94, anchor: .bottom).combined(with: .opacity))
+            }
+            gestureBar
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 12)
+        .animation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion), value: switcherOpen)
+    }
+
+    /// Minimal bar: the active label + the draggable pill under it.
+    private var gestureBar: some View {
+        VStack(spacing: 6) {
+            Text(activeItem.label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(PulseTheme.textSecondary)
+            Capsule()
+                .fill(PulseTheme.brandGradient)
+                .frame(width: 96, height: 6)
+                .shadow(color: PulseTheme.emerald500.opacity(0.6), radius: 5, y: 2)
+                .frame(width: 220, height: 34, alignment: .center)
+                .contentShape(Rectangle())
+                // Drag the pill left/right → prev/next tab (web :1116-1147);
+                // tap → the quick switcher.
+                .gesture(
+                    DragGesture(minimumDistance: 12)
+                        .onEnded { value in
+                            let dx = value.translation.width
+                            guard abs(dx) > 40 else { return }
+                            let order = PulseNavDestinations.all
+                            guard let index = order.firstIndex(where: { $0.tab == active }) else { return }
+                            let next = dx < 0 ? index + 1 : index - 1
+                            guard order.indices.contains(next) else { return }
+                            PulseHaptics.tap()
+                            context.onTab(order[next].tab)
+                        },
+                )
+                .onTapGesture {
+                    PulseHaptics.tap()
+                    withAnimation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion)) { switcherOpen.toggle() }
+                }
+                .accessibilityLabel("Tab switcher — drag or tap")
+                .accessibilityAddTraits(.isButton)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 20)
+        .background {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+                )
+                .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 12, y: 6)
+        }
+        .overlay(alignment: .topTrailing) {
+            // iOS deviation: the dock menu is the only Settings entry.
+            Menu {
+                Button { context.onSettings() } label: { Label("Settings", systemImage: "gearshape") }
+                Button { context.onSearch() } label: { Label("Search", systemImage: "magnifyingglass") }
+                Button { context.onCalls() } label: { Label("Calls", systemImage: "phone") }
+                Button { context.onSaved() } label: { Label("Saved", systemImage: "bookmark") }
+                Button { context.onStories() } label: { Label("Stories", systemImage: "sparkles") }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(PulseTheme.textTertiary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Circle())
+            }
+            .accessibilityLabel("More options")
+        }
+    }
+
+    /// The quick switcher — every destination + the dock actions.
+    private var switcherPanel: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(PulseNavDestinations.all) { item in
+                switcherRow(item)
+            }
+        }
+        .padding(6)
+        .frame(width: 232, alignment: .leading)
+        .background(PulseNavMenuPanel(dark: context.dark))
+    }
+
+    private func switcherRow(_ item: PulseNavDestination) -> some View {
+        let isActive = active == item.tab
+        return Button {
+            PulseHaptics.tap()
+            withAnimation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion)) { switcherOpen = false }
+            context.onTab(item.tab)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isActive ? item.filled : item.icon)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+                    .frame(width: 22)
+                Text(item.label)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.titleOnPanel)
+                Spacer()
+                if item.tab == PulseNavDestinations.chats.tab {
+                    PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.label)
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
+    }
+}
+
+// ── 13 · contextual-dock — dock that adapts to the active tab ──
+// (web ContextualDock :1193-1240: the four destinations plus a trailing
+// gradient chip whose action follows the active tab — chats→New chat,
+// hub→Search, contacts→New group, profile→Settings. R14 5-b.)
+
+struct ContextualDock: View {
+    let context: PulseDockContext
+    let active: PulseTab
+
+    @State private var moreOpen = false
+
+    /// web CONTEXT_ACTION — label + glyph per active tab.
+    private var contextAction: (label: String, icon: String) {
+        switch active {
+        case .chats: return ("New chat", "plus")
+        case .hub: return ("Search", "magnifyingglass")
+        case .contacts: return ("New group", "person.2")
+        case .profile: return ("Settings", "gearshape")
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 1) {
+            ForEach(PulseNavDestinations.all) { item in
+                contextualTab(item)
+            }
+            contextChip
+        }
+        .padding(6)
+        .background(contextualPanel)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottomTrailing) {
+            if moreOpen {
+                PulseNavMenuHost(anchor: .bottomTrailing, context: context) {
+                    moreOpen = false
+                }
+                .offset(y: -84)
+            }
+        }
+        .animation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion), value: active)
+    }
+
+    private func contextualTab(_ item: PulseNavDestination) -> some View {
+        let isActive = active == item.tab
+        return Button {
+            PulseHaptics.tap()
+            context.onTab(item.tab)
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: isActive ? item.filled : item.icon)
+                    .font(.system(size: 20, weight: isActive ? .semibold : .regular))
+                    .overlay(alignment: .topTrailing) {
+                        if item.tab == PulseNavDestinations.chats.tab {
+                            PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
+                                .offset(x: 8, y: -6)
+                        }
+                    }
+                Text(item.label)
+                    .font(.system(size: 9.5, weight: isActive ? .semibold : .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(PulseTheme.emerald500.opacity(0.12))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel(item.label)
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
+    }
+
+    /// The trailing chip — its glyph/label/action follow the active tab
+    /// (web :1225-1253 popLayout swap parity).
+    private var contextChip: some View {
+        Button {
+            PulseHaptics.tap()
+            switch active {
+            case .chats: context.onCompose()
+            case .hub: context.onSearch()
+            case .contacts: context.onCompose()
+            case .profile: context.onSettings()
+            }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: contextAction.icon)
+                    .font(.system(size: 18, weight: .bold))
+                Text(contextAction.label)
+                    .font(.system(size: 9, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(.white)
+            .frame(width: 64, minHeight: 50)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(PulseTheme.brandGradient),
+            )
+            .shadow(color: PulseTheme.emerald500.opacity(0.65), radius: 10, y: 5)
+        }
+        .buttonStyle(PulseButtonStyle())
+        .padding(.leading, 2)
+        .accessibilityLabel(contextAction.label)
+    }
+
+    private var contextualPanel: some View {
+        RoundedRectangle(cornerRadius: 26, style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
             )
             .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)

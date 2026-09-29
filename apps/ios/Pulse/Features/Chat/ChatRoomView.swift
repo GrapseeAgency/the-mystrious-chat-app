@@ -4639,7 +4639,8 @@ final class RoomViewModel: ObservableObject {
                 )
                 self.swapTemp(temp.id, for: message, session: session)
                 if let kindName = PulseRemediationLogic.particleKind(forEffect: effect) {
-                    session.particles.fire(kind: Self.particleKind(named: kindName), count: 90, center: CGPoint(x: 0.5, y: 0.85))
+                    let kind = Self.particleKind(named: kindName)
+                    session.particles.fire(kind: kind, count: Self.particleCount(for: kind), center: CGPoint(x: 0.5, y: 0.85))
                 }
                 self.loadTopics(session: session)
             } catch {
@@ -5431,11 +5432,25 @@ final class RoomViewModel: ObservableObject {
     }
 
     /// F-MS-23 — web EFFECT_PARTICLES name → native bus kind.
+    /// R14 5-b — lasers/echo map to their OWN distinct canvases (rotating
+    /// beams / expanding rings), no longer the generic burst.
     private static func particleKind(named name: String) -> ParticleBus.Kind {
         switch name {
         case "confetti": return .confetti
         case "stars": return .stars
+        case "lasers": return .lasers
+        case "echo": return .echo
         default: return .burst
+        }
+    }
+
+    /// R14 5-b — the effect's native particle count: the lasers/echo
+    /// canvases draw beams/rings (3-4 of them on the web), not bursts.
+    private static func particleCount(for kind: ParticleBus.Kind) -> Int {
+        switch kind {
+        case .lasers: return 4
+        case .echo: return 3
+        default: return 90
         }
     }
 
@@ -5445,7 +5460,8 @@ final class RoomViewModel: ObservableObject {
         guard message.senderId != viewerId,
               let effect = PulseRemediationLogic.effectOfPayload(message.payload),
               let kindName = PulseRemediationLogic.particleKind(forEffect: effect) else { return }
-        session.particles.fire(kind: Self.particleKind(named: kindName), count: 90, center: CGPoint(x: 0.5, y: 0.85))
+        let kind = Self.particleKind(named: kindName)
+        session.particles.fire(kind: kind, count: Self.particleCount(for: kind), center: CGPoint(x: 0.5, y: 0.85))
     }
 }
 

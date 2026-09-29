@@ -96,6 +96,37 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch { prefs.clearSpotlightRecents() }
     }
 
+    // ── R14 gap 14 — spotlight Actions block (web spotlight.tsx:237-262) ──
+
+    /** Check-in flight flag — the row label flips to "Checking in…" while pending. */
+    data class CheckinUi(val pending: Boolean = false)
+
+    private val _checkin = MutableStateFlow(CheckinUi())
+    val checkin: StateFlow<CheckinUi> = _checkin.asStateFlow()
+
+    /**
+     * The spotlight "Check in to Hub" action — the REAL POST /api/hub/wallet/checkin
+     * (repo.checkinWallet), 409 "Already checked in today." surfaces verbatim
+     * through the same notice channel the surface renders.
+     */
+    fun checkinToHub() {
+        if (_checkin.value.pending) return
+        if (repo.viewerId == null) {
+            notify("Pick an identity before checking in.", isError = true)
+            return
+        }
+        _checkin.value = CheckinUi(pending = true)
+        viewModelScope.launch {
+            repo.checkinWallet().fold(
+                onSuccess = { result ->
+                    notify("Checked in — +${result.reward} PC · ${result.streak}-day streak")
+                },
+                onFailure = { notify(it.message ?: "Check-in failed", isError = true) },
+            )
+            _checkin.value = CheckinUi(pending = false)
+        }
+    }
+
     val chats: StateFlow<List<Conversation>> = repo.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

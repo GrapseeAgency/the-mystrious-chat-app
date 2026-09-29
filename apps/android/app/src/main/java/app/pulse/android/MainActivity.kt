@@ -21,6 +21,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +51,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Lock
@@ -69,6 +71,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -88,6 +91,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
@@ -661,17 +665,23 @@ private fun PulseShell(
     val dockSpace = when (navStyle) {
         PulseNavStyle.CAPSULE -> 108.dp + navBottom
         PulseNavStyle.FLOATING_TOP -> navBottom + 12.dp
+        PulseNavStyle.FLOATING_DOCK -> 108.dp + navBottom
         PulseNavStyle.PILL -> 104.dp + navBottom
         PulseNavStyle.BOTTOM_BAR, PulseNavStyle.TAB_BAR -> 64.dp + navBottom
         PulseNavStyle.FLOATING_TAB_BAR -> 104.dp + navBottom
+        PulseNavStyle.COMMAND_BAR -> navBottom + 12.dp
         PulseNavStyle.RAIL -> navBottom + 12.dp
         PulseNavStyle.ISLAND -> 84.dp + navBottom
+        PulseNavStyle.RADIAL -> 108.dp + navBottom
+        PulseNavStyle.GESTURE -> 76.dp + navBottom
+        PulseNavStyle.CONTEXTUAL_DOCK -> 88.dp + navBottom
     }
     // floating-top pins the glass capsule beneath the top edge — each screen's
     // own statusBarsPadding still applies; this routes only the EXTRA nav
     // height through the shell scaffold (rail routes its width via the Row
-    // below). Rooms push the nav away, so the inset rides showDock too.
-    val navTopInset = if (showDock && navStyle == PulseNavStyle.FLOATING_TOP) 84.dp else 0.dp
+    // below). command-bar (R14) pins a compact strip beneath the top edge the
+    // same way. Rooms push the nav away, so the inset rides showDock too.
+    val navTopInset = if (showDock && (navStyle == PulseNavStyle.FLOATING_TOP || navStyle == PulseNavStyle.COMMAND_BAR)) 84.dp else 0.dp
 
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()) {
@@ -951,7 +961,13 @@ private fun PulseShell(
                         AccessibilitySection(onBack = { navController.popBackStack() })
                     }
                     "data" -> Box(Modifier.fillMaxSize()) {
-                        DataSection(onBack = { navController.popBackStack() })
+                        DataSection(
+                            onBack = { navController.popBackStack() },
+                            // R14 gap 6 — "The Hub" row lands on the Hub tab;
+                            // switchTab pops the settings back stack to the
+                            // start destination, closing the settings sheet.
+                            onOpenHub = { switchTab("hub") },
+                        )
                     }
                     "about" -> Box(Modifier.fillMaxSize()) {
                         AboutSection(onBack = { navController.popBackStack() })
@@ -1171,6 +1187,54 @@ private fun PulseShell(
                 onMoreMenuChange = { moreMenuOpen = it },
             )
             PulseNavStyle.ISLAND -> IslandDock(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                active = if (currentRoute == "archived") "chats" else currentRoute ?: "chats",
+                unread = unread,
+                dark = dark,
+                reducedMotion = reducedMotion,
+                actions = dockActions,
+                moreMenuOpen = moreMenuOpen,
+                onMoreMenuChange = { moreMenuOpen = it },
+            )
+            // R14 gap 13 — the 5 remaining web architectures as honest mobile
+            // adaptations (renderer comments live on each composable).
+            PulseNavStyle.FLOATING_DOCK -> FloatingDockDock(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                active = if (currentRoute == "archived") "chats" else currentRoute ?: "chats",
+                unread = unread,
+                dark = dark,
+                reducedMotion = reducedMotion,
+                actions = dockActions,
+                moreMenuOpen = moreMenuOpen,
+                onMoreMenuChange = { moreMenuOpen = it },
+            )
+            PulseNavStyle.COMMAND_BAR -> CommandBarDock(
+                modifier = Modifier.align(Alignment.TopCenter),
+                active = if (currentRoute == "archived") "chats" else currentRoute ?: "chats",
+                unread = unread,
+                dark = dark,
+                actions = dockActions,
+                moreMenuOpen = moreMenuOpen,
+                onMoreMenuChange = { moreMenuOpen = it },
+            )
+            PulseNavStyle.RADIAL -> RadialDock(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                active = if (currentRoute == "archived") "chats" else currentRoute ?: "chats",
+                unread = unread,
+                dark = dark,
+                reducedMotion = reducedMotion,
+                actions = dockActions,
+                moreMenuOpen = moreMenuOpen,
+                onMoreMenuChange = { moreMenuOpen = it },
+            )
+            PulseNavStyle.GESTURE -> GestureDock(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                active = if (currentRoute == "archived") "chats" else currentRoute ?: "chats",
+                unread = unread,
+                dark = dark,
+                actions = dockActions,
+            )
+            PulseNavStyle.CONTEXTUAL_DOCK -> ContextualDockDock(
                 modifier = Modifier.align(Alignment.BottomCenter),
                 active = if (currentRoute == "archived") "chats" else currentRoute ?: "chats",
                 unread = unread,
@@ -1602,9 +1666,9 @@ private fun MoreDockButton(
     }
 }
 
-// ── R4-B item 3 — the navigation architectures (web nav-router.tsx port) ─
+// ── R4-B item 3 / R14 — the navigation architectures (web nav-router.tsx) ─
 //
-// Ports of the web renderers, phone-feasible subset only:
+// Ports of the web renderers — ALL 13 since R14:
 //   FloatingTopDock  · nav-router.tsx:466  FloatingTopNav
 //   PillDock         · nav-router.tsx:563  PillNav
 //   BottomBarDock    · nav-router.tsx:617  BottomBar
@@ -1612,14 +1676,25 @@ private fun MoreDockButton(
 //   FloatingTabBarDock · nav-router.tsx:719 FloatingTabBar
 //   RailDock         · nav-router.tsx:873  RailNav
 //   IslandDock       · nav-router.tsx:925  IslandNav
-// (capsule IS the existing CapsuleDock; floating-dock / command-bar / radial
-// / gesture / contextual-dock stay web-only — desktop/keyboard/exotic, see
-// protocol PulseNavStyle.EXCLUDED_ON_PHONE.)
+//   FloatingDockDock · nav-router.tsx FloatingDock  — icon-only dock, the
+//                      ACTIVE tile magnifies (the web's hover magnify adapted
+//                      to a press/active scale).
+//   CommandBarDock   · nav-router.tsx:786-870 CommandBar — compact top strip
+//                      with tabs + inline search/settings buttons.
+//   RadialDock       · nav-router.tsx RadialNav — center FAB fanning the
+//                      destinations in an arc overlay (veil + auto-close).
+//   GestureDock      · nav-router.tsx:1117-1189 GestureNav — minimal pill +
+//                      drag handle; horizontal drag switches tabs, tap opens
+//                      the quick switcher.
+//   ContextualDockDock · nav-router.tsx:1193-1240 ContextualDock — the
+//                      trailing chip morphs per tab (New chat / Search /
+//                      New group / Settings).
+// (capsule IS the existing CapsuleDock.)
 //
-// Every style keeps the SAME 5 slots (Chats/Hub/Compose-FAB/Contacts/More)
-// over the SAME state: unread badge (99+ cap), direction-aware tab
-// transitions, snackbar channel, PiP rules, NewChatSheet + More menu, the
-// PulseMotion springs and the reduce-motion + haptics idioms.
+// Every style keeps the SAME tab set over the SAME state: unread badge
+// (99+ cap), direction-aware tab transitions, snackbar channel, PiP rules,
+// NewChatSheet + More menu, the PulseMotion springs and the reduce-motion +
+// haptics idioms.
 
 /** Shared dock callbacks — every architecture drives the identical state. */
 private data class DockActions(
@@ -2367,6 +2442,465 @@ private fun IslandDock(
                     )
                 }
             }
+        }
+    }
+}
+
+// ── 3 · floating-dock — icon-only dock, the ACTIVE tile magnifies ────
+
+@Composable
+private fun FloatingDockDock(
+    modifier: Modifier = Modifier,
+    active: String,
+    unread: Int,
+    dark: Boolean,
+    reducedMotion: Boolean,
+    actions: DockActions,
+    moreMenuOpen: Boolean,
+    onMoreMenuChange: (Boolean) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    Box(
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            Modifier
+                .pulseGlass(dark, RoundedCornerShape(26.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DOCK_TABS.forEach { tab ->
+                val isActive = active == tab.route
+                // web floating-dock magnify: the active tile grows (the
+                // desktop hover effect adapted to the active state).
+                val scale by animateFloatAsState(
+                    targetValue = if (isActive) 1.26f else 1f,
+                    animationSpec = if (reducedMotion) snap() else PulseMotion.snappy(),
+                    label = "fDockScale",
+                )
+                Box(
+                    Modifier
+                        .size(46.dp)
+                        .graphicsLayer { scaleX = scale; scaleY = scale }
+                        .clip(dockGlassShape(16.dp))
+                        .clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            actions.onSelect(tab.route)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (isActive) tab.activeIcon else tab.inactiveIcon,
+                        contentDescription = tab.label,
+                        tint = if (isActive) dockActiveTint else dockInactiveTint(dark),
+                        modifier = Modifier.size(21.dp),
+                    )
+                    if (tab.carriesUnread && unread > 0) DockUnreadBadge(unread, dark)
+                }
+            }
+            ComposeDockButton(actions.onCompose, size = 44.dp)
+            MoreDockButton(
+                dark = dark,
+                open = moreMenuOpen,
+                onOpenChange = onMoreMenuChange,
+                onSearch = actions.onSearch,
+                onSaved = actions.onSaved,
+                onStories = actions.onStories,
+                onSettings = actions.onSettings,
+                onDeferred = {},
+            )
+        }
+    }
+}
+
+// ── 8 · command-bar — compact top strip with search/settings buttons ─
+
+@Composable
+private fun CommandBarDock(
+    modifier: Modifier = Modifier,
+    active: String,
+    unread: Int,
+    dark: Boolean,
+    actions: DockActions,
+    moreMenuOpen: Boolean,
+    onMoreMenuChange: (Boolean) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    Column(
+        modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 10.dp)
+            .padding(top = 8.dp),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .pulseGlass(dark, RoundedCornerShape(18.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // brand tile (web command bar's "Pulse" stamp)
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(dockGlassShape(9.dp))
+                    .background(Brush.linearGradient(listOf(PulsePalette.Emerald, DockTeal600))),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("P", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black)
+            }
+            Spacer(Modifier.width(8.dp))
+            DOCK_TABS.forEach { tab ->
+                val isActive = active == tab.route
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .clip(dockGlassShape(12.dp))
+                        .background(if (isActive) PulsePalette.Emerald.copy(alpha = if (dark) 0.16f else 0.12f) else Color.Transparent)
+                        .clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            actions.onSelect(tab.route)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isActive) tab.activeIcon else tab.inactiveIcon,
+                                contentDescription = tab.label,
+                                tint = if (isActive) dockActiveTint else dockInactiveTint(dark),
+                                modifier = Modifier.size(18.dp),
+                            )
+                            if (tab.carriesUnread && unread > 0) DockUnreadBadge(unread, dark)
+                        }
+                        Text(
+                            tab.label,
+                            fontSize = 9.sp,
+                            lineHeight = 9.sp,
+                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (isActive) dockActiveTint else dockInactiveTint(dark),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(4.dp))
+            // inline search + settings buttons (web nav-router.tsx:786-870)
+            Box(
+                Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        actions.onSearch()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Search, contentDescription = "Search", tint = dockInactiveTint(dark), modifier = Modifier.size(19.dp))
+            }
+            Box(
+                Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        actions.onSettings()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = dockInactiveTint(dark), modifier = Modifier.size(19.dp))
+            }
+            MoreDockButton(
+                dark = dark,
+                open = moreMenuOpen,
+                onOpenChange = onMoreMenuChange,
+                onSearch = actions.onSearch,
+                onSaved = actions.onSaved,
+                onStories = actions.onStories,
+                onSettings = actions.onSettings,
+                onDeferred = {},
+            )
+        }
+    }
+}
+
+// ── 11 · radial — center FAB fanning the destinations in an arc ─────
+
+@Composable
+private fun RadialDock(
+    modifier: Modifier = Modifier,
+    active: String,
+    unread: Int,
+    dark: Boolean,
+    reducedMotion: Boolean,
+    actions: DockActions,
+    moreMenuOpen: Boolean,
+    onMoreMenuChange: (Boolean) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    var open by remember { mutableStateOf(false) }
+    // FAB press → destinations fan out on an arc above (web RadialNav).
+    LaunchedEffect(open, moreMenuOpen) {
+        if (open && !moreMenuOpen) {
+            kotlinx.coroutines.delay(5200)
+            open = false
+        }
+    }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(bottom = 14.dp),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (open) {
+                Box(Modifier.height(180.dp), contentAlignment = Alignment.BottomCenter) {
+                    // veil — taps outside the chips close the fan
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.Black.copy(alpha = 0.14f))
+                            .clickable { open = false },
+                    )
+                    val angles = listOf(-150.0, -115.0, -65.0, -30.0)
+                    val radius = 118.dp
+                    DOCK_TABS.forEachIndexed { index, tab ->
+                        val theta = Math.toRadians(angles[index])
+                        val isActive = active == tab.route
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .offset(
+                                    x = radius * kotlin.math.cos(theta).toFloat(),
+                                    y = radius * kotlin.math.sin(theta).toFloat(),
+                                )
+                                .size(52.dp)
+                                .shadow(6.dp, RoundedCornerShape(18.dp))
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(if (dark) Color(0xF21C1C1F) else Color(0xFAFFFFFF))
+                                .border(1.dp, PulsePalette.Emerald.copy(alpha = if (isActive) 0.45f else 0.18f), RoundedCornerShape(18.dp))
+                                .clickable {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    actions.onSelect(tab.route)
+                                    open = false
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = if (isActive) tab.activeIcon else tab.inactiveIcon,
+                                contentDescription = tab.label,
+                                tint = if (isActive) dockActiveTint else dockInactiveTint(dark),
+                                modifier = Modifier.size(21.dp),
+                            )
+                            if (tab.carriesUnread && unread > 0) DockUnreadBadge(unread, dark)
+                        }
+                    }
+                    ComposeDockButton(onCompose = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        actions.onCompose()
+                        open = false
+                    }, size = 44.dp)
+                }
+            }
+            // the center FAB (the radial origin)
+            Box(
+                Modifier
+                    .size(54.dp)
+                    .shadow(8.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(PulsePalette.Emerald, DockTeal600)))
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        open = !open
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (open) Icons.Filled.Close else Icons.Filled.Add,
+                    contentDescription = if (open) "Close navigation" else "Open navigation",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+                if (!open && unread > 0) DockUnreadBadge(unread, dark)
+            }
+        }
+    }
+}
+
+// ── 12 · gesture — minimal pill; drag switches tabs, tap = switcher ─
+
+@Composable
+private fun GestureDock(
+    modifier: Modifier = Modifier,
+    active: String,
+    unread: Int,
+    dark: Boolean,
+    actions: DockActions,
+) {
+    val haptics = LocalHapticFeedback.current
+    var switcherOpen by remember { mutableStateOf(false) }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(bottom = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        // the quick switcher (web GestureNav's drag-up switcher, adapted)
+        DropdownMenu(
+            expanded = switcherOpen,
+            onDismissRequest = { switcherOpen = false },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = if (dark) Color(0xFF1C1C1F) else Color.White,
+        ) {
+            DOCK_TABS.forEach { tab ->
+                DropdownMenuItem(
+                    text = { Text("${tab.label}${if (tab.carriesUnread && unread > 0) " · $unread unread" else ""}", fontSize = 14.sp) },
+                    leadingIcon = { Icon(if (active == tab.route) tab.activeIcon else tab.inactiveIcon, contentDescription = null, tint = dockInactiveTint(dark)) },
+                    onClick = {
+                        switcherOpen = false
+                        actions.onSelect(tab.route)
+                    },
+                )
+            }
+        }
+        Row(
+            Modifier
+                .pulseGlass(dark, RoundedCornerShape(999.dp))
+                .clip(RoundedCornerShape(999.dp))
+                .pointerInput(active) {
+                    // horizontal drag = prev/next tab (web edge-swipe parity)
+                    var acc = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { acc = 0f },
+                        onDragEnd = {
+                            val idx = TAB_ROUTES.indexOf(active).coerceAtLeast(0)
+                            when {
+                                acc <= -90f && idx < TAB_ROUTES.lastIndex -> actions.onSelect(TAB_ROUTES[idx + 1])
+                                acc >= 90f && idx > 0 -> actions.onSelect(TAB_ROUTES[idx - 1])
+                            }
+                        },
+                    ) { change, amount ->
+                        change.consume()
+                        acc += amount
+                    }
+                }
+                .clickable {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    switcherOpen = true
+                }
+                .padding(horizontal = 30.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                val activeTab = DOCK_TABS.firstOrNull { it.route == active } ?: DOCK_TABS[0]
+                Icon(
+                    if (active == activeTab.route) activeTab.activeIcon else activeTab.inactiveIcon,
+                    contentDescription = activeTab.label,
+                    tint = dockActiveTint,
+                    modifier = Modifier.size(18.dp),
+                )
+                if (activeTab.carriesUnread && unread > 0) DockUnreadBadge(unread, dark)
+            }
+            Icon(Icons.Filled.DragHandle, contentDescription = "Drag to switch tabs", tint = dockInactiveTint(dark), modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+// ── 13 · contextual-dock — the trailing chip morphs per active tab ──
+
+@Composable
+private fun ContextualDockDock(
+    modifier: Modifier = Modifier,
+    active: String,
+    unread: Int,
+    dark: Boolean,
+    reducedMotion: Boolean,
+    actions: DockActions,
+    moreMenuOpen: Boolean,
+    onMoreMenuChange: (Boolean) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    // web ContextualDock: the trailing action adapts to the active tab
+    // (nav-router.tsx:1193-1240 — New chat / Search / New group / Settings).
+    val (chipLabel, chipIcon, chipAction) = when (active) {
+        "chats" -> Triple("New chat", Icons.Filled.Add, actions.onCompose)
+        "hub" -> Triple("Search", Icons.Filled.Search, actions.onSearch)
+        "contacts" -> Triple("New group", Icons.Filled.Group, actions.onCompose)
+        else -> Triple("Settings", Icons.Filled.Settings, actions.onSettings)
+    }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 10.dp),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .pulseGlass(dark, RoundedCornerShape(24.dp))
+                .padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DOCK_TABS.forEach { tab ->
+                val isActive = active == tab.route
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    DockTabButton(
+                        tab = tab,
+                        active = isActive,
+                        unread = if (tab.carriesUnread) unread else 0,
+                        dark = dark,
+                        reducedMotion = reducedMotion,
+                        onSelect = { actions.onSelect(tab.route) },
+                    )
+                }
+            }
+            // trailing contextual chip
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = PulsePalette.Emerald.copy(alpha = if (dark) 0.20f else 0.16f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, PulsePalette.Emerald.copy(alpha = 0.32f)),
+                modifier = Modifier
+                    .width(92.dp)
+                    .height(44.dp)
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        chipAction()
+                    },
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Icon(chipIcon, contentDescription = null, tint = dockActiveTint, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(chipLabel, fontSize = 10.5.sp, lineHeight = 10.5.sp, fontWeight = FontWeight.SemiBold, color = dockActiveTint, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.width(2.dp))
+            MoreDockButton(
+                dark = dark,
+                open = moreMenuOpen,
+                onOpenChange = onMoreMenuChange,
+                onSearch = actions.onSearch,
+                onSaved = actions.onSaved,
+                onStories = actions.onStories,
+                onSettings = actions.onSettings,
+                onDeferred = {},
+            )
         }
     }
 }

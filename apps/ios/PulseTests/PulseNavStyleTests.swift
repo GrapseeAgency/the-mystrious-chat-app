@@ -3,23 +3,29 @@ import XCTest
 
 /// R4-A item 3 — navigation-style registry tests (web ground truth:
 /// src/lib/nav-registry.ts — key `pulse.navStyle.v2`, DEFAULT_NAV_STYLE,
-/// meta :50-64 label/hint strings byte-verbatim, and the excluded five
-/// desktop/keyboard/exotic ids that must still parse → capsule fallback).
+/// meta :50-64 label/hint strings byte-verbatim). R14 5-b — the registry
+/// is 13/13: the five previously-excluded desktop/keyboard/exotic ids now
+/// ship as honest mobile adaptations and round-trip through parse.
 final class PulseNavStyleTests: XCTestCase {
 
     // ── registry surface ─────────────────────────────────────
 
     func testAllCasesCarryTheWebRawValues() {
-        // The 8 shipped ids, byte-same with the web store.
+        // The 13 shipped ids, byte-same with the web store.
         let expected: [PulseNavStyle: String] = [
             .capsule: "capsule",
             .floatingTop: "floating-top",
+            .floatingDock: "floating-dock",
             .pill: "pill",
             .bottomBar: "bottom-bar",
             .tabBar: "tab-bar",
             .floatingTabBar: "floating-tab-bar",
+            .commandBar: "command-bar",
             .rail: "rail",
             .island: "island",
+            .radial: "radial",
+            .gesture: "gesture",
+            .contextualDock: "contextual-dock",
         ]
         XCTAssertEqual(PulseNavStyle.allCases.count, expected.count)
         XCTAssertTrue(expected.allSatisfy { style, raw in
@@ -45,6 +51,17 @@ final class PulseNavStyleTests: XCTestCase {
         XCTAssertEqual(PulseNavStyle.rail.hint, "Persistent vertical side rail")
         XCTAssertEqual(PulseNavStyle.island.label, "Island Navigation")
         XCTAssertEqual(PulseNavStyle.island.hint, "Dynamic-island pill that expands on tap")
+        // R14 5-b — the five mobile adaptations carry the web strings too.
+        XCTAssertEqual(PulseNavStyle.floatingDock.label, "Floating Dock")
+        XCTAssertEqual(PulseNavStyle.floatingDock.hint, "Desktop-style dock with magnifying icons")
+        XCTAssertEqual(PulseNavStyle.commandBar.label, "Command Bar")
+        XCTAssertEqual(PulseNavStyle.commandBar.hint, "Compact text command strip with search")
+        XCTAssertEqual(PulseNavStyle.radial.label, "Radial Navigation")
+        XCTAssertEqual(PulseNavStyle.radial.hint, "FAB fanning destinations in an arc")
+        XCTAssertEqual(PulseNavStyle.gesture.label, "Gesture Navigation")
+        XCTAssertEqual(PulseNavStyle.gesture.hint, "Edge swipes + gesture pill quick switcher")
+        XCTAssertEqual(PulseNavStyle.contextualDock.label, "Contextual Dock")
+        XCTAssertEqual(PulseNavStyle.contextualDock.hint, "Dock that adapts to the active tab")
     }
 
     func testZonesDriveTheShellChannels() {
@@ -58,17 +75,20 @@ final class PulseNavStyleTests: XCTestCase {
         XCTAssertEqual(PulseNavStyle.floatingTabBar.zone, .bottom)
         XCTAssertEqual(PulseNavStyle.island.zone, .bottom)
         XCTAssertEqual(PulseNavStyle.floatingTop.zone, .top)
+        XCTAssertEqual(PulseNavStyle.commandBar.zone, .top)
         XCTAssertEqual(PulseNavStyle.rail.zone, .side)
+        XCTAssertEqual(PulseNavStyle.radial.zone, .overlay)
     }
 
     // ── tolerant decode (web getNavStyleMeta fallback parity) ──
 
-    func testExcludedWebIdsParseToCapsuleFallback() {
-        // The 5 desktop/keyboard/exotic idioms stay PARSEABLE so a stored
-        // future style survives an app update — they decode to capsule.
-        let excluded = ["floating-dock", "command-bar", "radial", "gesture", "contextual-dock"]
-        for raw in excluded {
-            XCTAssertEqual(PulseNavStyle.parse(raw), .capsule, "raw \(raw) must fall back to capsule")
+    func testExcludedWebIdsNowRoundTripToThemselves() {
+        // R14 5-b — the five previously-excluded ids are shipped styles:
+        // they parse to THEIR OWN case (a stored value survives upgrades).
+        let shipped = ["floating-dock", "command-bar", "radial", "gesture", "contextual-dock"]
+        for raw in shipped {
+            let style = PulseNavStyle.parse(raw)
+            XCTAssertEqual(style.rawValue, raw, "raw \(raw) must round-trip")
         }
     }
 
@@ -120,8 +140,8 @@ final class PulseNavStyleTests: XCTestCase {
 
         // A future web-widened id stored today must not break the shell.
         defaults.set("radial", forKey: PulsePrefs.navStyleKey)
-        let excluded = PulsePrefs(defaults: defaults)
-        XCTAssertEqual(excluded.navStyle, .capsule)
+        let widened = PulsePrefs(defaults: defaults)
+        XCTAssertEqual(widened.navStyle, .radial)
     }
 
     @MainActor

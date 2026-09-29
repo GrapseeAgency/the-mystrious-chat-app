@@ -5,9 +5,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * R4-B item 3 — JVM pins for the navigation-style registry parser. The id
- * strings are the web nav-registry.ts values verbatim; the parse rules pin
- * the "5 excluded ids → capsule" and "junk → capsule" fallbacks.
+ * R4-B item 3 / R14 — JVM pins for the navigation-style registry parser. The
+ * id strings are the web nav-registry.ts values verbatim (13/13 since the
+ * R14 wiring); the parse rules pin the "junk → capsule" fallback.
  */
 class PulseNavStyleTest {
 
@@ -16,24 +16,21 @@ class PulseNavStyleTest {
         val cases = mapOf(
             "capsule" to PulseNavStyle.CAPSULE,
             "floating-top" to PulseNavStyle.FLOATING_TOP,
+            "floating-dock" to PulseNavStyle.FLOATING_DOCK,
             "pill" to PulseNavStyle.PILL,
             "bottom-bar" to PulseNavStyle.BOTTOM_BAR,
             "tab-bar" to PulseNavStyle.TAB_BAR,
             "floating-tab-bar" to PulseNavStyle.FLOATING_TAB_BAR,
+            "command-bar" to PulseNavStyle.COMMAND_BAR,
             "rail" to PulseNavStyle.RAIL,
             "island" to PulseNavStyle.ISLAND,
+            "radial" to PulseNavStyle.RADIAL,
+            "gesture" to PulseNavStyle.GESTURE,
+            "contextual-dock" to PulseNavStyle.CONTEXTUAL_DOCK,
         )
         cases.forEach { (raw, expected) -> assertEquals(expected, PulseNavStyle.fromPersisted(raw)) }
-        assertEquals(8, PulseNavStyle.entries.size)
-        assertEquals(8, cases.size)
-    }
-
-    @Test
-    fun `the five excluded web ids parse to the capsule fallback`() {
-        PulseNavStyle.EXCLUDED_ON_PHONE.forEach { excluded ->
-            assertEquals(PulseNavStyle.CAPSULE, PulseNavStyle.fromPersisted(excluded), excluded)
-        }
-        assertEquals(setOf("floating-dock", "command-bar", "radial", "gesture", "contextual-dock"), PulseNavStyle.EXCLUDED_ON_PHONE)
+        assertEquals(13, PulseNavStyle.entries.size)
+        assertEquals(13, cases.size)
     }
 
     @Test
@@ -51,8 +48,9 @@ class PulseNavStyleTest {
         // web NAV_STYLES ids (nav-registry.ts:51-63), order preserved.
         assertEquals(
             listOf(
-                "capsule", "floating-top", "pill", "bottom-bar",
-                "tab-bar", "floating-tab-bar", "rail", "island",
+                "capsule", "floating-top", "floating-dock", "pill",
+                "bottom-bar", "tab-bar", "floating-tab-bar", "command-bar",
+                "rail", "island", "radial", "gesture", "contextual-dock",
             ),
             PulseNavStyle.entries.map { it.id },
         )

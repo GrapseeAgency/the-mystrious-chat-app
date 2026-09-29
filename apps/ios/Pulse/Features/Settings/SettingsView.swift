@@ -1,4 +1,6 @@
 import SwiftUI
+import Network
+import UIKit
 
 /// More → Settings — the real app-level surface. Wave 8 extends it to the
 /// web's section registry (settings-screen.tsx SECTION_MAP, labels verbatim):
@@ -13,8 +15,13 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
+    // R14 5-b — the Hub handoff (web settings-screen.tsx "Explore" group:
+    // the onOpenHub prop only renders the row when the shell provides it).
+    var onOpenHub: (() -> Void)?
     // 3-d — the honest remote-push registration state (Notifications card).
     @ObservedObject private var pushCenter = PulsePushRegistrationCenter.shared
+    // R14 5-b — the Device network row (web navigator.onLine parity).
+    @StateObject private var networkMonitor = PulseNetworkMonitor()
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var systemScheme
@@ -147,6 +154,19 @@ struct SettingsView: View {
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                     }
+                    // R14 5-b — the member-since line (web AccountSection card
+                    // formatMemberSince parity, settings-screen.tsx :821). The
+                    // date rides the REAL stats payload already fetched for
+                    // the footprint (server-side joinedAt = the row's
+                    // createdAt); a failed fetch simply omits the line.
+                    if let joined = memberSinceText {
+                        Text("Member since \(joined)")
+                            .font(.system(size: 11, weight: .medium))
+                            .tracking(0.4)
+                            .textCase(.uppercase)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
             }
@@ -208,6 +228,15 @@ struct SettingsView: View {
         let combined = "\(emoji) \(text)".trimmingCharacters(in: .whitespaces)
         if !combined.isEmpty { return combined }
         return nil
+    }
+
+    /// R14 5-b — "Member since …" from the stats joinedAt (UserPageView
+    /// stampsFooter precedent: stats.joinedAt ?? createdAt). Format rides the
+    /// web formatMemberSince month-year stamp (pulse-utils.ts :280-283).
+    private var memberSinceText: String? {
+        guard let joined = footprintStats?.joinedAt else { return nil }
+        let text = PulseFormat.monthYear(joined)
+        return text.isEmpty ? nil : text
     }
 
     private func copyUserId() {
@@ -287,9 +316,11 @@ struct SettingsView: View {
             }
             .padding(.vertical, 4)
 
-            // R4-A item 3 — the 8 phone-feasible navigation architectures
-            // (web nav-registry.ts:51-63; label + hint strings VERBATIM,
-            // `pulse.navStyle.v2` parity key). Label cards like the
+            // R4-A item 3 — the navigation architectures (web
+            // nav-registry.ts:51-63; label + hint strings VERBATIM,
+            // `pulse.navStyle.v2` parity key). R14 5-b — the registry is
+            // 13/13; the five ex-desktop idioms render as honest mobile
+            // adaptations (NavDockStyles.swift). Label cards like the
             // design-language grid; live previews not required.
             VStack(alignment: .leading, spacing: 8) {
                 Text("Navigation style")
@@ -539,6 +570,12 @@ struct SettingsView: View {
             toggleRow(icon: "bell", title: "Message pop", description: "Soft pop for incoming messages.", isOn: prefs.notifSound) {
                 prefs.setNotifSound($0)
             }
+            // R14 5-b — the device-local MASTER ding gate (web
+            // pulse-settings.ts soundOn, default true). The pop above plays
+            // only when this is on too (web gate chain parity).
+            toggleRow(icon: "speaker.wave.2", title: "Incoming sound", description: "Master ding gate — the incoming pop plays only while this is on.", isOn: prefs.soundOn) {
+                prefs.setSoundOn($0)
+            }
             toggleRow(icon: "iphone.radiowaves.left.and.right", title: "Vibration", description: "Buzz on incoming messages.", isOn: prefs.notifVibrate) {
                 prefs.setNotifVibrate($0)
             }
@@ -583,9 +620,9 @@ struct SettingsView: View {
 
             Button {
                 // Preview alert — honors the toggles above exactly like the
-                // incoming path (quiet hours included).
+                // incoming path (quiet hours AND the soundOn master gate).
                 if !prefs.isQuietHoursNow {
-                    if prefs.notifSound { PulseSounds.incoming() }
+                    if prefs.soundOn, prefs.notifSound { PulseSounds.incoming() }
                     if prefs.notifVibrate { PulseHaptics.incoming() }
                 }
             } label: {
@@ -742,6 +779,14 @@ struct SettingsView: View {
                 icon: "person.2",
                 label: "People online now",
                 value: "\(session.onlineUserIds.count)",
+            )
+            // R14 5-b — the Device network row (web RealtimeSection
+            // navigator.onLine badge, settings-screen.tsx :1483-1492): the
+            // honest NWPathMonitor verdict for THIS device.
+            settingsRow(
+                icon: networkMonitor.isOnline ? "wifi" : "wifi.slash",
+                label: "Device network",
+                value: networkMonitor.isOnline ? "Online" : "Offline",
             )
             VStack(alignment: .leading, spacing: 6) {
                 Text("Server address")
@@ -1016,6 +1061,26 @@ struct SettingsView: View {
             Text("iOS updates ship through the App Store pipeline — in-place live updates are the Android build's superpower. This screen always shows the exact installed version below.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
+
+            // R14 5-b — the Hub link row (web "Explore" group,
+            // settings-screen.tsx :1676-1686). Dismisses this sheet and
+            // selects the Hub tab through the RootView handoff.
+            if let onOpenHub {
+                Divider().padding(.vertical, 4)
+                Button {
+                    PulseHaptics.tap()
+                    onOpenHub()
+                } label: {
+                    settingsLinkRow(
+                        icon: "info.circle",
+                        label: "The Hub",
+                        caption: "Wallet · Tasks · Market · Swap · Apps · Logs",
+                        value: "Open",
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("The Hub — open the hub tab")
+            }
         }
     }
 
@@ -1030,11 +1095,88 @@ struct SettingsView: View {
 
     private var aboutCard: some View {
         settingsCard(title: "About", icon: "app.badge.fill") {
+            // R14 5-b — the identity card (web AboutSection glass-deep card:
+            // gradient logo tile + wordmark + tagline + version badge).
+            HStack(spacing: 12) {
+                Text("✨")
+                    .font(.system(size: 20))
+                    .frame(width: 44, height: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(PulseTheme.brandGradient),
+                    )
+                    .shadow(color: PulseTheme.emerald500.opacity(0.25), radius: 6, y: 3)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Pulse")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(PulseTheme.titleOnPanel)
+                    Text("Real-time chat with a built-in economy")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Text("v\(version)")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(PulseTheme.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(PulseTheme.accent.opacity(0.12)))
+            }
+            .padding(.vertical, 2)
+            .accessibilityElement(children: .combine)
+
             settingsRow(icon: "number", label: "Version", value: "\(version) (\(build))")
             settingsRow(icon: "ship", label: "Platform", value: "iOS · native Swift")
             settingsRow(icon: "gearshape.2", label: "Bundle", value: "app.pulse.chat")
+            // R14 5-b — the missing web About rows (settings-screen.tsx
+            // :1712-1726): the realtime transport + the data layer.
+            settingsRow(
+                icon: "command",
+                label: "Realtime",
+                value: session.connected ? "socket.io relay · live" : "socket.io relay",
+            )
+            settingsRow(icon: "cylinder", label: "Data", value: "Prisma ORM + SQLite, zero mock data")
+
+            // R14 5-b — the GitHub repository link (web AboutSection Project
+            // group) — opens the real repo in Safari.
+            Button {
+                PulseHaptics.tap()
+                if let url = URL(string: Self.githubURL) {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                settingsLinkRow(
+                    icon: "link",
+                    label: "GitHub repository",
+                    caption: "GrapseeAgency/the-mystrious-chat-app",
+                    value: "Open",
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("GitHub repository — opens in Safari")
+
+            // R14 5-b — the web footer (heart + wordmark + live-sync line).
+            VStack(spacing: 4) {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(PulseTheme.emerald)
+                Text("Made with Pulse")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(PulseTheme.titleOnPanel)
+                Text("Version \(version) · chats, hub economy and settings sync live")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 6)
+            .accessibilityElement(children: .combine)
         }
     }
+
+    /// R14 5-b — the shared repo URL (web GITHUB_URL verbatim).
+    static let githubURL = "https://github.com/GrapseeAgency/the-mystrious-chat-app"
 
     // ── primitives ───────────────────────────────────────────
 
@@ -1276,5 +1418,31 @@ struct SettingsView: View {
             }
             probing = false
         }
+    }
+}
+
+// ── R14 5-b — the Device network verdict (web navigator.onLine parity) ──
+
+/// NWPathMonitor-backed online/offline truth for the Real-time card's
+/// "Device network" row (web RealtimeSection :1483-1492). The outbox
+/// engine runs its own private monitor for the flush trigger — this one is
+/// the UI mirror, evaluated on the main actor.
+@MainActor
+final class PulseNetworkMonitor: ObservableObject {
+    @Published private(set) var isOnline = true
+    private let monitor = NWPathMonitor()
+
+    init() {
+        monitor.pathUpdateHandler = { [weak self] path in
+            let satisfied = path.status == .satisfied
+            Task { @MainActor in
+                self?.isOnline = satisfied
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "app.pulse.chat.network-monitor"))
+    }
+
+    deinit {
+        monitor.cancel()
     }
 }
