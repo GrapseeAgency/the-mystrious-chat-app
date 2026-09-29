@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
@@ -141,6 +142,61 @@ fun SettingsRootScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val prefsOffline by viewModel.prefsOffline.collectAsStateWithLifecycle()
+    // R15 — web root-row live hints (settings-screen.tsx:1875-1885): every
+    // section row shows its LIVE state line instead of the static caption.
+    val viewerName by viewModel.viewerName.collectAsStateWithLifecycle()
+    val viewerProfile by viewModel.viewerProfile.collectAsStateWithLifecycle()
+    val uiTheme by viewModel.uiTheme.collectAsStateWithLifecycle()
+    val pulsePrefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
+    val quietHoursOn by viewModel.quietHoursOn.collectAsStateWithLifecycle()
+    val quietStart by viewModel.quietStart.collectAsStateWithLifecycle()
+    val quietEnd by viewModel.quietEnd.collectAsStateWithLifecycle()
+    val soundOn by viewModel.soundOn.collectAsStateWithLifecycle()
+    val connected by viewModel.connected.collectAsStateWithLifecycle()
+    val onlineCount by viewModel.onlineCount.collectAsStateWithLifecycle()
+    val reducedMotion by viewModel.reducedMotion.collectAsStateWithLifecycle()
+    val drafts by viewModel.drafts.collectAsStateWithLifecycle()
+    val outbox by viewModel.outbox.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val versionName = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull()
+    }
+
+    val themeLabels = mapOf(
+        "glass" to "Immersive Glass",
+        "kinetic" to "Kinetic",
+        "minimal" to "Quiet Minimal",
+        "dynamic" to "Dynamic",
+        "aero" to "Aero Kinetic",
+    )
+    val wallpaperLabels = mapOf(
+        "none" to "None",
+        "aurora" to "Aurora",
+        "dusk" to "Dusk",
+        "forest" to "Forest",
+        "mono" to "Mono",
+    )
+    val hints: Map<String, String> = mapOf(
+        "account" to (
+            viewerProfile?.handle?.takeIf { it.isNotBlank() }?.let { "@$it" }
+                ?: viewerName?.takeIf { it.isNotBlank() }
+                ?: "Signed out"
+        ),
+        "appearance" to (themeLabels[uiTheme] ?: uiTheme),
+        "chat" to "${if (pulsePrefs.density == "compact") "Compact" else "Cozy"} · ${wallpaperLabels[pulsePrefs.wallpaper] ?: "None"}",
+        "notifications" to when {
+            quietHoursOn -> "Quiet $quietStart–$quietEnd"
+            soundOn -> "Alerts on"
+            else -> "Alerts off"
+        },
+        "privacy" to if (pulsePrefs.readReceipts == true) "Read receipts on" else "Read receipts off",
+        "realtime" to if (connected) "$onlineCount online" else "Offline",
+        "accessibility" to if (reducedMotion) "Reduced motion" else "Full motion",
+        "data" to "${drafts.size} drafts · ${outbox.size} queued",
+        "about" to "v${versionName ?: "?"}",
+    )
     Scaffold(
         topBar = {
             TopAppBar(
@@ -197,7 +253,11 @@ fun SettingsRootScreen(
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(def.label, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                                    Text(def.caption, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        hints[def.id] ?: def.caption,
+                                        fontSize = 11.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                             }
                             if (index != ids.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
@@ -205,6 +265,16 @@ fun SettingsRootScreen(
                     }
                 }
             }
+            // R15 — root version footer (web settings-screen.tsx:2005-2007).
+            Text(
+                "Pulse v${versionName ?: "?"} — every control here is live.",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
             Spacer(Modifier.height(28.dp))
         }
     }
@@ -837,6 +907,8 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
 fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val connected by viewModel.connected.collectAsStateWithLifecycle()
     val probe by viewModel.probe.collectAsStateWithLifecycle()
+    // R15 — web "Device network" row state (settings-screen.tsx:1483-1492).
+    val deviceOnline by viewModel.deviceOnline.collectAsStateWithLifecycle()
     // R7 item 6 — web ctx.onlineCount (settings-screen.tsx:1423): the live
     // presence flow (repo onlineIds — socket Joined/PresenceSnapshot truth,
     // PulseRepositoryImpl.observePresence) reduced to a count.
@@ -912,6 +984,43 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        // R15 — web "Device network" StaticRow parity (settings-screen.tsx
+        // :1483-1492): navigator.onLine truth with Online/Offline badge.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (deviceOnline) Icons.Filled.Wifi else Icons.Filled.CloudOff,
+                contentDescription = null,
+                tint = if (deviceOnline) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Device network", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    if (deviceOnline) "This device is online — delivery is instant."
+                    else "This device is offline — messages wait in the queue.",
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = if (deviceOnline) PulsePalette.Emerald.copy(alpha = 0.12f) else MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
+            ) {
+                Text(
+                    if (deviceOnline) "Online" else "Offline",
+                    Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (deviceOnline) PulsePalette.Emerald else MaterialTheme.colorScheme.error,
                 )
             }
         }

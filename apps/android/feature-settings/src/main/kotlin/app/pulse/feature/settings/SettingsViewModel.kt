@@ -1,6 +1,10 @@
 package app.pulse.feature.settings
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pulse.core.PulseEndpoints
@@ -143,6 +147,26 @@ class SettingsViewModel @Inject constructor(
         .map { it.size }
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
+    /**
+     * R15 — web "Device network" row parity (settings-screen.tsx:1483-1492):
+     * navigator.onLine equivalent — the CONNECTIVITY_SERVICE active-network
+     * validated-internet truth, re-evaluated on every network callback. This is
+     * DEVICE truth, independent of the socket relay above it.
+     */
+    private val _deviceOnline = MutableStateFlow(true)
+
+    val deviceOnline: StateFlow<Boolean> = _deviceOnline.asStateFlow()
+
+    private fun refreshDeviceOnline() {
+        runCatching {
+            val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            _deviceOnline.value = cm.activeNetwork?.let { net ->
+                cm.getNetworkCapabilities(net)
+                    ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+            } ?: false
+        }
+    }
+
     init {
         viewModelScope.launch {
             prefs.viewerId.collect { id ->
@@ -152,6 +176,30 @@ class SettingsViewModel @Inject constructor(
                     _viewerProfile.value = repo.userProfile(id).getOrNull()
                 }
             }
+        }
+        // R15 — device-network tracker (web navigator.onLine parity).
+        refreshDeviceOnline()
+        runCatching {
+            val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm.registerNetworkCallback(
+                request,
+                object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        refreshDeviceOnline()
+                    }
+
+                    override fun onLost(network: Network) {
+                        refreshDeviceOnline()
+                    }
+
+                    override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                        refreshDeviceOnline()
+                    }
+                },
+            )
         }
     }
 
