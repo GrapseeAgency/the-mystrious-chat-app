@@ -376,6 +376,24 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                         fontSize = 12.5.sp,
                         color = PulsePalette.Emerald,
                     )
+                    // R16 — the web statusLine (settings-screen.tsx:777-780 +
+                    // :816-818): status glyph+text when set, else the bio line.
+                    val statusLine = listOfNotNull(
+                        profile?.statusEmoji?.takeIf { it.isNotBlank() },
+                        profile?.statusText?.takeIf { it.isNotBlank() },
+                    ).joinToString(" ").ifBlank {
+                        profile?.about?.takeIf { it.isNotBlank() } ?: ""
+                    }
+                    if (statusLine.isNotBlank()) {
+                        Text(
+                            statusLine,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 1.dp),
+                        )
+                    }
                     if (viewerId != null) {
                         memberSinceLine(profile?.createdAtIso)?.let { formatted ->
                             Text(

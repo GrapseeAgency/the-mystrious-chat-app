@@ -880,6 +880,9 @@ private fun PulseShell(
                     ProfileScreen(
                         onEditProfile = { navController.navigate("profile/edit") },
                         onOpenBlocked = { navController.navigate("settings/blocked") },
+                        // R16 — web profile-tab.tsx:497-508: the profile tab's
+                        // "Saved messages" row lands on the real starred library.
+                        onOpenSaved = { navController.navigate("saved") },
                         // R6 — M3: the durable sign-out. The app-level session VM
                         // clears prefs + the encrypted vault + token; viewerId →
                         // null unmounts the shell and PulseRoot shows onboarding.

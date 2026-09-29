@@ -26,11 +26,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Verified
@@ -66,6 +68,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -98,6 +101,10 @@ private val SWATCHES = listOf("#10B981", "#14B8A6", "#8B5CF6", "#F59E0B", "#FB71
 fun ProfileScreen(
     onEditProfile: () -> Unit = {},
     onOpenBlocked: () -> Unit = {},
+    // R16 — web profile-tab.tsx:497-508 "Saved messages" row → the real
+    // starred library (MainActivity routes this to the existing "saved" nav
+    // destination — fetch / search / unsave / jump-to-message).
+    onOpenSaved: () -> Unit = {},
     // R6 — M3: the durable sign-out — the app-level SessionViewModel
     // clears prefs + the encrypted session vault (ProfileViewModel's old
     // half-forget did NOT delete the vault, so the identity resurrected on
@@ -119,6 +126,13 @@ fun ProfileScreen(
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    // R16 — web profile-tab.tsx:169 `iAmOnline` (onlineIds.has(me.id)) + the
+    // full viewer row (name/handle/bio/color/status fields ride the SAME
+    // users list the IdentitySheet already loads).
+    val onlineIds by viewModel.onlineIds.collectAsStateWithLifecycle()
+    val viewer = state.users.firstOrNull { it.id == viewerId }
+    val iAmOnline = viewerId != null && viewerId in onlineIds
+    val handle = viewer?.handle?.takeIf { it.isNotBlank() }
 
     Column(
         Modifier
@@ -136,16 +150,15 @@ fun ProfileScreen(
         // from the identity emerald + two soft orbs + (on the card below) the
         // registered-member badge. Kept cheap: static alpha circles, no live
         // blur — reduce-motion needs no special case.
+        // R16 — the cover derives from the identity color (web
+        // profile-tab.tsx:309-313 gradientFor(me.color)) — no longer hardcoded
+        // emerald; fallback stays the web's default (emerald-400 → deep).
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(112.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(
-                    Brush.linearGradient(
-                        listOf(PulsePalette.Emerald, PulsePalette.Teal),
-                    ),
-                ),
+                .background(heroGradient(viewer?.color)),
         ) {
             Box(
                 Modifier
@@ -178,8 +191,10 @@ fun ProfileScreen(
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 PulseAvatar(
                     name = viewerName ?: "You",
-                    colorHex = null,
+                    colorHex = viewer?.color,
                     size = 56.dp,
+                    // R16 — presence ring (web profile-tab.tsx:346 showPresence).
+                    online = iAmOnline,
                 )
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
@@ -199,7 +214,54 @@ fun ProfileScreen(
                                 modifier = Modifier.size(18.dp),
                             )
                         }
-                        Text("Signed in on this device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // R16 — the @handle chip (web profile-tab.tsx:369-400):
+                        // tap-to-copy, or "Set your handle" → the edit page when
+                        // the account has no handle yet.
+                        Text(
+                            text = if (handle != null) "@$handle" else "Set your handle",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = PulsePalette.Emerald,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .clickable {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (handle == null) {
+                                        onEditProfile()
+                                    } else {
+                                        copyText(context, "Pulse handle", "@$handle", "Handle copied")
+                                    }
+                                }
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                        // R16 — status glyph + text (web profile-tab.tsx:402-415).
+                        val statusLine = listOfNotNull(
+                            viewer?.statusEmoji?.takeIf { it.isNotBlank() },
+                            viewer?.statusText?.takeIf { it.isNotBlank() },
+                        ).joinToString(" ")
+                        if (statusLine.isNotBlank()) {
+                            Text(
+                                statusLine,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        // R16 — the bio (web profile-tab.tsx:417-425, honest
+                        // "No bio yet" fallback included).
+                        Text(
+                            text = viewer?.bio?.takeIf { it.isNotBlank() } ?: "No bio yet",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
                     }
                 }
                 TextButton(onClick = {
@@ -244,6 +306,35 @@ fun ProfileScreen(
                 }
             }
             Spacer(Modifier.height(20.dp))
+        }
+
+        // R16 — the Saved-messages row (web profile-tab.tsx:497-508): opens
+        // the real starred library — long-press-save in any chat lands here.
+        if (viewerId != null) {
+            Spacer(Modifier.height(20.dp))
+            SettingCard {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onOpenSaved()
+                        }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Star, contentDescription = null, tint = PulsePalette.Amber)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Saved messages", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Long-press any message in a chat, then Save",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
 
         // R2-A item 10 — the wallet chip (web profile-tab.tsx:477-487:
@@ -297,6 +388,31 @@ fun ProfileScreen(
         // Wave 6 — edit profile + blocked accounts (web #/profile-edit + settings parity)
         SettingCard {
             Column {
+                // R16 — the Copy account ID row (web profile-tab.tsx:510-520):
+                // Fingerprint row, tap-to-copy with the honest toast.
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            copyText(context, "Pulse account ID", viewerId ?: "", "Account ID copied")
+                        }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = null, tint = PulsePalette.Emerald)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Copy account ID", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            viewerId ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
                 Row(
                     Modifier.fillMaxWidth().clickable(onClick = onEditProfile).padding(vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -674,6 +790,44 @@ internal fun shareProfile(
         context.startActivity(Intent.createChooser(send, "Share your profile"))
     }.onFailure {
         Toast.makeText(context, "Could not share right now", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/**
+ * R16 — web gradientFor (pulse-utils.ts:42-45 + AVATAR_GRADIENTS :31-40):
+ * the profile hero cover derives from the identity color. Accepts BOTH the
+ * web color NAMES (emerald/rose/amber/violet/teal/orange/pink/cyan) and the
+ * raw hex the native onboarding creates (#10B981 …). Fallback: web default
+ * emerald. The deep end darkens the start color (web's `-400 → -600` pair).
+ */
+internal fun heroGradient(color: String?): Brush {
+    val start = when (color?.trim()?.lowercase()) {
+        "teal" -> Color(0xFF2DD4BF)
+        "rose" -> Color(0xFFFB7185)
+        "amber" -> Color(0xFFFBBF24)
+        "violet" -> Color(0xFFA78BFA)
+        "orange" -> Color(0xFFFB923C)
+        "pink" -> Color(0xFFF472B6)
+        "cyan" -> Color(0xFF22D3EE)
+        "emerald" -> Color(0xFF34D399)
+        else -> PulsePalette.parse(color) ?: Color(0xFF34D399)
+    }
+    val deep = Color(start.red * 0.62f, start.green * 0.68f, start.blue * 0.72f)
+    return Brush.linearGradient(listOf(start, deep))
+}
+
+/**
+ * R16 — clipboard helper for the profile tap-to-copy affordances (web
+ * profile-tab.tsx copyHandle :243-255 / copyId :233-241 — same toasts).
+ */
+internal fun copyText(context: android.content.Context, label: String, text: String, toast: String) {
+    runCatching {
+        val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText(label, text))
+        Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
+    }.onFailure {
+        Toast.makeText(context, "Clipboard is unavailable here", Toast.LENGTH_SHORT).show()
     }
 }
 

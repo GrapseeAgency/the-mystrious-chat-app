@@ -57,6 +57,13 @@ class ProfileViewModel @Inject constructor(
     val serverBase: StateFlow<String?> = prefs.serverBase
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /**
+     * R16 — live presence set (web profile-tab.tsx:110/169 usePulseRealtime
+     * `.onlineIds` parity): drives the profile avatar's online ring.
+     */
+    val onlineIds: StateFlow<Set<String>> = repo.observePresence()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
     /** Live probe of the configured origin — honest connectivity verdict. */
     data class ProbeState(val running: Boolean = false, val ok: Boolean? = null, val detail: String = "")
 
