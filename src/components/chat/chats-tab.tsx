@@ -14,7 +14,8 @@ import Image from 'next/image'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArrowRight, AtSign, BellOff, CheckCheck, ChevronRight, FolderPlus, LoaderCircle, NotebookPen, Phone, Plus, Radio, Search, SquarePen, Users, X } from 'lucide-react'
+import { Archive, ArrowRight, AtSign, BellOff, CheckCheck, ChevronRight, LoaderCircle, NotebookPen, Phone, Plus, Radio, Users, X } from 'lucide-react'
+import { PulseCompose, PulseFolderPlus, PulseSearch } from '@/components/ui/icons'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -153,7 +154,7 @@ const SearchMessageRow = memo(function SearchMessageRow({
         {deleted ? (
           <p className="truncate text-[13px] italic text-zinc-400 dark:text-zinc-500">Deleted message</p>
         ) : hit.imagePath && hit.content.length === 0 ? (
-          <p className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">📷 Photo</p>
+          <p className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">Photo</p>
         ) : isFileHit && !captionMatches ? (
           <SearchSnippet content={fileSnippet} query={query} />
         ) : (
@@ -1005,7 +1006,7 @@ export function ChatsTab({
                 transition={spring.soft}
                 className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.25)] ring-2 ring-emerald-500/50"
               />
-              <Search className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
+              <PulseSearch className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
               <motion.div
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -1101,7 +1102,7 @@ export function ChatsTab({
               onClick={onRequestNewChat}
               className="size-10 rounded-full text-zinc-500 hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-95 dark:hover:text-emerald-400"
             >
-              <SquarePen className="size-[19px]" aria-hidden />
+              <PulseCompose className="size-[19px]" aria-hidden />
             </Button>
             <ThemeToggleButton />
           </motion.div>
@@ -1121,7 +1122,7 @@ export function ChatsTab({
               transition={pressSpring}
               className="flex h-10 w-full items-center gap-2.5 rounded-full bg-zinc-100/80 px-4 text-left outline-none ring-1 ring-zinc-200/70 backdrop-blur-xl transition-colors hover:bg-zinc-200/70 dark:bg-zinc-900/60 dark:ring-white/10 dark:hover:bg-zinc-800/70"
             >
-              <Search className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
+              <PulseSearch className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
               <span className="text-sm text-zinc-400 dark:text-zinc-500">Search chats and messages</span>
             </motion.button>
           </motion.div>
@@ -1300,7 +1301,7 @@ export function ChatsTab({
             transition={pressSpring}
             className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-500 ring-1 ring-zinc-200/70 backdrop-blur-xl outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 focus-visible:ring-2 focus-visible:ring-emerald-500/60 dark:bg-zinc-900/60 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-zinc-800/70 dark:hover:text-emerald-400"
           >
-            <FolderPlus className="size-[18px]" aria-hidden />
+            <PulseFolderPlus className="size-[18px]" aria-hidden />
           </motion.button>
         </div>
       ) : null}
@@ -1359,7 +1360,7 @@ export function ChatsTab({
             {filteredRows.length === 0 &&
             (deferredQuery.length < 2 || (!serverSearch.isPending && serverHits.length === 0)) ? (
               <div className="flex flex-col items-center justify-center gap-2 px-8 pt-24 text-center">
-                <Search className="size-8 text-zinc-300 dark:text-zinc-600" aria-hidden />
+                <PulseSearch className="size-8 text-zinc-300 dark:text-zinc-600" aria-hidden />
                 <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">No matches</p>
                 <p className="text-xs text-zinc-400 dark:text-zinc-500">
                   Nothing here for “{searchQuery}”.

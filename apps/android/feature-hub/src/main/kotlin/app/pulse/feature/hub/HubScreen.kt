@@ -26,7 +26,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -190,7 +194,8 @@ class HubViewModel @Inject constructor(
     val checkinSuccess: SharedFlow<Long> = _checkinSuccess.asSharedFlow()
 
     private fun notify(text: String, isError: Boolean = false) {
-        _notice.value = (if (isError) "⚠ " else "") + text
+        // R35 Neo - plain verdict text, no glyph decoration in toasts.
+        _notice.value = if (isError) "Error: $text" else text
     }
 
     fun consumeNotice() { _notice.value = null }
@@ -542,7 +547,7 @@ fun HubScreen(
                     onClick = { vm.checkin() },
                     enabled = !checkedIn && !wallet.loading,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (checkedIn) "Checked in today ✓" else "Daily check-in · +25 PC") }
+                ) { Text(if (checkedIn) "Checked in today" else "Daily check-in · +25 PC") }
                 page?.wallet?.let { w ->
                     if (!checkedIn && w.streak > 0) {
                         Spacer(Modifier.height(4.dp))
@@ -868,7 +873,18 @@ private fun TasksSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                         Text(t.title, Modifier.weight(1f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (col != "todo") Text("‹", Modifier.clickable { vm.moveTask(t, prevStatus(col)) }.padding(6.dp))
                         if (col != "done") Text("›", Modifier.clickable { vm.moveTask(t, nextStatus(col)) }.padding(6.dp))
-                        Text("✕", Modifier.clickable { vm.deleteTask(t.id) }.padding(6.dp), color = MaterialTheme.colorScheme.error)
+                        // R35 Neo - icon affordance instead of the old glyph button.
+                        IconButton(
+                            onClick = { vm.deleteTask(t.id) },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Delete task",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(15.dp),
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))

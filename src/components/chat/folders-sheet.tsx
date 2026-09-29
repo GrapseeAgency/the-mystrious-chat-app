@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronLeft, ChevronRight, LoaderCircle, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { FOLDER_GLYPHS, PulseFolder } from '@/components/ui/icons'
 import { toast } from 'sonner'
 import { apiJson, conversationDisplayName } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
@@ -33,6 +34,14 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/compone
 
 const FOLDER_NAME_MAX = 24
 const EMOJI_PRESETS = ['📂', '💼', '🎮', '❤️', '🔥', '🎯', '🎵', '🧠'] as const
+
+const FOLDER_FALLBACK_GLYPH = FOLDER_GLYPHS['📂']
+
+/** Renders a persisted folder value as a real icon — never an emoji. */
+function FolderGlyphIcon({ value, className }: { value: string; className?: string }) {
+  const Glyph = (value && FOLDER_GLYPHS[value]) || FOLDER_FALLBACK_GLYPH
+  return <Glyph className={className} aria-hidden />
+}
 
 interface FoldersResponse {
   folders: FolderSummary[]
@@ -128,7 +137,7 @@ export function FoldersSheet({
       void invalidateFolders()
       setNewName('')
       setNewEmoji('📂')
-      toast.success(`${res.folder.emoji} Folder “${res.folder.name}” created`)
+      toast.success(`Folder “${res.folder.name}” created`)
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Could not create the folder.')
@@ -262,9 +271,9 @@ export function FoldersSheet({
             ) : (
               <span
                 aria-hidden
-                className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-xl shadow-[0_10px_24px_-10px_rgba(16,185,129,0.7)]"
+                className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-[0_10px_24px_-10px_rgba(16,185,129,0.7)]"
               >
-                📂
+                <PulseFolder className="size-5" />
               </span>
             )}
             <div className="min-w-0 flex-1">
@@ -312,14 +321,14 @@ export function FoldersSheet({
                     <p className="pb-2 text-[12px] font-semibold uppercase tracking-wide text-zinc-500">
                       New folder
                     </p>
-                    <div className="flex flex-wrap gap-1.5 pb-2.5" role="group" aria-label="Folder emoji">
+                    <div className="flex flex-wrap gap-1.5 pb-2.5" role="group" aria-label="Folder icon">
                       {EMOJI_PRESETS.map((emoji) => {
                         const active = newEmoji === emoji
                         return (
                           <motion.button
                             key={emoji}
                             type="button"
-                            aria-label={`Emoji ${emoji}`}
+                            aria-label={`Folder icon ${emoji}`}
                             aria-pressed={active}
                             whileTap={reducedMotion ? undefined : pressTap}
                             transition={pressSpring}
@@ -328,13 +337,13 @@ export function FoldersSheet({
                               setNewEmoji(emoji)
                             }}
                             className={cn(
-                              'flex size-10 items-center justify-center rounded-xl text-lg outline-none transition-colors',
+                              'flex size-10 items-center justify-center rounded-xl outline-none transition-colors',
                               active
-                                ? 'bg-emerald-500/25 ring-2 ring-emerald-400/70'
-                                : 'bg-white/5 ring-1 ring-white/10 hover:bg-white/10',
+                                ? 'bg-emerald-500/25 text-emerald-300 ring-2 ring-emerald-400/70'
+                                : 'bg-white/5 text-zinc-300 ring-1 ring-white/10 hover:bg-white/10',
                             )}
                           >
-                            {emoji}
+                            <FolderGlyphIcon value={emoji} className="size-4.5" />
                           </motion.button>
                         )
                       })}
@@ -409,9 +418,9 @@ export function FoldersSheet({
                               <div className="flex items-center gap-2 px-2.5 py-2">
                                 <span
                                   aria-hidden
-                                  className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-lg ring-1 ring-white/10"
+                                  className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-emerald-300 ring-1 ring-white/10"
                                 >
-                                  {folder.emoji}
+                                  <FolderGlyphIcon value={folder.emoji} className="size-4.5" />
                                 </span>
                                 {renaming ? (
                                   <Input
@@ -544,7 +553,7 @@ export function FoldersSheet({
                   <p className="px-1 text-[12px] leading-relaxed text-zinc-500">
                     Tick the chats that live in{' '}
                     <span className="font-semibold text-zinc-300">
-                      {editingFolder?.emoji} {editingFolder?.name}
+                      {editingFolder?.name}
                     </span>
                     . Saving replaces the folder contents.
                   </p>

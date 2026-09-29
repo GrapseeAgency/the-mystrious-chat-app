@@ -151,7 +151,7 @@ class SavedLibraryViewModel @Inject constructor(
 /**
  * Saved library — the Wave 2 dock "Saved" destination. Honest states end to
  * end: loading spinner, error card with Retry, empty state (Star + hint),
- * searchable rows with 🖼/🎤/📎 snippets, unsave with confirm, and tap →
+ * searchable rows with kind-aware snippets, unsave with confirm, and tap →
  * open the room jumped to the original message.
  */
 @Composable
@@ -323,10 +323,11 @@ private fun SavedRow(
     val mine = message.authorId == viewerId
     val convName = item.conversationName ?: "chat"
     val title = if (mine) "You in $convName" else "${message.authorName.ifBlank { "Someone" }} in $convName"
+    // R35 Neo - plain kind prefixes (the old glyph prefixes are gone).
     val prefix = when {
-        message.imagePath != null -> "🖼 "
-        message.audioPath != null -> "🎤 "
-        message.filePath != null -> "📎 "
+        message.imagePath != null -> ""
+        message.audioPath != null -> ""
+        message.filePath != null -> ""
         else -> ""
     }
     val base = when {

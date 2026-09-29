@@ -1,17 +1,24 @@
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Space_Grotesk, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as SonnerToaster } from '@/components/ui/sonner'
 
-const geistSans = Geist({
+// R35 "Neo" identity — Space Grotesk carries the whole UI (techy,
+// geometric, unmistakably not-a-default), JetBrains Mono speaks
+// for timestamps, handles, IDs and stat numerals. The legacy
+// --font-geist-* variable names are kept so every existing
+// font-[family-name:var(--font-geist-sans)] usage keeps working.
+const pulseSans = Space_Grotesk({
   variable: '--font-geist-sans',
   subsets: ['latin'],
+  display: 'swap',
 })
 
-const geistMono = Geist_Mono({
+const pulseMono = JetBrains_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
+  display: 'swap',
 })
 
 export const metadata: Metadata = {
@@ -43,7 +50,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: 'cover',
-  themeColor: '#10b981',
+  themeColor: '#07090b',
 }
 
 export default function RootLayout({
@@ -54,7 +61,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${pulseSans.variable} ${pulseMono.variable} antialiased bg-background text-foreground`}
       >
         {children}
         <Toaster />

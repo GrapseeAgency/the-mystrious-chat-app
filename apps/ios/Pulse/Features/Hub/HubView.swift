@@ -470,7 +470,7 @@ struct HubView: View {
             Button {
                 vm.checkin()
             } label: {
-                Text(checkedIn ? "Checked in today ✓" : "Daily check-in · +25 PC")
+                Text(checkedIn ? "Checked in today" : "Daily check-in · +25 PC")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -723,7 +723,7 @@ private struct HubTasksSheet: View {
                                 Button { vm.moveTask(task, to: col == "todo" ? "doing" : "done") } label: { Text("›") }
                                     .buttonStyle(.borderless)
                             }
-                            Button { vm.deleteTask(task) } label: { Text("✕").foregroundStyle(.red) }
+                            Button { vm.deleteTask(task) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
                                 .buttonStyle(.borderless)
                         }
                     }

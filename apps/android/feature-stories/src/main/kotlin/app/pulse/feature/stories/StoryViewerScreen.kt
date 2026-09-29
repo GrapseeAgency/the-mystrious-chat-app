@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.core.PulseEndpoints
 import app.pulse.ui.PulseAvatar
+import app.pulse.ui.PulsePalette
 import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -304,7 +305,8 @@ fun StoryViewerScreen(
                 viewersOpen = false
                 storiesVm.resetViewers()
             },
-            containerColor = Color(0xFF18181B),
+            // R35 Neo - elevated carbon sheet fill (locked token #0d1211).
+            containerColor = PulsePalette.NeoSurface,
         ) {
             Text(
                 "Viewers · ${viewers.size}",

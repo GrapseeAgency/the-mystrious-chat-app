@@ -249,7 +249,23 @@ fun SettingsRootScreen(
                                     .padding(horizontal = 14.dp, vertical = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(def.icon, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(20.dp))
+                                // R35 Neo - section icon tile: the accent signal
+                                // sits on a 12%-alpha accent tile (the web's
+                                // color-mix accent 12% row tiles), not a bare icon.
+                                Box(
+                                    Modifier
+                                        .size(32.dp)
+                                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        def.icon,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(def.label, fontSize = 15.sp, fontWeight = FontWeight.Medium)

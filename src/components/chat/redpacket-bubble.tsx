@@ -17,6 +17,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Crown, LoaderCircle, Users } from 'lucide-react'
+import { PulseGift } from '@/components/ui/icons'
 import { toast } from 'sonner'
 import { apiJson, jsonBody } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
@@ -148,8 +149,8 @@ export default function RedPacketBubble({
         aria-label="Red packet"
         className="glassSurface flex w-56 items-center gap-3 rounded-3xl px-4 py-3.5"
       >
-        <span className="text-2xl opacity-40" aria-hidden>
-          🧧
+        <span className="opacity-40" aria-hidden>
+          <PulseGift className="size-6" />
         </span>
         <p className="text-[12.5px] font-medium text-zinc-500">Red packet unavailable</p>
       </div>
@@ -212,7 +213,7 @@ export default function RedPacketBubble({
                 {grabbing || isLoading ? (
                   <LoaderCircle className="size-6 animate-spin text-white/90" />
                 ) : (
-                  <span className="text-4xl drop-shadow-sm">🧧</span>
+                  <PulseGift className="size-8 text-white drop-shadow-sm" />
                 )}
               </motion.span>
             )}

@@ -100,6 +100,9 @@ struct SettingsView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        // R17 Neo — sheets at 28pt (web sheet radius parity; iOS 16.4+ API
+        // under the iOS 17 deployment floor).
+        .presentationCornerRadius(28)
         .sheet(isPresented: $blockedOpen) {
             BlockedListView(session: session)
         }
@@ -183,10 +186,7 @@ struct SettingsView: View {
             // User ID — UIPasteboard copy with an inline confirmation
             // (the app toast lives under the sheet, so it shows here).
             HStack(spacing: 10) {
-                Image(systemName: "number")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22)
+                neoTileIcon("number")
                 VStack(alignment: .leading, spacing: 1) {
                     Text("User ID")
                         .font(.system(size: 14, weight: .medium))
@@ -648,10 +648,7 @@ struct SettingsView: View {
                 PulsePushNotifications.activate()
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22)
+                    neoTileIcon("antenna.radiowaves.left.and.right")
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 6) {
                             Text("Remote push")
@@ -950,10 +947,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var footprintSection: some View {
         HStack(spacing: 10) {
-            Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+            neoTileIcon("chart.bar.xaxis")
             VStack(alignment: .leading, spacing: 0) {
                 Text("Your footprint")
                     .font(.system(size: 14.5, weight: .semibold))
@@ -1098,8 +1092,9 @@ struct SettingsView: View {
             // R14 5-b — the identity card (web AboutSection glass-deep card:
             // gradient logo tile + wordmark + tagline + version badge).
             HStack(spacing: 12) {
-                Text("✨")
+                Image(systemName: "sparkles")
                     .font(.system(size: 20))
+                    .foregroundStyle(PulseTheme.onAccent)
                     .frame(width: 44, height: 44)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -1194,10 +1189,15 @@ struct SettingsView: View {
         @ViewBuilder content: () -> Content,
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: icon)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(PulseTheme.accent)
-                .textCase(.uppercase)
+            // R17 Neo — accent-tinted section tile (web IconTile: accent 12%
+            // rounded square + accent glyph) beside the section label.
+            HStack(spacing: 8) {
+                neoTileIcon(icon)
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(PulseTheme.accent)
+                    .textCase(.uppercase)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 content()
             }
@@ -1217,22 +1217,35 @@ struct SettingsView: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// R17 Neo — accent-tinted row icon tile (web IconTile: accent 12%
+    /// rounded square, accent glyph) shared by every row primitive.
+    private func neoTileIcon(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(PulseTheme.accent)
+            .frame(width: 26, height: 26)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PulseTheme.accent.opacity(0.12)))
+    }
+
     private var cardPanel: some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(.ultraThinMaterial)
+        // R17 Neo — cards 24pt (was 18), carbon surface + white-8% hairline
+        // in dark; light keeps the frosted material.
+        RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(systemScheme == .dark
+                ? AnyShapeStyle(PulseTheme.neoSurface)
+                : AnyShapeStyle(.ultraThinMaterial))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(systemScheme == .dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.7), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(systemScheme == .dark
+                        ? PulseTheme.neoHairline
+                        : PulseTheme.zinc(200).opacity(0.7), lineWidth: 1),
             )
             .shadow(color: .black.opacity(0.08), radius: 12, y: 5)
     }
 
     private func settingsRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+            neoTileIcon(icon)
             Text(label)
                 .font(.system(size: 14.5, weight: .medium))
                 .foregroundStyle(PulseTheme.titleOnPanel)
@@ -1253,10 +1266,7 @@ struct SettingsView: View {
     /// used inside buttons so the whole row stays tappable.
     private func settingsLinkRow(icon: String, label: String, caption: String, value: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+            neoTileIcon(icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(label)
                     .font(.system(size: 14.5, weight: .medium))
@@ -1288,10 +1298,7 @@ struct SettingsView: View {
         onChange: @escaping (Bool) -> Void,
     ) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+            neoTileIcon(icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 14.5, weight: .medium))
@@ -1318,10 +1325,7 @@ struct SettingsView: View {
 
     private func actionRow(icon: String, title: String, caption: String, actionLabel: String, disabled: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+            neoTileIcon(icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 14.5, weight: .medium))

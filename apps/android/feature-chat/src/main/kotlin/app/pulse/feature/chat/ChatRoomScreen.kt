@@ -2410,7 +2410,7 @@ private fun PinnedBanner(pin: Message, onJump: () -> Unit, onOpenAll: () -> Unit
                     maxLines = 1,
                 )
                 Text(
-                    pin.body.ifBlank { if (pin.imagePath != null) "📷 Photo" else "Document — ${pin.fileName ?: "file"}" },
+                    pin.body.ifBlank { if (pin.imagePath != null) "Photo" else "Document — ${pin.fileName ?: "file"}" },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -2514,7 +2514,7 @@ private fun RoomSearchBar(
                                 }
                                 Text(
                                     snippetAnnotated(
-                                        hit.body.ifBlank { if (hit.imagePath != null) "📷 Photo" else "Document — ${hit.fileName ?: "file"}" },
+                                        hit.body.ifBlank { if (hit.imagePath != null) "Photo" else "Document — ${hit.fileName ?: "file"}" },
                                         query,
                                     ),
                                     fontSize = 13.sp,
@@ -4019,7 +4019,7 @@ internal fun Bubble(
     }
 }
 
-/** Soft-delete tombstone — "🚫 Message deleted" (spec §1.2), no actions. */
+/** Soft-delete tombstone: plain italic "Message deleted" (web parity), no actions. */
 @Composable
 internal fun TombstoneBubble() {
     val shape = RoundedCornerShape(14.dp)
@@ -4033,8 +4033,10 @@ internal fun TombstoneBubble() {
                 .padding(horizontal = 13.dp, vertical = 9.dp),
         ) {
             Text(
-                "\uD83D\uDEAB Message deleted",
-                style = MaterialTheme.typography.bodyMedium,
+                "Message deleted",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

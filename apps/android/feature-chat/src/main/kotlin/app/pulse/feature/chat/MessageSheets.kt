@@ -548,7 +548,7 @@ internal fun PinsDialog(
                                     color = PulsePalette.Emerald,
                                 )
                                 Text(
-                                    pin.body.ifBlank { if (pin.imagePath != null) "📷 Photo" else "Document — ${pin.fileName ?: "file"}" },
+                                    pin.body.ifBlank { if (pin.imagePath != null) "Photo" else "Document — ${pin.fileName ?: "file"}" },
                                     fontSize = 13.sp,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
@@ -567,7 +567,7 @@ internal fun PinsDialog(
     }
 }
 
-/** Delete confirmation — soft-delete tombstones render "🚫 Message deleted". */
+/** Delete confirmation: soft-delete tombstones render "Message deleted". */
 @Composable
 internal fun DeleteMessageDialog(
     message: Message,

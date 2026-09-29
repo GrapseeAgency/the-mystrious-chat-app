@@ -56,7 +56,7 @@ Typing 气泡已有完整动画。应用吸顶日期芯片：
 
 本轮 cron 审查任务完成。交付摘要如下：
 
-📋 Round 11 交付报告
+ Round 11 交付报告
 ① 状态评估（agent-browser QA）
 服务全绿：app 200 / socket 健康 / dev.log 无错误 / lint 0 / tsc 0
 QA 全过：深链登录 → 会话列表 → 消息面板 → 反应 E2E（创建/toggle/跨账号传播）→ SW 在线
@@ -64,11 +64,11 @@ QA 全过：深链登录 → 会话列表 → 消息面板 → 反应 E2E（创�
 ② 本轮新增（两条强制项均落实）
 交付
 细节
-💬 草稿预览（补全既有草稿库）	会话列表琥珀色 ✏️ Draft: 预览，typing > draft > 消息预览优先级，草稿文本可被搜索命中
-📥 离线发送队列（全新）	localStorage 持久 FIFO 发件箱 → 离线时琥珀 pill 提示 + 气泡带 CloudOff 图标/内嵌白环 → 联网/切回前台/重载挂载/20s 自愈四路自动冲刷，严格保序，成功 toast + 触觉反馈
-✨ 吸顶日期芯片（样式强制项）	磨砂玻璃 "Today" 胶囊悬浮于滚动气泡之上（WhatsApp 式）
+ 草稿预览（补全既有草稿库）	会话列表琥珀色  Draft: 预览，typing > draft > 消息预览优先级，草稿文本可被搜索命中
+ 离线发送队列（全新）	localStorage 持久 FIFO 发件箱 → 离线时琥珀 pill 提示 + 气泡带 CloudOff 图标/内嵌白环 → 联网/切回前台/重载挂载/20s 自愈四路自动冲刷，严格保序，成功 toast + 触觉反馈
+ 吸顶日期芯片（样式强制项）	磨砂玻璃 "Today" 胶囊悬浮于滚动气泡之上（WhatsApp 式）
 
-E2E 验证：草稿写入→预览→恢复→清除闭环 ✓；离线排队→在线冲刷→DB 落库 ✓；排队中刷新页面仍自动补发 ✓。测试数据已清理，fixtures 未动。
+E2E 验证：草稿写入→预览→恢复→清除闭环 ；离线排队→在线冲刷→DB 落库 ；排队中刷新页面仍自动补发 。测试数据已清理，fixtures 未动。
 
 ③ 风险与下轮建议
 队列消息暂不可长按操作（与 pending 语义一致）；图片/语音离线排队需先持久化 dataURL（列入候选）
@@ -224,7 +224,7 @@ Now handleKeyDown (Escape cancels edit; Enter picks mention before sending):
 
 Now the JSX batch — pinned banner, edit bar, mention popup, send-button state:
 
-⚠️ latestPinned 引用了后面才声明的 pinnedQuery（TDZ 错误）。把计算移到 pinnedQuery 之后：
+ latestPinned 引用了后面才声明的 pinnedQuery（TDZ 错误）。把计算移到 pinnedQuery 之后：
 
 现在插入 Pinned messages sheet。定位 reaction details Drawer 位置：
 
@@ -258,7 +258,7 @@ Pin 全链路闭环。现在测 @mention 自动补全 + 富文本发送：
 
 全部渲染到位。点击 spoiler 验证揭示动画：
 
-编辑气泡渲染精美（Really 粗体 + 斜体 + "edited ✓✓" 标签）。切到 Bob 会话验证跨端：mention 高亮 + 实时编辑/置顶传播：
+编辑气泡渲染精美（Really 粗体 + 斜体 + "edited " 标签）。切到 Bob 会话验证跨端：mention 高亮 + 实时编辑/置顶传播：
 
 Bob 视角琥珀色 mention 高亮 + 芯片确认。测实时编辑/置顶传播（curl 以 Alice 身份操作，Bob 浏览器在线）：
 
@@ -272,24 +272,24 @@ Bob 视角琥珀色 mention 高亮 + 芯片确认。测实时编辑/置顶传播
 
 全部通过。写入 worklog round-12 交接：
 
-✅ Round 12 delivered — modern messaging parity batch
+ Round 12 delivered — modern messaging parity batch
 Studied the interaction patterns across the apps in your list (Discord/Slack/WhatsApp/Telegram/Signal/Element/Line/Kakao…) and shipped the four most universal "modern chat" features into Pulse — all real, DB-backed, zero mocks:
 
-🆕 What you can do now (try it in the Preview Panel)
+ What you can do now (try it in the Preview Panel)
 Feature
 Inspired by
 Try it
-✏️ Message editing	Telegram/Discord/Slack	Tap your message → Edit message → change text → send-button becomes ✓. Bubble shows italic "edited" + syncs live to everyone
-📌 Pinned messages	WhatsApp/Telegram	Tap any message → Pin. Frosted banner appears under the header → tap for the pinned list → Jump (flash-scroll) or Unpin. Any member can pin
-🎨 Rich text	WhatsApp/Telegram/Discord	*bold* _italic_ ~strike~ __underline__ `code` ```code block``` and ||spoiler|| — spoilers render blurred and tap to reveal with haptic feedback
+ Message editing	Telegram/Discord/Slack	Tap your message → Edit message → change text → send-button becomes . Bubble shows italic "edited" + syncs live to everyone
+ Pinned messages	WhatsApp/Telegram	Tap any message → Pin. Frosted banner appears under the header → tap for the pinned list → Jump (flash-scroll) or Unpin. Any member can pin
+ Rich text	WhatsApp/Telegram/Discord	*bold* _italic_ ~strike~ __underline__ `code` ```code block``` and ||spoiler|| — spoilers render blurred and tap to reveal with haptic feedback
 @ Mentions	Slack/Discord	Type @Bo in a chat → autocomplete popup → pick → emerald chip in the bubble. If someone mentions you, your bubble gets an amber attention ring
 
-🔧 Under the hood (all verified)
+ Under the hood (all verified)
 Schema: editedAt/pinnedAt/pinnedBy migration pushed; 3 API routes curl-QA'd including all 403/400 guards
 Realtime: message:edited + message:pinned socket relays — Bob's session received Alice's edits/pins in ~2s live
 Bug caught by E2E: pin events didn't refresh the banner query → fixed with cache invalidation, re-verified with instrumented polling ([true,true,true,false,false,false])
 Gates: lint 0 · tsc 0 · app 200 · socket 200 · dev.log clean · test data cleaned, fixtures restored
-📋 Next-round candidates (logged in worklog)
+ Next-round candidates (logged in worklog)
 AI assistant bot (real LLM replies) → link previews → message translation → chat folder tabs → disappearing messages → view-once media
 
 The worklog at /home/z/my-project/worklog.md has the full three-section handover with implementation notes for the next session.
@@ -299,7 +299,7 @@ Text
 Pasted Content_1787823145011.txt
 TXT
 51.2 KB
-🎮 1. Community & Spatial Ecosystems001. DiscordBeyond Chat: Operates as a persistent virtual community infrastructure. It features programmatic bot webhooks, robust WebRTC voice switching with zero-latency channel hopping, integrated rich-presence API gaming overlays, and native stage channels for broad broadcast-style audience interactions.002. SlackBeyond Chat: Serves as a corporate automation hub. It utilizes custom-built structural apps, automated multi-step workflows, enterprise canvas documents embedded within channels, Huddles with collaborative screen drawing, and secure multi-organization enterprise pipelines via Slack Connect.017. TwitchBeyond Chat: Operates as a live crowd-control panel. It features programmatic chat integrations that let viewers trigger video streams, control real-world smart lights, play community mini-games, and drive micro-transaction tipping mechanics directly from text commands.029. GuildedBeyond Chat: Built as an structured gaming organizational engine. It features native tournament bracket management tools, advanced shared reservation calendars, nested documentation wikis, and structured role queues designed explicitly for esports teams.030. TeamSpeakBeyond Chat: Provides low-level, high-performance tactical audio infrastructure. It runs on isolated self-hosted server frameworks featuring military-grade multi-channel whisper lists, cross-channel communication pipelines, and 3D directional positional audio.031. MumbleBeyond Chat: An open-source, ultra-low-latency positional audio architecture. Its code structure supports high-performance directional acoustic rendering for intense competitive gaming, running on zero-tracking, private server frameworks.032. Steam ChatBeyond Chat: Functions as a native PC gaming meta-layer. It syncs directly with gaming hardware configurations, letting users join active server sessions instantly, compare hardware performance, and stream game video feeds to friends without leaving the network.034. VRChatBeyond Chat: A 3D spatial metaverse workspace. It replaces classic text boxes with full-body spatial trackers, customizable avatar identity scripts, and community-programmed interactive worlds with operational physics.035. Rec RoomBeyond Chat: A gamified spatial sandbox engine. It utilizes visual scripting nodes to let users build operational multi-player video games, custom rooms, and structural environments entirely from inside a live chat space.086. Gather.townBeyond Chat: Provides 2D proximity-based digital office layouts. It implements proximity video and audio triggers that mimic physical walking dynamics, letting remote workers seamlessly gather at virtual desks, whiteboards, or break rooms.087. KumospaceBeyond Chat: A browser-hosted spatial networking event platform. It handles custom-designed event floors featuring fluid spatial audio zones, multi-screen video broadcasts, and custom functional applications embedded directly into virtual furniture.088. TopiaBeyond Chat: A artistic, customizable virtual world landscape generator. It provides community worlds featuring custom canvas paintings, hidden spatial music links, and decentralized interactive environments for massive global web festivals.089. SpatialBeyond Chat: A high-definition 3D web showcase and art gallery network. It supports custom web assets, immersive spatial commerce storefronts, and cross-platform VR gallery events for creators and brands.🌐 2. Regional & Hyper-App Hubs003. WhatsAppBeyond Chat: Functions as a global transactional operating system. It handles native peer-to-peer payment rails, secure conversational banking protocols, complete corporate catalog browsing, automated Meta AI assistant integration, and verified cloud business messaging.004. TelegramBeyond Chat: Acts as an execution framework for decentralized Mini Apps. It supports responsive web applications launched inside chats, massive programmatic distribution channels, integrated Toncoin crypto-wallets, custom trading bots, and large-scale digital distribution nodes.011. WeChatBeyond Chat: The ultimate "everything app" digital environment. It functions as a complete lifestyle suite combining government documentation, digital payments via WeChat Pay, ride-hailing tools, food delivery frameworks, and lightweight internal mini-programs.012. LINEBeyond Chat: An East Asian lifestyle infrastructure application. It provides built-in digital banking lines, integrated insurance purchases, telemedicine doctor consultations, continuous news streams, and an expansive independent creator sticker economy.013. KakaoTalkBeyond Chat: A South Korean digital lifestyle anchor. It connects directly with Kakao Taxi transportation infrastructure, Kakao Pay monetary transfers, localized gift-delivery systems, custom avatar identities, and webtoon platforms.🔒 3. Cryptographic, Private & Open-Source Networks005. SignalBeyond Chat: The definitive baseline for non-profit cryptographic security. It features peer-reviewed Signal Protocol end-to-end encryption, zero metadata retention policies, sealed-sender routing frameworks, and local hidden pin profiles.006. ElementBeyond Chat: A structural client for decentralized cross-server bridging. It utilizes the open Matrix protocol to bridge separate external communication servers (like Slack or Discord) into a singular, unified platform.009. ThreemaBeyond Chat: An anonymous, non-identifiable infrastructure workspace. It generates random unique user IDs without requiring phone numbers or email links, keeping metadata completely insulated within strict Swiss privacy laws.010. ViberBeyond Chat: A global communication bridge featuring Rakuten retail integrations. It supports international VOIP landline routing, corporate carousel shopping cards, and hidden, self-destructing text vaults.014. SessionBeyond Chat: A metadata-free onion-routing chat space. It routes data through user-operated node clusters without using a central server, ensuring communication tracks leave no digital fingerprint.015. WickrBeyond Chat: A highly controlled corporate shredding environment. It utilizes ephemeral chat windows featuring hardware-level data destruction protocols, purpose-built for tactical military and intelligence teams.016. MatrixBeyond Chat: An open, standard decentralized transport protocol. It allows separate communication servers across the globe to run secure, cross-platform real-time data syncs without relying on corporate silos.051. StatusBeyond Chat: A web3 operating framework. It combines a secure decentralized chat client with a native Ethereum wallet and an un-censorable web3 browser to run smart contracts directly from inside individual chat interfaces.052. Status IMBeyond Chat: A secure smart-client built on top of peer-to-peer routing layers, ensuring messages bypass traditional corporate DNS tracking entirely.053. Status NetworkBeyond Chat: A distributed social communication protocol layer designed to keep digital identity data entirely under user ownership across different decentralized apps.054. Session MessagingBeyond Chat: An advanced variant of the Session protocol that actively masks source and destination IP addresses using an integrated decentralized crypto incentive model.055. SimpleX ChatBeyond Chat: A radical network architecture that eliminates all user identifiers. It replaces user accounts with directional, single-use communication queues, making network mapping mathematically impossible.056. BriarBeyond Chat: A resilient mesh network for crisis communication. It works offline by bouncing encrypted text directly via Bluetooth and Wi-Fi networks between physical mobile devices in proximity.057. JamiBeyond Chat: A direct peer-to-peer distributed video-calling network. It cuts out central relays by using a Distributed Hash Table (DHT) to connect calling parties directly, machine-to-machine.058. ToxBeyond Chat: A completely distributed, ad-free instant messaging infrastructure. It functions over a peer-to-peer network layer, preventing centralized corporate or government tracking.059. WireBeyond Chat: A sovereign corporate collaboration tool. It allows companies to run independent server deployments with advanced end-to-end encrypted file sharing and voice processing.060. DustBeyond Chat: A highly real-time, forensic-resistant messaging application. It prevents screenshots, never records history to permanent storage, and shreds data on receivers' screens instantly.061. KeybaseBeyond Chat: Cryptographic key management wrapped inside a functional team chat. It provides verified cryptographic proof linking developer identities on GitHub and Twitter directly to secure cloud storage files.🏢 4. Corporate Workflow & Enterprise Frameworks018. Microsoft TeamsBeyond Chat: An absolute hub for enterprise business management. It features deep Microsoft 365 cloud synchronization, automated meeting transcriptions, real-time live video caption translation, and secure enterprise compliance tracking.019. Google ChatBeyond Chat: A context-aware workspace built into Google Cloud. It links directly with live Docs, Sheets, and Slides, offering automated spaces with smart task delegation pipelines.020. ZoomBeyond Chat: An advanced video broadcasting environment. It includes unified workspace chat dashboards, cloud phone system emulation, automated generative summary modules, and interactive digital whiteboard arrays.021. WebexBeyond Chat: A highly secure corporate conference ecosystem. It features spatial video layouts, AI background noise removal profiles, real-time translated captioning, and enterprise data compliance tools.022. ChantyBeyond Chat: A task-centric corporate messaging workflow. It transforms individual chat responses directly into assigned project management cards via an integrated kanban system.023. FlockBeyond Chat: A velocity-focused team workspace tool. It includes native collaborative checklist modules, built-in polling applications, and manual code snippet management spaces.024. RyverBeyond Chat: An integrated platform combining corporate communication with task automation. It eliminates the division between chat and action items by embedding a task-board layout inside channel sidebars.025. MattermostBeyond Chat: An open-source workspace built for technical operations teams. It integrates secure playbook automation, step-by-step incident response logs, and direct developer tool pipelines.026. Rocket.ChatBeyond Chat: A highly customizable omnichannel customer interaction manager. It aggregates live support requests from multiple sources into a single open-source developer framework.027. ZulipBeyond Chat: A uniquely structured, thread-focused email/chat hybrid tool. It implements structured topic headers inside open streams, allowing teams to review distinct conversation contexts at any time.028. FumbleBeyond Chat: A project-matching engine built specifically for computer science students. It bridges personal chat profiles with active code repositories to streamline student collaboration.033. SkypeBeyond Chat: A veteran telecommunications system. It provides traditional telecom system bridges, allowing users to call physical global landlines via digital cloud numbers.062. SpikeBeyond Chat: A conversational email transformation layer. It strips out corporate headers and signatures, converting standard email inboxes into real-time interactive chat feeds.063. MissiveBeyond Chat: A shared inbox workspace for operational teams. It lets coworkers write and edit outbound corporate emails or social messages collectively inside a live side-chat window.064. FrontBeyond Chat: A centralized hub for customer operations. It pulls varied external communication lines directly into internal chat streams for efficient, collaborative team handling.🤖 5. B2B, Conversational AI & CRM Chat Systems008. BeeperBeyond Chat: A universal matrix-based chat router. It consolidates major standalone applications (like WhatsApp, Signal, and iMessage) into a unified smart inbox.065. IntercomBeyond Chat: A customer retention engine driven by autonomous AI agents. It employs specialized support bots to resolve user issues directly, using dynamic website event data.066. DriftBeyond Chat: A data-driven revenue acceleration platform. It qualifies sales prospects automatically using site activity tracking, instantly triggering target sales representative chats.067. CrispBeyond Chat: A clean, centralized customer support widget. It includes co-browsing features that let support agents see and interact with a user's screen in real time during a chat session.068. TidioBeyond Chat: A modular chat solution for boutique e-commerce shops. It matches automated bot paths with Shopify backend systems to handle shipping details and track order logs.069. Zendesk ChatBeyond Chat: An enterprise-scale ticketing suite. It translates simple web chat sessions into complete support tickets embedded within large corporate databases.070. HubSpot ChatBeyond Chat: A direct marketing automation bridge. It feeds conversational data directly into enterprise CRM databases to streamline pipeline management.071. ManyChatBeyond Chat: An automation architecture for social media platforms. It sets up conditional response trees to convert social media video comments directly into sales leads.072. ChatfuelBeyond Chat: A dedicated platform for Meta business profiles. It creates logic trees to answer customer questions and process payments within Facebook and Instagram environments.073. MobileMonkeyBeyond Chat: An inbound social-funnel automated responder. It sends links, handles promo distribution, and qualifies leads from social comments.074. LandbotBeyond Chat: A web interface builder focused on conversational logic. It replaces classic static contact forms with fully interactive, rich-media chat experiences.075. TarsBeyond Chat: An conversion-optimization landing page chatbot system. It optimizes advertising traffic by replacing marketing pages with direct, conversational chat tunnels.076. Typeform ChatBeyond Chat: An evolution of standard surveys. It reformats standard forms into interactive, friendly question-and-answer steps.077. JostleBeyond Chat: A digital employee intranet workspace. It connects team messaging directly with company milestone updates, structured team charts, and workplace asset storage.078. WorkplaceBeyond Chat: Meta's enterprise-tailored organizational system. It formats corporate announcements like a private news feed, backed by interactive video broadcasting hubs.079. Basecamp ChatBeyond Chat: An element of a broader project ecosystem. It keeps casual team discussion cleanly tied to specific target milestones, assignments, and check-in schedules.080. ClickUp ChatBeyond Chat: An integrated productivity workspace tool. It links channel messages directly to active engineering tasks and corporate documentation boards.081. Asana ChatBeyond Chat: A workflow-centric communication layer. It ties project updates directly to multi-tier task timelines and goal-tracking trackers.082. Monday ChatBeyond Chat: A data-focused corporate dashboard chat tool. It updates project management board columns automatically based on chat thread status.083. Notion ChatBeyond Chat: Wiki documentation mixed with fast collaboration. It embeds live discussion directly inside shared operational wiki pages and database tables.084. Miro ChatBeyond Chat: Real-time feedback overlaying a large infinite whiteboard. It allows remote teams to map processes visually while discussing changes.085. Figma ChatBeyond Chat: Collaborative discussion built into UI design canvas boards. It enables designers to prototype layouts and chat inside the active canvas workspace.📸 6. Social Media, Ephemeral & Content-Driven Hubs036. SnapchatBeyond Chat: An augmented reality photo ecosystem. It uses custom hardware map systems, localized geo-filters, and complex real-time AR face tracking to drive visual interaction.037. Instagram DMBeyond Chat: A direct pipeline for cultural trends. It links video sharing, public group spaces, creator subscription tiers, and direct interactive story feedback loops.038. TikTok InboxBeyond Chat: A highly algorithmic media interaction loop. It matches trending music snippets and video responses into active text threads.039. X DMsBeyond Chat: A global communication network for public figures. It links secure audio-calling paths directly to user profiles, verified verification tiers, and public posts.040. ThreadsBeyond Chat: An open social experiment moving toward the Fediverse. It integrates decentralization options, letting users share text across open networks using the ActivityPub protocol.041. iMessageBeyond Chat: Apple's native hardware ecosystem chat. It handles rich-text application widgets, games, end-to-end user confirmation tools, and satellite-based off-grid texting.042. Google MessagesBeyond Chat: Google's carrier-upgrade messaging application. It relies on modern RCS data pipelines to support group encryption, high-definition video sharing, and automated business lookups.043. RCS ChatBeyond Chat: The modern telecom alternative to legacy SMS text lines. It supports modern web features like typing tags, high-quality media sharing, and verified commercial accounts natively on cellular networks.044. VoxerBeyond Chat: A direct live-streaming walkie-talkie platform. It streams voice recordings live as they are spoken, letting recipients listen in real time or catch up via recording queues.045. ZelloBeyond Chat: A push-to-talk system built for field logistics teams. It mimics emergency radio channels on standard mobile phones, providing high-volume voice links for dispatchers.046. Marco PoloBeyond Chat: A asynchronous video-note communication diary. It combines the face-to-face feeling of video calls with the flexibility of text messaging for family communication.047. ClubhouseBeyond Chat: A pioneering platform for drop-in audio communities. It functions like a live interactive podcast network where listeners can raise their hands to join the speaker panel.048. Twitter SpacesBeyond Chat: A real-time audio broadcast layer connected to X. It allows public figures to host live conversations linked directly to trending news discussions.049. BeRealBeyond Chat: A timed social update platform. It prompts all users simultaneously to capture a dual-camera photo window, emphasizing unedited, realistic daily updates.050. Bere.alBeyond Chat: An alternative version of the instant-photo daily update model, focusing on prompt-driven visual updates to capture authentic friend interactions.093. PlatoBeyond Chat: A combined social lounge and online arcade. It integrates classic multiplayer games directly inside active chat rooms without external links.094. HagoBeyond Chat: A global gaming lounge platform. It combines group audio channels, 3D avatar stages, and fast casual games into a single social app.095. YuboBeyond Chat: A live-streaming platform focused on youth networking. It uses swiping mechanics to discover active group video streams based on shared interests.096. LeketBeyond Chat: A specialized community network focused on food redistribution and volunteer coordination. It coordinates volunteer picking schedules, excess food tracking, and community logistics hubs.097. AminoBeyond Chat: A network of niche interest fandom forums. It allows community leads to customize their local chat spaces with distinct designs, quizzes, and wiki resources.098. BandBeyond Chat: A group management platform tailored for sports teams and school clubs. It combines chat channels with shared attendance trackers, voting polls, and storage options.099. MeWeBeyond Chat: A social network centered on absolute user privacy. It ditches targeted data algorithms and tracking cookies in favor of a subscription-funded model.100. NextdoorBeyond Chat: A localized neighborhood hub. It uses physical address validation to connect users with real-world local safety alerts, community items for sale, and nearby recommendations.🎮 7. Immersive Virtual Worlds & Meta-Environments090. Roblox ChatBeyond Chat: An immersive communication engine inside user-created 3D game engines. It fields dynamic filters that screen out unsafe content for kids, keeping communication tied to in-game actions.091. Minecraft ChatBeyond Chat: A text command panel controlling a virtual voxel world. It allows players to execute server scripts, coordinate resource gathering, and run complex mechanical systems via text entry.092. Among Us ChatBeyond Chat: A social deduction communication tool. It uses quick-text wheel selectors and strict discussion timers to let players solve deduction games under pressure.
+ 1. Community & Spatial Ecosystems001. DiscordBeyond Chat: Operates as a persistent virtual community infrastructure. It features programmatic bot webhooks, robust WebRTC voice switching with zero-latency channel hopping, integrated rich-presence API gaming overlays, and native stage channels for broad broadcast-style audience interactions.002. SlackBeyond Chat: Serves as a corporate automation hub. It utilizes custom-built structural apps, automated multi-step workflows, enterprise canvas documents embedded within channels, Huddles with collaborative screen drawing, and secure multi-organization enterprise pipelines via Slack Connect.017. TwitchBeyond Chat: Operates as a live crowd-control panel. It features programmatic chat integrations that let viewers trigger video streams, control real-world smart lights, play community mini-games, and drive micro-transaction tipping mechanics directly from text commands.029. GuildedBeyond Chat: Built as an structured gaming organizational engine. It features native tournament bracket management tools, advanced shared reservation calendars, nested documentation wikis, and structured role queues designed explicitly for esports teams.030. TeamSpeakBeyond Chat: Provides low-level, high-performance tactical audio infrastructure. It runs on isolated self-hosted server frameworks featuring military-grade multi-channel whisper lists, cross-channel communication pipelines, and 3D directional positional audio.031. MumbleBeyond Chat: An open-source, ultra-low-latency positional audio architecture. Its code structure supports high-performance directional acoustic rendering for intense competitive gaming, running on zero-tracking, private server frameworks.032. Steam ChatBeyond Chat: Functions as a native PC gaming meta-layer. It syncs directly with gaming hardware configurations, letting users join active server sessions instantly, compare hardware performance, and stream game video feeds to friends without leaving the network.034. VRChatBeyond Chat: A 3D spatial metaverse workspace. It replaces classic text boxes with full-body spatial trackers, customizable avatar identity scripts, and community-programmed interactive worlds with operational physics.035. Rec RoomBeyond Chat: A gamified spatial sandbox engine. It utilizes visual scripting nodes to let users build operational multi-player video games, custom rooms, and structural environments entirely from inside a live chat space.086. Gather.townBeyond Chat: Provides 2D proximity-based digital office layouts. It implements proximity video and audio triggers that mimic physical walking dynamics, letting remote workers seamlessly gather at virtual desks, whiteboards, or break rooms.087. KumospaceBeyond Chat: A browser-hosted spatial networking event platform. It handles custom-designed event floors featuring fluid spatial audio zones, multi-screen video broadcasts, and custom functional applications embedded directly into virtual furniture.088. TopiaBeyond Chat: A artistic, customizable virtual world landscape generator. It provides community worlds featuring custom canvas paintings, hidden spatial music links, and decentralized interactive environments for massive global web festivals.089. SpatialBeyond Chat: A high-definition 3D web showcase and art gallery network. It supports custom web assets, immersive spatial commerce storefronts, and cross-platform VR gallery events for creators and brands. 2. Regional & Hyper-App Hubs003. WhatsAppBeyond Chat: Functions as a global transactional operating system. It handles native peer-to-peer payment rails, secure conversational banking protocols, complete corporate catalog browsing, automated Meta AI assistant integration, and verified cloud business messaging.004. TelegramBeyond Chat: Acts as an execution framework for decentralized Mini Apps. It supports responsive web applications launched inside chats, massive programmatic distribution channels, integrated Toncoin crypto-wallets, custom trading bots, and large-scale digital distribution nodes.011. WeChatBeyond Chat: The ultimate "everything app" digital environment. It functions as a complete lifestyle suite combining government documentation, digital payments via WeChat Pay, ride-hailing tools, food delivery frameworks, and lightweight internal mini-programs.012. LINEBeyond Chat: An East Asian lifestyle infrastructure application. It provides built-in digital banking lines, integrated insurance purchases, telemedicine doctor consultations, continuous news streams, and an expansive independent creator sticker economy.013. KakaoTalkBeyond Chat: A South Korean digital lifestyle anchor. It connects directly with Kakao Taxi transportation infrastructure, Kakao Pay monetary transfers, localized gift-delivery systems, custom avatar identities, and webtoon platforms. 3. Cryptographic, Private & Open-Source Networks005. SignalBeyond Chat: The definitive baseline for non-profit cryptographic security. It features peer-reviewed Signal Protocol end-to-end encryption, zero metadata retention policies, sealed-sender routing frameworks, and local hidden pin profiles.006. ElementBeyond Chat: A structural client for decentralized cross-server bridging. It utilizes the open Matrix protocol to bridge separate external communication servers (like Slack or Discord) into a singular, unified platform.009. ThreemaBeyond Chat: An anonymous, non-identifiable infrastructure workspace. It generates random unique user IDs without requiring phone numbers or email links, keeping metadata completely insulated within strict Swiss privacy laws.010. ViberBeyond Chat: A global communication bridge featuring Rakuten retail integrations. It supports international VOIP landline routing, corporate carousel shopping cards, and hidden, self-destructing text vaults.014. SessionBeyond Chat: A metadata-free onion-routing chat space. It routes data through user-operated node clusters without using a central server, ensuring communication tracks leave no digital fingerprint.015. WickrBeyond Chat: A highly controlled corporate shredding environment. It utilizes ephemeral chat windows featuring hardware-level data destruction protocols, purpose-built for tactical military and intelligence teams.016. MatrixBeyond Chat: An open, standard decentralized transport protocol. It allows separate communication servers across the globe to run secure, cross-platform real-time data syncs without relying on corporate silos.051. StatusBeyond Chat: A web3 operating framework. It combines a secure decentralized chat client with a native Ethereum wallet and an un-censorable web3 browser to run smart contracts directly from inside individual chat interfaces.052. Status IMBeyond Chat: A secure smart-client built on top of peer-to-peer routing layers, ensuring messages bypass traditional corporate DNS tracking entirely.053. Status NetworkBeyond Chat: A distributed social communication protocol layer designed to keep digital identity data entirely under user ownership across different decentralized apps.054. Session MessagingBeyond Chat: An advanced variant of the Session protocol that actively masks source and destination IP addresses using an integrated decentralized crypto incentive model.055. SimpleX ChatBeyond Chat: A radical network architecture that eliminates all user identifiers. It replaces user accounts with directional, single-use communication queues, making network mapping mathematically impossible.056. BriarBeyond Chat: A resilient mesh network for crisis communication. It works offline by bouncing encrypted text directly via Bluetooth and Wi-Fi networks between physical mobile devices in proximity.057. JamiBeyond Chat: A direct peer-to-peer distributed video-calling network. It cuts out central relays by using a Distributed Hash Table (DHT) to connect calling parties directly, machine-to-machine.058. ToxBeyond Chat: A completely distributed, ad-free instant messaging infrastructure. It functions over a peer-to-peer network layer, preventing centralized corporate or government tracking.059. WireBeyond Chat: A sovereign corporate collaboration tool. It allows companies to run independent server deployments with advanced end-to-end encrypted file sharing and voice processing.060. DustBeyond Chat: A highly real-time, forensic-resistant messaging application. It prevents screenshots, never records history to permanent storage, and shreds data on receivers' screens instantly.061. KeybaseBeyond Chat: Cryptographic key management wrapped inside a functional team chat. It provides verified cryptographic proof linking developer identities on GitHub and Twitter directly to secure cloud storage files. 4. Corporate Workflow & Enterprise Frameworks018. Microsoft TeamsBeyond Chat: An absolute hub for enterprise business management. It features deep Microsoft 365 cloud synchronization, automated meeting transcriptions, real-time live video caption translation, and secure enterprise compliance tracking.019. Google ChatBeyond Chat: A context-aware workspace built into Google Cloud. It links directly with live Docs, Sheets, and Slides, offering automated spaces with smart task delegation pipelines.020. ZoomBeyond Chat: An advanced video broadcasting environment. It includes unified workspace chat dashboards, cloud phone system emulation, automated generative summary modules, and interactive digital whiteboard arrays.021. WebexBeyond Chat: A highly secure corporate conference ecosystem. It features spatial video layouts, AI background noise removal profiles, real-time translated captioning, and enterprise data compliance tools.022. ChantyBeyond Chat: A task-centric corporate messaging workflow. It transforms individual chat responses directly into assigned project management cards via an integrated kanban system.023. FlockBeyond Chat: A velocity-focused team workspace tool. It includes native collaborative checklist modules, built-in polling applications, and manual code snippet management spaces.024. RyverBeyond Chat: An integrated platform combining corporate communication with task automation. It eliminates the division between chat and action items by embedding a task-board layout inside channel sidebars.025. MattermostBeyond Chat: An open-source workspace built for technical operations teams. It integrates secure playbook automation, step-by-step incident response logs, and direct developer tool pipelines.026. Rocket.ChatBeyond Chat: A highly customizable omnichannel customer interaction manager. It aggregates live support requests from multiple sources into a single open-source developer framework.027. ZulipBeyond Chat: A uniquely structured, thread-focused email/chat hybrid tool. It implements structured topic headers inside open streams, allowing teams to review distinct conversation contexts at any time.028. FumbleBeyond Chat: A project-matching engine built specifically for computer science students. It bridges personal chat profiles with active code repositories to streamline student collaboration.033. SkypeBeyond Chat: A veteran telecommunications system. It provides traditional telecom system bridges, allowing users to call physical global landlines via digital cloud numbers.062. SpikeBeyond Chat: A conversational email transformation layer. It strips out corporate headers and signatures, converting standard email inboxes into real-time interactive chat feeds.063. MissiveBeyond Chat: A shared inbox workspace for operational teams. It lets coworkers write and edit outbound corporate emails or social messages collectively inside a live side-chat window.064. FrontBeyond Chat: A centralized hub for customer operations. It pulls varied external communication lines directly into internal chat streams for efficient, collaborative team handling. 5. B2B, Conversational AI & CRM Chat Systems008. BeeperBeyond Chat: A universal matrix-based chat router. It consolidates major standalone applications (like WhatsApp, Signal, and iMessage) into a unified smart inbox.065. IntercomBeyond Chat: A customer retention engine driven by autonomous AI agents. It employs specialized support bots to resolve user issues directly, using dynamic website event data.066. DriftBeyond Chat: A data-driven revenue acceleration platform. It qualifies sales prospects automatically using site activity tracking, instantly triggering target sales representative chats.067. CrispBeyond Chat: A clean, centralized customer support widget. It includes co-browsing features that let support agents see and interact with a user's screen in real time during a chat session.068. TidioBeyond Chat: A modular chat solution for boutique e-commerce shops. It matches automated bot paths with Shopify backend systems to handle shipping details and track order logs.069. Zendesk ChatBeyond Chat: An enterprise-scale ticketing suite. It translates simple web chat sessions into complete support tickets embedded within large corporate databases.070. HubSpot ChatBeyond Chat: A direct marketing automation bridge. It feeds conversational data directly into enterprise CRM databases to streamline pipeline management.071. ManyChatBeyond Chat: An automation architecture for social media platforms. It sets up conditional response trees to convert social media video comments directly into sales leads.072. ChatfuelBeyond Chat: A dedicated platform for Meta business profiles. It creates logic trees to answer customer questions and process payments within Facebook and Instagram environments.073. MobileMonkeyBeyond Chat: An inbound social-funnel automated responder. It sends links, handles promo distribution, and qualifies leads from social comments.074. LandbotBeyond Chat: A web interface builder focused on conversational logic. It replaces classic static contact forms with fully interactive, rich-media chat experiences.075. TarsBeyond Chat: An conversion-optimization landing page chatbot system. It optimizes advertising traffic by replacing marketing pages with direct, conversational chat tunnels.076. Typeform ChatBeyond Chat: An evolution of standard surveys. It reformats standard forms into interactive, friendly question-and-answer steps.077. JostleBeyond Chat: A digital employee intranet workspace. It connects team messaging directly with company milestone updates, structured team charts, and workplace asset storage.078. WorkplaceBeyond Chat: Meta's enterprise-tailored organizational system. It formats corporate announcements like a private news feed, backed by interactive video broadcasting hubs.079. Basecamp ChatBeyond Chat: An element of a broader project ecosystem. It keeps casual team discussion cleanly tied to specific target milestones, assignments, and check-in schedules.080. ClickUp ChatBeyond Chat: An integrated productivity workspace tool. It links channel messages directly to active engineering tasks and corporate documentation boards.081. Asana ChatBeyond Chat: A workflow-centric communication layer. It ties project updates directly to multi-tier task timelines and goal-tracking trackers.082. Monday ChatBeyond Chat: A data-focused corporate dashboard chat tool. It updates project management board columns automatically based on chat thread status.083. Notion ChatBeyond Chat: Wiki documentation mixed with fast collaboration. It embeds live discussion directly inside shared operational wiki pages and database tables.084. Miro ChatBeyond Chat: Real-time feedback overlaying a large infinite whiteboard. It allows remote teams to map processes visually while discussing changes.085. Figma ChatBeyond Chat: Collaborative discussion built into UI design canvas boards. It enables designers to prototype layouts and chat inside the active canvas workspace. 6. Social Media, Ephemeral & Content-Driven Hubs036. SnapchatBeyond Chat: An augmented reality photo ecosystem. It uses custom hardware map systems, localized geo-filters, and complex real-time AR face tracking to drive visual interaction.037. Instagram DMBeyond Chat: A direct pipeline for cultural trends. It links video sharing, public group spaces, creator subscription tiers, and direct interactive story feedback loops.038. TikTok InboxBeyond Chat: A highly algorithmic media interaction loop. It matches trending music snippets and video responses into active text threads.039. X DMsBeyond Chat: A global communication network for public figures. It links secure audio-calling paths directly to user profiles, verified verification tiers, and public posts.040. ThreadsBeyond Chat: An open social experiment moving toward the Fediverse. It integrates decentralization options, letting users share text across open networks using the ActivityPub protocol.041. iMessageBeyond Chat: Apple's native hardware ecosystem chat. It handles rich-text application widgets, games, end-to-end user confirmation tools, and satellite-based off-grid texting.042. Google MessagesBeyond Chat: Google's carrier-upgrade messaging application. It relies on modern RCS data pipelines to support group encryption, high-definition video sharing, and automated business lookups.043. RCS ChatBeyond Chat: The modern telecom alternative to legacy SMS text lines. It supports modern web features like typing tags, high-quality media sharing, and verified commercial accounts natively on cellular networks.044. VoxerBeyond Chat: A direct live-streaming walkie-talkie platform. It streams voice recordings live as they are spoken, letting recipients listen in real time or catch up via recording queues.045. ZelloBeyond Chat: A push-to-talk system built for field logistics teams. It mimics emergency radio channels on standard mobile phones, providing high-volume voice links for dispatchers.046. Marco PoloBeyond Chat: A asynchronous video-note communication diary. It combines the face-to-face feeling of video calls with the flexibility of text messaging for family communication.047. ClubhouseBeyond Chat: A pioneering platform for drop-in audio communities. It functions like a live interactive podcast network where listeners can raise their hands to join the speaker panel.048. Twitter SpacesBeyond Chat: A real-time audio broadcast layer connected to X. It allows public figures to host live conversations linked directly to trending news discussions.049. BeRealBeyond Chat: A timed social update platform. It prompts all users simultaneously to capture a dual-camera photo window, emphasizing unedited, realistic daily updates.050. Bere.alBeyond Chat: An alternative version of the instant-photo daily update model, focusing on prompt-driven visual updates to capture authentic friend interactions.093. PlatoBeyond Chat: A combined social lounge and online arcade. It integrates classic multiplayer games directly inside active chat rooms without external links.094. HagoBeyond Chat: A global gaming lounge platform. It combines group audio channels, 3D avatar stages, and fast casual games into a single social app.095. YuboBeyond Chat: A live-streaming platform focused on youth networking. It uses swiping mechanics to discover active group video streams based on shared interests.096. LeketBeyond Chat: A specialized community network focused on food redistribution and volunteer coordination. It coordinates volunteer picking schedules, excess food tracking, and community logistics hubs.097. AminoBeyond Chat: A network of niche interest fandom forums. It allows community leads to customize their local chat spaces with distinct designs, quizzes, and wiki resources.098. BandBeyond Chat: A group management platform tailored for sports teams and school clubs. It combines chat channels with shared attendance trackers, voting polls, and storage options.099. MeWeBeyond Chat: A social network centered on absolute user privacy. It ditches targeted data algorithms and tracking cookies in favor of a subscription-funded model.100. NextdoorBeyond Chat: A localized neighborhood hub. It uses physical address validation to connect users with real-world local safety alerts, community items for sale, and nearby recommendations. 7. Immersive Virtual Worlds & Meta-Environments090. Roblox ChatBeyond Chat: An immersive communication engine inside user-created 3D game engines. It fields dynamic filters that screen out unsafe content for kids, keeping communication tied to in-game actions.091. Minecraft ChatBeyond Chat: A text command panel controlling a virtual voxel world. It allows players to execute server scripts, coordinate resource gathering, and run complex mechanical systems via text entry.092. Among Us ChatBeyond Chat: A social deduction communication tool. It uses quick-text wheel selectors and strict discussion timers to let players solve deduction games under pressure.
 
 
 here's the ui... as a txt file as well...
@@ -444,7 +444,7 @@ App inspiration
 Shipped in Pulse
 Slack / Zulip	Threads — one-level thread roots, N replies chip under bubbles, full Thread drawer with its own composer
 Discord / Slack / Band	Live polls — builder sheet (2–6 options), animated % bars, single-choice revote, creator "End", live tallies over socket
-Telegram	Saved messages ⭐ + Profile Library screen with tap-to-jump · Scheduled sends (presets, datetime picker, pending manager, cancel) · Folders chips All/Unread/Groups (persisted)
+Telegram	Saved messages  + Profile Library screen with tap-to-jump · Scheduled sends (presets, datetime picker, pending manager, cancel) · Folders chips All/Unread/Groups (persisted)
 WhatsApp / Signal / Wickr	Disappearing messages — Off/24h/7d/30d setting, expiry stamped at send, hard-purged server-side, pulsing timer icon on bubbles
 Discord / Twitch	Slash commands /me /shrug /tableflip /unflip /roll 2d6 /poll /schedule /help + cheat-sheet dialog
 Snap / WA view-once	View-once photos — blurred gate → tap → lightbox → permanent "Photo opened · gone forever", sender's bubble flips live via socket
@@ -452,7 +452,7 @@ Webex / Teams	LLM translation per message (8 languages, persisted cache, "See tr
 iMessage / Telegram	Link previews — live OG fetch, DB-cached cards pushed over socket
 Discord presence	Custom status (emoji + text) shown in contacts rows & DM headers
 Discord Stage / TG channels	Announcement mode admin toggle + composer lockout for members
-Beeper/Crisp-tier ✨ flagship	Pulse AI companion — a real DB user you DM or @mention in groups; typing indicator, z-ai LLM answers ("Authentic connections and shared moments make chat apps feel alive! 🌟" was its actual reply in QA)
+Beeper/Crisp-tier  flagship	Pulse AI companion — a real DB user you DM or @mention in groups; typing indicator, z-ai LLM answers ("Authentic connections and shared moments make chat apps feel alive! " was its actual reply in QA)
 
 Verification
 31/31 backend curl harness PASS (threads depth-guard, poll revote/close permissions, TTL stamp ≈24h, scheduled dispatch end-to-end through the socket-service ticker incl. the 30s–30d window guards, view-once idempotency)
@@ -472,7 +472,7 @@ No.
 
 yep i knew that was it however you will have to visible them all and alongside i will give tons of others features list and you will have to implement everything one by one not giving up not also stopping until you finish everything.. 
 
-here ## 📱 Section 1: The Core Global Mobile Navigation Frameworks
+here ##  Section 1: The Core Global Mobile Navigation Frameworks
 To support thousands of distinct sub-pages across different screen sizes, the modern chat industry relies on four major mobile navigation bar architectures. These structural frameworks handle core application views, manage dynamic layer hierarchies, and route gesture inputs smoothly.
 
 1. Floating Acrylic Dock Style (e.g., Telegram, Beeper, Element)
@@ -482,7 +482,7 @@ To support thousands of distinct sub-pages across different screen sizes, the mo
 |  [ Chat Canvas View / Infinite Scroll Feed ]    |
 |                                                 |
 |     +-------------------------------------+     |
-|     |  (💬)     (👥)     (🔍)     (⚙️)   |     | <-- Floating Translucent Pod
+|     |  ()     ()     ()     ()   |     | <-- Floating Translucent Pod
 |     +-------------------------------------+     |
 +-------------------------------------------------+
 
@@ -493,7 +493,7 @@ To support thousands of distinct sub-pages across different screen sizes, the mo
 |  [ Split Panes / Nested Channel Tree Nodes ]    |
 |                                                 |
 |=================================================|
-|  [💬 Chats]  [👥 Teams]  [🔔 Alerts]  [⚙️ Setup] | <-- Fixed Layout Boundary Rail
+|  [ Chats]  [ Teams]  [ Alerts]  [ Setup] | <-- Fixed Layout Boundary Rail
 +-------------------------------------------------+
 
 ## 1. The Floating Acrylic Bottom Dock
@@ -529,18 +529,18 @@ To support thousands of distinct sub-pages across different screen sizes, the mo
 * 
 
 ------------------------------
-## 🛠️ Section 2: Technical Secrets of Microscopic Input Area Toolkits
+##  Section 2: Technical Secrets of Microscopic Input Area Toolkits
 The chat input field is a highly optimized panel where messaging apps bundle advanced media tools, attachment workflows, and text formatting controls into tight, thumb-accessible spaces.
 
 +------------------------------------------------------------------------+
 
-|  (+)  [ Type a secure, end-to-end message...               ]  (🎙️) (📷) |
+|  (+)  [ Type a secure, end-to-end message...               ]  () () |
 +------------------------------------------------------------------------+
     |
     v (Tapping "+" springs open the Micro-Attachment Grid Sheet)
 +------------------------------------------------------------------------+
 
-|  [📄 Docs]      [🖼️ Gallery]   [📍 Location]  [📇 Contact]   [🪙 Wallet] |
+|  [ Docs]      [ Gallery]   [ Location]  [ Contact]   [ Wallet] |
 |  Size: 48px     Size: 48px     Size: 48px     Size: 48px     Size: 48px  |
 |  CSS Spring     CSS Spring     CSS Spring     CSS Spring     CSS Spring  |
 +------------------------------------------------------------------------+
@@ -652,7 +652,7 @@ The chat input field is a highly optimized panel where messaging apps bundle adv
    10. Nextdoor (100): Houses location-validated safety notification badges inside neighborhood feeds, organizing alerts by local proximity.
 
 ------------------------------
-## 🏛️ Section 3: The 400+ Massive Sub-Page Ecosystem Inventory
+##  Section 3: The 400+ Massive Sub-Page Ecosystem Inventory
 Beyond standard messaging, these applications host an expansive array of specialized sub-page environments tailored for technical operations, digital commerce, decentralized web integrations, and spatial event hosting.
 
                   [ 400+ Specialized Sub-Page Typologies ]
@@ -699,7 +699,7 @@ Beyond standard messaging, these applications host an expansive array of special
 * 
 
 ------------------------------
-## ⚙️ Section 4: Settings Page Hierarchies & Data Customization Systems
+##  Section 4: Settings Page Hierarchies & Data Customization Systems
 Modern configuration dashboards prioritize layout density, clear item clustering, and clean state transformations to give users granular control over data privacy, notifications, and visual styling.
 
 +-----------------------------------------------------+
@@ -707,13 +707,13 @@ Modern configuration dashboards prioritize layout density, clear item clustering
 | <-- [Settings] / Advanced Storage & Network         |
 +-----------------------------------------------------+
 
-| [📊 Media Auto-Download Quality]                     |
+| [ Media Auto-Download Quality]                     |
 |   ( ) Save Data    (*) Standard    ( ) Uncompressed |
 |                                                     |
-| [🔒 Cryptographic Session Fingerprints]              |
+| [ Cryptographic Session Fingerprints]              |
 |   ED25519_Auth_Node: 9A3F:2B8C:E71D:4F6A...         |
 |                                                     |
-| [🎨 UI Layout & Rendering Engine]                   |
+| [ UI Layout & Rendering Engine]                   |
 |   [x] Force GPU Layer Rendering                     |
 |   [ ] Enable Experimental Fluid Blur Effects        |
 +-----------------------------------------------------+
@@ -726,7 +726,7 @@ Modern configuration dashboards prioritize layout density, clear item clustering
 * 
 
 ------------------------------
-## 🎨 Section 5: The Secret Mechanics of Gradient Mesh & Fluid Physics Styling
+##  Section 5: The Secret Mechanics of Gradient Mesh & Fluid Physics Styling
 To make chat interfaces look highly premium, developers leverage advanced client-side graphics tech that goes far beyond basic CSS styling sheets.
 
 [ Lottie JSON Script ] ---> [ requestAnimationFrame Loop ] ---> [ Hardware GPU Frame ]
@@ -741,7 +741,7 @@ To make chat interfaces look highly premium, developers leverage advanced client
 * 
 
 ------------------------------
-## 🔓 Section 6: Public Visibility, Product Growth & App Distribution Secrets
+##  Section 6: Public Visibility, Product Growth & App Distribution Secrets
 Building a visually stunning chat application is only half the battle; the product must capture global user attention and sustain high platform adoption through systematic distribution engineering.
 
 * 
@@ -758,7 +758,7 @@ Generate a complete Tailwind CSS and HTML5 Canvas source code template for a flu
 Yes, every single one of the 100 applications previously detailed has been fully covered across those structural design categories. To be completely honest and transparent with you, the modern chat ecosystem shares highly standardized development blueprints across their core interfaces, but they differ fundamentally in their input drawers and layout layers.
 To ensure absolute clarity and guarantee that no single app is overlooked, here is the official master layout matrix proving exactly how all 100 platforms map into these advanced design frameworks, their navigation bars, and their hyper-specific input mechanics.
 ------------------------------
-## 📊 Comprehensive 100-App Feature Alignment Matrix
+##  Comprehensive 100-App Feature Alignment Matrix
 
 | App # & Name | Mobile Nav Style | Input Area Toolkit Tiny Tools | 400+ Sub-Page Category | Secret UI Architecture Feature |
 |---|---|---|---|---|
@@ -864,7 +864,7 @@ To ensure absolute clarity and guarantee that no single app is overlooked, here 
 | 099. MeWe | Persistent Solid Split Rail | Non-tracking data privacy switch controls | Stark Privacy Minimalist | Chronological ad-free personal social feeds |
 | 100. Nextdoor | Persistent Solid Split Rail | Verified address localized proximity grids | Spatial 3D Environments | Amber safety notice alert container plates |
 ------------------------------
-## 🎨 Section 7: Engineering Behind Premium Visual Tiers
+##  Section 7: Engineering Behind Premium Visual Tiers
 The visual aesthetics seen in high-end subscription tiers (such as Discord Nitro, Telegram Premium, or Viber Plus) are created using a specialized layout and rendering pipeline.
 
    1. Fragment Shaders & WebGL Canvas Layers: Background animation meshes are not standard video loops. They are processed using low-level GLSL (OpenGL Shading Language) scripts executed directly by your phone's graphics chip. These mathematical formulas calculate fluid movement patterns per pixel at a constant 60 or 120 frames per second, ensuring smooth color shifts that run efficiently without draining your battery.
@@ -874,7 +874,7 @@ The visual aesthetics seen in high-end subscription tiers (such as Discord Nitro
       * The Overlay Canvas (Top): Allocates room for pop-up windows, radial menus, and transient text effect particle streams.
    
 ------------------------------
-## 🔓 Section 8: The Visibility Formula (Onboarding & Discovery)
+##  Section 8: The Visibility Formula (Onboarding & Discovery)
 To maintain deep engagement and ensure features are instantly clear to users, product engineers rely on automated micro-onboarding scripts:
 
 * Dynamic Contextual Highlights: When a new sub-page format updates (such as an added Web3 checkout sheet or a fresh kanban project view), the interface applies a temporary CSS mask gradient overlay across the viewport. This darkens the surrounding app workspace, focusing a sharp spotlight bubble over the new tool along with a short, easy-to-read tip box.
@@ -890,7 +890,7 @@ Yes, the navigation bar styles and features detailed in the master matrix reflec
 You are completely correct about their iconography secrets: high-end modern chat platforms almost never use standard system emojis for their core interface buttons. Relying on standard OS emojis (like Apple's or Google's native emojis) would break the app's custom design identity, look cheap, and cause the interface to render inconsistently across different operating systems.
 Here is the honest, deep-tech breakdown of how these 100 applications handle their iconography, where their asset sources live, and the secret engineering pipelines behind them.
 ------------------------------
-## 🎨 1. The Asset Reality: Emojis vs. Custom SVGs
+##  1. The Asset Reality: Emojis vs. Custom SVGs
 Standard emojis are locked to the device's system font (like Apple Color Emoji or Noto Color Emoji). Modern platforms bypass this by building dedicated Vector Asset Pipelines.
 
 [ Developer Designs Icon ] ---> [ Export to .SVG Code ] ---> [ Compile to SVG-Sprite / Icon Font ]
@@ -907,7 +907,7 @@ v
    2. Custom Icon Fonts: Compiling hundreds of proprietary vector glyphs into a single binary font file (like .woff2 or .ttf). Instead of typing a letter, the app inputs a precise private Unicode character code to render a razor-sharp icon.
 
 ------------------------------
-## 🕵️ 2. Where the App Secrets and Sources Actually Live
+##  2. Where the App Secrets and Sources Actually Live
 The visual components, styling rules, and layout logic are strictly managed using Design Token Repositories. This is where the actual code behind their premium visual states is hosted.
 
 [ Central Design Tokens (JSON) ] 
@@ -920,7 +920,7 @@ The visual components, styling rules, and layout logic are strictly managed usin
 
 Instead of hardcoding colors like #5865F2 or navigation padding sizes directly into separate app builds, engineers store everything in centralized, multi-platform JSON Configuration Sheets. When the design team wants to roll out a brand-new animation or update a navigation dock theme across all mobile devices, they adjust a single design token variable. The unified pipeline automatically rebuilds the web, iOS, and Android clients instantly.
 ------------------------------
-## 📂 3. The Actual Code Sources Behind the Top Platforms
+##  3. The Actual Code Sources Behind the Top Platforms
 If you want to read the real code and dissect the raw files for these interfaces, you can review the open-source design systems of these top industry apps:
 
 * Discord's UI Blueprint: Uses their open-source design system known as Discord Design Tokens. You can track their styling updates and interface parameters directly via their public open npm packages (@discord/design-tokens).
@@ -1097,7 +1097,7 @@ False alarm — the room stays open; my earlier probe read only the first 150 ch
 
 Attach grid renders all 10 cells. Testing Sticker sheet + Code dialog:
 
-Sticker sent → bubble rendered 😁. Baseline QA complete. Capturing final evidence and logging baseline before feature work:
+Sticker sent → bubble rendered . Baseline QA complete. Capturing final evidence and logging baseline before feature work:
 
 Phrases API = GET/POST/DELETE. Now building the QuickPhrasesSheet component (new file) + wiring into attach grid + profile manager:
 
@@ -1157,7 +1157,7 @@ Now the chat-room UI. Check header structure + detail variable names:
 
 Header mapped. Implementing the mutation + header button + hands strip:
 
-⚠️ My insertion may have broken the leaveGroup mutation structure — verifying:
+ My insertion may have broken the leaveGroup mutation structure — verifying:
 
 Repairing: restore leaveGroup's onError, remove the dangling block:
 
@@ -1187,7 +1187,7 @@ Gateway delivers real socket.io handshake. Now the full realtime test through :8
 
 :81 is a different origin — session needs injection there:
 
-Realtime confirmed! Toast "✋ Bob raised their hand" arrived live. Verify the full strip + message realtime:
+Realtime confirmed! Toast " Bob raised their hand" arrived live. Verify the full strip + message realtime:
 
 Toast works (socket alive!) but bubble + strip-lag don't match. Investigating both:
 
@@ -1269,15 +1269,15 @@ The recurring review cron was lost in the interruption — recreating it per man
 
 Resumed and delivered — Round 14 complete, no stopping this time. Marathon ran from date = 06:52 UTC through ~08:05 UTC nonstop. Here's everything shipped and publicly verified in the browser (21 screenshots in download/qa-r14-*.png):
 
-🔧 Critical bug fixes found on resume
+ Critical bug fixes found on resume
 Service worker was pinning stale bundles — the SW cached /_next/static/* cache-first, so dev chunks changed by every edit never reached the browser. Switched to stale-while-revalidate + bumped cache to pulse-shell-v3. (This explains the "technical issue" you saw — changes weren't visible.)
 Realtime only works through the gateway (:81) — on direct :3000, socket.io polling gets HTML back, never connecting. All socket QA now goes through http://localhost:81/ (runbook updated in worklog).
-✨ Features shipped end-to-end (zero mock, all DB + real API + socket)
+ Features shipped end-to-end (zero mock, all DB + real API + socket)
 Quick phrases — the orphan /api/users/[id]/phrases CRUD finally wired: attach-grid "Phrases" cell, tap-to-insert sheet, focus-triggered one-tap chip rail, profile manager (add/delete, 12-cap)
-Raise hand (Signal/Discord parity) — handRaisedAt on participants, /hand API, hand:changed socket, live "✋ Bob raised their hand" toast, amber raised-hands queue strip under the header
+Raise hand (Signal/Discord parity) — handRaisedAt on participants, /hand API, hand:changed socket, live " Bob raised their hand" toast, amber raised-hands queue strip under the header
 App-lock PIN (Signal parity) — scrypt salted-hash storage, cold-start lock screen with keypad (wrong PIN shakes, correct unlocks), settings Enable/Change/Disable with live ON/OFF badge
 Coin Swap (Web3 fintech sub-page) — Pulse Coins ⇄ Gems with a real demand curve (rate moved 10.00 → 10.15 PC as volume grew), gas gauge driven by actual 24h messages+swaps, atomic transactions, DevOps event trail, full swap panel UI in Hub
-✅ Verification
+ Verification
 tsc src/ zero errors, lint clean, :3000 + :3003 both 200
 Full sweep: dock nav, chats, hub, contacts, profile, golden-path send, dark mode — all browser-confirmed
 Fixture junk archived/cleaned; worklog fully reconciled; 15-min review cron recreated (it had been lost in the interruption) so rounds keep rolling
@@ -1346,11 +1346,11 @@ Message didn't land in the input properly. Retrying with fill:
 
 Message sent end-to-end. Now the long-press reaction test — hold, snapshot while held, release elsewhere:
 
-Reactions fixed! The "Message options" sheet now opens on top with quick-reaction emojis and all actions (Reply, Thread, Save, Copy, Edit, Task, Pin, Forward, Info, Delete). Completing the flow — tapping ❤️:
+Reactions fixed! The "Message options" sheet now opens on top with quick-reaction emojis and all actions (Reply, Thread, Save, Copy, Edit, Task, Pin, Forward, Info, Delete). Completing the flow — tapping :
 
-The click landed on "Reply" instead of the heart (reply bar now active), but the snapshot showed a ❤️ ×1 chip. Canceling the reply and scrolling to the newest bubble to confirm visually:
+The click landed on "Reply" instead of the heart (reply bar now active), but the snapshot showed a  ×1 chip. Canceling the reply and scrolling to the newest bubble to confirm visually:
 
-❤️ reaction chip is visible on the probe bubble — reactions work end-to-end. Cleaning up the QA probe message now:
+ reaction chip is visible on the probe bubble — reactions work end-to-end. Cleaning up the QA probe message now:
 
 Tombstoned (consistent with existing QA hygiene in that room). Now the decisive proof for the user's main complaint — mobile viewport test:
 
@@ -1374,10 +1374,10 @@ Verified publicly in a real browser — desktop AND mobile
 Your report
 Result
 Evidence
-Plus icon shows nothing	✅ "Add attachment" drawer opens on top, all 11 tools visible	download/qa-r15-plus-fixed.png + mobile qa-r15-mobile-plus.png
-Emojis can't open	✅ Emoji picker renders above the composer	download/qa-r15-emoji-fixed.png + mobile qa-r15-mobile-emoji.png
-React/copy shows nothing	✅ Long-press opens "Message options" sheet on top (reactions, reply, thread, copy, edit, pin, delete…) and tapping ❤️ actually sticks to the bubble	download/qa-r15-react-fixed.png, qa-r15-reacted.png
-Rendering issue / sheet behind screen	✅ Any overlay now draws above every screen, inside the frame width	mobile 390×844 tested explicitly
+Plus icon shows nothing	 "Add attachment" drawer opens on top, all 11 tools visible	download/qa-r15-plus-fixed.png + mobile qa-r15-mobile-plus.png
+Emojis can't open	 Emoji picker renders above the composer	download/qa-r15-emoji-fixed.png + mobile qa-r15-mobile-emoji.png
+React/copy shows nothing	 Long-press opens "Message options" sheet on top (reactions, reply, thread, copy, edit, pin, delete…) and tapping  actually sticks to the bubble	download/qa-r15-react-fixed.png, qa-r15-reacted.png
+Rendering issue / sheet behind screen	 Any overlay now draws above every screen, inside the frame width	mobile 390×844 tested explicitly
 
 Also confirmed: sending still works end-to-end (sent + reacted on a real message through the live API), QA probe data cleaned up, lint + typecheck zero errors, app and socket services healthy, worklog updated, and the 15-min review cron re-armed (job 355618).
 
@@ -1439,7 +1439,7 @@ Hooks and queries are in. Finishing the remaining profile edits:
 
 全部搞定。API 的快速 curl 检查，然后在真实浏览器中进行完整的 E2E 测试：
 
-Real aggregates flowing (reactionsGiven: 1 — the ❤️ from the QA, correctly excluded from received since the probe was tombstoned). Now the browser verification:
+Real aggregates flowing (reactionsGiven: 1 — the  from the QA, correctly excluded from received since the probe was tombstoned). Now the browser verification:
 
 Hero 部分已上线。我正在滚动页面以验证统计卡片和快速操作：
 
@@ -1565,7 +1565,7 @@ The room IS open — my earlier text slice was reading the list behind it. Scree
 
 Room renders beautifully — poll card, tombstones, composer, mesh dots. Now testing the send flow and long-press actions:
 
-The full interactive arsenal renders. Reacting with ❤️, then closing and testing the profile sheet:
+The full interactive arsenal renders. Reacting with , then closing and testing the profile sheet:
 
 The profile view is exactly as demanded — @handle, real stats, Message action. Testing the Message button:
 
@@ -1610,7 +1610,7 @@ All 100 apps from your txt file, searchable, 4 category chips with counts (Web3 
 Every tile opens a real-data subpage: Token Terminal (live wallet, gas, swap), Ops Console (live log terminal), Marketfront (live listings), Spatial Floor (live presence canvas)
 4. WebGL fluid mesh + interactive polish — shader-driven gradient mesh now default-ON behind the shell, dock glow springs, breathing radial FAB, press-scaling rows, haptics
 
-5. Verified interactive in-chat: send → bubble ✓, 450ms long-press → sheet with 6 reactions + 11 actions ✓, ❤️ chip ✓, @mention highlighting, quote-replies, polls — all on mobile 390×844 too
+5. Verified interactive in-chat: send → bubble , 450ms long-press → sheet with 6 reactions + 11 actions ,  chip , @mention highlighting, quote-replies, polls — all on mobile 390×844 too
 
 Also fixed a corrupted Prisma schema (16 broken brackets) that would have blocked all future DB changes. 19 screenshots in download/qa-r16-*.png, worklog updated, and the 15-min review cron is live (job 355816) so development never stops.
 
@@ -1764,7 +1764,7 @@ Every member row, message sender, mention, and stat shows @username, never IDs
 Tap any member → their full profile sheet (real stats, presence, "Message" action)
 4. Input Toolkit (from your txt, spec §2)
 Slash palette: type / → 8 real commands (/poll /topic /schedule /ttl /task /redpacket /shrug /me) with keyboard nav — /shrug verified appending ¯\(ツ)/¯
-Sticker packs (LINE-style): 4 packs × 8 stickers, tap = instant send → big glyph bubble with pack caption (verified 😂 CLASSICS)
+Sticker packs (LINE-style): 4 packs × 8 stickers, tap = instant send → big glyph bubble with pack caption (verified  CLASSICS)
 Push-to-talk (Voxer): long-press mic → hold-to-talk mode with emerald ring, release = send, drag-away = cancel
 Location share (WhatsApp): GPS fix → confirm card → grid-map bubble with real coordinates (23.81030, 90.41250 · ±12m)
 Topic chip live in the group header

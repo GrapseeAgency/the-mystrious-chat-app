@@ -587,7 +587,7 @@ struct ChatsView: View {
                         newChatOpen = true
                     }
                     spotlightActionRow(
-                        icon: "flame",
+                        icon: "globe.americas.fill",
                         label: spotlightCheckinPending ? "Checking in…" : "Check in to Hub",
                         hint: "Daily Pulse Coins reward",
                     ) {
@@ -1781,7 +1781,7 @@ private struct SearchMessageRowView: View {
                 .foregroundStyle(PulseTheme.textTertiary)
                 .lineLimit(1)
         } else if hit.imagePath != nil && content.isEmpty {
-            Text("📷 Photo")
+            Text("Photo")
                 .font(.system(size: 13))
                 .foregroundStyle(PulseTheme.textSecondary)
                 .lineLimit(1)
@@ -2590,7 +2590,7 @@ final class ChatsViewModel: ObservableObject {
         var previewDeleted = false
         if let last {
             if last.deletedAt != nil {
-                previewText = "🚫 message deleted"
+                previewText = "message deleted"
                 previewDeleted = true
             } else {
                 let collapsed = last.content.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
@@ -2599,9 +2599,9 @@ final class ChatsViewModel: ObservableObject {
                 let isAudio = !isImage && last.audioPath != nil && collapsed.isEmpty
                 let isFile = !isImage && !isAudio && last.kind == "file" && last.filePath != nil
                 previewText = isImage
-                    ? "📷 Photo"
+                    ? "Photo"
                     : isAudio
-                        ? "🎤 Voice message"
+                        ? "Voice message"
                         : isFile
                             ? "Document — \(last.fileName ?? "file")"
                             : collapsed

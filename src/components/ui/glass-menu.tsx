@@ -10,7 +10,7 @@
 
 import { forwardRef, type ComponentPropsWithoutRef } from 'react'
 import { motion, type HTMLMotionProps } from 'framer-motion'
-import type { LucideIcon } from 'lucide-react'
+import type { PulseGlyph } from '@/components/ui/icons'
 import { cn } from '@/lib/utils'
 import { spring } from '@/lib/motion'
 
@@ -51,7 +51,8 @@ export const GlassMenu = forwardRef<HTMLDivElement, GlassMenuProps>(function Gla
 })
 
 interface GlassMenuItemProps extends ComponentPropsWithoutRef<'button'> {
-  icon?: LucideIcon
+  /** accepts Lucide + Phosphor-based Pulse glyphs (structural typing) */
+  icon?: PulseGlyph
   /** primary row label (falls back to children when omitted) */
   label?: React.ReactNode
   /** trailing short-cut hint or secondary glyph slot */

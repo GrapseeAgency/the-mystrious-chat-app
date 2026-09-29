@@ -19,10 +19,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -91,7 +95,7 @@ fun RedPacketSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
-            Text("🧧 Red packet", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Red packet", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("Whole PC only — every grab wins at least 1.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
@@ -142,7 +146,7 @@ fun GameSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp)) {
-            Text("⚔️ Tic-tac-toe", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Tic-tac-toe", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("Open challenges seat the first taker; direct invites lock the O seat.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
             Button(onClick = { onCreate(null) }, modifier = Modifier.fillMaxWidth()) { Text("Open challenge") }
@@ -185,7 +189,7 @@ fun TournamentSheet(
     var error by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp)) {
-            Text("🏆 New tournament", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("New tournament", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("Season runs until someone finishes it. Match wins feed the standings (+25 XP).", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
@@ -242,7 +246,7 @@ fun KanbanSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 14.dp).verticalScroll(rememberScrollState())) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("🗂️ Kanban", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                Text("Kanban", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { ticking = !ticking }) { Text(if (ticking) "Pause" else "Live") }
             }
             val cards = board?.cards ?: emptyList()
@@ -306,7 +310,15 @@ fun KanbanSheet(
                             Text("›", Modifier.clickable { onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) + 1], null) }.padding(6.dp), fontSize = 18.sp)
                         }
                         if (card.createdById == viewerId || isAdmin) {
-                            Text("✕", Modifier.clickable { onDeleteCard(card.id) }.padding(6.dp), color = MaterialTheme.colorScheme.error)
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Delete card",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier
+                                    .clickable { onDeleteCard(card.id) }
+                                    .padding(6.dp)
+                                    .size(16.dp),
+                            )
                         }
                     }
                     Spacer(Modifier.height(6.dp))
@@ -406,7 +418,7 @@ fun WhiteboardSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("🖌️ Whiteboard", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                Text("Whiteboard", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { draft.dropLast(); onUndo() }) { Text("Undo") }
                 TextButton(onClick = { if (confirmClear) onClear() else confirmClear = true }) {
                     Text(if (confirmClear) "Tap again to clear" else "Clear", color = if (confirmClear) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
@@ -551,7 +563,7 @@ fun EventsSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("📅 Events", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                Text("Events", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { creating = !creating }) { Text(if (creating) "Close" else "+ New") }
             }
             if (creating) {
@@ -599,11 +611,19 @@ fun EventsSheet(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(e.title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (e.createdById == viewerId || isAdmin) {
-                            Text("✕", Modifier.clickable { onDelete(e.id) }.padding(4.dp), color = MaterialTheme.colorScheme.error)
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Delete event",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier
+                                    .clickable { onDelete(e.id) }
+                                    .padding(4.dp)
+                                    .size(16.dp),
+                            )
                         }
                     }
                     e.location?.takeIf { it.isNotBlank() }?.let {
-                        Text("📍 $it", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Location: $it", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(formatEventTime(e.startsAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
@@ -690,7 +710,7 @@ fun RemindersSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
-            Text("⏰ Reminders", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Reminders", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("Fires locally even offline; resolves to the server when online.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
@@ -768,9 +788,25 @@ fun RemindersSheet(
                         )
                     }
                     if (r.firedAt == null) {
-                        Text("✓", Modifier.clickable { onResolve(r.id) }.padding(6.dp), color = PulsePalette.Emerald)
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = "Resolve reminder",
+                            tint = PulsePalette.Emerald,
+                            modifier = Modifier
+                                .clickable { onResolve(r.id) }
+                                .padding(6.dp)
+                                .size(16.dp),
+                        )
                     }
-                    Text("✕", Modifier.clickable { onDelete(r.id) }.padding(6.dp), color = MaterialTheme.colorScheme.error)
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "Delete reminder",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .clickable { onDelete(r.id) }
+                            .padding(6.dp)
+                            .size(16.dp),
+                    )
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -794,7 +830,7 @@ fun LeaderboardSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("🏅 Leaderboard", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                Text("Leaderboard", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { scope = !scope }) { Text(if (scope) "This room" else "Global") }
             }
             val rows = page?.rows ?: emptyList()

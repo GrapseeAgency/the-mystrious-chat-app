@@ -38,6 +38,50 @@ extension PulseTheme {
         }
     }
 
+    // ── R17 Neo carbon (web R35 .dark token block) ───────────
+    // The R35 Neo overhaul re-skinned the web dark palette onto a
+    // green-cast carbon ground with a neon-mint signal. These are the
+    // exact hex mirrors; the adaptive helpers below consume them in
+    // dark mode while light mode keeps the paper palette.
+    /// Page base — carbon green-cast near-black (web --background).
+    static var neoBackground: Color { PulseUiThemeColor(hex: "#07090b").color }
+    /// Elevated card surface (web --card).
+    static var neoSurface: Color { PulseUiThemeColor(hex: "#0d1211").color }
+    /// Secondary surface / chip fill (web --secondary).
+    static var neoSurfaceAlt: Color { PulseUiThemeColor(hex: "#161c1a").color }
+    /// Primary text (web --foreground).
+    static var neoText: Color { PulseUiThemeColor(hex: "#ecf4ef").color }
+    /// Body text one step down (web --secondary-foreground).
+    static var neoTextDim: Color { PulseUiThemeColor(hex: "#d7e4dd").color }
+    /// Muted text (web --muted-foreground).
+    static var neoMuted: Color { PulseUiThemeColor(hex: "#8ca398").color }
+    /// THE Neo signal — neon mint (web --primary).
+    static var neonMint: Color { PulseUiThemeColor(hex: "#2be8a6").color }
+    /// Text on filled mint surfaces (web --primary-foreground).
+    static var onNeon: Color { PulseUiThemeColor(hex: "#04120c").color }
+    /// Secondary accent, magenta — SPARING use only (web --chart-2).
+    static var neonMagenta: Color { PulseUiThemeColor(hex: "#ff5ca8").color }
+    /// Destructive (web --destructive).
+    static var neoDestructive: Color { PulseUiThemeColor(hex: "#ff5c6c").color }
+    /// The one hairline — white 8% (web --border dark).
+    static var neoHairline: Color { Color.white.opacity(0.08) }
+
+    /// Neo page base — paper grouped background in light, carbon in dark
+    /// (web R35 re-skins the dark palette only; light keeps its own).
+    static var neoPage: Color {
+        adaptive(Color(UIColor.systemGroupedBackground), neoBackground)
+    }
+
+    /// Neo elevated card fill — system card white in light, #0d1211 dark.
+    static var neoCard: Color {
+        adaptive(Color(UIColor.secondarySystemGroupedBackground), neoSurface)
+    }
+
+    /// Text/icons on accent fills — white in light, #04120c in dark.
+    static var onAccent: Color {
+        adaptive(Color.white, onNeon)
+    }
+
     // ── adaptive surfaces / hairlines (light / dark) ─────────
     private static func adaptive(_ light: UIColor, _ dark: UIColor) -> Color {
         Color(UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light })
@@ -57,35 +101,35 @@ extension PulseTheme {
         )
     }
 
-    /// Conversation row fill — white/80 light, zinc-900/70 dark (flat, cheap).
+    /// Conversation row fill — white/80 light, Neo carbon surface 70% dark.
     static var rowFill: Color {
         adaptive(
             UIColor.white.withAlphaComponent(0.80),
-            UIColor(red: 0.094, green: 0.094, blue: 0.106, alpha: 0.70),
+            UIColor(red: 0.051, green: 0.071, blue: 0.067, alpha: 0.70),
         )
     }
 
-    /// Row inner hairline — white/40 light, white 6% dark.
+    /// Row inner hairline — white/40 light, white 8% dark (Neo hairline).
     static var rowRim: Color {
         adaptive(
             UIColor.white.withAlphaComponent(0.40),
-            UIColor.white.withAlphaComponent(0.06),
+            UIColor.white.withAlphaComponent(0.08),
         )
     }
 
-    /// Glass pill fill — zinc-100/80 light, zinc-900/60 dark.
+    /// Glass pill fill — zinc-100/80 light, Neo secondary surface 60% dark.
     static var glassFill: Color {
         adaptive(
             UIColor(red: 0.957, green: 0.957, blue: 0.961, alpha: 0.80),
-            UIColor(red: 0.094, green: 0.094, blue: 0.106, alpha: 0.60),
+            UIColor(red: 0.086, green: 0.110, blue: 0.102, alpha: 0.60),
         )
     }
 
-    /// Glass pill ring — zinc-200/70 light, white/10 dark.
+    /// Glass pill ring — zinc-200/70 light, white 8% dark (Neo hairline).
     static var hairlineStrong: Color {
         adaptive(
             UIColor(red: 0.894, green: 0.894, blue: 0.906, alpha: 0.70),
-            UIColor.white.withAlphaComponent(0.10),
+            UIColor.white.withAlphaComponent(0.08),
         )
     }
 
@@ -99,20 +143,20 @@ extension PulseTheme {
         adaptive(zinc(200), zinc(800))
     }
 
-    /// Strong titles — zinc-900 light, zinc-50 dark.
-    static var titleOnWash: Color { adaptive(zinc(900), zinc(50)) }
+    /// Strong titles — zinc-900 light, Neo text dark.
+    static var titleOnWash: Color { adaptive(zinc(900), neoText) }
 
-    /// Body titles on panels — zinc-900 light, zinc-100 dark.
-    static var titleOnPanel: Color { adaptive(zinc(900), zinc(100)) }
+    /// Body titles on panels — zinc-900 light, Neo text dark.
+    static var titleOnPanel: Color { adaptive(zinc(900), neoText) }
 
-    /// Primary body text — zinc-600 light, zinc-300 dark.
-    static var textPrimary: Color { adaptive(zinc(600), zinc(300)) }
+    /// Primary body text — zinc-600 light, Neo dim text dark.
+    static var textPrimary: Color { adaptive(zinc(600), neoTextDim) }
 
-    /// Muted body text — zinc-500 light, zinc-400 dark.
-    static var textSecondary: Color { adaptive(zinc(500), zinc(400)) }
+    /// Muted body text — zinc-500 light, Neo muted dark.
+    static var textSecondary: Color { adaptive(zinc(500), neoMuted) }
 
-    /// Faint text — zinc-400 light, zinc-500 dark.
-    static var textTertiary: Color { adaptive(zinc(400), zinc(500)) }
+    /// Faint text — zinc-400 light, dimmed Neo muted dark.
+    static var textTertiary: Color { adaptive(zinc(400), PulseUiThemeColor(hex: "#6e837a").color) }
 
     // ── R2-D — active design language (web ui-theme.ts R25 parity) ──────
     // PulsePrefs owns the persisted selection; RootView mirrors it here so
@@ -157,8 +201,8 @@ extension PulseTheme {
     /// Unread badge outer ring — white light, zinc-900 dark.
     static var badgeRing: Color { adaptive(.white, zinc(900)) }
 
-    /// Filter chip inactive fill — zinc-100 light, zinc-800 dark.
-    static var chipFill: Color { adaptive(zinc(100), zinc(800)) }
+    /// Filter chip inactive fill — zinc-100 light, Neo secondary surface dark.
+    static var chipFill: Color { adaptive(zinc(100), neoSurfaceAlt) }
 
     /// Pressed overlay on rows — zinc-900 4% light, white 5% dark.
     static var pressOverlay: Color {
@@ -444,9 +488,11 @@ public enum PulseUiTheme {
     public static func tokens(for id: PulseUiThemeId, dark: Bool) -> PulseUiThemeTokens {
         switch id {
         case .glass:
-            // ui-glass — aurora wash over warm paper / near-black.
+            // ui-glass — aurora wash over warm paper / R35 Neo carbon.
+            // R17: the DARK accent is the Neo neon mint (web .dark --primary
+            // #2be8a6); the light accent stays the pinned emerald swatch.
             return PulseUiThemeTokens(
-                accent: PulseUiThemeColor(hex: "#10b981"),
+                accent: dark ? PulseUiThemeColor(hex: "#2be8a6") : PulseUiThemeColor(hex: "#10b981"),
                 accent2: PulseUiThemeColor(hex: "#0ea5e9"),
                 radiusPanel: 28,
                 pageBg: dark ? PulseUiThemeColor(hex: "#09090b") : PulseUiThemeColor(hex: "#f3f9f5"),

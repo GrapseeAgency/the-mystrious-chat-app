@@ -96,6 +96,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { AppUser, UserStats } from '@/lib/types'
+import { PulseAccess, PulseBell, PulseBroadcast, PulseChat, PulseDatabase, PulseInfo, PulseMonitor, PulseMoon, PulsePalette, PulseShield, PulseSun, PulseUser, type PulseGlyph } from '@/components/ui/icons'
+import type { RowIcon } from '@/components/profile/profile-primitives'
 import { apiJson, formatMemberSince } from '@/lib/pulse-utils'
 import { DEFAULT_WEBGL_MODE, isWebglMode, type WebGLMode } from '@/components/fx/webgl-glow'
 import { WEBGL_MODES } from '@/components/fx/webgl-glow'
@@ -170,7 +172,7 @@ interface SectionDef {
   id: SectionId
   label: string
   caption: string
-  Icon: LucideIcon
+  Icon: PulseGlyph
 }
 
 const SECTION_MAP: Record<SectionId, SectionDef> = {
@@ -178,55 +180,55 @@ const SECTION_MAP: Record<SectionId, SectionDef> = {
     id: 'account',
     label: 'Account',
     caption: 'Profile, handle and session',
-    Icon: UserRound,
+    Icon: PulseUser,
   },
   appearance: {
     id: 'appearance',
     label: 'Appearance',
     caption: 'Theme languages, color mode, navigation',
-    Icon: Palette,
+    Icon: PulsePalette,
   },
   chat: {
     id: 'chat',
     label: 'Chat',
     caption: 'Wallpaper, bubbles, drafts and outbox',
-    Icon: MessagesSquare,
+    Icon: PulseChat,
   },
   notifications: {
     id: 'notifications',
     label: 'Notifications',
     caption: 'Sound, previews, quiet hours',
-    Icon: Bell,
+    Icon: PulseBell,
   },
   privacy: {
     id: 'privacy',
     label: 'Privacy & Security',
     caption: 'Read receipts and presence',
-    Icon: ShieldCheck,
+    Icon: PulseShield,
   },
   realtime: {
     id: 'realtime',
     label: 'Real-time & Voice',
     caption: 'Live connection and voice rooms',
-    Icon: Radar,
+    Icon: PulseBroadcast,
   },
   accessibility: {
     id: 'accessibility',
     label: 'Accessibility',
     caption: 'Motion and haptic feedback',
-    Icon: Accessibility,
+    Icon: PulseAccess,
   },
   data: {
     id: 'data',
     label: 'Data & Storage',
     caption: 'Footprint, local data, install',
-    Icon: Database,
+    Icon: PulseDatabase,
   },
   about: {
     id: 'about',
     label: 'About',
     caption: 'Version and project',
-    Icon: Info,
+    Icon: PulseInfo,
   },
 }
 
@@ -348,9 +350,9 @@ function FooterNote({ children }: { children: React.ReactNode }) {
   )
 }
 
-function IconTile({ Icon }: { Icon: LucideIcon }) {
+function IconTile({ Icon }: { Icon: RowIcon }) {
   return (
-    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 dark:bg-emerald-400/10">
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)]">
       <Icon className="size-[18px] text-emerald-600 dark:text-emerald-400" aria-hidden />
     </span>
   )
@@ -520,7 +522,7 @@ function PillPicker<T extends string>({
   layoutId: string
   value: T
   onChange: (v: T) => void
-  options: Array<{ value: T; label: string; Icon?: LucideIcon }>
+  options: Array<{ value: T; label: string; Icon?: PulseGlyph }>
   ariaLabel: string
 }) {
   const reduced = useReducedMotion()
@@ -891,9 +893,9 @@ function AppearanceSection({ ctx }: { ctx: SectionCtx }) {
             value={themeValue}
             onChange={setTheme}
             options={[
-              { value: 'light', label: 'Light', Icon: Sun },
-              { value: 'dark', label: 'Dark', Icon: Moon },
-              { value: 'system', label: 'System', Icon: Monitor },
+              { value: 'light', label: 'Light', Icon: PulseSun },
+              { value: 'dark', label: 'Dark', Icon: PulseMoon },
+              { value: 'system', label: 'System', Icon: PulseMonitor },
             ]}
           />
         </PickerBlock>
@@ -954,7 +956,7 @@ function WebglModePicker({
   onChange: (mode: WebGLMode) => void
 }) {
   const current: WebGLMode = isWebglMode(value) ? value : DEFAULT_WEBGL_MODE
-  const MODE_ICONS: Record<WebGLMode, LucideIcon> = {
+  const MODE_ICONS: Record<WebGLMode, PulseGlyph> = {
     off: CircleSlash,
     aurora: Sparkles,
     caustics: Waves,

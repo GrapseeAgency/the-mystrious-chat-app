@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -112,7 +114,14 @@ fun RedPacketCard(
                 .size(40.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color(0x33FFFFFF)),
-        ) { Text("🧧", fontSize = 22.sp) }
+        ) {
+            Icon(
+                Icons.Filled.Redeem,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(22.dp),
+            )
+        }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -164,7 +173,7 @@ fun RedPacketDetailSheetBody(
         Text("From ${detail.senderName} · ${p?.total ?: 0} PC in ${p?.count ?: 0} grabs", fontWeight = FontWeight.SemiBold)
         if (myGrab > 0) {
             Spacer(Modifier.height(4.dp))
-            Text("You grabbed $myGrab PC 🎉", color = PulsePalette.Emerald, fontWeight = FontWeight.SemiBold)
+            Text("You grabbed $myGrab PC", color = PulsePalette.Emerald, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(12.dp))
         if (detail.grabs.isEmpty()) {
@@ -236,7 +245,7 @@ fun TicTacToeCard(
                 m.status == "x_won" -> "X wins — ${detail?.playerX?.name ?: "X"}"
                 m.status == "o_won" -> "O wins — ${detail?.playerO?.name ?: "O"}"
                 m.status == "draw" -> "Draw — both +10 XP"
-                m.playerOId == null -> "⚔️ Open challenge — tap a seat to join"
+                m.playerOId == null -> "Open challenge — tap a seat to join"
                 myTurn -> "Your turn ($mySide)"
                 else -> "Turn: ${m.turn}"
             },
@@ -284,9 +293,11 @@ fun TicTacToeCard(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
+                                    // R35 Neo - plain X/O letters (web/iOS parity;
+                                    // the mark VALUE stays the wire "x"/"o").
                                     when (mark) {
-                                        'X' -> "✕"
-                                        'O' -> "◯"
+                                        'X' -> "X"
+                                        'O' -> "O"
                                         else -> ""
                                     },
                                     fontSize = 30.sp,
@@ -302,7 +313,7 @@ fun TicTacToeCard(
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "✕ ${detail?.playerX?.name ?: "Player"}",
+                "X ${detail?.playerX?.name ?: "Player"}",
                 Modifier.weight(1f),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = PulsePalette.Emerald,
@@ -408,7 +419,12 @@ fun TournamentCard(
             .padding(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("🏆", fontSize = 18.sp)
+            Icon(
+                Icons.Filled.EmojiEvents,
+                contentDescription = null,
+                tint = Color(0xFFF5D90A),
+                modifier = Modifier.size(18.dp),
+            )
             Spacer(Modifier.width(8.dp))
             Text(name.ifBlank { "Tournament" }, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(

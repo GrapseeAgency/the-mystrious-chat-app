@@ -722,7 +722,7 @@ class ChatRoomViewModel @Inject constructor(
                 .onSuccess {
                     notify("Message deleted")
                     // The tombstone row arrives from the server truth — refetch
-                    // the window so "🚫 Message deleted" renders immediately.
+                    // the window so "Message deleted" renders immediately.
                     runCatching { repo.refreshMessages(conversationId) }
                 }
                 .onFailure { notify("Couldn't delete the message", isError = true) }
@@ -1475,7 +1475,7 @@ class ChatRoomViewModel @Inject constructor(
     fun grabRedPacket(packetId: String) {
         viewModelScope.launch {
             repo.grabRedPacket(packetId)
-                .onSuccess { notify("You grabbed ${it.amount} PC 🎉") }
+                .onSuccess { notify("You grabbed ${it.amount} PC") }
                 .onFailure { notify(it.message ?: "Could not grab the red packet", isError = true) }
         }
     }
