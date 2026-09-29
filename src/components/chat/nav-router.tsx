@@ -26,20 +26,20 @@ import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Aperture,
-  Bookmark,
-  CircleUserRound,
-  Command,
-  Ellipsis,
-  Flame,
-  GripHorizontal,
-  MessageCircle,
-  Plus,
-  Search,
-  Settings as SettingsIcon,
-  Users,
-  type LucideIcon,
-} from 'lucide-react'
+  PulseChats,
+  PulseHub,
+  PulseContacts,
+  PulseProfile,
+  PulseSearch,
+  PulsePlus,
+  PulseSettings,
+  PulseSaved,
+  PulseStories,
+  PulseMore,
+  PulseGrip,
+  PulseCommand,
+  type PulseGlyph,
+} from '@/components/ui/icons'
 import type { AppUser, ConversationSummary } from '@/lib/types'
 import { apiJson } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
@@ -60,16 +60,16 @@ export const NAV_STYLE_META = NAV_STYLES
 export interface NavItemDef {
   id: PulseTab
   label: string
-  Icon: LucideIcon
+  Icon: PulseGlyph
   /** which live badge feeds this destination (unread count today) */
   badge?: 'chats-unread'
 }
 
 export const NAV_ITEMS: Array<NavItemDef> = [
-  { id: 'chats', label: 'Chats', Icon: MessageCircle, badge: 'chats-unread' },
-  { id: 'hub', label: 'Hub', Icon: Flame },
-  { id: 'contacts', label: 'Contacts', Icon: Users },
-  { id: 'profile', label: 'Profile', Icon: CircleUserRound },
+  { id: 'chats', label: 'Chats', Icon: PulseChats, badge: 'chats-unread' },
+  { id: 'hub', label: 'Hub', Icon: PulseHub },
+  { id: 'contacts', label: 'Contacts', Icon: PulseContacts },
+  { id: 'profile', label: 'Profile', Icon: PulseProfile },
 ]
 
 /** React hook — current nav style + setter (zustand persist).
@@ -137,7 +137,7 @@ function CapsuleTab({
 }: {
   id: PulseTab
   label: string
-  Icon: LucideIcon
+  Icon: PulseGlyph
   badge?: NavItemDef['badge']
   active: boolean
   unread: number
@@ -296,7 +296,7 @@ function NavOverflowButton({
             : buttonClassName ?? 'size-10 self-center',
         )}
       >
-        <Ellipsis className="size-5" aria-hidden />
+        <PulseMore className="size-5" aria-hidden />
         {showLabel ? <span className="relative text-zinc-600 dark:text-zinc-300">More</span> : null}
       </motion.button>
       {typeof document === 'undefined'
@@ -331,7 +331,7 @@ function NavOverflowButton({
                   >
                     <GlassMenu aria-label="More options" className="w-[232px]" {...menuMotionProps}>
                       <TapMenuItem
-                        icon={SettingsIcon}
+                        icon={PulseSettings}
                         label="Settings"
                         whileTap={reduced ? undefined : pressTap}
                         transition={pressSpring}
@@ -341,9 +341,9 @@ function NavOverflowButton({
                         }}
                       />
                       <TapMenuItem
-                        icon={Search}
+                        icon={PulseSearch}
                         label="Search"
-                        trailing={<Command className="size-3 text-zinc-400" aria-hidden />}
+                        trailing={<PulseCommand className="size-3 text-zinc-400" aria-hidden />}
                         whileTap={reduced ? undefined : pressTap}
                         transition={pressSpring}
                         onClick={() => {
@@ -353,7 +353,7 @@ function NavOverflowButton({
                       />
                       <GlassMenuSeparator />
                       <TapMenuItem
-                        icon={Bookmark}
+                        icon={PulseSaved}
                         label="Saved"
                         whileTap={reduced ? undefined : pressTap}
                         transition={pressSpring}
@@ -363,7 +363,7 @@ function NavOverflowButton({
                         }}
                       />
                       <TapMenuItem
-                        icon={Aperture}
+                        icon={PulseStories}
                         label="Stories"
                         whileTap={reduced ? undefined : pressTap}
                         transition={pressSpring}
@@ -399,7 +399,7 @@ function CapsuleComposeButton({ onAction }: { onAction: (action: NavContextActio
       className="mx-0.5 flex size-[46px] shrink-0 touch-manipulation select-none items-center justify-center self-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-[0_8px_22px_-6px_rgba(16,185,129,0.7)] outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
       style={{ willChange: 'transform' }}
     >
-      <Plus className="size-5" aria-hidden />
+      <PulsePlus className="size-5" aria-hidden />
     </motion.button>
   )
 }
@@ -813,8 +813,8 @@ function CommandBarNav({
           whileTap={reduced ? undefined : { scale: 0.9 }}
           className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
         >
-          <Search className="size-4" aria-hidden />
-          <Command className="-ml-2 mt-3 size-2.5 text-zinc-400" aria-hidden />
+          <PulseSearch className="size-4" aria-hidden />
+          <PulseCommand className="-ml-2 mt-3 size-2.5 text-zinc-400" aria-hidden />
         </motion.button>
         <span aria-hidden className="h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />
         <div className="relative flex flex-1 items-center justify-around">
@@ -859,7 +859,7 @@ function CommandBarNav({
           whileTap={reduced ? undefined : { scale: 0.9 }}
           className="relative flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
         >
-          <SettingsIcon className="size-4" aria-hidden />
+          <PulseSettings className="size-4" aria-hidden />
           {unread > 0 ? <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-emerald-500" /> : null}
         </motion.button>
         <NavOverflowButton placement="below" onAction={onContextAction} buttonClassName="size-9" />
@@ -1031,7 +1031,7 @@ function IslandNav({
                 {active === 'chats' ? <UnreadBadge count={unread} /> : null}
               </span>
               <span className="text-[12px] font-semibold text-zinc-700 dark:text-zinc-200">{activeItem.label}</span>
-              <GripHorizontal className="size-4 text-zinc-400" aria-hidden />
+              <PulseGrip className="size-4 text-zinc-400" aria-hidden />
             </motion.div>
           )}
         </AnimatePresence>
@@ -1105,7 +1105,7 @@ function RadialNav({ active, onChange, unread }: TabProps) {
           className="pointer-events-auto flex size-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-[0_10px_36px_-6px_rgba(16,185,129,0.65)]"
           style={{ willChange: 'transform' }}
         >
-          <Plus className="size-6" aria-hidden />
+          <PulsePlus className="size-6" aria-hidden />
         </motion.button>
       </div>
     </>
@@ -1190,11 +1190,11 @@ function GestureNav({ active, onChange, unread }: TabProps) {
 
 // ── 13 · contextual-dock — adapts to the active tab ──────────
 
-const CONTEXT_ACTION: Record<PulseTab, { label: string; Icon: typeof Plus }> = {
-  chats: { label: 'New chat', Icon: Plus },
-  hub: { label: 'Search', Icon: Search },
-  contacts: { label: 'New group', Icon: Users },
-  profile: { label: 'Settings', Icon: SettingsIcon },
+const CONTEXT_ACTION: Record<PulseTab, { label: string; Icon: PulseGlyph }> = {
+  chats: { label: 'New chat', Icon: PulsePlus },
+  hub: { label: 'Search', Icon: PulseSearch },
+  contacts: { label: 'New group', Icon: PulseContacts },
+  profile: { label: 'Settings', Icon: PulseSettings },
 }
 
 function ContextualDock({

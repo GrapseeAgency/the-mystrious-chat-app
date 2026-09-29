@@ -54,6 +54,9 @@ compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
 compose-material-icons = { module = "androidx.compose.material:material-icons-extended", version = "1.7.6" }
+# R35 Neo - downloadable GoogleFonts provider for Space Grotesk / JetBrains Mono
+# (BOM-managed; no explicit version). Consumed by app.pulse.ui.PulseType.
+compose-ui-text-google-fonts = { module = "androidx.compose.ui:ui-text-google-fonts" }
 
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
 hilt-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hilt" }

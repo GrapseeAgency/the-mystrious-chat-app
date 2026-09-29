@@ -319,7 +319,7 @@ export function conversationPreview(
     return { text: 'No messages yet', deleted: false, mine: false, senderName: '', isReply: false, isImage: false, isAudio: false }
   }
   if (last.deletedAt) {
-    return { text: '🚫 message deleted', deleted: true, mine: false, senderName: '', isReply: false, isImage: false, isAudio: false }
+    return { text: 'Message deleted', deleted: true, mine: false, senderName: '', isReply: false, isImage: false, isAudio: false }
   }
   const mine = last.senderId === myId
   const collapsed = last.content.replace(/\s+/g, ' ').trim()
@@ -331,9 +331,9 @@ export function conversationPreview(
   const isFile = !isImage && !isAudio && last.kind === 'file' && last.filePath !== null
   return {
     text: isImage
-      ? '📷 Photo'
+      ? 'Photo'
       : isAudio
-        ? '🎤 Voice message'
+        ? 'Voice message'
         : isFile
           ? `Document — ${last.fileName ?? 'file'}`
           : collapsed,

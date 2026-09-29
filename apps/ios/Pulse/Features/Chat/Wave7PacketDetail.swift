@@ -23,7 +23,7 @@ struct Wave7PacketDetailLoader: View {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .navigationTitle("🧧 Red packet")
+            .navigationTitle("Red packet")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

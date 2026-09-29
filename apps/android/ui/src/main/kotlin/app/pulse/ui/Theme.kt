@@ -86,11 +86,14 @@ enum class PulseUiTheme(
         motion = PulseUiThemeMotion.ELASTIC,
         accentLight = Color(0xFF10B981),
         accent2Light = Color(0xFF0EA5E9),
-        accentDark = Color(0xFF10B981),
-        accent2Dark = Color(0xFF0EA5E9),
+        // R35 Neo: neon mint signal + neon magenta on the carbon field
+        // (web globals.css .dark [data-ui='ui-glass']).
+        accentDark = Color(0xFF2BE8A6),
+        accent2Dark = Color(0xFFFF5CA8),
         radiusPanel = 28.dp,
         pageBaseLight = Color(0xFFF3F9F5),
-        pageBaseDark = Color(0xFF09090B),
+        // R35 Neo carbon - green-cast near-black (web --background #07090b).
+        pageBaseDark = Color(0xFF07090B),
         pageBaseLightTop = null,
         pageBaseDarkTop = null,
         radialsLight = listOf(
@@ -98,15 +101,19 @@ enum class PulseUiTheme(
             PulsePageRadial(listOf(Color(0x330EA5E9), Color.Transparent), 0.96f, 0.12f, 1.00f),
             PulsePageRadial(listOf(Color(0x3314B8A6), Color.Transparent), 0.50f, 1.12f, 0.90f),
         ),
+        // R35 Neo: carbon field, mint + magenta signal bleed (same geometry
+        // as the web radial stack, alpha-matched).
         radialsDark = listOf(
-            PulsePageRadial(listOf(Color(0x3310B981), Color.Transparent), 0.12f, -0.08f, 1.20f),
-            PulsePageRadial(listOf(Color(0x2638BDF8), Color.Transparent), 0.96f, 0.12f, 1.00f),
-            PulsePageRadial(listOf(Color(0x2914B8A6), Color.Transparent), 0.50f, 1.12f, 0.90f),
+            PulsePageRadial(listOf(Color(0x212BE8A6), Color.Transparent), 0.10f, -0.10f, 1.20f),
+            PulsePageRadial(listOf(Color(0x17FF5CA8), Color.Transparent), 0.96f, 0.08f, 1.00f),
+            PulsePageRadial(listOf(Color(0x172BE8A6), Color.Transparent), 0.50f, 1.12f, 1.00f),
         ),
         panelBgLight = Color(0x8CFFFFFF),
         panelBorderLight = Color(0x1A092A1F),
-        panelBgDark = Color(0x14FFFFFF),
-        panelBorderDark = Color(0x24FFFFFF),
+        // Elevated carbon panel (web --ui-panel-bg rgba(13,18,17,0.6)) over
+        // the locked 8% white hairline border.
+        panelBgDark = Color(0x990D1211),
+        panelBorderDark = Color(0x17FFFFFF),
     ),
     KINETIC(
         id = "kinetic",
@@ -250,7 +257,7 @@ val LocalPulseUiTheme = staticCompositionLocalOf { PulseUiTheme.GLASS }
 private val Ink = Color(0xFF09090B)
 
 private fun onAccent(color: Color): Color =
-    if (color.luminanceCompat() > 0.6f) Ink else Color.White
+    if (color.luminanceCompat() > 0.6f) Color(0xFF04120C) else Color.White
 
 /** Stand-in for androidx.core luminance — keeps the ui module dependency-lean. */
 private fun Color.luminanceCompat(): Float =
@@ -286,29 +293,34 @@ private fun darkScheme(theme: PulseUiTheme) = with(theme) {
     darkColorScheme(
         primary = accent,
         onPrimary = onAccent(accent),
-        primaryContainer = lerp(Color(0xFF18181B), accent, 0.30f),
+        primaryContainer = lerp(Color(0xFF0D1211), accent, 0.30f),
         onPrimaryContainer = lerp(accent, Color.White, 0.72f),
         secondary = accent2,
         onSecondary = onAccent(accent2),
-        secondaryContainer = lerp(Color(0xFF18181B), accent2, 0.30f),
+        secondaryContainer = lerp(Color(0xFF0D1211), accent2, 0.30f),
         onSecondaryContainer = lerp(accent2, Color.White, 0.72f),
         tertiary = Color(0xFFA78BFA),
-        error = Color(0xFFFB7185),
+        // R35 Neo destructive (web --destructive #ff5c6c).
+        error = Color(0xFFFF5C6C),
         background = pageBaseDark,
-        onBackground = Color(0xFFE7E5E4),
+        // R35 Neo text tokens (web --foreground/--muted-foreground).
+        onBackground = Color(0xFFECF4EF),
         surface = surface(dark = true),
-        onSurface = Color(0xFFE7E5E4),
-        surfaceVariant = Color(0xFF232326),
-        onSurfaceVariant = Color(0xFFA1A1AA),
+        onSurface = Color(0xFFECF4EF),
+        // Secondary surface (web --secondary #161c1a) + dimmed text #8ca398.
+        surfaceVariant = Color(0xFF161C1A),
+        onSurfaceVariant = Color(0xFF8CA398),
         outlineVariant = panelBorderDark,
     )
 }
 
 private fun shapesFor(theme: PulseUiTheme): Shapes = Shapes(
-    extraSmall = RoundedCornerShape(8),
-    small = RoundedCornerShape(12),
-    medium = RoundedCornerShape(16),
-    large = RoundedCornerShape(20),
+    // R35 Neo: radii raised ~1.4x of the old scale (8/12/16/20) - cards sit
+    // at 20-24dp via the feature screens, chips stay full-round, sheets 28dp.
+    extraSmall = RoundedCornerShape(12),
+    small = RoundedCornerShape(16),
+    medium = RoundedCornerShape(22),
+    large = RoundedCornerShape(28),
     // The shared panel radius IS the design language's silhouette.
     extraLarge = RoundedCornerShape(theme.radiusPanel),
 )
@@ -324,6 +336,9 @@ fun PulseTheme(
         MaterialTheme(
             colorScheme = if (darkTheme) darkScheme(uiTheme) else lightScheme(uiTheme),
             shapes = shapesFor(uiTheme),
+            // R35 Neo - Space Grotesk carries the whole UI (PulseType.kt);
+            // mono call sites opt into PulseMonoFamily explicitly.
+            typography = pulseTypography(),
             content = content,
         )
     }

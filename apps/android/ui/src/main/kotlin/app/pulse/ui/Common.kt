@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 
-/** The web palette — one source of truth for accents (ui-theme tokens). */
+/** The web palette - one source of truth for accents (ui-theme tokens). */
 object PulsePalette {
     val Emerald = Color(0xFF10B981)
     val EmeraldDeep = Color(0xFF047857)
@@ -43,6 +43,28 @@ object PulsePalette {
     val Amber = Color(0xFFF59E0B)
 
     val fallbacks = listOf(Emerald, Teal, Violet, Amber, Rose)
+
+    // ── R35 Neo carbon tokens (locked spec; web globals.css .dark) ──
+    /** Page carbon background. */
+    val NeoCarbon = Color(0xFF07090B)
+    /** Elevated surface (cards, panels). */
+    val NeoSurface = Color(0xFF0D1211)
+    /** Secondary surface. */
+    val NeoSurface2 = Color(0xFF161C1A)
+    /** Primary text on carbon. */
+    val NeoText = Color(0xFFECF4EF)
+    /** Secondary text on carbon. */
+    val NeoTextDim = Color(0xFF8CA398)
+    /** Neon mint signal accent. */
+    val NeonMint = Color(0xFF2BE8A6)
+    /** Ink to place on top of the mint accent. */
+    val OnNeonMint = Color(0xFF04120C)
+    /** Neon magenta - sparing secondary accent. */
+    val NeonMagenta = Color(0xFFFF5CA8)
+    /** Neo destructive. */
+    val NeoDestructive = Color(0xFFFF5C6C)
+    /** The locked hairline border (rgba(255,255,255,0.08)). */
+    val Hairline = Color.White.copy(alpha = 0.08f)
 
     fun parse(hex: String?): Color? {
         if (hex.isNullOrBlank()) return null
@@ -151,9 +173,10 @@ object PulseGlass {
     val LightFill = Color.White.copy(alpha = 0.78f)
     val LightBorder = Color(0xFFE4E4E7).copy(alpha = 0.70f)
     val LightDeepFill = Color.White.copy(alpha = 0.88f)
-    val DarkFill = Color(0xFF18181B).copy(alpha = 0.70f)
-    val DarkBorder = Color.White.copy(alpha = 0.06f)
-    val DarkDeepFill = Color(0xFF0C0C0E).copy(alpha = 0.80f)
+    // R35 Neo - panels are elevated carbon with the locked 8% hairline.
+    val DarkFill = Color(0xFF0D1211).copy(alpha = 0.72f)
+    val DarkBorder = Color.White.copy(alpha = 0.08f)
+    val DarkDeepFill = Color(0xFF0D1211).copy(alpha = 0.88f)
 
     fun fill(dark: Boolean, deep: Boolean = false): Color = when {
         deep && dark -> DarkDeepFill

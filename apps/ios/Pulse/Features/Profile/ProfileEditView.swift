@@ -120,6 +120,8 @@ struct ProfileEditView: View {
                 Task { await uploadAvatar(item) }
             }
         }
+        // R17 Neo — sheets at 28pt (web sheet radius parity).
+        .presentationCornerRadius(28)
     }
 
     // ── sections ─────────────────────────────────────────────

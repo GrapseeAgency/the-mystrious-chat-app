@@ -21,6 +21,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import { LoaderCircle, Minus, Plus, Wallet, X } from 'lucide-react'
+import { PulseGift } from '@/components/ui/icons'
 import { toast } from 'sonner'
 import { apiJson, jsonBody } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
@@ -122,7 +123,7 @@ export function RedPacketSheet({
         }),
       )
       onClose()
-      toast.success('🧧 Red packet sent')
+      toast.success('Red packet sent')
       // instant local append — room polling is the fallback for stragglers
       window.dispatchEvent(
         new CustomEvent<ChatMessage>('pulse:external-message', { detail: res.message }),
@@ -162,9 +163,9 @@ export function RedPacketSheet({
           <header className="flex items-center gap-2.5">
             <span
               aria-hidden
-              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-rose-500 text-xl shadow-[0_10px_24px_-10px_rgba(244,63,94,0.6)]"
+              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-rose-500 text-white shadow-[0_10px_24px_-10px_rgba(244,63,94,0.6)]"
             >
-              🧧
+              <PulseGift className="size-5" />
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[15px] font-bold leading-tight text-zinc-50">Red packet</p>

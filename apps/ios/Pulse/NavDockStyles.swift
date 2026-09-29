@@ -46,7 +46,7 @@ struct PulseNavDestination: Identifiable, Equatable {
 enum PulseNavDestinations {
     static let all: [PulseNavDestination] = [
         PulseNavDestination(tab: .chats, label: "Chats", icon: "bubble.left.and.bubble.right", filled: "bubble.left.and.bubble.right.fill"),
-        PulseNavDestination(tab: .hub, label: "Hub", icon: "flame", filled: "flame.fill"),
+        PulseNavDestination(tab: .hub, label: "Hub", icon: "globe.americas", filled: "globe.americas.fill"),
         PulseNavDestination(tab: .contacts, label: "Contacts", icon: "person.2", filled: "person.2.fill"),
         PulseNavDestination(tab: .profile, label: "Profile", icon: "person.crop.circle", filled: "person.crop.circle.fill"),
     ]
@@ -125,7 +125,7 @@ struct PulseNavMoreMenu: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            PulseNavMoreMenu.row("Settings", icon: "gearshape", onDismiss: onDismiss) {
+            PulseNavMoreMenu.row("Settings", icon: "gearshape.fill", onDismiss: onDismiss) {
                 context.onSettings()
             }
             PulseNavMoreMenu.row("Search", icon: "magnifyingglass", onDismiss: onDismiss) {
@@ -1171,7 +1171,7 @@ struct CommandBarDock: View {
             commandButton("magnifyingglass", "Search") {
                 context.onSearch()
             }
-            commandButton("gearshape", "Settings") {
+            commandButton("gearshape.fill", "Settings") {
                 context.onSettings()
             }
         }
@@ -1278,7 +1278,7 @@ struct RadialDock: View {
             ForEach(PulseNavDestinations.all) { item in
                 radialLeaf(item)
             }
-            radialLeafButton("gearshape", label: "Settings") {
+            radialLeafButton("gearshape.fill", label: "Settings") {
                 context.onSettings()
             }
         }

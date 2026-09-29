@@ -197,10 +197,14 @@ function drawHeart(ctx: CanvasRenderingContext2D, p: Particle, alpha: number, fr
   ctx.translate(p.x + swayX, p.y)
   ctx.globalAlpha = alpha
   ctx.fillStyle = p.color
-  ctx.font = `${Math.round(p.size * 2.4)}px system-ui, sans-serif`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('♥', 0, 0)
+  // vector heart — no font glyph, pure path (crisp on every DPR)
+  const s = p.size * 0.9
+  ctx.beginPath()
+  ctx.moveTo(0, s * 0.55)
+  ctx.bezierCurveTo(-s * 1.1, -s * 0.35, -s * 0.5, -s * 1.05, 0, -s * 0.4)
+  ctx.bezierCurveTo(s * 0.5, -s * 1.05, s * 1.1, -s * 0.35, 0, s * 0.55)
+  ctx.closePath()
+  ctx.fill()
   ctx.restore()
 }
 

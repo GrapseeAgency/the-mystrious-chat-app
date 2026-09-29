@@ -3,6 +3,7 @@ package app.pulse.feature.settings
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -23,11 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Palette
@@ -38,7 +37,6 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -73,8 +71,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.ui.PulseAvatar
+import app.pulse.ui.PulseMonoFamily
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.isPulseDarkTheme
 import app.pulse.ui.update.LiveUpdater
 import app.pulse.ui.update.UpdaterDetail
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -146,13 +146,10 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // R14 gap 7c — the hero (web profile-tab.tsx:307-367): gradient cover
-        // from the identity emerald + two soft orbs + (on the card below) the
-        // registered-member badge. Kept cheap: static alpha circles, no live
-        // blur — reduce-motion needs no special case.
-        // R16 — the cover derives from the identity color (web
-        // profile-tab.tsx:309-313 gradientFor(me.color)) — no longer hardcoded
-        // emerald; fallback stays the web's default (emerald-400 → deep).
+        // ── R35 Neo hero (web profile-tab.tsx:329-467): flat identity cover
+        // with a static scanline texture + signal edge, then the overlapping
+        // ringed avatar. Zero carnival blobs, zero blur, no animation, and
+        // reduce-motion needs no special case (everything here is static).
         Box(
             Modifier
                 .fillMaxWidth()
@@ -160,293 +157,331 @@ fun ProfileScreen(
                 .clip(RoundedCornerShape(24.dp))
                 .background(heroGradient(viewer?.color)),
         ) {
+            // Static top sheen (web :333-336 linear wash, fades by 60%).
             Box(
                 Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 24.dp, y = (-30).dp)
-                    .size(130.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.14f)),
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.White.copy(alpha = 0.16f),
+                            0.6f to Color.Transparent,
+                        ),
+                    ),
             )
+            // The scanline texture: 1px lines every 3dp, white 5%
+            // (web .scan-fx::after repeating-linear-gradient). Cheap Canvas.
+            androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                val step = 3.dp.toPx()
+                val line = 1.dp.toPx()
+                var y = 0f
+                while (y < size.height) {
+                    drawRect(
+                        color = Color.White.copy(alpha = 0.05f),
+                        topLeft = androidx.compose.ui.geometry.Offset(0f, y),
+                        size = androidx.compose.ui.geometry.Size(size.width, line),
+                    )
+                    y += step
+                }
+            }
+            // The signal line: hairline bright edge grounding the cover (:337-341).
             Box(
                 Modifier
-                    .align(Alignment.BottomStart)
-                    .offset(x = (-18).dp, y = 22.dp)
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.10f)),
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.8f),
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
             )
         }
 
-        Spacer(Modifier.height(14.dp))
-
-        // Identity card
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-            tonalElevation = 1.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-            modifier = Modifier.fillMaxWidth(),
+        // Overlapping avatar with the slim identity ring (web :346-359):
+        // 84dp avatar, 44dp overlap, 2.5dp gradient ring + 2.5dp surface gap.
+        val neoDark = isPulseDarkTheme()
+        Box(
+            Modifier
+                .offset(y = (-44).dp)
+                .size(94.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                PulseAvatar(
-                    name = viewerName ?: "You",
-                    colorHex = viewer?.color,
-                    size = 56.dp,
-                    // R16 — presence ring (web profile-tab.tsx:346 showPresence).
-                    online = iAmOnline,
+            Box(
+                Modifier
+                    .size(94.dp)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(heroColors(viewer?.color))),
+            )
+            Box(
+                Modifier
+                    .size(89.dp)
+                    .clip(CircleShape)
+                    .background(if (neoDark) PulsePalette.NeoSurface else Color.White),
+            )
+            PulseAvatar(
+                name = viewerName ?: "You",
+                colorHex = viewer?.color,
+                size = 84.dp,
+                online = iAmOnline,
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Name 22sp bold, -0.02em tracking, with the quiet verified seal
+        // tinted accent (web :362-375 PulseSeal).
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = viewerName ?: "No identity",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.44).sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (viewerId != null) {
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    Icons.Filled.Verified,
+                    contentDescription = "Registered member",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp),
                 )
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    if (viewerId == null) {
-                        Text("No identity", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("Pick who you are to light up Pulse", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // @handle: tap to copy (or set), mono type inside a glass pill
+        // (web :384-407 .glass-pill .stat-mono).
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+                .border(1.dp, PulsePalette.Hairline, RoundedCornerShape(999.dp))
+                .clickable {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (handle == null) {
+                        onEditProfile()
                     } else {
-                        // R14 gap 7c — name + registered-member badge (web
-                        // profile-tab.tsx:359-367 BadgeCheck = "Registered member").
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(viewerName ?: "", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.width(5.dp))
-                            Icon(
-                                Icons.Filled.Verified,
-                                contentDescription = "Registered member",
-                                tint = PulsePalette.Emerald,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        // R16 — the @handle chip (web profile-tab.tsx:369-400):
-                        // tap-to-copy, or "Set your handle" → the edit page when
-                        // the account has no handle yet.
-                        Text(
-                            text = if (handle != null) "@$handle" else "Set your handle",
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = PulsePalette.Emerald,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .padding(top = 4.dp)
-                                .clip(RoundedCornerShape(999.dp))
-                                .clickable {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    if (handle == null) {
-                                        onEditProfile()
-                                    } else {
-                                        copyText(context, "Pulse handle", "@$handle", "Handle copied")
-                                    }
-                                }
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
-                        )
-                        // R16 — status glyph + text (web profile-tab.tsx:402-415).
-                        val statusLine = listOfNotNull(
-                            viewer?.statusEmoji?.takeIf { it.isNotBlank() },
-                            viewer?.statusText?.takeIf { it.isNotBlank() },
-                        ).joinToString(" ")
-                        if (statusLine.isNotBlank()) {
-                            Text(
-                                statusLine,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
-                        }
-                        // R16 — the bio (web profile-tab.tsx:417-425, honest
-                        // "No bio yet" fallback included).
-                        Text(
-                            text = viewer?.bio?.takeIf { it.isNotBlank() } ?: "No bio yet",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 3.dp),
-                        )
+                        copyText(context, "Pulse handle", "@$handle", "Handle copied")
                     }
                 }
-                TextButton(onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    shareProfile(context, viewerId, state.users)
-                }) {
-                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(15.dp), tint = PulsePalette.Emerald)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Share", color = PulsePalette.Emerald)
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+        ) {
+            Text(
+                text = if (handle != null) "@$handle" else "Set your handle",
+                fontFamily = PulseMonoFamily,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        // Status line + bio, 13sp (web :410-433). The status glyph/text are
+        // the user's own wire values, displayed verbatim, never decorated.
+        if (viewerId != null) {
+            val statusLine = listOfNotNull(
+                viewer?.statusEmoji?.takeIf { it.isNotBlank() },
+                viewer?.statusText?.takeIf { it.isNotBlank() },
+            ).joinToString(" ")
+            if (statusLine.isNotBlank()) {
+                Text(
+                    statusLine,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
+            Text(
+                text = viewer?.bio?.takeIf { it.isNotBlank() } ?: "No bio yet",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Quick actions: one signal pill, one ghost pill (web :436-467).
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onEditProfile()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Edit profile",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
                 }
-                TextButton(onClick = { identitySheet = true; haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }) {
-                    Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp), tint = PulsePalette.Emerald)
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (viewerId == null) "Choose" else "Switch", color = PulsePalette.Emerald)
+            }
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+                    .border(1.dp, PulsePalette.Hairline, RoundedCornerShape(999.dp))
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        shareProfile(context, viewerId, state.users)
+                    }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Share,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Share",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
                 }
             }
         }
 
-        Spacer(Modifier.height(20.dp))
-
-        // R14 gap 7a — the REAL stats row (web profile-tab.tsx:466-491):
-        // Messages / Rooms / Coins / Member since — stats via
-        // GET /api/users/{id}/stats (ProfileViewModel.loadStats, the
-        // SettingsViewModel loader pattern) + Coins from the wallet source.
+        // ── ONE flat stats row: mono numerals + hairline dividers, no heavy
+        // cards, no counters (web profile-tab.tsx:471-489). Same loaders as
+        // before (GET /api/users/{id}/stats + the wallet source); the Coins
+        // cell stays tappable-to-retry when the wallet errored (the old
+        // wallet card's affordance, folded into the instrument row).
         if (viewerId != null) {
             LaunchedEffect(viewerId) {
                 viewModel.loadStats()
+                viewModel.loadWallet()
             }
             val statsState by viewModel.stats.collectAsStateWithLifecycle()
             val stats = statsState.stats
             val coins by viewModel.wallet.collectAsStateWithLifecycle()
-            SettingCard {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    ProfileStatCell("Messages", stats?.messages?.toString() ?: if (statsState.loading) "…" else "—")
-                    ProfileStatCell("Rooms", stats?.chats?.toString() ?: if (statsState.loading) "…" else "—")
-                    ProfileStatCell("Coins", coins.coins?.toString() ?: if (coins.loading) "…" else "—")
+            Spacer(Modifier.height(24.dp))
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = if (neoDark) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.55f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (neoDark) PulsePalette.Hairline else Color(0x99E4E4E7),
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     ProfileStatCell(
-                        "Member since",
-                        stats?.joinedAtIso?.let { memberSinceShort(it) }
-                            ?: if (statsState.loading) "…" else "—",
+                        label = "Messages",
+                        value = stats?.messages?.toString() ?: if (statsState.loading) "·" else "-",
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatDivider()
+                    ProfileStatCell(
+                        label = "Rooms",
+                        value = stats?.chats?.toString() ?: if (statsState.loading) "·" else "-",
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatDivider()
+                    ProfileStatCell(
+                        label = "Coins",
+                        value = coins.coins?.toString() ?: if (coins.loading) "·" else "-",
+                        accent = true,
+                        onTap = if (coins.error) viewModel::loadWallet else null,
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatDivider()
+                    ProfileStatCell(
+                        label = "Since",
+                        value = stats?.joinedAtIso?.let { memberSinceShort(it) }
+                            ?: if (statsState.loading) "·" else "-",
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
-            Spacer(Modifier.height(20.dp))
         }
 
-        // R16 — the Saved-messages row (web profile-tab.tsx:497-508): opens
-        // the real starred library — long-press-save in any chat lands here.
-        if (viewerId != null) {
-            Spacer(Modifier.height(20.dp))
-            SettingCard {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onOpenSaved()
-                        }
-                        .padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Filled.Star, contentDescription = null, tint = PulsePalette.Amber)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Saved messages", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Long-press any message in a chat, then Save",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+        // ── Quiet hairline card: Saved messages + Copy account ID + identity
+        // switch + Sign out (web :493-524 Saved/Account sections, one card).
+        // Every previous entry point keeps working; blocked accounts live in
+        // Settings privacy, same as the web.
+        Spacer(Modifier.height(24.dp))
+        QuietCard {
+            if (viewerId != null) {
+                QuietRow(
+                    icon = Icons.Filled.Star,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    title = "Saved messages",
+                    subtitle = "Long-press any message in a chat, then Save",
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onOpenSaved()
+                    },
+                )
+                QuietDivider()
+            }
+            QuietRow(
+                icon = Icons.Filled.ContentCopy,
+                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                title = "Copy account ID",
+                subtitle = viewerId ?: "Pick an identity to copy its ID",
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (viewerId != null) {
+                        copyText(context, "Pulse account ID", viewerId ?: "", "Account ID copied")
                     }
-                }
+                },
+            )
+            QuietDivider()
+            QuietRow(
+                icon = Icons.Filled.SwapHoriz,
+                iconTint = if (viewerId == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                title = if (viewerId == null) "Choose identity" else "Switch identity",
+                subtitle = if (viewerId == null) "Pick who you are to light up Pulse" else "Choose or create who you are on this device",
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    identitySheet = true
+                },
+            )
+            if (viewerId != null) {
+                QuietDivider()
+                // R6 - M3: the destructive confirm still gates the real forget.
+                QuietRow(
+                    icon = Icons.Filled.Logout,
+                    iconTint = MaterialTheme.colorScheme.error,
+                    title = "Sign out",
+                    subtitle = "Clears the identity + stored session on this device",
+                    destructive = true,
+                    onClick = { forgetConfirm = true },
+                )
             }
         }
 
-        // R2-A item 10 — the wallet chip (web profile-tab.tsx:477-487:
-        // "Coins" pill with live balance; loading spinner, honest error row).
-        if (viewerId != null) {
-            LaunchedEffect(viewerId) { viewModel.loadWallet() }
-            val walletState by viewModel.wallet.collectAsStateWithLifecycle()
-            SettingCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Bolt, contentDescription = null, tint = PulsePalette.Amber, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Wallet", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            when {
-                                walletState.loading -> "Checking your balance…"
-                                walletState.error -> "Balance unavailable — pull to retry below"
-                                else -> "Pulse Coins available to spend in the Hub"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    when {
-                        walletState.loading -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        walletState.error -> TextButton(onClick = viewModel::loadWallet) { Text("Retry", color = PulsePalette.Emerald) }
-                        else -> Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "${walletState.coins ?: 0} PC",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = PulsePalette.Amber,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Surface(shape = RoundedCornerShape(999.dp), color = PulsePalette.Amber.copy(alpha = 0.14f)) {
-                                Text(
-                                    "Balance",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = PulsePalette.Amber,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(20.dp))
-        }
-
-        // Wave 6 — edit profile + blocked accounts (web #/profile-edit + settings parity)
-        SettingCard {
-            Column {
-                // R16 — the Copy account ID row (web profile-tab.tsx:510-520):
-                // Fingerprint row, tap-to-copy with the honest toast.
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            copyText(context, "Pulse account ID", viewerId ?: "", "Account ID copied")
-                        }
-                        .padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = null, tint = PulsePalette.Emerald)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Copy account ID", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            viewerId ?: "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                Row(
-                    Modifier.fillMaxWidth().clickable(onClick = onEditProfile).padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = PulsePalette.Emerald)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Edit profile", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Name, bio, status, colour, handle and avatar",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Row(
-                    Modifier.fillMaxWidth().clickable(onClick = onOpenBlocked).padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Filled.Block, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Blocked accounts", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Blocked accounts cannot message you in direct chats",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(20.dp))
         SectionHeader(Icons.Filled.Palette, "Appearance")
         SettingCard {
             Column {
@@ -541,7 +576,7 @@ fun ProfileScreen(
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     scope.launch { LiveUpdater.syncFrom(context, force = true) }
                 }) {
-                    Text("Check for updates", color = PulsePalette.Emerald)
+                    Text("Check for updates", color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
@@ -576,11 +611,11 @@ fun ProfileScreen(
                     TextButton(onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         viewModel.probeServer(serverField)
-                    }) { Text("Test", color = PulsePalette.Emerald) }
+                    }) { Text("Test", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         viewModel.setServerBase(serverField.trim().takeIf { it.isNotBlank() })
-                    }) { Text("Save & use", color = PulsePalette.Emerald) }
+                    }) { Text("Save & use", color = MaterialTheme.colorScheme.primary) }
                     if (!savedBase.isNullOrBlank()) {
                         TextButton(onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -595,37 +630,17 @@ fun ProfileScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // R35 Neo: plain verdict text replaces the old glyph prefixes.
                     probe.ok == true -> Text(
-                        "✓ ${probe.detail}",
+                        "Reachable: ${probe.detail}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = PulsePalette.Emerald,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     probe.ok == false -> Text(
-                        "✗ ${probe.detail}",
+                        "Not reachable: ${probe.detail}",
                         style = MaterialTheme.typography.bodySmall,
                         color = PulsePalette.Amber,
                     )
-                }
-            }
-        }
-
-        if (viewerId != null) {
-            Spacer(Modifier.height(14.dp))
-            SettingCard {
-                Row(
-                    Modifier.fillMaxWidth().clickable { forgetConfirm = true },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Filled.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Forget this viewer (sign out)", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
-                        Text(
-                            "Clears the identity + stored session on this device",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
             }
         }
@@ -801,6 +816,14 @@ internal fun shareProfile(
  * emerald. The deep end darkens the start color (web's `-400 → -600` pair).
  */
 internal fun heroGradient(color: String?): Brush {
+    return Brush.linearGradient(heroColors(color))
+}
+
+/**
+ * R35 Neo: the identity gradient as a color pair, shared by the hero cover
+ * and the avatar identity ring so both read as one signal beam.
+ */
+internal fun heroColors(color: String?): List<Color> {
     val start = when (color?.trim()?.lowercase()) {
         "teal" -> Color(0xFF2DD4BF)
         "rose" -> Color(0xFFFB7185)
@@ -813,7 +836,7 @@ internal fun heroGradient(color: String?): Brush {
         else -> PulsePalette.parse(color) ?: Color(0xFF34D399)
     }
     val deep = Color(start.red * 0.62f, start.green * 0.68f, start.blue * 0.72f)
-    return Brush.linearGradient(listOf(start, deep))
+    return listOf(start, deep)
 }
 
 /**
@@ -834,23 +857,116 @@ internal fun copyText(context: android.content.Context, label: String, text: Str
 @Composable
 private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
-        Icon(icon, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(8.dp))
         Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-/** R14 gap 7a — one stat cell of the profile stats row (web StatTile). */
+/**
+ * R35 Neo: one flat stat cell of the profile stats row (web StatTile):
+ * mono numeral + small dim label, hairline-divided by [StatDivider].
+ * [onTap] keeps the old wallet card's retry affordance on the Coins cell.
+ */
 @Composable
-private fun ProfileStatCell(label: String, value: String) {
-    Column(Modifier.padding(horizontal = 4.dp)) {
-        Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+private fun androidx.compose.foundation.layout.RowScope.ProfileStatCell(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    accent: Boolean = false,
+    onTap: (() -> Unit)? = null,
+) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            value,
+            fontFamily = PulseMonoFamily,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         Text(
             label,
-            style = MaterialTheme.typography.labelSmall,
+            fontSize = 10.5.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/** Hairline vertical divider between the flat stat cells. */
+@Composable
+private fun StatDivider() {
+    Box(
+        Modifier
+            .width(1.dp)
+            .height(30.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+    )
+}
+
+/** R35 Neo quiet card: flat hairline panel, no heavy surface/tonal build. */
+@Composable
+private fun QuietCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, PulsePalette.Hairline),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(vertical = 4.dp), content = content)
+    }
+}
+
+/** One quiet row inside [QuietCard] (web ChevronRow: icon + title + hint). */
+@Composable
+private fun QuietRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconTint: Color,
+    title: String,
+    subtitle: String,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** Hairline divider between quiet rows. */
+@Composable
+private fun QuietDivider() {
+    androidx.compose.material3.HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+    )
 }
 
 /**
@@ -866,10 +982,10 @@ internal fun memberSinceShort(iso: String): String? = runCatching {
 @Composable
 private fun SettingCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        tonalElevation = 1.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        // R35 Neo: 24dp card radius + hairline border (locked spec).
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, PulsePalette.Hairline),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), content = content)

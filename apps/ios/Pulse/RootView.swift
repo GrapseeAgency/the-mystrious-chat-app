@@ -88,7 +88,10 @@ struct RootView: View {
 
             ParticleOverlayView(bus: session.particles)
         }
-        .tint(PulseTheme.emerald)
+        .tint(PulseTheme.accent)
+        // R17 Neo — rounded system type everywhere the theme does not set an
+        // explicit font (SF Rounded floor; iOS 17 target covers the 16.1 API).
+        .fontDesign(.rounded)
         .preferredColorScheme(colorScheme)
         // R14 5-b — deep links now mount at the ROOT (the login route must
         // reach the app pre-identity; every other route re-checks the viewer
@@ -614,7 +617,7 @@ private struct CapsuleDock: View {
     var body: some View {
         HStack(spacing: 4) {
             dockTab(.chats, icon: "bubble.left.and.bubble.right", filled: "bubble.left.and.bubble.right.fill", label: "Chats", badge: session.dockUnreadCount)
-            dockTab(.hub, icon: "flame", filled: "flame.fill", label: "Hub", badge: 0)
+            dockTab(.hub, icon: "globe.americas", filled: "globe.americas.fill", label: "Hub", badge: 0)
             composeButton
             dockTab(.contacts, icon: "person.2", filled: "person.2.fill", label: "Contacts", badge: 0)
             dockTab(.profile, icon: "person.crop.circle", filled: "person.crop.circle.fill", label: "Profile", badge: 0)
@@ -729,7 +732,7 @@ private struct CapsuleDock: View {
 
     private var moreMenu: some View {
         VStack(alignment: .leading, spacing: 2) {
-            moreItem("Settings", icon: "gearshape") {
+            moreItem("Settings", icon: "gearshape.fill") {
                 onSettings()
             }
             moreItem("Search", icon: "magnifyingglass") {

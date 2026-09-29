@@ -216,23 +216,24 @@ struct SavedLibraryView: View {
         return "\(sender) in \(place)"
     }
 
-    /// 🖼 / 🎤 / 📎 / 📊 kind prefix + body excerpt ≤64 (spec §1 row 14).
+    /// Bracketed kind tag + body excerpt ≤64 (spec §1 row 14) — plain text
+    /// tags instead of emoji prefixes (R17 Neo de-emoji pass).
     private func snippet(_ item: WireSavedItem) -> String {
         let message = item.message
         let prefix: String
         let fallback: String
         switch message.kind {
         case "image":
-            prefix = "🖼 "
+            prefix = "[Photo] "
             fallback = "Photo"
         case "audio":
-            prefix = "🎤 "
+            prefix = "[Voice] "
             fallback = "Voice note"
         case "file":
-            prefix = "📎 "
+            prefix = "[File] "
             fallback = message.fileName ?? "File"
         case "poll":
-            prefix = "📊 "
+            prefix = "[Poll] "
             fallback = "Poll"
         default:
             prefix = ""

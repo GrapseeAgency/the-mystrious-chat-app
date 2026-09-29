@@ -10,12 +10,21 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, LoaderCircle, Plus, X } from 'lucide-react'
+import { TOPIC_GLYPHS } from '@/components/ui/icons'
 import type { TopicSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { spring, stagger, pressTap } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
 
 const TOPIC_EMOJI_CHOICES = ['💬', '🎨', '🚀', '🧠', '🎉', '🛠️', '📌', '☕'] as const
+
+const TOPIC_FALLBACK_GLYPH = TOPIC_GLYPHS['💬']
+
+/** Renders a persisted topic value as a real icon — never an emoji. */
+function TopicGlyphIcon({ value, className }: { value: string; className?: string }) {
+  const Glyph = (value && TOPIC_GLYPHS[value]) || TOPIC_FALLBACK_GLYPH
+  return <Glyph className={className} aria-hidden />
+}
 
 export function TopicBar({
   topics,
@@ -79,7 +88,7 @@ export function TopicBar({
               : 'border border-zinc-200/80 bg-white/70 text-zinc-600 backdrop-blur hover:border-emerald-300 hover:text-emerald-600 dark:border-white/10 dark:bg-zinc-900/60 dark:text-zinc-300 dark:hover:text-emerald-400',
           )}
         >
-          <span aria-hidden>💬</span>
+          <TopicGlyphIcon value="💬" className="size-3.5" />
           General
         </motion.button>
 
@@ -107,7 +116,7 @@ export function TopicBar({
                   : 'border border-zinc-200/80 bg-white/70 text-zinc-600 backdrop-blur hover:border-emerald-300 hover:text-emerald-600 dark:border-white/10 dark:bg-zinc-900/60 dark:text-zinc-300 dark:hover:text-emerald-400',
               )}
             >
-              <span aria-hidden>{topic.emoji}</span>
+              <TopicGlyphIcon value={topic.emoji} className="size-3.5 shrink-0" />
               <span className="max-w-[120px] truncate">{topic.name}</span>
               <span
                 className={cn(
@@ -201,7 +210,7 @@ export function TopicBar({
                 )}
               </button>
             </div>
-            <div className="flex gap-1 pt-2" role="radiogroup" aria-label="Topic emoji">
+            <div className="flex gap-1 pt-2" role="radiogroup" aria-label="Topic icon">
               {TOPIC_EMOJI_CHOICES.map((emoji) => (
                 <motion.button
                   key={emoji}
@@ -212,13 +221,13 @@ export function TopicBar({
                   transition={{ duration: 0.15 }}
                   onClick={() => setEmojiDraft(emoji)}
                   className={cn(
-                    'flex size-8 items-center justify-center rounded-lg text-base outline-none transition-colors',
+                    'flex size-8 items-center justify-center rounded-lg text-emerald-600 outline-none transition-colors dark:text-emerald-400',
                     emojiDraft === emoji
                       ? 'bg-emerald-500/15 ring-1 ring-emerald-400'
                       : 'hover:bg-zinc-100 dark:hover:bg-zinc-800',
                   )}
                 >
-                  {emoji}
+                  <TopicGlyphIcon value={emoji} className="size-4" />
                 </motion.button>
               ))}
             </div>

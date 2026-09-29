@@ -6,17 +6,23 @@
 // ─────────────────────────────────────────────────────────────
 'use client'
 
-import { useEffect } from 'react'
-import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'framer-motion'
-import { ChevronRight, type LucideIcon } from 'lucide-react'
+import { useEffect, type ComponentType } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { PulseCaret } from '@/components/ui/icons'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { ease, pressSpring, pressTap, spring, stagger } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
 
-/** Liquid-glass section card used by every profile group. */
+/** Icon prop accepted by rows — Lucide + Phosphor-based glyphs both fit. */
+export type RowIcon = ComponentType<{
+  className?: string
+  'aria-hidden'?: boolean | 'true' | 'false'
+}>
+
+/** R35 Neo card — hairline, quiet glass, no carnival shadows. */
 export const PROFILE_CARD =
-  'rounded-3xl border border-zinc-200/70 bg-white/70 backdrop-blur-2xl backdrop-saturate-150 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_14px_40px_-24px_rgba(9,42,31,0.28)] dark:border-white/10 dark:bg-zinc-900/60 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_14px_40px_-24px_rgba(0,0,0,0.6)]'
+  'rounded-2xl border border-zinc-200/60 bg-white/55 backdrop-blur-xl dark:border-white/8 dark:bg-white/[0.04]'
 
 /** Section = uppercase micro-title + glass card, entrance on the shared bezier. */
 export function ProfileSection({
@@ -65,7 +71,7 @@ export function ChevronRow({
   destructive = false,
   ariaLabel,
 }: {
-  icon: LucideIcon
+  icon: RowIcon
   iconClassName?: string
   title: string
   description?: string
@@ -124,7 +130,7 @@ export function ChevronRow({
         <span className="shrink-0 text-xs font-medium text-zinc-500 dark:text-zinc-400">{trailing}</span>
       ) : null}
       <motion.span variants={CHEVRON_VARIANTS} className="shrink-0" aria-hidden>
-        <ChevronRight
+        <PulseCaret
           className={cn('size-4', destructive ? 'text-destructive/70' : 'text-zinc-400 dark:text-zinc-500')}
         />
       </motion.span>
@@ -144,7 +150,7 @@ export function SwitchRow({
   ariaLabel,
   children,
 }: {
-  icon: LucideIcon
+  icon: RowIcon
   iconClassName?: string
   title: string
   description?: string
@@ -208,7 +214,6 @@ export function CountUp({ value, cap = false }: { value: number; cap?: boolean }
 
   return <motion.span>{text}</motion.span>
 }
-
 /** One stat tile of the hero stats row (real data only — callers pass values). */
 export function StatTile({
   label,
@@ -236,7 +241,7 @@ export function StatTile({
     >
       <span
         className={cn(
-          'text-base font-bold tracking-tight tabular-nums',
+          'stat-mono text-[15px] font-semibold tracking-tight',
           accent
             ? 'text-[var(--ui-accent,#10b981)]'
             : 'text-zinc-800 dark:text-zinc-100',
@@ -244,7 +249,7 @@ export function StatTile({
       >
         {value}
       </span>
-      <span className="truncate text-[10px] font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+      <span className="truncate text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
         {label}
       </span>
     </motion.div>

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { LoaderCircle, RefreshCw, Swords, Trophy } from 'lucide-react'
+import { PulseSword } from '@/components/ui/icons'
 import { toast } from 'sonner'
 import { apiJson, ApiError } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
@@ -243,7 +244,7 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
     return (
       <div className={cn(glassSurface, 'w-full max-w-[300px] p-4')} aria-busy="true">
         <div className="mb-3 flex items-center gap-2">
-          <span className="text-base">⚔️</span>
+          <PulseSword className="size-4 text-zinc-400" aria-hidden />
           <div className="h-3.5 w-28 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-700" />
         </div>
         <div className="grid aspect-square grid-cols-3 gap-1.5">
@@ -258,9 +259,7 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
   if (gameQuery.isError || !data || !match) {
     return (
       <div className={cn(glassSurface, 'flex w-full max-w-[300px] flex-col items-center gap-2 p-4')}>
-        <span className="text-base" aria-hidden>
-          ⚔️
-        </span>
+        <PulseSword className="size-5 text-zinc-400" aria-hidden />
         <p className="text-center text-[12.5px] text-zinc-500 dark:text-zinc-400">
           This game could not be loaded.
         </p>

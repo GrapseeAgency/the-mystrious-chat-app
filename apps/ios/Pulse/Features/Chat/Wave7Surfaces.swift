@@ -83,7 +83,7 @@ final class Wave7RoomActions: ObservableObject {
         Task { @MainActor in
             do {
                 let result = try await api.grabRedPacket(packetId)
-                toast("You grabbed \(result.amount) PC 🎉")
+                toast("You grabbed \(result.amount) PC")
             } catch {
                 toast(describe(error), isError: true)
             }
@@ -355,7 +355,9 @@ struct Wave7RedPacketCard: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text("🧧").font(.system(size: 24))
+            Image(systemName: "gift.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(.white)
             VStack(alignment: .leading, spacing: 2) {
                 Text(note?.isEmpty == false ? note! : "Red packet")
                     .font(.subheadline.weight(.semibold))
@@ -420,7 +422,7 @@ struct Wave7RedPacketDetailBody: View {
             Text("From \(detail.senderName ?? "Unknown") · \(detail.packet?.total ?? 0) PC in \(detail.packet?.count ?? 0) grabs")
                 .font(.subheadline.weight(.semibold))
             if let myGrab = detail.myGrab, myGrab > 0 {
-                Text("You grabbed \(myGrab) PC 🎉")
+                Text("You grabbed \(myGrab) PC")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(PulseTheme.color(named: "emerald"))
             }
@@ -496,7 +498,7 @@ struct Wave7RedPacketCreateSheet: View {
                     }
                 }
             }
-            .navigationTitle("🧧 Red packet")
+            .navigationTitle("Red packet")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -522,13 +524,13 @@ struct Wave7TicTacToeCard: View {
                 .font(.subheadline.weight(.semibold))
             board
             HStack {
-                Text("✕ \(detail?.playerX?.name ?? "Player")")
+                Text("X \(detail?.playerX?.name ?? "Player")")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(PulseTheme.color(named: "emerald"))
                 Spacer()
                 Text("vs").font(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Text("◯ \(detail?.playerO?.name ?? "waiting…")")
+                Text("O \(detail?.playerO?.name ?? "waiting…")")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.orange)
             }
@@ -606,8 +608,8 @@ struct Wave7TicTacToeCard: View {
         case "o_won": return "O wins — \(detail?.playerO?.name ?? "O")"
         case "draw": return "Draw — both +10 XP"
         default:
-            if match.playerOId == nil && mySide == nil { return "⚔️ Open challenge — tap a seat to join" }
-            if match.playerOId == nil { return "⚔️ Tic-tac-toe — open challenge" }
+            if match.playerOId == nil && mySide == nil { return "Open challenge - tap a seat to join" }
+            if match.playerOId == nil { return "Tic-tac-toe - open challenge" }
             return myTurn ? "Your turn (\(mySide.map(String.init) ?? ""))" : "Turn: \(match.turn ?? "X")"
         }
     }
@@ -619,7 +621,7 @@ struct Wave7TicTacToeCard: View {
                     ForEach(0..<3, id: \.self) { col in
                         let idx = row * 3 + col
                         let mark = PulseWave7Logic.cellAt(match.board, idx)
-                        Text(mark == "X" ? "✕" : mark == "O" ? "◯" : " ")
+                        Text(mark == "X" ? "X" : mark == "O" ? "O" : " ")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundStyle(mark == "X" ? PulseTheme.color(named: "emerald") : Color.orange)
                             .frame(width: 56, height: 56)
@@ -677,7 +679,7 @@ struct Wave7GameCreateSheet: View {
                     }
                 }
             }
-            .navigationTitle("⚔️ Tic-tac-toe")
+            .navigationTitle("Tic-tac-toe")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -699,7 +701,9 @@ struct Wave7TournamentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("🏆").font(.subheadline)
+                Image(systemName: "trophy.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(PulseTheme.amber)
                 Text(name.isEmpty ? "Tournament" : name)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
@@ -772,7 +776,7 @@ struct Wave7TournamentCreateSheet: View {
                     }
                 }
             }
-            .navigationTitle("🏆 New tournament")
+            .navigationTitle("New tournament")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -828,7 +832,7 @@ struct Wave7KanbanSheet: View {
                     }
                 }
             }
-            .navigationTitle("🗂️ Kanban")
+            .navigationTitle("Kanban")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -879,7 +883,7 @@ struct Wave7KanbanSheet: View {
                     .buttonStyle(.borderless)
             }
             if card.createdById == viewerId || isAdmin {
-                Button { onDeleteCard(card.id) } label: { Text("✕").foregroundStyle(.red) }
+                Button { onDeleteCard(card.id) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
                     .buttonStyle(.borderless)
             }
         }
@@ -917,7 +921,7 @@ struct Wave7WhiteboardSheet: View {
         NavigationStack {
             VStack(spacing: 8) {
                 HStack {
-                    Text("🖌️ Whiteboard").font(.headline)
+                    Text("Whiteboard").font(.headline)
                     Spacer()
                     Button("Undo", action: onUndo)
                     Button(confirmClear ? "Tap again to clear" : "Clear") {
@@ -1169,7 +1173,7 @@ struct Wave7EventsSheet: View {
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
                             if event.createdById == viewerId || isAdmin {
-                                Button { onDelete(event.id) } label: { Text("✕").foregroundStyle(.red) }
+                                Button { onDelete(event.id) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
                                     .buttonStyle(.borderless)
                             }
                         }
@@ -1202,7 +1206,7 @@ struct Wave7EventsSheet: View {
                     }
                 }
             }
-            .navigationTitle("📅 Events")
+            .navigationTitle("Events")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 while !Task.isCancelled {
@@ -1338,16 +1342,16 @@ struct Wave7RemindersSheet: View {
                                     .buttonStyle(.borderless)
                             }
                             if item.firedAt == nil {
-                                Button { onResolve(item.id) } label: { Text("✓").foregroundStyle(PulseTheme.color(named: "emerald")) }
+                                Button { onResolve(item.id) } label: { Image(systemName: "checkmark").foregroundStyle(PulseTheme.color(named: "emerald")) }
                                     .buttonStyle(.borderless)
                             }
-                            Button { onDelete(item.id) } label: { Text("✕").foregroundStyle(.red) }
+                            Button { onDelete(item.id) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
                                 .buttonStyle(.borderless)
                         }
                     }
                 }
             }
-            .navigationTitle("⏰ Reminders")
+            .navigationTitle("Reminders")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 while !Task.isCancelled {
@@ -1430,7 +1434,7 @@ struct Wave7LeaderboardSheet: View {
                     }
                 }
             }
-            .navigationTitle("🏅 Leaderboard")
+            .navigationTitle("Leaderboard")
             .navigationBarTitleDisplayMode(.inline)
             .task(id: scopeGlobal) {
                 let page = await (scopeGlobal ? loadGlobal() : loadRoom())

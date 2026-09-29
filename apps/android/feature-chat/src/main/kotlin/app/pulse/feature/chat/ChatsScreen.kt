@@ -80,7 +80,6 @@ import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
@@ -145,6 +144,7 @@ import app.pulse.domain.model.StoryCell
 import app.pulse.feature.chat.R
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseGlass
+import app.pulse.ui.PulseMonoFamily
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.isPulseDarkTheme
@@ -942,7 +942,7 @@ private fun HomeHeader(
         ) {
             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Outlined.Search,
+                    Icons.Filled.Search,
                     contentDescription = null,
                     tint = Zinc400,
                     modifier = Modifier.size(16.dp),
@@ -1021,7 +1021,7 @@ private fun SearchHeader(
                 singleLine = true,
                 textStyle = TextStyle(fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground),
                 leadingIcon = {
-                    Icon(Icons.Outlined.Search, contentDescription = null, tint = Zinc400, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Filled.Search, contentDescription = null, tint = Zinc400, modifier = Modifier.size(16.dp))
                 },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color.Transparent,
@@ -1679,6 +1679,7 @@ private fun ConversationRowItem(
                     Spacer(Modifier.width(6.dp))
                     Text(
                         PulseTime.listStamp(conversation.lastActivityAt),
+                        fontFamily = PulseMonoFamily,
                         fontSize = 11.sp,
                         fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
                         color = if (hasUnread) Emerald600 else Zinc400,
@@ -1763,11 +1764,11 @@ private fun previewPrefix(c: Conversation): String = when {
     else -> ""
 }
 
-/** Web conversationPreview — kind-based label substitution. */
+/** Web conversationPreview: kind-based label substitution (R35 Neo: no glyphs). */
 private fun previewText(c: Conversation): String = when {
-    c.lastMessageDeleted -> "🚫 message deleted"
-    c.lastMessageIsImage && c.lastMessagePreview.isNullOrBlank() -> "📷 Photo"
-    c.lastMessageIsAudio && c.lastMessagePreview.isNullOrBlank() -> "🎤 Voice message"
+    c.lastMessageDeleted -> "Message deleted"
+    c.lastMessageIsImage && c.lastMessagePreview.isNullOrBlank() -> "Photo"
+    c.lastMessageIsAudio && c.lastMessagePreview.isNullOrBlank() -> "Voice message"
     c.lastMessageIsFile -> "Document — ${c.lastMessageFileName ?: "file"}"
     !c.lastMessagePreview.isNullOrBlank() -> c.lastMessagePreview ?: "No messages yet"
     else -> "No messages yet"
@@ -2185,7 +2186,7 @@ private fun SearchResults(
                 Modifier.fillMaxWidth().padding(top = 96.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(Icons.Outlined.Search, contentDescription = null, tint = Zinc400, modifier = Modifier.size(32.dp))
+                Icon(Icons.Filled.Search, contentDescription = null, tint = Zinc400, modifier = Modifier.size(32.dp))
                 Spacer(Modifier.height(8.dp))
                 Text("No matches", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Zinc500)
                 Text(
@@ -2317,7 +2318,7 @@ private fun SearchHitRow(hit: MessageHit, query: String, onOpen: () -> Unit) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                hit.imageOnly -> Text("📷 Photo", fontSize = 13.sp, color = Zinc500, maxLines = 1)
+                hit.imageOnly -> Text("Photo", fontSize = 13.sp, color = Zinc500, maxLines = 1)
                 else -> Text(
                     snippetAnnotated(
                         if (hit.isFile && !hit.content.contains(query, ignoreCase = true)) {

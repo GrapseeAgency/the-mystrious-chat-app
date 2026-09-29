@@ -31,21 +31,19 @@ import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft,
-  AtSign,
-  BadgeCheck,
-  Check,
-  Coins,
-  Copy,
-  Fingerprint,
-  Image as ImageIcon,
-  LoaderCircle,
-  LogOut,
-  Mic,
-  Pencil,
-  Share2,
-  Star,
-} from 'lucide-react'
+  PulseAt,
+  PulseBack,
+  PulseCheck,
+  PulseEdit,
+  PulseFingerprint,
+  PulseLoader,
+  PulseMic,
+  PulsePhoto,
+  PulseSeal,
+  PulseShare,
+  PulseSignOut,
+  PulseStar,
+} from '@/components/ui/icons'
 import { toast } from 'sonner'
 import type { AppUser, SavedItem, UserStats } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
@@ -71,13 +69,38 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { AvatarPhotoEditor } from '@/components/profile/avatar-editor'
-import { ChevronRow, CountUp, ProfileSection, StatTile, PROFILE_CARD } from '@/components/profile/profile-primitives'
+import { ChevronRow, ProfileSection, PROFILE_CARD } from '@/components/profile/profile-primitives'
 import { STATUS_GLYPH_CHOICES, StatusGlyph } from '@/components/profile/status-glyph'
 import { HandleEditorDialog } from '@/components/profile/handle-editor'
 
 const NAME_MAX = 32
 const ABOUT_MAX = 140
 const STATUS_MAX = 48
+
+/** One instrument cell of the flat stats row. */
+function StatCell({ label, value, accent = false, small = false }: {
+  label: string
+  value: string
+  accent?: boolean
+  small?: boolean
+}) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-0.5 px-1 text-center">
+      <span
+        className={cn(
+          'stat-mono whitespace-nowrap truncate font-semibold tracking-tight',
+          small ? 'text-[11px]' : 'text-[15px]',
+          accent ? 'text-[var(--ui-accent,#10b981)]' : 'text-zinc-800 dark:text-zinc-100',
+        )}
+      >
+        {value}
+      </span>
+      <span className="truncate text-[10px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+        {label}
+      </span>
+    </div>
+  )
+}
 
 interface UsersResponse {
   user: AppUser
@@ -303,67 +326,52 @@ function ProfileEditor({
     <div className="absolute inset-0 flex flex-col">
       {/* ── ROOT PAGE ───────────────────────────────────────── */}
       <div className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(104px+env(safe-area-inset-bottom))]">
-        {/* ── HERO ── */}
+        {/* ── HERO — identity beam, zero carnival blobs ── */}
         <section aria-label="Profile" className="relative">
-          {/* gradient cover from the identity color + glass sheen */}
-          <div
-            className={cn(
-              'relative isolate h-40 overflow-hidden rounded-b-[28px] bg-gradient-to-br sm:h-48',
-              gradient,
-            )}
-          >
+          {/* flat identity cover with a scanline texture + signal edge */}
+          <div className={cn('scan-fx relative isolate h-28 overflow-hidden sm:h-32', gradient)}>
             <span
               aria-hidden
-              className="absolute inset-0 bg-[radial-gradient(80%_90%_at_18%_0%,rgba(255,255,255,0.32),transparent_55%),radial-gradient(70%_80%_at_88%_18%,rgba(255,255,255,0.16),transparent_50%)]"
+              className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16),transparent_60%),radial-gradient(130%_150%_at_88%_-12%,rgba(255,255,255,0.2),transparent_55%)]"
             />
-            <motion.span
+            {/* the signal line — hairline bright edge grounding the cover */}
+            <span
               aria-hidden
-              className="absolute -right-10 -top-14 size-44 rounded-full bg-white/15 blur-2xl"
-              animate={reducedMotion ? undefined : { scale: [1, 1.12, 1], opacity: [0.7, 1, 0.7] }}
-              transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            <motion.span
-              aria-hidden
-              className="absolute -left-12 -bottom-8 size-36 rounded-full bg-black/10 blur-2xl"
-              animate={reducedMotion ? undefined : { scale: [1, 1.18, 1], opacity: [0.5, 0.8, 0.5] }}
-              transition={{ duration: 11, delay: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-white/80 to-transparent"
             />
           </div>
 
-          <div className="relative px-4">
-            {/* overlapping avatar with specular gradient ring */}
+          <div className="relative px-5">
+            {/* overlapping avatar with a slim identity ring */}
             <motion.div
-              initial={reducedMotion ? false : { scale: 0.8, opacity: 0, y: 10 }}
+              initial={reducedMotion ? false : { scale: 0.86, opacity: 0, y: 8 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               transition={spring.bouncy}
               className={cn(
-                'relative z-10 -mt-12 w-fit rounded-full p-[3px] shadow-lg shadow-black/15',
+                'relative z-10 -mt-11 w-fit rounded-full p-[2.5px] shadow-lg shadow-black/20',
                 'bg-gradient-to-br',
                 gradient,
               )}
             >
-              <div className="rounded-full bg-white p-[3px] dark:bg-zinc-900">
-                <UserAvatar name={me.name} color={me.color} avatar={me.avatar} size={92} showPresence online={iAmOnline} />
+              <div className="rounded-full bg-white p-[2.5px] dark:bg-[#0d1211]">
+                <UserAvatar name={me.name} color={me.color} avatar={me.avatar} size={84} showPresence online={iAmOnline} />
               </div>
             </motion.div>
 
-            {/* name + verified-style member badge */}
+            {/* name + quiet trust mark */}
             <motion.div
               initial={reducedMotion ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: ease.out, delay: 0.05 }}
-              className="mt-3 flex items-center gap-2"
+              className="mt-3 flex items-center gap-1.5"
             >
-              <h1 className="truncate text-2xl font-black tracking-tight text-zinc-900 dark:text-zinc-50">
+              <h1 className="truncate text-[22px] font-bold tracking-[-0.02em] text-zinc-900 dark:text-zinc-50">
                 {me.name}
               </h1>
-              <span
-                title="Registered member"
-                className="flex size-5 shrink-0 items-center justify-center rounded-full"
+              <PulseSeal
+                className="size-4 shrink-0 text-[var(--ui-accent,#10b981)]"
                 aria-label="Registered member"
-              >
-                <BadgeCheck className="size-5 fill-[var(--ui-accent,#10b981)] text-white dark:text-zinc-900" aria-hidden />
-              </span>
+              />
             </motion.div>
 
             {/* @handle — tap to copy (editing lives on the sub-page) */}
@@ -381,13 +389,13 @@ function ProfileEditor({
                 aria-label={
                   me.username ? `Copy handle @${me.username}` : 'Set your handle'
                 }
-                className="glass-pill flex min-h-[32px] items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold text-[var(--ui-accent,#10b981)] outline-none"
+                className="glass-pill stat-mono flex min-h-[30px] items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold text-[var(--ui-accent,#10b981)] outline-none"
               >
-                <AtSign className="size-3.5" aria-hidden />
+                <PulseAt className="size-3.5" aria-hidden />
                 {me.username ? (
                   handleCopied ? (
                     <>
-                      <Check className="size-3.5" strokeWidth={3} aria-hidden />
+                      <PulseCheck className="size-3.5" aria-hidden />
                       Copied
                     </>
                   ) : (
@@ -405,7 +413,7 @@ function ProfileEditor({
                 initial={reducedMotion ? false : { opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, ease: ease.out, delay: 0.12 }}
-                className="mt-2.5 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-700 dark:text-zinc-200"
+                className="mt-2.5 flex items-center gap-1.5 text-[13px] font-medium text-zinc-700 dark:text-zinc-200"
               >
                 {me.statusEmoji ? (
                   <StatusGlyph value={me.statusEmoji} className="size-4 text-[var(--ui-accent,#10b981)]" />
@@ -424,7 +432,7 @@ function ProfileEditor({
               {me.about.trim() || 'No bio yet'}
             </motion.p>
 
-            {/* quick actions — two designed pills, not a toolbox dump */}
+            {/* quick actions — one signal, one ghost */}
             <motion.div
               initial={reducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
@@ -440,9 +448,9 @@ function ProfileEditor({
                   navigate('/profile/edit')
                 }}
                 aria-label="Edit profile"
-                className="glass-pill flex h-10 items-center gap-2 rounded-full px-4 text-[13px] font-bold text-[var(--ui-accent,#10b981)] outline-none"
+                className="flex h-10 items-center gap-2 rounded-full bg-[var(--ui-accent,#10b981)] px-4 text-[13px] font-bold text-white shadow-[0_8px_24px_-8px_rgba(16,185,129,0.65)] outline-none transition-opacity hover:opacity-90 dark:text-[#04120c] dark:shadow-[0_8px_28px_-6px_rgba(43,232,166,0.4)]"
               >
-                <Pencil className="size-4" aria-hidden />
+                <PulseEdit className="size-4" aria-hidden />
                 Edit profile
               </motion.button>
               <motion.button
@@ -453,53 +461,39 @@ function ProfileEditor({
                 aria-label="Share your profile"
                 className="glass-pill flex h-10 items-center gap-2 rounded-full px-4 text-[13px] font-bold text-zinc-600 outline-none dark:text-zinc-300"
               >
-                <Share2 className="size-4" aria-hidden />
+                <PulseShare className="size-4" aria-hidden />
                 Share
               </motion.button>
             </motion.div>
           </div>
         </section>
 
-        {/* ── STATS — real data only ── */}
-        <section aria-label="Your activity" className="mt-5 px-4">
-          <div className="glass-deep glass-sheen isolate grid grid-cols-4 gap-1.5 rounded-3xl p-2">
-            {statsQ.isPending ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-[58px] rounded-2xl" />
-              ))
-            ) : (
-              <>
-                <StatTile delay={0} label="Messages" value={statsQ.isError ? '—' : <CountUp value={statsQ.data?.messages ?? 0} />} />
-                <StatTile delay={1} label="Rooms" value={statsQ.isError ? '—' : <CountUp value={statsQ.data?.chats ?? 0} />} />
-                <StatTile
-                  delay={2}
-                  accent
-                  label="Coins"
-                  value={
-                    walletQ.isPending ? (
-                      <Skeleton className="h-5 w-10 rounded-md" />
-                    ) : walletQ.isError ? (
-                      '—'
-                    ) : (
-                      <span className="inline-flex items-center gap-1">
-                        <Coins className="size-3.5" aria-hidden />
-                        <CountUp value={walletQ.data?.coins ?? 0} />
-                      </span>
-                    )
-                  }
-                />
-                <StatTile delay={3} label="Member since" value={memberSinceShort || '—'} />
-              </>
-            )}
+        {/* ── STATS — one flat instrument row, mono numerals ── */}
+        <section aria-label="Your activity" className="mt-6 px-5">
+          <div className="grid grid-cols-4 divide-x divide-zinc-200/70 rounded-2xl border border-zinc-200/60 bg-white/55 py-3 backdrop-blur-xl dark:divide-white/8 dark:border-white/8 dark:bg-white/[0.04]">
+            <StatCell
+              label="Messages"
+              value={statsQ.isPending ? '·' : statsQ.isError ? '—' : (statsQ.data?.messages ?? 0).toLocaleString('en-US')}
+            />
+            <StatCell
+              label="Rooms"
+              value={statsQ.isPending ? '·' : statsQ.isError ? '—' : (statsQ.data?.chats ?? 0).toLocaleString('en-US')}
+            />
+            <StatCell
+              label="Coins"
+              accent
+              value={walletQ.isPending ? '·' : walletQ.isError ? '—' : (walletQ.data?.coins ?? 0).toLocaleString('en-US')}
+            />
+            <StatCell label="Since" value={memberSinceShort || '—'} small />
           </div>
         </section>
 
         {/* ── SAVED — real starred-message library ── */}
-        <div className="px-4">
+        <div className="px-5">
           <ProfileSection title="Saved" delay={0.02}>
             <ChevronRow
-              icon={Star}
-              iconClassName="bg-amber-500/12 text-amber-500"
+              icon={PulseStar}
+              iconClassName="bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)] text-[var(--ui-accent,#10b981)]"
               title="Saved messages"
               description="Long-press any message in a chat, then Save"
               onPress={() => setSavedOpen(true)}
@@ -508,18 +502,18 @@ function ProfileEditor({
         </div>
 
         {/* ── ACCOUNT ── */}
-        <div className="px-4">
+        <div className="px-5">
           <ProfileSection title="Account" delay={0.06}>
             <div className="p-1">
               <ChevronRow
-                icon={Fingerprint}
+                icon={PulseFingerprint}
                 title="Copy account ID"
                 description={me.id}
                 onPress={copyId}
                 ariaLabel={`Copy account ID ${me.id}`}
               />
               <ChevronRow
-                icon={LogOut}
+                icon={PulseSignOut}
                 destructive
                 title="Sign out"
                 description="Return to the welcome screen — nothing is deleted"
@@ -560,7 +554,7 @@ function ProfileEditor({
                       aria-label="Back to profile"
                       className="glass-pill flex h-9 items-center gap-1.5 rounded-full pl-2 pr-3 text-[13px] font-bold text-zinc-700 outline-none dark:text-zinc-200"
                     >
-                      <ArrowLeft className="size-4" aria-hidden />
+                      <PulseBack className="size-4" aria-hidden />
                       Profile
                     </motion.button>
                     <h2 className="text-[15px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -583,10 +577,9 @@ function ProfileEditor({
                             className="h-9 rounded-full bg-[var(--ui-accent,#10b981)] px-3.5 text-xs font-bold text-white hover:opacity-90 active:scale-95"
                           >
                             {saveProfile.isPending ? (
-                              <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+                              <PulseLoader className="size-3.5 animate-spin" aria-hidden />
                             ) : (
-                              <Check className="size-3.5" strokeWidth={3} aria-hidden />
-                            )}
+                              <PulseCheck className="size-3.5" aria-hidden />                            )}
                             Save
                           </Button>
                         </motion.div>
@@ -702,7 +695,7 @@ function ProfileEditor({
                                     : 'hover:scale-105',
                                 )}
                               >
-                                {selected ? <Check className="size-4 text-white" strokeWidth={3} /> : null}
+                                {selected ? <PulseCheck className="size-4 text-white" /> : null}
                               </motion.button>
                             )
                           })}
@@ -713,7 +706,7 @@ function ProfileEditor({
                     <ProfileSection title="Handle">
                       <div className="p-1">
                         <ChevronRow
-                          icon={AtSign}
+                          icon={PulseAt}
                           iconClassName="bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)] text-[var(--ui-accent,#10b981)]"
                           title="Your handle"
                           description={me.username ? `@${me.username}` : 'Claim yours — friends can find you by it'}
@@ -731,12 +724,12 @@ function ProfileEditor({
                       >
                         {saveProfile.isPending ? (
                           <>
-                            <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                            <PulseLoader className="size-4 animate-spin" aria-hidden />
                             Saving
                           </>
                         ) : (
                           <>
-                            <Check className="size-4" strokeWidth={3} aria-hidden />
+                            <PulseCheck className="size-4" aria-hidden />
                             Save changes
                           </>
                         )}
@@ -760,7 +753,7 @@ function ProfileEditor({
           <DrawerDescription className="sr-only">Messages you starred across every chat</DrawerDescription>
           <div className="pb-2">
             <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
-              <Star className="size-4 fill-amber-400 text-amber-500" aria-hidden />
+              <PulseStar className="size-4 text-[var(--ui-accent,#10b981)]" aria-hidden />
               {savedQuery.isPending
                 ? 'Loading'
                 : `${(savedQuery.data ?? []).length} saved ${(savedQuery.data ?? []).length === 1 ? 'message' : 'messages'}`}
@@ -772,8 +765,8 @@ function ProfileEditor({
               </div>
             ) : (savedQuery.data ?? []).length === 0 ? (
               <div className="flex flex-col items-center gap-2.5 px-6 py-7 text-center">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-500/12">
-                  <Star className="size-6 text-amber-500" aria-hidden />
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)]">
+                  <PulseStar className="size-6 text-[var(--ui-accent,#10b981)]" aria-hidden />
                 </div>
                 <p className="max-w-[250px] text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                   Long-press a message in any chat and choose Save message.
@@ -802,10 +795,10 @@ function ProfileEditor({
                       </div>
                       <span className="mt-1 flex items-start gap-1.5">
                         {item.message.imagePath ? (
-                          <ImageIcon className="mt-0.5 size-3.5 shrink-0 text-zinc-400" aria-label="Photo message" />
+                          <PulsePhoto className="mt-0.5 size-3.5 shrink-0 text-zinc-400" aria-label="Photo message" />
                         ) : null}
                         {item.message.audioPath ? (
-                          <Mic className="mt-0.5 size-3.5 shrink-0 text-zinc-400" aria-label="Voice message" />
+                          <PulseMic className="mt-0.5 size-3.5 shrink-0 text-zinc-400" aria-label="Voice message" />
                         ) : null}
                         <span className="line-clamp-2 text-[13px] leading-snug text-zinc-600 dark:text-zinc-300">
                           {item.message.content.replace(/\s+/g, ' ').trim() || '(media)'}

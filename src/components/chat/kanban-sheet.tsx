@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, LoaderCircle, Trash2, WifiOff, X } from 'lucide-react'
+import { PulseKanban } from '@/components/ui/icons'
 import { toast } from 'sonner'
 import { ApiError, apiJson, gradientFor, initialsOf } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
@@ -303,9 +304,9 @@ export function KanbanSheet({
           <header className="flex shrink-0 items-center gap-2.5 border-b border-white/10 px-4 pb-3 pt-1">
             <span
               aria-hidden
-              className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-[15px]"
+              className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_14%,transparent)] text-[var(--ui-accent,#10b981)]"
             >
-              📋
+              <PulseKanban className="size-4.5" />
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[15px] font-bold leading-tight text-zinc-50">Board</p>

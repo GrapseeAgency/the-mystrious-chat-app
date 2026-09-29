@@ -56,13 +56,13 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Whatshot
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -183,9 +183,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-private val DockEmerald600 = Color(0xFF059669)
+private val DockEmerald600 = Color(0xFF2BE8A6) // R35 Neo - neon mint active signal
 private val DockTeal600 = Color(0xFF0D9488)
-private val DockInactiveDark = Color(0xFFA1A1AA)
+private val DockInactiveDark = Color(0xFF8CA398) // R35 Neo - dimmed text token
 private val DockInactiveLight = Color(0xFF71717A)
 
 /** Canonical tab order — drives dock layout + direction-aware transitions. */
@@ -199,10 +199,10 @@ private data class DockTab(
     val carriesUnread: Boolean = false,
 )
 
-/** Registry parity with web NAV_ITEMS (nav-router.ts) — Lucide icon mapping. */
+/** Registry parity with web NAV_ITEMS (nav-router.ts) - R35 Neo filled icon voice. */
 private val DOCK_TABS = listOf(
     DockTab("chats", "Chats", Icons.Filled.ChatBubble, Icons.Outlined.ChatBubbleOutline, carriesUnread = true),
-    DockTab("hub", "Hub", Icons.Filled.Whatshot, Icons.Outlined.Whatshot),
+    DockTab("hub", "Hub", Icons.Filled.Public, Icons.Outlined.Public),
     DockTab("contacts", "Contacts", Icons.Filled.Group, Icons.Outlined.Group),
     DockTab("profile", "Profile", Icons.Filled.AccountCircle, Icons.Outlined.AccountCircle),
 )
@@ -1586,7 +1586,7 @@ private fun ComposeDockButton(onCompose: () -> Unit, size: Dp = 46.dp) {
         Modifier
             .size(size)
             .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(PulsePalette.Emerald, DockTeal600)))
+            .background(Brush.linearGradient(listOf(DockEmerald600, DockTeal600)))
             .clickable {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onCompose()
@@ -2271,7 +2271,7 @@ private fun RailDock(
                 .size(36.dp)
                 .shadow(4.dp, RoundedCornerShape(12.dp))
                 .clip(RoundedCornerShape(12.dp))
-                .background(Brush.linearGradient(listOf(PulsePalette.Emerald, DockTeal600))),
+                .background(Brush.linearGradient(listOf(DockEmerald600, DockTeal600))),
             contentAlignment = Alignment.Center,
         ) {
             Text("P", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
@@ -2555,7 +2555,7 @@ private fun CommandBarDock(
                 Modifier
                     .size(28.dp)
                     .clip(dockGlassShape(9.dp))
-                    .background(Brush.linearGradient(listOf(PulsePalette.Emerald, DockTeal600))),
+                    .background(Brush.linearGradient(listOf(DockEmerald600, DockTeal600))),
                 contentAlignment = Alignment.Center,
             ) {
                 Text("P", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black)
@@ -2721,7 +2721,7 @@ private fun RadialDock(
                     .size(54.dp)
                     .shadow(8.dp, CircleShape)
                     .clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(PulsePalette.Emerald, DockTeal600)))
+                    .background(Brush.linearGradient(listOf(DockEmerald600, DockTeal600)))
                     .clickable {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         open = !open
