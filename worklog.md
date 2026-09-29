@@ -3973,3 +3973,23 @@ Stage Summary:
 - GATE: `JAVA_HOME=/home/z/jdk-21 ./gradlew :app:compileDebugKotlin …` → BUILD SUCCESSFUL in 12s (140 up-to-date after the green run); `./gradlew :protocol:test …` → BUILD SUCCESSFUL, PulseNavStyleTest failures=0 errors=0 (tests=4).
 - HONEST NOTES (documented, not regressions): incoming buzz is gated by the account notifVibrate (Wave-8 mapping, pre-existing) while the device hapticsOn toggle gates the preview buzz/UI haptics; About keeps the web's "Framework" row as "Kotlin + Jetpack Compose (native Android)"; the 5 new nav styles are honest mobile adaptations of desktop idioms (renderer comments cite the web nav-router lines); Preview alert is additionally hard-disabled while quiet hours are active (web only silences the ping).
 - Net Android delta: 17 files +1299/−77 + 1 new domain file (PreviewAlertHook.kt). No src/ changes, no apps/ios changes, no commit, no version bump.
+
+---
+Task ID: 6/7 (release chain)
+Agent: main orchestrator
+Task: R14-CLOSE — ship full web→native settings parity as v0.11.3-native
+
+Work Log:
+- Sandbox rollback discovered mid-wave: local repo was R10-era (R11/R12/R13 only on remote; artifacts/ + mirror gone) → reconciled: deleted ambiguous local `origin/main` branch, reset hard to refs/remotes/origin/main (28885f2 R13-CLOSE); local-only cron commit c9cb2d1 (55-line worklog delta) saved to /tmp/cron-r10-worklog-lost.patch then discarded (superseded by remote R11-R13 worklogs)
+- Release v0.11.2-native verified LIVE via API (asset Pulse-v0.11.2-native.apk 25.4MB R8-minified; Android+iOS CI success on tag) — but user reported web settings ⊄ app → R14 wave opened
+- Web inventory re-derived from src/** (Explore agent + personal line-grep cross-check): 47 settings rows / 9 sections, 19 persisted keys (7 device pulse.settings.v1 + 12 account-prefs + uiTheme/navStyle stores), ~150 feature families (B-H), all file:line receipted
+- Parallel coverage audits: Android 4-a (17 WIRED / 2 PARTIAL / 0 keys missing; 35/47 rows WIRED, 16-item gap list), iOS 4-b (18/19 keys WIRED; 36/47 rows WIRED, 13-item gap list); both appended to worklog
+- Wiring wave: Android first agent died at context deadline leaving +1289 lines → continuation agent verified 14/14 gaps, fixed 2 real defects (cross-module IncomingAttention leak → new domain PreviewAlertHook seam; Dp*Double radial math), compile gate GREEN (:app:compileDebugKotlin BUILD SUCCESSFUL; :protocol:test 4/4; SDK re-provisioned: JDK 21.0.12.1 + cmdline-tools 11076708 + platforms;android-35 + build-tools;35.0.0 → /home/z/android-sdk, local.properties written)
+- iOS first agent died leaving +1486 lines → continuation agent verified 14/14 (completed ?login auto-sign-in, member-since monthYear formatting), 16/16 files brace-balance clean, worklog reconciled
+- Gaps wired on BOTH platforms: soundOn master ding (device key + row + gate chain), preview-alert test row, About realtime/data/GitHub/footer, session-scope row, voice-rooms info row, The-Hub link row, profile stats row + hero cover/orbs + member-since (+status glyph on Android account card), avatar remove-photo (PATCH avatar:"" web-parity), fx.webglMode server dual-write, default-list-filter settings row, channel photo on create (web POST /api/channels contract), nav 13/13 (rail/command-bar/radial/gesture/contextual-dock as real renderers + unread badges), spotlight/search actions block (new chat / check-in POST /api/hub/wallet/checkin / theme toggle)
+- Commit 97fe61a (36 files, +2921/-145), version defaults bumped 24/0.11.3-native; pushed main + tag v0.11.3-native via PAT inline (token never persisted — remote.origin.url clean); CI arbitrating Android (tests+minified APK+release) and iOS (xcodebuild+455 tests+archive)
+
+Stage Summary:
+- Web 47-row settings screen now fully mirrored on both native apps (Android was 35/47 → 47/47 wired; iOS 36/47 → 47/47 wired; honest platform substitutions documented: PWA install→LiveUpdater/App Store pipeline rows)
+- Honest residue: iOS nav-idiom rendering adapted to touch (desktop-idiom parity by structure); incoming buzz gated by account notifVibrate per Wave-8 mapping; web/browser-idiom layer (SW/PWA/WebGL shaders) mapped to native equivalents (AGSL/Metal)
+- Release v0.11.3-native in CI flight; verify runs + release assets before close
