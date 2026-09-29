@@ -4063,3 +4063,18 @@ Work Log:
 
 Stage Summary:
 - v0.11.4-native (versionCode 25) = v0.11.3 feature set + root live hints + device-network row + root version footer. Tag v0.11.4-native pushed; CI release build triggered; verification below.
+
+---
+Task ID: R15-close
+Agent: Z.ai main session
+Task: publish verification — v0.11.4-native live
+
+Work Log:
+- Pushed main (e26f294) + tag v0.11.4-native via inline-token URL (token never persisted in config/worklog/files).
+- CI: Pulse Android CI run 36547048255 on v0.11.4-native → completed SUCCESS; iOS CI 36547048242 in flight (macOS, longer).
+- Release v0.11.4-native LIVE: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.11.4-native with Pulse-v0.11.4-native.apk (25,429,099 bytes).
+- Shipped-APK dex proof: "Device network", "every control here is live", "Navigation style", "contextual-dock", "Immersive Glass" all present in classes.dex.
+- Mirror /home/z/pulse-mirror.git recreated (sandbox wiped it) and synced (main + v0.11.4-native).
+
+Stage Summary:
+- v0.11.4-native (25) is the current full-featured release; user must install THIS apk (their installed build predates R14). Honest device caveats unchanged: FCM delivery needs console creds, CallKit/Telecom + quick-reply round-trips need real-device QA.
