@@ -3993,3 +3993,19 @@ Stage Summary:
 - Web 47-row settings screen now fully mirrored on both native apps (Android was 35/47 → 47/47 wired; iOS 36/47 → 47/47 wired; honest platform substitutions documented: PWA install→LiveUpdater/App Store pipeline rows)
 - Honest residue: iOS nav-idiom rendering adapted to touch (desktop-idiom parity by structure); incoming buzz gated by account notifVibrate per Wave-8 mapping; web/browser-idiom layer (SW/PWA/WebGL shaders) mapped to native equivalents (AGSL/Metal)
 - Release v0.11.3-native in CI flight; verify runs + release assets before close
+
+---
+Task ID: 7-final
+Agent: main orchestrator
+Task: R14-SHIPPED — v0.11.3-native live with full web→native settings parity
+
+Work Log:
+- CI flight 1 (tag @97fe61a): Android SUCCESS; iOS FAIL → R14-fix1 f0325fe (NavDockStyles .frame(width:minHeight:) → width+height, R12-fix3 lesson redux)
+- CI flight 2 (tag @f0325fe): iOS FAIL → R14-fix2 2462eb0 (ProfileView hero LinearGradient-into-Color-stop → PulseTheme.color(named:)); tag force-moved 97fe61a→f0325fe→2462eb0 (softprops release step updates in place)
+- CI flight 3 (tag @2462eb0): Android CI SUCCESS (module unit tests + :app:assembleRelease R8-minified + instrumented emulator gate + release publish), iOS CI SUCCESS (simulator+device build, 455 tests incl. extended nav-style suite, unsigned archive + .app artifact)
+- Release verified via API: v0.11.3-native → Pulse-v0.11.3-native.apk 25,425,337 bytes, published 05:46:46Z, updated by the final-commit run
+- Browser self-check: / renders hydrated onboarding (web untouched by wave, confirmed alive); services 3000/3003 200; mirror re-cloned at /home/z/pulse-mirror.git and synced (main + v0.11.3-native)
+
+Stage Summary:
+- SHIPPED: web 47/47 settings rows + 19/19 persisted keys mirrored on Android and iOS; 14 gaps per platform wired with receipts (worklog 4-a/4-b/5-a/5-b sections); v0.11.3-native release live
+- Honest gates unchanged: FCM/APNs console creds, iOS share-extension target, real-device QA list (quick-reply round-trip, app lock × banners, shortcuts cold/warm, WebRTC ≥2 devices, OEM notification channels)
