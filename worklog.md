@@ -4097,3 +4097,18 @@ Work Log:
 
 Stage Summary:
 - 0.11.5-native (26) = full web-settings parity (9/9 rows) + FULL profile-tab parity (hero/handle/status/bio/presence/saved/copy-id). Honest caveats: avatar PHOTO renders initials app-wide (no coil in ui module — deliberate native idiom, upload still works); real-device QA list unchanged (FCM console creds, CallKit/Telecom, quick-reply round-trips).
+
+---
+Task ID: R16-close
+Agent: Z.ai main session
+Task: publish verification — v0.11.5-native live
+
+Work Log:
+- Android CI on v0.11.5-native: SUCCESS (R8-minified signed APK auto-attached); iOS CI macOS run still in flight (artifact-only pipeline).
+- Release LIVE: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.11.5-native with Pulse-v0.11.5-native.apk (25,431,927 bytes).
+- Downloaded the SHIPPED CI APK and dex-scanned it: "Saved messages", "Copy account ID", "Set your handle", "No bio yet", "Handle copied", "Account ID copied" — ALL present in the release artifact (not just the local build).
+- Mirror /home/z/pulse-mirror.git recreated (sandbox wipe) and synced (main + v0.11.5-native).
+- Web dev server restarted post-build (HTTP 200 on :3000).
+
+Stage Summary:
+- v0.11.5-native (versionCode 26) is the current full-featured release — web settings 9/9 row parity + web profile-tab full parity, release-APK-verified. User should install THIS apk.
