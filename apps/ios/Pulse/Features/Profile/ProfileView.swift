@@ -74,7 +74,7 @@ struct ProfileView: View {
         Section {
             ZStack {
                 LinearGradient(
-                    colors: [PulseTheme.gradient(named: prefs.viewer?.color ?? "emerald"), PulseTheme.emeraldDeep],
+                    colors: [PulseTheme.color(named: prefs.viewer?.color ?? "emerald"), PulseTheme.emeraldDeep],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing,
                 )
