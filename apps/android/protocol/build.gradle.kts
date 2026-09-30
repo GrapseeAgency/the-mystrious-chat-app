@@ -17,7 +17,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
-    // JVM socket.io client — used by the live-gateway parity tests below
+    // JVM socket.io client - used by the live-gateway parity tests below
     // (the Android data layer uses the same artifact on device).
     testImplementation(libs.socketio.client)
     testImplementation(libs.junit.jupiter)

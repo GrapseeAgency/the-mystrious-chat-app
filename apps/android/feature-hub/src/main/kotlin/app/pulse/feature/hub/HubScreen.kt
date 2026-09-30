@@ -94,16 +94,16 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Wave 7 F-HB-01…10 — the LIVE hub. Replaces the Wave-0 static tile grid:
+ * Wave 7 F-HB-01…10 - the LIVE hub. Replaces the Wave-0 static tile grid:
  * real wallet + ledger, daily check-in (+25 PC, +2/day streak bonus capped
  * +20), @handle transfers, PC⇄GEM swap (100/80 rates), personal tasks,
  * market with atomic buy, logs stream, the 100-app matrix (bundled catalog
- * JSON — browsable offline) with install/connect, app communities
+ * JSON - browsable offline) with install/connect, app communities
  * (auto-provisioned real conversations) and My apps (fan-out install state
- * — web hub-data.tsx parity).
+ * - web hub-data.tsx parity).
  */
 
-// Bundled catalog (generated from src/lib/hub-catalog.ts — tools/gen-hub-catalog.mjs).
+// Bundled catalog (generated from src/lib/hub-catalog.ts - tools/gen-hub-catalog.mjs).
 @kotlinx.serialization.Serializable
 data class HubCatalogApp(
     val n: Int = 0,
@@ -159,7 +159,7 @@ class HubViewModel @Inject constructor(
     val wallet: StateFlow<WalletUi> = _wallet.asStateFlow()
 
     /**
-     * R5-B ITEM 3 — the per-app install truth now carries the full GET
+     * R5-B ITEM 3 - the per-app install truth now carries the full GET
      * /api/hub/apps/[appId]/install payload: installedAt (viewer's own connect
      * day) + installers (≤6 most-recent REAL connected users) + status.
      */
@@ -172,7 +172,7 @@ class HubViewModel @Inject constructor(
         val installers: List<HubLogUserDto> = emptyList(),
     )
 
-    /** R5-B ITEM 3 — viewer id for "(you)" marks + the own-row relative stamp. */
+    /** R5-B ITEM 3 - viewer id for "(you)" marks + the own-row relative stamp. */
     val viewerId: String? get() = repo.viewerId
 
     private val _installs = MutableStateFlow<Map<String, AppInstallRow>>(emptyMap())
@@ -182,7 +182,7 @@ class HubViewModel @Inject constructor(
     val notice: StateFlow<String?> = _notice.asStateFlow()
 
     /**
-     * R1-W2H D38 — one-shot check-in success event (carries the reward). The
+     * R1-W2H D38 - one-shot check-in success event (carries the reward). The
      * screen turns it into the F-HB-02 celebration; never replayed to a
      * re-entering surface (extraBufferCapacity=1, DROP_OLDEST, no replay).
      */
@@ -200,7 +200,7 @@ class HubViewModel @Inject constructor(
 
     fun consumeNotice() { _notice.value = null }
 
-    // ── F-HB-01 wallet ──
+    // F-HB-01 wallet
     fun loadWallet() {
         viewModelScope.launch {
             _wallet.value = _wallet.value.copy(loading = true, error = null)
@@ -212,7 +212,7 @@ class HubViewModel @Inject constructor(
             repo.wallet().fold(
                 onSuccess = { page -> _wallet.value = WalletUi(loading = false, page = page, stale = false) },
                 onFailure = { t ->
-                    val msg = t.message ?: "No gateway configured — set your server in Profile → Connection."
+                    val msg = t.message ?: "No gateway configured - set your server in Profile → Connection."
                     val hasCache = _wallet.value.page != null
                     _wallet.value = _wallet.value.copy(loading = false, stale = hasCache, error = if (hasCache) null else msg)
                 },
@@ -220,13 +220,13 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    // ── F-HB-02 check-in (409 body carries {error, wallet}) ──
+    // F-HB-02 check-in (409 body carries {error, wallet})
     fun checkin() {
         viewModelScope.launch {
             repo.checkinWallet().fold(
                 onSuccess = { v ->
-                    notify("Checked in — +${v.reward} PC${if (v.streak > 1) " · ${v.streak}-day streak" else ""}")
-                    _checkinSuccess.tryEmit(v.reward) // R1-W2H D38 — once per success
+                    notify("Checked in - +${v.reward} PC${if (v.streak > 1) " · ${v.streak}-day streak" else ""}")
+                    _checkinSuccess.tryEmit(v.reward) // R1-W2H D38 - once per success
                     loadWallet()
                 },
                 onFailure = { t ->
@@ -237,7 +237,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    // ── F-HB-03 transfer ──
+    // F-HB-03 transfer
     fun transfer(handle: String, amount: Long, note: String?, onDone: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             repo.transferCoins(handle, amount, note).fold(
@@ -251,7 +251,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    // ── F-HB-04 swap ──
+    // F-HB-04 swap
     private val _swap = MutableStateFlow<SwapPageDto?>(null)
     val swap: StateFlow<SwapPageDto?> = _swap.asStateFlow()
 
@@ -277,7 +277,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    // ── F-HB-05 tasks ──
+    // F-HB-05 tasks
     private val _tasks = MutableStateFlow<HubTasksPageDto?>(null)
     val tasks: StateFlow<HubTasksPageDto?> = _tasks.asStateFlow()
 
@@ -318,7 +318,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    // ── F-HB-06 market ──
+    // F-HB-06 market
     private val _market = MutableStateFlow<List<MarketListingDto>>(emptyList())
     val market: StateFlow<List<MarketListingDto>> = _market.asStateFlow()
 
@@ -349,7 +349,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    // ── F-HB-07 logs ──
+    // F-HB-07 logs
     private val _logs = MutableStateFlow<List<HubLogDto>>(emptyList())
     val logs: StateFlow<List<HubLogDto>> = _logs.asStateFlow()
 
@@ -362,7 +362,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    // ── F-HB-08/09/10 apps ──
+    // F-HB-08/09/10 apps
     fun loadInstallState(appId: String) {
         viewModelScope.launch {
             repo.appInstallState(appId).onSuccess { v ->
@@ -401,7 +401,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    /** F-HB-09 — join (or fetch) the app community → real conversation id. */
+    /** F-HB-09 - join (or fetch) the app community → real conversation id. */
     fun joinCommunity(appId: String, name: String, onJoined: (String) -> Unit) {
         viewModelScope.launch {
             repo.joinAppCommunity(appId).fold(
@@ -416,7 +416,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    /** F-HB-10 — fan-out My apps state (web hub-data.tsx parity). */
+    /** F-HB-10 - fan-out My apps state (web hub-data.tsx parity). */
     fun loadMyApps(catalog: HubCatalog) {
         viewModelScope.launch {
             val ids = catalog.apps.take(24).map { it.n.toString() }
@@ -438,7 +438,7 @@ class HubViewModel @Inject constructor(
     }
 }
 
-// ── Surface routing (hub tab → sub-surface sheets) ───────────────────────
+// Surface routing (hub tab → sub-surface sheets)
 
 private enum class HubSurface { WALLET, TRANSFER, SWAP, TASKS, MARKET, LOGS, APPS, MY_APPS }
 
@@ -482,10 +482,10 @@ fun HubScreen(
     LaunchedEffect(notice) { notice?.let { toast = it; vm.consumeNotice() } }
     LaunchedEffect(toast) { toast?.let { delay(2_600); toast = null } }
 
-    // R1-W2H D38 — check-in celebration (spec F-HB-02 "Success haptic +
+    // R1-W2H D38 - check-in celebration (spec F-HB-02 "Success haptic +
     // particles"; the web's toast-only ground truth is exceeded, sanctioned).
     // ONE confetti burst per successful check-in via the same API onboarding
-    // uses — the shell's global ParticleBurstHost renders it and ticks its own
+    // uses - the shell's global ParticleBurstHost renders it and ticks its own
     // subtle haptic. The screen adds the house screen-haptic (LocalHapticFeedback,
     // the idiom every other surface uses) so the success feedback survives
     // Reduce Motion, where the host gates everything.
@@ -512,13 +512,13 @@ fun HubScreen(
             Spacer(Modifier.height(14.dp))
             Text("Hub", fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Text(
-                if (viewerName.isBlank()) "XP · streaks · mini apps" else "Hey $viewerName — XP · streaks · mini apps",
+                if (viewerName.isBlank()) "XP · streaks · mini apps" else "Hey $viewerName - XP · streaks · mini apps",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
             )
             Spacer(Modifier.height(14.dp))
 
-            // ── Wallet hero (F-HB-01 + F-HB-02) ──
+            // Wallet hero (F-HB-01 + F-HB-02)
             val page = wallet.page
             Column(
                 Modifier
@@ -529,7 +529,7 @@ fun HubScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Pulse Wallet", color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    if (wallet.stale) Text("offline — cached", color = Color(0x99FFFFFF), fontSize = 11.sp)
+                    if (wallet.stale) Text("offline - cached", color = Color(0x99FFFFFF), fontSize = 11.sp)
                     if (wallet.loading) {
                         Spacer(Modifier.width(8.dp))
                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
@@ -603,7 +603,7 @@ fun HubScreen(
         }
     }
 
-    // ── Sub-surfaces ──
+    // Sub-surfaces
     when (surface) {
         HubSurface.WALLET -> SheetHost(onDismiss = { surface = null }) {
             LedgerBody(wallet.page?.ledger ?: emptyList())
@@ -613,7 +613,7 @@ fun HubScreen(
         HubSurface.TASKS -> TasksSheet(vm = vm, onDismiss = { surface = null })
         HubSurface.MARKET -> MarketSheet(vm = vm, onDismiss = { surface = null })
         HubSurface.LOGS -> {
-            LogsLivePoll(vm) // R1-W2H D40 — 12s live poll while this sheet is open
+            LogsLivePoll(vm) // R1-W2H D40 - 12s live poll while this sheet is open
             SheetHost(onDismiss = { surface = null }) {
                 LogsBody(logs = logs)
             }
@@ -670,10 +670,10 @@ private fun SheetHost(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 /**
- * R1-W2H D40 — hub logs live poll (web ground truth hub-tab.tsx:603-611
+ * R1-W2H D40 - hub logs live poll (web ground truth hub-tab.tsx:603-611
  * refetchInterval 12_000). Runs only while the Logs sheet is composed (the
  * call site lives inside the LOGS branch, so closing the sheet disposes it)
- * and pauses whenever the app drops below STARTED — the D25 house pattern
+ * and pauses whenever the app drops below STARTED - the D25 house pattern
  * (DisposableEffect + LifecycleEventObserver) copied verbatim. First tick is
  * immediate so the sheet never opens empty; failure toasts stay rare (the VM
  * notifies only on error).
@@ -701,7 +701,7 @@ private fun LogsLivePoll(vm: HubViewModel) {
             }
         }
         lifecycleOwner.lifecycle.addObserver(obs)
-        // The sheet can open while the app is already STARTED — the observer
+        // The sheet can open while the app is already STARTED - the observer
         // only fires on transitions, so kick the loop for the current state.
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) startLoop()
         onDispose {
@@ -749,7 +749,7 @@ private fun TransferSheet(vm: HubViewModel, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Text("Send PC", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("Whole PC only — max 100,000 per transfer.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text("Whole PC only - max 100,000 per transfer.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(value = handle, onValueChange = { handle = it.take(24) }, label = { Text("@handle") }, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(6.dp))
@@ -987,7 +987,7 @@ private fun LogsBody(logs: List<HubLogDto>) {
     }
 }
 
-/** F-HB-08/10 — apps matrix (bundled catalog, offline-browsable) + My apps. */
+/** F-HB-08/10 - apps matrix (bundled catalog, offline-browsable) + My apps. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppsSheet(
@@ -1016,7 +1016,7 @@ private fun AppsSheet(
             )
             Text(
                 if (myAppsOnly) "Installed & connected apps"
-                else "${catalog.apps.size} apps · ${catalog.categories.size} categories — browsable offline",
+                else "${catalog.apps.size} apps · ${catalog.categories.size} categories - browsable offline",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
@@ -1037,7 +1037,7 @@ private fun AppsSheet(
             Spacer(Modifier.height(8.dp))
             if (visible.isEmpty()) {
                 Text(
-                    if (myAppsOnly) "No apps connected yet — open Mini apps to connect."
+                    if (myAppsOnly) "No apps connected yet - open Mini apps to connect."
                     else "No apps match.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -1079,7 +1079,7 @@ private fun AppsSheet(
     }
 
     expanded?.let { app ->
-        // R5-B ITEM 3 — the deep app-detail sheet (Overview | Community |
+        // R5-B ITEM 3 - the deep app-detail sheet (Overview | Community |
         // Connectors + installer stack + related rail). Same mutations,
         // same community handoff; tapping a related app swaps the detail.
         AppDetailSheet(

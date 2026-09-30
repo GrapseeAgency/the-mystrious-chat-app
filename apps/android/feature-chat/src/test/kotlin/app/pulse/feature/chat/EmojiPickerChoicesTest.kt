@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * R5-B ITEM 1 — the composer emoji strip must be BYTE-IDENTICAL to the web's
+ * R5-B ITEM 1 - the composer emoji strip must be BYTE-IDENTICAL to the web's
  * EMOJI_PICKER_CHOICES (src/lib/pulse-utils.ts:146-149): exactly 24 glyphs in
  * the same order, grid = 8 columns (chat-room.tsx:5398 grid-cols-8).
  */

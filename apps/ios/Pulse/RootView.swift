@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Pulse design tokens — native mirror of the web palette (emerald on warm neutrals).
+/// Pulse design tokens - native mirror of the web palette (emerald on warm neutrals).
 enum PulseTheme {
     static let emerald = Color(red: 0.06, green: 0.72, blue: 0.51)
     static let emeraldDeep = Color(red: 0.02, green: 0.47, blue: 0.34)
@@ -8,50 +8,50 @@ enum PulseTheme {
     static let mist = Color(red: 0.98, green: 0.98, blue: 0.976)
 }
 
-/// Dock tab set — index order drives the direction-aware slide (web §1).
+/// Dock tab set - index order drives the direction-aware slide (web §1).
 enum PulseTab: Int, CaseIterable {
     case chats, hub, contacts, profile
 }
 
-/// Root shell — session + prefs live here (single ownership), the ambient
+/// Root shell - session + prefs live here (single ownership), the ambient
 /// field renders behind the tab chrome, the particle overlay above it, and
 /// the onboarding (name → live @handle picker, web design parity) IS the app
 /// until a viewer exists. Color scheme follows prefs (system/light/dark).
 /// Tab chrome is the R4-A 13-style navigation registry (web nav-registry.ts
-/// parity; default = the floating capsule dock, web §12) — the stock TabView
+/// parity; default = the floating capsule dock, web §12) - the stock TabView
 /// is gone; exactly one panel is mounted at a time (web AnimatePresence
 /// parity). Every style renders over the same shared dock context; the
 /// floating-top bar and the side rail ride their own safe-area channels.
-/// @MainActor — the R10-b app-lock singleton feeds an eager @ObservedObject
+/// @MainActor - the R10-b app-lock singleton feeds an eager @ObservedObject
 /// (same shape as SettingsView's pushCenter).
 @MainActor
 struct RootView: View {
     @StateObject private var session = PulseSession()
     @StateObject private var prefs = PulsePrefs()
-    // R10-b — the biometric app lock (singleton owns needsLock; the
+    // R10-b - the biometric app lock (singleton owns needsLock; the
     // fullScreenCover gate below presents it when the scene is active).
     @ObservedObject private var appLock = PulseAppLock.shared
     @State private var didBootstrap = false
     @State private var tab: PulseTab = .chats
     @State private var navDirection = 0
-    // R4-A item 3 — the mirrored navigation style. prefs owns the persisted
+    // R4-A item 3 - the mirrored navigation style. prefs owns the persisted
     // value; RootView mirrors it on attach + onChange (the uiTheme pattern)
     // and the dock switch renders the matching layout renderer.
     @State private var navStyle: PulseNavStyle = .capsule
-    // Dock nav surfaces — every dock button now opens something real.
+    // Dock nav surfaces - every dock button now opens something real.
     @State private var newChatOpen = false
     @State private var settingsOpen = false
     @State private var storiesOpen = false
-    // R3-A item 9 — the dock More menu carries a Calls row that opens the
+    // R3-A item 9 - the dock More menu carries a Calls row that opens the
     // real call-history page (same surface the chats header hosts).
     @State private var callsOpen = false
-    // Wave 2 — dock More → Saved opens the real saved library (spec §1 row 14);
+    // Wave 2 - dock More → Saved opens the real saved library (spec §1 row 14);
     // the old create-self-chat detour is gone.
     @State private var savedLibraryOpen = false
-    // Wave 6 — pulse:// deep links (F-DL): invite previews join, user opens
+    // Wave 6 - pulse:// deep links (F-DL): invite previews join, user opens
     // the full user page (Contacts tab), room opens the conversation.
     @State private var pendingInvite: InviteLinkTarget?
-    // R14 5-b — the ?login= handoff (web /?login=Name parity): the deep
+    // R14 5-b - the ?login= handoff (web /?login=Name parity): the deep
     // link's display-name prefill + auto-lookup target for OnboardingView.
     @State private var pendingLoginName: String?
 
@@ -71,7 +71,7 @@ struct RootView: View {
         prefs.appearance == "dark" || (prefs.appearance == "system" && systemScheme == .dark)
     }
 
-    // R12 — the monolithic body exceeded Swift's type-check budget in
+    // R12 - the monolithic body exceeded Swift's type-check budget in
     // release batches; the view tree is unchanged, but each layer now
     // type-checks as its own small expression (body → shell → panels).
 
@@ -89,17 +89,17 @@ struct RootView: View {
             ParticleOverlayView(bus: session.particles)
         }
         .tint(PulseTheme.accent)
-        // R17 Neo — rounded system type everywhere the theme does not set an
+        // R17 Neo - rounded system type everywhere the theme does not set an
         // explicit font (SF Rounded floor; iOS 17 target covers the 16.1 API).
         .fontDesign(.rounded)
         .preferredColorScheme(colorScheme)
-        // R14 5-b — deep links now mount at the ROOT (the login route must
+        // R14 5-b - deep links now mount at the ROOT (the login route must
         // reach the app pre-identity; every other route re-checks the viewer
         // inside handleDeepLink exactly like before).
         .onOpenURL { url in
             handleDeepLink(url)
         }
-        // R10-b — the app-lock gate. Armed on scenePhase → .background (when
+        // R10-b - the app-lock gate. Armed on scenePhase → .background (when
         // enabled); presenting the moment the scene is active again. Layered
         // at the very root like the call/rooms full-screen surfaces so it
         // covers everything (onboarding included).
@@ -107,14 +107,14 @@ struct RootView: View {
             PulseAppLockView()
         }
         .onAppear {
-            // Wave 8 — prefs handoff: incoming attention gate, settings PATCH
+            // Wave 8 - prefs handoff: incoming attention gate, settings PATCH
             // funnel, quiet-gate refresh (idempotent, closures attach once).
             session.attach(prefs: prefs)
-            // 3-d — push handoff: the registration center reads the live API
+            // 3-d - push handoff: the registration center reads the live API
             // client through this closure (rebuilt per gateway override +
             // identity). attach re-arms any pending token → server POST.
             PulsePushRegistrationCenter.shared.attach { [weak session] in session?.api }
-            // R10-b — quick-reply handoff: the coordinator reads the live
+            // R10-b - quick-reply handoff: the coordinator reads the live
             // session through the SAME seam the push registration center
             // uses, and opens rooms through the standard linked-room bridge
             // (pendingLinkedRoomId → openLinkedRoom below).
@@ -122,13 +122,13 @@ struct RootView: View {
             PulseQuickReplyCoordinator.shared.onOpenRoom = { [weak session] conversationId in
                 session?.pendingLinkedRoomId = conversationId
             }
-            // R4-A item 3 — mirror the nav style on attach (onChange below
+            // R4-A item 3 - mirror the nav style on attach (onChange below
             // keeps the mirror live after Appearance picks).
             navStyle = prefs.navStyle
             // System Reduce Motion AND the in-app reducedMotion pref both calm
             // the ambient particles (the prefs toggle PATCHes to the server).
             session.particles.reduceMotionDisabled = reduceMotion || prefs.reducedMotion
-            // R2-D — mirror the design language into the token set (the
+            // R2-D - mirror the design language into the token set (the
             // settings picker flips prefs.uiTheme; every PulseTheme-fed view
             // swaps with it).
             PulseTheme.activeUiTheme = prefs.uiTheme
@@ -136,16 +136,16 @@ struct RootView: View {
             if !didBootstrap, let viewer = prefs.viewer {
                 didBootstrap = true
                 session.start(as: viewer)
-                // R14 5-b — boot identity probe (web app-root.tsx BootGate):
+                // R14 5-b - boot identity probe (web app-root.tsx BootGate):
                 // a stored identity the server no longer knows (404) wipes
                 // the session and lands on onboarding. Network flakes keep
-                // it — the identical optimistic contract.
+                // it - the identical optimistic contract.
                 session.validateStoredIdentity { [weak session] name in
                     session?.prefs?.setViewer(nil)
-                    session?.toasts.show("“\(name)” no longer exists on this Pulse — sign in or create an identity.")
+                    session?.toasts.show("“\(name)” no longer exists on this Pulse - sign in or create an identity.")
                 }
             }
-            // R2-D — reminder-notification taps route like pulse://room: the
+            // R2-D - reminder-notification taps route like pulse://room: the
             // delegate (registered in PulseApp.init) parses the userInfo into
             // PulseDeepLink.room and hands it over through the session bridge.
             // Cold-start taps that landed before this closure existed are
@@ -162,7 +162,7 @@ struct RootView: View {
         .onChange(of: prefs.uiTheme) { _, theme in
             PulseTheme.activeUiTheme = theme
         }
-        // R4-A item 3 — RootView mirrors prefs.navStyle on change so every
+        // R4-A item 3 - RootView mirrors prefs.navStyle on change so every
         // dock channel (bottom/top/leading) re-renders with the pick.
         .onChange(of: prefs.navStyle) { _, style in
             navStyle = style
@@ -180,7 +180,7 @@ struct RootView: View {
                 session.flushOutbox()
             case .background:
                 PulseApp.scheduleOutboxRefresh()
-                // R10-b — arm the app lock while leaving the foreground
+                // R10-b - arm the app lock while leaving the foreground
                 // (when the toggle is on). The fullScreenCover gate presents
                 // when the scene is active again.
                 appLock.appDidEnterBackground(appLockEnabled: prefs.appLockEnabled)
@@ -188,7 +188,7 @@ struct RootView: View {
                 break
             }
         }
-        // R2-D — the shared linked-room bridge: reminder-notification taps
+        // R2-D - the shared linked-room bridge: reminder-notification taps
         // (delegate) AND calls-history row taps land here and follow the
         // exact pulse://room path (fetch detail → Chats tab → open room).
         .onReceive(session.$pendingLinkedRoomId) { pending in
@@ -196,7 +196,7 @@ struct RootView: View {
             session.pendingLinkedRoomId = nil
             openLinkedRoom(conversationId)
         }
-        // R10-b — home-screen quick actions: cold launch replays the
+        // R10-b - home-screen quick actions: cold launch replays the
         // pending route through this subscription (@Published replays the
         // current value on attach); warm launches publish on tap.
         .onReceive(PulseQuickActions.shared.$pendingRoute) { pending in
@@ -206,7 +206,7 @@ struct RootView: View {
             case .openChats:
                 switchTab(.chats)
             case .newMessage:
-                // Never compose under the lock cover (invisible UI) — the
+                // Never compose under the lock cover (invisible UI) - the
                 // guard keeps the tap honest while the gate is up.
                 guard prefs.viewer != nil, !appLock.needsLock else { break }
                 PulseHaptics.tap()
@@ -215,9 +215,9 @@ struct RootView: View {
         }
     }
 
-    // ── R12 body decomposition ──────────────────────────────
+    // R12 body decomposition
 
-    /// Tab panels — exactly one mounted at a time (web §1): 220ms crossfade
+    /// Tab panels - exactly one mounted at a time (web §1): 220ms crossfade
     /// with a ±24pt horizontal slide whose sign follows the travel direction;
     /// reduced motion → fade only.
     private var tabPanels: some View {
@@ -246,7 +246,7 @@ struct RootView: View {
                     .transition(panelTransition)
             }
         }
-        // R14 5-b — edge-swipe tab switching (web main-shell.tsx :337-377):
+        // R14 5-b - edge-swipe tab switching (web main-shell.tsx :337-377):
         // horizontal drags move one tab in the drag direction. The
         // simultaneous attachment (never highPriority) keeps scrollables,
         // carousels and the room's swipe-reply in control of their own
@@ -255,11 +255,11 @@ struct RootView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: tab)
     }
 
-    /// R14 5-b — the swipe verdict: vertical-cancel (±45pt) + a real
-    /// horizontal travel (>60pt — a notch above the web's 56 so scroll-
+    /// R14 5-b - the swipe verdict: vertical-cancel (±45pt) + a real
+    /// horizontal travel (>60pt - a notch above the web's 56 so scroll-
     /// flicks stay list-owned) → prev/next, clamped at the registry edges
     /// (web main-shell.tsx :337-372 parity; the 24pt edge anchor becomes a
-    /// whole-shell gesture here — simultaneous, never hijacking). Rooms and
+    /// whole-shell gesture here - simultaneous, never hijacking). Rooms and
     /// the app-lock cover never participate.
     private var edgeSwipeGesture: some Gesture {
         DragGesture(minimumDistance: 50)
@@ -284,12 +284,12 @@ struct RootView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // Reserve the dock's footprint so lists always clear it
-                // (zero while a chat room owns the screen — dock hidden;
-                // zero for top/side styles — they reserve their own
+                // (zero while a chat room owns the screen - dock hidden;
+                // zero for top/side styles - they reserve their own
                 // R4-A channels below).
                 Color.clear.frame(height: dockBottomReserve)
             }
-            // R4-A item 3 — the floating-top channel: the glass bar lives
+            // R4-A item 3 - the floating-top channel: the glass bar lives
             // IN the top inset so every screen (lists, room chrome) clears
             // it through the same mechanism the bottom dock reserve uses.
             // Zero while a room owns the screen.
@@ -301,7 +301,7 @@ struct RootView: View {
                     Color.clear.frame(height: 0)
                 }
             }
-            // R4-A item 3 — the rail channel: a persistent left rail; all
+            // R4-A item 3 - the rail channel: a persistent left rail; all
             // content insets right of it. Zero while a room owns the screen
             // (dock auto-hide in room, unchanged).
             .safeAreaInset(edge: .leading, spacing: 0) {
@@ -332,7 +332,7 @@ struct RootView: View {
             }
             .sheet(isPresented: $settingsOpen) {
                 SettingsView(session: session, prefs: prefs, onOpenHub: {
-                    // R14 5-b — the Hub link row: dismiss, then select the hub
+                    // R14 5-b - the Hub link row: dismiss, then select the hub
                     // tab (web onOpenHub parity).
                     settingsOpen = false
                     switchTab(.hub)
@@ -341,7 +341,7 @@ struct RootView: View {
             .sheet(isPresented: $storiesOpen) {
                 StoriesView(session: session)
             }
-            // R3-A item 9 — the dock More → Calls page. Row taps ride the
+            // R3-A item 9 - the dock More → Calls page. Row taps ride the
             // EXISTING linked-room bridge (pendingLinkedRoomId → fetch →
             // Chats tab → open room), identical to the chats-header entry.
             .sheet(isPresented: $callsOpen) {
@@ -365,9 +365,9 @@ struct RootView: View {
                 }
             }
         } else {
-            // Gate on identity exactly like the web onboarding — the
+            // Gate on identity exactly like the web onboarding - the
             // two-step screen replaces the shell (not a modal sheet).
-            // R14 5-b — a pending ?login= deep link prefills the name and
+            // R14 5-b - a pending ?login= deep link prefills the name and
             // runs the live lookup (the "That's me" affordance) on appear.
             OnboardingView(
                 session: session,
@@ -378,7 +378,7 @@ struct RootView: View {
         }
     }
 
-    /// R1-W2I — the PiP pane overlay (F-PI-01..03): floats above the tab
+    /// R1-W2I - the PiP pane overlay (F-PI-01..03): floats above the tab
     /// chrome and pushed rooms, below the call/rooms overlays. The host
     /// self-gates on the store being open and observes it directly.
     @ViewBuilder
@@ -391,7 +391,7 @@ struct RootView: View {
                     openLinkedRoom(conversationId)
                 },
             )
-            // R4-A item 3 — the PiP host rides the SAME nav channels: panes
+            // R4-A item 3 - the PiP host rides the SAME nav channels: panes
             // keep their internal top/bottom reserves but must also clear
             // the floating-top bar and the rail.
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -403,7 +403,7 @@ struct RootView: View {
         }
     }
 
-    /// Wave 3 — the call surfaces own the WHOLE screen whenever their engine
+    /// Wave 3 - the call surfaces own the WHOLE screen whenever their engine
     /// is not idle; mounted beside each other at shell level (web
     /// main-shell.tsx parity).
     @ViewBuilder
@@ -412,8 +412,8 @@ struct RootView: View {
             CallOverlayHostView(engine: engine)
                 .ignoresSafeArea()
         }
-        // 3-d — the GROUP (mesh) call surface + the shell-level ring banner
-        // and the 'Ongoing group call · N in call — Join' discovery banner
+        // 3-d - the GROUP (mesh) call surface + the shell-level ring banner
+        // and the 'Ongoing group call · N in call - Join' discovery banner
         // (web GroupCallRingBanner parity). Suppressed while CallKit owns
         // the incoming presentation (no double-ring).
         if let groupEngine = session.groupCallEngine {
@@ -421,7 +421,7 @@ struct RootView: View {
                 .ignoresSafeArea()
             GroupCallBannerHostView(engine: groupEngine)
         }
-        // W5-f — the rooms surfaces (voice/stage/space) present through ONE
+        // W5-f - the rooms surfaces (voice/stage/space) present through ONE
         // fullScreenCover driven by the session model's surface state;
         // hosted at the root so room membership survives chat navigation
         // (VR-1).
@@ -436,9 +436,9 @@ struct RootView: View {
         tab = target
     }
 
-    // ── R4-A item 3 — nav-style geometry + dock dispatch ────
+    // R4-A item 3 - nav-style geometry + dock dispatch
 
-    /// The shared dock state/actions — every style renderer consumes THIS
+    /// The shared dock state/actions - every style renderer consumes THIS
     /// (web TabProps + onContextAction parity); RootView keeps owning the
     /// sheets and bridges behind every closure.
     private var dockContext: PulseDockContext {
@@ -457,7 +457,7 @@ struct RootView: View {
     }
 
     /// Bottom-zone styles reserve the dock's footprint (the R3-era 74);
-    /// floating-top and rail reserve nothing at the bottom — they occupy
+    /// floating-top and rail reserve nothing at the bottom - they occupy
     /// their own top/leading channels instead. Radial is the overlay FAB:
     /// it floats above the bottom edge, so the SAME footprint applies.
     private var dockBottomReserve: CGFloat {
@@ -468,7 +468,7 @@ struct RootView: View {
         }
     }
 
-    /// PiP clearances — mirror the visible nav channels so panes never
+    /// PiP clearances - mirror the visible nav channels so panes never
     /// slide under the floating-top bar or the rail.
     private var pipTopReserve: CGFloat {
         (!session.roomVisible && navStyle.zone == .top) ? PulseDockMetrics.topBarHeight : 0
@@ -478,7 +478,7 @@ struct RootView: View {
         (!session.roomVisible && navStyle.zone == .side) ? PulseDockMetrics.railWidth : 0
     }
 
-    /// R14 5-b — the top-zone channel dispatch: the floating-top bar stays
+    /// R14 5-b - the top-zone channel dispatch: the floating-top bar stays
     /// byte-as-is; the command-bar strip joins it (both live in the top
     /// inset so every screen clears them through the same mechanism).
     @ViewBuilder
@@ -491,9 +491,9 @@ struct RootView: View {
         }
     }
 
-    /// The bottom-zone dock host — capsule stays byte-as-is (brief), the
+    /// The bottom-zone dock host - capsule stays byte-as-is (brief), the
     /// other bottom styles are the R4-A renderers over the shared context.
-    /// R14 5-b — floating-dock / radial / gesture / contextual-dock join as
+    /// R14 5-b - floating-dock / radial / gesture / contextual-dock join as
     /// the honest mobile adaptations of the remaining web idioms.
     @ViewBuilder
     private var bottomDock: some View {
@@ -535,13 +535,13 @@ struct RootView: View {
         }
     }
 
-    // ── Wave 6 deep links (F-DL) ─────────────────────────────
+    // Wave 6 deep links (F-DL)
 
     /// pulse://invite/{code} → JoinGroupSheet parity · pulse://user/{id} →
     /// UserPage via the Contacts tab · pulse://room/{id} → open conversation
-    /// · R14 5-b — pulse://login/{name} → the web /?login= onboarding
+    /// · R14 5-b - pulse://login/{name} → the web /?login= onboarding
     /// prefill (identity-less apps ONLY). Links arriving while signed in
-    /// are IGNORED (the web requires login too — no half-onboarded limbo).
+    /// are IGNORED (the web requires login too - no half-onboarded limbo).
     private func handleDeepLink(_ url: URL) {
         guard let link = PulseDeepLink.parse(url) else { return }
         switch link {
@@ -562,7 +562,7 @@ struct RootView: View {
             guard prefs.viewer != nil else { return }
             openLinkedRoom(conversationId)
         case .compose:
-            // R10-b — pulse://new (the quick-action destination parity).
+            // R10-b - pulse://new (the quick-action destination parity).
             guard prefs.viewer != nil else { return }
             PulseHaptics.tap()
             newChatOpen = true
@@ -590,12 +590,10 @@ struct RootView: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-// The floating capsule dock — home chrome shared by every tab
+// The floating capsule dock - home chrome shared by every tab
 // (web §12): [Chats, Hub] · compose · [Contacts, Profile] · More,
 // glass panel, emerald active pill, unread badge on Chats, wobble
 // on press, compact More menu with honest actions (no fakes).
-// ─────────────────────────────────────────────────────────────
 private struct CapsuleDock: View {
     @ObservedObject var session: PulseSession
     let dark: Bool
@@ -607,7 +605,7 @@ private struct CapsuleDock: View {
     var onSettings: () -> Void = {}
     var onSaved: () -> Void = {}
     var onStories: () -> Void = {}
-    // R3-A item 9 — More → Calls (the real history page).
+    // R3-A item 9 - More → Calls (the real history page).
     var onCalls: () -> Void = {}
 
     @State private var moreOpen = false
@@ -645,7 +643,7 @@ private struct CapsuleDock: View {
         }
     }
 
-    // ── tabs ──────────────────────────────────────────────────
+    // tabs
     private func dockTab(_ target: PulseTab, icon: String, filled: String, label: String, badge: Int) -> some View {
         let isActive = tab == target
         return Button {
@@ -671,9 +669,9 @@ private struct CapsuleDock: View {
                         .fill(PulseTheme.dockPillGradient)
                         .overlay(
                             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .strokeBorder(PulseTheme.emerald500.opacity(0.30), lineWidth: 1)
+                                .strokeBorder(PulseTheme.accent.opacity(0.30), lineWidth: 1)
                         )
-                        .shadow(color: PulseTheme.emerald500.opacity(0.55), radius: 10, y: 6)
+                        .shadow(color: PulseTheme.accent.opacity(0.55), radius: 10, y: 6)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -684,8 +682,8 @@ private struct CapsuleDock: View {
                         .padding(.horizontal, 5)
                         .frame(minWidth: 20, minHeight: 20)
                         .background(Capsule().fill(PulseTheme.brandGradient))
-                        .overlay(Capsule().strokeBorder(dark ? PulseTheme.zinc(900) : .white, lineWidth: 2))
-                        .shadow(color: PulseTheme.emerald500.opacity(0.45), radius: 6, y: 2)
+                        .overlay(Capsule().strokeBorder(dark ? PulseTheme.neoSurface : .white, lineWidth: 2))
+                        .shadow(color: PulseTheme.accent.opacity(0.45), radius: 6, y: 2)
                         .offset(x: 10, y: -6)
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
                 }
@@ -698,7 +696,7 @@ private struct CapsuleDock: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.6), value: badge)
     }
 
-    // ── compose ───────────────────────────────────────────────
+    // compose
     private var composeButton: some View {
         Button {
             PulseHaptics.tap()
@@ -709,13 +707,13 @@ private struct CapsuleDock: View {
                 .foregroundStyle(.white)
                 .frame(width: 46, height: 46)
                 .background(Circle().fill(PulseTheme.brandGradient))
-                .shadow(color: PulseTheme.emerald500.opacity(0.55), radius: 10, y: 4)
+                .shadow(color: PulseTheme.accent.opacity(0.55), radius: 10, y: 4)
                 .contentShape(Circle())
         }
         .buttonStyle(DockPressStyle())
     }
 
-    // ── more ──────────────────────────────────────────────────
+    // more
     private var moreButton: some View {
         Button {
             PulseHaptics.tap()
@@ -769,7 +767,7 @@ private struct CapsuleDock: View {
         .buttonStyle(.plain)
     }
 
-    // ── wobble (web: rotate [0, -8, 6, 0]° over ~350ms) ───────
+    // wobble (web: rotate [0, -8, 6, 0]° over ~350ms)
     private func runWobble(_ target: PulseTab) {
         guard !reduceMotion else { return }
         wobbling = target
@@ -783,18 +781,18 @@ private struct CapsuleDock: View {
         }
     }
 
-    // ── glass recipes (web §12 panel + menu) ──────────────────
+    // glass recipes (web §12 panel + menu; R18-b dark rides Neo)
     private var dockPanel: some View {
         RoundedRectangle(cornerRadius: 28, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70))
+                    .fill(dark ? PulseTheme.neoSurface.opacity(0.72) : Color.white.opacity(0.70))
             )
             .overlay(
-                // hairline ring — zinc-200/70 light, white/10 dark
+                // hairline ring - zinc-200/70 light, neoHairline (white 8%) dark
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1)
+                    .strokeBorder(dark ? PulseTheme.neoHairline : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1)
             )
             .overlay(
                 // specular top edge
@@ -813,11 +811,11 @@ private struct CapsuleDock: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(dark ? PulseTheme.zinc(900).opacity(0.72) : Color.white.opacity(0.78))
+                    .fill(dark ? PulseTheme.neoSurface.opacity(0.78) : Color.white.opacity(0.78))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1)
+                    .strokeBorder(dark ? PulseTheme.neoHairline : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
     }
@@ -829,7 +827,7 @@ private struct InviteLinkTarget: Identifiable {
     var id: String { code }
 }
 
-/// Dock press feedback — scale .88 spring on every dock button.
+/// Dock press feedback - scale .88 spring on every dock button.
 private struct DockPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

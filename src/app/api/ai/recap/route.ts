@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/ai/recap — Zoom AI-Companion-style conversation recap.
+// /api/ai/recap - Zoom AI-Companion-style conversation recap.
 // POST { userId, conversationId } → loads the last ~30 messages
 // (server-side, soft-deletes respected), asks the Z-AI LLM for a
 // ≤5-bullet plain-English summary (decisions / questions / action
@@ -8,7 +7,6 @@
 // Results are cached in-memory per conversation for ~5 minutes and
 // keyed on the newest message id + count, so a fresh message yields
 // a fresh recap while repeat taps are instant.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import ZAI from 'z-ai-web-dev-sdk'
 import { db } from '@/lib/db'
@@ -183,7 +181,7 @@ export async function POST(req: Request) {
     )
   }
 
-  // Bounded map — one entry per conversation is plenty at app scale.
+  // Bounded map - one entry per conversation is plenty at app scale.
   if (recapCache.size > 256) {
     for (const [key, entry] of recapCache) {
       if (Date.now() - entry.at >= CACHE_TTL_MS) recapCache.delete(key)

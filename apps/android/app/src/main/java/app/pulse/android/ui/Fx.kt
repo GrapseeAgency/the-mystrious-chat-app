@@ -38,11 +38,11 @@ import kotlin.random.Random
 import app.pulse.core.fx.PulseFx
 
 /**
- * Pulse ambient FX — the NATIVE rebuild of the web WebGL ambient system
+ * Pulse ambient FX - the NATIVE rebuild of the web WebGL ambient system
  * (src/components/fx/webgl-glow.tsx). Same six modes, same palette, same
- * outcome — implemented with Android graphics APIs:
+ * outcome - implemented with Android graphics APIs:
  *   · API 33+ (AGSL): the actual GLSL fragment shaders ported to AGSL
- *     and run through RuntimeShader — the platform's WebGL analogue.
+ *     and run through RuntimeShader - the platform's WebGL analogue.
  *   · API 26-32: an animated Canvas gradient approximation of the mode.
  *   · Reduced motion: one static frame, no loop (web contract parity).
  */
@@ -59,7 +59,7 @@ enum class FxMode(val id: String, val label: String) {
     }
 }
 
-// ── AGSL shader sources (ports of the web GLSL ES fragments) ─────
+// AGSL shader sources (ports of the web GLSL ES fragments)
 
 private const val AGSL_AURORA = """
 uniform float2 resolution;
@@ -192,7 +192,7 @@ half4 main(float2 fragCoord) {
 }
 """
 
-// R2-A item 11 — caustics + liquid complete the six-mode set (web
+// R2-A item 11 - caustics + liquid complete the six-mode set (web
 // webgl-glow.tsx CAUSTICS_FRAG / LIQUID_FRAG ports; AGSL is GLSL-ES-flavoured
 // so the translation is nearly verbatim).
 private const val AGSL_CAUSTICS = """
@@ -235,7 +235,7 @@ half4 main(float2 fragCoord) {
 }
 """
 
-// liquid — slow metaball fluid (web R31-b). The five ball centers are
+// liquid - slow metaball fluid (web R31-b). The five ball centers are
 // TIME-ONLY data: the CPU uploads u_balls once per frame (web drawBalls
 // parity) so the fragment shader stays free of per-pixel trig.
 private const val AGSL_LIQUID = """
@@ -251,7 +251,7 @@ float hash21(float2 p) {
     return fract(p.x * p.y);
 }
 
-// polynomial smooth-min (IQ) — nearby blobs merge into one fluid body
+// polynomial smooth-min (IQ) - nearby blobs merge into one fluid body
 float smin(float a, float b, float k) {
     float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
     return mix(b, a, h) - k * h * (1.0 - h);
@@ -331,7 +331,7 @@ private class AgslShaderHolder private constructor(val shader: Any, private val 
         s.setFloatUniform("time", time)
         s.setFloatUniform("intensity", intensity)
         s.setFloatUniform("dark", dark)
-        // liquid-only: the five metaball centers (web drawBalls parity —
+        // liquid-only: the five metaball centers (web drawBalls parity -
         // same Lissajous constants, 10 sin/cos per FRAME not per pixel).
         if (!hasBalls) return
         val aspect = w / h.coerceAtLeast(1f)
@@ -350,7 +350,7 @@ private class AgslShaderHolder private constructor(val shader: Any, private val 
     }
 }
 
-/** Fullscreen ambient field — mount ONE instance behind the app shell. */
+/** Fullscreen ambient field - mount ONE instance behind the app shell. */
 @Composable
 fun AmbientField(
     mode: FxMode,
@@ -362,7 +362,7 @@ fun AmbientField(
     if (mode == FxMode.OFF) return
     var time by remember { mutableFloatStateOf(14.2f) } // start at a pleasing moment (web parity)
 
-    // Drive the clock with the frame loop — but never when motion is reduced.
+    // Drive the clock with the frame loop - but never when motion is reduced.
     LaunchedEffect(mode, reducedMotion) {
         if (reducedMotion) return@LaunchedEffect
         var last = withFrameNanos { it }
@@ -388,7 +388,7 @@ fun AmbientField(
     }
 }
 
-/** Animated gradient approximation for API 26-32 — same palette, softer physics. */
+/** Animated gradient approximation for API 26-32 - same palette, softer physics. */
 @Composable
 private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intensity: Float) {
     Canvas(Modifier.fillMaxSize()) {
@@ -419,7 +419,7 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
                 }
             }
             FxMode.CAUSTICS -> {
-                // aqua interference rings — brighter + cooler than the blobs
+                // aqua interference rings - brighter + cooler than the blobs
                 val aqua = Color(0xFF4DE8D8)
                 repeat(3) { ring ->
                     val cx = w * (0.5f + 0.22f * sin(time * (0.24f + ring * 0.11f) + ring * 2.1f))
@@ -438,7 +438,7 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
                 }
             }
             FxMode.LIQUID -> {
-                // five fused metaballs — emerald/teal body with a rose rim
+                // five fused metaballs - emerald/teal body with a rose rim
                 val emerald = Color(0xFF10B981)
                 val rose = Color(0xFFF43F5E)
                 repeat(5) { ball ->
@@ -463,7 +463,7 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
                 }
             }
             else -> {
-                // three drifting curtains/blobs — aurora/mesh shared geometry
+                // three drifting curtains/blobs - aurora/mesh shared geometry
                 val blobs = listOf(
                     Triple(emerald, 0.32f * sin(time * 0.31f), 0.60f + 0.14f * cos(time * 0.23f)),
                     Triple(teal, 0.26f * cos(time * 0.21f + 1.7f), 0.34f + 0.16f * sin(time * 0.27f + 0.6f)),
@@ -499,7 +499,7 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
     }
 }
 
-// ── Particle bursts (native port of particle-layer.tsx) ──────────
+// Particle bursts (native port of particle-layer.tsx)
 
 private val CONFETTI_COLORS = listOf(
     Color(0xFF10B981), Color(0xFF14B8A6), Color(0xFFF59E0B),
@@ -641,7 +641,7 @@ private fun DrawScope.drawParticle(p: P) {
 }
 
 /**
- * Fullscreen burst overlay — listens to [PulseFx.bursts], animates only while
+ * Fullscreen burst overlay - listens to [PulseFx.bursts], animates only while
  * particles are alive (zero idle cost, web parity), pointer-transparent.
  */
 @Composable
@@ -661,7 +661,7 @@ fun ParticleBurstHost(modifier: Modifier = Modifier, reducedMotion: Boolean) {
         }
     }
 
-    // The physics loop runs only while particles exist — zero idle cost.
+    // The physics loop runs only while particles exist - zero idle cost.
     LaunchedEffect(particles.size) {
         if (particles.isEmpty()) return@LaunchedEffect
         var last = withFrameNanos { it }

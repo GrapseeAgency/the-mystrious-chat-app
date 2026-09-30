@@ -1,12 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// /api/voice/transcribe — R48 live voice-room captions (ASR)
-// ─────────────────────────────────────────────────────────────
+// /api/voice/transcribe - R48 live voice-room captions (ASR)
 // A speaker's client wraps ~4 s of its OWN downsampled mic PCM
 // (16 kHz mono Int16) in a WAV container and posts it here while
 // holding push-to-talk with captions enabled. The server runs the
 // real speech-recognition service and returns the text; the client
 // then relays it to the voice room as an ephemeral `voice:transcript`
-// socket event. Nothing is stored on a message or on disk — captions
+// socket event. Nothing is stored on a message or on disk - captions
 // are live-only, matching the voice room's "never recorded" contract.
 import { NextResponse } from 'next/server'
 import ZAI from 'z-ai-web-dev-sdk'
@@ -72,7 +70,7 @@ export async function POST(req: Request) {
       error instanceof Error ? error.message : error,
     )
     return NextResponse.json(
-      { error: 'Transcription failed — the speech service could not process this audio.' },
+      { error: 'Transcription failed - the speech service could not process this audio.' },
       { status: 502 },
     )
   }

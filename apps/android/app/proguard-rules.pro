@@ -1,14 +1,12 @@
-# ─────────────────────────────────────────────────────────────
-# Pulse R8 / ProGuard rules — Wave 8 (spec §7 "R8 after keep-rules
+# Pulse R8 / ProGuard rules (Wave 8, spec section 7 "R8 after keep-rules
 # proven"). Posture: CONSERVATIVE.
-#   • ALL app code is kept (shrinking still strips unused library
+#   - ALL app code is kept (shrinking still strips unused library
 #     code/resources; obfuscation renames only library classes).
 #     This removes the reflective-decode risk surface while still
 #     delivering the R8 pipeline the spec asks for.
-# ─────────────────────────────────────────────────────────────
 
 # Every app class: DTOs with tolerant JSON decode, Hilt graph, Room
-# entities/DAOs, Compose — kept whole.
+# entities/DAOs, Compose - kept whole.
 -keep class app.pulse.** { *; }
 
 # kotlinx.serialization (tolerant PulseJson decoders rely on generated

@@ -1,12 +1,12 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 0 — outbox engine semantics, mirroring src/lib/pulse-outbox.ts:
+/// Wave 0 - outbox engine semantics, mirroring src/lib/pulse-outbox.ts:
 /// FIFO ≤50, stop-at-first-network-failure, temp→real swap on success,
 /// 4xx drop + continue. The APIClient boundary is the ONLY mock seam.
 @MainActor
 final class PulseOutboxTests: XCTestCase {
-    // ── stubbed sender (test-only) ───────────────────────────
+    // stubbed sender (test-only)
 
     private final class StubSender: PulseOutboxSending, @unchecked Sendable {
         enum Behavior {
@@ -18,7 +18,7 @@ final class PulseOutboxTests: XCTestCase {
         private let lock = NSLock()
         private var behaviors: [String: Behavior]
         private var attempted: [String] = []
-        /// R1-W2B D28 — every sendMessage's forward-relevant body, recorded
+        /// R1-W2B D28 - every sendMessage's forward-relevant body, recorded
         /// as "kind|imagePath|audioPath|durationMs|filePath|fileName|fileSize"
         /// so the flush pass-through is pinned in tests.
         private var attemptedBodies: [String] = []
@@ -47,9 +47,9 @@ final class PulseOutboxTests: XCTestCase {
             return attemptedBodies[index]
         }
 
-        // W1-DATA-B — full PulseOutboxSending requirement (mirrors the
+        // W1-DATA-B - full PulseOutboxSending requirement (mirrors the
         // extended PulseAPIClient.sendMessage; the engine passes nil for
-        // every media/thread field — queued sends stay text-only).
+        // every media/thread field - queued sends stay text-only).
         func sendMessage(
             conversationId: String,
             content: String,
@@ -84,13 +84,13 @@ final class PulseOutboxTests: XCTestCase {
         }
     }
 
-    // ── engine helper ────────────────────────────────────────
+    // engine helper
 
     private func makeEngine(_ store: PulseStore, _ sender: StubSender?) -> PulseOutboxEngine {
         PulseOutboxEngine(store: store) { sender }
     }
 
-    // ── queue shape ──────────────────────────────────────────
+    // queue shape
 
     func testAppendPreservesFIFOOrder() throws {
         let store = try PulseStore()
@@ -115,7 +115,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(rows.last?.clientId, "cap-54")
     }
 
-    // ── flush semantics ──────────────────────────────────────
+    // flush semantics
 
     func testSuccessSwapsTempRowForRealAndEmptiesOutbox() async throws {
         let store = try PulseStore()
@@ -161,7 +161,7 @@ final class PulseOutboxTests: XCTestCase {
 
         await engine.flush()
 
-        // Stop at the first failure — "third" was never attempted.
+        // Stop at the first failure - "third" was never attempted.
         XCTAssertEqual(sender.attempts(of: "first"), 1)
         XCTAssertEqual(sender.attempts(of: "second"), 1)
         XCTAssertEqual(sender.attempts(of: "third"), 0)
@@ -196,7 +196,7 @@ final class PulseOutboxTests: XCTestCase {
         await engine.flush()
 
         // The 4xx entry was dropped (temp row deleted) and the drain
-        // CONTINUED — the next entry was still delivered.
+        // CONTINUED - the next entry was still delivered.
         XCTAssertEqual(sender.attempts(of: "bad"), 1)
         XCTAssertEqual(sender.attempts(of: "good"), 1)
         XCTAssertEqual(store.countOutbox(), 0)
@@ -216,7 +216,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .unknown, message: nil)))
     }
 
-    // ── R1-W2B D28 — queued forwards flush with their stored body ──
+    // R1-W2B D28 - queued forwards flush with their stored body
 
     func testQueuedForwardFlushesWithKindAndMediaPaths() async throws {
         let store = try PulseStore()
@@ -265,7 +265,7 @@ final class PulseOutboxTests: XCTestCase {
     }
 }
 
-/// Shared fixture builder — WireChatMessage's memberwise init is internal,
+/// Shared fixture builder - WireChatMessage's memberwise init is internal,
 /// which @testable exposes to both test classes here.
 enum OutboxFixtures {
     static func makeMessage(id: String, conversationId: String, content: String) -> WireChatMessage {

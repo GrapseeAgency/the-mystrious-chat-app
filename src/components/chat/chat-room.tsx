@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — full-screen chat room overlay.
+// Pulse Chat - full-screen chat room overlay.
 // Bubbles with clustering, day chips, typing indicators,
 // read receipts, optimistic sending, delete-for-everyone.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import {
@@ -110,6 +108,8 @@ import type {
   ScheduledItem,
   TopicSummary,
 } from '@/lib/types'
+import type { TopicIconId } from '@/lib/icon-ids'
+import { statusLabelFor } from '@/components/profile/status-glyph'
 import {
   apiJson,
   ApiError,
@@ -187,13 +187,13 @@ import {
 import { SlashPalette } from '@/components/chat/slash-palette'
 import { VoiceRoomSheet, useVoiceRoom } from "@/components/chat/voice-room-sheet"
 import { useWhiteboardSheet } from "@/components/chat/whiteboard-sheet"
-// ── R23: beyond-chat wave 2 — red packets, games, kanban, events ──
+// R23: beyond-chat wave 2 - red packets, games, kanban, events 
 import RedPacketBubble from "@/components/chat/redpacket-bubble"
 import { useRedPacketSheet } from "@/components/chat/redpacket-sheet"
 import GameTicTacToeCard from "@/components/chat/game-tictactoe-card"
 import { useKanbanSheet } from "@/components/chat/kanban-sheet"
 import { useEventsSheet } from "@/components/chat/events-sheet"
-// ── R24-b: topics rail + stage/space/tournament (parallel crews' sheets) ──
+// R24-b: topics rail + stage/space/tournament (parallel crews' sheets) 
 import { TopicBar } from "@/components/chat/topic-bar"
 import { useStageSheet } from "@/components/chat/stage-room-sheet"
 import { useSpaceSheet } from "@/components/chat/space-sheet"
@@ -213,15 +213,15 @@ import { usePipChat } from '@/components/chat/pip-store'
 import { GroupInfoSheet } from '@/components/chat/group-info-sheet'
 import { useNavStyle } from '@/components/chat/nav-router'
 import { useHashRoute, navigateHash, replaceHash, backHash } from '@/lib/hash-router'
-// ── R27-c: chat-room hash sub-pages + compact glass pins sheet ──
+// R27-c: chat-room hash sub-pages + compact glass pins sheet 
 import { RoomInfoPage } from '@/components/chat/room-info-page'
 import { RoomSearchPage } from '@/components/chat/room-search-page'
 import { RoomPinsSheet } from '@/components/chat/room-pins-sheet'
-// ── R37: DM header ShieldCheck badge — the shared safety-number sheet lives
+//  R37: DM header ShieldCheck badge - the shared safety-number sheet lives
 // in its own file (also mounted by the room info Encryption row); this room
 // only renders the badge and opens the sheet on tap.
 import { SafetySheet, safetyKey, type SafetyState } from '@/components/chat/safety-sheet'
-// ── R30-b: per-message reminders — glass sheet + due-loop + jump event ──
+// R30-b: per-message reminders - glass sheet + due-loop + jump event 
 import {
   RemindersSheet,
   REMINDER_JUMP_EVENT,
@@ -231,7 +231,7 @@ import {
   useReminderDueLoop,
   type ReminderJumpDetail,
 } from '@/components/chat/reminders-sheet'
-// ── R33-a: 1:1 voice/video calls — since R35-b the call session + overlay
+//  R33-a: 1:1 voice/video calls - since R35-b the call session + overlay
 // live at SHELL level (main-shell) so rings surface app-wide; the room only
 // hands its DM peer to the shell through the onStartCall callback.
 import type { CallPeer } from '@/components/chat/call-overlay'
@@ -260,7 +260,7 @@ interface SearchResponse {
   total?: number
 }
 
-// ── F-MS-29: quick phrases — server-backed composer rail ──────
+// F-MS-29: quick phrases - server-backed composer rail 
 // Rows live in Prisma (QuickPhrase) behind /api/users/[id]/phrases
 // (GET/POST/DELETE). These mirror the server-side caps exactly.
 const QUICK_PHRASE_MAX = 120
@@ -284,7 +284,7 @@ const SLASH_COMMANDS = [
   { cmd: '/me', args: '<action>', help: 'Send an italic action line' },
   { cmd: '/shrug', args: '[text]', help: 'Append ¯\\_(ツ)_/¯' },
   { cmd: '/tableflip', args: '[text]', help: 'Append (╯°□°）╯︵ ┻━┻' },
-  { cmd: '/unflip', args: '[text]', help: 'Prefix ┬─┬ ノ( ゜-゜ノ' },
+  { cmd: '/unflip', args: '[text]', help: 'Prefix ┬┬ ノ( ゜-゜ノ' },
   { cmd: '/roll', args: '[AdM]', help: 'Roll dice, e.g. /roll 2d6' },
   { cmd: '/poll', args: '', help: 'Open the live-poll builder' },
   { cmd: '/schedule', args: '', help: 'Schedule this message for later' },
@@ -306,7 +306,7 @@ const EFFECT_ICON: Record<MessageEffectName, LucideIcon> = {
   sparkles: Sparkles,
 }
 
-/** Parse one rolled die — returns null on malformed input. */
+/** Parse one rolled die - returns null on malformed input. */
 function rollDice(spec: string): { rolls: number[]; total: number } | null {
   const m = /^(\d{1,2})d(\d{1,3})$/i.exec(spec.trim())
   const count = m ? Math.min(Math.max(parseInt(m[1], 10), 1), 12) : 1
@@ -328,19 +328,19 @@ const BUBBLE_RADIUS: Record<'md' | 'lg' | 'pill', string> = {
   pill: 'rounded-3xl',
 }
 
-/** Safe-parse a red-packet payload {packetId, …} — never throws. (R23-a) */
+/** Safe-parse a red-packet payload {packetId, …} - never throws. (R23-a) */
 function parseRedPacketPayload(payload: string | null): { packetId: string } | null {
   const p = parseMessagePayload(payload)
   return typeof p.packetId === 'string' && p.packetId.length > 0 ? { packetId: p.packetId } : null
 }
 
-/** Safe-parse a game payload {matchId, …} — never throws. (R23-b) */
+/** Safe-parse a game payload {matchId, …} - never throws. (R23-b) */
 function parseGamePayload(payload: string | null): { matchId: string } | null {
   const p = parseMessagePayload(payload)
   return typeof p.matchId === 'string' && p.matchId.length > 0 ? { matchId: p.matchId } : null
 }
 
-/** Safe-parse a tournament payload {tournamentId, name, game} — never throws. (R24) */
+/** Safe-parse a tournament payload {tournamentId, name, game} - never throws. (R24) */
 function parseTournamentPayload(payload: string | null): { tournamentId: string } | null {
   const p = parseMessagePayload(payload)
   return typeof p.tournamentId === 'string' && p.tournamentId.length > 0
@@ -348,9 +348,9 @@ function parseTournamentPayload(payload: string | null): { tournamentId: string 
     : null
 }
 
-// ── R24-b: client mirror of the server's deterministic incognito alias —
+//  R24-b: client mirror of the server's deterministic incognito alias -
 // identical FNV-1a + word lists to the messages route, so the OPTIMISTIC
-// bubble already shows the exact alias the server will store. ──
+// bubble already shows the exact alias the server will store. 
 const ANON_ADJECTIVES = ['Swift', 'Quiet', 'Neon', 'Ember', 'Frost', 'Lucky', 'Cosmic', 'Silent'] as const
 const ANON_ANIMALS = ['Falcon', 'Otter', 'Panda', 'Wolf', 'Comet', 'Tiger', 'Raven', 'Fox'] as const
 
@@ -370,7 +370,7 @@ function anonAliasPreview(userId: string, conversationId: string): string {
   return `${adjective} the ${animal}`
 }
 
-/** Safe-parse a sticker payload {emoji, pack} — never throws. */
+/** Safe-parse a sticker payload {emoji, pack} - never throws. */
 function parseSticker(payload: string | null): { emoji: string; pack: string } | null {
   const p = parseMessagePayload(payload)
   const emoji = typeof p.emoji === 'string' ? p.emoji : ''
@@ -379,7 +379,7 @@ function parseSticker(payload: string | null): { emoji: string; pack: string } |
   return { emoji, pack }
 }
 
-/** Safe-parse a message payload blob — never throws, always an object. */
+/** Safe-parse a message payload blob - never throws, always an object. */
 function parseMessagePayload(payload: string | null): Record<string, unknown> {
   if (!payload) return {}
   try {
@@ -451,14 +451,14 @@ function applySlash(
     case 'tableflip':
       return { kind: 'send', content: `${arg}${arg.length > 0 ? ' ' : ''}(╯°□°）╯︵ ┻━┻` }
     case 'unflip':
-      return { kind: 'send', content: `┬─┬ ノ( ゜-゜ノ${arg.length > 0 ? ` ${arg}` : ''}` }
+      return { kind: 'send', content: `┬┬ ノ( ゜-゜ノ${arg.length > 0 ? ` ${arg}` : ''}` }
     case 'roll': {
       if (arg.length === 0) {
         const roll = rollDice('1d6')
         return { kind: 'send', content: `Rolled **1d6**: *${roll?.total ?? '?'}*` }
       }
       const roll = rollDice(arg)
-      if (!roll) return { kind: 'error', message: 'Usage: /roll AdM — e.g. /roll 2d6' }
+      if (!roll) return { kind: 'error', message: 'Usage: /roll AdM - e.g. /roll 2d6' }
       const parts = roll.rolls.join(' + ')
       return { kind: 'send', content: `Rolled **${arg.toLowerCase()}**: ${parts} = *${roll.total}*` }
     }
@@ -467,7 +467,7 @@ function applySlash(
     case 'schedule':
       return { kind: 'schedule' }
     case 'remind':
-      // R30-b: conversation-level reminder — the chat-room body parses the
+      // R30-b: conversation-level reminder - the chat-room body parses the
       // trailing relative time (via parseRelativeReminder) and POSTs it.
       return { kind: 'remind', arg }
     case 'sticker':
@@ -482,7 +482,7 @@ function applySlash(
     case 'stage':
     case 'space':
     case 'tournament':
-      // R23/R24: standalone tools — sheets/games live in the component body
+      // R23/R24: standalone tools - sheets/games live in the component body
       return { kind: 'tool', tool: word.toLowerCase() as 'whiteboard' | 'redpacket' | 'kanban' | 'events' | 'game' | 'stage' | 'space' | 'tournament' }
     case 'topic': {
       // R24-b: create a Zulip topic, then file the NEXT send under it
@@ -500,7 +500,7 @@ function applySlash(
     case 'help':
       return { kind: 'help' }
     default: {
-      // R21-a bot commands are answered server-side by @pulseai — pass them
+      // R21-a bot commands are answered server-side by @pulseai - pass them
       // through as a normal message so the bot engine can reply. Typos that
       // match nothing still surface the /help affordance below.
       const botCommands = new Set(['math', 'flip', '8ball', 'rps', 'dice', 'time', 'wallet'])
@@ -509,7 +509,7 @@ function applySlash(
       }
       return {
         kind: 'error',
-        message: `Unknown command "/${word}" — try /help`,
+        message: `Unknown command "/${word}" - try /help`,
       }
     }
   }
@@ -522,7 +522,7 @@ const EFFECT_PARTICLES: Record<MessageEffectName, ParticleKind> = {
   sparkles: 'stars',
 }
 
-/** R30-b: quick remind presets — dates are computed per open, never cached. */
+/** R30-b: quick remind presets - dates are computed per open, never cached. */
 function remindPresets(): Array<{ label: string; at: Date }> {
   const now = new Date()
   const tomorrow9 = new Date(now)
@@ -547,7 +547,7 @@ function remindMinAttr(): string {
 
 /**
  * Fire the full-screen particle layer from an element's viewport position
- * (used for reaction bursts — one synchronous getBoundingClientRect, no rAF
+ * (used for reaction bursts - one synchronous getBoundingClientRect, no rAF
  * churn). Respects reduced motion.
  */
 function fireParticlesAt(el: Element | null, kind: ParticleKind = 'hearts', count = 24): void {
@@ -591,7 +591,7 @@ export function ChatRoom({
   conversationId: string
   /** pre-open read watermark frozen by the chats list at tap time (unread divider) */
   unreadAnchorMs?: number | null
-  /** global-search hit — jump + flash this message once history renders */
+  /** global-search hit - jump + flash this message once history renders */
   initialJumpMessageId?: string | null
   /** R35-b: dial through the shell's single call session + overlay
       (omitted by hosts without the shell mount → call buttons hide) */
@@ -614,7 +614,7 @@ export function ChatRoom({
   const closePipChat = usePipChat((s) => s.close)
   const pipConversationId = usePipChat((s) => (s.isOpen ? s.conversationId : null))
 
-  // ── in-room conversation switching ────────────────────────
+  // in-room conversation switching 
   // Tapping a profile sheet's "Message" opens the DM WITHOUT tearing this
   // room down: the whole component re-keys its queries onto the new id.
   const [switchedId, setSwitchedId] = useState<string | null>(null)
@@ -630,7 +630,7 @@ export function ChatRoom({
     setSwitchedId(null)
     setAnchorOverride(undefined)
     setJumpOverride(undefined)
-    // R24-b: topics are per-conversation — never leak a view across rooms
+    // R24-b: topics are per-conversation - never leak a view across rooms
     setActiveTopicId(null)
     setAnonNext(false)
     anonNextRef.current = false
@@ -649,7 +649,7 @@ export function ChatRoom({
     }
   }, [])
 
-  // ── keyboard lift (R22): visualViewport shrink → composer rides the keyboard ──
+  // keyboard lift (R22): visualViewport shrink → composer rides the keyboard 
   // Transform-only (no layout thrash); only while a text field actually holds
   // focus so browser-chrome collapses never bounce the room.
   useEffect(() => {
@@ -683,7 +683,7 @@ export function ChatRoom({
     }
   }, [])
 
-  // mount watermark / send pop / missed-count effects live further down —
+  // mount watermark / send pop / missed-count effects live further down -
   // they depend on queries + mutations declared below (see "scrolling" section).
 
   // restore persisted draft once per opened conversation
@@ -699,11 +699,11 @@ export function ChatRoom({
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [showJump, setShowJump] = useState(false)
-  /** messages that landed while scrolled away — badge on the jump-to-latest pill */
+  /** messages that landed while scrolled away - badge on the jump-to-latest pill */
   const [missedCount, setMissedCount] = useState(0)
   const missedCountRef = useRef(0)
   const lastSeenLenRef = useRef(0)
-  // ── R22 composer premium state ────────────────────────────────
+  // R22 composer premium state 
   /** attachments tray (springs open above the capsule) */
   const [trayOpen, setTrayOpen] = useState(false)
   const [trayEffectsOpen, setTrayEffectsOpen] = useState(false)
@@ -716,19 +716,19 @@ export function ChatRoom({
   /** 0→N success pop tick for the send/mic slot after a message lands */
   const [sendPop, setSendPop] = useState(0)
   const wasSendingRef = useRef(false)
-  /** R44 — epoch ms until which slow mode blocks MY sends (0 = free). Set
+  /** R44 - epoch ms until which slow mode blocks MY sends (0 = free). Set
    *  from the server's 429 retryAfter; the send/mic slot counts down live. */
   const [slowUntil, setSlowUntil] = useState(0)
-  /** mount watermark — only messages newer than this animate their entrance */
+  /** mount watermark - only messages newer than this animate their entrance */
   const mountMsRef = useRef(0)
-  /** real ids that just replaced optimistic temps — skip their re-entrance */
+  /** real ids that just replaced optimistic temps - skip their re-entrance */
   const landedIdsRef = useRef<Map<string, number>>(new Map())
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   /** message being edited (Telegram-style composer edit mode) */
   const [editing, setEditing] = useState<ChatMessage | null>(null)
   /** pinned-messages sheet */
   const [pinnedOpen, setPinnedOpen] = useState(false)
-  // ── R30-b: reminders sheet + per-message remind picker ─────
+  // R30-b: reminders sheet + per-message remind picker 
   const [remindersOpen, setRemindersOpen] = useState(false)
   /** message the remind picker anchors to (null = picker closed) */
   const [remindTarget, setRemindTarget] = useState<ChatMessage | null>(null)
@@ -740,10 +740,10 @@ export function ChatRoom({
   const [reactionInfo, setReactionInfo] = useState<{ message: ChatMessage; emoji: string } | null>(null)
   /** seen-by detail sheet (read receipts) */
   const [seenByOpen, setSeenByOpen] = useState(false)
-  /** message whose info the sheet shows — null = the latest own message (read-by stack tap) */
+  /** message whose info the sheet shows - null = the latest own message (read-by stack tap) */
   const [infoMessage, setInfoMessage] = useState<ChatMessage | null>(null)
   const [sendingImage, setSendingImage] = useState(false)
-  /** R40 — document picker: hidden input ref + in-flight upload flag */
+  /** R40 - document picker: hidden input ref + in-flight upload flag */
   const docInputRef = useRef<HTMLInputElement>(null)
   const [sendingDoc, setSendingDoc] = useState(false)
   /** uploaded image awaiting an optional caption → caption sheet */
@@ -757,27 +757,27 @@ export function ChatRoom({
   const [recordMs, setRecordMs] = useState(0)
   const [sendingVoice, setSendingVoice] = useState(false)
 
-  // ── search overlay + jump-to-message ───────────────────────
+  // search overlay + jump-to-message 
   /** message currently flashing (sub-page search hit / reply jump) */
   const [highlight, setHighlight] = useState<{ id: string; nonce: number } | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── forward-message sheet (fresh mount per open) ──────────
+  // forward-message sheet (fresh mount per open) 
   const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null)
   const [forwardGeneration, setForwardGeneration] = useState(0)
   const [forwardMounted, setForwardMounted] = useState(false)
   const [forwardOpen, setForwardOpen] = useState(false)
 
-  // ── threads (Slack/Zulip) ───────────────────────────────────
-  /** open thread root — drawer shows its replies */
+  // threads (Slack/Zulip) 
+  /** open thread root - drawer shows its replies */
   const [threadRoot, setThreadRoot] = useState<ChatMessage | null>(null)
   /** lifted thread composer draft (survives drawer re-mounts) */
   const [threadDraft, setThreadDraft] = useState('')
 
-  // ── live polls ─────────────────────────────────────────────
+  // live polls 
   const [pollBuilderOpen, setPollBuilderOpen] = useState(false)
 
-  // ── scheduled sends (Telegram-style) ──────────────────────
+  // scheduled sends (Telegram-style) 
   const [scheduleFor, setScheduleFor] = useState<string | null>(null) // pending draft text
   const [scheduledListOpen, setScheduledListOpen] = useState(false)
 
@@ -786,7 +786,7 @@ export function ChatRoom({
   /** slash-command cheat-sheet dialog */
   const [helpOpen, setHelpOpen] = useState(false)
 
-  // ── stickers · location · effects (R19-b) ──────────────────
+  // stickers · location · effects (R19-b) 
   const [stickerOpen, setStickerOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
   /** armed full-screen effect applied to the NEXT sent message */
@@ -796,20 +796,20 @@ export function ChatRoom({
   /** full-screen group management sheet (R19-c contract) */
   const [groupInfoOpen, setGroupInfoOpen] = useState(false)
 
-  // ── live voice room (R21-b) — engine survives sheet close ──
+  // live voice room (R21-b) - engine survives sheet close 
   const [voiceOpen, setVoiceOpen] = useState(false)
   const voice = useVoiceRoom(conversationId, me)
 
-  // ── collaborative whiteboard (R21-c) — palette event opens it ──
+  // collaborative whiteboard (R21-c) - palette event opens it 
   const whiteboard = useWhiteboardSheet(conversationId, me.id)
 
-  // ── R24-b: Zulip-style topics (groups) + incognito arming ─────
-  /** active topic view — null = General (the implicit whole-room stream) */
+  // R24-b: Zulip-style topics (groups) + incognito arming 
+  /** active topic view - null = General (the implicit whole-room stream) */
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null)
-  /** Venetian-mask arming — next send posts anonymously (groups only) */
+  /** Venetian-mask arming - next send posts anonymously (groups only) */
   const [anonNext, setAnonNext] = useState(false)
   const anonNextRef = useRef(false)
-  /** previous activeTopicId — detects topic switches to re-arm scroll anchoring */
+  /** previous activeTopicId - detects topic switches to re-arm scroll anchoring */
   const prevTopicRef = useRef<string | null>(null)
 
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -835,7 +835,7 @@ export function ChatRoom({
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const recordCancelRef = useRef(false)
 
-  // ── data ───────────────────────────────────────────────────
+  // data 
 
   const detail = useQuery({
     queryKey: ['conversation', conversationId],
@@ -850,9 +850,9 @@ export function ChatRoom({
     refetchInterval: 6_000,
   })
 
-  // ── R45: server-synced draft restore (cross-device) ──────────
+  // R45: server-synced draft restore (cross-device) 
   // The local (localStorage) draft always wins when present. When this device
-  // has none — fresh tab, another phone — the server draft (kept fresh by the
+  // has none - fresh tab, another phone - the server draft (kept fresh by the
   // drafts-store funnel PATCHing from every device) seeds the composer ONCE
   // per opened conversation. Never re-seeds afterwards, so an intentional
   // clear can't be resurrected by the next detail refetch.
@@ -867,8 +867,8 @@ export function ChatRoom({
     setInput(serverDraft)
   }, [conversationId, detail.isSuccess, detail.data?.myDraft])
 
-  // ── R38: Signal "Screen security" — frost the message area while unfocused ──
-  // R42: the veil engages when EITHER flag is on — the room-wide switch
+  // R38: Signal "Screen security" - frost the message area while unfocused 
+  // R42: the veil engages when EITHER flag is on - the room-wide switch
   // (screenPrivacy) or the viewer's personal flag (myScreenPrivacy).
   // Registered ONLY while either flag is on (zero listener overhead when off);
   // cleaned up on toggle/unmount/route change.
@@ -896,7 +896,7 @@ export function ChatRoom({
     }
   }, [screenPrivacyOn])
 
-  // R24-b: General view = whole room (existing key — unchanged behavior);
+  // R24-b: General view = whole room (existing key - unchanged behavior);
   // an active topic gets its own key so caches never bleed between views.
   const messagesKey =
     activeTopicId === null
@@ -943,7 +943,7 @@ export function ChatRoom({
       const res = await apiJson<MessagesResponse>(
         `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=${OLDER_PAGE_SIZE}&before=${encodeURIComponent(oldest.createdAt)}${topicSuffix}`,
       )
-      // Arm the anchor only now — the very next render (data applied) restores it.
+      // Arm the anchor only now - the very next render (data applied) restores it.
       scrollRestoreRef.current = { prevHeight, prevTop }
       let cachedCount = res.messages.length
       queryClient.setQueryData<ChatMessage[]>(messagesKey, (old) => {
@@ -971,7 +971,7 @@ export function ChatRoom({
     el.scrollTop = el.scrollHeight - pending.prevHeight + pending.prevTop
   })
 
-  // ── R24-b: message-cache plumbing that spans BOTH views ─────
+  // R24-b: message-cache plumbing that spans BOTH views 
   // The General view keeps the whole-room cache; the active topic view has
   // its own key. Mutations patch both so optimistic rows never vanish when
   // the user flips between General and a topic mid-flight.
@@ -985,7 +985,7 @@ export function ChatRoom({
     [queryClient, conversationId, activeTopicId],
   )
 
-  // Switching topics swaps the message view — re-arm the first-load scroll
+  // Switching topics swaps the message view - re-arm the first-load scroll
   // anchor so every topic starts pinned to its newest message.
   useEffect(() => {
     if (prevTopicRef.current === null) {
@@ -999,7 +999,7 @@ export function ChatRoom({
     }
   }, [activeTopicId])
 
-  // ── jump-to-message machinery (search hits + quoted replies) ─
+  // jump-to-message machinery (search hits + quoted replies)
 
   /** Smooth-scroll the thread so the target message sits mid-viewport. */
   const scrollToMessageEl = useCallback((messageId: string): boolean => {
@@ -1048,7 +1048,7 @@ export function ChatRoom({
             `/api/conversations/${encodeURIComponent(conversationId)}/messages?limit=60&before=${encodeURIComponent(cached[0].createdAt)}`,
           )
           if (res.messages.length === 0) break
-          // Plain prepend; no scroll-restore arm — we re-anchor on the hit below.
+          // Plain prepend; no scroll-restore arm - we re-anchor on the hit below.
           queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) => {
             const base = old ?? cached
             const known = new Set(base.map((m) => m.id))
@@ -1090,9 +1090,9 @@ export function ChatRoom({
     [jumpToMessage],
   )
 
-  // ── R30-b: reminder jumps — same room → scroll to the anchor message;
+  //  R30-b: reminder jumps - same room → scroll to the anchor message;
   // other room → close the sheet and point at the right chat (cross-room
-  // jump is a known gap, the toast keeps the outcome honest) ──
+  // jump is a known gap, the toast keeps the outcome honest) 
   useEffect(() => {
     const onReminderJump = (event: Event) => {
       const detail = (event as CustomEvent<ReminderJumpDetail>).detail
@@ -1102,7 +1102,7 @@ export function ChatRoom({
         if (detail.messageId) void jumpToMessage(detail.messageId)
       } else {
         toast.info(
-          `That reminder lives in ${detail.conversationName || 'another chat'} — open it to see the message`,
+          `That reminder lives in ${detail.conversationName || 'another chat'} - open it to see the message`,
         )
       }
     }
@@ -1110,7 +1110,7 @@ export function ChatRoom({
     return () => window.removeEventListener(REMINDER_JUMP_EVENT, onReminderJump)
   }, [conversationId, jumpToMessage])
 
-  // ── R27-c: hash-routed room sub-pages (#/room/<id>/info | /search) ──
+  // R27-c: hash-routed room sub-pages (#/room/<id>/info | /search) 
   // The room itself is state-mounted (not hash-driven); its sub-pages ride
   // the real hash router so browser back works. Only a hash scoped to THIS
   // conversation opens a sub-page.
@@ -1134,7 +1134,7 @@ export function ChatRoom({
     }
   }, [conversationId])
 
-  // ── forward-message sheet ─────────────────────────────────
+  // forward-message sheet 
 
   const startForward = useCallback((message: ChatMessage | null) => {
     if (!message || message.deletedAt) return
@@ -1159,7 +1159,7 @@ export function ChatRoom({
   )
 
 
-  // ── realtime registration + read receipts ──────────────────
+  // realtime registration + read receipts 
 
   useEffect(() => {
     realtime.setActiveConversation(conversationId)
@@ -1207,7 +1207,7 @@ export function ChatRoom({
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [markVisibleRead])
 
-  // ── derived ────────────────────────────────────────────────
+  // derived 
 
   const detailData = detail.data
   const other = useMemo(
@@ -1217,8 +1217,8 @@ export function ChatRoom({
   const isGroup = detailData?.isGroup ?? false
   const displayName = detailData ? conversationDisplayName(detailData, me.id) : ''
 
-  // ── R37: Signal paradigm — DM header ShieldCheck verification badge.
-  // DMs ONLY (never groups/channels/self-chat — otherMemberOf falls back to
+  //  R37: Signal paradigm - DM header ShieldCheck verification badge.
+  // DMs ONLY (never groups/channels/self-chat - otherMemberOf falls back to
   // myself there, so isSelf is checked explicitly). Shares the
   // ['safety', peerId, meId] cache key with the room info page, so a verify
   // made in either surface flips both instantly.
@@ -1234,7 +1234,7 @@ export function ChatRoom({
     staleTime: 10_000,
   })
 
-  // ── R33-a → R35-b: 1:1 voice/video calls — the WebRTC + signaling state
+  //  R33-a → R35-b: 1:1 voice/video calls - the WebRTC + signaling state
   // machine and the <CallOverlay> now live at SHELL level (main-shell), so
   // incoming rings surface app-wide; this room only forwards dial requests
   // ({ conversationId, peer, kind }) through the onStartCall prop.
@@ -1244,7 +1244,7 @@ export function ChatRoom({
     [detailData, me.id],
   )
 
-  // ── R23: external-message contract — sheets/cards that create messages
+  //  R23: external-message contract - sheets/cards that create messages
   // (red-packet send, game rematch) push the fresh ChatMessage through this
   // window event so the room appends it instantly; 3.5s polling is the fallback.
   // R24-b: topic-filed arrivals also append to the active topic view.
@@ -1267,7 +1267,7 @@ export function ChatRoom({
     return () => window.removeEventListener('pulse:external-message', handler)
   }, [conversationId, activeTopicId, queryClient])
 
-  // ── R23-b: /game palette entry → create a tic-tac-toe match.
+  //  R23-b: /game palette entry → create a tic-tac-toe match.
   // DM: challenge the peer directly; group: open challenge anyone can claim.
   const createGame = useCallback(async () => {
     try {
@@ -1324,7 +1324,7 @@ export function ChatRoom({
     return max
   }, [detailData, me.id])
 
-  // ── group read-by stack (last own message) ────────────
+  // group read-by stack (last own message) 
 
   /** newest own non-pending message still in the loaded window */
   const lastOwnMessage = useMemo(() => {
@@ -1440,7 +1440,7 @@ export function ChatRoom({
     return counts
   }, [messages.data])
 
-  // ── scrolling ──────────────────────────────────────────────
+  // scrolling 
 
   const scrollToBottom = useCallback((smooth: boolean) => {
     const el = viewportRef.current
@@ -1455,7 +1455,7 @@ export function ChatRoom({
     }
   }, [scrollToBottom])
 
-  // ── full-screen message effects (confetti/lasers/echo/sparkles) ──
+  // full-screen message effects (confetti/lasers/echo/sparkles) 
   const [activeEffect, setActiveEffect] = useState<ActiveEffect | null>(null)
   const effectQueueRef = useRef<Array<{ effect: MessageEffectName; origin: EffectOrigin }>>([])
   const effectNonceRef = useRef(0)
@@ -1543,7 +1543,7 @@ export function ChatRoom({
 
   useEffect(() => {
     if (lastMessageId === null || !historyLoaded) return
-    // initial search-jump owns the first positioning — no bottom auto-scroll race
+    // initial search-jump owns the first positioning - no bottom auto-scroll race
     if (initialJumpMessageId !== null) return
     requestAnimationFrame(() => {
       if (nearBottomRef.current) {
@@ -1558,7 +1558,7 @@ export function ChatRoom({
   useEffect(() => {
     if (messages.isSuccess && !historyLoaded) {
       // global-search hit: skip the plain bottom anchor, land on the hit instead.
-      // Deferred until the room's slide-in spring has mostly settled — running the
+      // Deferred until the room's slide-in spring has mostly settled - running the
       // centering math mid-flight measures a transformed layout and mis-aims.
       if (initialJumpMessageId !== null) {
         const t = setTimeout(() => {
@@ -1590,7 +1590,7 @@ export function ChatRoom({
     }
   }, [])
 
-  // mount watermark: freeze "now" when the first history page commits —
+  // mount watermark: freeze "now" when the first history page commits -
   // only messages newer than this get the spring entrance (never history).
   useEffect(() => {
     if (historyLoaded) mountMsRef.current = Date.now()
@@ -1617,7 +1617,7 @@ export function ChatRoom({
     }
   }, [messages.data])
 
-  // ── sending ────────────────────────────────────────────────
+  // sending 
 
   const sendMessage = useMutation({
     mutationFn: async ({
@@ -1645,9 +1645,9 @@ export function ChatRoom({
       viewOnce?: boolean
       /** rich kinds: 'text' | 'sticker' | 'location' | 'file' (effects ride kind:'text' + payload) */
       kind?: string
-      /** structured extras — sticker {emoji,pack} · location {lat,lng,label} · {effect} */
+      /** structured extras - sticker {emoji,pack} · location {lat,lng,label} · {effect} */
       payload?: Record<string, unknown>
-      /** R40 — document attachment (kind 'file') */
+      /** R40 - document attachment (kind 'file') */
       filePath?: string
       fileName?: string
       fileSize?: number
@@ -1704,7 +1704,7 @@ export function ChatRoom({
         imagePath: imagePath ?? null,
         audioPath: audioPath ?? null,
         durationMs: durationMs ?? null,
-        // R40 — document attachment rides the optimistic row too
+        // R40 - document attachment rides the optimistic row too
         filePath: filePath ?? null,
         fileName: fileName ?? null,
         fileSize: fileSize ?? null,
@@ -1737,18 +1737,18 @@ export function ChatRoom({
     },
     onSuccess: ({ res, clientId }, vars) => {
       const real = res.message
-      // R31-a: Snapchat-style streak nudge — fires only when THIS send GREW
+      // R31-a: Snapchat-style streak nudge - fires only when THIS send GREW
       // the streak (second-or-later consecutive day). Same-day re-sends and
       // restarts stay silent; one send = one bump per UTC day.
       const grewStreak = res.streak
       if (grewStreak && grewStreak.continued && grewStreak.count >= 2) {
         toast.success(
-          grewStreak.count === 2 ? '2-day streak — keep it alive' : `${grewStreak.count}-day streak`,
+          grewStreak.count === 2 ? '2-day streak - keep it alive' : `${grewStreak.count}-day streak`,
           { icon: <Flame className="size-4 text-amber-500" aria-hidden /> },
         )
       }
       setReplyTo(null)
-      // R24-b: incognito is one-shot — disarm after a successful send
+      // R24-b: incognito is one-shot - disarm after a successful send
       if (anonNextRef.current) {
         anonNextRef.current = false
         setAnonNext(false)
@@ -1757,7 +1757,7 @@ export function ChatRoom({
         // keep the topic chip count badge honest right away
         void queryClient.invalidateQueries({ queryKey: ['topics', conversationId] })
       }
-      // the real row replaces the optimistic temp — remember it so the bubble
+      // the real row replaces the optimistic temp - remember it so the bubble
       // entrance spring doesn't replay for a message that already animated in
       landedIdsRef.current.set(real.id, Date.now())
       if (landedIdsRef.current.size > 60) {
@@ -1783,7 +1783,7 @@ export function ChatRoom({
         })
       }
       queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
-      // iMessage-grade send effects — play instantly for our own sends
+      // iMessage-grade send effects - play instantly for our own sends
       const sentEffect = parseMessagePayload(real.payload).effect
       if (isMessageEffect(sentEffect) && !prefs.reducedMotion) {
         seenTailRef.current.processed.add(real.id)
@@ -1800,7 +1800,7 @@ export function ChatRoom({
     },
     onError: (error, { clientId }) => {
       patchMessageViews((old) => old?.filter((m) => m.id !== `temp-${clientId}`) ?? old)
-      // R44 — slow-mode 429: start the live countdown instead of a generic
+      // R44 - slow-mode 429: start the live countdown instead of a generic
       // failure toast (the server's honest message carries the wait window).
       if (error instanceof ApiError && error.status === 429) {
         const wait = error.retryAfter ?? 5
@@ -1861,7 +1861,7 @@ export function ChatRoom({
       )
     },
     onError: () => {
-      toast.error('Reaction failed — try again')
+      toast.error('Reaction failed - try again')
       queryClient.invalidateQueries({ queryKey: ['messages', conversationId] })
     },
   })
@@ -1913,7 +1913,7 @@ export function ChatRoom({
     },
   })
 
-  // ── edit message (sender only) ───────────────────────────
+  // edit message (sender only) 
 
   const editMessage = useMutation({
     mutationFn: async ({ messageId, content }: { messageId: string; content: string }) => {
@@ -1957,7 +1957,7 @@ export function ChatRoom({
     },
   })
 
-  // ── pin / unpin (any participant, toggle) ────────────────
+  // pin / unpin (any participant, toggle) 
 
   const pinMessage = useMutation({
     mutationFn: async (messageId: string) => {
@@ -1991,7 +1991,7 @@ export function ChatRoom({
     },
   })
 
-  /** Authoritative pinned list (banner + sheet) — refreshed by pin events. */
+  /** Authoritative pinned list (banner + sheet) - refreshed by pin events. */
   const pinnedQuery = useQuery({
     queryKey: ['pinned', conversationId],
     queryFn: async (): Promise<ChatMessage[]> => {
@@ -2009,7 +2009,7 @@ export function ChatRoom({
   const latestPinned = pinnedList.length > 0 ? pinnedList[pinnedList.length - 1] : null
   const pinnedCount = pinnedList.length
 
-  // ── live-poll actions ─────────────────────────────────────
+  // live-poll actions 
 
   /** swap a fresh poll-bearing row into every cache it lives in */
   const applyPollRow = useCallback(
@@ -2035,7 +2035,7 @@ export function ChatRoom({
         return old.some((m) => m.id === message.id) ? old : [...old, message]
       })
       setPollBuilderOpen(false)
-      toast.success('Poll posted — tap an option to vote')
+      toast.success('Poll posted - tap an option to vote')
       haptic(12)
       requestAnimationFrame(() => scrollToBottom(true))
     },
@@ -2053,7 +2053,7 @@ export function ChatRoom({
       })
     },
     onSuccess: ({ message }) => applyPollRow(message),
-    onError: () => toast.error('Vote failed — try again'),
+    onError: () => toast.error('Vote failed - try again'),
   })
 
   const closePoll = useMutation({
@@ -2066,7 +2066,7 @@ export function ChatRoom({
     },
     onSuccess: ({ message }) => {
       applyPollRow(message)
-      toast.success('Voting closed — results are final')
+      toast.success('Voting closed - results are final')
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Could not close the poll')
@@ -2081,7 +2081,7 @@ export function ChatRoom({
     [votePoll],
   )
 
-  // ── saved / starred messages (Telegram-style) ────────────
+  // saved / starred messages (Telegram-style) 
 
   const toggleSaved = useMutation({
     mutationFn: async (messageId: string) => {
@@ -2099,7 +2099,7 @@ export function ChatRoom({
     onError: () => toast.error('Could not update saved state'),
   })
 
-  // ── R24-b: Chanty-style message → kanban task conversion ──
+  // R24-b: Chanty-style message → kanban task conversion 
 
   const convertToTask = useMutation({
     mutationFn: async (messageId: string) => {
@@ -2125,7 +2125,7 @@ export function ChatRoom({
     onSettled: () => setSelected(null),
   })
 
-  // ── view-once consumption ────────────────────────────────
+  // view-once consumption 
 
   const consumeViewOnce = useMutation({
     mutationFn: async (messageId: string) => {
@@ -2152,7 +2152,7 @@ export function ChatRoom({
     [consumeViewOnce, me.id],
   )
 
-  // ── disappearing messages TTL ────────────────────────────
+  // disappearing messages TTL 
 
   const setTtl = useMutation({
     mutationFn: async (ttlSeconds: number) => {
@@ -2179,8 +2179,8 @@ export function ChatRoom({
     onError: () => toast.error('Could not update disappearing messages'),
   })
 
-  // ── R34-b: AI recap (Zoom AI-Companion parity) ───────────
-  /** live recap card content — null = no card; auto-dismisses after 15s */
+  // R34-b: AI recap (Zoom AI-Companion parity) 
+  /** live recap card content - null = no card; auto-dismisses after 15s */
   const [recap, setRecap] = useState<{ text: string; basedOn: number } | null>(null)
   const recapMutation = useMutation({
     mutationFn: async () =>
@@ -2215,7 +2215,7 @@ export function ChatRoom({
     setRecap(null)
   }, [conversationId])
 
-  // ── scheduled sends ──────────────────────────────────────
+  // scheduled sends 
 
   const scheduledQuery = useQuery({
     queryKey: ['scheduled', conversationId, me.id],
@@ -2245,7 +2245,7 @@ export function ChatRoom({
       requestAnimationFrame(autosize)
       setScheduleFor(null)
       void scheduledQuery.refetch()
-      toast.success(`Scheduled for ${formatListStamp(data.item.scheduledAt)} — it sends itself`)
+      toast.success(`Scheduled for ${formatListStamp(data.item.scheduledAt)} - it sends itself`)
       haptic(12)
     },
     onError: (error) => {
@@ -2292,11 +2292,11 @@ export function ChatRoom({
   /** viewer's group role → announcement-mode lockout */
   const myRole = detailData?.members.find((m) => m.id === me.id)?.role ?? 'member'
   const broadcastLocked = isGroup && (detailData?.broadcastMode ?? false) && myRole !== 'admin'
-  // R47 — blocked-pair DM dead-end: the composer is replaced by a notice;
+  // R47 - blocked-pair DM dead-end: the composer is replaced by a notice;
   // the messages POST 403 stays the server-authoritative enforcement.
   const dmBlocked = !isGroup && (detailData?.dmBlocked ?? false)
 
-  // ── R23: red packets + kanban + events — palette events open them ──
+  // R23: red packets + kanban + events - palette events open them 
   const redPacket = useRedPacketSheet(conversationId, me.id)
   const sheetMembers = useMemo(
     () => (detailData?.members ?? []).map((m) => ({ id: m.id, name: m.name, color: m.color })),
@@ -2305,7 +2305,7 @@ export function ChatRoom({
   const kanban = useKanbanSheet(conversationId, me.id, sheetMembers, myRole)
   const events = useEventsSheet(conversationId, me.id, sheetMembers, myRole)
 
-  // ── R30-b: per-message reminders — due-loop toasts, badge count, create ──
+  // R30-b: per-message reminders - due-loop toasts, badge count, create 
   useReminderDueLoop(me.id)
   const remindersQuery = useQuery({
     queryKey: remindersKey(me.id),
@@ -2341,7 +2341,7 @@ export function ChatRoom({
     [conversationId, me.id, queryClient],
   )
 
-  // ── R24-b: Zulip-style topic rail data (groups only) ─────────
+  // R24-b: Zulip-style topic rail data (groups only) 
   const topicsQuery = useQuery({
     queryKey: ['topics', conversationId],
     queryFn: async (): Promise<TopicSummary[]> => {
@@ -2360,19 +2360,19 @@ export function ChatRoom({
     activeTopicId !== null ? (topics.find((t) => t.id === activeTopicId) ?? null) : null
 
   const createTopic = useCallback(
-    async (name: string, emoji: string): Promise<string | null> => {
+    async (name: string, icon: TopicIconId): Promise<string | null> => {
       try {
         const res = await apiJson<{ topic: TopicSummary }>(
           `/api/conversations/${encodeURIComponent(conversationId)}/topics`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: me.id, name, emoji }),
+            body: JSON.stringify({ userId: me.id, name, emoji: icon }),
           },
         )
         await queryClient.invalidateQueries({ queryKey: ['topics', conversationId] })
         setActiveTopicId(res.topic.id)
-        toast.success(`Filing to ${res.topic.emoji} ${res.topic.name} — next send lands there`)
+        toast.success(`Filing to ${res.topic.name} - next send lands there`)
         window.dispatchEvent(new CustomEvent(TOPIC_CREATED_EVENT, { detail: res.topic }))
         haptic(12)
         return res.topic.id
@@ -2396,7 +2396,7 @@ export function ChatRoom({
     }
   }, [isGroup, topicsQuery.isSuccess, topics, activeTopicId])
 
-  // ── R24: stage / space / tournament sheets (parallel crews' hooks) ──
+  // R24: stage / space / tournament sheets (parallel crews' hooks) 
   const stage = useStageSheet(conversationId, me)
   const space = useSpaceSheet(conversationId, me)
   const tournament = useTournamentSheet(conversationId, me)
@@ -2408,21 +2408,21 @@ export function ChatRoom({
     return { count: items.length, next: formatListStamp(items[0].scheduledAt) }
   }, [scheduledQuery.data])
 
-  // ── R44 slow-mode countdown (server is the source of truth; this only
-  // renders the honest wait window the 429 handed us) ─────────────
+  //  R44 slow-mode countdown (server is the source of truth; this only
+  // renders the honest wait window the 429 handed us) 
   const [slowTick, setSlowTick] = useState(0)
   useEffect(() => {
     if (slowUntil <= Date.now()) return
     const t = window.setInterval(() => setSlowTick((v) => v + 1), 500)
     return () => window.clearInterval(t)
   }, [slowUntil])
-  // slowTick keeps this honest between interval renders — read it so the
+  // slowTick keeps this honest between interval renders - read it so the
   // value recomputes on every tick (the linter would call it unused; it is
   // the render trigger).
   void slowTick
   const slowRemaining = slowUntil > Date.now() ? Math.ceil((slowUntil - Date.now()) / 1000) : 0
 
-  // ── notification mute (per-user watermark) ─────────────
+  // notification mute (per-user watermark) 
 
   const isRoomMuted =
     detailData != null &&
@@ -2451,7 +2451,7 @@ export function ChatRoom({
         data.mutedUntil === null
           ? 'Notifications unmuted'
           : Date.parse(data.mutedUntil) - Date.now() > 20 * 365 * 24 * 3600 * 1000
-            ? 'Muted — always'
+            ? 'Muted - always'
             : `Muted until ${formatListStamp(data.mutedUntil)}`,
       )
     },
@@ -2460,7 +2460,7 @@ export function ChatRoom({
     },
   })
 
-  // ── composer behaviour ─────────────────────────────────────
+  // composer behaviour 
 
   const autosize = useCallback(() => {
     const el = textareaRef.current
@@ -2471,13 +2471,13 @@ export function ChatRoom({
     el.style.height = `${Math.min(el.scrollHeight, cap)}px`
   }, [])
 
-  /** tray toggle — collapses the textarea to one line while the tray is open */
+  /** tray toggle - collapses the textarea to one line while the tray is open */
   const setTray = useCallback(
     (open: boolean) => {
       trayOpenRef.current = open
       setTrayOpen(open)
       if (open) {
-        // the tray overlays the slash palette — dismiss it until the draft changes
+        // the tray overlays the slash palette - dismiss it until the draft changes
         setSlashDismissed(true)
         setTrayEffectsOpen(false)
       }
@@ -2500,7 +2500,7 @@ export function ChatRoom({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [trayOpen, setTray])
 
-  // ── F-MS-29: quick phrases — composer rail data + CRUD ────────
+  // F-MS-29: quick phrases - composer rail data + CRUD 
   // Nothing is cached locally: the server rows are the single source of
   // truth (spec row F-MS-29; the route validates ≤12 phrases × ≤120 chars).
   const phrasesQuery = useQuery({
@@ -2534,7 +2534,7 @@ export function ChatRoom({
       void queryClient.invalidateQueries({ queryKey: ['phrases', me.id] })
       setPhraseDraft('')
       haptic(12)
-      toast.success(`Quick phrase saved — "${phrase.text}"`)
+      toast.success(`Quick phrase saved - "${phrase.text}"`)
     },
     onError: (err) =>
       toast.error(err instanceof Error ? err.message : 'Could not save the phrase'),
@@ -2571,10 +2571,10 @@ export function ChatRoom({
     [autosize],
   )
 
-  // ── R34-b: progressive-disclosure attachments tray ────────
+  // R34-b: progressive-disclosure attachments tray 
   // Discord rule: the FREQUENT actions (photo, sticker, emoji, mic/voice)
   // stay on the composer bar; everything else lives here, GROUPED by
-  // purpose behind the '+' toggle. No capability was removed — regrouped.
+  // purpose behind the '+' toggle. No capability was removed - regrouped.
   // (Folders live in the Chats tab, not in a room's composer, so there is
   // no Folder tile; 'Topic' is groups-only by nature.)
   type TrayTile = {
@@ -2593,7 +2593,7 @@ export function ChatRoom({
         title: 'Create',
         tiles: [
           {
-            // R40 — document attachments (WhatsApp/Slack paradigm)
+            // R40 - document attachments (WhatsApp/Slack paradigm)
             label: 'Document',
             help: 'Share a PDF, TXT, CSV or ZIP',
             icon: FileText,
@@ -2742,7 +2742,7 @@ export function ChatRoom({
             groupOnly: true,
             run: () => {
               setTray(false)
-              // stage the /topic draft — the palette + parser take it from here
+              // stage the /topic draft - the palette + parser take it from here
               setInput('/topic ')
               setSlashDismissed(false)
               requestAnimationFrame(() => {
@@ -2788,7 +2788,7 @@ export function ChatRoom({
           },
           {
             label: 'Incognito',
-            help: anonNext ? 'Armed — next send is anonymous' : 'Next send hides your name',
+            help: anonNext ? 'Armed - next send is anonymous' : 'Next send hides your name',
             icon: VenetianMask,
             tone: anonNext
               ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
@@ -2821,7 +2821,7 @@ export function ChatRoom({
 
   useEffect(() => () => stopTyping(), [stopTyping])
 
-  // ── in-room switches + profile wiring ─────────────────────
+  // in-room switches + profile wiring 
 
   /** Swap this mounted room onto another conversation (profile → "Message"). */
   const switchRoom = useCallback(
@@ -2884,7 +2884,7 @@ export function ChatRoom({
     navigateHash(`#/user/${encodeURIComponent(user.id)}`)
   }, [])
 
-  // ── @mention autocomplete (composer) ────────────────────
+  // @mention autocomplete (composer) 
 
   /** caret position inside the textarea (tracked on every change) */
   const [mentionCaret, setMentionCaret] = useState(0)
@@ -2928,7 +2928,7 @@ export function ChatRoom({
   const memberNamesKey = (detailData?.members ?? []).map((m) => m.name).join('\u0000')
   const memberNames = useMemo(() => memberNamesKey.split('\u0000'), [memberNamesKey])
 
-  // ── edit mode helpers ────────────────────────────────────
+  // edit mode helpers 
 
   const startEdit = useCallback(
     (message: ChatMessage) => {
@@ -2974,7 +2974,7 @@ export function ChatRoom({
       return
     }
 
-    // Discord/Twitch-flavored slash commands — parsed BEFORE any network call.
+    // Discord/Twitch-flavored slash commands - parsed BEFORE any network call.
     // Everything they produce is real message content / a real sheet open.
     let transformed = ''
     if (raw.startsWith('/')) {
@@ -2994,7 +2994,7 @@ export function ChatRoom({
         setInput('')
         pulseDraftsStore.getState().clearDraft(conversationId)
         requestAnimationFrame(autosize)
-        void createTopic(outcome.name, '💬')
+        void createTopic(outcome.name, 'chat')
         return
       }
       if (outcome.kind === 'tool') {
@@ -3038,7 +3038,7 @@ export function ChatRoom({
         requestAnimationFrame(autosize)
         const parsed = parseRelativeReminder(outcome.arg)
         if (!parsed) {
-          toast.error('Usage: /remind buy milk in 30m — try 30m, 2h, tomorrow, tonight, next week')
+          toast.error('Usage: /remind buy milk in 30m - try 30m, 2h, tomorrow, tonight, next week')
           return
         }
         void createReminder(null, parsed.remindAt, parsed.note)
@@ -3064,7 +3064,7 @@ export function ChatRoom({
         requestAnimationFrame(autosize)
         if (outcome.content.length > 0) {
           if (sendMessage.isPending || isOffline) {
-            if (isOffline) toast.error('Effects need a connection — try again when online')
+            if (isOffline) toast.error('Effects need a connection - try again when online')
             return
           }
           stopTyping()
@@ -3077,7 +3077,7 @@ export function ChatRoom({
           })
         } else {
           setPendingEffect(outcome.effect)
-          toast(`${outcome.effect} effect armed — type a message and send`)
+          toast(`${outcome.effect} effect armed - type a message and send`)
           requestAnimationFrame(() => textareaRef.current?.focus())
         }
         return
@@ -3104,7 +3104,7 @@ export function ChatRoom({
     // Offline → hold in the persisted outbox; the realtime provider
     // flushes it (FIFO) as soon as connectivity returns.
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      // the outbox is text-only by design — effects never survive the queue
+      // the outbox is text-only by design - effects never survive the queue
       const queuedTemp: ChatMessage = {
         id: `temp-${clientId}`,
         conversationId,
@@ -3161,7 +3161,7 @@ export function ChatRoom({
       queryClient.setQueryData<ChatMessage[]>(['messages', conversationId], (old) =>
         old ? [...old, queuedTemp] : [queuedTemp],
       )
-      toast('Queued — sends when you’re back online')
+      toast('Queued - sends when you’re back online')
       haptic(10)
       return
     }
@@ -3174,7 +3174,7 @@ export function ChatRoom({
     })
   }, [input, editing, editMessage, sendMessage, stopTyping, autosize, replyTo, conversationId, me, queryClient, pendingEffect, isOffline, setTray])
 
-  /** Thread drawer composer — replies land under the root, never the main flow. */
+  /** Thread drawer composer - replies land under the root, never the main flow. */
   const submitThreadReply = useCallback(
     (text: string) => {
       const content = text.trim()
@@ -3186,7 +3186,7 @@ export function ChatRoom({
     [threadRoot, threadDraft, sendMessage],
   )
 
-  // ── sticker / location senders (R19-b) ─────────────────────
+  // sticker / location senders (R19-b) 
 
   /** Sticker tile tap → real kind:'sticker' message. */
   const sendSticker = useCallback(
@@ -3226,7 +3226,7 @@ export function ChatRoom({
     [sendMessage, replyTo, isOffline],
   )
 
-  /** Slash-palette row activated (tap / Enter) — fast-path over applySlash. */
+  /** Slash-palette row activated (tap / Enter) - fast-path over applySlash. */
   const runPaletteCommand = useCallback(
     (cmd: string) => {
       haptic(8)
@@ -3261,13 +3261,13 @@ export function ChatRoom({
         setHelpOpen(true)
         return
       }
-      // R34-b: AI recap — same trigger as the header overflow entry
+      // R34-b: AI recap - same trigger as the header overflow entry
       if (cmd === '/recap') {
         clearDraft()
         requestRecap()
         return
       }
-      // ── R23: standalone tools — clear the draft, then open/dispatch ──
+      // R23: standalone tools - clear the draft, then open/dispatch 
       if (cmd === '/redpacket') {
         clearDraft()
         redPacket.setOpen(true)
@@ -3288,7 +3288,7 @@ export function ChatRoom({
         window.dispatchEvent(new CustomEvent(NEW_GAME_EVENT))
         return
       }
-      // ── R24-b: stage / space / tournament dispatch straight to the ──
+      // R24-b: stage / space / tournament dispatch straight to the 
       // parallel crews' hooks; /topic falls through to the staging tail so
       // typed args survive and applySlash creates the topic on Enter.
       if (cmd === '/stage') {
@@ -3315,7 +3315,7 @@ export function ChatRoom({
         clearDraft()
         if (isMessageEffect(effect)) {
           setPendingEffect(effect)
-          toast(`${effect} effect armed — type a message and send`)
+          toast(`${effect} effect armed - type a message and send`)
         }
         requestAnimationFrame(() => textareaRef.current?.focus())
         return
@@ -3349,7 +3349,7 @@ export function ChatRoom({
     } else {
       stopTyping()
     }
-    // persist the draft — but never resurrect one the user just cleared/sent
+    // persist the draft - but never resurrect one the user just cleared/sent
     draftTimerRef.current = setTimeout(() => {
       draftTimerRef.current = null
       const live = textareaRef.current?.value ?? ''
@@ -3396,9 +3396,9 @@ export function ChatRoom({
     })
   }, [pendingImage, captionDraft, sendMessage, stopTyping, replyTo])
 
-  // ── R40: document attachments (WhatsApp/Slack paradigm) ───
+  // R40: document attachments (WhatsApp/Slack paradigm) 
 
-  /** ext → mime for the doc data-URL prefix (derived from the extension —
+  /** ext → mime for the doc data-URL prefix (derived from the extension -
    *  deterministic, matches the server whitelist even when File.type is ''). */
   const DOC_FILE_MIME: Record<string, string> = {
     pdf: 'application/pdf',
@@ -3407,7 +3407,7 @@ export function ChatRoom({
     zip: 'application/zip',
   }
   const DOC_FILE_EXT_REGEX = /\.(pdf|txt|csv|zip)$/i
-  /** 10 MB — mirrors the server's DOC_MAX_BYTES hard cap. */
+  /** 10 MB - mirrors the server's DOC_MAX_BYTES hard cap. */
   const DOC_CLIENT_MAX_BYTES = 10_485_760
 
   /** Pick → upload → send as kind 'file' with the composer text as caption. */
@@ -3419,7 +3419,7 @@ export function ChatRoom({
       return
     }
     if (file.size > DOC_CLIENT_MAX_BYTES) {
-      toast.error('Document is too large — the limit is 10 MB')
+      toast.error('Document is too large - the limit is 10 MB')
       return
     }
     setSendingDoc(true)
@@ -3484,7 +3484,7 @@ export function ChatRoom({
     }
   }
 
-  // ── voice notes ────────────────────────────────────────────
+  // voice notes 
 
   const teardownRecorder = useCallback(() => {
     if (recordTimerRef.current !== null) {
@@ -3522,7 +3522,7 @@ export function ChatRoom({
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch {
-      toast.error('Microphone access was denied — check browser permissions')
+      toast.error('Microphone access was denied - check browser permissions')
       return
     }
     const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
@@ -3541,7 +3541,7 @@ export function ChatRoom({
       const type = rec.mimeType || 'audio/webm'
       teardownRecorder()
       if (cancelled || elapsed < MIN_VOICE_MS || chunks.length === 0) {
-        if (!cancelled && elapsed < MIN_VOICE_MS) toast.info('Hold too short — voice note discarded')
+        if (!cancelled && elapsed < MIN_VOICE_MS) toast.info('Hold too short - voice note discarded')
         return
       }
       setSendingVoice(true)
@@ -3599,7 +3599,7 @@ export function ChatRoom({
     [],
   )
 
-  // ── group management ───────────────────────────────────────
+  // group management 
 
   const renameGroup = useMutation({
     mutationFn: async (name: string) => {
@@ -3720,7 +3720,7 @@ export function ChatRoom({
       queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (prev) =>
         prev ? { ...prev, inviteCode: res.inviteCode } : prev,
       )
-      toast.success(regenerate ? 'Link replaced — old links no longer work' : 'Invite link ready to share')
+      toast.success(regenerate ? 'Link replaced - old links no longer work' : 'Invite link ready to share')
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Could not create the invite link')
@@ -3741,8 +3741,8 @@ export function ChatRoom({
       queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
       toast.success(
         res.conversation.broadcastMode
-          ? 'Announcement mode on — only admins can post'
-          : 'Announcement mode off — everyone can post',
+          ? 'Announcement mode on - only admins can post'
+          : 'Announcement mode off - everyone can post',
       )
       haptic(12)
     },
@@ -3756,7 +3756,7 @@ export function ChatRoom({
     [toggleBroadcast],
   )
 
-  // ── long-press helpers ─────────────────────────────────────
+  // long-press helpers 
 
   const clearLongPress = useCallback(() => {
     if (longPressRef.current !== null) {
@@ -3818,7 +3818,10 @@ export function ChatRoom({
   const headerTitle = !isGroup && other ? other.name : displayName || 'Conversation'
 
   /** Discord-style custom status on DM partners surfaces in the room header */
-  const dmStatus = !isGroup && other ? [other.statusEmoji, other.statusText].filter(Boolean).join(' ').trim() : ''
+  const dmStatus =
+    !isGroup && other
+      ? [statusLabelFor(other.statusEmoji), other.statusText ?? ''].filter(Boolean).join(' ').trim()
+      : ''
   const ttlSeconds = detailData?.ttlSeconds ?? 0
   const isBroadcast = isGroup && (detailData?.broadcastMode ?? false)
 
@@ -3840,7 +3843,7 @@ export function ChatRoom({
 
   const isDark = themeMounted && resolvedTheme === 'dark'
   const dotColor = isDark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.05)'
-  // layered wallpaper (prefs): soft glows over the dot grid — aurora/dusk/forest/mono/none
+  // layered wallpaper (prefs): soft glows over the dot grid - aurora/dusk/forest/mono/none
   // R29-a: per-conversation override (chat.convThemes) wins over the global default;
   // optional tint replaces the top glow color. Everything else unchanged.
   const [glowTop, glowBottom] = applyConvTint(
@@ -3858,11 +3861,11 @@ export function ChatRoom({
       role="dialog"
       aria-label={`Conversation with ${headerTitle}`}
     >
-      {/* R32: room canvas is translucent (was opaque bg-white/dark:bg-zinc-900) —
+      {/* R32: room canvas is translucent (was opaque bg-white/dark:bg-zinc-900) -
           the ui-root aurora washes glow through the whole room and the
           wallpaper glows below finally have light to work with. The only
           backdrop-blur layers in the room are the header + composer capsule. */}
-      {/* R28 lead: floating pane manager — panes were orphaned (store writes
+      {/* R28 lead: floating pane manager - panes were orphaned (store writes
           with no renderer). Mounted once per room overlay, above content. */}
       <PipChat me={me} />
 
@@ -3923,7 +3926,7 @@ export function ChatRoom({
             {isBroadcast ? (
               <span
                 className="flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400"
-                aria-label="Broadcast channel — only admins can post"
+                aria-label="Broadcast channel - only admins can post"
               >
                 <Radio className="size-2.5" aria-hidden />
                 Channel
@@ -3952,7 +3955,7 @@ export function ChatRoom({
           </AnimatePresence>
         </button>
 
-        {/* R37 — Signal paradigm: DM-only contact verification badge beside
+        {/* R37 - Signal paradigm: DM-only contact verification badge beside
             the call buttons. Verified peer → emerald ShieldCheck with a subtle
             emerald tint ring; otherwise a zinc outline icon with a tiny amber
             dot. Tap opens the shared safety-number sheet. */}
@@ -3982,7 +3985,7 @@ export function ChatRoom({
           </Button>
         ) : null}
 
-        {/* R33-a → R35-b: DM-only call buttons — voice always, video beside it.
+        {/* R33-a → R35-b: DM-only call buttons - voice always, video beside it.
             They dial through the SHELL's single call session (onStartCall);
             hosts without the shell wiring honestly show no dead buttons. */}
         {!isGroup && other && onStartCall ? (
@@ -4022,7 +4025,7 @@ export function ChatRoom({
           </>
         ) : null}
 
-        {/* Group call buttons (mesh) — same shell-dial contract, one session. */}
+        {/* Group call buttons (mesh) - same shell-dial contract, one session. */}
         {isGroup && onStartGroupCall ? (
           <>
             <Button
@@ -4072,7 +4075,7 @@ export function ChatRoom({
         >
           <PictureInPicture2 className="size-5" aria-hidden />
         </Button>
-        {/* R27-c: header sub-page entries — search + info for every room */}
+        {/* R27-c: header sub-page entries - search + info for every room */}
         <Button
           variant="ghost"
           size="icon"
@@ -4085,13 +4088,13 @@ export function ChatRoom({
         >
           <Search className="size-5" aria-hidden />
         </Button>
-        {/* R30-b: reminders — opens the glass reminders sheet; badge = upcoming count */}
+        {/* R30-b: reminders - opens the glass reminders sheet; badge = upcoming count */}
         <Button
           variant="ghost"
           size="icon"
           aria-label={
             upcomingReminderCount > 0
-              ? `Reminders — ${upcomingReminderCount} upcoming`
+              ? `Reminders - ${upcomingReminderCount} upcoming`
               : 'Reminders'
           }
           onClick={() => {
@@ -4193,7 +4196,7 @@ export function ChatRoom({
                   <Info className="size-4 text-zinc-400" aria-hidden />
                   {isGroup ? 'Manage group' : 'Manage chat'}
                 </button>
-                {/* R34-b: AI recap — real LLM summary of the recent chat */}
+                {/* R34-b: AI recap - real LLM summary of the recent chat */}
                 <button
                   type="button"
                   role="menuitem"
@@ -4301,7 +4304,7 @@ export function ChatRoom({
         </AnimatePresence>
       </header>
 
-      {/* live voice pill — mic stays warm with the sheet closed; tap to reopen (R21-b) */}
+      {/* live voice pill - mic stays warm with the sheet closed; tap to reopen (R21-b) */}
       <AnimatePresence>
         {voice.inRoom && !voiceOpen ? (
           <motion.button
@@ -4315,7 +4318,7 @@ export function ChatRoom({
               haptic(10)
               setVoiceOpen(true)
             }}
-            aria-label={`Reopen live voice room — ${voice.roster.length} ${voice.roster.length === 1 ? 'participant' : 'participants'}`}
+            aria-label={`Reopen live voice room - ${voice.roster.length} ${voice.roster.length === 1 ? 'participant' : 'participants'}`}
             className="absolute top-[calc(3.75rem+env(safe-area-inset-top))] left-1/2 z-30 flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-zinc-950/85 py-1.5 pr-3 pl-2.5 text-xs font-bold text-emerald-300 shadow-lg shadow-emerald-950/40 backdrop-blur-md outline-none active:scale-95"
             style={{ willChange: 'transform' }}
           >
@@ -4329,7 +4332,7 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
-      {/* pinned banner — slim glass strip (R27-c); tap → compact glass pins sheet */}
+      {/* pinned banner - slim glass strip (R27-c); tap → compact glass pins sheet */}
       {latestPinned ? (
         <motion.button
           type="button"
@@ -4340,7 +4343,7 @@ export function ChatRoom({
             haptic(8)
             setPinnedOpen(true)
           }}
-          aria-label={`Open pinned messages — ${pinnedCount} pinned`}
+          aria-label={`Open pinned messages - ${pinnedCount} pinned`}
           className="glass-sheen relative flex shrink-0 items-center gap-2 border-b border-zinc-200/70 bg-white/60 px-3 py-1.5 text-left backdrop-blur-xl transition-colors hover:bg-white/80 dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:hover:bg-zinc-900/80"
         >
           <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10" aria-hidden>
@@ -4358,7 +4361,7 @@ export function ChatRoom({
         </motion.button>
       ) : null}
 
-      {/* R24-b: Zulip-style topic rail — General + real topic chips (groups only) */}
+      {/* R24-b: Zulip-style topic rail - General + real topic chips (groups only) */}
       {isGroup ? (
         <TopicBar
           topics={topics}
@@ -4369,7 +4372,7 @@ export function ChatRoom({
         />
       ) : null}
 
-      {/* messages — wrapped (R38) so the screen-security veil can cover ONLY
+      {/* messages - wrapped (R38) so the screen-security veil can cover ONLY
           the message area; header + composer stay visible/interactive */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
@@ -4397,7 +4400,7 @@ export function ChatRoom({
             </div>
           ) : items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-              {/* R32 empty state — the reference glass: deep layered panel with a
+              {/* R32 empty state - the reference glass: deep layered panel with a
                   soft emerald glow blooming behind the glyph. */}
               <div className="glass-deep glass-sheen relative flex w-full max-w-[280px] flex-col items-center gap-3 rounded-[28px] px-6 py-8">
                 <span
@@ -4413,7 +4416,7 @@ export function ChatRoom({
                 <div className="relative">
                   <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
                   <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                    Say hello — your words travel in real time.
+                    Say hello - your words travel in real time.
                   </p>
                 </div>
               </div>
@@ -4563,7 +4566,7 @@ export function ChatRoom({
                 type="button"
                 aria-label={
                   missedCount > 0
-                    ? `Jump to newest messages — ${missedCount} new`
+                    ? `Jump to newest messages - ${missedCount} new`
                     : 'Jump to newest messages'
                 }
                 initial={{ opacity: 0, y: 10, scale: 0.85 }}
@@ -4599,7 +4602,7 @@ export function ChatRoom({
           </AnimatePresence>
         </div>
 
-        {/* R38 — Signal "Screen security" veil: frosts the message area while
+        {/* R38 - Signal "Screen security" veil: frosts the message area while
             the Pulse window is unfocused. Covers ONLY the messages (header +
             composer stay untouched), never takes focus, pointer-events-none
             while focused, instant under prefers-reduced-motion. */}
@@ -4631,7 +4634,7 @@ export function ChatRoom({
         ) : null}
       </div>
 
-      {/* composer — floating glass capsule (R22); rides the keyboard via visualViewport */}
+      {/* composer - floating glass capsule (R22); rides the keyboard via visualViewport */}
       <motion.div
         animate={{ y: -kbdLift }}
         transition={spring.soft}
@@ -4652,7 +4655,7 @@ export function ChatRoom({
               <div className="mb-2 flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30">
                 <CloudOff className="size-3.5 shrink-0" aria-hidden />
                 <span>
-                  Offline — messages you send will be queued
+                  Offline - messages you send will be queued
                   {outboxCount() > 0 ? ` (${outboxCount()} waiting)` : ''}
                 </span>
               </div>
@@ -4708,7 +4711,7 @@ export function ChatRoom({
                 <span className="min-w-0 flex-1 truncate">Filing to #{activeTopic.name}</span>
                 <button
                   type="button"
-                  aria-label="Stop filing to this topic — back to General"
+                  aria-label="Stop filing to this topic - back to General"
                   onClick={() => {
                     haptic(8)
                     setActiveTopicId(null)
@@ -4772,13 +4775,13 @@ export function ChatRoom({
                 className="mb-2 flex w-full items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-left text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30"
               >
                 <CalendarClock className="size-3.5 shrink-0" aria-hidden />
-                {scheduledChip.next} · {scheduledChip.count} pending — tap to manage
+                {scheduledChip.next} · {scheduledChip.count} pending - tap to manage
               </button>
             </motion.div>
           ) : null}
         </AnimatePresence>
 
-        {/* R44 — slow-mode countdown: appears the moment the server answers
+        {/* R44 - slow-mode countdown: appears the moment the server answers
             429, counts the honest wait down live, then collapses. */}
         <AnimatePresence initial={false}>
           {slowRemaining > 0 ? (
@@ -4796,7 +4799,7 @@ export function ChatRoom({
                 className="mb-2 flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1.5 text-[11px] font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-white/[0.06] dark:text-zinc-300 dark:ring-white/10"
               >
                 <Gauge className="size-3.5 shrink-0 text-emerald-500" aria-hidden />
-                Slow mode — you can send again in {slowRemaining}s
+                Slow mode - you can send again in {slowRemaining}s
               </div>
             </motion.div>
           ) : null}
@@ -4815,7 +4818,7 @@ export function ChatRoom({
               <div className="mb-2 flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/30">
                 <Sparkles className="size-3.5 shrink-0" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">
-                  {pendingEffect} effect armed — next message pops
+                  {pendingEffect} effect armed - next message pops
                 </span>
                 <button
                   type="button"
@@ -4849,7 +4852,7 @@ export function ChatRoom({
                 >
                   <VenetianMask className="size-3.5 shrink-0" aria-hidden />
                 </motion.span>
-                <span className="min-w-0 flex-1">Incognito on — next message hides your name</span>
+                <span className="min-w-0 flex-1">Incognito on - next message hides your name</span>
                 <button
                   type="button"
                   aria-label="Turn off incognito"
@@ -4866,7 +4869,7 @@ export function ChatRoom({
           ) : null}
         </AnimatePresence>
 
-        {/* R34-b: AI recap card — pinned above the composer, auto-dismisses.
+        {/* R34-b: AI recap card - pinned above the composer, auto-dismisses.
             Real LLM output via /api/ai/recap; failures surface as honest toasts. */}
         <AnimatePresence initial={false}>
           {recap !== null || recapMutation.isPending ? (
@@ -4935,7 +4938,7 @@ export function ChatRoom({
           ) : null}
         </AnimatePresence>
 
-        {/* attachments tray — Discord-style progressive disclosure (R34-b):
+        {/* attachments tray - Discord-style progressive disclosure (R34-b):
             the bar keeps the frequent actions (photo/sticker/emoji/mic),
             everything else lives here GROUPED by purpose behind the '+'.
             Tap-away backdrop + Esc close it. */}
@@ -5043,7 +5046,7 @@ export function ChatRoom({
                         onClick={() => {
                           setPendingEffect(effectName)
                           setTray(false)
-                          toast(`${effectName} effect armed — type a message and send`)
+                          toast(`${effectName} effect armed - type a message and send`)
                           requestAnimationFrame(() => textareaRef.current?.focus())
                         }}
                         className="flex flex-1 items-center justify-center gap-1 rounded-full bg-violet-500/10 py-2 text-[11px] font-bold text-violet-700 ring-1 ring-inset ring-violet-500/25 outline-none transition-colors hover:bg-violet-500/20 dark:text-violet-300"
@@ -5077,9 +5080,9 @@ export function ChatRoom({
           </div>
         ) : null}
 
-        {/* F-MS-29 — quick phrases rail: one-tap lines above the composer.
+        {/* F-MS-29 - quick phrases rail: one-tap lines above the composer.
             Server-backed (GET/POST/DELETE /api/users/[id]/phrases, no local
-            persistence) — tap a chip to insert its text into the input; the
+            persistence) - tap a chip to insert its text into the input; the
             tail affordance opens the small manage popover (add + delete). */}
         {!broadcastLocked && !dmBlocked && !recording && !editing && phrasesQuery.isSuccess ? (
           <div
@@ -5169,7 +5172,7 @@ export function ChatRoom({
                   ))}
                   {phrases.length === 0 ? (
                     <p className="px-1 pb-1.5 pt-1 text-[11.5px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                      No phrases yet — save the lines you send often, then tap them above the
+                      No phrases yet - save the lines you send often, then tap them above the
                       composer.
                     </p>
                   ) : null}
@@ -5220,7 +5223,7 @@ export function ChatRoom({
             dmBlocked && 'hidden',
           )}
         >
-          {/* emerald focus hairline — springs in whenever the capsule holds focus */}
+          {/* emerald focus hairline - springs in whenever the capsule holds focus */}
           <motion.div
             aria-hidden
             initial={false}
@@ -5228,7 +5231,7 @@ export function ChatRoom({
             transition={spring.soft}
             className="pointer-events-none absolute inset-0 rounded-[26px] ring-2 ring-inset ring-emerald-500/40"
           />
-          {/* slash-command palette (Discord/Slack-style) — fast-path over the plain parser */}
+          {/* slash-command palette (Discord/Slack-style) - fast-path over the plain parser */}
           {!editing && !recording ? (
             <SlashPalette
               open={input.startsWith('/') && !broadcastLocked && !slashDismissed}
@@ -5276,7 +5279,7 @@ export function ChatRoom({
             tabIndex={-1}
             onChange={(e) => void handleImagePicked(e.target.files?.[0])}
           />
-          {/* R40 — hidden document picker (pdf/txt/csv/zip), mirrors the image input */}
+          {/* R40 - hidden document picker (pdf/txt/csv/zip), mirrors the image input */}
           <input
             ref={docInputRef}
             type="file"
@@ -5347,7 +5350,7 @@ export function ChatRoom({
             </>
           ) : (
             <>
-              {/* + tray toggle — rotates 45° into a ✕ while the tray is open */}
+              {/* plus tray toggle: rotates 45 degrees into a close mark while the tray is open */}
               <motion.button
                 type="button"
                 aria-label={trayOpen ? 'Close attachments tray' : 'Open attachments tray'}
@@ -5369,7 +5372,7 @@ export function ChatRoom({
               >
                 <Plus className="size-6" aria-hidden />
               </motion.button>
-              {/* R34-b: frequent actions stay on the bar (Discord rule) — photo + sticker */}
+              {/* R34-b: frequent actions stay on the bar (Discord rule) - photo + sticker */}
               <motion.button
                 type="button"
                 aria-label="Send a photo"
@@ -5542,7 +5545,7 @@ export function ChatRoom({
       {/* clearance for the floating bottom dock (composer must never sit under it) */}
       <div className="shrink-0 bg-zinc-100/80 dark:bg-zinc-950/60" style={{ height: dockInset }} aria-hidden />
 
-      {/* message actions — compact frosted glass menu anchored to the bubble (R26-b).
+      {/* message actions - compact frosted glass menu anchored to the bubble (R26-b).
           Springs in from the tap point, dismisses on backdrop tap or Esc; all
           previous actions kept (reply, thread, copy, forward, save, task, pin,
           info, edit, delete-for-everyone). */}
@@ -5607,7 +5610,7 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
-      {/* R30-b: remind-me time picker — compact glass panel for the selected message */}
+      {/* R30-b: remind-me time picker - compact glass panel for the selected message */}
       <AnimatePresence>
         {remindTarget !== null ? (
           <>
@@ -5742,7 +5745,7 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
-      {/* caption sheet — staged image awaiting an optional caption */}
+      {/* caption sheet - staged image awaiting an optional caption */}
       <Drawer
         open={pendingImage !== null}
         onOpenChange={(open) => {
@@ -5821,7 +5824,7 @@ export function ChatRoom({
         </DrawerContent>
       </Drawer>
 
-      {/* pinned messages — compact glass sheet (R27-c) */}
+      {/* pinned messages - compact glass sheet (R27-c) */}
       <AnimatePresence>
         {pinnedOpen ? (
           <RoomPinsSheet
@@ -5839,7 +5842,7 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
-      {/* reminders — compact glass sheet (R30-b); close refreshes the badge */}
+      {/* reminders - compact glass sheet (R30-b); close refreshes the badge */}
       <AnimatePresence>
         {remindersOpen ? (
           <RemindersSheet
@@ -5852,7 +5855,7 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
-      {/* 1:1 voice/video calls — since R35-b the overlay mounts ONCE at shell
+      {/* 1:1 voice/video calls - since R35-b the overlay mounts ONCE at shell
           level (main-shell) so rings surface on every screen; nothing here. */}
 
       {/* who-reacted sheet */}
@@ -5923,7 +5926,7 @@ export function ChatRoom({
         </DrawerContent>
       </Drawer>
 
-      {/* seen-by sheet — per-member read receipts for the latest or a picked own message */}
+      {/* seen-by sheet - per-member read receipts for the latest or a picked own message */}
       <Drawer open={seenByOpen} onOpenChange={(open) => !open && setSeenByOpen(false)}>
         <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 dark:bg-zinc-900">
           <DrawerTitle className="sr-only">Message read receipts</DrawerTitle>
@@ -6021,7 +6024,7 @@ export function ChatRoom({
         </DrawerContent>
       </Drawer>
 
-      {/* R27-c: hash-routed room sub-pages — info + search slide up over the room */}
+      {/* R27-c: hash-routed room sub-pages - info + search slide up over the room */}
       <AnimatePresence>
         {roomSubPage === 'info' ? (
           <RoomInfoPage
@@ -6059,7 +6062,7 @@ export function ChatRoom({
         onSubmit={(question, options) => createPoll.mutate({ question, options })}
       />
 
-      {/* R37 — DM-only safety-number sheet, opened by the header ShieldCheck
+      {/* R37 - DM-only safety-number sheet, opened by the header ShieldCheck
           badge (shared component; also mounted by the room info page). */}
       {!isGroup && dmPeer ? (
         <SafetySheet
@@ -6116,7 +6119,7 @@ export function ChatRoom({
         onOpenProfile={openProfileForAuthor}
       />
 
-      {/* ── R19 toolkit overlays ───────────────────────────────── */}
+      {/*  R19 toolkit overlays  */}
       <StickerPicker open={stickerOpen} onOpenChange={setStickerOpen} onPick={sendSticker} />
       <LocationShareSheet
         open={locationOpen}
@@ -6130,7 +6133,7 @@ export function ChatRoom({
         meId={me.id}
       />
 
-      {/* ── R21-b live voice room (engine keeps running while closed) ── */}
+      {/*  R21-b live voice room (engine keeps running while closed)  */}
       <AnimatePresence>
         {voiceOpen ? (
           <VoiceRoomSheet
@@ -6142,21 +6145,21 @@ export function ChatRoom({
           />
         ) : null}
       </AnimatePresence>
-      {/* ── R21-c shared whiteboard (opened via /whiteboard palette entry) ── */}
+      {/*  R21-c shared whiteboard (opened via /whiteboard palette entry)  */}
       {whiteboard.node}
-      {/* ── R23: red packets / kanban / events sheets (palette + tray entries) ── */}
+      {/*  R23: red packets / kanban / events sheets (palette + tray entries)  */}
       {redPacket.node}
       {kanban.node}
       {events.node}
-      {/* ── R24: stage / space / tournament sheets (parallel crews' hooks) ── */}
+      {/*  R24: stage / space / tournament sheets (parallel crews' hooks)  */}
       {stage.node}
       {space.node}
       {tournament.node}
-      {/* R27-c: profile taps route to the global #/user/:id page — the
+      {/* R27-c: profile taps route to the global #/user/:id page - the
           in-room UserProfileSheet mount is gone; the sheet component stays
           in use by contacts-tab + group-info-sheet. */}
       <PipChat me={me} />
-      {/* full-screen message effects — one canvas, queue upstream, zero pointer events */}
+      {/* full-screen message effects - one canvas, queue upstream, zero pointer events */}
       <div className="pointer-events-none fixed inset-0 z-[80]" aria-hidden>
         <MessageEffectsLayer active={activeEffect} onDone={handleEffectDone} />
       </div>
@@ -6170,7 +6173,7 @@ export function ChatRoom({
               Slash commands
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Type these at the start of the message box — Discord/Twitch style.
+              Type these at the start of the message box - Discord/Twitch style.
             </DialogDescription>
           </DialogHeader>
           <ul className="space-y-1.5">
@@ -6237,9 +6240,9 @@ export function ChatRoom({
   )
 }
 
-// ── pieces ───────────────────────────────────────────────────
+// pieces 
 
-// ── message action menu (R26-b) — compact frosted glass panel sprouting
+//  message action menu (R26-b) - compact frosted glass panel sprouting
 // from the tapped bubble. Replaces the old centered "Message options"
 // dialog: reactions strip on top, icon rows in hairline-separated groups,
 // owner-only rows, destructive delete last. Backdrop tap / Esc dismisses.
@@ -6326,7 +6329,7 @@ function MessageActionMenu({
 
   return (
     <>
-      {/* backdrop — tap anywhere outside to dismiss */}
+      {/* backdrop - tap anywhere outside to dismiss */}
       <motion.div
         key="message-menu-backdrop"
         initial={{ opacity: 0 }}
@@ -6454,7 +6457,7 @@ function TypingDots({ reducedMotion = false }: { reducedMotion?: boolean }) {
           />
         ) : (
           // Telegram-grade squash & stretch: dots stretch into pills as they
-          // rise (velocity), squash wide on landing — transform-only, GPU-friendly.
+          // rise (velocity), squash wide on landing - transform-only, GPU-friendly.
           <motion.span
             key={i}
             className="size-1.5 origin-bottom rounded-full bg-zinc-400 dark:bg-zinc-500"
@@ -6492,9 +6495,9 @@ function voiceBars(seed: string, count = 26): number[] {
 }
 
 /** Voice-note bubble: play/pause + pseudo waveform + duration + progress. */
-// ── R40: document attachment card (kind 'file') ──────────────
+// R40: document attachment card (kind 'file') 
 
-/** Human byte size — "820 B" / "24 KB" / "1.2 MB". Null/invalid → "File". */
+/** Human byte size - "820 B" / "24 KB" / "1.2 MB". Null/invalid → "File". */
 function formatDocSize(bytes: number | null): string {
   if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return 'File'
   if (bytes < 1024) return `${bytes} B`
@@ -6584,7 +6587,7 @@ function VoiceBubble({
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
-  // R45 — Telegram-style playback speed (1x → 1.5x → 2x), persisted globally
+  // R45 - Telegram-style playback speed (1x → 1.5x → 2x), persisted globally
   const [rate, setRate] = useState(() => pulseSettingsStore.getState().voiceRate)
   const bars = useMemo(() => voiceBars(seed), [seed])
 
@@ -6649,7 +6652,7 @@ function VoiceBubble({
       </div>
       <button
         type="button"
-        aria-label={`Playback speed ${rate}x — tap to change`}
+        aria-label={`Playback speed ${rate}x - tap to change`}
         onClick={cycleRate}
         className={cn(
           'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums outline-none transition-transform active:scale-90',
@@ -6690,7 +6693,7 @@ function VoiceBubble({
   )
 }
 
-// ── R43: voice-note transcription strip ("voice notes you can read") ──
+// R43: voice-note transcription strip ("voice notes you can read") 
 // Any member can run a voice note through the REAL ASR service; the
 // transcript is cached on the message row and rendered under the bubble for
 // everyone. Pill button when absent, honest spinner while pending.
@@ -6779,13 +6782,13 @@ interface MessageRowProps {
   isGroup: boolean
   readMs: number
   myId: string
-  /** viewer's display name — drives the mention-me highlight */
+  /** viewer's display name - drives the mention-me highlight */
   myName: string
-  /** member display names (stable ref) — drives @mention chips */
+  /** member display names (stable ref) - drives @mention chips */
   memberNames: string[]
   /** group read-by stack for the last own message (null otherwise) */
   readBy: { members: Array<{ id: string; name: string; color: string; avatar: string | null }>; all: boolean } | null
-  /** search/reply jump flash — ring-pulse this bubble briefly */
+  /** search/reply jump flash - ring-pulse this bubble briefly */
   highlighted: boolean
   /** live Slack/Zulip reply count for THIS thread root (0 = none) */
   threadCount: number
@@ -6797,7 +6800,7 @@ interface MessageRowProps {
   onReply: (message: ChatMessage) => void
   /** long-press a chip → who-reacted sheet */
   onReactionInfo: (message: ChatMessage, emoji: string) => void
-  /** open photo lightbox — consumes a view-once gate transparently */
+  /** open photo lightbox - consumes a view-once gate transparently */
   onOpenImageGated: (message: ChatMessage) => void
   /** tap the quoted block → scroll to the parent message + flash */
   onJumpToReply: (parentMessageId: string) => void
@@ -6817,7 +6820,7 @@ interface MessageRowProps {
   onOpenProfile: (sender: MessageAuthor) => void
   /** spring-entrance for freshly arrived messages (history renders static) */
   justArrived: boolean
-  /** prefs.reducedMotion mirror — gates entrance/tap/particle motion */
+  /** prefs.reducedMotion mirror - gates entrance/tap/particle motion */
   reducedMotion: boolean
 }
 
@@ -6834,7 +6837,7 @@ function escapeRegExp(value: string): string {
 const FORMAT_RE =
   /```([\s\S]+?)```|`([^`\n]+)`|\*\*([^*\n]+?)\*\*|__([^_\n]+?)__|~~([^~\n]+?)~~|\|\|([^|\n]+?)\|\||\*([^*\n]+?)\*|_([^_\n]+?)_|~([^~\n]+?)~/g
 
-/** Discord-style blur-reveal spoiler — tap once to unmask. */
+/** Discord-style blur-reveal spoiler - tap once to unmask. */
 function SpoilerSpan({ children, mine }: { children: ReactNode; mine: boolean }) {
   const [revealed, setRevealed] = useState(false)
   return (
@@ -6847,7 +6850,7 @@ function SpoilerSpan({ children, mine }: { children: ReactNode; mine: boolean })
           haptic(8)
         }
       }}
-      aria-label={revealed ? undefined : 'Hidden spoiler — tap to reveal'}
+      aria-label={revealed ? undefined : 'Hidden spoiler - tap to reveal'}
       className="inline align-baseline outline-none"
     >
       <span
@@ -7057,7 +7060,7 @@ function PollCard({
               type="button"
               role={poll.closed ? undefined : 'radio'}
               aria-checked={picked || undefined}
-              aria-label={`${option.text} — ${option.voteCount} ${option.voteCount === 1 ? 'vote' : 'votes'}`}
+              aria-label={`${option.text} - ${option.voteCount} ${option.voteCount === 1 ? 'vote' : 'votes'}`}
               onClick={(e) => {
                 e.stopPropagation()
                 if (!poll.closed && !picked) onVote(poll.id, option.id)
@@ -7161,7 +7164,7 @@ function LinkPreviewCard({
     </a>
   )
 }
-/** Per-message LLM translation — collapsed by default, tap to reveal. */
+/** Per-message LLM translation - collapsed by default, tap to reveal. */
 function TranslationLine({
   translations,
   mine,
@@ -7248,7 +7251,7 @@ const MessageRow = memo(function MessageRow({
   const hasReactions = message.reactions.length > 0
   const isImage = !deleted && message.imagePath !== null
   const isVoice = !deleted && !isImage && message.audioPath !== null
-  // R40 — document message (kind 'file'): renders the glass document card.
+  // R40 - document message (kind 'file'): renders the glass document card.
   const isFile = !deleted && !isImage && !isVoice && message.filePath !== null
   const isPoll = !deleted && message.poll !== null
   const isSticker = !deleted && !isImage && !isVoice && message.kind === 'sticker'
@@ -7296,7 +7299,7 @@ const MessageRow = memo(function MessageRow({
   const hintOpacity = useTransform(towardX, [4, 28], [0, 1])
   const hintScale = useTransform(towardX, [4, 44], [0.5, 1.1])
 
-  /** true when a ❤️ double-tap would ADD (not remove) the reaction */
+  /** true when a heart double-tap would ADD (not remove) the reaction */
   const doubleTapAddsHeart = !message.reactions.some(
     (g) => g.emoji === '❤️' && g.userIds.includes(myId),
   )
@@ -7411,7 +7414,7 @@ const MessageRow = memo(function MessageRow({
               return
             }
             // R23: clicks inside self-contained cards (red packet, game board)
-            // belong to the card — never open the message-options sheet
+            // belong to the card - never open the message-options sheet
             if (e.target instanceof Element && e.target.closest('[data-card-interactive]')) return
             if (interactive && !isImage && !isFile) onPress(message, { x: e.clientX, y: e.clientY })
           }}
@@ -7681,7 +7684,7 @@ const MessageRow = memo(function MessageRow({
             ) : null}
             {mine && !deleted ? (
               queued ? (
-                <CloudOff className="size-3 text-amber-200" aria-label="queued — sends when online" />
+                <CloudOff className="size-3 text-amber-200" aria-label="queued - sends when online" />
               ) : pending ? (
                 <Clock className="size-3 opacity-90" aria-label="sending…" />
               ) : isRead ? (
@@ -7711,7 +7714,7 @@ const MessageRow = memo(function MessageRow({
                 <button
                   key={group.emoji}
                   type="button"
-                  aria-label={`${group.emoji} ${group.count} — tap to toggle, hold for details`}
+                  aria-label={`${group.emoji} ${group.count} - tap to toggle, hold for details`}
                   onClick={(e) => {
                     if (!chipFiredRef.current) {
                       // R22: hearts burst from the chip when a reaction is added
@@ -7782,7 +7785,7 @@ const MessageRow = memo(function MessageRow({
               haptic(8)
               onOpenThread(message)
             }}
-            aria-label={`Open thread — ${threadCount} ${threadCount === 1 ? 'reply' : 'replies'}`}
+            aria-label={`Open thread - ${threadCount} ${threadCount === 1 ? 'reply' : 'replies'}`}
             className={cn(
               'mt-0.5 flex max-w-[78%] items-center gap-1 rounded-full border bg-white/95 px-2 py-0.5 text-[10.5px] font-semibold shadow-sm outline-none transition-colors active:scale-95',
               mine
@@ -7806,7 +7809,7 @@ const MessageRow = memo(function MessageRow({
               type="button"
               onClick={onOpenSeenBy}
               aria-label={
-                readBy.all ? 'Seen by everyone — show details' : `Read by ${readBy.members.length} — show details`
+                readBy.all ? 'Seen by everyone - show details' : `Read by ${readBy.members.length} - show details`
               }
               className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 outline-none transition-colors hover:bg-zinc-100/80 active:scale-95 dark:hover:bg-zinc-800/80"
             >
@@ -8284,7 +8287,7 @@ function InfoDialog({
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-semibold text-zinc-800 dark:text-zinc-100">Announcement mode</span>
                       <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
-                        {broadcastMode ? 'Only admins can send — everyone else reads' : 'Everyone can post messages and polls'}
+                        {broadcastMode ? 'Only admins can send - everyone else reads' : 'Everyone can post messages and polls'}
                       </span>
                     </span>
                     <span aria-hidden className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', broadcastMode ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600')}>
@@ -8430,7 +8433,7 @@ function InfoDialog({
   )
 }
 
-// ── poll builder sheet ───────────────────────────────────────
+// poll builder sheet 
 
 const POLL_OPTIONS_MAX = 6
 
@@ -8558,7 +8561,7 @@ function PollBuilderSheet({
   )
 }
 
-// ── schedule sheet ───────────────────────────────────────────
+// schedule sheet 
 
 function ScheduleSheet({
   draft,
@@ -8690,7 +8693,7 @@ function ScheduleSheet({
   )
 }
 
-// ── scheduled sends manager ─────────────────────────────────
+// scheduled sends manager 
 
 function ScheduledListDrawer({
   open,
@@ -8722,7 +8725,7 @@ function ScheduledListDrawer({
             </div>
           ) : items.length === 0 ? (
             <p className="py-6 text-center text-xs text-zinc-400 dark:text-zinc-500">
-              Draft a message and choose “Schedule message” — it sends itself later.
+              Draft a message and choose “Schedule message” - it sends itself later.
             </p>
           ) : (
             <ul className="pulse-scroll max-h-[44dvh] space-y-2 overflow-y-auto py-1">
@@ -8746,7 +8749,7 @@ function ScheduledListDrawer({
                     )}
                     {refused ? (
                       <span className="text-[11px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-400">
-                        Not sent — blocked · was {formatListStamp(item.scheduledAt)}
+                        Not sent - blocked · was {formatListStamp(item.scheduledAt)}
                       </span>
                     ) : (
                       <span className="text-[11px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
@@ -8788,7 +8791,7 @@ function ScheduledListDrawer({
   )
 }
 
-// ── thread sheet (Slack/Zulip-style side discussion) ─────────
+// thread sheet (Slack/Zulip-style side discussion) 
 
 function ThreadSheet({
   root,
@@ -8884,7 +8887,7 @@ function ThreadSheet({
               </div>
             ) : (threadQuery.data?.replies.length ?? 0) === 0 ? (
               <p className="py-4 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                No replies yet — start the discussion.
+                No replies yet - start the discussion.
               </p>
             ) : (
               (threadQuery.data?.replies ?? []).map((m) => {

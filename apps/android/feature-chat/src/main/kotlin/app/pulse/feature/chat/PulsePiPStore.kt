@@ -10,8 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-// ─────────────────────────────────────────────────────────────
-// R1-W2I — PiP pane store (F-PI-01..03).
+// R1-W2I - PiP pane store (F-PI-01..03).
 // Mirror of the web src/components/chat/pip-store.ts (zustand + persist):
 //
 // A floating pane = one conversation rendered as a draggable mini window.
@@ -32,9 +31,8 @@ import kotlinx.serialization.json.Json
 //   isOpen      → true while ≥ 1 pane exists
 //   conversationId → the focused (expanded) pane's conversation,
 //                    null when only the stack is showing
-// ─────────────────────────────────────────────────────────────
 
-/** Max simultaneously live panes (1 expanded + rest stacked) — web pip-store.ts PIP_MAX_PANES. */
+/** Max simultaneously live panes (1 expanded + rest stacked) - web pip-store.ts PIP_MAX_PANES. */
 const val PIP_MAX_PANES = 3
 
 /**
@@ -42,7 +40,7 @@ const val PIP_MAX_PANES = 3
  * per conversation); [nx]/[ny] are the normalized top-left position across
  * the draggable range; [lastSeenAt] drives pane-local unread badges;
  * [openedAt] (creation/last-focus) is the eviction order.
- * Web's `meta` display blob is not stored here — the native cards read the
+ * Web's `meta` display blob is not stored here - the native cards read the
  * SHARED conversation cache (`PulseRepository.observeConversations`) instead,
  * which is the exact mirror of web's "same shared TanStack caches" rule.
  */
@@ -56,7 +54,7 @@ data class PipPane(
     val openedAt: Long = 0L,
 )
 
-/** Web PipChatState parity — persisted fields mirror the web partialize blob. */
+/** Web PipChatState parity - persisted fields mirror the web partialize blob. */
 @Serializable
 data class PiPState(
     val panes: List<PipPane> = emptyList(),
@@ -66,7 +64,7 @@ data class PiPState(
 )
 
 /**
- * Process-singleton pane holder (Hilt @Singleton — the Wave 3 call engine /
+ * Process-singleton pane holder (Hilt @Singleton - the Wave 3 call engine /
  * Wave 5 voice rooms engine pattern): every surface overlays the same state.
  * Persists through SharedPreferences (the spec's "native key-value" for
  * `pulse.pip.v2` geometry persistence, AT-PI-03) on every mutation.
@@ -81,9 +79,9 @@ class PulsePiPStore @Inject constructor(
     private val _state = MutableStateFlow(load())
     val state: StateFlow<PiPState> = _state.asStateFlow()
 
-    // ── legacy contract ops (web usePipChat) ─────────────────────
+    // legacy contract ops (web usePipChat)
 
-    /** open (or focus) the pane for a conversation — demotes the rest. */
+    /** open (or focus) the pane for a conversation - demotes the rest. */
     fun open(conversationId: String) = update { s ->
         val now = System.currentTimeMillis()
         val demotedAll = s.panes.map { p ->
@@ -105,7 +103,7 @@ class PulsePiPStore @Inject constructor(
                 openedAt = now,
             )
         }
-        // cap live panes — evict the OLDEST pane that is not the focused one
+        // cap live panes - evict the OLDEST pane that is not the focused one
         while (panes.size > PIP_MAX_PANES) {
             val oldest = panes
                 .filter { it.conversationId != conversationId }
@@ -151,7 +149,7 @@ class PulsePiPStore @Inject constructor(
         )
     }
 
-    // ── R28-a pane ops (web parity) ──────────────────────────────
+    // R28-a pane ops (web parity)
 
     /** expand a specific stacked pane, demote the rest. */
     fun focusPane(conversationId: String) = update { s ->
@@ -184,7 +182,7 @@ class PulsePiPStore @Inject constructor(
         )
     }
 
-    /** persist a pane's normalized position (0..1) — web setPanePosition. */
+    /** persist a pane's normalized position (0..1) - web setPanePosition. */
     fun setPanePosition(conversationId: String, nx: Float, ny: Float) = update { s ->
         val pane = s.panes.firstOrNull { it.conversationId == conversationId } ?: return@update s
         val sx = clamp01(nx)
@@ -202,7 +200,7 @@ class PulsePiPStore @Inject constructor(
         s.copy(panes = s.panes.map { p -> if (p.conversationId == conversationId) p.copy(lastSeenAt = at) else p })
     }
 
-    // ── internals ────────────────────────────────────────────────
+    // internals
 
     private fun update(transform: (PiPState) -> PiPState) {
         val next = transform(_state.value)
@@ -212,7 +210,7 @@ class PulsePiPStore @Inject constructor(
         }
     }
 
-    /** Relaunch restore — web persist.merge() parity: sanitize panes, the
+    /** Relaunch restore - web persist.merge() parity: sanitize panes, the
      *  focused pane must exist AND be expanded, otherwise stack-only. */
     private fun load(): PiPState {
         val raw = prefs.getString(KEY, null) ?: return PiPState()

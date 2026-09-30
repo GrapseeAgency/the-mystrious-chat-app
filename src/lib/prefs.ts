@@ -9,7 +9,7 @@ import {
 } from '@/lib/prefs-defaults'
 
 /**
- * Client prefs store — optimistic local state synced to the REAL
+ * Client prefs store - optimistic local state synced to the REAL
  * /api/settings endpoint (User.preferences JSON blob in SQLite).
  * - hydrate(userId): pull server truth once per login
  * - save(patch): optimistic update + debounced PATCH, rollback on failure

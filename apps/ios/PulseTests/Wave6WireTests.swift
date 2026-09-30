@@ -1,11 +1,11 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 6 — social-graph WIRE tests (F-CP family). Proves the tolerant
+/// Wave 6 - social-graph WIRE tests (F-CP family). Proves the tolerant
 /// Codable DTO layer against the audited gateway JSON (worklog 6-a):
 /// users/{stats,safety,block,blocks,report} shapes, the 409/403 error
 /// bodies, and the server-computed 60-digit safety number split. Pure
-/// XCTest — no sockets, no AVAudio, no network.
+/// XCTest - no sockets, no AVAudio, no network.
 final class Wave6WireTests: XCTestCase {
 
     private func decode<T: Decodable>(_ type: T.Type, _ json: String, file: StaticString = #filePath, line: UInt = #line) throws -> T {
@@ -13,7 +13,7 @@ final class Wave6WireTests: XCTestCase {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    // ── stats (GET /api/users/{id}/stats → { stats }) ────────
+    // stats (GET /api/users/{id}/stats → { stats })
 
     func testUserStatsDecodesFullShape() throws {
         let stats = try decode(WireUserStatsPage.self, """
@@ -29,7 +29,7 @@ final class Wave6WireTests: XCTestCase {
         XCTAssertEqual(stats.joinedAt, "2026-01-05T10:00:00.000Z")
     }
 
-    /// Tolerance: an older gateway may omit any stamp — the page must still
+    /// Tolerance: an older gateway may omit any stamp - the page must still
     /// decode (the UserPage renders zeros, never crashes).
     func testUserStatsToleratesMissingFields() throws {
         let stats = try decode(WireUserStatsPage.self, """
@@ -41,7 +41,7 @@ final class Wave6WireTests: XCTestCase {
         XCTAssertNil(stats.lastSeenAt)
     }
 
-    // ── safety (GET/POST/DELETE /api/users/{id}/safety) ──────
+    // safety (GET/POST/DELETE /api/users/{id}/safety)
 
     /// The server computes sha256(min|max|pepper) mod 10^60 → 60 digits,
     /// space-joined 12×5 (src/lib/safety.ts). The DTO must carry it intact.
@@ -56,7 +56,7 @@ final class Wave6WireTests: XCTestCase {
         XCTAssertNotNil(state.verifiedAt)
     }
 
-    /// The safety SPLIT: PulseSafetyNumber.groups yields 12 groups of 5 —
+    /// The safety SPLIT: PulseSafetyNumber.groups yields 12 groups of 5 -
     /// the SafetySheet's 3×4 tile grid indexes it directly.
     func testSafetyNumberSplitsIntoTwelveGroupsOfFive() {
         let joined = Array(repeating: "01234", count: 12).joined(separator: " ")
@@ -74,7 +74,7 @@ final class Wave6WireTests: XCTestCase {
         XCTAssertEqual(verdict.verified, true)
     }
 
-    // ── block pair state + list ───────────────────────────────
+    // block pair state + list
 
     func testBlockStateDecodes() throws {
         XCTAssertTrue(try decode(WireBlockState.self, #"{"blocked":true}"#).blocked)
@@ -90,7 +90,7 @@ final class Wave6WireTests: XCTestCase {
         XCTAssertEqual(page.blocks[1].blockedAt, nil)
     }
 
-    // ── report verdicts (201 create vs 200 idempotent refresh) ──
+    // report verdicts (201 create vs 200 idempotent refresh)
 
     func testReportVerdictCreateShape() throws {
         let verdict = try decode(WireReportVerdict.self, #"{"reported":true}"#)
@@ -103,7 +103,7 @@ final class Wave6WireTests: XCTestCase {
         XCTAssertEqual(verdict.updated, true)
     }
 
-    // ── 409/403 error bodies (the Failure enrichment path) ────
+    // 409/403 error bodies (the Failure enrichment path)
 
     /// The handle-clash 409: error copy + machine code + suggestion ride the
     /// body; the client maps username_taken → .validation.
@@ -119,11 +119,11 @@ final class Wave6WireTests: XCTestCase {
     func testStatusKindMappingCoversTheWave6Routes() {
         XCTAssertEqual(PulseAPIClient.kind(for: 400), .unknown)
         XCTAssertEqual(PulseAPIClient.kind(for: 401), .auth)
-        // 403 — the last-admin channel leave + the blocks self-check.
+        // 403 - the last-admin channel leave + the blocks self-check.
         XCTAssertEqual(PulseAPIClient.kind(for: 403), .forbidden)
-        // 404 — dead invite links.
+        // 404 - dead invite links.
         XCTAssertEqual(PulseAPIClient.kind(for: 404), .notFound)
-        // 409 — the handle clash.
+        // 409 - the handle clash.
         XCTAssertEqual(PulseAPIClient.kind(for: 409), .unknown)
         XCTAssertEqual(PulseAPIClient.kind(for: 429), .rateLimited)
         XCTAssertEqual(PulseAPIClient.kind(for: 500), .server)
@@ -142,7 +142,7 @@ final class Wave6WireTests: XCTestCase {
         XCTAssertEqual(failure.kind, .validation)
     }
 
-    // ── channels / invite / mentions / folders envelopes ─────
+    // channels / invite / mentions / folders envelopes
 
     func testChannelSummaryTolerance() throws {
         let page = try decode(Wave6ChannelProbe.self, """
@@ -191,7 +191,7 @@ final class Wave6WireTests: XCTestCase {
     }
 }
 
-/// Local probe type — mirrors WireChannelsPage's { channels: [...] } envelope
+/// Local probe type - mirrors WireChannelsPage's { channels: [...] } envelope
 /// (the real one lives behind an internal init; the shape is what's tested).
 private struct Wave6ChannelProbe: Decodable {
     let channels: [WireChannelSummary]

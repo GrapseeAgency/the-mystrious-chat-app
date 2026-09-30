@@ -3,12 +3,12 @@ package app.pulse.feature.chat
 import app.pulse.core.fx.PulseFx
 
 /**
- * F-MS-22 / F-MS-23 — slash-command + message-effect logic, ported from the
+ * F-MS-22 / F-MS-23 - slash-command + message-effect logic, ported from the
  * web ground truth (no transport, no UI):
- *  · PULSE_SLASH_COMMANDS — src/components/chat/slash-palette.tsx (verbatim)
- *  · applySlash / rollDice — src/components/chat/chat-room.tsx:296-502
- *  · fuzzyMatch — src/components/chat/slash-palette.tsx (subsequence match)
- *  · effectOfPayload / burstKindOf — chat-room.tsx:1504-1519 + EFFECT_PARTICLES
+ *  · PULSE_SLASH_COMMANDS - src/components/chat/slash-palette.tsx (verbatim)
+ *  · applySlash / rollDice - src/components/chat/chat-room.tsx:296-502
+ *  · fuzzyMatch - src/components/chat/slash-palette.tsx (subsequence match)
+ *  · effectOfPayload / burstKindOf - chat-room.tsx:1504-1519 + EFFECT_PARTICLES
  */
 object PulseSlash {
 
@@ -46,7 +46,7 @@ object PulseSlash {
     /**
      * Lightweight fuzzy match: every character of `needle` appears in
      * `haystack` in order (case-insensitive, whitespace squeezed) with a
-     * bounded gap budget — '/ef co' → /effects confetti ✓ (web parity).
+     * bounded gap budget - '/ef co' -> /effects confetti (web parity).
      */
     fun fuzzyMatch(haystack: String, needle: String): Boolean {
         val h = haystack.lowercase()
@@ -79,7 +79,7 @@ object PulseSlash {
         data class Sheet(val sheet: String) : Outcome
         data class Topic(val name: String) : Outcome
         data class Remind(val rest: String) : Outcome
-        /** R2-A item 5 — /recap runs the AI recap request (web runPaletteCommand). */
+        /** R2-A item 5 - /recap runs the AI recap request (web runPaletteCommand). */
         data object Recap : Outcome
         object Help : Outcome
     }
@@ -90,7 +90,7 @@ object PulseSlash {
     private val BOT_COMMANDS: Set<String> = setOf("math", "flip", "8ball", "rps", "dice", "time", "wallet")
 
     /**
-     * Port of the web applySlash — leading-slash parsing into real content
+     * Port of the web applySlash - leading-slash parsing into real content
      * or UI actions. Non-slash input returns `.send` verbatim; a leading
      * token that is not a \w+ word also falls through to `.send`.
      */
@@ -113,7 +113,7 @@ object PulseSlash {
                     Outcome.Send("Rolled **1d6**: *" + rollDice("1d6")?.total.let { it ?: "?" } + "*")
                 } else {
                     val roll = rollDice(arg)
-                        ?: return Outcome.Error("Usage: /roll AdM — e.g. /roll 2d6")
+                        ?: return Outcome.Error("Usage: /roll AdM - e.g. /roll 2d6")
                     Outcome.Send(
                         "Rolled **" + arg.lowercase() + "**: " + roll.rolls.joinToString(" + ") +
                             " = *" + roll.total + "*",
@@ -123,7 +123,7 @@ object PulseSlash {
             "poll" -> Outcome.Sheet("poll")
             "schedule" -> Outcome.Sheet("schedule")
             "remind" -> Outcome.Remind(rest)
-            // R2-A item 5 — /recap executes the AI recap (web chat-room.tsx:3260-3264).
+            // R2-A item 5 - /recap executes the AI recap (web chat-room.tsx:3260-3264).
             "recap" -> Outcome.Recap
             "sticker" -> Outcome.Sheet("sticker")
             "location" -> Outcome.Sheet("location")
@@ -142,12 +142,12 @@ object PulseSlash {
             "help" -> Outcome.Help
             else -> {
                 if (word in BOT_COMMANDS) Outcome.Send(input)
-                else Outcome.Error("Unknown command \"/$word\" — try /help")
+                else Outcome.Error("Unknown command \"/$word\" - try /help")
             }
         }
     }
 
-    /** "AdM" dice roll — web rollDice parity (1..12 dice clamp, 2..1000 sides). */
+    /** "AdM" dice roll - web rollDice parity (1..12 dice clamp, 2..1000 sides). */
     data class Roll(val rolls: List<Int>, val total: Int)
 
     fun rollDice(spec: String): Roll? {
@@ -161,7 +161,7 @@ object PulseSlash {
 }
 
 /**
- * F-MS-23 / D29 — message-effect helpers. The wire stores the effect on
+ * F-MS-23 / D29 - message-effect helpers. The wire stores the effect on
  * kind:"text" rows as payload { effect: "confetti" | "lasers" | "echo" |
  * "sparkles" } (messages route shape, web parseMessagePayload(m.payload).effect
  * at chat-room.tsx:1518).

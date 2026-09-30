@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse UI Theme System (R25) — five locked design languages.
+// Pulse UI Theme System (R25) - five locked design languages.
 // The old single-theme chrome is gone; every surface now renders
 // through ONE of these five languages, applied via `data-ui` on
 // the shell root + CSS custom properties (see globals.css).
@@ -12,7 +11,6 @@
 //
 // Persisted in localStorage `pulse.uiTheme.v2` (zustand persist),
 // broadcast via `pulse.uiTheme.changed` for out-of-React listeners.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { create } from 'zustand'
@@ -28,7 +26,7 @@ export interface UiThemeMeta {
   detail: string
   /** preview accent (oklch/hex) for swatches */
   swatch: [string, string]
-  /** motion personality — surfaces may pick springs by theme */
+  /** motion personality - surfaces may pick springs by theme */
   motion: 'elastic' | 'crisp' | 'quiet' | 'playful' | 'glide'
 }
 
@@ -103,7 +101,7 @@ export const useUiThemeStore = create<UiThemeState>()(
   ),
 )
 
-/** React hook — current theme + setter.
+/** React hook - current theme + setter.
  *  Primitive + stable-function selectors (a fresh array in the selector
  *  would trip useSyncExternalStore's getSnapshot cache → infinite loop). */
 export function useUiTheme(): [UiThemeId, (t: UiThemeId) => void] {
@@ -117,7 +115,7 @@ export function getUiThemeMeta(id: UiThemeId): UiThemeMeta {
 }
 
 /**
- * Motion character per theme — surfaces that want theme-aware physics
+ * Motion character per theme - surfaces that want theme-aware physics
  * call this instead of hardcoding spring presets.
  */
 export function themeMotion(id: UiThemeId): UiThemeMeta['motion'] {

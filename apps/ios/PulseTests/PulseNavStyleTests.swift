@@ -1,14 +1,14 @@
 import XCTest
 @testable import Pulse
 
-/// R4-A item 3 — navigation-style registry tests (web ground truth:
-/// src/lib/nav-registry.ts — key `pulse.navStyle.v2`, DEFAULT_NAV_STYLE,
-/// meta :50-64 label/hint strings byte-verbatim). R14 5-b — the registry
+/// R4-A item 3 - navigation-style registry tests (web ground truth:
+/// src/lib/nav-registry.ts - key `pulse.navStyle.v2`, DEFAULT_NAV_STYLE,
+/// meta :50-64 label/hint strings byte-verbatim). R14 5-b - the registry
 /// is 13/13: the five previously-excluded desktop/keyboard/exotic ids now
 /// ship as honest mobile adaptations and round-trip through parse.
 final class PulseNavStyleTests: XCTestCase {
 
-    // ── registry surface ─────────────────────────────────────
+    // registry surface
 
     func testAllCasesCarryTheWebRawValues() {
         // The 13 shipped ids, byte-same with the web store.
@@ -36,7 +36,7 @@ final class PulseNavStyleTests: XCTestCase {
     func testMetaStringsAreByteIdenticalWithNavRegistry() {
         // nav-registry.ts:51-63 verbatim.
         XCTAssertEqual(PulseNavStyle.capsule.label, "Floating Capsule")
-        XCTAssertEqual(PulseNavStyle.capsule.hint, "Detached glass capsule dock — the default")
+        XCTAssertEqual(PulseNavStyle.capsule.hint, "Detached glass capsule dock - the default")
         XCTAssertEqual(PulseNavStyle.floatingTop.label, "Floating Top Nav")
         XCTAssertEqual(PulseNavStyle.floatingTop.hint, "Capsule bar floating beneath the top edge")
         XCTAssertEqual(PulseNavStyle.pill.label, "Pill Navigation")
@@ -51,7 +51,7 @@ final class PulseNavStyleTests: XCTestCase {
         XCTAssertEqual(PulseNavStyle.rail.hint, "Persistent vertical side rail")
         XCTAssertEqual(PulseNavStyle.island.label, "Island Navigation")
         XCTAssertEqual(PulseNavStyle.island.hint, "Dynamic-island pill that expands on tap")
-        // R14 5-b — the five mobile adaptations carry the web strings too.
+        // R14 5-b - the five mobile adaptations carry the web strings too.
         XCTAssertEqual(PulseNavStyle.floatingDock.label, "Floating Dock")
         XCTAssertEqual(PulseNavStyle.floatingDock.hint, "Desktop-style dock with magnifying icons")
         XCTAssertEqual(PulseNavStyle.commandBar.label, "Command Bar")
@@ -67,7 +67,7 @@ final class PulseNavStyleTests: XCTestCase {
     func testZonesDriveTheShellChannels() {
         // RootView routes bottom styles through the bottom reserve,
         // floating-top through the top inset and rail through the leading
-        // inset — the zone decides, so it must match the web meta.
+        // inset - the zone decides, so it must match the web meta.
         XCTAssertEqual(PulseNavStyle.capsule.zone, .bottom)
         XCTAssertEqual(PulseNavStyle.pill.zone, .bottom)
         XCTAssertEqual(PulseNavStyle.bottomBar.zone, .bottom)
@@ -80,10 +80,10 @@ final class PulseNavStyleTests: XCTestCase {
         XCTAssertEqual(PulseNavStyle.radial.zone, .overlay)
     }
 
-    // ── tolerant decode (web getNavStyleMeta fallback parity) ──
+    // tolerant decode (web getNavStyleMeta fallback parity)
 
     func testExcludedWebIdsNowRoundTripToThemselves() {
-        // R14 5-b — the five previously-excluded ids are shipped styles:
+        // R14 5-b - the five previously-excluded ids are shipped styles:
         // they parse to THEIR OWN case (a stored value survives upgrades).
         let shipped = ["floating-dock", "command-bar", "radial", "gesture", "contextual-dock"]
         for raw in shipped {
@@ -106,7 +106,7 @@ final class PulseNavStyleTests: XCTestCase {
         }
     }
 
-    // ── persistence (PulsePrefs · pulse.navStyle.v2) ─────────
+    // persistence (PulsePrefs · pulse.navStyle.v2)
 
     @MainActor
     func testPrefsRoundTripPersistsTheWebRawValue() {

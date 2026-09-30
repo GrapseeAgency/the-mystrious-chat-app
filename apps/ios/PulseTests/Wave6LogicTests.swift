@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 6 — discovery LOGIC tests (F-SM/F-FD/F-CH + deep links). The pure
+/// Wave 6 - discovery LOGIC tests (F-SM/F-FD/F-CH + deep links). The pure
 /// kernels the new surfaces run on: the pulse:// parser, the mentions
 /// regex mirror, the 99+ badge cap, channel/folder validation, the 2600 ms
 /// two-tap delete window, the handle verdict machine, the ≤64 snippet
@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class Wave6LogicTests: XCTestCase {
 
-    // ── deep links (pulse:// scheme, F-DL) ───────────────────
+    // deep links (pulse:// scheme, F-DL)
 
     func testDeepLinkInviteRoute() {
         XCTAssertEqual(PulseDeepLink.parse(URL(string: "pulse://invite/abc123")!), .invite(code: "abc123"))
@@ -43,7 +43,7 @@ final class Wave6LogicTests: XCTestCase {
         XCTAssertNil(PulseDeepLink.parse(URL(string: "pulse://user/")!))
     }
 
-    // ── badge cap (mentions header + pills + dock) ───────────
+    // badge cap (mentions header + pills + dock)
 
     func testBadgeCapRenders99PlusPastTheCap() {
         XCTAssertEqual(PulseBadgeCap.cap(0), "0")
@@ -53,12 +53,12 @@ final class Wave6LogicTests: XCTestCase {
         XCTAssertEqual(PulseBadgeCap.cap(999), "99+")
     }
 
-    // ── mentions: composer token + feed chip mirror (F-SM-03/04) ──
+    // mentions: composer token + feed chip mirror (F-SM-03/04)
 
     func testComposerTokenAnchoredAtTheTail() {
         XCTAssertEqual(PulseMentions.activeToken(in: "@Ada")?.token, "Ada")
         XCTAssertEqual(PulseMentions.activeToken(in: "hey @Ada")?.token, "Ada")
-        // "@Ada @Bob" — the ACTIVE token is the last one.
+        // "@Ada @Bob" - the ACTIVE token is the last one.
         XCTAssertEqual(PulseMentions.activeToken(in: "@Ada @Bob")?.token, "Bob")
         XCTAssertEqual(PulseMentions.activeToken(in: "@")?.token, "")
     }
@@ -117,7 +117,7 @@ final class Wave6LogicTests: XCTestCase {
         XCTAssertEqual(String(snippet[range.upperBound...]), "!")
     }
 
-    // ── channel create validation (verbatim copy) ────────────
+    // channel create validation (verbatim copy)
 
     func testChannelNameValidationCopy() {
         XCTAssertEqual(PulseChannelDraft.nameError("a"), "Name needs at least 2 characters.")
@@ -141,7 +141,7 @@ final class Wave6LogicTests: XCTestCase {
         XCTAssertEqual(PulseChannelDraft.trimmedDescription(over).count, 200)
     }
 
-    // ── folder validation + membership planner (F-FD) ────────
+    // folder validation + membership planner (F-FD)
 
     func testFolderNameValidation() {
         XCTAssertFalse(PulseFolderDraft.isValidName(""))
@@ -163,7 +163,7 @@ final class Wave6LogicTests: XCTestCase {
         XCTAssertEqual(FolderMembership.orderedSelection(checked: ["ghost"], listOrder: order), [])
     }
 
-    // ── two-tap destructive confirm (2600 ms window) ─────────
+    // two-tap destructive confirm (2600 ms window)
 
     func testTwoTapWindowArmsAndExecutes() {
         // Never armed → first tap does NOT execute.
@@ -178,7 +178,7 @@ final class Wave6LogicTests: XCTestCase {
         XCTAssertFalse(PulseTwoTap.shouldExecute(nowMs: 500, armedAtMs: 1000))
     }
 
-    // ── handle verdict machine (profile edit, verbatim copy) ──
+    // handle verdict machine (profile edit, verbatim copy)
 
     func testHandleVerdictOrder() {
         var state = HandleCheckState()
@@ -235,7 +235,7 @@ final class Wave6LogicTests: XCTestCase {
         XCTAssertEqual(OnboardingViewModel.sanitizeHandle("  Ada WU! "), "adawu")
     }
 
-    // ── the ≤64 snippet window (chats search + room search) ──
+    // the ≤64 snippet window (chats search + room search)
 
     func testSnippetWindowShortContentStaysWhole() {
         let window = HighlightedSnippet.window(content: "hello world", query: "world")
@@ -251,7 +251,7 @@ final class Wave6LogicTests: XCTestCase {
         let content = lead + "needle" + String(repeating: "b", count: 5)
         let window = HighlightedSnippet.window(content: content, query: "needle")
         XCTAssertTrue(window.clippedHead)
-        // The ellipsis glyphs render OUTSIDE the body — the body itself is
+        // The ellipsis glyphs render OUTSIDE the body - the body itself is
         // the 24-char lead + match + the tail the ≤64 budget still allows.
         XCTAssertEqual(window.body.count, 34)
         XCTAssertTrue(window.clippedTail)
@@ -263,7 +263,7 @@ final class Wave6LogicTests: XCTestCase {
         let window = HighlightedSnippet.window(content: content, query: "needle")
         XCTAssertFalse(window.clippedHead)
         XCTAssertTrue(window.clippedTail)
-        // 6 (match) + 28 (tail) = 34 total — inside the ≤64 budget.
+        // 6 (match) + 28 (tail) = 34 total - inside the ≤64 budget.
         XCTAssertEqual(window.body.count, 34)
     }
 
@@ -280,15 +280,8 @@ final class Wave6LogicTests: XCTestCase {
         XCTAssertNil(clipped.matchRange)
     }
 
-    // ── status glyph display (F-CP-09) ───────────────────────
-
-    func testVacationTokenMapsToAPlaneGlyphForDisplayOnly() {
-        XCTAssertEqual(pulseStatusGlyphDisplay("vacation"), "✈️")
-        XCTAssertEqual(pulseStatusGlyphDisplay("🔥"), "🔥")
-    }
-
     func testProfileEditGlyphSetMatchesTheElevenStoredValues() {
-        XCTAssertEqual(ProfileEditView.statusGlyphs, ["🔥", "✨", "🎯", "☕", "🎧", "🌙", "💡", "🚀", "😴", "🍽️", "vacation"])
+        XCTAssertEqual(ProfileEditView.statusGlyphs, PulseStatusIconId.allCases.map(\.rawValue))
         XCTAssertEqual(ProfileEditView.colors.count, 8)
         XCTAssertEqual(ProfileEditView.nameMax, 32)
         XCTAssertEqual(ProfileEditView.aboutMax, 140)

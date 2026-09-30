@@ -35,7 +35,7 @@ data class SessionVault(
 )
 
 /**
- * Secure session storage (Wave 0) — the durable, offline copy of WHO the
+ * Secure session storage (Wave 0) - the durable, offline copy of WHO the
  * viewer is and WHERE the deployment points. The payload JSON is encrypted
  * with an AndroidKeyStore AES-GCM key ("pulse.session.key") and stored in
  * the existing DataStore prefs under "session.vault".
@@ -45,7 +45,7 @@ data class SessionVault(
  * and removed (they survive only as the read-only UI mirror the
  * SessionViewModel re-seeds from the vault).
  *
- * API < 23 has no AndroidKeyStore AES — the vault degrades to prefixed
+ * API < 23 has no AndroidKeyStore AES - the vault degrades to prefixed
  * cleartext storage there (honest, documented).
  */
 @Singleton
@@ -69,7 +69,7 @@ class SecureSessionStore @Inject constructor(
         val prefs = context.pulsePrefs.data.first()
         prefs[Keys.VAULT]?.let { stored -> return decryptOrNull(stored) }
 
-        // Legacy migration — plaintext viewer.* keys → encrypted vault → old keys removed.
+        // Legacy migration - plaintext viewer.* keys → encrypted vault → old keys removed.
         val legacyId = prefs[Keys.LEGACY_VIEWER_ID] ?: return null
         val vault = SessionVault(
             viewerId = legacyId,
@@ -90,7 +90,7 @@ class SecureSessionStore @Inject constructor(
         scope.launch { context.pulsePrefs.edit { it.remove(Keys.VAULT) } }
     }
 
-    // ── crypto ──────────────────────────────────────────────────
+    // crypto
 
     private fun encrypt(plain: String): String {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return PREFIX_PLAIN + plain
@@ -99,7 +99,7 @@ class SecureSessionStore @Inject constructor(
 
     private fun decryptOrNull(stored: String): String? {
         if (stored.startsWith(PREFIX_PLAIN)) return stored.removePrefix(PREFIX_PLAIN)
-        if (!stored.startsWith(PREFIX_ENC)) return null // unknown format — treat as absent
+        if (!stored.startsWith(PREFIX_ENC)) return null // unknown format - treat as absent
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
         return runCatching { keystoreDecrypt(stored.removePrefix(PREFIX_ENC)) }.getOrNull()
     }

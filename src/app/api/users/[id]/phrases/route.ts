@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users/[id]/phrases — quick-phrase rail CRUD
+// /api/users/[id]/phrases - quick-phrase rail CRUD
 // (Among Us-style one-tap line wheel; user-authored rows)
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

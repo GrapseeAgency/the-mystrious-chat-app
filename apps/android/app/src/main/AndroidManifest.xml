@@ -15,11 +15,11 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- R1-W2H D45: re-arm reminder one-shots after reboot (BootReceiver). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- R8 Task 3-c — Telecom self-managed calls: own-call management for the
+    <!-- R8 Task 3-c - Telecom self-managed calls: own-call management for the
          ConnectionService (self-managed PhoneAccounts need MANAGE_OWN_CALLS;
          BIND_TELECOM_CONNECTION_SERVICE rides the service declaration). -->
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
-    <!-- R8 Task 3-c — incoming-call ring fallback: full-screen-intent high-
+    <!-- R8 Task 3-c - incoming-call ring fallback: full-screen-intent high-
          priority call notifications (FCM push + Telecom-unavailable path). -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
@@ -40,14 +40,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Deep links: pulse://chat/<id> — parity with the web hash router -->
+            <!-- Deep links: pulse://chat/<id> - parity with the web hash router -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="pulse" />
             </intent-filter>
-            <!-- R10-a — launcher shortcuts fire this custom action with
+            <!-- R10-a - launcher shortcuts fire this custom action with
                  tab/action extras (res/xml/shortcuts.xml); the handler is
                  MainActivity.handleIntent → the shell's tab/search/composer
                  state. -->
@@ -55,13 +55,13 @@
                 <action android:name="app.pulse.android.action.SHORTCUT" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-            <!-- R10-a — static launcher shortcuts: Chats / New message / Search. -->
+            <!-- R10-a - static launcher shortcuts: Chats / New message / Search. -->
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
 
-        <!-- R10-a — system share target ("Share into Pulse"): a thin hop that
+        <!-- R10-a - system share target ("Share into Pulse"): a thin hop that
              validates the ACTION_SEND payload, forwards it to MainActivity as
              the pulse.share_in.* extras and finishes. exported=true because the
              SYSTEM must reach it; the translucent theme keeps the hop
@@ -123,7 +123,7 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <!-- R8 Task 3-c — Telecom self-managed ConnectionService (1:1 calls
+        <!-- R8 Task 3-c - Telecom self-managed ConnectionService (1:1 calls
              mirror into the system call UIs). BIND_TELECOM_CONNECTION_SERVICE
              is the required system binding permission; MANAGE_OWN_CALLS is
              declared above. -->
@@ -136,7 +136,7 @@
             </intent-filter>
         </service>
 
-        <!-- R8 Task 3-c — FCM entry point. Registered unconditionally but
+        <!-- R8 Task 3-c - FCM entry point. Registered unconditionally but
              DORMANT without Firebase credentials (PulsePush.init is
              fail-closed), so the build stays green with no
              google-services.json / google-services plugin. -->
@@ -149,7 +149,7 @@
         </service>
 
         <!-- R1-W2H D45: after reboot the reminder WorkManager one-shots have no
-             guarantee of being re-armed in time — BootReceiver re-schedules
+             guarantee of being re-armed in time - BootReceiver re-schedules
              still-future reminders via ReminderNotifier.schedule and fires the
              notify path for ones that came due while the device was off.
              exported=false: the system delivers BOOT_COMPLETED to it regardless. -->
@@ -163,7 +163,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- R10-a — notification quick-reply hand-off. The system (not any
+        <!-- R10-a - notification quick-reply hand-off. The system (not any
              other app) delivers the RemoteInput result here; exported=false. -->
         <receiver
             android:name="app.pulse.android.notify.PulseReplyReceiver"

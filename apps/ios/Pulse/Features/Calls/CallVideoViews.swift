@@ -1,8 +1,7 @@
 import SwiftUI
 import WebRTC
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — Wave R1-W2D REAL video renderers for the call overlay (web
+// Pulse - Wave R1-W2D REAL video renderers for the call overlay (web
 // call-overlay.tsx parity):
 //   • remote video → full-bleed MTK surface (web `absolute inset-0 cover`)
 //   • local camera → mirrored PiP tile (web `scaleX(-1)`, ≈96×144pt rounded
@@ -10,8 +9,7 @@ import WebRTC
 //
 // Both wrap RTCMTLVideoView (Metal, the modern default) bound to a REAL
 // RTCVideoTrack via add/remove sink. Renderer lifecycle: the sink detaches
-// and the view releases with SwiftUI's dismantle — no camera surface leaks.
-// ─────────────────────────────────────────────────────────────
+// and the view releases with SwiftUI's dismantle - no camera surface leaks.
 
 /// One RTCVideoTrack rendered through RTCMTLVideoView. Recreated per track
 /// instance; mirrored self-views flip the UIKit transform (web scaleX(-1)).
@@ -30,7 +28,7 @@ struct VideoTrackView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> RTCMTLVideoView {
         let view = RTCMTLVideoView(frame: .zero)
-        // Web object-cover parity — fill, crop, keep aspect.
+        // Web object-cover parity - fill, crop, keep aspect.
         view.videoContentMode = .scaleAspectFill
         if mirrored {
             view.transform = CGAffineTransform(scaleX: -1, y: 1)
@@ -47,7 +45,7 @@ struct VideoTrackView: UIViewRepresentable {
 }
 
 /// The peer's video, full-bleed behind the call UI (web remote <video>).
-/// Renders only once the remote track actually arrives — the audio-only
+/// Renders only once the remote track actually arrives - the audio-only
 /// fallback keeps the avatar-only layout.
 struct RemoteVideoLayer: View {
     @ObservedObject var engine: PulseCallEngine
@@ -63,7 +61,7 @@ struct RemoteVideoLayer: View {
     }
 }
 
-/// The local camera PiP — mirrored self-view tile, bottom-trailing above the
+/// The local camera PiP - mirrored self-view tile, bottom-trailing above the
 /// controls (web `bottom-28 right-4` parity). Hidden while the camera toggle
 /// is off (web cameraEnabled parity) or when no camera is attached.
 struct LocalVideoPipLayer: View {

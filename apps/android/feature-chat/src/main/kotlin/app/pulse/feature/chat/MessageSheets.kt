@@ -39,7 +39,7 @@ import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.PushPin
-// R1-W2F — F-MD-06 translation action.
+// R1-W2F - F-MD-06 translation action.
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -83,7 +83,7 @@ import app.pulse.domain.model.Message
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
 
-/** Wave 1 wire-whitelist palette (spec §1.1 — 🙏 replaced by 🎉 for compliance). */
+/** Wave 1 wire-whitelist palette (spec §1.1; pray was swapped for party for compliance). */
 internal val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🎉")
 
 /**
@@ -174,7 +174,7 @@ internal fun PollBuilderSheet(
 }
 
 /**
- * The long-press message sheet — Wave 0's reactions/reply/copy grown into the
+ * The long-press message sheet - Wave 0's reactions/reply/copy grown into the
  * full action surface (spec §2 row 4): edit, delete, pin, save, forward,
  * share, info, reply-in-thread. Every row is wired; conditional rows simply
  * don't render (no dead entries, no stubs).
@@ -198,16 +198,16 @@ internal fun MessageActionSheet(
     onShare: (() -> Unit)?,
     onDelete: (() -> Unit)?,
     onInfo: (() -> Unit)?,
-    // ── Wave 7 ──
+    // Wave 7
     onAddToBoard: (() -> Unit)? = null,
     onRemindMe: (() -> Unit)? = null,
-    // ── R3-B item 6 — web "Convert to task" (text rows, thread roots only) ──
+    // R3-B item 6 - web "Convert to task" (text rows, thread roots only)
     onConvertToTask: (() -> Unit)? = null,
-    /** Busy while the kanban round-trip runs — the row spins + disables. */
+    /** Busy while the kanban round-trip runs - the row spins + disables. */
     taskPending: Boolean = false,
-    // ── R1-W2F — F-MD-06 LLM translation (text rows only; server persists per language) ──
+    // R1-W2F - F-MD-06 LLM translation (text rows only; server persists per language)
     onTranslate: (() -> Unit)? = null,
-    /** iOS parity — an already-translated row re-labels the action. */
+    /** iOS parity - an already-translated row re-labels the action. */
     alreadyTranslated: Boolean = false,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
@@ -238,7 +238,7 @@ internal fun MessageActionSheet(
             SheetAction(Icons.Filled.Edit, "Edit", onEdit)
         }
         SheetAction(Icons.Filled.ContentCopy, "Copy", onCopy)
-        // ── R1-W2F F-MD-06 — the message long-press menu's Translate entry ──
+        // R1-W2F F-MD-06 - the message long-press menu's Translate entry
         onTranslate?.let {
             SheetAction(
                 Icons.Filled.Translate,
@@ -255,11 +255,11 @@ internal fun MessageActionSheet(
         SheetAction(Icons.Filled.Forward, "Forward", onForward)
         onShare?.let { SheetAction(Icons.Filled.Share, "Share", it) }
         onInfo?.let { SheetAction(Icons.Filled.Info, "Info", it) }
-        // ── Wave 7: message→kanban card + per-message reminder (web parity) ──
+        // Wave 7: message→kanban card + per-message reminder (web parity)
         if (message.kind == Message.Kind.TEXT && !message.isDeleted) {
             onAddToBoard?.let { SheetAction(Icons.Filled.ViewKanban, "Add to board", it) }
         }
-        // R3-B item 6 — web chat-room.tsx:6372-6379: "Convert to task" for
+        // R3-B item 6 - web chat-room.tsx:6372-6379: "Convert to task" for
         // TOP-LEVEL text rows (parentId === null), LoaderCircle while pending.
         // Checklist is the native stand-in for the web's lucide checklist glyph.
         if (message.kind == Message.Kind.TEXT && !message.isDeleted && message.threadRootId == null) {
@@ -276,7 +276,7 @@ internal fun MessageActionSheet(
 }
 
 /**
- * Forward targets — every conversation, search-filterable, multi-select,
+ * Forward targets - every conversation, search-filterable, multi-select,
  * one "Send" re-POSTing the source into each chosen chat (spec §1.1 forward).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -508,7 +508,7 @@ private fun MemberRow(member: ConversationMember, check: Boolean) {
     }
 }
 
-/** All pinned rows of the room — tap to jump-scroll to the pin. */
+/** All pinned rows of the room - tap to jump-scroll to the pin. */
 @Composable
 internal fun PinsDialog(
     pins: List<Message>,
@@ -548,7 +548,7 @@ internal fun PinsDialog(
                                     color = PulsePalette.Emerald,
                                 )
                                 Text(
-                                    pin.body.ifBlank { if (pin.imagePath != null) "Photo" else "Document — ${pin.fileName ?: "file"}" },
+                                    pin.body.ifBlank { if (pin.imagePath != null) "Photo" else "Document - ${pin.fileName ?: "file"}" },
                                     fontSize = 13.sp,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
@@ -591,7 +591,7 @@ internal fun DeleteMessageDialog(
     )
 }
 
-/** Rounded one-line text field — forward-sheet search + room search share it. */
+/** Rounded one-line text field - forward-sheet search + room search share it. */
 @Composable
 internal fun BasicField(
     value: String,
@@ -644,7 +644,7 @@ internal fun SheetAction(
     label: String,
     onClick: () -> Unit,
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
-    /** R3-B item 6 — disabled row (web GlassMenuItem disabled parity). */
+    /** R3-B item 6 - disabled row (web GlassMenuItem disabled parity). */
     enabled: Boolean = true,
     /** Swap the leading glyph for a spinner while the action round-trips. */
     busy: Boolean = false,
@@ -671,7 +671,7 @@ internal fun SheetAction(
     }
 }
 
-/** Highlight the first matched substring — same rhythm as the chats search. */
+/** Highlight the first matched substring - same rhythm as the chats search. */
 internal fun snippetAnnotated(content: String, query: String): AnnotatedString {
     val q = query.trim()
     if (q.isEmpty()) return buildAnnotatedString { append(content) }
@@ -693,7 +693,7 @@ internal fun snippetAnnotated(content: String, query: String): AnnotatedString {
 }
 
 /**
- * Double-check "seen" glyph — material-icons-extended is deliberately kept off
+ * Double-check "seen" glyph - material-icons-extended is deliberately kept off
  * the classpath (APK size, minify disabled), so the two-stroke check is drawn
  * natively. Same silhouette as the extended-icons CheckCheck.
  */

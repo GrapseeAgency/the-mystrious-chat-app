@@ -1,14 +1,13 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — W5-f voice room PCM chunker (PURE, no AVFoundation).
+// Pulse - W5-f voice room PCM chunker (PURE, no AVFoundation).
 //
 // The capture contract (spec §1.1 VR-4, web voice-room-sheet.tsx):
 //   · 16 kHz mono Int16 input
 //   · full chunks every 250 ms = 4000 samples, base64(Int16LE bytes)
 //   · seq starts at 1 and increments per emitted chunk
 //   · a partial block (< 4000 samples) is flushed PROPORTIONALLY on
-//     release — the emitted chunk simply carries the remaining
+//     release - the emitted chunk simply carries the remaining
 //     samples (its duration is the proportional fraction of 250 ms),
 //     never padded, never dropped
 //   · reset() returns the machine to the cold state (seq = 1)
@@ -18,9 +17,8 @@ import Foundation
 // client. This chunker is the single feed path for captured samples
 // and its chunk/seq/partial/reset semantics are proof-tested in
 // VoiceRoomMachineTests (the fix is proven by test, per spec VR-4).
-// ─────────────────────────────────────────────────────────────
 
-/// One emitted chunk — the exact C→S `voice:chunk` fields.
+/// One emitted chunk - the exact C→S `voice:chunk` fields.
 public struct VoicePcmChunkOut: Equatable, Sendable {
     public let seq: Int
     public let base64: String
@@ -31,11 +29,11 @@ public struct VoicePcmChunkOut: Equatable, Sendable {
     }
 }
 
-/// Pure block machine — feed Int16 samples, receive base64 chunks.
+/// Pure block machine - feed Int16 samples, receive base64 chunks.
 /// A value type: the audio engine owns one instance and mutates it on
 /// its capture queue; unit tests drive it directly.
 public struct VoicePcmChunker: Sendable {
-    /// Samples per full chunk — 16 kHz × 250 ms.
+    /// Samples per full chunk - 16 kHz × 250 ms.
     public let chunkSamples: Int
     private var buffer: [Int16] = []
     private var nextSeq: Int
@@ -70,7 +68,7 @@ public struct VoicePcmChunker: Sendable {
         return out
     }
 
-    /// Proportional partial flush on PTT release — emits whatever is
+    /// Proportional partial flush on PTT release - emits whatever is
     /// left (< one full block) as the FINAL chunk of the burst. Nil
     /// when nothing is pending (the burst ended on a block boundary).
     public mutating func flushPartial() -> VoicePcmChunkOut? {

@@ -1,12 +1,11 @@
 import Foundation
 import AVFoundation
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — W5-f voice room audio engine (AVFoundation).
+// Pulse - W5-f voice room audio engine (AVFoundation).
 //
 // Capture (VR-4): AVAudioEngine input tap (bus 0, 1024 frames) →
 // AVAudioConverter → 16 kHz mono Int16 → VoicePcmChunker (the pure
-// machine — WEB DEFECT FIX #1: this IS the armed capture path; every
+// machine - WEB DEFECT FIX #1: this IS the armed capture path; every
 // gated sample flows into it and leaves as a voice:chunk payload).
 //
 // Playback (VR-5): one AVAudioPlayerNode per peer; a fresh node is
@@ -17,20 +16,19 @@ import AVFoundation
 // (FIX #2 seam: VoiceRoomModel.resetPeer + engine.resetPeer).
 //
 // The software gate (transmitting && !muted, VR-6) is checked inside
-// the tap — muted/late means samples never enter the chunker.
+// the tap - muted/late means samples never enter the chunker.
 //
 // Audio session: a DEDICATED slim wrapper (playAndRecord + voiceChat
 // + defaultToSpeaker + allowBluetooth, saving/restoring the prior
-// category) — PulseCallAudioSession is NOT modified and not shared
+// category) - PulseCallAudioSession is NOT modified and not shared
 // (a call and a voice room never own the session at once; the rooms
 // wrapper only touches the session while a room is joined).
 //
 // Hardware honesty (spec §3): capture/playback quality, route
-// switching and background behaviour are PHYSICAL DEVICE: PENDING —
+// switching and background behaviour are PHYSICAL DEVICE: PENDING -
 // the simulator answers these APIs with defaults.
-// ─────────────────────────────────────────────────────────────
 
-/// Slim per-room AVAudioSession owner — save/restore mirrors the
+/// Slim per-room AVAudioSession owner - save/restore mirrors the
 /// verified PulseCallAudioSession pattern (PulseCallAudioSession.swift
 /// L51-86) without touching that type.
 final class VoiceRoomAudioSession {
@@ -44,7 +42,7 @@ final class VoiceRoomAudioSession {
     private(set) var isActive = false
 
     /// Snapshot + apply the rooms configuration. Returns false when the
-    /// hardware refuses (honest degradation — the room still joins).
+    /// hardware refuses (honest degradation - the room still joins).
     func activate() -> Bool {
         guard !isActive else { return true }
         let session = AVAudioSession.sharedInstance()
@@ -76,7 +74,7 @@ final class VoiceRoomAudioSession {
         isActive = false
     }
 
-    /// Mic permission — the SAME AVAudioSession.requestRecordPermission
+    /// Mic permission - the SAME AVAudioSession.requestRecordPermission
     /// pattern PulseCallAudioSession.requestMicPermission() uses
     /// (verified: granted / denied / undetermined + continuation).
     func requestMicPermission() async -> Bool {
@@ -103,7 +101,7 @@ final class VoiceRoomAudioSession {
 /// realtime audio thread, so the gate is lock-guarded and callbacks
 /// fire on that thread (the session model hops to main).
 final class VoiceRoomAudioEngine {
-    /// Emitted on the audio tap queue — one VoicePcmChunkOut per 250 ms
+    /// Emitted on the audio tap queue - one VoicePcmChunkOut per 250 ms
     /// block (+ the proportional partial flush on release).
     var onChunk: ((VoicePcmChunkOut) -> Void)?
     /// The same gated samples, for the caption accumulator (VR-7).
@@ -111,7 +109,7 @@ final class VoiceRoomAudioEngine {
     /// Honest hardware failure copy (mic absent/busy/refused).
     var onError: ((String) -> Void)?
 
-    /// Mic permission — the SAME AVAudioSession.requestRecordPermission
+    /// Mic permission - the SAME AVAudioSession.requestRecordPermission
     /// pattern PulseCallAudioSession.requestMicPermission() uses
     /// (verified: granted / denied / undetermined + continuation). The
     /// session model awaits this BEFORE startCapture(micGranted:).
@@ -127,7 +125,7 @@ final class VoiceRoomAudioEngine {
     private let engine = AVAudioEngine()
     private let audioSession = VoiceRoomAudioSession()
     private var converter: AVAudioConverter?
-    /// 16 kHz mono Int16 — the wire format for every buffer.
+    /// 16 kHz mono Int16 - the wire format for every buffer.
     private let wireFormat: AVAudioFormat? = AVAudioFormat(
         commonFormat: .pcmFormatInt16,
         sampleRate: VoiceRoomAudioEngine.sampleRate,
@@ -144,21 +142,21 @@ final class VoiceRoomAudioEngine {
     private let playbackLock = NSLock()
     private var peerNodes: [String: AVAudioPlayerNode] = [:]
 
-    // ── lifecycle ────────────────────────────────────────
+    // lifecycle
 
     /// Graph + session + engine start. `micGranted` comes from the
-    /// awaited requestMicPermission() — returns an honest failure copy
+    /// awaited requestMicPermission() - returns an honest failure copy
     /// instead of throwing (VR-10).
     func startCapture(micGranted: Bool) -> String? {
         // 1. Permission (the TCC prompt already happened in the await).
         guard micGranted else {
-            return "Microphone access is off — enable it for Pulse in Settings."
+            return "Microphone access is off - enable it for Pulse in Settings."
         }
         // 2. Session category (saved/restored by the rooms wrapper).
         if !audioSession.activate() {
             return "Audio hardware refused the room session."
         }
-        // 3. Graph — input tap → converter → chunker; playback nodes hang
+        // 3. Graph - input tap → converter → chunker; playback nodes hang
         //    off the main mixer.
         do {
             try configureGraphIfNeeded()
@@ -184,7 +182,7 @@ final class VoiceRoomAudioEngine {
         audioSession.deactivate()
     }
 
-    /// The software gate (VR-6) — the ONLY thing the tap consults.
+    /// The software gate (VR-6) - the ONLY thing the tap consults.
     func setGate(transmitting: Bool, muted: Bool) {
         lock.lock()
         gateTransmitting = transmitting
@@ -192,7 +190,7 @@ final class VoiceRoomAudioEngine {
         lock.unlock()
     }
 
-    /// PTT released — flush the proportional partial block (VR-4).
+    /// PTT released - flush the proportional partial block (VR-4).
     func flushPartial() {
         lock.lock()
         let chunk = chunker.flushPartial()
@@ -213,7 +211,7 @@ final class VoiceRoomAudioEngine {
         engine.isRunning
     }
 
-    // ── capture internals ────────────────────────────────
+    // capture internals
 
     private func configureGraphIfNeeded() throws {
         guard !captureConfigured else { return }
@@ -254,7 +252,7 @@ final class VoiceRoomAudioEngine {
 
     /// AVAudioConverter → 16 kHz mono Int16 samples (linear resample
     /// handled by the converter). The input block is passed per
-    /// `convert(to:error:withInputFrom:)` call — AVAudioConverter has no
+    /// `convert(to:error:withInputFrom:)` call - AVAudioConverter has no
     /// settable inputBlock property.
     private func convertTo16kMono(_ input: AVAudioPCMBuffer) -> [Int16]? {
         guard let converter else { return nil }
@@ -291,7 +289,7 @@ final class VoiceRoomAudioEngine {
         return collected.isEmpty ? nil : collected
     }
 
-    // ── playback (VR-5) ──────────────────────────────────
+    // playback (VR-5)
 
     /// Schedules one decoded chunk for a peer. Fresh nodes get the 85 ms
     /// silent prime + start; future playheads schedule at the exact host
@@ -335,7 +333,7 @@ final class VoiceRoomAudioEngine {
         }
     }
 
-    /// Roster drop / rejoin — stop the node, drop its queue, forget it
+    /// Roster drop / rejoin - stop the node, drop its queue, forget it
     /// (FIX #2 seam; the model clears its bookkeeping in resetPeer).
     func resetPeer(_ userId: String) {
         playbackLock.lock()
@@ -357,7 +355,7 @@ final class VoiceRoomAudioEngine {
         }
     }
 
-    // ── helpers ──────────────────────────────────────────
+    // helpers
 
     /// base64(Int16LE PCM) → samples; nil for corrupt payloads (dropped
     /// silently, never crashing on wire data).

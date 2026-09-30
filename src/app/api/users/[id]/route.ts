@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users/[id] — fetch one user (session validation), edit profile
-// ─────────────────────────────────────────────────────────────
+// /api/users/[id] - fetch one user (session validation), edit profile
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -14,6 +12,7 @@ import {
   USER_NAME_MAX,
 } from '@/lib/serializers'
 import { DEFAULT_PREFERENCES, mergePrefs } from '@/lib/prefs-defaults'
+import { STATUS_ICON_IDS } from '@/lib/icon-ids'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,7 +57,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     data.name = name
   }
 
-  // @handle edit — explicit key; '' clears, otherwise validate + clash-check
+  // @handle edit - explicit key; '' clears, otherwise validate + clash-check
   if (body.username !== undefined) {
     const raw = strField(body.username)
     if (raw.length === 0) {
@@ -101,7 +100,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     data.color = normalizeColor(body.color) // unknown colors fall back to 'emerald'
   }
 
-  // Profile photo — explicit key; '' or null clears. Must be a server-managed /uploads/ path
+  // Profile photo - explicit key; '' or null clears. Must be a server-managed /uploads/ path
   // (client uploads via POST /api/uploads first, then PATCHes the returned path).
   if (body.avatar !== undefined) {
     const avatar = strField(body.avatar)
@@ -117,11 +116,12 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     }
   }
 
-  // Discord-style custom status — explicit keys only; null clears.
+  // Discord-style custom status - explicit keys only; null clears.
+  // statusEmoji carries a status icon id from the registry, not a raw glyph.
   if (body.statusEmoji !== undefined) {
     const emoji = strField(body.statusEmoji)
-    if (emoji.length > 8) {
-      return NextResponse.json({ error: 'statusEmoji must be 8 characters or fewer.' }, { status: 400 })
+    if (emoji.length > 0 && !(STATUS_ICON_IDS as readonly string[]).includes(emoji)) {
+      return NextResponse.json({ error: 'Unknown status icon id.' }, { status: 400 })
     }
     data.statusEmoji = emoji.length === 0 ? null : emoji
   }
@@ -138,8 +138,8 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
   }
 
-  // R46 — any successful profile touch counts as "last active", UNLESS the
-  // user hides their last seen (then the stamp freezes — enforced privacy).
+  // R46 - any successful profile touch counts as "last active", UNLESS the
+  // user hides their last seen (then the stamp freezes - enforced privacy).
   let prefs = DEFAULT_PREFERENCES
   try {
     prefs = mergePrefs(existing.preferences ? JSON.parse(existing.preferences) : null)

@@ -1,17 +1,15 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — tournament standings card (Task R24-d, Twitch-style XP)
+// Pulse - tournament standings card (Task R24-d, Twitch-style XP)
 //
 // Self-fetching bubble for kind:'tournament' messages. Renders the
-// live season card: 🏆 name + game chip + status, the top-3 podium
+// live season card: name + game chip + status, the top-3 podium
 // (medal rows with layout springs), real player count, and a JOIN
 // button for members of the room who haven't entered yet. Polls
 // every 15s while the season runs so standings stay fresh.
 //
 // Wiring contract for chat-room (lead): render inside the
-// kind === 'tournament' branch —
+// kind === 'tournament' branch -
 //   <TournamentCard tournamentId={parsed.tournamentId} meId={me.id} />
 // (the wrapper adds `data-card-interactive`, not this component).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
@@ -96,7 +94,7 @@ export default function TournamentCard({
       )
       haptic(20)
       fireParticles({ kind: 'stars', count: 44 })
-      toast.success('Joined the season — wins now score points')
+      toast.success('Joined the season - wins now score points')
       void qc.invalidateQueries({ queryKey: ['tournament', tournamentId] })
       void qc.invalidateQueries({ queryKey: ['tournaments'] })
       void qc.invalidateQueries({ queryKey: ['leaderboard'] })
@@ -163,7 +161,7 @@ export default function TournamentCard({
           </div>
         </div>
 
-        {/* standings — top-3 medals, layout springs on re-order */}
+        {/* standings - top-3 medals, layout springs on re-order */}
         <div
           className="pulse-scroll max-h-56 overflow-y-auto px-2.5"
           role="list"
@@ -177,7 +175,7 @@ export default function TournamentCard({
           ) : tournament && tournament.entries.length === 0 ? (
             <p className="flex items-center gap-2 px-1.5 py-4 text-[12px] font-medium text-zinc-500 dark:text-zinc-400">
               <Users className="size-3.5 shrink-0" aria-hidden />
-              No players yet — be the first
+              No players yet - be the first
             </p>
           ) : (
             tournament?.entries.map((entry, i) => (
@@ -224,7 +222,7 @@ export default function TournamentCard({
         {/* footer + join */}
         <div className="border-t border-zinc-200/70 px-3.5 py-2.5 dark:border-white/10">
           <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-            {tournament ? `${tournament.entries.length} player${tournament.entries.length === 1 ? '' : 's'}` : '—'}
+            {tournament ? `${tournament.entries.length} player${tournament.entries.length === 1 ? '' : 's'}` : '-'}
             {' · '}
             {running ? 'Season running' : 'Season finished'}
           </p>

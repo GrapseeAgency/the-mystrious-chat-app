@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * R4-B item 3 / R14 — JVM pins for the navigation-style registry parser. The
+ * R4-B item 3 / R14 - JVM pins for the navigation-style registry parser. The
  * id strings are the web nav-registry.ts values verbatim (13/13 since the
  * R14 wiring); the parse rules pin the "junk → capsule" fallback.
  */

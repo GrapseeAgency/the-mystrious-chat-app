@@ -9,7 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Wave 8 — the REAL AndroidKeyStore AES-GCM round-trip (emulator/instrumented
+ * Wave 8 - the REAL AndroidKeyStore AES-GCM round-trip (emulator/instrumented
  * path; the store logic under a fake cipher is covered by the JVM
  * SessionTokenStoreTest). Locks:
  *  - encrypt→decrypt round-trip through the actual keystore-backed key

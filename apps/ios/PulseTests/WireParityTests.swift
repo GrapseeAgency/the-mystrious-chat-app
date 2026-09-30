@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// Wire-parity tests — the JSON here is the exact shape the live gateway
+/// Wire-parity tests - the JSON here is the exact shape the live gateway
 /// emits (captured from :81), mirrored by Android's LiveGatewayParityTest
 /// and packages/protocol. iOS decodes it without loss.
 final class WireParityTests: XCTestCase {
@@ -48,11 +48,11 @@ final class WireParityTests: XCTestCase {
         XCTAssertEqual(PulseAPIClient.kind(for: 502), .server)
     }
 
-    // ── W1-DATA-B — Wave 1 wire additions ───────────────────
+    // W1-DATA-B - Wave 1 wire additions
 
     /// A thread reply with every Wave 1 field populated + unknown keys the
     /// relay already sends (linkPreview/poll/transcripts/…) and keys from
-    /// the FUTURE — decoding must stay lossless and tolerant.
+    /// the FUTURE - decoding must stay lossless and tolerant.
     func testThreadReplyAndMediaFieldsDecodeWithUnknownKeys() throws {
         let json = """
         {"id":"m-r1","conversationId":"c1","senderId":"a1","content":"thread reply",
@@ -80,14 +80,14 @@ final class WireParityTests: XCTestCase {
         XCTAssertEqual(msg.reactions?.first?.emoji, "👍")
         XCTAssertEqual(msg.reactions?.first?.userIds, ["u1"])
 
-        // Spec §2 row 5 — parentId decodes into the THREAD ROOT slot;
+        // Spec §2 row 5 - parentId decodes into the THREAD ROOT slot;
         // replyToId is reserved for the inline-quote snippet (nil here).
         let domain = msg.toDomain()
         XCTAssertEqual(domain.threadRootId, "m-root")
         XCTAssertNil(domain.replyToId)
     }
 
-    /// An inline quote (replyTo) without parentId must NOT set threadRootId —
+    /// An inline quote (replyTo) without parentId must NOT set threadRootId -
     /// the two concepts stay separated end to end.
     func testInlineQuoteDoesNotConflateWithThreadRoot() throws {
         let json = """
@@ -101,7 +101,7 @@ final class WireParityTests: XCTestCase {
         XCTAssertNil(domain.threadRootId)
     }
 
-    /// GET /api/messages/{id}/thread — the exact {parent, replies} page the
+    /// GET /api/messages/{id}/thread - the exact {parent, replies} page the
     /// route returns (replies asc on the wire).
     func testThreadPageDecodes() throws {
         let json = """
@@ -122,7 +122,7 @@ final class WireParityTests: XCTestCase {
     }
 
     /// POST /api/messages/{id}/save → {saved} and POST /api/uploads →
-    /// {filePath, imagePath} — small envelopes, tolerant of extra keys.
+    /// {filePath, imagePath} - small envelopes, tolerant of extra keys.
     func testSavedToggleAndUploadResultDecode() throws {
         let saved = try JSONDecoder().decode(
             WireSavedToggle.self,

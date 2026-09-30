@@ -2,15 +2,14 @@ import Foundation
 import Combine
 import WebRTC
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — GROUP call engine (the native useGroupCallSession hook).
+// Pulse - GROUP call engine (the native useGroupCallSession hook).
 //
 // Behavioral spec = src/components/chat/group-call-overlay.tsx (R8-web):
 //   • MESH: one peer connection per remote member, the ONE shared local
 //     audio/video track acquisition feeding all of them (web single
 //     MediaStream parity). Between any two members the one with the
 //     lexicographically SMALLER id creates the offer (deterministic,
-//     stateless — PulseGroupCallPolicy, web applyRoster :285-309).
+//     stateless - PulseGroupCallPolicy, web applyRoster :285-309).
 //   • Signaling (same relay, gcall:* family): join → state broadcast →
 //     targeted offer/answer/ice. join = gcall:join + POST
 //     /api/conversations/[id]/calls/ring (rings online members + pushes
@@ -18,19 +17,18 @@ import WebRTC
 //   • Ongoing-call probe: GET /api/group-call-state every 20s while idle
 //     (a late-opening room learns about the call without a live ring).
 //   • Leave emits gcall:leave; gcall:ended and socket disconnect tear the
-//     mesh down (disconnect teardown is the 3-d spec — the web hook
+//     mesh down (disconnect teardown is the 3-d spec - the web hook
 //     survives transient reconnects; iOS tears down honestly instead of
 //     ghosting audio after a suspension).
 //
-// Seams (tests substitute fakes — the PulseOutboxSending pattern):
-//   • PulseCallSignalingSending — emits gcall:* envelopes (reused)
-//   • PulseGroupCallMediaProviding — permissions + bare peer factory +
+// Seams (tests substitute fakes - the PulseOutboxSending pattern):
+//   • PulseCallSignalingSending - emits gcall:* envelopes (reused)
+//   • PulseGroupCallMediaProviding - permissions + bare peer factory +
 //     the ONE shared mic/camera acquisition
 //
 // Cross-engine exclusion: a live group call owns the audio session; the
 // 1:1 PulseCallEngine checks `PulseGroupCallEngine.active?.isBusy` before
 // dialing and this engine refuses to join while a 1:1 call is live.
-// ─────────────────────────────────────────────────────────────
 
 @MainActor
 public final class PulseGroupCallEngine: ObservableObject {
@@ -65,7 +63,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         }
     }
 
-    // ── published UI state (GroupCallView binds these) ───────
+    // published UI state (GroupCallView binds these)
     @Published public private(set) var uiState: UiState = .idle
     @Published public private(set) var kind: CallKind = .voice
     /// Roster INCLUDING me, join-ordered (while in the call).
@@ -92,10 +90,10 @@ public final class PulseGroupCallEngine: ObservableObject {
     /// The room display name feeding the header (set at start/join).
     @Published public private(set) var displayTitle = "Group call"
 
-    /// Honest mic-denied copy — the SAME native wording the 1:1 engine uses.
+    /// Honest mic-denied copy - the SAME native wording the 1:1 engine uses.
     public static let micDeniedMessage = PulseCallEngine.micDeniedMessage
 
-    // ── deps ─────────────────────────────────────────────────
+    // deps
     private let viewer: PulseViewer
     private let signaling: any PulseCallSignalingSending
     private let media: any PulseGroupCallMediaProviding
@@ -104,7 +102,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     private let voiceCallBusy: () -> Bool
     private let toasts: ToastCenter
 
-    // ── live mesh state (cleared on every teardown) ──────────
+    // live mesh state (cleared on every teardown)
     private var peers: [String: any PulseGroupCallPeerConnecting] = [:]
     private var peerBridges: [String: MeshPeerBridge] = [:]
     private var pendingIce: [String: [CallIceEnvelope]] = [:]
@@ -118,7 +116,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     private var ringArrivedAt: Date?
     /// The conversation currently open on screen (drives the probe +
     /// the ONGOING banner, web hook options.conversationId parity).
-    /// Public read-only since 3-d — ChatRoomView's onDisappear compares it
+    /// Public read-only since 3-d - ChatRoomView's onDisappear compares it
     /// before standing the room's probe/banner down.
     public private(set) var activeConversationId: String?
     /// The conversation whose live call the ONGOING banner describes
@@ -127,7 +125,7 @@ public final class PulseGroupCallEngine: ObservableObject {
 
     private var cancellables: Set<AnyCancellable> = []
 
-    /// Weak process-wide mirror of the LIVE group engine — the 1:1 engine
+    /// Weak process-wide mirror of the LIVE group engine - the 1:1 engine
     /// consults it so the two call surfaces never fight over the audio
     /// session. Set in init; a session restart replaces it, `stop()` drops
     /// it (weak → nil on dealloc).
@@ -166,17 +164,17 @@ public final class PulseGroupCallEngine: ObservableObject {
     }
 
     deinit {
-        // No actor-isolated state is touched here — the weak static mirror
+        // No actor-isolated state is touched here - the weak static mirror
         // clears itself on dealloc and the Combine subscriptions die with
         // the cancellables store.
     }
 
-    /// UI gating — one call at a time across BOTH engines.
+    /// UI gating - one call at a time across BOTH engines.
     public var isBusy: Bool { uiState != .idle }
     /// True while joined/joining (banner + CallKit coordination).
     public var isInCall: Bool { uiState == .joining || uiState == .active }
 
-    // ── room context (ChatRoomView onAppear/onDisappear) ─────
+    // room context (ChatRoomView onAppear/onDisappear)
 
     /// The open group conversation. Setting it kicks an immediate probe
     /// (web effect-on-mount parity); clearing it hides the ONGOING banner.
@@ -189,7 +187,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         probeNow()
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     /// Start a NEW group call in the open conversation (rings everyone:
     /// online → gcall:ring relay, offline → push fanout).
@@ -197,14 +195,14 @@ public final class PulseGroupCallEngine: ObservableObject {
         startJoin(conversationId, wanted: wanted, ringOthers: true, title: title)
     }
 
-    /// Accept an incoming ring (the ring already went out — NEVER re-rings).
+    /// Accept an incoming ring (the ring already went out - NEVER re-rings).
     public func joinCall() {
         guard let target = ring, uiState == .idle else { return }
         PulseHaptics.tap()
         startJoin(target.conversationId, wanted: target.kind, ringOthers: false, title: target.title.isEmpty ? displayTitle : target.title)
     }
 
-    /// Silently join the ONGOING call in the open room — never re-rings.
+    /// Silently join the ONGOING call in the open room - never re-rings.
     public func joinOngoing() {
         guard uiState == .idle, let conv = ongoingConversationId else { return }
         PulseHaptics.tap()
@@ -247,7 +245,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         uiState = .idle
     }
 
-    /// Mute = the ONE shared audio track's isEnabled flip — every mesh peer
+    /// Mute = the ONE shared audio track's isEnabled flip - every mesh peer
     /// sees it at once (web track.enabled on the single stream parity).
     public func toggleMic() {
         guard isInCall else { return }
@@ -256,7 +254,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         PulseHaptics.tap()
     }
 
-    /// Camera (video) toggle — the shared camera track's isEnabled flip.
+    /// Camera (video) toggle - the shared camera track's isEnabled flip.
     public func toggleCamera() {
         guard kind == .video, cameraLive, localVideoTrack != nil else { return }
         cameraEnabled.toggle()
@@ -270,9 +268,9 @@ public final class PulseGroupCallEngine: ObservableObject {
         media.switchSharedCamera()
     }
 
-    // ── socket disconnect (mission spec: teardown on disconnect) ──
+    // socket disconnect (mission spec: teardown on disconnect)
 
-    /// The relay connection dropped while joined — the mesh is dead
+    /// The relay connection dropped while joined - the mesh is dead
     /// (media kept flowing to a socket that stopped routing), so tear down
     /// honestly instead of ghosting. The web hook tolerates transient
     /// reconnects; iOS suspensions kill the socket, so the honest state is
@@ -284,7 +282,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         summary = "Connection lost"
     }
 
-    // ── the join pipeline (web startJoin parity) ─────────────
+    // the join pipeline (web startJoin parity)
 
     private func startJoin(_ targetConvId: String, wanted: CallKind, ringOthers: Bool, title: String) {
         guard uiState == .idle else { return }
@@ -294,7 +292,7 @@ public final class PulseGroupCallEngine: ObservableObject {
             return
         }
         guard connectedProvider() else {
-            toasts.show("You are offline — calls need a connection")
+            toasts.show("You are offline - calls need a connection")
             return
         }
         joinIntent = true
@@ -316,7 +314,7 @@ public final class PulseGroupCallEngine: ObservableObject {
             let cameraOk = await media.requestCameraPermission() && media.canCaptureVideo()
             guard uiState == .joining, joinedConv == nil else { return }
             if !cameraOk {
-                toasts.show("Camera unavailable — joining as a voice call")
+                toasts.show("Camera unavailable - joining as a voice call")
                 resolved = .voice
                 kind = .voice
             }
@@ -348,8 +346,8 @@ public final class PulseGroupCallEngine: ObservableObject {
             cameraEnabled = false
             localVideoTrack = nil
             if resolved == .video {
-                // Capture refused mid-join (device yanked) — degrade honestly.
-                toasts.show("Camera unavailable — joining as a voice call")
+                // Capture refused mid-join (device yanked) - degrade honestly.
+                toasts.show("Camera unavailable - joining as a voice call")
                 resolved = .voice
                 kind = .voice
             }
@@ -370,7 +368,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         ))
         if ringOthers {
             // Ring the other members (online → socket banner, offline → push).
-            // Fire-and-forget — the response only confirms validation.
+            // Fire-and-forget - the response only confirms validation.
             Task { await ringOthersViaApi(conversationId: convId, kind: resolved) }
         }
     }
@@ -384,7 +382,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         }
     }
 
-    // ── mesh bookkeeping ─────────────────────────────────────
+    // mesh bookkeeping
 
     /// One peer connection per remote member, fed from the ONE shared local
     /// acquisition (web ensurePeerConnection :212-245 parity).
@@ -420,7 +418,7 @@ public final class PulseGroupCallEngine: ObservableObject {
 
     /// Roster sync for a call I'm in. Departed members get their connection
     /// closed; arrivals whose id sorts below mine get my offer (web
-    /// applyRoster parity — the deterministic mesh rule lives in the policy).
+    /// applyRoster parity - the deterministic mesh rule lives in the policy).
     private func applyRoster(_ roster: [PulseGroupCallMember], rosterConvId: String) {
         members = roster
         ongoingMembers = roster
@@ -506,14 +504,14 @@ public final class PulseGroupCallEngine: ObservableObject {
         }
     }
 
-    // ── signaling inbound (session routes .groupCallSignal here) ──
+    // signaling inbound (session routes .groupCallSignal here)
 
     public func handleGroupCallSignal(event: String, raw: [String: Any]) {
         switch event {
         case "gcall:ring":
             guard let decoded = Ring.decode(raw) else { return }
             guard decoded.caller.id != viewer.id else { return }
-            // Only ring when idle — a participant never sees their own ring
+            // Only ring when idle - a participant never sees their own ring
             // (web :459-464). The ended-card state stays untouched too.
             guard uiState == .idle else { return }
             ring = decoded
@@ -523,18 +521,18 @@ public final class PulseGroupCallEngine: ObservableObject {
         case "gcall:state":
             guard let conv = raw["conversationId"] as? String, !conv.isEmpty else { return }
             // Web applyRoster parity (group-call-overlay.tsx :470): states for
-            // conversations other than the OPEN room are ignored — no phantom
+            // conversations other than the OPEN room are ignored - no phantom
             // 'Ongoing' banners for rooms you are not looking at. The one
             // addition to the web rule: a state for the call I am actually IN
             // still syncs the roster when its room is closed (the shell-level
-            // overlay must stay consistent — web only ever filters the banner
+            // overlay must stay consistent - web only ever filters the banner
             // path, its session dies with the room's page context).
             guard conv == activeConversationId || conv == joinedConv else { return }
             let roster = PulseGroupCallMember.decodeList(raw["members"])
             let iAmMember = roster.contains { $0.id == viewer.id }
             if iAmMember {
                 // Membership per the relay (this device joined, or the same
-                // account joined from ANOTHER device — iOS never silently
+                // account joined from ANOTHER device - iOS never silently
                 // attaches media for the cross-device case; joinedConv is
                 // only ever set by the local join pipeline).
                 ongoingElsewhere = false
@@ -575,7 +573,7 @@ public final class PulseGroupCallEngine: ObservableObject {
                     sdpMLineIndex: ice.sdpMLineIndex,
                 ) }
             } else {
-                // Early candidate (the peer's SDP hasn't landed yet) — queue
+                // Early candidate (the peer's SDP hasn't landed yet) - queue
                 // until the remote description arrives, then drain.
                 pendingIce[peerId, default: []].append(ice)
             }
@@ -605,7 +603,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         }
     }
 
-    // ── ongoing-call probe (web 20s probe parity) ────────────
+    // ongoing-call probe (web 20s probe parity)
 
     private func probeNow() {
         guard uiState == .idle, joinedConv == nil,
@@ -634,13 +632,13 @@ public final class PulseGroupCallEngine: ObservableObject {
         }
     }
 
-    // ── heartbeat ────────────────────────────────────────────
+    // heartbeat
 
     func tick() {
         if uiState == .active, let joinedAt {
             durationSec = max(0, Int(Date().timeIntervalSince(joinedAt).rounded()))
         }
-        // The local ring guard — group rings have no server-side timeout;
+        // The local ring guard - group rings have no server-side timeout;
         // a stuck incoming surface is worse than a missed ring.
         if ring != nil, let arrivedAt = ringArrivedAt,
            Date().timeIntervalSince(arrivedAt) >= PulseGroupCallPolicy.ringTimeoutSec {
@@ -649,7 +647,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         }
     }
 
-    // ── teardown ─────────────────────────────────────────────
+    // teardown
 
     private func teardownMedia() {
         for (_, pc) in peers {
@@ -678,7 +676,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         PulseCallAudioSession.shared.restore()
     }
 
-    // ── peer bridge callbacks (main actor via MeshPeerBridge) ──
+    // peer bridge callbacks (main actor via MeshPeerBridge)
 
     func handleLocalCandidate(peerId: String, candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) {
         guard let conv = joinedConv else { return }
@@ -697,14 +695,14 @@ public final class PulseGroupCallEngine: ObservableObject {
         peerStates[peerId] = state
     }
 
-    /// A remote member's video track arrived over their m=video line —
+    /// A remote member's video track arrived over their m=video line -
     /// publish it so the grid tile renders the live surface.
     func handleRemoteVideoTrack(peerId: String, track: RTCVideoTrack) {
         guard remoteTracks[peerId] !== track else { return }
         remoteTracks[peerId] = track
     }
 
-    // ── peer bridge (WebRTC callbacks → main actor, per peer) ──
+    // peer bridge (WebRTC callbacks → main actor, per peer)
 
     /// Nonisolated bridge: WebRTC threads land here, then hop to the main
     /// actor before touching engine state (PulseCallEngine.PeerBridge

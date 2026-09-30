@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// R2-D ITEM 8 — spotlight recent-searches store (web spotlight.tsx:46-73).
+/// R2-D ITEM 8 - spotlight recent-searches store (web spotlight.tsx:46-73).
 /// Pure-logic asserts run allSatisfy-style per the R1-CLOSE test lessons;
 /// storage tests ride an isolated UserDefaults suite.
 final class PulseSpotlightRecentsTests: XCTestCase {
@@ -12,7 +12,7 @@ final class PulseSpotlightRecentsTests: XCTestCase {
         return (PulseSpotlightRecents(defaults: defaults), defaults, suiteName)
     }
 
-    // ── the pure sanitizer ──────────────────────────────────
+    // the pure sanitizer
 
     func testSanitizeDedupesCaseInsensitivelyKeepingNewest() {
         let out = PulseSpotlightRecents.sanitize([
@@ -36,7 +36,7 @@ final class PulseSpotlightRecentsTests: XCTestCase {
         XCTAssertEqual(out, ["beach trip", "budget"])
     }
 
-    // ── storage round trip ──────────────────────────────────
+    // storage round trip
 
     func testPushPrependsAndDedupesAcrossWrites() {
         let (store, defaults, suiteName) = makeStore()
@@ -47,7 +47,7 @@ final class PulseSpotlightRecentsTests: XCTestCase {
         XCTAssertEqual(store.read(), ["party plans", "contracts"])
 
         // Re-pushing an existing query (any case) moves it to the front and
-        // adopts the new casing — web pushRecent prepends the trimmed query
+        // adopts the new casing - web pushRecent prepends the trimmed query
         // verbatim (spotlight.tsx pushRecent).
         store.push("CONTRACTS")
         XCTAssertEqual(store.read(), ["CONTRACTS", "party plans"])

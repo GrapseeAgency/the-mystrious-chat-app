@@ -1,11 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — SettingsScreen (R26-c): section-by-section glass
+// Pulse Chat - SettingsScreen (R26-c): section-by-section glass
 // settings. Root = a compact grouped section list (NO search, NO
 // top overlay); every section opens a full sub-page with its own
-// glass sub-header, hash-routed via #/settings/<id> — browser
+// glass sub-header, hash-routed via #/settings/<id> - browser
 // back works, deep links land directly inside the section.
 //
-// Every control is wired to REAL persisted state — zero mocks:
+// Every control is wired to REAL persisted state - zero mocks:
 // - Color mode          → next-themes useTheme
 // - UI language         → useUiThemeStore ([data-ui] CSS vars)
 // - Navigation style    → useNavStyleStore (nav-router swaps live)
@@ -19,8 +18,7 @@
 //
 // Glass language (locked R26 refs): .glass-deep + .glass-sheen
 // shells, .glass-pill segmented pickers, .glass-row-hover rows,
-// GlassMenu popups. Zero emojis — Lucide icons only.
-// ─────────────────────────────────────────────────────────────
+// GlassMenu popups. Zero emojis - Lucide icons only.
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -139,6 +137,7 @@ import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import { pressTap, spring } from '@/lib/motion'
 import { useMounted } from '@/hooks/use-mounted'
 import { cn } from '@/lib/utils'
+import { statusLabelFor } from '@/components/profile/status-glyph'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
@@ -150,12 +149,12 @@ import {
   GlassMenuSeparator,
 } from '@/components/ui/glass-menu'
 
-/** Build metadata — mirrored by hand from package.json (version is not an import). */
+/** Build metadata - mirrored by hand from package.json (version is not an import). */
 const PULSE_VERSION = '0.2.1'
 
 const GITHUB_URL = 'https://github.com/GrapseeAgency/the-mystrious-chat-app'
 
-// ── section registry ─────────────────────────────────────────
+// section registry 
 
 type SectionId =
   | 'account'
@@ -232,7 +231,7 @@ const SECTION_MAP: Record<SectionId, SectionDef> = {
   },
 }
 
-/** Root groups — the compact section list order. */
+/** Root groups - the compact section list order. */
 const SECTION_GROUPS: Array<{ label: string; ids: SectionId[] }> = [
   { label: 'Personal', ids: ['account', 'appearance', 'chat', 'notifications'] },
   { label: 'System', ids: ['privacy', 'realtime', 'accessibility'] },
@@ -240,7 +239,7 @@ const SECTION_GROUPS: Array<{ label: string; ids: SectionId[] }> = [
   { label: 'About', ids: ['about'] },
 ]
 
-// ── real preference data (wallpapers are consumed by chat-room) ──
+// real preference data (wallpapers are consumed by chat-room) 
 
 const WALLPAPERS: Array<{ id: PulsePrefs['wallpaper']; label: string; preview: string }> = [
   { id: 'none', label: 'None', preview: 'bg-zinc-100 dark:bg-zinc-800' },
@@ -295,7 +294,7 @@ const THEME_ICONS: Record<UiThemeId, LucideIcon> = {
   aero: Wind,
 }
 
-// ── entrance variants (reduced-motion aware) ─────────────────
+// entrance variants (reduced-motion aware) 
 
 type NavDirection = 'forward' | 'back'
 
@@ -309,7 +308,7 @@ const rowVariants: Variants = {
   show: { opacity: 1, y: 0, transition: spring.soft },
 }
 
-// ── small building blocks ────────────────────────────────────
+// small building blocks 
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -358,7 +357,7 @@ function IconTile({ Icon }: { Icon: RowIcon }) {
   )
 }
 
-/** Static info row (no control) — always backed by real state in its caption/trailing. */
+/** Static info row (no control) - always backed by real state in its caption/trailing. */
 function StaticRow({
   Icon,
   title,
@@ -388,7 +387,7 @@ function StaticRow({
   )
 }
 
-/** Real toggle row — `checked`/`onCheckedChange` always bind to a live store. */
+/** Real toggle row - `checked`/`onCheckedChange` always bind to a live store. */
 function ToggleRow({
   Icon,
   title,
@@ -643,7 +642,7 @@ function StatTile({ Icon, value, label }: { Icon: LucideIcon; value: number | st
   )
 }
 
-// ── popup plumbing (GlassMenu language) ──────────────────────
+// popup plumbing (GlassMenu language) 
 
 type MenuKind = 'ui-theme' | 'nav-style'
 
@@ -663,7 +662,7 @@ function MenuBackdrop({ onClose, children }: { onClose: () => void; children: Re
   )
 }
 
-// ── root section row ─────────────────────────────────────────
+// root section row 
 
 function RootRow({
   def,
@@ -697,7 +696,7 @@ function RootRow({
   )
 }
 
-// ── sub-page shell (glass sub-header + slide-in) ─────────────
+// sub-page shell (glass sub-header + slide-in) 
 
 function SectionPage({
   def,
@@ -751,7 +750,7 @@ function SectionPage({
   )
 }
 
-// ── shared section context ───────────────────────────────────
+// shared section context 
 
 interface SectionCtx {
   user: AppUser | null
@@ -761,7 +760,7 @@ interface SectionCtx {
   mounted: boolean
   stats: UseQueryResult<UserStats>
   openMenu: (kind: MenuKind) => void
-  /** closes settings — the Profile tab lives one level below */
+  /** closes settings - the Profile tab lives one level below */
   onEditProfile: () => void
   onOpenHub?: () => void
   connected: boolean
@@ -772,13 +771,13 @@ interface SectionCtx {
   onInstall: () => void
 }
 
-// ── Account ──────────────────────────────────────────────────
+// Account 
 
 function AccountSection({ ctx }: { ctx: SectionCtx }) {
   const { user } = ctx
   const statusLine =
     user !== null && (user.statusEmoji !== null || user.statusText !== null)
-      ? `${user.statusEmoji ?? ''} ${user.statusText ?? ''}`.trim()
+      ? [statusLabelFor(user.statusEmoji), user.statusText ?? ''].filter(Boolean).join(' ').trim()
       : (user?.about ?? '')
 
   const copyUserId = async () => {
@@ -787,7 +786,7 @@ function AccountSection({ ctx }: { ctx: SectionCtx }) {
       await navigator.clipboard.writeText(user.id)
       toast.success('User ID copied')
     } catch {
-      toast.error('Copy failed — clipboard unavailable')
+      toast.error('Copy failed - clipboard unavailable')
     }
   }
 
@@ -829,7 +828,7 @@ function AccountSection({ ctx }: { ctx: SectionCtx }) {
         <PickerRow
           Icon={UserRound}
           title="Edit profile"
-          caption="Name, handle, status and avatar — in the Profile tab"
+          caption="Name, handle, status and avatar - in the Profile tab"
           value="Open"
           onClick={ctx.onEditProfile}
         />
@@ -843,7 +842,7 @@ function AccountSection({ ctx }: { ctx: SectionCtx }) {
               User ID
             </span>
             <span className="block truncate font-mono text-[11.5px] text-zinc-500 dark:text-zinc-400">
-              {user?.id ?? '—'}
+              {user?.id ?? '-'}
             </span>
           </span>
           <Button
@@ -860,7 +859,7 @@ function AccountSection({ ctx }: { ctx: SectionCtx }) {
         <StaticRow
           Icon={Smartphone}
           title="Session scope"
-          caption="Signed in on this browser tab only (sessionStorage) — other tabs can hold a different account."
+          caption="Signed in on this browser tab only (sessionStorage) - other tabs can hold a different account."
           trailing={<StatusBadge tone={user ? 'ok' : 'off'}>{user ? 'Active' : 'None'}</StatusBadge>}
         />
       </Group>
@@ -868,7 +867,7 @@ function AccountSection({ ctx }: { ctx: SectionCtx }) {
   )
 }
 
-// ── Appearance — color mode, UI languages, navigation ────────
+// Appearance - color mode, UI languages, navigation 
 
 function AppearanceSection({ ctx }: { ctx: SectionCtx }) {
   const { theme, setTheme } = useTheme()
@@ -911,7 +910,7 @@ function AppearanceSection({ ctx }: { ctx: SectionCtx }) {
         />
         <FooterNote>
           Running <span className="font-semibold text-zinc-500 dark:text-zinc-400">{themeMeta.label}</span>{' '}
-          with {themeMeta.motion} motion — each language restyles every surface through its own
+          with {themeMeta.motion} motion - each language restyles every surface through its own
           design tokens, instantly.
         </FooterNote>
       </Group>
@@ -920,12 +919,12 @@ function AppearanceSection({ ctx }: { ctx: SectionCtx }) {
         <PickerRow
           Icon={NAV_ICONS[navStyle]}
           title="Navigation style"
-          caption={navMeta ? `${navMeta.hint} — ${navMeta.zone} zone` : undefined}
+          caption={navMeta ? `${navMeta.hint} - ${navMeta.zone} zone` : undefined}
           value={navMeta?.label ?? 'Floating Capsule'}
           onClick={() => ctx.openMenu('nav-style')}
         />
         <FooterNote>
-          Thirteen architectures are available — switching applies to the shell navigation
+          Thirteen architectures are available - switching applies to the shell navigation
           immediately.
         </FooterNote>
       </Group>
@@ -933,12 +932,12 @@ function AppearanceSection({ ctx }: { ctx: SectionCtx }) {
         <PickerBlock
           Icon={Sparkles}
           title="WebGL ambience"
-          caption="A living GPU shader field behind every surface — pauses when hidden, honors reduced motion."
+          caption="A living GPU shader field behind every surface - pauses when hidden, honors reduced motion."
         >
           <WebglModePicker value={prefs['fx.webglMode']} onChange={(m) => save({ 'fx.webglMode': m })} />
         </PickerBlock>
         <FooterNote>
-          Six realtime shader modes — off keeps the DOM particle layer instead. Each mode is a
+          Six realtime shader modes - off keeps the DOM particle layer instead. Each mode is a
           different ambient world: aurora bands, glass caustics, gradient mesh, star drift, liquid
           metaballs.
         </FooterNote>
@@ -991,7 +990,7 @@ function ChatSection({ ctx }: { ctx: SectionCtx }) {
         <PickerBlock
           Icon={ImageIcon}
           title="Chat wallpaper"
-          caption={`Background behind every chat room — currently ${wallpaperLabel}.`}
+          caption={`Background behind every chat room - currently ${wallpaperLabel}.`}
         >
           <div className="grid grid-cols-5 gap-2 pb-1" role="radiogroup" aria-label="Chat wallpaper">
             {WALLPAPERS.map((w) => {
@@ -1097,7 +1096,7 @@ function ChatSection({ ctx }: { ctx: SectionCtx }) {
           caption={
             ctx.mounted && ctx.queuedCount > 0
               ? `${ctx.queuedCount} ${ctx.queuedCount === 1 ? 'message' : 'messages'} waiting to send when you're back online.`
-              : 'Empty — every composed message has been delivered.'
+              : 'Empty - every composed message has been delivered.'
           }
           trailing={
             ctx.mounted && ctx.queuedCount > 0 ? (
@@ -1112,7 +1111,7 @@ function ChatSection({ ctx }: { ctx: SectionCtx }) {
   )
 }
 
-// ── Notifications — real alert gates + quiet hours ───────────
+// Notifications - real alert gates + quiet hours 
 
 function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
   const { prefs, save, user } = ctx
@@ -1125,7 +1124,7 @@ function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
   const quietEnd = pulseSettingsStore((s) => s.quietEnd)
   const setQuietEnd = pulseSettingsStore((s) => s.setQuietEnd)
 
-  // Remote push (Web Push / VAPID) — registers this browser with the server
+  // Remote push (Web Push / VAPID) - registers this browser with the server
   // transport so notifications arrive with every tab closed.
   const [pushStatus, setPushStatus] = useState<WebPushStatus | 'checking'>('checking')
   const [pushBusy, setPushBusy] = useState(false)
@@ -1200,7 +1199,7 @@ function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
             pushStatus === 'subscribed'
               ? 'This device receives pushes even with the app closed.'
               : pushStatus === 'denied'
-                ? 'Blocked — allow notifications in the browser settings first.'
+                ? 'Blocked - allow notifications in the browser settings first.'
                 : pushStatus === 'unsupported'
                   ? 'Not supported by this browser/device.'
                   : 'Deliver notifications to this device via the server (works app-closed).'
@@ -1250,7 +1249,7 @@ function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
             <StaticRow
               Icon={MoonStar}
               title="Window status"
-              caption={`${quietStart} → ${quietEnd} — overnight windows are supported.`}
+              caption={`${quietStart} → ${quietEnd} - overnight windows are supported.`}
               trailing={<StatusBadge tone={quietNow ? 'warn' : 'info'}>{quietNow ? 'Active now' : 'Idle'}</StatusBadge>}
             />
           </>
@@ -1280,7 +1279,7 @@ function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
   )
 }
 
-// ── Privacy & Security — the real synced controls ────────────
+// Privacy & Security - the real synced controls 
 
 /** One row of the R47 blocked-accounts manager (self-service list). */
 type BlockedAccount = {
@@ -1319,7 +1318,7 @@ function PrivacySection({ ctx }: { ctx: SectionCtx }) {
       haptic(12)
       if (user) {
         void queryClient.invalidateQueries({ queryKey: ['blocked-accounts', user.id] })
-        // DM dead-end notices read detail.dmBlocked — refresh live rooms too
+        // DM dead-end notices read detail.dmBlocked - refresh live rooms too
         void queryClient.invalidateQueries({ queryKey: ['conversation'] })
       }
       toast.success('Account unblocked')
@@ -1437,7 +1436,7 @@ function PrivacySection({ ctx }: { ctx: SectionCtx }) {
         ) : null}
       </Group>
       <FooterNote>
-        These sync to your Pulse account and are enforced server-side — hidden
+        These sync to your Pulse account and are enforced server-side - hidden
         last-seen also hides your online status, hidden typing ends the relay
         before it reaches anyone, and blocked accounts cannot DM you.
       </FooterNote>
@@ -1445,7 +1444,7 @@ function PrivacySection({ ctx }: { ctx: SectionCtx }) {
   )
 }
 
-// ── Real-time & Voice — live socket state ────────────────────
+// Real-time & Voice - live socket state 
 
 function RealtimeSection({ ctx }: { ctx: SectionCtx }) {
   const [deviceOnline, setDeviceOnline] = useState(() =>
@@ -1471,8 +1470,8 @@ function RealtimeSection({ ctx }: { ctx: SectionCtx }) {
           title={ctx.connected ? 'Realtime socket' : 'Reconnecting'}
           caption={
             ctx.connected
-              ? 'Connected — messages, presence and typing stream live.'
-              : 'Socket offline — outgoing messages queue in the offline outbox.'
+              ? 'Connected - messages, presence and typing stream live.'
+              : 'Socket offline - outgoing messages queue in the offline outbox.'
           }
           trailing={<StatusBadge tone={ctx.connected ? 'ok' : 'off'}>{ctx.connected ? 'Live' : 'Down'}</StatusBadge>}
         />
@@ -1487,8 +1486,8 @@ function RealtimeSection({ ctx }: { ctx: SectionCtx }) {
           title="Device network"
           caption={
             deviceOnline
-              ? 'This device is online — delivery is instant.'
-              : 'This device is offline — messages wait in the queue.'
+              ? 'This device is online - delivery is instant.'
+              : 'This device is offline - messages wait in the queue.'
           }
           trailing={<StatusBadge tone={deviceOnline ? 'ok' : 'warn'}>{deviceOnline ? 'Online' : 'Offline'}</StatusBadge>}
         />
@@ -1505,7 +1504,7 @@ function RealtimeSection({ ctx }: { ctx: SectionCtx }) {
   )
 }
 
-// ── Accessibility — motion + haptics (real state) ────────────
+// Accessibility - motion + haptics (real state) 
 
 function AccessibilitySection({ ctx }: { ctx: SectionCtx }) {
   const [sysReduced, setSysReduced] = useState(false)
@@ -1524,7 +1523,7 @@ function AccessibilitySection({ ctx }: { ctx: SectionCtx }) {
         <ToggleRow
           Icon={Accessibility}
           title="Reduced motion"
-          description="Calm the interface — instant transitions, no parallax or message effects."
+          description="Calm the interface - instant transitions, no parallax or message effects."
           checked={ctx.prefs.reducedMotion}
           onCheckedChange={(v) => ctx.save({ reducedMotion: v })}
         />
@@ -1544,7 +1543,7 @@ function AccessibilitySection({ ctx }: { ctx: SectionCtx }) {
         <ToggleRow
           Icon={Vibrate}
           title="Haptics"
-          description="Vibration on taps, sends and incoming alerts — where the device supports it."
+          description="Vibration on taps, sends and incoming alerts - where the device supports it."
           checked={pulseSettingsStore((s) => s.hapticsOn)}
           onCheckedChange={pulseSettingsStore((s) => s.setHapticsOn)}
         />
@@ -1553,7 +1552,7 @@ function AccessibilitySection({ ctx }: { ctx: SectionCtx }) {
   )
 }
 
-// ── Data & Storage — footprint, cache actions, install ───────
+// Data & Storage - footprint, cache actions, install 
 
 function DataSection({ ctx }: { ctx: SectionCtx }) {
   const { stats } = ctx
@@ -1638,7 +1637,7 @@ function DataSection({ ctx }: { ctx: SectionCtx }) {
         <ActionRow
           Icon={FileText}
           title="Composer drafts"
-          caption={`${ctx.draftCount} saved on this device — clearing frees their storage.`}
+          caption={`${ctx.draftCount} saved on this device - clearing frees their storage.`}
           actionLabel="Clear"
           onAction={clearAllDrafts}
           disabled={ctx.draftCount === 0}
@@ -1648,8 +1647,8 @@ function DataSection({ ctx }: { ctx: SectionCtx }) {
           title="Offline queue"
           caption={
             ctx.queuedCount > 0
-              ? `${ctx.queuedCount} waiting — discarding drops them without sending.`
-              : 'Empty — nothing queued right now.'
+              ? `${ctx.queuedCount} waiting - discarding drops them without sending.`
+              : 'Empty - nothing queued right now.'
           }
           actionLabel="Discard"
           onAction={clearOutbox}
@@ -1662,7 +1661,7 @@ function DataSection({ ctx }: { ctx: SectionCtx }) {
           <PickerRow
             Icon={Download}
             title="Install Pulse"
-            caption="Add to your home screen — opens instantly, works offline."
+            caption="Add to your home screen - opens instantly, works offline."
             value="Install"
             onClick={ctx.onInstall}
           />
@@ -1670,7 +1669,7 @@ function DataSection({ ctx }: { ctx: SectionCtx }) {
           <StaticRow
             Icon={Smartphone}
             title="Install Pulse"
-            caption="Your browser hasn't offered the install prompt yet — check its menu (Share → Add to Home Screen)."
+            caption="Your browser hasn't offered the install prompt yet - check its menu (Share → Add to Home Screen)."
           />
         )}
       </Group>
@@ -1690,7 +1689,7 @@ function DataSection({ ctx }: { ctx: SectionCtx }) {
   )
 }
 
-// ── About — honest build info + project link ─────────────────
+// About - honest build info + project link 
 
 function AboutSection() {
   return (
@@ -1711,7 +1710,7 @@ function AboutSection() {
           </div>
           <p className="pt-3 text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
             Chats, groups, topics, threads, polls, games, red packets, voice rooms, stages and the
-            Hub economy all run on the real Pulse API with zero mock data — and every control in
+            Hub economy all run on the real Pulse API with zero mock data - and every control in
             these settings is backed by live state.
           </p>
         </div>
@@ -1767,7 +1766,7 @@ function AboutSection() {
   )
 }
 
-// ── main component ───────────────────────────────────────────
+// main component 
 
 export function SettingsScreen({
   open,
@@ -1789,11 +1788,11 @@ export function SettingsScreen({
   const reducedFx = useReducedMotion()
   const mounted = useMounted()
 
-  // hash sub-page routing — #/settings/<id> with working browser back
+  // hash sub-page routing - #/settings/<id> with working browser back
   const { path, navigate, back } = useHashNav()
   const { isConnected, onlineIds } = usePulseRealtime()
 
-  // real registries — selection applies to the whole app instantly
+  // real registries - selection applies to the whole app instantly
   const uiTheme = useUiThemeStore((s) => s.theme)
   const setUiTheme = useUiThemeStore((s) => s.setTheme)
   const navStyle = useNavStyleStore((s) => s.style)
@@ -1830,7 +1829,7 @@ export function SettingsScreen({
 
   const reduced = Boolean(reducedFx) || prefs.reducedMotion
 
-  // real footprint numbers from the live DB — fetched while settings is open
+  // real footprint numbers from the live DB - fetched while settings is open
   const stats = useQuery({
     queryKey: ['user-stats', user?.id ?? '-'],
     enabled: open && !!user,
@@ -1859,7 +1858,7 @@ export function SettingsScreen({
 
   const goBack = () => {
     haptic(8)
-    // a section's back lands on the settings ROOT — never exits the tree
+    // a section's back lands on the settings ROOT - never exits the tree
     back('/settings')
   }
 
@@ -1942,7 +1941,7 @@ export function SettingsScreen({
     >
       <AnimatePresence initial={false}>
         {def === null ? (
-          // ── root: compact grouped section list (no search, no overlay) ──
+          // root: compact grouped section list (no search, no overlay) 
           <motion.div
             key="root"
             initial={reduced ? { opacity: 0 } : { opacity: 0, x: direction === 'forward' ? -28 : 28 }}
@@ -2005,13 +2004,13 @@ export function SettingsScreen({
                   </motion.section>
                 ))}
                 <p className="pb-2 pt-1 text-center text-[11px] text-zinc-400 dark:text-zinc-500">
-                  Pulse v{PULSE_VERSION} — every control here is live.
+                  Pulse v{PULSE_VERSION} - every control here is live.
                 </p>
               </motion.div>
             </div>
           </motion.div>
         ) : (
-          // ── section sub-page: glass sub-header + direction-aware slide ──
+          // section sub-page: glass sub-header + direction-aware slide 
           <SectionPage key={def.id} def={def} direction={direction} reduced={reduced} onBack={goBack}>
             {renderSection(def.id)}
           </SectionPage>

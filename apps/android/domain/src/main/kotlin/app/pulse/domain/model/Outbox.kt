@@ -3,7 +3,7 @@ package app.pulse.domain.model
 import kotlinx.serialization.Serializable
 
 /**
- * One held-for-later outgoing message — the framework-free mirror of the
+ * One held-for-later outgoing message - the framework-free mirror of the
  * wire outbox (web src/lib/pulse-outbox.ts QueuedMessage). `clientId` is
  * the stable id that links the optimistic `local_<clientId>` message row,
  * the Room outbox row and the flush bookkeeping.
@@ -15,7 +15,7 @@ data class OutboxEntry(
     val clientId: String,
     val content: String,
     val kind: String = "text",
-    /** ISO-8601 wire timestamp — display time of the queued bubble. */
+    /** ISO-8601 wire timestamp - display time of the queued bubble. */
     val createdAt: String,
     /** failed POST count (diagnostics; incremented on retryable failures). */
     val attempts: Int = 0,
@@ -36,10 +36,10 @@ data class FlushReport(
 
 /** How the outbox drain policy treats one failed send attempt. */
 enum class OutboxFailureClass {
-    /** Definitive server verdict (validation/forbidden/not-found/auth) — the entry will never deliver. */
+    /** Definitive server verdict (validation/forbidden/not-found/auth) - the entry will never deliver. */
     DROP,
 
-    /** Network-class / server hiccup — keep the entry and retry later. */
+    /** Network-class / server hiccup - keep the entry and retry later. */
     RETRY,
 }
 

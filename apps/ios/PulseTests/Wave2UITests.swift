@@ -1,16 +1,16 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 2 UI-logic tests — pure functions only (no network, no mic, no TCC):
+/// Wave 2 UI-logic tests - pure functions only (no network, no mic, no TCC):
 /// voice duration rounding, the unfurl trigger, and the topic self-heal.
 final class Wave2UITests: XCTestCase {
-    // ── VoiceMath — the web rounding contract (spec §1 row 11) ──
+    // VoiceMath - the web rounding contract (spec §1 row 11)
 
     func testRoundedDurationQuantizesTo100msAndFloorsAtOne() {
         XCTAssertEqual(VoiceMath.roundedDurationMs(fromElapsedMs: 647), 600)
         XCTAssertEqual(VoiceMath.roundedDurationMs(fromElapsedMs: 651), 700)
         XCTAssertEqual(VoiceMath.roundedDurationMs(fromElapsedMs: 1000), 1000)
-        // Never send 0 — 40ms quantizes to 0 → clamped to 1.
+        // Never send 0 - 40ms quantizes to 0 → clamped to 1.
         XCTAssertEqual(VoiceMath.roundedDurationMs(fromElapsedMs: 40), 1)
         XCTAssertEqual(VoiceMath.roundedDurationMs(fromElapsedMs: 0), 1)
     }
@@ -29,11 +29,11 @@ final class Wave2UITests: XCTestCase {
         XCTAssertEqual(VoicePlaybackManager.nextRate(after: 3.7), 1.5)
     }
 
-    // ── VoiceWaveform — the web voiceBars LCG (D31) ─────────────
+    // VoiceWaveform - the web voiceBars LCG (D31)
 
     func testVoiceBubbleBarsMatchTheWebLCG() {
         // Vectors generated from the web implementation (chat-room.tsx:6232 +
-        // pulse-utils.ts:59 hashString) via node — the same message id must
+        // pulse-utils.ts:59 hashString) via node - the same message id must
         // render the SAME decorative bars on web, Android and iOS.
         XCTAssertEqual(
             VoiceWaveform.bars(for: "abc123"),
@@ -48,7 +48,7 @@ final class Wave2UITests: XCTestCase {
         XCTAssertTrue(VoiceWaveform.bars(for: "any-id").allSatisfy { (28...100).contains($0) })
     }
 
-    // ── UnfurlTrigger — http(s):// or bare www. ─────────────────
+    // UnfurlTrigger - http(s):// or bare www.
 
     func testUnfurlTriggerDetectsLinks() {
         XCTAssertTrue(UnfurlTrigger.matches("look at https://example.com/x"))
@@ -61,7 +61,7 @@ final class Wave2UITests: XCTestCase {
         XCTAssertFalse(UnfurlTrigger.matches("awww no"))
     }
 
-    // ── TopicHeal — deleted active topic resets to General ──────
+    // TopicHeal - deleted active topic resets to General
 
     func testTopicHealResetsGhostActiveTopic() {
         let topics = [

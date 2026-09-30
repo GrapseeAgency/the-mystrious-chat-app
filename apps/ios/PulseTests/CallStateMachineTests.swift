@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 3 — the pure call state machine: every transition in the W3-PLAN
+/// Wave 3 - the pure call state machine: every transition in the W3-PLAN
 /// shared design, duplicate-event idempotency, and the pinned terminal
 /// mapping (answered→completed, reject→declined, cancel-while-ringing→missed).
 final class CallStateMachineTests: XCTestCase {
@@ -28,7 +28,7 @@ final class CallStateMachineTests: XCTestCase {
         )
     }
 
-    // ── the happy path ──────────────────────────────────────
+    // the happy path
 
     func testOutgoingFullFlow() {
         let machine = makeMachine()
@@ -51,7 +51,7 @@ final class CallStateMachineTests: XCTestCase {
         XCTAssertEqual(end.end?.outcome, .completed)
     }
 
-    // ── terminal mappings ───────────────────────────────────
+    // terminal mappings
 
     func testRejectReceivedMapsToDeclined() {
         let machine = makeMachine()
@@ -107,7 +107,7 @@ final class CallStateMachineTests: XCTestCase {
         XCTAssertEqual(end.end?.outcome, .completed)
     }
 
-    // ── duplicates / invalid inputs are idempotent ──────────
+    // duplicates / invalid inputs are idempotent
 
     func testDuplicateAnswerIsNoOp() {
         let machine = makeMachine()
@@ -133,14 +133,14 @@ final class CallStateMachineTests: XCTestCase {
         XCTAssertTrue(machine.apply(.peerConnectionReady, now: Date()).isNoOp)
     }
 
-    // ── timeouts (defensive ring/connect) ───────────────────
+    // timeouts (defensive ring/connect)
 
     func testRingTimeoutEndsUnansweredOutgoingAsMissed() {
         var timers = CallTimers.standard
         timers.ringTimeout = 0.05
         let machine = CallStateMachine(timers: timers)
         _ = machine.apply(.startOutgoing(outgoingInfo), now: Date())
-        // No signaling at all — the defensive ring timer must fire.
+        // No signaling at all - the defensive ring timer must fire.
         let fired = machine.checkTimeouts(now: Date().addingTimeInterval(0.1))
         XCTAssertEqual(fired, .ringTimeout)
         let end = machine.apply(.ringTimeout, now: Date())
@@ -164,7 +164,7 @@ final class CallStateMachineTests: XCTestCase {
         _ = machine.apply(.startOutgoing(outgoingInfo), now: Date())
         _ = machine.apply(.answerArrived, now: Date())
         _ = machine.apply(.peerConnectionReady, now: Date())
-        // ICE drops — the grace window opens NOW (the disconnected input
+        // ICE drops - the grace window opens NOW (the disconnected input
         // is what arms the machine's disconnectedAt deadline).
         let dis = machine.apply(.peerConnectionDisconnected, now: Date())
         XCTAssertEqual(dis.to, .connected, "grace window holds the connected state")
@@ -175,7 +175,7 @@ final class CallStateMachineTests: XCTestCase {
         guard let fired = machine.checkTimeouts(now: after) else {
             return XCTFail("disconnect grace must fire")
         }
-        // Apply with the SAME timestamp the check used — the reducer re-verifies
+        // Apply with the SAME timestamp the check used - the reducer re-verifies
         // now >= graceDeadline and an already-passed "now" would be a no-op.
         let end = machine.apply(fired, now: after)
         XCTAssertEqual(end.end?.outcome, .completed)

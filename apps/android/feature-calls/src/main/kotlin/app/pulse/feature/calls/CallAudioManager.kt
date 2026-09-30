@@ -7,7 +7,7 @@ import android.media.AudioManager
 import android.os.Build
 
 /**
- * Wave 3 — native audio routing for 1:1 calls (the AUDIO-SESSION half of the
+ * Wave 3 - native audio routing for 1:1 calls (the AUDIO-SESSION half of the
  * call stack). Hardware verification (real mic capture, speaker/Bluetooth
  * routes, focus arbitration with other apps) is a PHYSICAL-DEVICE gate:
  * emulator surfaces exist but are not proof.
@@ -55,7 +55,7 @@ class CallAudioManager(context: Context) {
         runCatching { am.mode = AudioManager.MODE_NORMAL }
     }
 
-    /** Loud-speaker toggle — true once applied. */
+    /** Loud-speaker toggle - true once applied. */
     fun setSpeakerOn(on: Boolean): Boolean = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val target = am.availableCommunicationDevices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }

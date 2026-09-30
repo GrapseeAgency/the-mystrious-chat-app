@@ -1,16 +1,14 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — group kanban board sheet (Task R23-c).
+// Pulse - group kanban board sheet (Task R23-c).
 // A three-column board (todo / doing / done) over the chat: add
 // cards with Enter, quick-move them forward/back, assign members.
 // Cards persist as REAL KanbanCard rows and sync across every
 // member by 1500ms polling (paused while the tab is hidden).
 //
-// Wiring contract for chat-room (lead): mount once per room —
+// Wiring contract for chat-room (lead): mount once per room -
 //   const kanban = useKanbanSheet(conversationId, me.id, members, myRole)
 //   ... {kanban.node}
 // and the /kanban slash entry (or any surface) opens it via the
 // `pulse:open-kanban` CustomEvent on window.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -25,11 +23,11 @@ import { cn } from '@/lib/utils'
 import { spring, stagger } from '@/lib/motion'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 
-// ── event contract (slash-palette dispatches this; sheet obeys) ──
+// event contract (slash-palette dispatches this; sheet obeys) 
 
 export const KANBAN_OPEN_EVENT = 'pulse:open-kanban'
 
-// ── wire types (mirror of the REST contract) ─────────────────
+// wire types (mirror of the REST contract) 
 
 export type KanbanColumnId = 'todo' | 'doing' | 'done'
 
@@ -61,7 +59,7 @@ interface KanbanMutationResponse {
   card: KanbanCardDTO
 }
 
-// ── constants ────────────────────────────────────────────────
+// constants 
 
 const POLL_MS = 1500
 const COLUMN_ORDER: KanbanColumnId[] = ['todo', 'doing', 'done']
@@ -96,7 +94,7 @@ const COLUMN_META: Record<
   },
 }
 
-// ── component ────────────────────────────────────────────────
+// component 
 
 export function KanbanSheet({
   open,
@@ -111,7 +109,7 @@ export function KanbanSheet({
   conversationId: string
   me: { id: string }
   members: Array<{ id: string; name: string; color: string }>
-  /** my group role — admins may delete any card; defaults to 'member' */
+  /** my group role - admins may delete any card; defaults to 'member' */
   myRole?: 'admin' | 'member'
 }) {
   const meId = me.id
@@ -140,7 +138,7 @@ export function KanbanSheet({
     })
   }, [])
 
-  // ── remote sync (1500ms poll while open; pauses when hidden) ──
+  // remote sync (1500ms poll while open; pauses when hidden) 
 
   const kanbanQuery = useQuery({
     queryKey: ['kanban', conversationId],
@@ -193,7 +191,7 @@ export function KanbanSheet({
     [queryClient, conversationId],
   )
 
-  // ── mutations ────────────────────────────────────────────────
+  // mutations 
 
   const addCard = useCallback(
     async (col: KanbanColumnId) => {
@@ -260,7 +258,7 @@ export function KanbanSheet({
     [busyIds, markBusy, meId, refresh],
   )
 
-  // ── motion (spring entrance stagger + layout moves) ─────────
+  // motion (spring entrance stagger + layout moves) 
 
   const cardVariants: Variants = {
     hidden: { opacity: 0, y: 10, scale: 0.94 },
@@ -290,7 +288,7 @@ export function KanbanSheet({
       >
         <DrawerTitle className="sr-only">Kanban board</DrawerTitle>
         <DrawerDescription className="sr-only">
-          Add, move and delete team task cards — the board syncs to everyone in this chat
+          Add, move and delete team task cards - the board syncs to everyone in this chat
         </DrawerDescription>
 
         <motion.div

@@ -1,13 +1,12 @@
 import Foundation
 import UIKit
 
-// ─────────────────────────────────────────────────────────────
-// R10-b — home-screen quick actions (UIApplicationShortcutItem).
+// R10-b - home-screen quick actions (UIApplicationShortcutItem).
 //
 // The two STATIC shortcuts are declared in project.yml
 // (infoProperties → UIApplicationShortcutItems); the type strings below
 // must stay byte-identical with that list (the XCTest pins the mapping,
-// not the plist — CI/device QA confirms the plist round-trip).
+// not the plist - CI/device QA confirms the plist round-trip).
 //
 // Delivery chain:
 //   cold launch → PulseAppDelegate.application(
@@ -16,25 +15,24 @@ import UIKit
 //      connectionOptions.shortcutItem;
 //   warm launch → PulseSceneDelegate.windowScene(_:performActionFor:…).
 //   Both funnel into ONE @Published pendingRoute; RootView consumes it
-//   (.onReceive) into real destinations — the Chats tab, or the dock's
+//   (.onReceive) into real destinations - the Chats tab, or the dock's
 //   own New-chat sheet (the exact sheet the compose button opens).
 //
 // Lifecycle honesty: PulseAppDelegate implements configurationForConnecting
 // ONLY to install PulseSceneDelegate (the established SwiftUI-lifecycle
-// pattern for quick actions). The delegate owns NO window and NO UI —
-// SwiftUI's WindowGroup keeps providing the window — and both delivery
+// pattern for quick actions). The delegate owns NO window and NO UI -
+// SwiftUI's WindowGroup keeps providing the window - and both delivery
 // hooks converge on one idempotent route value, so a cold-launch replay
 // through both hooks is harmless. CI compiles this; on-device behavior of
 // the scene-delegate override needs real-device QA (noted in the worklog).
-// ─────────────────────────────────────────────────────────────
 
 /// Pure shortcut-type → destination mapping (unit-tested; the type string
 /// constants live here so the test can pin them without touching the
 /// @MainActor singleton).
 public enum PulseQuickActionRoute: Equatable {
-    /// "Open Pulse" — lands on the Chats tab (the app's home).
+    /// "Open Pulse" - lands on the Chats tab (the app's home).
     case openChats
-    /// "New message" — opens the dock compose sheet (NewChatSheet).
+    /// "New message" - opens the dock compose sheet (NewChatSheet).
     case newMessage
 
     /// Must match project.yml → UIApplicationShortcutItems item 1 type.
@@ -42,7 +40,7 @@ public enum PulseQuickActionRoute: Equatable {
     /// Must match project.yml → UIApplicationShortcutItems item 2 type.
     public static let composeType = "app.pulse.shortcut.compose"
 
-    /// Unknown types are ignored — the app never invents a destination it
+    /// Unknown types are ignored - the app never invents a destination it
     /// wasn't asked for.
     public static func parse(shortcutType: String?) -> PulseQuickActionRoute? {
         switch shortcutType {
@@ -72,7 +70,7 @@ public final class PulseQuickActions: ObservableObject {
         pendingRoute = route
     }
 
-    /// RootView consumption — returns and clears the pending route.
+    /// RootView consumption - returns and clears the pending route.
     @discardableResult
     public func consume() -> PulseQuickActionRoute? {
         let pending = pendingRoute
@@ -92,7 +90,7 @@ public final class PulseSceneDelegate: NSObject, UIWindowSceneDelegate {
         willConnectTo session: UISceneSession,
         options connectionOptions: UIScene.ConnectionOptions
     ) {
-        // Cold launch via a quick action — the shortcut rides the options.
+        // Cold launch via a quick action - the shortcut rides the options.
         if let shortcut = connectionOptions.shortcutItem {
             Task { @MainActor in
                 PulseQuickActions.shared.handle(shortcut: shortcut)

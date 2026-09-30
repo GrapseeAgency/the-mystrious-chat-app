@@ -1,9 +1,9 @@
 import UIKit
 import AudioToolbox
 
-/// Tactile feedback — light impact for taps, success notice for sends,
+/// Tactile feedback - light impact for taps, success notice for sends,
 /// mirroring the web's press micro-interaction feel.
-/// Wave 8 — the web gates haptics twice: the master `hapticsOn` toggle
+/// Wave 8 - the web gates haptics twice: the master `hapticsOn` toggle
 /// (pulse-settings.haptic()) and the quiet-hours window ("Silence sounds
 /// and vibration inside the window"). Both inputs live on PulsePrefs and
 /// land here as plain statics so the gate evaluates at CALL time from any
@@ -33,7 +33,7 @@ public enum PulseHaptics {
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
     }
 
-    /// Wave 8 — incoming-message buzz (notifVibrate toggle, web haptic(20)
+    /// Wave 8 - incoming-message buzz (notifVibrate toggle, web haptic(20)
     /// parity). Quiet hours gate it exactly like every other haptic.
     public static func incoming() {
         guard allowed() else { return }
@@ -41,7 +41,7 @@ public enum PulseHaptics {
     }
 }
 
-/// Wave 8 — audible feedback. The web plays a two-note WebAudio ding for
+/// Wave 8 - audible feedback. The web plays a two-note WebAudio ding for
 /// incoming messages; the native equivalent uses the system "message
 /// received" sound (no bundled asset, no new dependency). Gated by the
 /// quiet-hours window + the sound toggles at the call site.

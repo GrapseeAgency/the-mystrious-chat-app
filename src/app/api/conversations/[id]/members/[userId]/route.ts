@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/members/[userId] — promote · demote · remove
+// /api/conversations/[id]/members/[userId] - promote · demote · remove
 // Group role governance (admin-only mutations on other members).
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {

@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — onboarding, two steps:
+// Pulse Chat - onboarding, two steps:
 //   1. display name + avatar color (existing reclaim-by-name flow)
-//   2. @handle picker — auto-suggested from the name, live
+//   2. @handle picker - auto-suggested from the name, live
 //      availability via GET /api/users/check-username (debounced),
 //      skippable. Creates the real account via POST /api/users.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -124,7 +122,7 @@ async function createUserRequest(payload: {
       ok: false,
       status: 0,
       code: null,
-      message: 'Network error — try again.',
+      message: 'Network error - try again.',
       suggestion: null,
     }
   }
@@ -185,7 +183,7 @@ export function OnboardingScreen() {
   const trimmedHandle = handle.trim()
   const validHandle = isValidHandle(trimmedHandle)
 
-  // live availability — debounced so typing doesn't hammer the API
+  // live availability - debounced so typing doesn't hammer the API
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedHandle(trimmedHandle), CHECK_DEBOUNCE_MS)
     return () => clearTimeout(timer)
@@ -307,7 +305,7 @@ export function OnboardingScreen() {
               transition={{ type: 'spring', stiffness: 380, damping: 34 }}
               className="w-full"
             >
-              {/* ── step 1: display name + color ── */}
+              {/*  step 1: display name + color  */}
               <form
                 className="w-full space-y-4"
                 onSubmit={(event) => {
@@ -403,7 +401,7 @@ export function OnboardingScreen() {
                     ) : (
                       <>
                         <LogIn className="size-4" aria-hidden />
-                        That&apos;s me — log in instead
+                        That&apos;s me - log in instead
                       </>
                     )}
                   </Button>
@@ -419,7 +417,7 @@ export function OnboardingScreen() {
               transition={{ type: 'spring', stiffness: 380, damping: 34 }}
               className="w-full"
             >
-              {/* ── step 2: pick a @handle ── */}
+              {/*  step 2: pick a @handle  */}
               <form
                 className="w-full space-y-4"
                 onSubmit={(event) => {
@@ -445,7 +443,7 @@ export function OnboardingScreen() {
                       Pick your handle
                     </p>
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                      Creating account for “{name.trim()}” — optional, but it makes you findable.
+                      Creating account for “{name.trim()}” - optional, but it makes you findable.
                     </p>
                   </div>
                 </div>
@@ -499,7 +497,7 @@ export function OnboardingScreen() {
                   >
                     {trimmedHandle.length === 0 ? (
                       <span className="text-zinc-400 dark:text-zinc-500">
-                        Skip it if you prefer — you can add one later in Profile.
+                        Skip it if you prefer - you can add one later in Profile.
                       </span>
                     ) : !validHandle ? (
                       <span className="text-zinc-500 dark:text-zinc-400">

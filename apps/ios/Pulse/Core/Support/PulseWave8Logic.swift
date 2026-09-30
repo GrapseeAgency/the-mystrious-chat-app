@@ -1,18 +1,16 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Wave 8 — pure logic parity with the web (no transport, no UI):
-//   • isQuietHoursNow — verbatim port of src/lib/pulse-settings.ts:73-83
-//   • mergedPrefs     — port of src/lib/prefs-defaults.ts mergePrefs
+// Wave 8 - pure logic parity with the web (no transport, no UI):
+//   • isQuietHoursNow - verbatim port of src/lib/pulse-settings.ts:73-83
+//   • mergedPrefs     - port of src/lib/prefs-defaults.ts mergePrefs
 //     (defaults + whitelist-clamped shallow merge, server value wins)
-// ─────────────────────────────────────────────────────────────
 public enum PulseWave8Logic {
 
-    // ── quiet hours (local card, Notifications section) ──────
+    // quiet hours (local card, Notifications section)
 
     /// 'HH:MM' → minutes since midnight; NaN-safe (falls back to 0).
     /// Verbatim: /^(\d{1,2}):(\d{2})$/ on the trimmed value; hour clamped
-    /// 0-23, minute clamped 0-59; a malformed string is 0 — never throws.
+    /// 0-23, minute clamped 0-59; a malformed string is 0 - never throws.
     public static func minutesOf(_ hhmm: String) -> Int {
         let trimmed = hhmm.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let match = quietTimeRegex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
@@ -50,9 +48,9 @@ public enum PulseWave8Logic {
         return startMin < endMin ? (cur >= startMin && cur < endMin) : (cur >= startMin || cur < endMin)
     }
 
-    // ── prefs merge parity (src/lib/prefs-defaults.ts mergePrefs) ──
+    // prefs merge parity (src/lib/prefs-defaults.ts mergePrefs)
 
-    /// Shallow-merges a server patch over `base` — the patch field wins ONLY
+    /// Shallow-merges a server patch over `base` - the patch field wins ONLY
     /// when it decoded to a real value, and the string tokens are clamped to
     /// the web whitelists (RADIUS / DENSITY / WALLPAPER): malformed values
     /// are silently discarded, never thrown, never junk. `base` starts from

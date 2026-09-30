@@ -1,15 +1,13 @@
-// ─────────────────────────────────────────────────────────────
-// /api/games/[id] — match detail with resolved player identities
-// (Task R23-b — in-chat tic-tac-toe)
+// /api/games/[id] - match detail with resolved player identities
+// (Task R23-b - in-chat tic-tac-toe)
 //
 //   GET → { match: SerializedMatch,
 //           playerX: {id, name, color},
 //           playerO: {id, name, color} | null }
 //
 // Read-only: mirrors the messages GET policy (no membership gate on
-// reads — moves/joins carry the guards). The chat card self-fetches
+// reads - moves/joins carry the guards). The chat card self-fetches
 // this endpoint and polls while status === 'active'.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
@@ -21,7 +19,7 @@ interface RouteCtx {
 
 const BOARD_SIZE = 9
 
-/** Wire shape of a match — winLine is parsed back into number[] | null. */
+/** Wire shape of a match - winLine is parsed back into number[] | null. */
 interface SerializedMatch {
   id: string
   conversationId: string
@@ -62,7 +60,7 @@ function serializeMatch(row: {
         winLine = parsed.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
       }
     } catch {
-      // corrupt row — ship null rather than crashing the card
+      // corrupt row - ship null rather than crashing the card
     }
   }
   return {

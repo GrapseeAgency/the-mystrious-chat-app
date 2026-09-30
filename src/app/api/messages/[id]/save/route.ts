@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/messages/[id]/save — Telegram-style star/save toggle
-// ─────────────────────────────────────────────────────────────
+// /api/messages/[id]/save - Telegram-style star/save toggle
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -13,7 +11,7 @@ interface RouteCtx {
 
 /**
  * POST /api/messages/[id]/save  body { userId }
- * → 200 { saved: boolean } — toggles the bookmark for THIS user.
+ * → 200 { saved: boolean } - toggles the bookmark for THIS user.
  * Participant-guarded; deleted messages cannot be saved.
  */
 export async function POST(req: Request, { params }: RouteCtx) {

@@ -7,14 +7,14 @@ import android.media.AudioManager
 import android.os.Build
 
 /**
- * Wave 5 — slim audio router for voice rooms (the AUDIO-SESSION half of the
+ * Wave 5 - slim audio router for voice rooms (the AUDIO-SESSION half of the
  * room stack). Own recipe, mirrors the shape of the Wave-3 call manager but
  * lives entirely in :feature-voice (feature-calls untouched):
  *  • audio focus (AUDIOFOCUS_GAIN) for the room, released on teardown;
  *  • MODE_IN_COMMUNICATION while a room is live (echo-cancelled voice path);
  *  • speaker toggle (API 31+ setCommunicationDevice, legacy setSpeakerphoneOn).
  *
- * PHYSICAL DEVICE: PENDING — route changes and focus arbitration need real
+ * PHYSICAL DEVICE: PENDING - route changes and focus arbitration need real
  * hardware evidence (emulator surfaces are not proof).
  */
 class RoomAudioRouter(context: Context) {
@@ -53,7 +53,7 @@ class RoomAudioRouter(context: Context) {
         runCatching { am.mode = AudioManager.MODE_NORMAL }
     }
 
-    /** Loud-speaker toggle — true once applied. */
+    /** Loud-speaker toggle - true once applied. */
     fun setSpeakerOn(on: Boolean): Boolean = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val target = am.availableCommunicationDevices.firstOrNull {

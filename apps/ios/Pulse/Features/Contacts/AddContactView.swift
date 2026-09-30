@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Wave 6 — the add-contact page (F-CP-02, contacts-add-page.tsx parity):
+/// Wave 6 - the add-contact page (F-CP-02, contacts-add-page.tsx parity):
 /// search-as-you-type over the live people list (client filter on
-/// GET /api/users — name / @handle / about), presence dots, rows open the
+/// GET /api/users - name / @handle / about), presence dots, rows open the
 /// user page, and a Message action that creates/dedupes a DM then opens it.
 struct AddContactView: View {
     @ObservedObject var session: PulseSession

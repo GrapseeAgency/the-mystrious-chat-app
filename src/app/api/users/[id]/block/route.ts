@@ -1,7 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users/[id]/block — R47 account blocking.
+// /api/users/[id]/block - R47 account blocking.
 // `[id]` is the TARGET user; the ACTOR rides along as `userId`
-// (query for GET/DELETE, JSON body for POST) — mirrors the R35-a
+// (query for GET/DELETE, JSON body for POST) - mirrors the R35-a
 // safety route's pair convention.
 //
 // Contract:
@@ -10,11 +9,10 @@
 //   GET    ?userId={actorId}             → 200 { blocked: boolean }  (pair state)
 //
 // Semantics: idempotent both ways; self-block is an honest 400;
-// unknown actor/target ids are 404 (uniform "account is gone" — same
+// unknown actor/target ids are 404 (uniform "account is gone" - same
 // policy as the safety route). Enforcement of the block lives at the
-// DM boundaries (POST /api/conversations + messages POST) — this
+// DM boundaries (POST /api/conversations + messages POST) - this
 // route only manages the flag rows.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -40,7 +38,7 @@ async function resolvePair(targetId: string, actorId: string) {
   return { targetId: target.id, actorId: actor.id }
 }
 
-/** GET — is `[id]` blocked BY `?userId`? (drives the profile-sheet toggle) */
+/** GET - is `[id]` blocked BY `?userId`? (drives the profile-sheet toggle) */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id: targetId } = await params
 
@@ -59,7 +57,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   return NextResponse.json({ blocked: row !== null })
 }
 
-/** POST { userId } — `[userId]` blocks `[id]`. Idempotent. */
+/** POST { userId } - `[userId]` blocks `[id]`. Idempotent. */
 export async function POST(req: Request, { params }: RouteCtx) {
   const { id: targetId } = await params
   const body = await safeJson(req)
@@ -83,7 +81,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   return NextResponse.json({ ok: true, blocked: true })
 }
 
-/** DELETE ?userId= — `[userId]` unblocks `[id]`. Idempotent. */
+/** DELETE ?userId= - `[userId]` unblocks `[id]`. Idempotent. */
 export async function DELETE(req: Request, { params }: RouteCtx) {
   const { id: targetId } = await params
 

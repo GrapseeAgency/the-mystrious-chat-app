@@ -63,7 +63,7 @@ import kotlinx.coroutines.launch
 private val StageBlack = Color(0xFF000000)
 private val BarTrack = Color.White.copy(alpha = 0.32f)
 
-/** {gateway}/api/uploads/{path} — the image-story source (spec §wire). Shared with the composer. */
+/** {gateway}/api/uploads/{path} - the image-story source (spec §wire). Shared with the composer. */
 internal fun storyImageUrl(imagePath: String): String =
     PulseEndpoints.http("/api/uploads/" + imagePath.removePrefix("/"))
 
@@ -73,7 +73,7 @@ internal fun storyImageUrl(imagePath: String): String =
  * left-32%-prev tap zones, ≥240ms hold-to-pause with a "Paused" pill,
  * drag-down dismiss (>110px or >550px/s), optimistic view marking with a
  * single retry (D6), owner viewers sheet polling every 5s (D7) and a delete
- * confirm strip — the machine handles vanish auto-advance (D3) when the
+ * confirm strip - the machine handles vanish auto-advance (D3) when the
  * displayed story is deleted underneath.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,14 +97,14 @@ fun StoryViewerScreen(
     // Feed → machine: start-position pick, expiry re-filter (D2) and
     // vanish reconciliation (D3) all flow through this one door.
     // Guard: an empty feed BEFORE the first fetch lands is "not loaded yet",
-    // not an empty world — feeding it now would auto-close the viewer.
+    // not an empty world - feeding it now would auto-close the viewer.
     LaunchedEffect(groups, flags.loadedOnce) {
         if (flags.loadedOnce || groups.isNotEmpty()) {
             machine.on(StoryViewerInput.GroupsUpdated(groups, System.currentTimeMillis()))
         }
     }
 
-    // Playback loop — 5000ms per story. The MACHINE no-ops ticks while
+    // Playback loop - 5000ms per story. The MACHINE no-ops ticks while
     // paused/dismissed, so this loop never needs to stop-and-restart
     // (a paused→resumed hold would otherwise leave a dead key'd effect:
     // resume must continue from elapsed, never restart).
@@ -116,7 +116,7 @@ fun StoryViewerScreen(
     }
 
     // D6: mark non-mine stories as viewed the moment they are DISPLAYED
-    // (not after 5s) — optimistic + single retry driven by the machine.
+    // (not after 5s) - optimistic + single retry driven by the machine.
     LaunchedEffect(state.pendingMark?.storyId, state.pendingMark?.attempt) {
         val mark = state.pendingMark ?: return@LaunchedEffect
         storiesVm.markViewed(
@@ -133,7 +133,7 @@ fun StoryViewerScreen(
     val current = state.current
     val group = current?.let { state.groups.getOrNull(it.groupIndex) }
 
-    // Drag-down dismiss visuals (>110px or >550px/s — machine constants).
+    // Drag-down dismiss visuals (>110px or >550px/s - machine constants).
     val dragY = remember { Animatable(0f) }
     val velocityTracker = remember { VelocityTracker() }
 
@@ -163,7 +163,7 @@ fun StoryViewerScreen(
                             if (holding) {
                                 machine.on(StoryViewerInput.HoldEnd(System.currentTimeMillis()))
                             } else if (dragY.value > 0.5f) {
-                                // drag release — never a zone tap
+                                // drag release - never a zone tap
                             } else if (offset.x < size.width * 0.32f) {
                                 machine.on(StoryViewerInput.TapPrev)
                             } else {
@@ -223,7 +223,7 @@ fun StoryViewerScreen(
                     .statusBarsPadding()
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
-                // Progress bars — CURRENT GROUP only (done/active/future).
+                // Progress bars - CURRENT GROUP only (done/active/future).
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -440,7 +440,7 @@ private fun HeaderIconButton(
     }
 }
 
-/** Image story — {gateway}/api/uploads/{path} full-screen CONTAIN + caption pill (≤3 lines). */
+/** Image story - {gateway}/api/uploads/{path} full-screen CONTAIN + caption pill (≤3 lines). */
 @Composable
 private fun ImageStage(imagePath: String, caption: String) {
     Box(Modifier.fillMaxSize().background(StageBlack)) {
@@ -469,7 +469,7 @@ private fun ImageStage(imagePath: String, caption: String) {
     }
 }
 
-/** Text story — full-bleed palette gradient, centered bold white caption, scrollable when long. */
+/** Text story - full-bleed palette gradient, centered bold white caption, scrollable when long. */
 @Composable
 private fun TextStage(background: String, caption: String) {
     val scroll = rememberScrollState()

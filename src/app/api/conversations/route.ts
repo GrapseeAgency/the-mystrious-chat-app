@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations — list my chats, create DM / group
-// ─────────────────────────────────────────────────────────────
+// /api/conversations - list my chats, create DM / group
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -102,7 +100,7 @@ export async function POST(req: Request) {
       )
     }
 
-    // DM dedupe — find a non-group conversation whose participant set
+    // DM dedupe - find a non-group conversation whose participant set
     // equals exactly these two users.
     const candidates = await db.conversation.findMany({
       where: {
@@ -127,14 +125,14 @@ export async function POST(req: Request) {
           { status: 500 },
         )
       }
-      // R47 — an EXISTING DM stays openable even when blocked (WhatsApp
+      // R47 - an EXISTING DM stays openable even when blocked (WhatsApp
       // parity: history visible, composer dead-ended by the send gate).
       return NextResponse.json({
         conversation: await buildConversationSummary(full, creatorId),
-      }) // 200 — deduped
+      }) // 200 - deduped
     }
 
-    // R47 — NEW DM with a blocked pair (either direction) is refused at
+    // R47 - NEW DM with a blocked pair (either direction) is refused at
     // creation time; the messages POST gate enforces it per-send after.
     const blockRow = await db.userBlock.findFirst({
       where: {

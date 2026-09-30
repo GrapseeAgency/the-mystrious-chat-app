@@ -4,12 +4,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 /**
- * The 8 story gradient stages — Tailwind palette values matching the web
+ * The 8 story gradient stages - Tailwind palette values matching the web
  * AVATAR_GRADIENTS (from-*-400 to-*-600, `bg-gradient-to-br`):
  *   emerald-400 #34d399 / emerald-600 #059669, rose #fb7185/#e11d48,
  *   amber #fbbf24/#d97706, violet #a78bfa/#7c3aed, teal #2dd4bf/#0d9488,
  *   orange #fb923c/#ea580c, pink #f472b6/#db2777, cyan #22d3ee/#0891b2.
- * Unknown keys degrade to emerald (server default) — never a crash.
+ * Unknown keys degrade to emerald (server default) - never a crash.
  */
 object StoryPalette {
 

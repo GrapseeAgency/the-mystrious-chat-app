@@ -31,7 +31,7 @@ class VoicePcmChunkerTest {
         val chunker = VoicePcmChunker()
         assertEquals(2, chunker.consume(ShortArray(8000)).size) // seq 1,2
         assertNull(chunker.flush()) // nothing partial between pushes
-        // A fresh push keeps counting — restarting at 1 would trip every
+        // A fresh push keeps counting - restarting at 1 would trip every
         // receiver's `seq <= lastSeq` dedupe and blackhole the audio.
         val next = chunker.consume(ShortArray(4000))
         assertEquals(listOf(3L), next.map { it.seq })

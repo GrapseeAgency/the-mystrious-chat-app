@@ -71,10 +71,10 @@ private val Emerald600 = Color(0xFF059669)
 private val Rose500 = Color(0xFFEF4444)
 
 /**
- * Image → downscaled JPEG data-URL — the EXACT ≤1280px q0.82 wire policy.
+ * Image → downscaled JPEG data-URL - the EXACT ≤1280px q0.82 wire policy.
  * feature-chat's MediaSupport is module-internal, so the pipeline is mirrored
  * here with the SAME :core constants ([PulseMedia.MAX_IMAGE_DIMENSION_PX] +
- * [PulseMedia.IMAGE_JPEG_QUALITY]) — one source of truth for the policy.
+ * [PulseMedia.IMAGE_JPEG_QUALITY]) - one source of truth for the policy.
  */
 object StoryMedia {
     suspend fun imageToDataUrl(context: Context, uri: Uri): Result<String> = withContext(Dispatchers.IO) {
@@ -126,7 +126,7 @@ object StoryMedia {
 /**
  * Full-screen story composer (Wave 4): Text/Photo pill toggle, hard 280-char
  * caption with live counter, 8 gradient swatches (text mode), explicit Post
- * button (Enter inserts a newline — never send-on-Enter), photo pick →
+ * button (Enter inserts a newline - never send-on-Enter), photo pick →
  * compress → upload → preview + optional caption, spinner states and
  * user-visible errors. Success closes via [onPublished].
  */
@@ -149,13 +149,13 @@ fun StoryComposerScreen(
                 val dataUrl = StoryMedia.imageToDataUrl(context, uri).getOrNull()
                 if (dataUrl == null) {
                     localPreview = null
-                    cs = cs.withUploading(false).withError("Couldn't read that image — try another one")
+                    cs = cs.withUploading(false).withError("Couldn't read that image - try another one")
                     return@launch
                 }
                 storiesVm.uploadStoryImage(dataUrl) { path ->
                     cs = if (path == null) {
                         localPreview = null
-                        cs.withUploading(false).withError("Upload failed — check your connection and retry")
+                        cs.withUploading(false).withError("Upload failed - check your connection and retry")
                     } else {
                         cs.withImage(path).withUploading(false)
                     }
@@ -350,7 +350,7 @@ fun StoryComposerScreen(
 
             Spacer(Modifier.height(10.dp))
 
-            // 8 gradient swatches — text-story affordance (wire: background only for text).
+            // 8 gradient swatches - text-story affordance (wire: background only for text).
             if (cs.mode == ComposerState.Mode.TEXT) {
                 Row(
                     Modifier.fillMaxWidth(),

@@ -75,6 +75,7 @@ import app.pulse.ui.PulseMonoFamily
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.isPulseDarkTheme
+import app.pulse.ui.pulseStatusGlyph
 import app.pulse.ui.update.LiveUpdater
 import app.pulse.ui.update.UpdaterDetail
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -92,8 +93,8 @@ private val FX_OPTIONS = listOf(
 private val SWATCHES = listOf("#10B981", "#14B8A6", "#8B5CF6", "#F59E0B", "#FB7185", "#0EA5E9")
 
 /**
- * Profile tab — identity management (the native onboarding parity surface),
- * appearance (dark override + ambient FX picker — the WebGL modes reborn as
+ * Profile tab - identity management (the native onboarding parity surface),
+ * appearance (dark override + ambient FX picker - the WebGL modes reborn as
  * AGSL shaders), motion respect, and honest about-notes.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,11 +102,11 @@ private val SWATCHES = listOf("#10B981", "#14B8A6", "#8B5CF6", "#F59E0B", "#FB71
 fun ProfileScreen(
     onEditProfile: () -> Unit = {},
     onOpenBlocked: () -> Unit = {},
-    // R16 — web profile-tab.tsx:497-508 "Saved messages" row → the real
+    // R16 - web profile-tab.tsx:497-508 "Saved messages" row → the real
     // starred library (MainActivity routes this to the existing "saved" nav
-    // destination — fetch / search / unsave / jump-to-message).
+    // destination - fetch / search / unsave / jump-to-message).
     onOpenSaved: () -> Unit = {},
-    // R6 — M3: the durable sign-out — the app-level SessionViewModel
+    // R6 - M3: the durable sign-out - the app-level SessionViewModel
     // clears prefs + the encrypted session vault (ProfileViewModel's old
     // half-forget did NOT delete the vault, so the identity resurrected on
     // the next launch). MainActivity wires this to session.forgetViewer().
@@ -120,13 +121,13 @@ fun ProfileScreen(
     val reduced by viewModel.reducedMotion.collectAsStateWithLifecycle()
 
     var identitySheet by remember { mutableStateOf(false) }
-    // R6 — M3: the forget confirmation (iOS IdentityPickerSheet "Forget this
-    // viewer" semantics — destructive, so it asks first).
+    // R6 - M3: the forget confirmation (iOS IdentityPickerSheet "Forget this
+    // viewer" semantics - destructive, so it asks first).
     var forgetConfirm by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    // R16 — web profile-tab.tsx:169 `iAmOnline` (onlineIds.has(me.id)) + the
+    // R16 - web profile-tab.tsx:169 `iAmOnline` (onlineIds.has(me.id)) + the
     // full viewer row (name/handle/bio/color/status fields ride the SAME
     // users list the IdentitySheet already loads).
     val onlineIds by viewModel.onlineIds.collectAsStateWithLifecycle()
@@ -146,7 +147,7 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // ── R35 Neo hero (web profile-tab.tsx:329-467): flat identity cover
+        // R35 Neo hero (web profile-tab.tsx:329-467): flat identity cover
         // with a static scanline texture + signal edge, then the overlapping
         // ringed avatar. Zero carnival blobs, zero blur, no animation, and
         // reduce-motion needs no special case (everything here is static).
@@ -285,23 +286,37 @@ fun ProfileScreen(
             )
         }
 
-        // Status line + bio, 13sp (web :410-433). The status glyph/text are
-        // the user's own wire values, displayed verbatim, never decorated.
+        // Status line + bio, 13sp (web :410-433). R18 icon-id contract: the
+        // status value is a stable icon id - the glyph renders as a vector
+        // normalized through the registry, never as raw stored text.
         if (viewerId != null) {
-            val statusLine = listOfNotNull(
-                viewer?.statusEmoji?.takeIf { it.isNotBlank() },
-                viewer?.statusText?.takeIf { it.isNotBlank() },
-            ).joinToString(" ")
-            if (statusLine.isNotBlank()) {
-                Text(
-                    statusLine,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            val statusText = viewer?.statusText?.takeIf { it.isNotBlank() }
+            val statusGlyph = pulseStatusGlyph(viewer?.statusEmoji)
+            if (statusText != null || statusGlyph != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.padding(top = 10.dp),
-                )
+                ) {
+                    statusGlyph?.let { glyph ->
+                        Icon(
+                            glyph,
+                            contentDescription = "Status",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                    statusText?.let { text ->
+                        Text(
+                            text,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
             Text(
                 text = viewer?.bio?.takeIf { it.isNotBlank() } ?: "No bio yet",
@@ -372,7 +387,7 @@ fun ProfileScreen(
             }
         }
 
-        // ── ONE flat stats row: mono numerals + hairline dividers, no heavy
+        // ONE flat stats row: mono numerals + hairline dividers, no heavy
         // cards, no counters (web profile-tab.tsx:471-489). Same loaders as
         // before (GET /api/users/{id}/stats + the wallet source); the Coins
         // cell stays tappable-to-retry when the wallet errored (the old
@@ -426,7 +441,7 @@ fun ProfileScreen(
             }
         }
 
-        // ── Quiet hairline card: Saved messages + Copy account ID + identity
+        // Quiet hairline card: Saved messages + Copy account ID + identity
         // switch + Sign out (web :493-524 Saved/Account sections, one card).
         // Every previous entry point keeps working; blocked accounts live in
         // Settings privacy, same as the web.
@@ -499,7 +514,7 @@ fun ProfileScreen(
                 Spacer(Modifier.height(14.dp))
                 Text("Ambient field (native shaders)", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "aurora · caustics · mesh · stars · liquid — the web's WebGL modes ported to AGSL",
+                    "aurora · caustics · mesh · stars · liquid - the web's WebGL modes ported to AGSL",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -554,7 +569,7 @@ fun ProfileScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Kotlin · Compose · Hilt · Room · Ktor · Socket.IO — rebuilt natively against the same live gateway as the web app.",
+                    "Kotlin · Compose · Hilt · Room · Ktor · Socket.IO - rebuilt natively against the same live gateway as the web app.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -591,7 +606,7 @@ fun ProfileScreen(
                 Text("Server address", style = MaterialTheme.typography.titleSmall)
                 Text(
                     if (savedBase.isNullOrBlank()) {
-                        "Not set — Pulse runs offline-first. Paste your Pulse web origin (the https:// address of this app's server) to go live."
+                        "Not set - Pulse runs offline-first. Paste your Pulse web origin (the https:// address of this app's server) to go live."
                     } else {
                         "REST + realtime point at:\n$savedBase"
                     },
@@ -648,7 +663,7 @@ fun ProfileScreen(
         Spacer(Modifier.height(28.dp))
     }
 
-    // R6 — M3: the destructive confirm before the real forget.
+    // R6 - M3: the destructive confirm before the real forget.
     if (forgetConfirm) {
         AlertDialog(
             onDismissRequest = { forgetConfirm = false },
@@ -782,8 +797,8 @@ private fun IdentitySheet(
 }
 
 /**
- * R6 — BE8: profile share via the OS share sheet (web profile-tab.tsx:258-278
- * `shareProfile` parity): "Find me on Pulse — @handle". No handle yet → the
+ * R6 - BE8: profile share via the OS share sheet (web profile-tab.tsx:258-278
+ * `shareProfile` parity): "Find me on Pulse - @handle". No handle yet → the
  * web's honest info toast; a failed chooser → "Could not share right now".
  */
 internal fun shareProfile(
@@ -793,10 +808,10 @@ internal fun shareProfile(
 ) {
     val handle = users.firstOrNull { it.id == viewerId }?.handle
     if (handle.isNullOrBlank()) {
-        Toast.makeText(context, "Claim a handle first — it is how people find you", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Claim a handle first - it is how people find you", Toast.LENGTH_SHORT).show()
         return
     }
-    val text = "Find me on Pulse — @$handle"
+    val text = "Find me on Pulse - @$handle"
     runCatching {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
@@ -809,7 +824,7 @@ internal fun shareProfile(
 }
 
 /**
- * R16 — web gradientFor (pulse-utils.ts:42-45 + AVATAR_GRADIENTS :31-40):
+ * R16 - web gradientFor (pulse-utils.ts:42-45 + AVATAR_GRADIENTS :31-40):
  * the profile hero cover derives from the identity color. Accepts BOTH the
  * web color NAMES (emerald/rose/amber/violet/teal/orange/pink/cyan) and the
  * raw hex the native onboarding creates (#10B981 …). Fallback: web default
@@ -840,8 +855,8 @@ internal fun heroColors(color: String?): List<Color> {
 }
 
 /**
- * R16 — clipboard helper for the profile tap-to-copy affordances (web
- * profile-tab.tsx copyHandle :243-255 / copyId :233-241 — same toasts).
+ * R16 - clipboard helper for the profile tap-to-copy affordances (web
+ * profile-tab.tsx copyHandle :243-255 / copyId :233-241 - same toasts).
  */
 internal fun copyText(context: android.content.Context, label: String, text: String, toast: String) {
     runCatching {
@@ -970,7 +985,7 @@ private fun QuietDivider() {
 }
 
 /**
- * R14 gap 7a — the web profile-tab memberSinceShort ("Sep 2025", month short
+ * R14 gap 7a - the web profile-tab memberSinceShort ("Sep 2025", month short
  * + year): null when the stats row carries no joinedAt timestamp.
  */
 internal fun memberSinceShort(iso: String): String? = runCatching {

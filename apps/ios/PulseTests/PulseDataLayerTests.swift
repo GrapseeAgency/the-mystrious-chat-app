@@ -1,12 +1,12 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 1 data-layer unit tests (W1-DATA-B) — pure logic only, no network
+/// Wave 1 data-layer unit tests (W1-DATA-B) - pure logic only, no network
 /// and no wall clock: the timeline query builder (limit/before/q URL shape),
 /// the reactionsJson cache codec round-trip, and the Wave 1 envelope decode
 /// shapes. Store-side v3 persistence lives in PulseStoreMigrationTests.
 final class PulseDataLayerTests: XCTestCase {
-    // ── timeline query building (GET …/messages?limit=&before=&q=) ──
+    // timeline query building (GET …/messages?limit=&before=&q=)
 
     func testMessagesPathNewestPage() {
         XCTAssertEqual(
@@ -17,7 +17,7 @@ final class PulseDataLayerTests: XCTestCase {
 
     func testMessagesPathBeforeCursor() {
         // ISO cursors pass through untouched (":" and "." are legal in a
-        // query — same shape the web client emits).
+        // query - same shape the web client emits).
         XCTAssertEqual(
             PulseAPIClient.messagesPath(conversationId: "c1", limit: 40, before: "2026-09-07T12:26:36.991Z", query: nil),
             "/api/conversations/c1/messages?limit=40&before=2026-09-07T12:26:36.991Z",
@@ -25,7 +25,7 @@ final class PulseDataLayerTests: XCTestCase {
     }
 
     func testMessagesPathSearchEncodesReservedCharacters() {
-        // "&", "+" and spaces must never leak into the raw query — a search
+        // "&", "+" and spaces must never leak into the raw query - a search
         // for "budget & q2 2026" is ONE param, not four.
         XCTAssertEqual(
             PulseAPIClient.messagesPath(conversationId: "c1", limit: 100, before: nil, query: "budget & q2 2026"),
@@ -51,7 +51,7 @@ final class PulseDataLayerTests: XCTestCase {
         )
     }
 
-    // ── W2-DATA-B — topic-filtered timeline query (GET …&topicId=) ──
+    // W2-DATA-B - topic-filtered timeline query (GET …&topicId=)
 
     func testMessagesPathTopicFilter() {
         XCTAssertEqual(
@@ -60,11 +60,11 @@ final class PulseDataLayerTests: XCTestCase {
         )
     }
 
-    // ── R2-D ITEM 2 — D47 delta-sync cursor (GET …&since=<ISO>) ──
+    // R2-D ITEM 2 - D47 delta-sync cursor (GET …&since=<ISO>)
 
     func testMessagesPathSinceCursor() {
         // Route contract: since is an ISO date validated by parseIsoDate and
-        // rides the newest-window branch — only rows STRICTLY NEWER come back.
+        // rides the newest-window branch - only rows STRICTLY NEWER come back.
         XCTAssertEqual(
             PulseAPIClient.messagesPath(conversationId: "c1", limit: 200, before: nil, query: nil, since: "2026-09-07T12:26:36.991Z"),
             "/api/conversations/c1/messages?limit=200&since=2026-09-07T12:26:36.991Z",
@@ -91,7 +91,7 @@ final class PulseDataLayerTests: XCTestCase {
     }
 
     func testMessagesPathBlankTopicIdIsOmitted() {
-        // General is the unfiltered room — a blank topicId must not hit the
+        // General is the unfiltered room - a blank topicId must not hit the
         // wire (nil and whitespace both collapse to the bare path).
         XCTAssertEqual(
             PulseAPIClient.messagesPath(conversationId: "c1", limit: 100, before: nil, query: nil, topicId: nil),
@@ -116,7 +116,7 @@ final class PulseDataLayerTests: XCTestCase {
         )
     }
 
-    // ── reactionsJson codec (v3 cache column ⇄ grouped wire shape) ──
+    // reactionsJson codec (v3 cache column ⇄ grouped wire shape)
 
     func testReactionsJsonRoundTripPreservesGroupsAndOrder() {
         let groups = [
@@ -138,7 +138,7 @@ final class PulseDataLayerTests: XCTestCase {
         XCTAssertEqual(PulseStore.reactions(fromJson: "{\"emoji\":\"👍\"}"), [])
     }
 
-    // ── Wave 1 envelope shapes (tolerant decode) ────────────
+    // Wave 1 envelope shapes (tolerant decode)
 
     func testThreadPageDecodesParentAndReplies() throws {
         let json = """

@@ -1,13 +1,11 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — W5-f WAV encoder (PURE). Builds the 44-byte RIFF header
-// for mono / 16 kHz / 16-bit PCM followed by the sample payload —
+// Pulse - W5-f WAV encoder (PURE). Builds the 44-byte RIFF header
+// for mono / 16 kHz / 16-bit PCM followed by the sample payload -
 // the exact envelope POST /api/voice/transcribe expects for caption
 // windows (web parity: one 4 s window ≈ 128 KB PCM + 44 bytes).
 // Header layout verified against the canonical RIFF/WAVE spec and
 // byte-tested in VoiceRoomMachineTests.
-// ─────────────────────────────────────────────────────────────
 
 public enum WavEncoder {
     /// Canonical PCM WAV header size for the mono/16-bit layout.
@@ -30,7 +28,7 @@ public enum WavEncoder {
         data.append(contentsOf: Array("RIFF".utf8))
         appendUInt32(&data, UInt32(36 + dataByteCount))
         data.append(contentsOf: Array("WAVE".utf8))
-        // "fmt " chunk — 16 bytes of PCM format description
+        // "fmt " chunk - 16 bytes of PCM format description
         data.append(contentsOf: Array("fmt ".utf8))
         appendUInt32(&data, 16)                       // fmt chunk size
         appendUInt16(&data, 1)                        // audio format: PCM (1)

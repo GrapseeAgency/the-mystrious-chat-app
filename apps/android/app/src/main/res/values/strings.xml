@@ -7,10 +7,10 @@
     <string name="tab_profile">Profile</string>
     <string name="cd_open_calls">Open calls</string>
 
-    <!-- R10-a — notification quick-reply action -->
+    <!-- R10-a - notification quick-reply action -->
     <string name="reply_action">Reply</string>
 
-    <!-- R10-a — static launcher shortcuts (res/xml/shortcuts.xml) -->
+    <!-- R10-a - static launcher shortcuts (res/xml/shortcuts.xml) -->
     <string name="shortcut_chats_short">Chats</string>
     <string name="shortcut_chats_long">Open Pulse chats</string>
     <string name="shortcut_new_message_short">New message</string>
@@ -18,7 +18,7 @@
     <string name="shortcut_search_short">Search</string>
     <string name="shortcut_search_long">Search Pulse chats</string>
 
-    <!-- R8 Task 3-c — FCM credential knobs (fail-closed). These stay EMPTY in
+    <!-- R8 Task 3-c - FCM credential knobs (fail-closed). These stay EMPTY in
          the repo: dropping real values in (or baking them via a CI-only
          overlay) is what arms remote push. Empty = FirebaseApp is never
          initialized, the messaging service never fires, and the build stays

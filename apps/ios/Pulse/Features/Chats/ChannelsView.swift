@@ -1,16 +1,14 @@
 import SwiftUI
 import PhotosUI
 
-// ─────────────────────────────────────────────────────────────
-// Wave 6 — the channel directory (F-CH-01…03, channels-page.tsx parity):
+// Wave 6 - the channel directory (F-CH-01…03, channels-page.tsx parity):
 // "Subscribed · N" + "Discover · N" over the REAL GET /api/channels feed,
 // rows with the unread dot, subscriber counts, description || preview ||
 // "No description yet", the OPTIMISTIC subscribe (+memberCount, rollback
-// on error) and the honest leave flow (the server 403s the last admin —
+// on error) and the honest leave flow (the server 403s the last admin -
 // its verbatim copy is surfaced, never paraphrased). Create flow = name
 // 2-40 / description ≤200 / optional photo through the real upload
 // pipeline; the creator lands as admin with the server's first post.
-// ─────────────────────────────────────────────────────────────
 
 struct ChannelsView: View {
     @ObservedObject var session: PulseSession
@@ -91,20 +89,20 @@ struct ChannelsView: View {
         }
     }
 
-    // ── directory ────────────────────────────────────────────
+    // directory
 
     private var resolved: [WireChannelSummary] {
         channels.map { optimistic[$0.id] ?? $0 }
     }
 
-    // R1-W2G — the directory partition lives in PulseChannelDirectory
+    // R1-W2G - the directory partition lives in PulseChannelDirectory
     // (Core/Support), pinned by PulseStoryChannelTests.
     private var subscribed: [WireChannelSummary] { PulseChannelDirectory.subscribed(resolved) }
     private var discover: [WireChannelSummary] { PulseChannelDirectory.discover(resolved) }
 
     @ViewBuilder
     private var directoryContent: some View {
-        Text("Broadcast spaces — only admins post")
+        Text("Broadcast spaces - only admins post")
             .font(.system(size: 12))
             .foregroundStyle(PulseTheme.textSecondary)
             .padding(.bottom, 2)
@@ -122,7 +120,7 @@ struct ChannelsView: View {
                 Text("No channels yet")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(PulseTheme.titleOnPanel)
-                Text("Start one from the + button — pick a name, drop a description, and your broadcast space is live.")
+                Text("Start one from the + button - pick a name, drop a description, and your broadcast space is live.")
                     .font(.system(size: 12))
                     .foregroundStyle(PulseTheme.textSecondary)
                     .multilineTextAlignment(.center)
@@ -140,7 +138,7 @@ struct ChannelsView: View {
             }
             sectionHeader("Discover", count: discover.count)
             if discover.isEmpty {
-                Text("You are in every channel on this Pulse — nice.")
+                Text("You are in every channel on this Pulse - nice.")
                     .font(.system(size: 12))
                     .foregroundStyle(PulseTheme.textTertiary)
                     .padding(.vertical, 6)
@@ -163,7 +161,7 @@ struct ChannelsView: View {
     private func channelRow(_ channel: WireChannelSummary) -> some View {
         let isSubscribed = channel.isSubscribed ?? false
         let busy = busyId == channel.id
-        // R1-W2G — blurb fallback chain pinned in PulseChannelDirectory.
+        // R1-W2G - blurb fallback chain pinned in PulseChannelDirectory.
         let blurb = PulseChannelDirectory.blurb(channel)
         return HStack(alignment: .top, spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
@@ -264,12 +262,12 @@ struct ChannelsView: View {
         }
     }
 
-    // R1-W2G — copy pinned in PulseChannelDirectory.subscriberCount.
+    // R1-W2G - copy pinned in PulseChannelDirectory.subscriberCount.
     private func subscriberCount(_ channel: WireChannelSummary) -> String {
         PulseChannelDirectory.subscriberCount(channel.memberCount)
     }
 
-    // ── create mode ──────────────────────────────────────────
+    // create mode
 
     private var createForm: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -285,7 +283,7 @@ struct ChannelsView: View {
                                 .foregroundStyle(PulseTheme.accent)
                         }
                     }
-                    Text("Square works best — cropped to 512.")
+                    Text("Square works best - cropped to 512.")
                         .font(.system(size: 10.5))
                         .foregroundStyle(PulseTheme.textTertiary)
                 }
@@ -329,7 +327,7 @@ struct ChannelsView: View {
             }
             .buttonStyle(PulseButtonStyle())
             .disabled(busyId == "creating" || photoBusy)
-            Text("You become the channel's admin — only admins post, everyone else reads along.")
+            Text("You become the channel's admin - only admins post, everyone else reads along.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(PulseTheme.textSecondary)
         }
@@ -361,7 +359,7 @@ struct ChannelsView: View {
         }
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     private func reload() async {
         if let fresh = try? await session.api.channels(mineOnly: false) {
@@ -371,7 +369,7 @@ struct ChannelsView: View {
         loading = false
     }
 
-    /// Subscribe — OPTIMISTIC (isSubscribed flips, memberCount +1), settle
+    /// Subscribe - OPTIMISTIC (isSubscribed flips, memberCount +1), settle
     /// confirms with the verbatim toasts, failure rolls the snapshot back.
     private func subscribe(_ channel: WireChannelSummary) async {
         guard busyId == nil else { return }
@@ -390,11 +388,11 @@ struct ChannelsView: View {
             await reload()
         } catch {
             optimistic[channel.id] = snapshot
-            session.toasts.show("Could not subscribe — try again")
+            session.toasts.show("Could not subscribe - try again")
         }
     }
 
-    /// Unsubscribe — the server owns the last-admin rule and answers 403
+    /// Unsubscribe - the server owns the last-admin rule and answers 403
     /// with the verbatim succession copy; the toast carries it untouched.
     private func leave(_ channel: WireChannelSummary) async {
         guard busyId == nil else { return }
@@ -465,7 +463,7 @@ struct ChannelsView: View {
     private func uploadPhoto(_ item: PhotosPickerItem) async {
         guard let raw = try? await item.loadTransferable(type: Data.self),
               let jpeg = PulseAvatarImage.jpegData(from: raw) else {
-            session.toasts.show("Couldn't read that image — try another one")
+            session.toasts.show("Couldn't read that image - try another one")
             return
         }
         photoBusy = true
@@ -478,7 +476,7 @@ struct ChannelsView: View {
     }
 }
 
-/// Memberwise re-clone — the wire struct keeps `let` storage (Codable+Sendable
+/// Memberwise re-clone - the wire struct keeps `let` storage (Codable+Sendable
 /// house style), so the optimistic flip builds a copy instead of mutating.
 private extension WireChannelSummary {
     func with(subscribed: Bool? = nil, memberCount: Int? = nil) -> WireChannelSummary {

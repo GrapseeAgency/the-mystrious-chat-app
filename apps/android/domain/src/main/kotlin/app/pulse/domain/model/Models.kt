@@ -2,7 +2,7 @@ package app.pulse.domain.model
 
 import kotlinx.serialization.Serializable
 
-/** A Pulse account — mirrors web `AppUser` (src/lib/types.ts). */
+/** A Pulse account - mirrors web `AppUser` (src/lib/types.ts). */
 @Serializable
 data class User(
     val id: String,
@@ -17,7 +17,7 @@ data class User(
     val statusText: String? = null,
 )
 
-/** GET /api/users/check-username outcome — onboarding @handle picker (web parity). */
+/** GET /api/users/check-username outcome - onboarding @handle picker (web parity). */
 data class HandleCheck(
     val available: Boolean,
     val suggestion: String? = null,
@@ -32,7 +32,7 @@ data class Reaction(
 
 /**
  * One conversation participant with the read watermark (wire members[]).
- * Powers the ✓✓ read ticks (member.lastReadAt ≥ message createdAt) and the
+ * Powers the double-tick read receipts (member.lastReadAt >= message createdAt) and the
  * message-info "seen by" sheet. Serialized into the Room `membersJson` cache.
  */
 @Serializable
@@ -40,13 +40,13 @@ data class ConversationMember(
     val id: String,
     val name: String,
     val color: String? = null,
-    /** Epoch ms of the member's read watermark — null = never read / unknown. */
+    /** Epoch ms of the member's read watermark - null = never read / unknown. */
     val lastReadAt: Long? = null,
-    /** Wire role — "admin" | "member". */
+    /** Wire role - "admin" | "member". */
     val role: String? = null,
 )
 
-/** A conversation in the chats list — mirrors web `ConversationSummary`. */
+/** A conversation in the chats list - mirrors web `ConversationSummary`. */
 @Serializable
 data class Conversation(
     val id: String,
@@ -63,18 +63,18 @@ data class Conversation(
     val isArchived: Boolean = false,
     val memberIds: List<String> = emptyList(),
     val memberNames: List<String> = emptyList(),
-    /** Full member rows with read watermarks (summaries + detail) — ticks/info sheet. */
+    /** Full member rows with read watermarks (summaries + detail) - ticks/info sheet. */
     val members: List<ConversationMember> = emptyList(),
     val accentColor: String? = null,
     val streakCount: Int = 0,
     val myDraft: String? = null,
     val isSelf: Boolean = false,
-    // N10 home-page era — web ConversationSummary parity (spec HOMEPAGE-SPEC §7/§14).
+    // N10 home-page era - web ConversationSummary parity (spec HOMEPAGE-SPEC §7/§14).
     /** Viewer flagged this row mark-as-unread (12dp dot even at 0 unread). */
     val myManualUnread: Boolean = false,
-    /** deadStreak.count — a live chain that dies tonight (amber "ends tonight"). */
+    /** deadStreak.count - a live chain that dies tonight (amber "ends tonight"). */
     val streakAtRiskCount: Int = 0,
-    /** lostStreak.count > 0 — honestly lost chain (rose "streak lost"). */
+    /** lostStreak.count > 0 - honestly lost chain (rose "streak lost"). */
     val streakLost: Boolean = false,
     val lastMessageMine: Boolean = false,
     val lastMessageDeleted: Boolean = false,
@@ -83,9 +83,9 @@ data class Conversation(
     val lastMessageIsAudio: Boolean = false,
     val lastMessageIsFile: Boolean = false,
     val lastMessageFileName: String? = null,
-    /** Epoch ms when the viewer's mute window ends — 0 = not muted (future-check truth). */
+    /** Epoch ms when the viewer's mute window ends - 0 = not muted (future-check truth). */
     val mutedUntilEpoch: Long = 0,
-    /** First non-viewer member id — DM presence lookup. Null when unknown. */
+    /** First non-viewer member id - DM presence lookup. Null when unknown. */
     val otherUserId: String? = null,
     /** Broadcast-only channel (web broadcastMode). */
     val isChannel: Boolean = false,
@@ -111,7 +111,7 @@ data class MessageHit(
     val fileName: String? = null,
 )
 
-// ── Wave 2 messaging depth — polls / link previews / saved / topics / ASR ──
+// Wave 2 messaging depth - polls / link previews / saved / topics / ASR
 
 /** One option of a live poll with its per-user tally (wire votedBy mirror). */
 @Serializable
@@ -128,7 +128,7 @@ data class PollOptionInfo(
  *
  * `myOptionId` is carried for completeness but is ACTOR-RELATIVE on relayed
  * rows (poll:voted maps the row with the VOTER as viewer → every recipient
- * would see the voter's pick as "mine") and null on history GETs — NEVER use
+ * would see the voter's pick as "mine") and null on history GETs - NEVER use
  * it. The viewer's own pick derives ONLY from [pickFor], which scans
  * options[].votedBy for the viewer id.
  */
@@ -142,7 +142,7 @@ data class PollInfo(
     val myOptionId: String? = null,
 ) {
     /**
-     * The viewer's own pick, derived from options[].votedBy ONLY — never from
+     * The viewer's own pick, derived from options[].votedBy ONLY - never from
      * [myOptionId] (actor-relative on relays, null on history). Null when the
      * viewer has not voted (or viewerId is unknown).
      */
@@ -170,12 +170,13 @@ data class SavedItem(
     val message: Message,
 )
 
-/** One Zulip-style topic chip (General is NOT a row — implicit whole room). */
+/** One Zulip-style topic chip (General is NOT a row - implicit whole room). */
 @Serializable
 data class Topic(
     val id: String,
     val name: String,
-    val emoji: String = "💬",
+    /** R18 icon-id contract - a stable topic icon id (default "chat"), never a raw emoji. */
+    val emoji: String = app.pulse.protocol.TOPIC_ICON_DEFAULT,
     val lastMessageAt: Long? = null,
     val messageCount: Int = 0,
 )
@@ -188,7 +189,7 @@ data class TranscribeOutcome(
     val cached: Boolean = false,
 )
 
-/** One cell in the chats stories rail (GET /api/stories — degrades to My status only). */
+/** One cell in the chats stories rail (GET /api/stories - degrades to My status only). */
 data class StoryCell(
     val userId: String,
     val name: String,
@@ -214,14 +215,14 @@ data class StoryUser(
  */
 data class StoryItem(
     val id: String,
-    /** "image" | "text" — imagePath != null ⇒ image (wire kind is advisory). */
+    /** "image" | "text" - imagePath != null ⇒ image (wire kind is advisory). */
     val kind: String,
     val imagePath: String? = null,
     val caption: String = "",
     /** Palette key (emerald/rose/amber/violet/teal/orange/pink/cyan). */
     val background: String = "emerald",
     val createdAtEpochMs: Long = 0L,
-    /** createdAt + 24h — stories with expiresAt <= now are dropped client-side (web-defect D2). */
+    /** createdAt + 24h - stories with expiresAt <= now are dropped client-side (web-defect D2). */
     val expiresAtEpochMs: Long = 0L,
     val viewCount: Int = 0,
     val viewedByMe: Boolean = false,
@@ -242,7 +243,7 @@ data class StoryGroup(
     val stories: List<StoryItem>,
 )
 
-/** One row of the owner-only viewers list (GET /api/stories/{id}/view — oldest first). */
+/** One row of the owner-only viewers list (GET /api/stories/{id}/view - oldest first). */
 data class StoryViewer(
     val userId: String,
     val name: String,
@@ -251,7 +252,7 @@ data class StoryViewer(
     val viewedAtIso: String = "",
 )
 
-/** Signal/Beeper-style chat folder (GET /api/folders — fails offline → empty rail). */
+/** Signal/Beeper-style chat folder (GET /api/folders - fails offline → empty rail). */
 data class FolderSummary(
     val id: String,
     val name: String,
@@ -259,7 +260,7 @@ data class FolderSummary(
     val conversationIds: List<String> = emptyList(),
 )
 
-/** One @mention row (GET /api/mentions) — the list pill only consumes the count. */
+/** One @mention row (GET /api/mentions) - the list pill only consumes the count. */
 data class MentionItem(
     val messageId: String,
     val conversationId: String,
@@ -269,11 +270,11 @@ data class MentionItem(
     val createdAt: String = "",
 )
 
-// ── Wave 6 — social graph & discovery domain models ─────────────────
+// Wave 6 - social graph & discovery domain models
 
 /**
  * The FULL profile row behind a user page / edit form (GET+PATCH
- * /api/users/{id}). `lastSeenIso` is null when the owner scrubs it —
+ * /api/users/{id}). `lastSeenIso` is null when the owner scrubs it -
  * surfaces render "Last seen hidden", never a guess.
  */
 data class UserProfile(
@@ -305,7 +306,7 @@ data class UserStats(
 )
 
 /**
- * R5-B — the conversation-streak state AFTER a send (server `streak` field,
+ * R5-B - the conversation-streak state AFTER a send (server `streak` field,
  * messages/route.ts:678-706). `continued` mirrors the server's `lastDay ==
  * yesterdayUTC` growth check; a restart lands continued=false, count=1.
  */
@@ -316,8 +317,8 @@ data class StreakSnapshot(
 )
 
 /**
- * R5-B — receipt of a DELIVERED send: the real row PLUS the streak bump the
- * server attached (null when the send didn't change today's streak —
+ * R5-B - receipt of a DELIVERED send: the real row PLUS the streak bump the
+ * server attached (null when the send didn't change today's streak -
  * same-day re-sends). The room fires the web-verbatim nudge from it.
  */
 data class SendReceipt(
@@ -353,7 +354,7 @@ data class InvitePreview(
     val alreadyMember: Boolean,
 )
 
-/** POST /api/invite/{code}/join outcome — idempotent (alreadyMember=true is a no-op join). */
+/** POST /api/invite/{code}/join outcome - idempotent (alreadyMember=true is a no-op join). */
 data class InviteJoinOutcome(
     val conversationId: String,
     val alreadyMember: Boolean,
@@ -373,7 +374,7 @@ data class Channel(
 )
 
 /**
- * A PATCH /api/users/{id} payload — only fields the user touched ride the
+ * A PATCH /api/users/{id} payload - only fields the user touched ride the
  * body; `username` null = leave alone, "" = clear (wire contract).
  */
 data class ProfilePatch(
@@ -386,25 +387,25 @@ data class ProfilePatch(
     val username: String? = null,
 )
 
-// ── REM-A group governance + scheduling models ─────────────────────────────
+// REM-A group governance + scheduling models
 
-/** Outcome of leaving a group (DELETE members) — succession bookkeeping included. */
+/** Outcome of leaving a group (DELETE members) - succession bookkeeping included. */
 data class GroupLeave(
     /** How many members remain in the group after the departure. */
     val remainingMembers: Int,
-    /** Set when the leaver was the group's LAST admin — the server auto-promotes the longest-standing member. */
+    /** Set when the leaver was the group's LAST admin - the server auto-promotes the longest-standing member. */
     val promotedUserId: String? = null,
 )
 
 /**
  * One pending delayed-send row (GET/POST /api/conversations/{id}/scheduled,
- * DELETE /api/scheduled/{id}) — web ScheduledItem parity.
+ * DELETE /api/scheduled/{id}) - web ScheduledItem parity.
  */
 data class ScheduledItem(
     val id: String,
     val conversationId: String,
     val content: String,
-    /** ISO-8601 wire stamp — the moment the server will dispatch it. */
+    /** ISO-8601 wire stamp - the moment the server will dispatch it. */
     val scheduledAtIso: String,
     val cancelledAtIso: String? = null,
     val cancelledReason: String? = null,
@@ -412,26 +413,26 @@ data class ScheduledItem(
 
 /**
  * Server detail meta for the group-info surface (web ConversationDetail
- * subset). Fetched live on room/info open — NOT persisted in Room (schema v9
+ * subset). Fetched live on room/info open - NOT persisted in Room (schema v9
  * is frozen); every read is honest server truth.
  */
 data class GroupMeta(
-    /** THIS viewer's wire role — "admin" | "member" (null on DMs). */
+    /** THIS viewer's wire role - "admin" | "member" (null on DMs). */
     val myRole: String?,
     val isGroup: Boolean,
     /** Disappearing-message TTL seconds (0 = off). */
     val ttlSeconds: Int,
-    /** Announcement mode — admins only post while on. */
+    /** Announcement mode - admins only post while on. */
     val broadcastMode: Boolean,
-    /** Slow mode — members wait Ns between sends (0 = off). */
+    /** Slow mode - members wait Ns between sends (0 = off). */
     val slowModeSeconds: Int,
     /** Signal screen security (room-wide flag). */
     val screenPrivacy: Boolean,
     /** R42 per-VIEWER screen security (the personal veil flag). */
     val myScreenPrivacy: Boolean = false,
-    /** Shareable join code — null = no active link. */
+    /** Shareable join code - null = no active link. */
     val inviteCode: String?,
-    // R6 — M5: R47 DM dead-end (web detail `dmBlocked`) — a block in EITHER
+    // R6 - M5: R47 DM dead-end (web detail `dmBlocked`) - a block in EITHER
     // direction between the DM pair. The room swaps the composer for the
     // "You can no longer message this account" notice; the server 403
     // remains the real enforcement.
@@ -439,7 +440,7 @@ data class GroupMeta(
 ) {
     val isAdmin: Boolean get() = myRole == "admin"
 
-    /** R42 — the room veils when EITHER flag is on (web screenPrivacyOn parity). */
+    /** R42 - the room veils when EITHER flag is on (web screenPrivacyOn parity). */
     val screenPrivacyEffective: Boolean get() = screenPrivacy || myScreenPrivacy
 }
 
@@ -456,7 +457,7 @@ class PulseApiException(
     val retryAfter: Int? = null,
 ) : IllegalStateException(message ?: "Request failed")
 
-/** A message — mirrors web `MessageDTO`. */
+/** A message - mirrors web `MessageDTO`. */
 @Serializable
 data class Message(
     val id: String,
@@ -479,8 +480,8 @@ data class Message(
     val senderColor: String? = null,
     val viaAutomation: Boolean = false,
     val durationMs: Long? = null,
-    // Wave 1 media fields — image/file/voice rows render without extra fetches.
-    /** Wire imagePath — served as {gateway}/api/uploads/{imagePath}. */
+    // Wave 1 media fields - image/file/voice rows render without extra fetches.
+    /** Wire imagePath - served as {gateway}/api/uploads/{imagePath}. */
     val imagePath: String? = null,
     val audioPath: String? = null,
     val filePath: String? = null,
@@ -488,10 +489,10 @@ data class Message(
     val fileSize: Long? = null,
     /** View-once render gate (consume itself is a Wave 2 non-goal). */
     val viewOnce: Boolean = false,
-    // ── Wave 2 depth fields ─────────────────────────────────────
+    // Wave 2 depth fields
     /** Epoch ms when the view-once photo was consumed (wire viewedAt ISO → parsed). Null = unopened. */
     val viewedAt: Long? = null,
-    /** Voice-note transcript (server ASR cache — visible to every member). */
+    /** Voice-note transcript (server ASR cache - visible to every member). */
     val transcript: String? = null,
     /** Epoch ms the transcript was produced (wire transcribedAt ISO → parsed). */
     val transcribedAt: Long? = null,
@@ -499,29 +500,29 @@ data class Message(
     val poll: PollInfo? = null,
     /** Parsed Open-Graph preview (null until the unfurl round-trip lands). */
     val linkPreview: LinkPreviewInfo? = null,
-    /** Zulip-style topic the message is filed under — null = General (whole room). */
+    /** Zulip-style topic the message is filed under - null = General (whole room). */
     val topicId: String? = null,
-    // ── Wave 7 rich-object payload (raw JSON string from the wire; null on text rows) ──
+    // Wave 7 rich-object payload (raw JSON string from the wire; null on text rows)
     val payload: String? = null,
-    // ── REM-A — incognito + disappearing (F-MS-17/19) ──
-    /** Wire anon flag — group-only server-side; the sender's own rows keep it true. */
+    // REM-A - incognito + disappearing (F-MS-17/19)
+    /** Wire anon flag - group-only server-side; the sender's own rows keep it true. */
     val anon: Boolean = false,
     /** Deterministic per (sender, conversation) mask ("Ember the Falcon"). */
     val anonAlias: String? = null,
     /** Epoch ms when this row evaporates (wire expiresAt ISO → parsed). Null = forever. */
     val expiresAtEpochMs: Long? = null,
 ) {
-    // R1-W2F (F-MD-07): wire kind "location" — pin rows carry payload {lat,lng,label}.
+    // R1-W2F (F-MD-07): wire kind "location" - pin rows carry payload {lat,lng,label}.
     enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, GAME, TOURNAMENT, STICKER, LOCATION, SYSTEM }
 
     val isDeleted: Boolean get() = deletedAt != null
 }
 
 /**
- * R1-W2F — `kind=="location"` payload blob: {lat,lng,label} (web
+ * R1-W2F - `kind=="location"` payload blob: {lat,lng,label} (web
  * LocationPayload / parseLocationPayload in location-share.tsx). lat/lng have
  * NO defaults on purpose: a garbled or partial blob fails the decode and the
- * bubble falls back to plain text — the same honesty as the web parser.
+ * bubble falls back to plain text - the same honesty as the web parser.
  */
 @Serializable
 data class LocationPayload(
@@ -532,10 +533,10 @@ data class LocationPayload(
 )
 
 /**
- * R1-W2F — one conversation's theme override (F-FX-05, web ConvTheme in
+ * R1-W2F - one conversation's theme override (F-FX-05, web ConvTheme in
  * conv-theme.ts): wallpaper mirrors the global Appearance tokens and tint is
  * an optional accent layered over the room wallpaper. Stored under the prefs
- * key `chat.convThemes` as { conversationId: { wallpaper, tint? } } — the web
+ * key `chat.convThemes` as { conversationId: { wallpaper, tint? } } - the web
  * JSON shape, byte-identical.
  */
 data class ConvTheme(
@@ -543,19 +544,19 @@ data class ConvTheme(
     val tint: String? = null,
 ) {
     companion object {
-        /** Web conv-theme.ts CONV_WALLPAPERS — the global Appearance token set. */
+        /** Web conv-theme.ts CONV_WALLPAPERS - the global Appearance token set. */
         val WALLPAPERS: List<String> = listOf("none", "aurora", "dusk", "forest", "mono")
 
         /** Web conv-theme.ts CONV_TINTS. */
         val TINTS: List<String> = listOf("emerald", "rose", "amber", "violet", "teal")
 
-        /** Web MAX_CONV_THEMES — the /api/settings 4KB prefs budget keeps 48 safe. */
+        /** Web MAX_CONV_THEMES - the /api/settings 4KB prefs budget keeps 48 safe. */
         const val MAX_MAP_ENTRIES = 48
     }
 }
 
 /**
- * One row of the viewer's quick-phrase rail (F-MS-29 — GET/POST/DELETE
+ * One row of the viewer's quick-phrase rail (F-MS-29 - GET/POST/DELETE
  * /api/users/{id}/phrases). position is the server-side ordering key.
  */
 data class QuickPhrase(
@@ -565,7 +566,7 @@ data class QuickPhrase(
 )
 
 /**
- * R39 — one keyword auto-reply rule (web `AutomationSummary`, types.ts:330).
+ * R39 - one keyword auto-reply rule (web `AutomationSummary`, types.ts:330).
  * The send path lands the reply as a real machine-sent message server-side;
  * native surfaces manage rows through /api/automations.
  */
@@ -587,7 +588,7 @@ data class Automation(
 
 /**
  * One Discord-style incoming webhook (web `WebhookItem`). `url` is the
- * RELATIVE ingest path from the wire (`/api/webhooks/{token}`) — surfaces
+ * RELATIVE ingest path from the wire (`/api/webhooks/{token}`) - surfaces
  * pair it with the configured server origin for copy/share.
  */
 data class Webhook(

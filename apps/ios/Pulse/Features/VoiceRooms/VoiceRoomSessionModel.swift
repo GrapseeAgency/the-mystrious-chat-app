@@ -1,18 +1,16 @@
 import Combine
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — W5-f session-scoped voice rooms owner (voice + stage +
+// Pulse - W5-f session-scoped voice rooms owner (voice + stage +
 // space). Created by PulseSession.startVoiceRooms(viewer:) at
 // identity adoption (mirrors startStories), so room MEMBERSHIP
-// SURVIVES surface close (VR-1) — the ChatRoomView pill + the
+// SURVIVES surface close (VR-1) - the ChatRoomView pill + the
 // fullScreenCover host both read this one instance.
 //
 // Consumes the 7 rooms signals via session.signals (they keep
 // flowing to other subscribers unchanged) and emits through
 // session.emitRoomSignal (payloads from the pure VoiceRoomWire
 // builders, unit-tested against the relay's validation).
-// ─────────────────────────────────────────────────────────────
 
 @MainActor
 public final class VoiceRoomSessionModel: ObservableObject {
@@ -20,7 +18,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         case voice, stage, space
     }
 
-    /// One caption strip row (ephemeral — never stored, VR-7/spec §1.4).
+    /// One caption strip row (ephemeral - never stored, VR-7/spec §1.4).
     public struct Caption: Equatable, Identifiable, Sendable {
         public let id: UUID
         public let userId: String
@@ -31,16 +29,16 @@ public final class VoiceRoomSessionModel: ObservableObject {
         public let at: Date
     }
 
-    // ── published state (three pure machines + UI bits) ──
+    // published state (three pure machines + UI bits)
     @Published public private(set) var voice = VoiceRoomModel()
     @Published public private(set) var stage: StageModel
     @Published public private(set) var space: SpaceModel
     @Published public private(set) var captions: [Caption] = []
     /// The open surface (nil = closed; the pill shows while joined).
     @Published public private(set) var surface: Surface?
-    /// VR-7 — captions toggle, persisted (PulsePrefs.voiceCaptionsKey).
+    /// VR-7 - captions toggle, persisted (PulsePrefs.voiceCaptionsKey).
     @Published public private(set) var captionsEnabled: Bool
-    /// VR-10 — honest mic issue banner (denied / busy / absent); the
+    /// VR-10 - honest mic issue banner (denied / busy / absent); the
     /// room still joins and listens.
     @Published public private(set) var micIssue: String?
 
@@ -55,7 +53,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     private var accumulator = CaptionWindowAccumulator()
     private var lastTranscriptEmitMs: Double = 0
     /// The caption toggle store (the ONLY persisted artefact of the
-    /// rooms feature — spec §1.4). Key shared with PulsePrefs.
+    /// rooms feature - spec §1.4). Key shared with PulsePrefs.
     private let defaults: UserDefaults
 
     public init(session: PulseSession, defaults: UserDefaults = .standard) {
@@ -66,7 +64,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         space = SpaceModel(myId: myId)
         captionsEnabled = defaults.bool(forKey: PulsePrefs.voiceCaptionsKey)
 
-        // Engine callbacks fire on the audio tap thread — hop to the main
+        // Engine callbacks fire on the audio tap thread - hop to the main
         // queue (strict FIFO keeps chunk ORDER intact; Task would not).
         engine.onChunk = { [weak self] chunk in
             DispatchQueue.main.async {
@@ -94,7 +92,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         // the 7 rooms events + connectionState here (single delivery).
     }
 
-    // ── viewer helpers ───────────────────────────────────
+    // viewer helpers
 
     private var viewerId: String { session.viewer?.id ?? "" }
     private var viewerName: String { session.viewer?.name ?? "Someone" }
@@ -105,9 +103,9 @@ public final class VoiceRoomSessionModel: ObservableObject {
         Date().timeIntervalSince1970 * 1000
     }
 
-    // ── signal routing ───────────────────────────────────
+    // signal routing
 
-    /// Routed from PulseSession.handle — the 7 rooms signals AND
+    /// Routed from PulseSession.handle - the 7 rooms signals AND
     /// connectionState land here exactly once.
     func handle(_ signal: PulseSocketClient.Signal) {
         switch signal {
@@ -134,7 +132,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
             guard conversationId == spaceConversationId else { return }
             if let state = Self.decode(WireSpaceState.self, from: raw) {
                 let verdict = space.apply(state: state, nowMs: nowMs())
-                // R1-W2G D46 — an adopted SERVER position is the last known
+                // R1-W2G D46 - an adopted SERVER position is the last known
                 // position too; the cache refreshes with the server's truth.
                 if case .adopt(let x, let y) = verdict {
                     storeLastPosition(roomId: conversationId, x: x, y: y)
@@ -153,7 +151,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         return try? JSONDecoder().decode(T.self, from: data)
     }
 
-    // ── voice room (VR-1…VR-11) ──────────────────────────
+    // voice room (VR-1…VR-11)
 
     public func joinVoice(conversationId: String) {
         guard voice.status == .idle || voice.status == .error else { return }
@@ -186,7 +184,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         micIssue = nil
     }
 
-    /// VR-3 — PTT hold/latch share this gate: disabled when muted,
+    /// VR-3 - PTT hold/latch share this gate: disabled when muted,
     /// not joined, disconnected or mic-denied (honest, never fake).
     public var canTransmit: Bool {
         voice.status == .joined
@@ -226,7 +224,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         }
     }
 
-    /// VR-6 — software gate is the truth; muting while transmitting
+    /// VR-6 - software gate is the truth; muting while transmitting
     /// force-stops the PTT (the model reports the force-stop).
     public func setMicMuted(_ muted: Bool) {
         let forceStopped = voice.setMicMuted(muted)
@@ -251,7 +249,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         }
     }
 
-    /// VR-10 — the mic banner's "Try again": re-run permission + engine
+    /// VR-10 - the mic banner's "Try again": re-run permission + engine
     /// start; the room stays joined and listening throughout.
     public func retryMicAccess() async {
         let granted = await engine.requestMicPermission()
@@ -269,11 +267,11 @@ public final class VoiceRoomSessionModel: ObservableObject {
 
         let containsMe = (roster.peers ?? []).contains { $0.id == viewerId }
         guard !containsMe else { return }
-        // VR-8 — joined but absent: rate-limited re-join (2 s).
+        // VR-8 - joined but absent: rate-limited re-join (2 s).
         let now = nowMs()
         guard voice.mayResync(nowMs: now) else { return }
         voice.noteResync(nowMs: now)
-        // FIX #3 seam — stage-joined but the voice roster dropped me
+        // FIX #3 seam - stage-joined but the voice roster dropped me
         // (forced removal): re-arm the seat, then re-join so I keep HEARING.
         stage.markVoiceSeatRemoved()
         emitVoiceJoin()
@@ -313,7 +311,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         }
     }
 
-    // ── captions pipeline (VR-7) ─────────────────────────
+    // captions pipeline (VR-7)
 
     private func startTranscription(window: [Int16]) {
         guard let conversationId = voice.conversationId, !window.isEmpty else {
@@ -360,14 +358,14 @@ public final class VoiceRoomSessionModel: ObservableObject {
         captions.removeAll { $0.at < cutoff }
     }
 
-    // ── stage (ST-1…ST-8) ────────────────────────────────
+    // stage (ST-1…ST-8)
 
     public func joinStage(conversationId: String) {
         guard !stage.joined else { return }
         stage.beginJoin(conversationId: conversationId, asHost: false)
         open(.stage)
-        emitStageJoin(asHost: false) // ST-1 — ALWAYS as listener
-        // FIX #3 — every joined role holds a voice seat (audience hears).
+        emitStageJoin(asHost: false) // ST-1 - ALWAYS as listener
+        // FIX #3 - every joined role holds a voice seat (audience hears).
         if stage.consumeVoiceSeatRequest() {
             emitVoiceJoin(conversationId: conversationId)
         }
@@ -393,7 +391,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         emitRoom(.stageHand, VoiceRoomWire.stageHand(conversationId: conversationId, userId: viewerId, raised: raised))
     }
 
-    /// ST-3 — host-only approve (hand → speaker, server truth follows).
+    /// ST-3 - host-only approve (hand → speaker, server truth follows).
     public func approveHand(userId: String) {
         guard stage.isHost, let conversationId = stage.conversationId else { return }
         emitRoom(.stageApprove, VoiceRoomWire.stageApprove(
@@ -403,7 +401,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         ))
     }
 
-    /// ST-4 — host-only mute (speaker → listener; the server ALSO
+    /// ST-4 - host-only mute (speaker → listener; the server ALSO
     /// force-removes the target's voice seat).
     public func muteMember(userId: String) {
         guard stage.isHost, let conversationId = stage.conversationId else { return }
@@ -414,14 +412,14 @@ public final class VoiceRoomSessionModel: ObservableObject {
         ))
     }
 
-    /// ST-5 — the host fires this on the SECOND tap of the two-tap confirm
+    /// ST-5 - the host fires this on the SECOND tap of the two-tap confirm
     /// (the 2600 ms reset window lives in StageEndConfirm).
     public func endStage() {
         guard stage.canEnd, let conversationId = stage.conversationId else { return }
         emitRoom(.stageEnd, VoiceRoomWire.stageEnd(conversationId: conversationId, byUserId: viewerId))
     }
 
-    /// ST-7 — the host seat is empty: claim it with an asHost re-join.
+    /// ST-7 - the host seat is empty: claim it with an asHost re-join.
     public func claimHost() {
         guard stage.canClaimHost, let conversationId = stage.conversationId else { return }
         stage.wasHost = true
@@ -440,7 +438,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         ))
     }
 
-    /// stage:ended — full local teardown + surface close + toast (ST-5).
+    /// stage:ended - full local teardown + surface close + toast (ST-5).
     private func finishStageTeardown(toast: String) {
         let seatConversationId = stage.conversationId
         stage.applyEnded()
@@ -451,12 +449,12 @@ public final class VoiceRoomSessionModel: ObservableObject {
         }
     }
 
-    // ── space (SP-1…SP-5) ────────────────────────────────
+    // space (SP-1…SP-5)
 
     public func joinSpace(conversationId: String) {
         guard !space.joined else { return }
         space.beginJoin()
-        // R1-W2G D46 — the durable last-position cache seeds the initial
+        // R1-W2G D46 - the durable last-position cache seeds the initial
         // target on rejoin (web falls back to 0.5/0.5); the server still
         // wins when its state returns a real self position (apply()).
         if let cached = loadLastPosition(roomId: conversationId) {
@@ -464,7 +462,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         }
         open(.space)
         // Remember which conversation the space seat belongs to (SpaceModel
-        // is pure — no wire ids). The re-join path uses it too.
+        // is pure - no wire ids). The re-join path uses it too.
         spaceConversationId = conversationId
         emitRoom(.spaceJoin, VoiceRoomWire.spaceJoin(
             conversationId: conversationId,
@@ -478,7 +476,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     public func leaveSpace() {
         guard space.joined else { return }
         if let conversationId = spaceConversationId {
-            // R1-W2G D46 — leave-time flush of the optimistic target (drag
+            // R1-W2G D46 - leave-time flush of the optimistic target (drag
             // frames past the last throttled emit never wrote through).
             storeLastPosition(roomId: conversationId, x: space.targetX, y: space.targetY)
             emitRoom(.spaceLeave, VoiceRoomWire.spaceLeave(conversationId: conversationId))
@@ -486,21 +484,21 @@ public final class VoiceRoomSessionModel: ObservableObject {
         space.leave()
     }
 
-    /// SP-3 — tap-to-move AND drag share this: clamp + optimistic target
+    /// SP-3 - tap-to-move AND drag share this: clamp + optimistic target
     /// + 80 ms throttle; the emit fires only when the throttle allows.
     public func moveSpace(x: Double, y: Double) {
         guard space.joined, let conversationId = spaceConversationId else { return }
         guard case .emit(let clampedX, let clampedY) = space.localMove(x: x, y: y, nowMs: nowMs()) else { return }
-        // R1-W2G D46 — write-through on every position change that EMITS:
+        // R1-W2G D46 - write-through on every position change that EMITS:
         // the 80 ms throttle gate doubles as the write debounce, and the
         // direct defaults write is the house prefs pattern (voiceCaptions).
         storeLastPosition(roomId: conversationId, x: clampedX, y: clampedY)
         emitRoom(.spaceMove, VoiceRoomWire.spaceMove(conversationId: conversationId, x: clampedX, y: clampedY))
     }
 
-    // ── R1-W2G D46 — durable last-position cache ("space:lastpos:<roomId>",
+    // R1-W2G D46 - durable last-position cache ("space:lastpos:<roomId>",
     // JSON-encoded SpaceLastPosition; direct defaults writes, the same
-    // pattern the captions toggle uses — the ONLY persisted artefacts of
+    // pattern the captions toggle uses - the ONLY persisted artefacts of
     // the rooms feature).
 
     private func loadLastPosition(roomId: String) -> SpaceLastPosition? {
@@ -513,13 +511,13 @@ public final class VoiceRoomSessionModel: ObservableObject {
         defaults.set(data, forKey: PulsePrefs.spaceLastPositionKey(roomId))
     }
 
-    /// The space conversation id — SpaceModel is pure (no wire ids), so
+    /// The space conversation id - SpaceModel is pure (no wire ids), so
     /// the session carries it alongside.
     private var spaceConversationId: String?
 
-    // ── surface lifecycle ────────────────────────────────
+    // surface lifecycle
 
-    /// The conversation the open surface belongs to — captured at open()
+    /// The conversation the open surface belongs to - captured at open()
     /// (joinVoice/joinStage/joinSpace set the ids BEFORE opening), so an
     /// in-surface leave keeps the surface's Join card pointed at the right
     /// room and the fullScreenCover host can pass it to the surfaces.
@@ -539,7 +537,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         }
     }
 
-    /// VR-1 entry state — true when ANY room kind of this conversation is
+    /// VR-1 entry state - true when ANY room kind of this conversation is
     /// joined (the chat header mic tints active; the live pill additionally
     /// requires a closed surface and is voice-specific).
     public func isInRoom(_ conversationId: String) -> Bool {
@@ -561,7 +559,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         }
     }
 
-    // ── connection transitions (VR-8 / ST-8 / SP-5) ──────
+    // connection transitions (VR-8 / ST-8 / SP-5)
 
     private func handleConnection(connected: Bool) {
         voice.setConnected(connected)
@@ -592,11 +590,11 @@ public final class VoiceRoomSessionModel: ObservableObject {
             if voice.transmitting {
                 stopTransmitting(emitPttOff: true)
             }
-            space.noteDisconnected() // FIX #5 — attempts → honest error
+            space.noteDisconnected() // FIX #5 - attempts → honest error
         }
     }
 
-    // ── emit funnels ─────────────────────────────────────
+    // emit funnels
 
     private func emitRoom(_ event: PulseSocketEvents, _ payload: [String: Any]) {
         session.emitRoomSignal(event: event.rawValue, payload: payload)
@@ -624,7 +622,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         emitRoom(.voicePtt, VoiceRoomWire.voicePtt(conversationId: conversation, userId: viewerId, on: on))
     }
 
-    /// The seat existed only for a stage/space context — release without
+    /// The seat existed only for a stage/space context - release without
     /// touching the user's voice-room intent.
     private func releaseVoiceSeat() {
         if let conversation = voice.conversationId {

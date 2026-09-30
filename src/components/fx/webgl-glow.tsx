@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse premium FX (R26-e) — multi-mode WebGL ambient system.
+// Pulse premium FX (R26-e) - multi-mode WebGL ambient system.
 // Raw WebGL1 (no three.js): one fullscreen quad + a per-mode
 // fragment shader. Six modes ship today:
 //
@@ -13,14 +12,14 @@
 // Contract (R26-a lead): the active mode is read from the prefs
 // store key 'fx.webglMode' (string, one of WEBGL_MODES; default
 // DEFAULT_WEBGL_MODE = 'aurora'). Settings (R26-c) writes it via
-// usePrefs().save({ 'fx.webglMode': mode }) — until prefs-defaults
+// usePrefs().save({ 'fx.webglMode': mode }) - until prefs-defaults
 // carries the key, the tolerant reader below validates whatever it
 // finds and falls back to the default. A `mode` prop overrides the
 // pref (used by WebglGlow for back-compat and by tests).
 //
 // Performance & safety guards:
 // · Device-pixel-ratio capped at 1.5 (times a per-mode render
-//   scale — these are gradients/soft points, not text).
+//   scale - these are gradients/soft points, not text).
 // · Paused when offscreen (IntersectionObserver) or tab hidden
 //   (visibilitychange).
 // · prefers-reduced-motion (media query OR prefs.reducedMotion)
@@ -38,8 +37,7 @@
 // module-level availability signal (isWebglAmbientAvailable /
 // useWebglAmbientAvailable) that particle-layer.tsx consumes so the
 // DOM particle layer and the WebGL ambient never overdraw at the
-// same time. Zero emojis — code and comments alike.
-// ─────────────────────────────────────────────────────────────
+// same time. Zero emojis - code and comments alike.
 'use client'
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
@@ -47,7 +45,7 @@ import { cn } from '@/lib/utils'
 import { usePrefs } from '@/lib/prefs'
 import { prefersReducedMotion } from '@/lib/motion'
 
-// ── Mode registry + prefs contract ──────────────────────────
+// Mode registry + prefs contract 
 
 export const WEBGL_MODES = ['off', 'aurora', 'caustics', 'mesh', 'stars', 'liquid'] as const
 export type WebGLMode = (typeof WEBGL_MODES)[number]
@@ -62,7 +60,7 @@ export function isWebglMode(v: unknown): v is WebGLMode {
   return typeof v === 'string' && (WEBGL_MODES as readonly string[]).includes(v)
 }
 
-// ── Ambient availability signal (consumed by particle-layer) ─
+// Ambient availability signal (consumed by particle-layer)
 
 const AMBIENT_AVAILABLE_EVENT = 'pulse:webgl-ambient-availability'
 
@@ -88,12 +86,12 @@ function subscribeAmbient(onChange: () => void): () => void {
 
 const getServerAmbient = (): boolean => false
 
-/** React hook — is the WebGL ambient canvas currently alive? */
+/** React hook - is the WebGL ambient canvas currently alive? */
 export function useWebglAmbientAvailable(): boolean {
   return useSyncExternalStore(subscribeAmbient, isWebglAmbientAvailable, getServerAmbient)
 }
 
-// ── Shaders ─────────────────────────────────────────────────
+// Shaders 
 
 const VERT_SRC = `
 attribute vec2 a_pos;
@@ -104,7 +102,7 @@ void main() {
 }
 `
 
-// aurora — drifting soft color bands
+// aurora - drifting soft color bands
 const AURORA_FRAG = `
 precision mediump float;
 varying vec2 v_uv;
@@ -149,7 +147,7 @@ void main() {
 }
 `
 
-// caustics — glassy refraction ripples (interference minima)
+// caustics - glassy refraction ripples (interference minima)
 const CAUSTICS_FRAG = `
 precision mediump float;
 varying vec2 v_uv;
@@ -192,7 +190,7 @@ void main() {
 }
 `
 
-// mesh — slowly morphing gradient blobs (the R22 hero glow)
+// mesh - slowly morphing gradient blobs (the R22 hero glow)
 const MESH_FRAG = `
 precision mediump float;
 varying vec2 v_uv;
@@ -238,7 +236,7 @@ void main() {
 }
 `
 
-// stars — parallax particle starfield with twinkle
+// stars - parallax particle starfield with twinkle
 const STARS_FRAG = `
 precision mediump float;
 varying vec2 v_uv;
@@ -292,11 +290,11 @@ void main() {
 }
 `
 
-// liquid — slow metaball fluid: five drifting centers fused with a
+// liquid - slow metaball fluid: five drifting centers fused with a
 // polynomial smooth-min, threshold-banded emerald/teal/rose mixing,
 // a fresnel-ish specular rim and dithering grain (R31-b).
 // The Lissajous centers are time-only data, so they are computed on
-// the CPU once per frame and uploaded as u_balls — the fragment
+// the CPU once per frame and uploaded as u_balls - the fragment
 // shader stays free of per-pixel trig (software-GL friendly).
 const LIQUID_FRAG = `
 precision mediump float;
@@ -313,7 +311,7 @@ float hash21(vec2 p) {
   return fract(p.x * p.y);
 }
 
-// polynomial smooth-min (IQ) — nearby blobs merge into one fluid body
+// polynomial smooth-min (IQ) - nearby blobs merge into one fluid body
 float smin(float a, float b, float k) {
   float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
   return mix(b, a, h) - k * h * (1.0 - h);
@@ -443,7 +441,7 @@ export function WebGLAmbient({
   const intensityRef = useRef(intensity)
   const [failed, setFailed] = useState(false)
 
-  // prefs-driven mode (tolerant read — prefs-defaults may not carry
+  // prefs-driven mode (tolerant read - prefs-defaults may not carry
   // the key yet; unknown/invalid values resolve to the default)
   const prefsModeRaw = usePrefs((s) => (s.prefs as unknown as Record<string, unknown>)[PREF_KEY_WEBGL_MODE])
   const prefsReduced = usePrefs((s) => s.prefs.reducedMotion)
@@ -661,7 +659,7 @@ export function WebGLAmbient({
 
   const canvas = (
     <canvas
-      key={mode} // fresh canvas per mode — contexts are never reused after loseContext
+      key={mode} // fresh canvas per mode - contexts are never reused after loseContext
       ref={canvasRef}
       aria-hidden
       className={cn('block h-full w-full', className)}
@@ -692,7 +690,7 @@ export interface WebglGlowProps {
 }
 
 /**
- * R22 hero glow — kept as the mesh mode of the ambient system so
+ * R22 hero glow - kept as the mesh mode of the ambient system so
  * onboarding-screen keeps its exact look, palette and CSS fallback.
  */
 export function WebglGlow({ className, intensity = 1 }: WebglGlowProps) {

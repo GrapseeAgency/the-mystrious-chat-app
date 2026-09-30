@@ -1,10 +1,9 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — W5-f voice rooms surface HOST + chat entry.
+// Pulse - W5-f voice rooms surface HOST + chat entry.
 //
 // Hosting (R2): the three room surfaces present through ONE
-// fullScreenCover whose `item` is VoiceRoomSessionModel.surface —
+// fullScreenCover whose `item` is VoiceRoomSessionModel.surface -
 // the session model's published surface state (open/closed + active
 // kind) is the single driver, exactly like the call overlay is
 // driven by engine state (RootView CallOverlayHostView) and the
@@ -13,18 +12,17 @@ import SwiftUI
 // room, switching tabs or popping the stack can never tear the cover
 // away from a live room.
 //
-// Closing (VR-1): the cover's close calls closeSurface() — voice
+// Closing (VR-1): the cover's close calls closeSurface() - voice
 // membership SURVIVES (the "Voice · N live" pill reopens it), stage
 // close = stage:leave (ST-7), space close = space:leave (SP-1); a
 // transmitting PTT force-stops on close via PTTButton.onDisappear.
 //
 // Entry: the ChatRoomView header gains the room launcher (mic icon, tints
-// active while any room of that conversation is joined — VR-1; the menu
+// active while any room of that conversation is joined - VR-1; the menu
 // offers Voice room / Stage / Space, the web palette/tray parity) and the
 // "Voice · N live" pill (voice joined + surface closed → tap to reopen).
-// ─────────────────────────────────────────────────────────────
 
-/// fullScreenCover(item:) needs an Identifiable item — a local wrapper
+/// fullScreenCover(item:) needs an Identifiable item - a local wrapper
 /// carries the surface kind plus a stable id (kept OUT of the session
 /// model so the @MainActor class gains no retroactive conformances).
 private struct RoomsSurfaceItem: Identifiable {
@@ -41,7 +39,7 @@ private struct RoomsSurfaceItem: Identifiable {
     }
 }
 
-/// Mounted by RootView next to CallOverlayHostView — renders nothing,
+/// Mounted by RootView next to CallOverlayHostView - renders nothing,
 /// presents the cover whenever the model's surface state is open.
 struct VoiceRoomsSurfaceHost: View {
     @ObservedObject var model: VoiceRoomSessionModel
@@ -159,7 +157,7 @@ struct VoiceRoomSurface: View {
     }
 }
 
-/// ChatRoomView toolbar entry — the mic button + the live pill. Own
+/// ChatRoomView toolbar entry - the mic button + the live pill. Own
 /// @ObservedObject so the header re-renders on room state changes even
 /// though the parent only observes the session.
 struct VoiceRoomChatEntry: View {
@@ -170,7 +168,7 @@ struct VoiceRoomChatEntry: View {
         model.isInRoom(conversationId)
     }
 
-    /// VR-1 — joined to THIS conversation's voice room and the surface is
+    /// VR-1 - joined to THIS conversation's voice room and the surface is
     /// closed: the pill is the re-entry door (tap → reopen the surface).
     private var showPill: Bool {
         model.voice.status != .idle
@@ -198,10 +196,10 @@ struct VoiceRoomChatEntry: View {
                     .background(Capsule().fill(PulseTheme.emerald500.opacity(0.15)))
                 }
                 .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Voice room live with \(liveCount) people — reopen")
+                .accessibilityLabel("Voice room live with \(liveCount) people - reopen")
             }
 
-            // The room launcher — web parity for the tray/palette entries
+            // The room launcher - web parity for the tray/palette entries
             // (pulse:open-stage / pulse:open-space) + the header mic:
             // one item, three room kinds, tinted while in-room.
             Menu {
@@ -225,7 +223,7 @@ struct VoiceRoomChatEntry: View {
                     .font(.body)
                     .foregroundStyle(inRoom ? PulseTheme.accent : PulseTheme.textSecondary)
             }
-            .accessibilityLabel(inRoom ? "Rooms — you're in one" : "Open a voice room, stage or space")
+            .accessibilityLabel(inRoom ? "Rooms - you're in one" : "Open a voice room, stage or space")
         }
     }
 
@@ -238,7 +236,7 @@ struct VoiceRoomChatEntry: View {
     private func voiceTapped() {
         PulseHaptics.tap()
         if model.voice.status != .idle {
-            // Already in a voice room (this or another conversation) —
+            // Already in a voice room (this or another conversation) -
             // surface it instead of silently swallowing the tap.
             model.open(.voice)
         } else {

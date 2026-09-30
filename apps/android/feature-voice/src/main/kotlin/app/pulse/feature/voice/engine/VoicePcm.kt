@@ -1,7 +1,7 @@
 package app.pulse.feature.voice.engine
 
 /**
- * RFC 4648 base64 — a tiny pure-Kotlin codec so the voice pipeline never
+ * RFC 4648 base64 - a tiny pure-Kotlin codec so the voice pipeline never
  * touches platform codecs: android.util.Base64 does not exist on the JVM
  * test classpath and java.util.Base64 needs API 26 (minSdk is 21). The wire
  * carries base64(Int16LE PCM 16kHz) in every voice:chunk and caption WAV.
@@ -69,14 +69,14 @@ internal object Base64Codec {
 
 /**
  * 16kHz mono Int16 PCM helpers shared by the capture and playback legs:
- * ShortArray ↔ little-endian ByteArray ↔ base64 (the wire form of voice:chunk).
+ * ShortArray <-> little-endian ByteArray <-> base64 (the wire form of voice:chunk).
  */
 internal object VoicePcm {
 
     const val SAMPLE_RATE = 16_000
-    /** 250ms transmit blocks — 4000 samples at 16kHz (spec §0). */
+    /** 250ms transmit blocks - 4000 samples at 16kHz (spec §0). */
     const val BLOCK_SAMPLES = 4_000
-    /** Capture read granularity (100ms) — the chunker re-blocks to 250ms. */
+    /** Capture read granularity (100ms) - the chunker re-blocks to 250ms. */
     const val READ_SAMPLES = 1_600
 
     fun toBytesLE(samples: ShortArray): ByteArray {

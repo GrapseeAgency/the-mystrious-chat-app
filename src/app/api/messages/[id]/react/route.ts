@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/messages/[id]/react — toggle an emoji reaction
-// ─────────────────────────────────────────────────────────────
+// /api/messages/[id]/react - toggle an emoji reaction
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {

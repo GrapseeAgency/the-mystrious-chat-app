@@ -27,7 +27,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 
-// Room schema history — every version bump exports its JSON here (v4 committed).
+// Room schema history - every version bump exports its JSON here (v4 committed).
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
     arg("room.incremental", "true")
@@ -62,7 +62,7 @@ dependencies {
     androidTestImplementation(libs.junit4)
     androidTestImplementation(libs.kotlinx.coroutines.test)
 
-    // JVM unit tests — Home gateway guard + manifest probe order (pure JVM,
+    // JVM unit tests - Home gateway guard + manifest probe order (pure JVM,
     // no Robolectric: PulseApi/PulseEndpoints/manifestProbeUrls touch no android.*).
     testImplementation(libs.junit4)
     testImplementation(libs.kotlinx.coroutines.test)

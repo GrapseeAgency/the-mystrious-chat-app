@@ -7,7 +7,7 @@ package app.pulse.feature.stories
  *
  * Wire truth (POST /api/stories route validation):
  *  - caption ≤ 280;
- *  - must have photo OR text — "A status needs a photo or some text.";
+ *  - must have photo OR text - "A status needs a photo or some text.";
  *  - background must be one of the 8 palette keys and is a TEXT-story
  *    affordance only (image stories are forced "emerald" server-side).
  */
@@ -15,7 +15,7 @@ data class ComposerState(
     val mode: Mode = Mode.TEXT,
     val caption: String = "",
     val background: String = DEFAULT_BACKGROUND,
-    /** Uploaded gateway filename (from POST /api/uploads) — non-null ⇒ photo mode has content. */
+    /** Uploaded gateway filename (from POST /api/uploads) - non-null ⇒ photo mode has content. */
     val imagePath: String? = null,
     val uploading: Boolean = false,
     val posting: Boolean = false,
@@ -40,7 +40,7 @@ data class ComposerState(
 
     fun withMode(mode: Mode): ComposerState = copy(mode = mode, error = null)
 
-    /** Swatch select — TEXT mode only (ignored in photo mode, matching the wire rule). */
+    /** Swatch select - TEXT mode only (ignored in photo mode, matching the wire rule). */
     fun withBackground(key: String): ComposerState =
         if (mode == Mode.TEXT && isValidBackground(key)) {
             copy(background = key, error = null)
@@ -63,7 +63,7 @@ data class ComposerState(
         const val CAPTION_MAX = 280
         const val DEFAULT_BACKGROUND = "emerald"
 
-        /** The 8 gradient keys — AVATAR_COLORS on the wire (route validation). */
+        /** The 8 gradient keys - AVATAR_COLORS on the wire (route validation). */
         val BACKGROUNDS = listOf(
             "emerald", "rose", "amber", "violet", "teal", "orange", "pink", "cyan",
         )
@@ -73,7 +73,7 @@ data class ComposerState(
 }
 
 /**
- * "now" / "Xm" / "Xh" / "Xd" — compact Instagram-style relative stamp
+ * "now" / "Xm" / "Xh" / "Xd" - compact Instagram-style relative stamp
  * (web storyRelativeTime). The day branch is unreachable for live stories
  * (24h TTL) but kept for the owner viewers list.
  */

@@ -1,15 +1,13 @@
-// ─────────────────────────────────────────────────────────────
-// /api/topics/[id] — delete a Zulip-style topic (R24-b)
+// /api/topics/[id] - delete a Zulip-style topic (R24-b)
 //
 // Contract:
 //   DELETE ?userId= (or JSON body { userId })
 //     → 404 unknown topic
 //     → 403 when the requester is not a participant, or is a plain
 //       member who is neither the topic creator nor a group admin
-//     → 200 { ok: true } — the topic row is hard-deleted and every
+//     → 200 { ok: true } - the topic row is hard-deleted and every
 //       filed message drops back to General automatically (the
 //       Message.topic relation is onDelete: SetNull).
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

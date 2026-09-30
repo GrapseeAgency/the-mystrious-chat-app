@@ -2,7 +2,7 @@ import SwiftUI
 import Network
 import UIKit
 
-/// More → Settings — the real app-level surface. Wave 8 extends it to the
+/// More → Settings - the real app-level surface. Wave 8 extends it to the
 /// web's section registry (settings-screen.tsx SECTION_MAP, labels verbatim):
 /// Account · Appearance · Chat · Notifications · Privacy & Security ·
 /// Real-time & Voice · Accessibility · Data & Storage · About. Every control
@@ -15,12 +15,12 @@ import UIKit
 struct SettingsView: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
-    // R14 5-b — the Hub handoff (web settings-screen.tsx "Explore" group:
+    // R14 5-b - the Hub handoff (web settings-screen.tsx "Explore" group:
     // the onOpenHub prop only renders the row when the shell provides it).
     var onOpenHub: (() -> Void)?
-    // 3-d — the honest remote-push registration state (Notifications card).
+    // 3-d - the honest remote-push registration state (Notifications card).
     @ObservedObject private var pushCenter = PulsePushRegistrationCenter.shared
-    // R14 5-b — the Device network row (web navigator.onLine parity).
+    // R14 5-b - the Device network row (web navigator.onLine parity).
     @StateObject private var networkMonitor = PulseNetworkMonitor()
 
     @Environment(\.dismiss) private var dismiss
@@ -30,17 +30,17 @@ struct SettingsView: View {
     @State private var probing = false
     @State private var probeResult: ProbeResult?
     @State private var serverField = PulseEndpoints.configuredBase ?? ""
-    // Wave 6 — blocked accounts (F-CP-05, P-SE-05).
+    // Wave 6 - blocked accounts (F-CP-05, P-SE-05).
     @State private var blockedOpen = false
-    // Wave 8 — new section surfaces + local UI state.
+    // Wave 8 - new section surfaces + local UI state.
     @State private var draftsOutboxOpen = false
     @State private var editProfileOpen = false
     @State private var draftCount = 0
     @State private var queuedCount = 0
     @State private var copiedUserId = false
     @State private var footprintBytes: Int64?
-    // R5-A Item 4 — "Your footprint" live stats (web settings-screen.tsx
-    // DataSection): the viewer's real counts from GET /api/users/{id}/stats —
+    // R5-A Item 4 - "Your footprint" live stats (web settings-screen.tsx
+    // DataSection): the viewer's real counts from GET /api/users/{id}/stats -
     // the same endpoint the user pages call. Loading + honest failure states.
     @State private var footprintStats: WireUserStats?
     @State private var footprintLoading = false
@@ -52,11 +52,11 @@ struct SettingsView: View {
     }
 
     private var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
     }
 
     private var build: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
     }
 
     private var gatewayHost: String {
@@ -100,7 +100,7 @@ struct SettingsView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        // R17 Neo — sheets at 28pt (web sheet radius parity; iOS 16.4+ API
+        // R17 Neo - sheets at 28pt (web sheet radius parity; iOS 16.4+ API
         // under the iOS 17 deployment floor).
         .presentationCornerRadius(28)
         .sheet(isPresented: $blockedOpen) {
@@ -121,7 +121,7 @@ struct SettingsView: View {
         }
     }
 
-    // ── Account ──────────────────────────────────────────────
+    // Account
 
     private var accountCard: some View {
         settingsCard(title: "Account", icon: "person.crop.circle.fill") {
@@ -157,7 +157,7 @@ struct SettingsView: View {
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                     }
-                    // R14 5-b — the member-since line (web AccountSection card
+                    // R14 5-b - the member-since line (web AccountSection card
                     // formatMemberSince parity, settings-screen.tsx :821). The
                     // date rides the REAL stats payload already fetched for
                     // the footprint (server-side joinedAt = the row's
@@ -179,11 +179,11 @@ struct SettingsView: View {
                 PulseHaptics.tap()
                 editProfileOpen = true
             } label: {
-                settingsLinkRow(icon: "pencil", label: "Edit profile", caption: "Name, handle, status and avatar — in the Profile tab", value: "Open")
+                settingsLinkRow(icon: "pencil", label: "Edit profile", caption: "Name, handle, status and avatar - in the Profile tab", value: "Open")
             }
             .buttonStyle(.plain)
 
-            // User ID — UIPasteboard copy with an inline confirmation
+            // User ID - UIPasteboard copy with an inline confirmation
             // (the app toast lives under the sheet, so it shows here).
             HStack(spacing: 10) {
                 neoTileIcon("number")
@@ -191,7 +191,7 @@ struct SettingsView: View {
                     Text("User ID")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(PulseTheme.titleOnPanel)
-                    Text(prefs.viewer?.id ?? "—")
+                    Text(prefs.viewer?.id ?? "-")
                         .font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -223,14 +223,19 @@ struct SettingsView: View {
     }
 
     private var statusLine: String? {
-        let emoji = prefs.viewerStatusEmoji ?? ""
-        let text = prefs.viewerStatusText ?? ""
-        let combined = "\(emoji) \(text)".trimmingCharacters(in: .whitespaces)
-        if !combined.isEmpty { return combined }
-        return nil
+        // R18-b - the stored statusEmoji is an icon ID; text rows speak its
+        // human label (web status-glyph LABEL_BY_ID) instead of a raw glyph.
+        var parts: [String] = []
+        if let label = PulseStatusIconId.normalize(prefs.viewerStatusEmoji)?.label {
+            parts.append(label)
+        }
+        if let text = prefs.viewerStatusText?.trimmingCharacters(in: .whitespaces), !text.isEmpty {
+            parts.append(text)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// R14 5-b — "Member since …" from the stats joinedAt (UserPageView
+    /// R14 5-b - "Member since …" from the stats joinedAt (UserPageView
     /// stampsFooter precedent: stats.joinedAt ?? createdAt). Format rides the
     /// web formatMemberSince month-year stamp (pulse-utils.ts :280-283).
     private var memberSinceText: String? {
@@ -250,12 +255,12 @@ struct SettingsView: View {
         }
     }
 
-    // ── R10-b — app lock enable/disable ──────────────────────
+    // R10-b - app lock enable/disable
 
     /// Disable: persisted immediately and any pending gate clears (the
     /// toggle can only be reached while the app is unlocked, so this is
     /// belt-and-braces). Enable: one no-UI availability probe, then ONE
-    /// real evaluatePolicy — success persists the toggle, any failure
+    /// real evaluatePolicy - success persists the toggle, any failure
     /// surfaces the honest reason through the toast and keeps the stored
     /// value off (the toggle visually reverts by itself).
     private func confirmAppLock(_ enable: Bool) async {
@@ -270,13 +275,13 @@ struct SettingsView: View {
         }
         if await PulseAppLock.shared.runEnableConfirmation() {
             prefs.setAppLockEnabled(true)
-            session.toasts.show("App lock is on — Pulse locks when backgrounded.")
+            session.toasts.show("App lock is on - Pulse locks when backgrounded.")
         } else {
             session.toasts.show(PulseAppLock.shared.statusMessage ?? "App lock needs Face ID, Touch ID or the device passcode.")
         }
     }
 
-    // ── Appearance ───────────────────────────────────────────
+    // Appearance
 
     private var appearanceCard: some View {
         settingsCard(title: "Appearance", icon: "paintpalette.fill") {
@@ -297,14 +302,14 @@ struct SettingsView: View {
             }
             .padding(.vertical, 4)
 
-            // R2-D — the five locked design languages (web ui-theme.ts R25
+            // R2-D - the five locked design languages (web ui-theme.ts R25
             // parity; the selection persists under the web's exact
             // `pulse.uiTheme.v2` key and re-skins every PulseTheme-fed token).
             VStack(alignment: .leading, spacing: 8) {
                 Text("Design language")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text("One of five locked looks — \(PulseUiTheme.meta(for: prefs.uiTheme).detail)")
+                Text("One of five locked looks - \(PulseUiTheme.meta(for: prefs.uiTheme).detail)")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -316,9 +321,9 @@ struct SettingsView: View {
             }
             .padding(.vertical, 4)
 
-            // R4-A item 3 — the navigation architectures (web
+            // R4-A item 3 - the navigation architectures (web
             // nav-registry.ts:51-63; label + hint strings VERBATIM,
-            // `pulse.navStyle.v2` parity key). R14 5-b — the registry is
+            // `pulse.navStyle.v2` parity key). R14 5-b - the registry is
             // 13/13; the five ex-desktop idioms render as honest mobile
             // adaptations (NavDockStyles.swift). Label cards like the
             // design-language grid; live previews not required.
@@ -326,7 +331,7 @@ struct SettingsView: View {
                 Text("Navigation style")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text("How the app's dock is laid out — currently \(prefs.navStyle.label).")
+                Text("How the app's dock is laid out - currently \(prefs.navStyle.label).")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -342,7 +347,7 @@ struct SettingsView: View {
                 Text("Chat wallpaper")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text("Background behind every chat room — currently \(prefs.wallpaper.label).")
+                Text("Background behind every chat room - currently \(prefs.wallpaper.label).")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                 HStack(spacing: 10) {
@@ -390,7 +395,7 @@ struct SettingsView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// R2-D — one design-language card: diagonal accent-pair swatch
+    /// R2-D - one design-language card: diagonal accent-pair swatch
     /// (web swatch order preserved) + label, selected ring like the
     /// wallpaper swatches.
     private func uiThemeSwatch(_ themeMeta: PulseUiThemeMeta) -> some View {
@@ -434,11 +439,11 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(themeMeta.label) design language — \(themeMeta.tagline)")
+        .accessibilityLabel("\(themeMeta.label) design language - \(themeMeta.tagline)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// R4-A item 3 — one navigation-style card: glyph + the web's verbatim
+    /// R4-A item 3 - one navigation-style card: glyph + the web's verbatim
     /// label + hint line, selected ring exactly like the design-language
     /// swatches. Selection persists instantly (RootView mirrors it live).
     private func navStyleCard(_ style: PulseNavStyle) -> some View {
@@ -485,11 +490,11 @@ struct SettingsView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(style.label) navigation style — \(style.hint)")
+        .accessibilityLabel("\(style.label) navigation style - \(style.hint)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    // ── Chat ─────────────────────────────────────────────────
+    // Chat
 
     private var chatCard: some View {
         settingsCard(title: "Chat", icon: "bubble.left.and.bubble.right.fill") {
@@ -560,7 +565,7 @@ struct SettingsView: View {
         }
     }
 
-    // ── Notifications ────────────────────────────────────────
+    // Notifications
 
     private var notificationsCard: some View {
         settingsCard(title: "Notifications", icon: "bell.fill") {
@@ -570,10 +575,10 @@ struct SettingsView: View {
             toggleRow(icon: "bell", title: "Message pop", description: "Soft pop for incoming messages.", isOn: prefs.notifSound) {
                 prefs.setNotifSound($0)
             }
-            // R14 5-b — the device-local MASTER ding gate (web
+            // R14 5-b - the device-local MASTER ding gate (web
             // pulse-settings.ts soundOn, default true). The pop above plays
             // only when this is on too (web gate chain parity).
-            toggleRow(icon: "speaker.wave.2", title: "Incoming sound", description: "Master ding gate — the incoming pop plays only while this is on.", isOn: prefs.soundOn) {
+            toggleRow(icon: "speaker.wave.2", title: "Incoming sound", description: "Master ding gate - the incoming pop plays only while this is on.", isOn: prefs.soundOn) {
                 prefs.setSoundOn($0)
             }
             toggleRow(icon: "iphone.radiowaves.left.and.right", title: "Vibration", description: "Buzz on incoming messages.", isOn: prefs.notifVibrate) {
@@ -582,7 +587,7 @@ struct SettingsView: View {
 
             Divider().padding(.vertical, 4)
 
-            // Wave 8 — LOCAL quiet hours (pulse.settings.v1 parity):
+            // Wave 8 - LOCAL quiet hours (pulse.settings.v1 parity):
             // silences incoming sounds/vibration/preview toasts in-window.
             toggleRow(icon: "moon.stars.fill", title: "Quiet hours", description: "Silence sounds and vibration inside the window.", isOn: prefs.quietHoursOn) {
                 prefs.setQuietHoursOn($0)
@@ -611,7 +616,7 @@ struct SettingsView: View {
                     label: "Window status",
                     value: prefs.isQuietHoursNow ? "Active now" : "Idle",
                 )
-                Text("\(prefs.quietStart) → \(prefs.quietEnd) — overnight windows are supported.")
+                Text("\(prefs.quietStart) → \(prefs.quietEnd) - overnight windows are supported.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
             }
@@ -619,7 +624,7 @@ struct SettingsView: View {
             Divider().padding(.vertical, 4)
 
             Button {
-                // Preview alert — honors the toggles above exactly like the
+                // Preview alert - honors the toggles above exactly like the
                 // incoming path (quiet hours AND the soundOn master gate).
                 if !prefs.isQuietHoursNow {
                     if prefs.soundOn, prefs.notifSound { PulseSounds.incoming() }
@@ -637,12 +642,12 @@ struct SettingsView: View {
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
 
-            // 3-d — REMOTE push (R8-web transport parity): the honest
+            // 3-d - REMOTE push (R8-web transport parity): the honest
             // registration state. The rows above are all in-app surfaces;
             // this one is the only thing that reaches a CLOSED app. Tapping
-            // (re)runs activation — authorization ask-once, then APNs, then
+            // (re)runs activation - authorization ask-once, then APNs, then
             // the token POST. Failures (simulator, unsigned build, denied,
-            // no gateway) surface VERBATIM — never a fake success.
+            // no gateway) surface VERBATIM - never a fake success.
             Divider().padding(.vertical, 4)
             Button {
                 PulsePushNotifications.activate()
@@ -712,24 +717,24 @@ struct SettingsView: View {
         return String(format: "%02d:%02d", hour, minute)
     }
 
-    // ── Privacy & Security ───────────────────────────────────
+    // Privacy & Security
 
     private var privacyCard: some View {
-        settingsCard(title: "Privacy & Security", icon: "shield.checkerboard") {
+        settingsCard(title: "Privacy & Security", icon: "shield.lefthalf.filled") {
             toggleRow(icon: "eye", title: "Last seen & online", description: "Let people see when you were last active or online.", isOn: prefs.lastSeenVisible) {
                 prefs.setLastSeenVisible($0)
             }
             toggleRow(icon: "checkmark.circle", title: "Read receipts", description: "Show others when you've read their messages.", isOn: prefs.readReceipts) {
                 prefs.setReadReceipts($0)
             }
-            toggleRow(icon: "pencil.line", title: "Typing indicator", description: "Show others when you're typing.", isOn: prefs.typingVisible) {
+            toggleRow(icon: "ellipsis.bubble", title: "Typing indicator", description: "Show others when you're typing.", isOn: prefs.typingVisible) {
                 prefs.setTypingVisible($0)
             }
 
             Divider().padding(.vertical, 4)
 
-            // R10-b — biometric app lock (LAContext.deviceOwnerAuthentication).
-            // Enabling runs ONE real evaluatePolicy confirmation first — a
+            // R10-b - biometric app lock (LAContext.deviceOwnerAuthentication).
+            // Enabling runs ONE real evaluatePolicy confirmation first - a
             // device that cannot enforce the lock never keeps the toggle on.
             // The persisted value is only written on success, so a failure
             // leaves the toggle visually off (the honest revert) with the
@@ -737,7 +742,7 @@ struct SettingsView: View {
             toggleRow(icon: "faceid", title: "App lock", description: "Ask for Face ID, Touch ID or the passcode when returning to Pulse.", isOn: prefs.appLockEnabled) { newValue in
                 Task { await self.confirmAppLock(newValue) }
             }
-            Text("App lock guards this device only — it never syncs to your account.")
+            Text("App lock guards this device only - it never syncs to your account.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
 
@@ -747,25 +752,25 @@ struct SettingsView: View {
                 PulseHaptics.tap()
                 blockedOpen = true
             } label: {
-                settingsLinkRow(icon: "person.badge.minus", label: "Blocked accounts", caption: "Blocked accounts cannot message you in direct chats — the server enforces the boundary.", value: "Open")
+                settingsLinkRow(icon: "person.badge.minus", label: "Blocked accounts", caption: "Blocked accounts cannot message you in direct chats - the server enforces the boundary.", value: "Open")
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Blocked accounts — open the blocked list")
+            .accessibilityLabel("Blocked accounts - open the blocked list")
 
-            Text("These sync to your Pulse account and are enforced server-side — hidden last-seen also hides your online status, hidden typing ends the relay before it reaches anyone, and blocked accounts cannot DM you.")
+            Text("These sync to your Pulse account and are enforced server-side - hidden last-seen also hides your online status, hidden typing ends the relay before it reaches anyone, and blocked accounts cannot DM you.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
         }
     }
 
-    // ── Real-time & Voice ────────────────────────────────────
+    // Real-time & Voice
 
     private var realtimeCard: some View {
         settingsCard(title: "Real-time & Voice", icon: "dot.radiowaves.left.and.right") {
             settingsRow(
                 icon: "network",
                 label: "Gateway",
-                value: PulseEndpoints.configuredBase == nil ? "Not set — offline-first" : gatewayHost,
+                value: PulseEndpoints.configuredBase == nil ? "Not set - offline-first" : gatewayHost,
             )
             settingsRow(
                 icon: "bolt",
@@ -777,7 +782,7 @@ struct SettingsView: View {
                 label: "People online now",
                 value: "\(session.onlineUserIds.count)",
             )
-            // R14 5-b — the Device network row (web RealtimeSection
+            // R14 5-b - the Device network row (web RealtimeSection
             // navigator.onLine badge, settings-screen.tsx :1483-1492): the
             // honest NWPathMonitor verdict for THIS device.
             settingsRow(
@@ -879,11 +884,11 @@ struct SettingsView: View {
         }
     }
 
-    // ── Accessibility ────────────────────────────────────────
+    // Accessibility
 
     private var accessibilityCard: some View {
         settingsCard(title: "Accessibility", icon: "accessibility") {
-            toggleRow(icon: "accessibility", title: "Reduced motion", description: "Calm the interface — instant transitions, no ambient particles or message effects.", isOn: prefs.reducedMotion) {
+            toggleRow(icon: "accessibility", title: "Reduced motion", description: "Calm the interface - instant transitions, no ambient particles or message effects.", isOn: prefs.reducedMotion) {
                 prefs.setReducedMotion($0)
             }
             settingsRow(
@@ -892,7 +897,7 @@ struct SettingsView: View {
                 value: systemReduceMotion ? "Reduce" : "Full",
             )
             Text(systemReduceMotion
-                ? "Your OS asks apps to reduce motion — motion is reduced regardless of the toggle."
+                ? "Your OS asks apps to reduce motion - motion is reduced regardless of the toggle."
                 : "When the OS Reduce Motion setting is on, motion is reduced regardless of the toggle above.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
@@ -902,9 +907,9 @@ struct SettingsView: View {
         }
     }
 
-    // ── Data & Storage ───────────────────────────────────────
+    // Data & Storage
 
-    /// R5-A Item 4 — the viewer's live footprint (web StatTile row parity:
+    /// R5-A Item 4 - the viewer's live footprint (web StatTile row parity:
     /// messages / photos / voice notes / chats / groups / days active).
     /// Signed-out renders the honest notice; a failed fetch shows Try again.
     private func loadFootprintStats() async {
@@ -978,7 +983,7 @@ struct SettingsView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
         } else if footprintLoading && footprintStats == nil {
-            // Loading — six honest placeholder tiles (web Skeleton grid).
+            // Loading - six honest placeholder tiles (web Skeleton grid).
             HStack(spacing: 0) {
                 ProgressView()
                     .controlSize(.small)
@@ -1016,7 +1021,7 @@ struct SettingsView: View {
 
     private var dataCard: some View {
         settingsCard(title: "Data & Storage", icon: "externaldrive.fill") {
-            // R5-A Item 4 — the footprint tiles sit ABOVE the SQLite line
+            // R5-A Item 4 - the footprint tiles sit ABOVE the SQLite line
             // (web order: "Your footprint" section, then the local-data rows).
             footprintSection
 
@@ -1037,7 +1042,7 @@ struct SettingsView: View {
                 PulseHaptics.tap()
                 clearAllDrafts()
             } label: {
-                actionRow(icon: "doc.text", title: "Clear drafts", caption: draftCount > 0 ? "\(draftCount) saved on this device — clearing frees their storage." : "Empty — nothing to clear.", actionLabel: "Clear", disabled: draftCount == 0)
+                actionRow(icon: "doc.text", title: "Clear drafts", caption: draftCount > 0 ? "\(draftCount) saved on this device - clearing frees their storage." : "Empty - nothing to clear.", actionLabel: "Clear", disabled: draftCount == 0)
             }
             .buttonStyle(.plain)
             .disabled(draftCount == 0)
@@ -1046,17 +1051,17 @@ struct SettingsView: View {
                 PulseHaptics.tap()
                 clearOutbox()
             } label: {
-                actionRow(icon: "cloud.slash", title: "Discard offline queue", caption: queuedCount > 0 ? "\(queuedCount) waiting — discarding drops them without sending." : "Empty — nothing queued right now.", actionLabel: "Discard", disabled: queuedCount == 0)
+                actionRow(icon: "cloud.slash", title: "Discard offline queue", caption: queuedCount > 0 ? "\(queuedCount) waiting - discarding drops them without sending." : "Empty - nothing queued right now.", actionLabel: "Discard", disabled: queuedCount == 0)
             }
             .buttonStyle(.plain)
             .disabled(queuedCount == 0)
 
             settingsRow(icon: "arrow.triangle.2.circlepath", label: "Updates", value: "App Store pipeline")
-            Text("iOS updates ship through the App Store pipeline — in-place live updates are the Android build's superpower. This screen always shows the exact installed version below.")
+            Text("iOS updates ship through the App Store pipeline - in-place live updates are the Android build's superpower. This screen always shows the exact installed version below.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
 
-            // R14 5-b — the Hub link row (web "Explore" group,
+            // R14 5-b - the Hub link row (web "Explore" group,
             // settings-screen.tsx :1676-1686). Dismisses this sheet and
             // selects the Hub tab through the RootView handoff.
             if let onOpenHub {
@@ -1073,23 +1078,23 @@ struct SettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("The Hub — open the hub tab")
+                .accessibilityLabel("The Hub - open the hub tab")
             }
         }
     }
 
     private var footprintText: String {
-        guard let bytes = footprintBytes else { return "—" }
+        guard let bytes = footprintBytes else { return "-" }
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
     }
 
-    // ── About ────────────────────────────────────────────────
+    // About
 
     private var aboutCard: some View {
         settingsCard(title: "About", icon: "app.badge.fill") {
-            // R14 5-b — the identity card (web AboutSection glass-deep card:
+            // R14 5-b - the identity card (web AboutSection glass-deep card:
             // gradient logo tile + wordmark + tagline + version badge).
             HStack(spacing: 12) {
                 Image(systemName: "sparkles")
@@ -1124,7 +1129,7 @@ struct SettingsView: View {
             settingsRow(icon: "number", label: "Version", value: "\(version) (\(build))")
             settingsRow(icon: "ship", label: "Platform", value: "iOS · native Swift")
             settingsRow(icon: "gearshape.2", label: "Bundle", value: "app.pulse.chat")
-            // R14 5-b — the missing web About rows (settings-screen.tsx
+            // R14 5-b - the missing web About rows (settings-screen.tsx
             // :1712-1726): the realtime transport + the data layer.
             settingsRow(
                 icon: "command",
@@ -1133,8 +1138,8 @@ struct SettingsView: View {
             )
             settingsRow(icon: "cylinder", label: "Data", value: "Prisma ORM + SQLite, zero mock data")
 
-            // R14 5-b — the GitHub repository link (web AboutSection Project
-            // group) — opens the real repo in Safari.
+            // R14 5-b - the GitHub repository link (web AboutSection Project
+            // group) - opens the real repo in Safari.
             Button {
                 PulseHaptics.tap()
                 if let url = URL(string: Self.githubURL) {
@@ -1149,9 +1154,9 @@ struct SettingsView: View {
                 )
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("GitHub repository — opens in Safari")
+            .accessibilityLabel("GitHub repository - opens in Safari")
 
-            // R14 5-b — the web footer (heart + wordmark + live-sync line).
+            // R14 5-b - the web footer (heart + wordmark + live-sync line).
             VStack(spacing: 4) {
                 Image(systemName: "heart.fill")
                     .font(.system(size: 13))
@@ -1170,10 +1175,10 @@ struct SettingsView: View {
         }
     }
 
-    /// R14 5-b — the shared repo URL (web GITHUB_URL verbatim).
+    /// R14 5-b - the shared repo URL (web GITHUB_URL verbatim).
     static let githubURL = "https://github.com/GrapseeAgency/the-mystrious-chat-app"
 
-    // ── primitives ───────────────────────────────────────────
+    // primitives
 
     private func filterLabel(_ filter: PulsePrefs.ChatsFilter) -> String {
         switch filter {
@@ -1189,7 +1194,7 @@ struct SettingsView: View {
         @ViewBuilder content: () -> Content,
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // R17 Neo — accent-tinted section tile (web IconTile: accent 12%
+            // R17 Neo - accent-tinted section tile (web IconTile: accent 12%
             // rounded square + accent glyph) beside the section label.
             HStack(spacing: 8) {
                 neoTileIcon(icon)
@@ -1201,7 +1206,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 content()
             }
-            // Wave 8 — the honest sync hint: optimistic toggles stay local
+            // Wave 8 - the honest sync hint: optimistic toggles stay local
             // when the PATCH can't reach the server (server value wins on
             // the next successful fetch instead).
             if let note = prefs.lastSyncNote {
@@ -1217,7 +1222,7 @@ struct SettingsView: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// R17 Neo — accent-tinted row icon tile (web IconTile: accent 12%
+    /// R17 Neo - accent-tinted row icon tile (web IconTile: accent 12%
     /// rounded square, accent glyph) shared by every row primitive.
     private func neoTileIcon(_ name: String) -> some View {
         Image(systemName: name)
@@ -1228,7 +1233,7 @@ struct SettingsView: View {
     }
 
     private var cardPanel: some View {
-        // R17 Neo — cards 24pt (was 18), carbon surface + white-8% hairline
+        // R17 Neo - cards 24pt (was 18), carbon surface + white-8% hairline
         // in dark; light keeps the frosted material.
         RoundedRectangle(cornerRadius: 24, style: .continuous)
             .fill(systemScheme == .dark
@@ -1262,7 +1267,7 @@ struct SettingsView: View {
         .accessibilityLabel("\(label): \(value)")
     }
 
-    /// Row with caption under the label (web ToggleRow/PickerRow shape) —
+    /// Row with caption under the label (web ToggleRow/PickerRow shape) -
     /// used inside buttons so the whole row stays tappable.
     private func settingsLinkRow(icon: String, label: String, caption: String, value: String) -> some View {
         HStack(spacing: 10) {
@@ -1287,7 +1292,7 @@ struct SettingsView: View {
         .frame(minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label) — \(value)")
+        .accessibilityLabel("\(label) - \(value)")
     }
 
     private func toggleRow(
@@ -1346,10 +1351,10 @@ struct SettingsView: View {
         .frame(minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title) — \(actionLabel)")
+        .accessibilityLabel("\(title) - \(actionLabel)")
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     private func refreshLocalCounts() {
         guard let store = session.store else { return }
@@ -1358,7 +1363,7 @@ struct SettingsView: View {
         footprintBytes = Self.databaseFootprint()
     }
 
-    /// Wave 8 — the REAL GRDB footprint: pulse.sqlite plus its -wal/-shm
+    /// Wave 8 - the REAL GRDB footprint: pulse.sqlite plus its -wal/-shm
     /// siblings, straight from FileManager.
     static func databaseFootprint() -> Int64? {
         guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
@@ -1402,7 +1407,7 @@ struct SettingsView: View {
         probeResult = nil
         Task {
             let started = Date()
-            // The probe must honor the FIELD, not the frozen session base —
+            // The probe must honor the FIELD, not the frozen session base -
             // build a throwaway client against the candidate origin.
             let target: String
             if let hostOverride, !hostOverride.isEmpty {
@@ -1414,10 +1419,10 @@ struct SettingsView: View {
             do {
                 _ = try await candidate.users()
                 let ms = Int(Date().timeIntervalSince(started) * 1000)
-                withAnimation { probeResult = .ok("Reachable — identities endpoint answered in \(ms) ms.") }
+                withAnimation { probeResult = .ok("Reachable - identities endpoint answered in \(ms) ms.") }
             } catch {
                 withAnimation {
-                    probeResult = .fail("No answer — the offline-first store keeps your chats readable meanwhile.")
+                    probeResult = .fail("No answer - the offline-first store keeps your chats readable meanwhile.")
                 }
             }
             probing = false
@@ -1425,11 +1430,11 @@ struct SettingsView: View {
     }
 }
 
-// ── R14 5-b — the Device network verdict (web navigator.onLine parity) ──
+// R14 5-b - the Device network verdict (web navigator.onLine parity)
 
 /// NWPathMonitor-backed online/offline truth for the Real-time card's
 /// "Device network" row (web RealtimeSection :1483-1492). The outbox
-/// engine runs its own private monitor for the flush trigger — this one is
+/// engine runs its own private monitor for the flush trigger - this one is
 /// the UI mirror, evaluated on the main actor.
 @MainActor
 final class PulseNetworkMonitor: ObservableObject {

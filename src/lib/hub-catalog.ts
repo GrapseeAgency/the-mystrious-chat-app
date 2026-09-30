@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Hub — the 100-platform Apps Matrix (from the user's master
+// Pulse Hub - the 100-platform Apps Matrix (from the user's master
 // blueprint). Every app maps: mobile nav style · input toolkit ·
 // 400+ sub-page category · secret UI architecture feature.
 // Rendered by the Hub → Apps panel; data is static catalog (the
 // matrix itself), while live Pulse features attach via routes.
-// ─────────────────────────────────────────────────────────────
 
 export type NavStyleId = 'acrylic' | 'rail' | 'edge' | 'radial'
 
@@ -167,11 +165,9 @@ export function categoryCounts(): Record<string, number> {
   return counts
 }
 
-// ─────────────────────────────────────────────────────────────
-// R27-b sub-page metadata — static catalog enrichment. Taglines,
+// R27-b sub-page metadata - static catalog enrichment. Taglines,
 // category blurbs and accent gradients are EDITORIAL catalog data
-// (never user-specific stats — those always come from Prisma).
-// ─────────────────────────────────────────────────────────────
+// (never user-specific stats - those always come from Prisma).
 
 export interface CategoryMeta {
   /** URL-safe slug for #/hub/c/<slug> */
@@ -194,7 +190,7 @@ export const CATEGORY_META: Record<MatrixCategory, CategoryMeta> = {
   'Workplace Canvas / Dev-Ops': {
     slug: 'workplace',
     label: 'Workplace',
-    blurb: 'Structured work chat — boards, threads and operational flows.',
+    blurb: 'Structured work chat - boards, threads and operational flows.',
     accent: ['#0ea5e9', '#0891b2'],
   },
   'E-Commerce Showcase': {
@@ -212,7 +208,7 @@ export const CATEGORY_META: Record<MatrixCategory, CategoryMeta> = {
   'E-Commerce / Hyper-Apps': {
     slug: 'hyper-apps',
     label: 'Hyper-Apps',
-    blurb: 'Everything-apps — messaging fused with services and mini-programs.',
+    blurb: 'Everything-apps - messaging fused with services and mini-programs.',
     accent: ['#84cc16', '#16a34a'],
   },
   'Web3 FinTech / Hyper-Apps': {
@@ -236,13 +232,13 @@ export const CATEGORY_META: Record<MatrixCategory, CategoryMeta> = {
   'Spatial 3D Environments': {
     slug: 'spatial-3d',
     label: 'Spatial 3D',
-    blurb: 'Presence as a place — avatars, rooms and proximity audio.',
+    blurb: 'Presence as a place - avatars, rooms and proximity audio.',
     accent: ['#d946ef', '#9333ea'],
   },
   'Spatial 2D/3D Art': {
     slug: 'spatial-art',
     label: 'Spatial Art',
-    blurb: 'Expressive canvases — voice stages, visual threads, motion mail.',
+    blurb: 'Expressive canvases - voice stages, visual threads, motion mail.',
     accent: ['#f43f5e', '#db2777'],
   },
 }
@@ -280,7 +276,7 @@ const BRAND_ACCENTS: Record<number, [string, string]> = {
   41: ['#34c759', '#0a9e4a'], // iMessage
 }
 
-/** Per-app accent gradient — brand override, else the category accent. */
+/** Per-app accent gradient - brand override, else the category accent. */
 export function appAccent(app: MatrixApp): [string, string] {
   return BRAND_ACCENTS[app.n] ?? CATEGORY_META[app.category].accent
 }
@@ -391,19 +387,19 @@ export const APP_TAGLINES: Record<number, string> = {
   100: 'Neighbors verified by the block map',
 }
 
-/** Tagline for an app (catalog copy — falls back to the input toolkit line). */
+/** Tagline for an app (catalog copy - falls back to the input toolkit line). */
 export function appTagline(app: MatrixApp): string {
   return APP_TAGLINES[app.n] ?? app.input
 }
 
 /**
- * Feature list for the app sub-page — derived from REAL matrix fields
+ * Feature list for the app sub-page - derived from REAL matrix fields
  * (input toolkit, secret UI feature, Pulse nav mapping). No invented stats.
  */
 export function appFeatures(app: MatrixApp): string[] {
   return [
     app.input,
     app.secret,
-    `Ships with Pulse's ${MATRIX_TO_NAV[app.nav]} nav pattern — switchable live in Profile → Navigation`,
+    `Ships with Pulse's ${MATRIX_TO_NAV[app.nav]} nav pattern - switchable live in Profile → Navigation`,
   ]
 }

@@ -19,6 +19,11 @@ android {
 dependencies {
     implementation(project(":core"))
 
+    // R18 icon-id contract - the glyph registry maps stable wire ids
+    // (Folder.emoji / Topic.emoji / AppUser.statusEmoji) carried by
+    // app.pulse.protocol (PulseIconIds) to Material vectors.
+    implementation(project(":protocol"))
+
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     // R35 Neo - the GoogleFont downloadable-fonts provider (Space Grotesk /

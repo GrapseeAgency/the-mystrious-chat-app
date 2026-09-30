@@ -1,20 +1,20 @@
 import XCTest
 @testable import Pulse
 
-/// 3-d — the PURE group-call contract (web useGroupCallSession parity,
+/// 3-d - the PURE group-call contract (web useGroupCallSession parity,
 /// src/components/chat/group-call-overlay.tsx + the relay's gcall:* family):
 ///   • the DETERMINISTIC mesh rule: between any two members the one with the
-///     lexicographically SMALLER id creates the offer — pinned with the
+///     lexicographically SMALLER id creates the offer - pinned with the
 ///     EXACT JS rule (UTF-16 code-unit order, "10" < "2");
 ///   • the roster diff (departing peers / offers I own);
 ///   • the wire shapes: C→S builders the relay validates + tolerant S→C
 ///     decodes with the web fallbacks ('Someone' / 'emerald' / null avatar).
-/// Pure Foundation — no WebRTC, no relay, no device hardware.
+/// Pure Foundation - no WebRTC, no relay, no device hardware.
 final class PulseGroupCallPolicyTests: XCTestCase {
 
-    // ── offer direction: the JS-lexicographic id rule ────────────
+    // offer direction: the JS-lexicographic id rule
 
-    /// Web `me < member.id` — JS compares strings by UTF-16 code units.
+    /// Web `me < member.id` - JS compares strings by UTF-16 code units.
     /// "10" < "2" because '1' (0x31) < '2' (0x32), even though the numeric
     /// read would say otherwise. This is the exact pinned rule.
     func testJsLexicographicOrderTenBeforeTwo() {
@@ -44,7 +44,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         XCTAssertFalse(PulseGroupCallPolicy.shouldOffer(myId: "", remoteId: ""))
     }
 
-    /// Exactly one side owns the offer for every pair — both views agree.
+    /// Exactly one side owns the offer for every pair - both views agree.
     func testBothSidesAgreeOnExactlyOneOfferer() {
         let pairs = [("user-1", "user-2"), ("10", "9"), ("aa", "a"), ("b7", "b71")]
         for (a, b) in pairs {
@@ -54,7 +54,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         }
     }
 
-    // ── roster plan (web applyRoster diff) ───────────────────────
+    // roster plan (web applyRoster diff)
 
     func testRosterPlanOffersToLowerUnconnectedMembers() {
         // Roster join-ordered INCLUDING me; my id 'a' sorts below b and c.
@@ -69,7 +69,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
 
     func testRosterPlanSkipsConnectedMembersAndHigherIds() {
         // 'a' already connected (offer/answer in flight or it offered us),
-        // 'c' already connected too; 'd' sorts above me — the deterministic
+        // 'c' already connected too; 'd' sorts above me - the deterministic
         // rule is `me < member.id` (web applyRoster :287), so I own the
         // b–d offer and d is the only unconnected peer left to offer.
         let plan = PulseGroupCallPolicy.rosterPlan(
@@ -114,11 +114,11 @@ final class PulseGroupCallPolicyTests: XCTestCase {
             connectedPeerIds: ["m", "z", "q"],
         )
         XCTAssertEqual(plan.departing, ["m", "q"])
-        XCTAssertEqual(plan.toOffer, [], "z is still connected — no duplicate offer")
+        XCTAssertEqual(plan.toOffer, [], "z is still connected - no duplicate offer")
     }
 
     /// The 8-member full-call mesh: total offers across all views equals
-    /// the number of pairs (C(n,2)) — the deterministic rule needs no glare
+    /// the number of pairs (C(n,2)) - the deterministic rule needs no glare
     /// protection even under simultaneous joins.
     func testFullMeshOfferCountMatchesPairCount() {
         let ids = (1...8).map { "member-\($0)" }
@@ -131,7 +131,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
                 XCTAssertTrue(PulseGroupCallPolicy.shouldOffer(myId: me, remoteId: peerId))
             }
         }
-        XCTAssertEqual(totalOffers, 28, "C(8,2) = 28 — every pair gets exactly one offer")
+        XCTAssertEqual(totalOffers, 28, "C(8,2) = 28 - every pair gets exactly one offer")
     }
 
     /// My own id is never in toOffer (self-connection impossible) even when
@@ -146,9 +146,9 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         XCTAssertFalse(plan.toOffer.contains("me"))
     }
 
-    // ── leave copy + local ring guard ────────────────────────────
+    // leave copy + local ring guard
 
-    /// Web leaveCall summary — 'You left · M:SS' once a second elapsed.
+    /// Web leaveCall summary - 'You left · M:SS' once a second elapsed.
     func testLeaveSummaryFormatsDuration() {
         XCTAssertEqual(PulseGroupCallPolicy.leaveSummary(elapsedSec: 65), "You left · 1:05")
         XCTAssertEqual(PulseGroupCallPolicy.leaveSummary(elapsedSec: 5), "You left · 0:05")
@@ -156,12 +156,12 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         XCTAssertEqual(PulseGroupCallPolicy.leaveSummary(elapsedSec: -3), "You left")
     }
 
-    /// The 45s local ring guard — group rings have NO server-side timeout.
+    /// The 45s local ring guard - group rings have NO server-side timeout.
     func testRingTimeoutIsPinned() {
         XCTAssertEqual(PulseGroupCallPolicy.ringTimeoutSec, 45)
     }
 
-    // ── wire: member decode (web fallbacks) ──────────────────────
+    // wire: member decode (web fallbacks)
 
     func testMemberDecodeUsesWebFallbacks() {
         let member = PulseGroupCallMember.decode([
@@ -194,7 +194,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         XCTAssertNil(PulseGroupCallMember.decode(["name": "Ada"]))
     }
 
-    // ── wire: the gcall:ring decode ──────────────────────────────
+    // wire: the gcall:ring decode
 
     func testRingDecodeCarriesCallerKindAndTitle() {
         let ring = PulseGroupCallEngine.Ring.decode([
@@ -228,9 +228,9 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         ]), "no caller → no ring")
     }
 
-    // ── wire: C→S builders (the relay's validated shapes) ────────
+    // wire: C→S builders (the relay's validated shapes)
 
-    /// gcall:join { conversationId, kind, user: {id,name,color,avatar} } —
+    /// gcall:join { conversationId, kind, user: {id,name,color,avatar} } -
     /// the relay identity-gates user.id against the socket's registered user.
     func testJoinPayloadShape() {
         let payload = GroupCallWire.joinPayload(
@@ -250,7 +250,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         XCTAssertEqual(user?["avatar"] as? String, "", "nil avatar degrades to the empty string")
     }
 
-    /// gcall:offer / gcall:answer carry NO callId from the client — the
+    /// gcall:offer / gcall:answer carry NO callId from the client - the
     /// relay injects the conversation call's id server-side.
     func testOfferAndAnswerPayloadsAreTargetedAndCallIdFree() {
         let offer = GroupCallWire.offerPayload(
@@ -261,7 +261,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         XCTAssertEqual(offer["to"] as? String, "peer")
         XCTAssertEqual(offer["kind"] as? String, "voice")
         XCTAssertEqual(offer["sdp"] as? String, "v=0")
-        XCTAssertNil(offer["callId"], "the relay injects callId — the client never sends one")
+        XCTAssertNil(offer["callId"], "the relay injects callId - the client never sends one")
 
         let answer = GroupCallWire.answerPayload(
             conversationId: "conv-1", from: "me", to: "peer", sdp: "v=0",
@@ -274,7 +274,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         XCTAssertNil(answer["kind"], "the relay's gcall:answer handler reads no kind")
     }
 
-    /// gcall:ice — the flat candidate triple; nil sdpMid/sdpMLineIndex ride
+    /// gcall:ice - the flat candidate triple; nil sdpMid/sdpMLineIndex ride
     /// as NSNull (JSON null), matching the relay's tolerant passthrough.
     func testIcePayloadCarriesCandidateTripleWithNullFallbacks() {
         let full = GroupCallWire.icePayload(
@@ -294,7 +294,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         XCTAssertTrue(sparse["sdpMLineIndex"] is NSNull)
     }
 
-    /// gcall:leave { conversationId, from } — exactly two keys.
+    /// gcall:leave { conversationId, from } - exactly two keys.
     func testLeavePayloadShape() {
         let payload = GroupCallWire.leavePayload(conversationId: "conv-1", from: "me")
         XCTAssertEqual(payload["conversationId"] as? String, "conv-1")
@@ -302,7 +302,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         XCTAssertEqual(payload.count, 2)
     }
 
-    // ── wire: the REST probe snapshot (GET /api/group-call-state) ──
+    // wire: the REST probe snapshot (GET /api/group-call-state)
 
     func testGroupCallStateSnapshotDecodesLiveShape() throws {
         let json = """
@@ -317,7 +317,7 @@ final class PulseGroupCallPolicyTests: XCTestCase {
     }
 
     /// The honest-empty shape ({ members: [] }) plus a seconds-form
-    /// startedAt and a missing kind — every tolerance the route allows.
+    /// startedAt and a missing kind - every tolerance the route allows.
     func testGroupCallStateSnapshotToleratesEmptyAndPartialShapes() throws {
         let empty = try JSONDecoder().decode(PulseGroupCallStateSnapshot.self, from: Data(#"{"members":[]}"#.utf8))
         XCTAssertTrue(empty.members.isEmpty)

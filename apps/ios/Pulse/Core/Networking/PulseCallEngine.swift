@@ -2,25 +2,23 @@ import Foundation
 import Combine
 import WebRTC
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — Wave 3 call engine (the native useCallSession hook).
+// Pulse - Wave 3 call engine (the native useCallSession hook).
 //
 // Owns the call state machine, the WebRTC seam, the call:* signaling and
 // the single-writer call-log write path. Behavioral spec = the web
 // call-overlay.tsx hook; the relay semantics (30s ring timeout, busy map,
 // offline/busy cancel, reject routing, disconnect teardown) live in
-// mini-services/pulse-socket — this engine mirrors, never re-implements.
+// mini-services/pulse-socket - this engine mirrors, never re-implements.
 //
-// Seams (tests substitute fakes — the same pattern as PulseOutboxSending):
-//   • PulseCallSignalingSending — emits call:* envelopes
-//   • PulseCallMediaProviding   — mic permission + peer connection factory
-//   • PulseCallPeerConnecting   — one live peer connection
+// Seams (tests substitute fakes - the same pattern as PulseOutboxSending):
+//   • PulseCallSignalingSending - emits call:* envelopes
+//   • PulseCallMediaProviding   - mic permission + peer connection factory
+//   • PulseCallPeerConnecting   - one live peer connection
 //
 // Single-writer rule: the CALLER's client writes every terminal row
-// (completed | missed | declined) via POST /api/calls — the callee never
+// (completed | missed | declined) via POST /api/calls - the callee never
 // writes. Network-failed rows queue in PulseStore.callLogQueue and flush on
 // socket reconnect / app start (PulseOutboxEngine trigger style).
-// ─────────────────────────────────────────────────────────────
 
 @MainActor
 public protocol PulseCallSignalingSending: AnyObject {
@@ -30,7 +28,7 @@ public protocol PulseCallSignalingSending: AnyObject {
 
 @MainActor
 public final class PulseCallEngine: ObservableObject {
-    // ── published UI state (CallView binds these) ────────────
+    // published UI state (CallView binds these)
     @Published public private(set) var state: CallState = .idle
     @Published public private(set) var activePeer: CallPeer?
     /// Live duration while connecting/connected (ticks from the answer, web parity).
@@ -42,10 +40,10 @@ public final class PulseCallEngine: ObservableObject {
     /// Ended-card text ('No answer', 'Declined', 'Call ended · 0:42', …).
     @Published public private(set) var summary: String?
 
-    // ── Wave R1-W2D — REAL video state (CallView binds these) ──
+    // Wave R1-W2D - REAL video state (CallView binds these)
     /// True iff a real camera capturer is running (drives video-only controls).
     @Published public private(set) var videoCaptureActive = false
-    /// Camera (video) toggle mirror — web track.enabled parity.
+    /// Camera (video) toggle mirror - web track.enabled parity.
     @Published public private(set) var cameraEnabled = false
     /// The local camera track once capture is live (nil = audio-only call).
     @Published public private(set) var localVideoTrack: RTCVideoTrack?
@@ -64,13 +62,13 @@ public final class PulseCallEngine: ObservableObject {
     private let apiProvider: () -> PulseAPIClient?
     private let toasts: ToastCenter
 
-    // ── live media state (cleared on every teardown) ─────────
+    // live media state (cleared on every teardown)
     private var pc: (any PulseCallPeerConnecting)?
     private let peerBridge: PeerBridge
     private var pendingRemoteIce: [CallIceEnvelope] = []
     private var remoteDescriptionSet = false
     /// True once call:offer actually went out (dismissError logs 'missed'
-    /// only for attempts that never reached the relay — web parity).
+    /// only for attempts that never reached the relay - web parity).
     private var offerSent = false
     private var incomingOffer: CallOfferEnvelope?
     /// When the machine reached .ended (auto-reset ≈2.5s, web parity).
@@ -103,23 +101,23 @@ public final class PulseCallEngine: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// UI gating — one call at a time (relay busy map is the backstop).
+    /// UI gating - one call at a time (relay busy map is the backstop).
     public var isBusy: Bool { state != .idle }
 
-    // ── outgoing ─────────────────────────────────────────────
+    // outgoing
 
     /// Entry point from the contact row / chat toolbar. Shows the ring
     /// immediately (web parity), then acquires media + sends call:offer.
     ///
-    /// Wave R1-W2D — for kind == .video the CAMERA capability is resolved
+    /// Wave R1-W2D - for kind == .video the CAMERA capability is resolved
     /// FIRST (web acquireMedia parity: no usable camera ⇒ the call degrades
     /// to voice + an honest toast BEFORE the ring opens, so the wire kind
     /// always carries the ACTUAL kind).
     public func startOutgoing(to peer: CallPeer, conversationId: String, kind: CallKind = .voice) {
         guard case .idle = machine.state else { return }
         guard !viewer.id.isEmpty, !peer.id.isEmpty, peer.id != viewer.id, !conversationId.isEmpty else { return }
-        // 3-d — cross-engine exclusion (mirror of the group engine's
-        // voiceCallBusy gate): a live GROUP call owns the audio session —
+        // 3-d - cross-engine exclusion (mirror of the group engine's
+        // voiceCallBusy gate): a live GROUP call owns the audio session -
         // honest refusal, never two fighting call surfaces.
         if PulseGroupCallEngine.active?.isBusy == true {
             toasts.show("Finish your current call first")
@@ -136,7 +134,7 @@ public final class PulseCallEngine: ObservableObject {
             guard case .idle = self.machine.state else { return }
             if PulseGroupCallEngine.active?.isBusy == true { return }
             if !cameraOk {
-                self.toasts.show("Camera unavailable — starting a voice call")
+                self.toasts.show("Camera unavailable - starting a voice call")
             }
             self.beginOutgoing(
                 to: peer,
@@ -177,7 +175,7 @@ public final class PulseCallEngine: ObservableObject {
             return
         }
         pc = connection
-        // Wave R1-W2D — attach the REAL camera BEFORE createOffer so the
+        // Wave R1-W2D - attach the REAL camera BEFORE createOffer so the
         // offer carries a sendrecv m=video (web caller parity). A failed
         // attach degrades gracefully: the offer stays audio-only.
         if machine.call?.kind == .video {
@@ -204,14 +202,14 @@ public final class PulseCallEngine: ObservableObject {
                 callerAvatar: viewer.avatar,
             ))
         } catch {
-            // Local SDP/media failure before the offer reached the relay —
+            // Local SDP/media failure before the offer reached the relay -
             // no emit, no row (web 'Call failed' parity, honest UI only).
             errorText = "Could not start the call. Try again."
             apply(.abortLocal, now: Date())
         }
     }
 
-    // ── incoming ─────────────────────────────────────────────
+    // incoming
 
     public func acceptIncoming() {
         guard case .incomingRinging = machine.state, let call = machine.call else { return }
@@ -242,8 +240,8 @@ public final class PulseCallEngine: ObservableObject {
                 apply(.abortLocal, now: Date())
                 return
             }
-            // Wave R1-W2D — REAL video answer: attach the camera BEFORE
-            // setRemoteDescription (web callee parity — getUserMedia first),
+            // Wave R1-W2D - REAL video answer: attach the camera BEFORE
+            // setRemoteDescription (web callee parity - getUserMedia first),
             // gated on the wire kind AND the offer SDP's usable m=video line.
             // No usable camera ⇒ audio-only answer; the caller's video still
             // flows in over the recvonly m-line (web fallback parity).
@@ -258,7 +256,7 @@ public final class PulseCallEngine: ObservableObject {
                 cameraEnabled = attached
                 localVideoTrack = connection.localVideoTrack()
                 if !attached {
-                    toasts.show("Camera unavailable — answering with audio only")
+                    toasts.show("Camera unavailable - answering with audio only")
                 }
             }
             try await connection.setRemoteDescription(sdp: offer.sdp, type: "offer")
@@ -298,9 +296,9 @@ public final class PulseCallEngine: ObservableObject {
         apply(.rejectRequested, now: Date())
     }
 
-    // ── live controls ────────────────────────────────────────
+    // live controls
 
-    /// End/decline/cancel — the machine maps the current state:
+    /// End/decline/cancel - the machine maps the current state:
     /// outgoingRinging → cancel+missed row, incomingRinging → reject,
     /// connecting/connected → hangup (+completed row for the caller).
     public func endCall() {
@@ -308,7 +306,7 @@ public final class PulseCallEngine: ObservableObject {
         apply(.hangupRequested, now: Date())
     }
 
-    /// The mic-denied (or SDP-failed) error card's Close — web parity: a
+    /// The mic-denied (or SDP-failed) error card's Close - web parity: a
     /// failed OUTGOING attempt still counts as an unanswered call (missed row).
     public func dismissError() {
         errorText = nil
@@ -336,7 +334,7 @@ public final class PulseCallEngine: ObservableObject {
         pc?.setAudioEnabled(micEnabled)
     }
 
-    /// Wave R1-W2D — camera (video) toggle: RTCVideoTrack.isEnabled flip
+    /// Wave R1-W2D - camera (video) toggle: RTCVideoTrack.isEnabled flip
     /// (web toggleCamera parity). Honest no-op without a live camera.
     public func toggleCamera() {
         guard videoCaptureActive else { return }
@@ -345,7 +343,7 @@ public final class PulseCallEngine: ObservableObject {
         cameraEnabled = next
     }
 
-    /// Wave R1-W2D — front ⇄ back camera flip (honest no-op without camera).
+    /// Wave R1-W2D - front ⇄ back camera flip (honest no-op without camera).
     public func flipCamera() {
         guard videoCaptureActive else { return }
         pc?.switchCamera()
@@ -354,7 +352,7 @@ public final class PulseCallEngine: ObservableObject {
     /// The wire kind of the live call (CallView status line parity).
     public var activeKind: CallKind? { machine.call?.kind }
 
-    /// 3-d — the conversation of the live call (CallKit bookkeeping).
+    /// 3-d - the conversation of the live call (CallKit bookkeeping).
     public var activeCallConversationId: String? { machine.call?.conversationId }
 
     /// Speaker toggle → AVAudioSession.overrideOutputAudioPort (earpiece ⇄
@@ -364,7 +362,7 @@ public final class PulseCallEngine: ObservableObject {
         PulseCallAudioSession.shared.setSpeaker(speakerOn)
     }
 
-    // ── signaling inbound (session routes .callSignal here) ──
+    // signaling inbound (session routes .callSignal here)
 
     public func handleCallSignal(event: String, raw: [String: Any]) {
         let now = Date()
@@ -416,7 +414,7 @@ public final class PulseCallEngine: ObservableObject {
                     sdpMLineIndex: ice.sdpMLineIndex,
                 ) }
             } else {
-                // Early candidate (relay relays ICE while ringing) — queue
+                // Early candidate (relay relays ICE while ringing) - queue
                 // until the remote description lands, then drain.
                 pendingRemoteIce.append(ice)
             }
@@ -449,7 +447,7 @@ public final class PulseCallEngine: ObservableObject {
             remoteDescriptionSet = true
             await drainPendingIce()
         } catch {
-            // 'Call failed' — no row, no emit (web parity).
+            // 'Call failed' - no row, no emit (web parity).
             apply(.abortLocal, now: Date())
         }
     }
@@ -467,7 +465,7 @@ public final class PulseCallEngine: ObservableObject {
         }
     }
 
-    // ── peer bridge callbacks (main actor via PeerBridge) ────
+    // peer bridge callbacks (main actor via PeerBridge)
 
     func handleLocalCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) {
         guard let call = machine.call, !machine.isTerminal else { return }
@@ -499,14 +497,14 @@ public final class PulseCallEngine: ObservableObject {
         }
     }
 
-    /// Wave R1-W2D — the peer's video track arrived over the m=video line;
+    /// Wave R1-W2D - the peer's video track arrived over the m=video line;
     /// publish it so CallView renders the full-bleed remote surface.
     func handleRemoteVideoTrack(_ track: RTCVideoTrack) {
         guard remoteVideoTrack !== track else { return }
         remoteVideoTrack = track
     }
 
-    // ── heartbeat ────────────────────────────────────────────
+    // heartbeat
 
     func tick() {
         let now = Date()
@@ -526,7 +524,7 @@ public final class PulseCallEngine: ObservableObject {
         }
     }
 
-    // ── transitions ──────────────────────────────────────────
+    // transitions
 
     private func apply(_ input: CallMachineInput, now: Date) {
         let transition = machine.apply(input, now: now)
@@ -552,7 +550,7 @@ public final class PulseCallEngine: ObservableObject {
         teardownMedia()
 
         let call = machine.call
-        // ── wire effects (what the relay still needs to hear) ──
+        // wire effects (what the relay still needs to hear)
         switch input {
         case .hangupRequested, .rejectRequested:
             if let call {
@@ -573,7 +571,7 @@ public final class PulseCallEngine: ObservableObject {
                 }
             }
         case .peerConnectionFailed, .connectTimeout, .disconnectGraceExpired:
-            // Answered-then-ended by a defensive timer — the survivor must
+            // Answered-then-ended by a defensive timer - the survivor must
             // stop the media UI (relay tolerates hangup on answered sessions).
             if let call { sendHangup(call: call, durationSec: end.durationSec) }
         case .staleTimeout:
@@ -583,12 +581,12 @@ public final class PulseCallEngine: ObservableObject {
                 sendHangup(call: call, durationSec: end.durationSec)
             }
         default:
-            // reject/cancel/hangup RECEIVED + ringTimeout + abortLocal — the
+            // reject/cancel/hangup RECEIVED + ringTimeout + abortLocal - the
             // relay already routed the peer side (or there is nothing to say).
             break
         }
 
-        // ── single-writer log row ────────────────────────────
+        // single-writer log row
         // .abortLocal writes NOTHING (web 'Call failed' parity). The callee
         // never writes. Only the caller's terminal outcomes become rows.
         if input != .abortLocal, let call,
@@ -623,7 +621,7 @@ public final class PulseCallEngine: ObservableObject {
         remoteDescriptionSet = false
         offerSent = false
         incomingOffer = nil
-        // Wave R1-W2D — video mirrors reset with the media leg.
+        // Wave R1-W2D - video mirrors reset with the media leg.
         videoCaptureActive = false
         cameraEnabled = false
         localVideoTrack = nil
@@ -631,7 +629,7 @@ public final class PulseCallEngine: ObservableObject {
         PulseCallAudioSession.shared.restore()
     }
 
-    // ── call-log write path (single writer, offline queue) ───
+    // call-log write path (single writer, offline queue)
 
     private func writeLogRow(_ body: [String: Any]) async {
         guard let api = apiProvider() else {
@@ -642,11 +640,11 @@ public final class PulseCallEngine: ObservableObject {
             _ = try await api.createCallLogRow(body)
         } catch {
             if PulseOutboxEngine.isDroppable(error) {
-                // 4xx — retrying can never succeed (peer left the DM, group
+                // 4xx - retrying can never succeed (peer left the DM, group
                 // conversation, …): honest toast, row dropped (web parity).
                 toasts.show("Could not save this call to history")
             } else {
-                // Network-class failure — queue locally, flush on socket
+                // Network-class failure - queue locally, flush on socket
                 // reconnect / app start (outbox trigger style).
                 try? store.appendCallLogQueue(payload: body)
                 toasts.show("Call will be added to history when you're back online")
@@ -680,12 +678,12 @@ public final class PulseCallEngine: ObservableObject {
         }
     }
 
-    /// Reconnect/foreground trigger — fire-and-forget wrapper.
+    /// Reconnect/foreground trigger - fire-and-forget wrapper.
     public func flushCallLogQueueOnReconnect() {
         Task { await flushCallLogQueue() }
     }
 
-    // ── summary text (web CANCEL_SUMMARY + ended-card parity) ──
+    // summary text (web CANCEL_SUMMARY + ended-card parity)
 
     static func summaryText(for input: CallMachineInput, end: CallEndContext, direction: CallDirection?) -> String? {
         let endedText = end.durationSec >= 1
@@ -726,7 +724,7 @@ public final class PulseCallEngine: ObservableObject {
         }
     }
 
-    // ── peer bridge (WebRTC callbacks → main actor) ──────────
+    // peer bridge (WebRTC callbacks → main actor)
 
     /// Nonisolated bridge: WebRTC threads land here, then hop to the main
     /// actor before touching engine state.

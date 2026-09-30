@@ -62,7 +62,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import org.json.JSONObject
 
 /**
- * REAL Socket.IO relay client — joins `user:{userId}` rooms exactly like the
+ * REAL Socket.IO relay client - joins `user:{userId}` rooms exactly like the
  * web client (use-pulse-socket.ts): connect → emit join → receive joined ack
  * + presence snapshots; then the FULL S→C registry from contracts.ts arrives
  * as typed Signals.
@@ -77,20 +77,20 @@ import org.json.JSONObject
  */
 class PulseSocketClient(
     private val socketUrl: String,
-    /** Wave 8 — current session credential; a PRESENT token is verified by the relay. */
+    /** Wave 8 - current session credential; a PRESENT token is verified by the relay. */
     private val tokenProvider: () -> String? = { null },
-    /** Wave 8 — join:error hook (token invalid/rotated): clear + surface re-login. */
+    /** Wave 8 - join:error hook (token invalid/rotated): clear + surface re-login. */
     private val onAuthInvalid: (String?) -> Unit = {},
 ) {
     sealed interface Signal {
-        /** Realtime transport state — true on connect, false on disconnect/error. */
+        /** Realtime transport state - true on connect, false on disconnect/error. */
         data class Connection(val connected: Boolean) : Signal
         data class Joined(val onlineUserIds: List<String>) : Signal
         data class PresenceSnapshot(val onlineUserIds: List<String>) : Signal
 
         /**
          * The message:* envelope family (message:new/deleted/react/edited/pinned/
-         * viewed, poll:voted, link:preview, translation:added) — [event] is the
+         * viewed, poll:voted, link:preview, translation:added) - [event] is the
          * wire event name, [dto] the authoritative (already decoded) row.
          */
         data class MessageEnvelope(val event: String, val conversationId: String, val dto: ChatMessageDto?) : Signal
@@ -105,30 +105,30 @@ class PulseSocketClient(
         data class StageEnded(val conversationId: String) : Signal
         data class SpaceState(val conversationId: String, val state: kotlinx.serialization.json.JsonElement?) : Signal
         /**
-         * Typed call:* envelope — the payload type is the OUTER-level union
+         * Typed call:* envelope - the payload type is the OUTER-level union
          * (fully qualified: inside this nested class the bare name
          * `CallSignal` would resolve to the nested class itself).
          */
         data class CallSignal(val signal: app.pulse.data.remote.PulseSocketClient.CallSignal) : Signal
 
-        // ── R8 Task 3-c — group call (mesh) signals ─────────────────
-        /** S→C gcall:state — the join-ordered roster after every join/leave. */
+        // R8 Task 3-c - group call (mesh) signals
+        /** S→C gcall:state - the join-ordered roster after every join/leave. */
         data class GroupCallState(val payload: GroupCallStatePayload) : Signal
-        /** S→C gcall:offer — a member with a smaller id is offering me. */
+        /** S→C gcall:offer - a member with a smaller id is offering me. */
         data class GroupCallOffer(val dto: GroupCallOfferDto) : Signal
-        /** S→C gcall:answer — my offer was answered. */
+        /** S→C gcall:answer - my offer was answered. */
         data class GroupCallAnswer(val dto: GroupCallAnswerDto) : Signal
-        /** S→C gcall:ice — a peer's candidate triple. */
+        /** S→C gcall:ice - a peer's candidate triple. */
         data class GroupCallIce(val dto: GroupCallIceDto) : Signal
-        /** S→C gcall:ring — HTTP-relayed ring (online members). */
+        /** S→C gcall:ring - HTTP-relayed ring (online members). */
         data class GroupCallRing(val payload: GroupCallRingPayload) : Signal
-        /** S→C gcall:ended — the call was torn down. */
+        /** S→C gcall:ended - the call was torn down. */
         data class GroupCallEnded(val payload: GroupCallEndedPayload) : Signal
-        /** S→C gcall:full — join rejected (8 max). */
+        /** S→C gcall:full - join rejected (8 max). */
         data class GroupCallFull(val payload: GroupCallFullPayload) : Signal
 
         /**
-         * Wave 8 — the relay refused our join because the PRESENTED token is
+         * Wave 8 - the relay refused our join because the PRESENTED token is
          * invalid or has been rotated (server disconnects the socket right
          * after). The app clears the credential and routes to re-login.
          */
@@ -136,7 +136,7 @@ class PulseSocketClient(
     }
 
     /**
-     * Typed per-event call:* signal — each payload decodes into its EXACT
+     * Typed per-event call:* signal - each payload decodes into its EXACT
      * wire DTO (flat ICE triple, durationSec hangup). Wave-3 engine feed.
      */
     sealed interface CallSignal {
@@ -179,7 +179,7 @@ class PulseSocketClient(
     @Volatile private var joinedUserId: String? = null
 
     /**
-     * Effective relay base — the injected default wins when set, but a live
+     * Effective relay base - the injected default wins when set, but a live
      * manifest override (PulseEndpoints.socketUrl retargeted at runtime) is
      * picked up on every connect without recreating the singleton.
      */
@@ -189,11 +189,11 @@ class PulseSocketClient(
         joinedUserId = userId
         val base = effectiveBase()
         if (base.isBlank()) {
-            Log.i(TAG, "Realtime disabled — no relay base baked; staying offline-first")
+            Log.i(TAG, "Realtime disabled - no relay base baked; staying offline-first")
             return
         }
         if (socket?.connected() == true) return
-        disconnectSocket() // clean slate — no double handlers across reconnects
+        disconnectSocket() // clean slate - no double handlers across reconnects
 
         val sock = IO.socket(
             base,
@@ -208,12 +208,12 @@ class PulseSocketClient(
             },
         )
 
-        // EVENT_CONNECT fires on every (re)connection — the join re-emission is
+        // EVENT_CONNECT fires on every (re)connection - the join re-emission is
         // what restores the user room after a network blip.
         sock.on(Socket.EVENT_CONNECT) {
             _signals.tryEmit(Signal.Connection(true))
             joinedUserId?.let { id ->
-                // Wave 8 — the join payload carries the session token when one
+                // Wave 8 - the join payload carries the session token when one
                 // exists; a PRESENT token is verified server-side (invalid →
                 // join:error + disconnect). Token-less joins stay accepted
                 // during the web-migration window.
@@ -287,7 +287,7 @@ class PulseSocketClient(
         // Wave 5: stage:state / space:state carry the room object at TOP level
         // (verified against the relay), so the passthrough `state` field of the
         // DTO always decodes null. The Signal therefore carries the WHOLE raw
-        // element — parseStageRoomState/parseSpaceBoardState handle both shapes.
+        // element - parseStageRoomState/parseSpaceBoardState handle both shapes.
         sock.on(SocketEvents.STAGE_STATE) { args ->
             decode<StageStatePayload>(args)?.let {
                 _signals.tryEmit(Signal.StageState(it.conversationId, rawElement(args)))
@@ -301,9 +301,9 @@ class PulseSocketClient(
                 _signals.tryEmit(Signal.SpaceState(it.conversationId, rawElement(args)))
             }
         }
-        // Typed call:* handlers — decode into the EXACT per-event DTO, wrap
+        // Typed call:* handlers - decode into the EXACT per-event DTO, wrap
         // into the outer-level union, emit. Inline (the decoder needs the
-        // instance `decode` helper — a nested object cannot reach it).
+        // instance `decode` helper - a nested object cannot reach it).
         sock.on(SocketEvents.CALL_OFFER) { args ->
             decode<CallOfferDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Offer(it))) }
         }
@@ -323,7 +323,7 @@ class PulseSocketClient(
             decode<CallHangupDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Hangup(it))) }
         }
 
-        // ── R8 Task 3-c — group call (mesh) S→C handlers ────────────
+        // R8 Task 3-c - group call (mesh) S→C handlers
         sock.on(GroupCallEvents.STATE) { args ->
             decode<GroupCallStatePayload>(args)?.let { _signals.tryEmit(Signal.GroupCallState(it)) }
         }
@@ -371,34 +371,34 @@ class PulseSocketClient(
         socket?.emit(SocketEvents.TYPING, payload)
     }
 
-    // ── Wave-3 call signaling emission (wire-perfect payloads) ─────
+    // Wave-3 call signaling emission (wire-perfect payloads)
 
-    /** call:offer — opens the ring; carries the caller's identity decoration. */
+    /** call:offer - opens the ring; carries the caller's identity decoration. */
     fun emitCallOffer(payload: CallOfferDto) {
         emitCall(SocketEvents.CALL_OFFER, payload.toJsonObject())
     }
 
-    /** call:answer — callee accepted, SDP answer attached. */
+    /** call:answer - callee accepted, SDP answer attached. */
     fun emitCallAnswer(payload: CallAnswerDto) {
         emitCall(SocketEvents.CALL_ANSWER, payload.toJsonObject())
     }
 
-    /** call:ice — flat candidate triple, trickled any time after the offer. */
+    /** call:ice - flat candidate triple, trickled any time after the offer. */
     fun emitCallIce(payload: CallIceDto) {
         emitCall(SocketEvents.CALL_ICE, payload.toJsonObject())
     }
 
-    /** call:reject — callee declined (busy / explicit). */
+    /** call:reject - callee declined (busy / explicit). */
     fun emitCallReject(payload: CallRejectDto) {
         emitCall(SocketEvents.CALL_REJECT, payload.toJsonObject())
     }
 
-    /** call:cancel — caller aborts while ringing. */
+    /** call:cancel - caller aborts while ringing. */
     fun emitCallCancel(payload: CallCancelDto) {
         emitCall(SocketEvents.CALL_CANCEL, payload.toJsonObject())
     }
 
-    /** call:hangup — either side ends an ACTIVE call (durationSec on the wire). */
+    /** call:hangup - either side ends an ACTIVE call (durationSec on the wire). */
     fun emitCallHangup(payload: CallHangupDto) {
         emitCall(SocketEvents.CALL_HANGUP, payload.toJsonObject())
     }
@@ -408,36 +408,36 @@ class PulseSocketClient(
         sock.emit(event, JSONObject(payload.toString()))
     }
 
-    // ── R8 Task 3-c — group call (mesh) emission ─────────────────
+    // R8 Task 3-c - group call (mesh) emission
     // Best-effort like every emit: a disconnected socket is a no-op (the
     // engine tears down honestly on disconnect instead).
 
-    /** gcall:join — creates/joins the conversation's ONE live group call. */
+    /** gcall:join - creates/joins the conversation's ONE live group call. */
     fun emitGroupCallJoin(conversationId: String, kind: String, user: GroupCallMemberDto) {
         emitRoomEvent(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user))
     }
 
-    /** gcall:offer — joiner → existing member (targeted relay). */
+    /** gcall:offer - joiner → existing member (targeted relay). */
     fun emitGroupCallOffer(payload: GroupCallOfferDto) {
         emitRoomEvent(GroupCallEvents.OFFER, payload.toJsonObject())
     }
 
-    /** gcall:answer — the targeted peer answers. */
+    /** gcall:answer - the targeted peer answers. */
     fun emitGroupCallAnswer(payload: GroupCallAnswerDto) {
         emitRoomEvent(GroupCallEvents.ANSWER, payload.toJsonObject())
     }
 
-    /** gcall:ice — flat candidate triple, targeted relay. */
+    /** gcall:ice - flat candidate triple, targeted relay. */
     fun emitGroupCallIce(payload: GroupCallIceDto) {
         emitRoomEvent(GroupCallEvents.ICE, payload.toJsonObject())
     }
 
-    /** gcall:leave — explicit exit (roster rebroadcast; last member ends the call). */
+    /** gcall:leave - explicit exit (roster rebroadcast; last member ends the call). */
     fun emitGroupCallLeave(conversationId: String, from: String) {
         emitRoomEvent(GroupCallEvents.LEAVE, groupCallLeavePayload(conversationId, from))
     }
 
-    // ── Wave-5 voice/stage/space emission (wire-perfect payloads) ─────
+    // Wave-5 voice/stage/space emission (wire-perfect payloads)
     // Best-effort like every emit: a disconnected socket is a no-op (the
     // engines re-join on the next connect), never a throw.
 
@@ -447,7 +447,7 @@ class PulseSocketClient(
             .onFailure { Log.w(TAG, "emit $event failed", it) }
     }
 
-    /** voice:join — registers this socket's seat; re-emitted on reconnect (VR-8). */
+    /** voice:join - registers this socket's seat; re-emitted on reconnect (VR-8). */
     fun emitVoiceJoin(conversationId: String, user: PulseVoiceUser) {
         emitRoomEvent(SocketEvents.VOICE_JOIN, voiceJoinPayload(conversationId, user))
     }
@@ -468,7 +468,7 @@ class PulseSocketClient(
         emitRoomEvent(SocketEvents.VOICE_TRANSCRIPT, voiceTranscriptPayload(conversationId, userId, text))
     }
 
-    /** stage:join — asHost:true is ONLY the claim-host path (ST-7). */
+    /** stage:join - asHost:true is ONLY the claim-host path (ST-7). */
     fun emitStageJoin(conversationId: String, user: PulseVoiceUser, asHost: Boolean) {
         emitRoomEvent(SocketEvents.STAGE_JOIN, stageJoinPayload(conversationId, user, asHost))
     }

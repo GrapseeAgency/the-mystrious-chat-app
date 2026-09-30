@@ -2,14 +2,14 @@ import XCTest
 import SwiftUI
 @testable import Pulse
 
-/// R2-D ITEM 3 — the five design-language themes. Web ground truth:
+/// R2-D ITEM 3 - the five design-language themes. Web ground truth:
 /// src/lib/ui-theme.ts:35-76 (meta) + src/app/globals.css:124-240 (tokens).
 /// The table values are asserted BYTE-SAME so the two platforms can never
 /// drift; the selection decodes tolerantly (junk → glass) and persists
 /// under the web's exact `pulse.uiTheme.v2` key.
 final class PulseUiThemeTests: XCTestCase {
 
-    // ── meta table (ui-theme.ts:35-76 verbatim) ─────────────
+    // meta table (ui-theme.ts:35-76 verbatim)
 
     func testMetaTableIsByteSameAsWeb() {
         let expectations: [(PulseUiThemeId, String, String, String, [String], String)] = [
@@ -39,7 +39,7 @@ final class PulseUiThemeTests: XCTestCase {
         XCTAssertEqual(Set(metas.map(\.id)), Set(PulseUiThemeId.allCases))
     }
 
-    // ── tolerant decode (web isUiThemeId parity) ────────────
+    // tolerant decode (web isUiThemeId parity)
 
     func testParseAcceptsTheFiveLockedValues() {
         XCTAssertTrue(PulseUiThemeId.allCases.allSatisfy { id in
@@ -60,7 +60,7 @@ final class PulseUiThemeTests: XCTestCase {
         XCTAssertEqual(PulseTheme.activeUiTheme, .glass)
     }
 
-    // ── tokens (globals.css [data-ui] blocks) ───────────────
+    // tokens (globals.css [data-ui] blocks)
 
     func testRadiusPanelMatchesTheCssBlocks() {
         // Base 28 (glass), kinetic 14, minimal 22, dynamic 26, aero 24.
@@ -116,7 +116,7 @@ final class PulseUiThemeTests: XCTestCase {
         XCTAssertTrue(bothSchemes)
     }
 
-    // ── hex decode (pure) ───────────────────────────────────
+    // hex decode (pure)
 
     func testHexDecodePureValues() {
         let emerald = PulseUiThemeColor(hex: "#10b981")
@@ -128,14 +128,14 @@ final class PulseUiThemeTests: XCTestCase {
         let glassPanel = PulseUiThemeColor(hex: "#ffffff", alpha: 0.55)
         XCTAssertEqual(glassPanel.alpha, 0.55, accuracy: 0.0001)
         XCTAssertEqual(glassPanel.red, 1.0, accuracy: 0.0001)
-        // Junk degrades to opaque black — never traps.
+        // Junk degrades to opaque black - never traps.
         let junk = PulseUiThemeColor(hex: "zz")
         XCTAssertEqual(junk.red, 0.0, accuracy: 0.0001)
         XCTAssertEqual(junk.green, 0.0, accuracy: 0.0001)
         XCTAssertEqual(junk.blue, 0.0, accuracy: 0.0001)
     }
 
-    // ── persistence (PulsePrefs · pulse.uiTheme.v2) ─────────
+    // persistence (PulsePrefs · pulse.uiTheme.v2)
 
     @MainActor
     func testPrefsRoundTripPersistsTheWebRawValue() {

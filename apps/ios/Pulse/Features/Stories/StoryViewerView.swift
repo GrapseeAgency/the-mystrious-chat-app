@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Full-screen story viewer (Wave 4) — a thin renderer over the pure
+/// Full-screen story viewer (Wave 4) - a thin renderer over the pure
 /// [StoryViewerMachine]: 5000ms stories, per-group progress bars,
 /// left-32%-prev tap zones, ≥240ms hold-to-pause with a "Paused" pill,
 /// drag-down dismiss (>110px or >550px/s), optimistic view marking with a
@@ -53,7 +53,7 @@ struct StoryViewerView: View {
         }
         .gesture(viewerGesture)
         .task {
-            // Playback loop — 30fps wall-clock ticks. The MACHINE no-ops
+            // Playback loop - 30fps wall-clock ticks. The MACHINE no-ops
             // ticks while paused/dismissed, so a hold never restarts progress
             // (resume continues from the preserved elapsed).
             while !Task.isCancelled {
@@ -83,7 +83,7 @@ struct StoryViewerView: View {
         }
     }
 
-    // ── stage ────────────────────────────────────────────────
+    // stage
 
     @ViewBuilder
     private func stage(for current: StoryViewerMachine.FlatStory) -> some View {
@@ -139,7 +139,7 @@ struct StoryViewerView: View {
 
     private var caption: String { machine.state.current?.story.caption ?? "" }
 
-    // ── header ───────────────────────────────────────────────
+    // header
 
     private func header(for current: StoryViewerMachine.FlatStory) -> some View {
         VStack(spacing: 10) {
@@ -237,7 +237,7 @@ struct StoryViewerView: View {
         }
     }
 
-    /// Progress bars — CURRENT GROUP only (done / animated / future).
+    /// Progress bars - CURRENT GROUP only (done / animated / future).
     private func bars(for current: StoryViewerMachine.FlatStory) -> some View {
         let groupStories = machine.state.flat.filter { $0.groupIndex == current.groupIndex }
         return HStack(spacing: 4) {
@@ -257,7 +257,7 @@ struct StoryViewerView: View {
         }
     }
 
-    // ── gestures ─────────────────────────────────────────────
+    // gestures
 
     /// Tap zones (left 32% = prev, else next) + hold ≥240ms pause + vertical
     /// drag-down dismiss. A drag release is never a tap; a hold pause RESUMES
@@ -309,7 +309,7 @@ struct StoryViewerView: View {
                 }
                 machine.holdEnd(nowMs: Int64(Date().timeIntervalSince1970 * 1000))
                 if heldMs >= StoryViewerMachine.holdThresholdMs {
-                    return // pure pause — release resumes, never a zone tap
+                    return // pure pause - release resumes, never a zone tap
                 }
                 if value.startLocation.x < UIScreen.main.bounds.width * 0.32 {
                     machine.tapPrev()
@@ -319,11 +319,11 @@ struct StoryViewerView: View {
             }
     }
 
-    // ── view marking (D6) ────────────────────────────────────
+    // view marking (D6)
 
     private func markViewed(_ mark: StoryViewerMachine.PendingMark) async {
         // Optimistic local flip already applied by the feed model; one retry
-        // max — the second failure gives up and the next fetch reconciles.
+        // max - the second failure gives up and the next fetch reconciles.
         do {
             let count = try await session.api.markStoryViewed(id: mark.storyId)
             stories.markViewedLocally(storyId: mark.storyId, viewCount: count)
@@ -334,7 +334,7 @@ struct StoryViewerView: View {
         }
     }
 
-    // ── viewers sheet (D7) ───────────────────────────────────
+    // viewers sheet (D7)
 
     private var viewersSheet: some View {
         NavigationStack {
@@ -390,7 +390,7 @@ struct StoryViewerView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .task(id: viewersOpen) {
-            // D7: poll every ≤5s while the sheet is open — the count badge
+            // D7: poll every ≤5s while the sheet is open - the count badge
             // refreshes from each tick.
             while viewersOpen {
                 if let current = machine.state.current, current.mine {

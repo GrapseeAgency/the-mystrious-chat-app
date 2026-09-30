@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/events/[id]/rsvp — cast or move an event RSVP (Task R23-d)
+// /api/events/[id]/rsvp - cast or move an event RSVP (Task R23-d)
 //
 //   POST body { userId, status: 'going' | 'maybe' | 'no' }
 //   → 200 { rsvp: { id, eventId, userId, status, createdAt },
@@ -7,8 +6,7 @@
 //
 // Upsert on @@unique(eventId, userId): a revote MOVES the existing
 // RSVP row instead of failing. The caller must be a participant of
-// the conversation hosting the event — 403 otherwise.
-// ─────────────────────────────────────────────────────────────
+// the conversation hosting the event - 403 otherwise.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -24,7 +22,7 @@ type RsvpStatus = (typeof RSVP_STATUSES)[number]
 
 /**
  * POST /api/events/[id]/rsvp  body { userId, status }
- * → 200 { rsvp, counts } — the fresh tally after the upsert.
+ * → 200 { rsvp, counts } - the fresh tally after the upsert.
  */
 export async function POST(req: Request, { params }: RouteCtx) {
   const { id } = await params

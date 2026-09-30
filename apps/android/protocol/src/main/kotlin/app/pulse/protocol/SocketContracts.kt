@@ -7,15 +7,15 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Socket.IO contract — the COMPLETE pulse-socket relay surface, mirroring
+ * Socket.IO contract - the COMPLETE pulse-socket relay surface, mirroring
  * packages/protocol/src/contracts.ts v2 exactly (CLIENT_EVENTS 22 C→S,
  * SERVER_EVENTS 27 S→C, NOTIFY_EVENTS 11 HTTP-relay whitelist). Every
  * payload DTO is tolerant: unknown keys are dropped (PulseJson
  * ignoreUnknownKeys) and every non-essential field defaults so partial
- * events still decode. Source of truth is contracts.ts — change there first.
+ * events still decode. Source of truth is contracts.ts - change there first.
  */
 object SocketEvents {
-    // ── client → server ─────────────────────────────────────────
+    // client → server
     const val JOIN = "join"
     const val TYPING = "typing"
     const val VOICE_JOIN = "voice:join"
@@ -39,7 +39,7 @@ object SocketEvents {
     const val CALL_CANCEL = "call:cancel"
     const val CALL_HANGUP = "call:hangup"
 
-    // ── server → client ─────────────────────────────────────────
+    // server → client
     const val JOINED = "joined"
     const val PRESENCE_SNAPSHOT = "presence:snapshot"
     const val MESSAGE_NEW = "message:new"
@@ -54,14 +54,14 @@ object SocketEvents {
     const val TRANSLATION_ADDED = "translation:added"
     const val CONVERSATION_UPDATED = "conversation:updated"
 
-    /** Wave 8 — join refused: a PRESENTED token failed server verification. */
+    /** Wave 8 - join refused: a PRESENTED token failed server verification. */
     const val JOIN_ERROR = "join:error"
     const val VOICE_ROSTER = "voice:roster"
     const val STAGE_STATE = "stage:state"
     const val STAGE_ENDED = "stage:ended"
     const val SPACE_STATE = "space:state"
 
-    /** Full C→S registry — flat mirror of contracts.ts CLIENT_EVENTS. */
+    /** Full C→S registry - flat mirror of contracts.ts CLIENT_EVENTS. */
     val CLIENT_EVENTS: List<String> = listOf(
         JOIN, TYPING,
         VOICE_JOIN, VOICE_LEAVE, VOICE_PTT, VOICE_CHUNK, VOICE_TRANSCRIPT,
@@ -70,7 +70,7 @@ object SocketEvents {
         CALL_OFFER, CALL_ANSWER, CALL_ICE, CALL_REJECT, CALL_CANCEL, CALL_HANGUP,
     )
 
-    /** Full S→C registry — flat mirror of contracts.ts SERVER_EVENTS. */
+    /** Full S→C registry - flat mirror of contracts.ts SERVER_EVENTS. */
     val SERVER_EVENTS: List<String> = listOf(
         JOINED, PRESENCE_SNAPSHOT, TYPING,
         MESSAGE_NEW, MESSAGE_DELETED, MESSAGE_READ,
@@ -82,7 +82,7 @@ object SocketEvents {
         CALL_OFFER, CALL_ANSWER, CALL_ICE, CALL_REJECT, CALL_CANCEL, CALL_HANGUP,
     )
 
-    /** HTTP relay whitelist — POST /notify accepts exactly these. */
+    /** HTTP relay whitelist - POST /notify accepts exactly these. */
     val NOTIFY_EVENTS: List<String> = listOf(
         MESSAGE_NEW, MESSAGE_DELETED, MESSAGE_READ,
         MESSAGE_REACT, MESSAGE_EDITED, MESSAGE_PINNED, MESSAGE_VIEWED,
@@ -96,9 +96,9 @@ object SocketEvents {
     )
 }
 
-// ── presence ────────────────────────────────────────────────────
+// presence
 
-/** C→S join { userId } — registers presence + enters room user:{userId}. */
+/** C→S join { userId } - registers presence + enters room user:{userId}. */
 @Serializable
 data class JoinPayload(val userId: String)
 
@@ -106,12 +106,12 @@ data class JoinPayload(val userId: String)
 @Serializable
 data class JoinedAck(val onlineUserIds: List<String> = emptyList())
 
-/** S→C presence:snapshot — re-broadcast whenever anyone joins/leaves. */
+/** S→C presence:snapshot - re-broadcast whenever anyone joins/leaves. */
 @Serializable
 data class PresenceSnapshotPayload(val onlineUserIds: List<String> = emptyList())
 
 /**
- * typing — C→S carries `recipients`; the S→C relay drops them (the server
+ * typing - C→S carries `recipients`; the S→C relay drops them (the server
  * resolves rooms), so they decode as an empty list on the way back.
  */
 @Serializable
@@ -123,7 +123,7 @@ data class TypingPayload(
     val isTyping: Boolean = false,
 )
 
-// ── message family ──────────────────────────────────────────────
+// message family
 
 /**
  * Envelope for every event that relays a fresh message row
@@ -139,7 +139,7 @@ data class SocketMessageEnvelope(
     val conversationId: String? = null,
 )
 
-/** S→C message:read — a viewer advanced their watermark. */
+/** S→C message:read - a viewer advanced their watermark. */
 @Serializable
 data class ReadEventPayload(
     val conversationId: String = "",
@@ -147,14 +147,14 @@ data class ReadEventPayload(
     val lastReadAt: String? = null,
 )
 
-/** S→C conversation:updated — metadata changed (members, name, photo, flags). */
+/** S→C conversation:updated - metadata changed (members, name, photo, flags). */
 @Serializable
 data class ConversationUpdatedPayload(
     val conversationId: String = "",
     val conversation: ConversationSummaryDto? = null,
 )
 
-// ── voice ───────────────────────────────────────────────────────
+// voice
 
 /** One member of a voice room (contracts.ts VoicePeer). */
 @Serializable
@@ -166,14 +166,14 @@ data class VoicePeerDto(
     val joinedAt: Long? = null,
 )
 
-/** S→C voice:roster — who is in the voice room. */
+/** S→C voice:roster - who is in the voice room. */
 @Serializable
 data class VoiceRosterPayload(
     val conversationId: String = "",
     val roster: List<VoicePeerDto> = emptyList(),
 )
 
-/** S→C voice:ptt — push-to-talk latch state of one peer. */
+/** S→C voice:ptt - push-to-talk latch state of one peer. */
 @Serializable
 data class VoicePttPayload(
     val conversationId: String = "",
@@ -181,7 +181,7 @@ data class VoicePttPayload(
     val active: Boolean = false,
 )
 
-/** voice:chunk — 16 kHz PCM base64 frames (~4 s), relayed to the room. */
+/** voice:chunk - 16 kHz PCM base64 frames (~4 s), relayed to the room. */
 @Serializable
 data class VoiceChunkPayload(
     val conversationId: String = "",
@@ -190,7 +190,7 @@ data class VoiceChunkPayload(
     val data: String = "",
 )
 
-/** S→C voice:transcript — ephemeral caption strip. */
+/** S→C voice:transcript - ephemeral caption strip. */
 @Serializable
 data class VoiceTranscriptPayload(
     val conversationId: String = "",
@@ -198,29 +198,29 @@ data class VoiceTranscriptPayload(
     val text: String = "",
 )
 
-// ── stage / space ───────────────────────────────────────────────
+// stage / space
 
-/** S→C stage:state — full stage roster (host/speakers/hand-queue/muted). */
+/** S→C stage:state - full stage roster (host/speakers/hand-queue/muted). */
 @Serializable
 data class StageStatePayload(
     val conversationId: String = "",
     val state: JsonElement? = null,
 )
 
-/** S→C stage:ended — host closed the stage. */
+/** S→C stage:ended - host closed the stage. */
 @Serializable
 data class StageEndedPayload(val conversationId: String = "")
 
-/** S→C space:state — spatial map snapshot (players + positions). */
+/** S→C space:state - spatial map snapshot (players + positions). */
 @Serializable
 data class SpaceStatePayload(
     val conversationId: String = "",
     val state: JsonElement? = null,
 )
 
-// ── call signaling (mirrors web src/lib/call-types.ts — R33-a) ──
+// call signaling (mirrors web src/lib/call-types.ts - R33-a)
 
-/** Thin ICE candidate triple — JSON-safe everywhere. */
+/** Thin ICE candidate triple - JSON-safe everywhere. */
 @Serializable
 data class CallCandidateDto(
     val candidate: String? = null,
@@ -229,7 +229,7 @@ data class CallCandidateDto(
 )
 
 /**
- * Tolerant call:* payload — ONE shape covers every call event the relay
+ * Tolerant call:* payload - ONE shape covers every call event the relay
  * emits (offer/answer/ice/reject/cancel/hangup): the five CallSignalBase
  * fields are always present, everything else is optional per event.
  */
@@ -239,7 +239,7 @@ data class CallSignalDto(
     val conversationId: String = "",
     val from: String = "",
     val to: String = "",
-    /** "voice" | "video" — tolerant string, the caller decides the surface. */
+    /** "voice" | "video" - tolerant string, the caller decides the surface. */
     val kind: String = "voice",
     val sdp: String? = null,
     /** call:reject → "busy" | "declined"; call:cancel → "timeout" | "cancel" | "busy" | "offline". */
@@ -247,31 +247,31 @@ data class CallSignalDto(
     val candidate: CallCandidateDto? = null,
     /** call:hangup only. */
     val durationMs: Long? = null,
-    // call:offer decoration — who is ringing (the callee may not know them).
+    // call:offer decoration - who is ringing (the callee may not know them).
     val callerName: String? = null,
     val callerColor: String? = null,
     val callerAvatar: String? = null,
 )
 
-// ── Wave-3 full-fidelity call payloads (wire = src/lib/call-types.ts) ────
+// Wave-3 full-fidelity call payloads (wire = src/lib/call-types.ts)
 //
 // The generic CallSignalDto above stays for back-compat, but the WIRE (relay
 // mini-services/pulse-socket/index.ts + the web client) carries:
 //   • call:ice  → a FLAT candidate string triple (NOT a nested object);
-//   • call:hangup → durationSec (contracts.ts says durationMs — known drift,
+//   • call:hangup → durationSec (contracts.ts says durationMs - known drift,
 //     the relay and the web client both emit durationSec; native follows the
 //     WIRE).
 // One exact DTO per event follows, plus pure-kotlinx JSON builders so the
 // data layer can emit wire-perfect payloads (org.json stays out of :protocol
 // so the JVM tests can run the round-trips).
 
-/** call:reject reason — "busy" (callee busy) | "declined" (explicit). */
+/** call:reject reason - "busy" (callee busy) | "declined" (explicit). */
 object CallRejectReasons {
     const val BUSY = "busy"
     const val DECLINED = "declined"
 }
 
-/** call:offer — opens the ring (30s server-side timeout). */
+/** call:offer - opens the ring (30s server-side timeout). */
 @Serializable
 data class CallOfferDto(
     val callId: String = "",
@@ -285,7 +285,7 @@ data class CallOfferDto(
     val callerAvatar: String? = null,
 )
 
-/** call:answer — callee accepted; SDP answer attached. */
+/** call:answer - callee accepted; SDP answer attached. */
 @Serializable
 data class CallAnswerDto(
     val callId: String = "",
@@ -296,7 +296,7 @@ data class CallAnswerDto(
     val sdp: String = "",
 )
 
-/** call:ice — thin FLAT candidate triple (JSON-safe everywhere). */
+/** call:ice - thin FLAT candidate triple (JSON-safe everywhere). */
 @Serializable
 data class CallIceDto(
     val callId: String = "",
@@ -309,7 +309,7 @@ data class CallIceDto(
     val sdpMLineIndex: Int? = null,
 )
 
-/** call:reject — callee declined (busy / explicit). */
+/** call:reject - callee declined (busy / explicit). */
 @Serializable
 data class CallRejectDto(
     val callId: String = "",
@@ -320,7 +320,7 @@ data class CallRejectDto(
     val reason: String? = null,
 )
 
-/** call:cancel — caller gave up / server tore the ring down. */
+/** call:cancel - caller gave up / server tore the ring down. */
 @Serializable
 data class CallCancelDto(
     val callId: String = "",
@@ -331,7 +331,7 @@ data class CallCancelDto(
     val reason: String = "cancel",
 )
 
-/** call:hangup — either side ended an ACTIVE call. WIRE = durationSec. */
+/** call:hangup - either side ended an ACTIVE call. WIRE = durationSec. */
 @Serializable
 data class CallHangupDto(
     val callId: String = "",
@@ -343,9 +343,9 @@ data class CallHangupDto(
     val durationSec: Long? = null,
 )
 
-// ── wire-perfect JSON builders (pure kotlinx — JVM-test friendly) ────────
+// wire-perfect JSON builders (pure kotlinx - JVM-test friendly)
 
-/** Builds the exact call:offer wire object (null avatar omitted — the relay tolerates it). */
+/** Builds the exact call:offer wire object (null avatar omitted - the relay tolerates it). */
 fun CallOfferDto.toJsonObject(): JsonObject = buildJsonObject {
     put("callId", callId)
     put("conversationId", conversationId)
@@ -368,7 +368,7 @@ fun CallAnswerDto.toJsonObject(): JsonObject = buildJsonObject {
     put("sdp", sdp)
 }
 
-/** Builds the exact call:ice wire object — flat candidate triple. */
+/** Builds the exact call:ice wire object - flat candidate triple. */
 fun CallIceDto.toJsonObject(): JsonObject = buildJsonObject {
     put("callId", callId)
     put("conversationId", conversationId)
@@ -400,7 +400,7 @@ fun CallCancelDto.toJsonObject(): JsonObject = buildJsonObject {
     put("reason", reason)
 }
 
-/** Builds the exact call:hangup wire object — durationSec, never durationMs. */
+/** Builds the exact call:hangup wire object - durationSec, never durationMs. */
 fun CallHangupDto.toJsonObject(): JsonObject = buildJsonObject {
     put("callId", callId)
     put("conversationId", conversationId)

@@ -9,10 +9,10 @@ import app.pulse.domain.model.CallDirection
 import app.pulse.domain.model.CallState
 
 /**
- * R8 Task 3-c — one Telecom Connection mirroring one [CallEngine] session.
+ * R8 Task 3-c - one Telecom Connection mirroring one [CallEngine] session.
  * The callbacks drive the engine; the engine's snapshot (through
  * [TelecomCallController]) drives setActive/disconnected. No call logic lives
- * here — this class is a thin OS-facing adapter over the pure machine.
+ * here - this class is a thin OS-facing adapter over the pure machine.
  */
 @RequiresApi(Build.VERSION_CODES.O)
 class PulseConnection(
@@ -57,7 +57,7 @@ class PulseConnection(
 
     /**
      * The OS asked for a mute flip (system call UI / headset buttons). The
-     * engine's toggle is the single source of truth — sync once, honestly.
+     * engine's toggle is the single source of truth - sync once, honestly.
      */
     override fun onMuteStateChanged(muted: Boolean) {
         Log.d(TAG, "telecom mute $muted")
@@ -66,10 +66,10 @@ class PulseConnection(
         }
     }
 
-    override fun onHold() = Unit // hold is not a Pulse feature — the OS view stays unheld
+    override fun onHold() = Unit // hold is not a Pulse feature - the OS view stays unheld
     override fun onUnhold() = Unit
 
-    /** Engine reached CONNECTED — the controller calls this (idempotent). */
+    /** Engine reached CONNECTED - the controller calls this (idempotent). */
     fun setActiveIfSensible() {
         runCatching {
             // STATE_NEW (API 26) is the just-created state; the legacy

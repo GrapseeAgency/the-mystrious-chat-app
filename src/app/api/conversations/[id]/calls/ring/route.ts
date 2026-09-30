@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/conversations/[id]/calls/ring — group-call ring fanout.
+// POST /api/conversations/[id]/calls/ring - group-call ring fanout.
 //
 // The starting member's client has ALREADY joined the call over the socket
 // (`gcall:join`). This route tells everyone ELSE the call exists:
@@ -9,7 +8,6 @@
 // Muted members are skipped entirely (mute means no rings, same rule the
 // message relay honours). Ring is fire-and-forget for the caller UX: the
 // response only confirms validation, never blocks on delivery.
-// ─────────────────────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { fanoutPush } from '@/lib/push/transport'
@@ -71,7 +69,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   })
 
   // 2. High-priority push for members whose apps are closed (transport
-  //    skips currently-online users itself; muted members opted out here —
+  //    skips currently-online users itself; muted members opted out here -
   //    same watermark semantics as message notifications: mutedUntil > now).
   const now = new Date()
   const muted = await db.conversationParticipant.findMany({

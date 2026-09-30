@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/messages/[id] — edit (sender only) + soft-delete (sender only)
-// ─────────────────────────────────────────────────────────────
+// /api/messages/[id] - edit (sender only) + soft-delete (sender only)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -23,7 +21,7 @@ interface RouteCtx {
  * PATCH /api/messages/[id] body { userId, content }
  * Only the sender may edit; deleted messages are not editable (400).
  * Content must be 1..MESSAGE_MAX chars after trim. Sets editedAt (kept even
- * if the text is reverted — mirrors Telegram). Media captions editable too.
+ * if the text is reverted - mirrors Telegram). Media captions editable too.
  * → { message: ChatMessage } · relays message:edited to other members.
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {

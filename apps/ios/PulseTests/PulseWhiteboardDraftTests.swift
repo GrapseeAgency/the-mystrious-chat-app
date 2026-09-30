@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// R1-W2G D44 — the whiteboard pending-draft store (UserDefaults-backed,
+/// R1-W2G D44 - the whiteboard pending-draft store (UserDefaults-backed,
 /// JSON-encoded [WireWhiteboardStrokePost]). Pins the crash-safety
 /// contract: draw-time write-through, batch verdict removal from the
 /// front, restore-time dedupe against the server snapshot, and per-
@@ -50,7 +50,7 @@ final class PulseWhiteboardDraftTests: XCTestCase {
             WireWhiteboardStroke(id: "srv-1", userId: "me", color: "#22c55e", width: 3, points: [[0.1, 0.2], [0.3, 0.4]], createdAt: nil),
         ]
         XCTAssertEqual(PulseWhiteboardDraft.droppingSynced(draft, snapshot: snapshot), [unsynced])
-        // A width mismatch is NOT the same stroke — nothing is dropped.
+        // A width mismatch is NOT the same stroke - nothing is dropped.
         let narrower = PulseWhiteboardDraft.droppingSynced(draft, snapshot: [
             WireWhiteboardStroke(id: "srv-1", userId: "me", color: "#22c55e", width: 4, points: [[0.1, 0.2], [0.3, 0.4]], createdAt: nil),
         ])

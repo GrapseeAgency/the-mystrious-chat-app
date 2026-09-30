@@ -1,16 +1,16 @@
 import XCTest
 @testable import Pulse
 
-/// R2-B — pure room-parity logic + wire DTO tests (web ground truth:
+/// R2-B - pure room-parity logic + wire DTO tests (web ground truth:
 /// chat-room.tsx missed machine + unread divider, chats-tab.tsx anchor
 /// freeze, automations/webhooks/recap/screen-privacy routes). Fixtures use
 /// the CURRENT object shapes (mapAutomation / WebhookDTO verbatim).
 final class PulseRoomParityTests: XCTestCase {
 
-    // ── fixtures ─────────────────────────────────────────────
+    // fixtures
 
     /// Full memberwise build (the wire struct has defaulted trailing vars,
-    /// everything before payload is required — mirrors the store tests).
+    /// everything before payload is required - mirrors the store tests).
     private func makeMessage(
         id: String,
         senderId: String,
@@ -55,7 +55,7 @@ final class PulseRoomParityTests: XCTestCase {
         try JSONDecoder().decode(T.self, from: Data(json.utf8))
     }
 
-    // ── R26 — the missed-count machine (chat-room.tsx:1594-1612) ──
+    // R26 - the missed-count machine (chat-room.tsx:1594-1612)
 
     func testMissedStepGrowsBadgeWhileAway() {
         let step = PulseRoomParityLogic.missedStep(
@@ -101,12 +101,12 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertEqual(PulseRoomParityLogic.missedBadgeText(1), "1")
         XCTAssertEqual(PulseRoomParityLogic.missedBadgeText(99), "99")
         XCTAssertEqual(PulseRoomParityLogic.missedBadgeText(148), "99+")
-        // Every count below the cap renders digits — no "0" badge ever.
+        // Every count below the cap renders digits - no "0" badge ever.
         let counts = [1, 5, 24, 99]
         XCTAssertTrue(counts.allSatisfy { PulseRoomParityLogic.missedBadgeText($0) != "99+" })
     }
 
-    // ── R30-c — the tap-time anchor (chats-tab.tsx:431-435) ──
+    // R30-c - the tap-time anchor (chats-tab.tsx:431-435)
 
     func testUnreadAnchorRequiresUnreadBadgeAndWatermark() {
         let anchor = PulseRoomParityLogic.unreadAnchorMs(
@@ -124,7 +124,7 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertTrue(none.allSatisfy { $0 == nil })
     }
 
-    // ── R30-c — divider placement (chat-room.tsx:1395-1420) ──
+    // R30-c - divider placement (chat-room.tsx:1395-1420)
 
     func testDividerPlacesBeforeFirstForeignLiveNewerRow() {
         let anchor = PulseRoomParityLogic.unreadAnchorMs(
@@ -132,8 +132,8 @@ final class PulseRoomParityTests: XCTestCase {
             unreadCount: 3,
         )
         let river = [
-            makeMessage(id: "m1", senderId: "u1", createdAt: "2026-01-15T10:30:00.000Z"), // own, newer — skipped
-            makeMessage(id: "m2", senderId: "u2", createdAt: "2026-01-15T10:40:00.000Z", deletedAt: "2026-01-15T10:41:00.000Z"), // deleted — skipped
+            makeMessage(id: "m1", senderId: "u1", createdAt: "2026-01-15T10:30:00.000Z"), // own, newer - skipped
+            makeMessage(id: "m2", senderId: "u2", createdAt: "2026-01-15T10:40:00.000Z", deletedAt: "2026-01-15T10:41:00.000Z"), // deleted - skipped
             makeMessage(id: "m3", senderId: "u2", createdAt: "2026-01-15T10:45:00.000Z"), // FIRST qualifier
             makeMessage(id: "m4", senderId: "u3", createdAt: "2026-01-15T11:00:00.000Z"),
         ]
@@ -166,7 +166,7 @@ final class PulseRoomParityTests: XCTestCase {
         ))
     }
 
-    // ── R39 — validation mirrors (automations + webhooks routes) ──
+    // R39 - validation mirrors (automations + webhooks routes)
 
     func testAutomationValidationBounds() {
         XCTAssertTrue(PulseRoomParityLogic.automationValid(trigger: "pricing", reply: "Here you go"))
@@ -189,7 +189,7 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertFalse(PulseRoomParityLogic.webhookNameValid(String(repeating: "w", count: 33)))
     }
 
-    // ── R34-b — the recap gate (requestRecap) ──
+    // R34-b - the recap gate (requestRecap)
 
     func testRecapGateNeedsFiveLive() {
         let counts = [0, 1, 4]
@@ -198,7 +198,7 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertTrue(PulseRoomParityLogic.recapGatePassed(liveCount: 30))
     }
 
-    // ── wire decodes (current route shapes) ─────────────────
+    // wire decodes (current route shapes)
 
     func testAutomationPageDecodesCurrentShape() throws {
         let page = try decode(
@@ -275,7 +275,7 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertNil(legacy.myScreenPrivacy)
     }
 
-    // ── R47 — DM dead-end flag · reminders badge · profile share ──
+    // R47 - DM dead-end flag · reminders badge · profile share
 
     func testConversationDetailCarriesDmBlockedFlag() throws {
         // Blocked pair (either direction): the detail flags it and the
@@ -287,7 +287,7 @@ final class PulseRoomParityTests: XCTestCase {
         )
         XCTAssertTrue(blocked.dmBlockedNow)
         // Groups never flag (the server hard-codes false for isGroup) and
-        // older relays / list summaries omit the key — both "not blocked".
+        // older relays / list summaries omit the key - both "not blocked".
         let legacy = try decode(WireConversationSummary.self, #"{"id":"c2","isGroup":false,"members":[]}"#)
         XCTAssertNil(legacy.dmBlocked)
         XCTAssertFalse(legacy.dmBlockedNow)
@@ -307,7 +307,7 @@ final class PulseRoomParityTests: XCTestCase {
         ]
         XCTAssertEqual(PulseRoomParityLogic.upcomingReminderCount(items), 2)
         XCTAssertEqual(PulseRoomParityLogic.upcomingReminderCount([]), 0)
-        // The badge caps at 9 ("9+") — distinct rhythm from the 99+ jump pill.
+        // The badge caps at 9 ("9+") - distinct rhythm from the 99+ jump pill.
         XCTAssertEqual(PulseRoomParityLogic.reminderBadgeText(9), "9")
         XCTAssertEqual(PulseRoomParityLogic.reminderBadgeText(10), "9+")
     }
@@ -330,7 +330,7 @@ final class PulseRoomParityTests: XCTestCase {
         // Verbatim web copy (profile-tab.tsx:270) + the pulse://user deep
         // link that PulseDeepLink parses back out (user/{id} branch).
         let text = ProfileView.shareMessage(handle: "ada", userId: "u42")
-        XCTAssertTrue(text.contains("Find me on Pulse — @ada"))
+        XCTAssertTrue(text.contains("Find me on Pulse - @ada"))
         XCTAssertTrue(text.contains("pulse://user/u42"))
         XCTAssertEqual(PulseDeepLink.parse(URL(string: "pulse://user/u42")!), .user(userId: "u42"))
         // No id → the handle text still shares; the link line is absent.
@@ -338,7 +338,7 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertFalse(bare.contains("pulse://"))
     }
 
-    // ── F-MS-22 — /recap rides the slash outcome ────────────
+    // F-MS-22 - /recap rides the slash outcome
 
     func testSlashRecapOutcome() {
         XCTAssertEqual(PulseRemediationLogic.applySlash("/recap"), .recap)
@@ -347,7 +347,7 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertNotEqual(PulseRemediationLogic.applySlash("recap"), .recap)
     }
 
-    // ── R3-A — palette fuzzy match (slash-palette.tsx:127-140) ──
+    // R3-A - palette fuzzy match (slash-palette.tsx:127-140)
 
     func testFuzzyMatchWebExamples() {
         // The web doc-string example: "/ef co" finds "/effects confetti …".
@@ -377,10 +377,10 @@ final class PulseRoomParityTests: XCTestCase {
         XCTAssertTrue(PulseRemediationLogic.slashFuzzyMatch(haystack: "/me", needle: "   "))
     }
 
-    // ── R4-A item 2 — one-shot incognito disarm ──────────────
+    // R4-A item 2 - one-shot incognito disarm
     // Web chat-room.tsx:1747-1751 (onSuccess consumes the mask) + Android
     // R3-B one-shot disarm (ChatRoomViewModel.kt:566-570). The old iOS
-    // behavior kept the mask armed until manually disarmed — this pins the
+    // behavior kept the mask armed until manually disarmed - this pins the
     // new shared verdict.
 
     func testAnonDisarmsAfterServerAcceptedSend() {
@@ -388,7 +388,7 @@ final class PulseRoomParityTests: XCTestCase {
     }
 
     func testAnonStaysArmedWhenSendQueuedOrFailed() {
-        // Queued / offline / 429 / dropped — the text may still go out
+        // Queued / offline / 429 / dropped - the text may still go out
         // later, so the mask must not silently drop first (Android
         // onFailure parity: the failure branch never touches the flag).
         XCTAssertTrue(PulseRoomParityLogic.anonDisarmAfterSend(armed: true, serverAccepted: false))
@@ -396,7 +396,7 @@ final class PulseRoomParityTests: XCTestCase {
 
     func testPlainSendNeverConsumesTheMask() {
         // A send that did NOT ride the mask (armed: false) never touches
-        // the flag either way — the Android `if (anonArmed)` gate.
+        // the flag either way - the Android `if (anonArmed)` gate.
         XCTAssertFalse(PulseRoomParityLogic.anonDisarmAfterSend(armed: false, serverAccepted: true))
         XCTAssertFalse(PulseRoomParityLogic.anonDisarmAfterSend(armed: false, serverAccepted: false))
     }

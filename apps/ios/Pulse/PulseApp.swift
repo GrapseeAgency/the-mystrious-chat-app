@@ -1,6 +1,6 @@
-// Pulse iOS — app entry (SwiftUI lifecycle, iOS 17+).
+// Pulse iOS - app entry (SwiftUI lifecycle, iOS 17+).
 // Native per the blueprint: SwiftUI UI, Clean Architecture folders,
-// GRDB (SQLite) local store, URLSession networking — no cross-platform shell.
+// GRDB (SQLite) local store, URLSession networking - no cross-platform shell.
 
 import SwiftUI
 import BackgroundTasks
@@ -8,24 +8,24 @@ import UserNotifications
 
 @main
 struct PulseApp: App {
-    /// Outbox background-refresh identifier — must match
+    /// Outbox background-refresh identifier - must match
     /// project.yml → BGTaskSchedulerPermittedIdentifiers.
     static let outboxTaskID = "app.pulse.chat.outbox"
 
     @Environment(\.scenePhase) private var scenePhase
 
-    // 3-d — the SwiftUI-lifecycle AppDelegate captures the APNs token
+    // 3-d - the SwiftUI-lifecycle AppDelegate captures the APNs token
     // lifecycle (didRegisterForRemoteNotificationsWithDeviceToken /
     // didFailToRegister…) and arms the PushKit VoIP registry at launch.
     @UIApplicationDelegateAdaptor(PulseAppDelegate.self) private var appDelegate
 
     init() {
-        // R2-D — the notification-tap delegate (reminder taps → room).
+        // R2-D - the notification-tap delegate (reminder taps → room).
         // Registered once at process start so cold-start taps are captured
         // even before RootView attaches its routing closure.
         UNUserNotificationCenter.current().delegate = PulseReminderNotificationDelegate.shared
 
-        // R10-b — the notification quick-reply category ("Reply" text-input
+        // R10-b - the notification quick-reply category ("Reply" text-input
         // action on message-bound notifications). Registered once at process
         // start so cold-start banners already offer it; the same delegate
         // routes UNTextInputNotificationResponse to
@@ -34,7 +34,7 @@ struct PulseApp: App {
 
         // BGAppRefreshTask for the outbox. Registration returns false (and
         // logs) on the simulator / when the identifier is missing from the
-        // Info.plist — tolerated, foreground flushing still covers it.
+        // Info.plist - tolerated, foreground flushing still covers it.
         let registered = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.outboxTaskID,
             using: nil,
@@ -46,7 +46,7 @@ struct PulseApp: App {
         }
     }
 
-    /// Simulator chatter guard — flip to true while debugging background tasks.
+    /// Simulator chatter guard - flip to true while debugging background tasks.
     private static let bgTaskVerbose = false
 
     var body: some Scene {
@@ -66,7 +66,7 @@ struct PulseApp: App {
         }
     }
 
-    // ── BGAppRefreshTask plumbing (static — no view graph here) ──
+    // BGAppRefreshTask plumbing (static - no view graph here)
 
     /// Chains the next refresh and flushes the outbox through the live engine.
     static func handleOutboxTask(_ task: BGTask) {
@@ -80,15 +80,15 @@ struct PulseApp: App {
         }
     }
 
-    /// Submits the background-refresh request (15 min earliest). Failures —
-    /// simulator, missing permission, over-quota — are honest no-ops.
+    /// Submits the background-refresh request (15 min earliest). Failures -
+    /// simulator, missing permission, over-quota - are honest no-ops.
     static func scheduleOutboxRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: outboxTaskID)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            // Simulator / missing Info.plist entry — foreground triggers cover it.
+            // Simulator / missing Info.plist entry - foreground triggers cover it.
         }
     }
 }

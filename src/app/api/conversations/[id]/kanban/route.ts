@@ -1,6 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/kanban — group task board (Task R23-c)
-// "Pulse group kanban board" — three real columns (todo/doing/done)
+// /api/conversations/[id]/kanban - group task board (Task R23-c)
+// "Pulse group kanban board" - three real columns (todo/doing/done)
 // persisted as KanbanCard rows so the board survives close/reopen
 // and syncs across members by client polling (1500ms while open).
 //
@@ -14,14 +13,13 @@
 //        assignee/creator names resolved via the users table.
 //   POST body { userId, title (1..120), column? ('todo' default),
 //               assigneeId? (must be a room participant) }
-//        → 201 { card } — position = (max position in that column) + 1.
+//        → 201 { card } - position = (max position in that column) + 1.
 //   POST body { userId, messageId } (Chanty-style, R24-b)
 //        → the message itself becomes the card: title = first 80 chars of
 //          its text (fallback 'Task'), sourceMessageId keeps provenance.
 //
-// All handlers verify conversation participation — no anonymous
+// All handlers verify conversation participation - no anonymous
 // board access, no mocks, everything lands in Prisma/SQLite.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -32,7 +30,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-// ── validation bounds ────────────────────────────────────────
+// validation bounds 
 const COLUMNS = ['todo', 'doing', 'done'] as const
 type KanbanColumnId = (typeof COLUMNS)[number]
 const TITLE_MIN = 1
@@ -106,7 +104,7 @@ function serializeCard(row: KanbanRow, names: Map<string, string>) {
 
 /**
  * GET /api/conversations/[id]/kanban?userId=
- * Full board snapshot for this room — every member polls this while
+ * Full board snapshot for this room - every member polls this while
  * the sheet is open (1.5s) so moves/adds/removes propagate to all.
  */
 export async function GET(req: Request, { params }: RouteCtx) {
@@ -127,7 +125,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   })
 
   // Board order todo → doing → done, then position (alphabetical SQL
-  // order would put "done" first — the board reads left-to-right).
+  // order would put "done" first - the board reads left-to-right).
   const orderIndex = (col: string): number => {
     const idx = (COLUMNS as readonly string[]).indexOf(col)
     return idx === -1 ? COLUMNS.length : idx
@@ -164,7 +162,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const guard = await participantGuard(id, userId)
   if (guard) return guard
 
-  // ── R24-b: message→task conversion (Chanty) ─────────────────
+  // R24-b: message→task conversion (Chanty) 
   // When messageId is present the card is born FROM a chat message: the
   // text becomes the title and the row keeps a sourceMessageId so the
   // board can always trace the provenance. Title-based creation is
@@ -219,7 +217,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     assigneeId = assigneeRaw
   }
 
-  // Bottom of the column: (max position) + 1 — 0 for the first card.
+  // Bottom of the column: (max position) + 1 - 0 for the first card.
   const agg = await db.kanbanCard.aggregate({
     where: { conversationId: id, column },
     _max: { position: true },
@@ -239,7 +237,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   })
   const names = await resolveNames([row.assigneeId, row.createdById])
 
-  // Real activity trail — the note calls out the message provenance.
+  // Real activity trail - the note calls out the message provenance.
   await db.logEvent.create({
     data: {
       userId,

@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/tournaments/[id]/join — enter a season's standings
+// /api/tournaments/[id]/join - enter a season's standings
 // (Task R24-d)
 //
 // POST { userId }
@@ -8,12 +7,11 @@
 //
 // Guards (contract statuses):
 //   404 tournament or user not found
-//   400 'Tournament finished' — closed seasons reject entrants
+//   400 'Tournament finished' - closed seasons reject entrants
 //   403 caller is not a participant of the season's room
 //
 // Joining is an upsert (idempotent): a re-join returns the existing
-// entry untouched — standings never double-count a member.
-// ─────────────────────────────────────────────────────────────
+// entry untouched - standings never double-count a member.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -64,7 +62,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const entry = await db.tournamentPlayer.upsert({
     where: { tournamentId_userId: { tournamentId: id, userId } },
     create: { tournamentId: id, userId },
-    update: {}, // already joined — return the standing as-is
+    update: {}, // already joined - return the standing as-is
   })
 
   return NextResponse.json({

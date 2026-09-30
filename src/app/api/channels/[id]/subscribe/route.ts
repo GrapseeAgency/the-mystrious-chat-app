@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// /api/channels/[id]/subscribe — join / leave a broadcast channel
+// /api/channels/[id]/subscribe - join / leave a broadcast channel
 // (R30-c, leave succession reworked R33-b). Joining lands a role:"member"
-// participant row; an admin may leave only while another admin remains —
+// participant row; an admin may leave only while another admin remains -
 // the last admin must promote a successor first.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { notifySocket, safeJson, strField } from '@/lib/serializers'
@@ -114,7 +112,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'You are not subscribed to this channel.' }, { status: 404 })
   }
   if (participant.role === 'admin') {
-    // Real succession check — leave is fine when another admin stays behind.
+    // Real succession check - leave is fine when another admin stays behind.
     const otherAdmins = await db.conversationParticipant.count({
       where: { conversationId: id, role: 'admin', NOT: { userId } },
     })
@@ -122,7 +120,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
       return NextResponse.json(
         {
           error:
-            'You are the last admin of this channel — promote another admin ("Make admin" on the channel info) before leaving.',
+            'You are the last admin of this channel - promote another admin ("Make admin" on the channel info) before leaving.',
         },
         { status: 403 },
       )

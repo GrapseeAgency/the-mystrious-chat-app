@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Wave 8 — Drafts & outbox manager (web settings Chat section parity):
+/// Wave 8 - Drafts & outbox manager (web settings Chat section parity):
 /// the REAL per-conversation GRDB draft rows and the offline outbox queue
-/// with per-row delete + clear-all. Fully offline — both stores are local
+/// with per-row delete + clear-all. Fully offline - both stores are local
 /// GRDB tables (`draft`, `outbox`); nothing here touches the network.
 struct DraftsOutboxManagerView: View {
     @ObservedObject var session: PulseSession
@@ -48,12 +48,12 @@ struct DraftsOutboxManagerView: View {
         .onAppear { reload() }
     }
 
-    // ── drafts ───────────────────────────────────────────────
+    // drafts
 
     private var draftsCard: some View {
         settingsCard(title: "Saved drafts", icon: "doc.text", count: drafts.count) {
             if drafts.isEmpty {
-                emptyNote("No drafts — composer text saves per conversation on this device.")
+                emptyNote("No drafts - composer text saves per conversation on this device.")
             } else {
                 ForEach(drafts, id: \.conversationId) { row in
                     draftRow(row)
@@ -107,12 +107,12 @@ struct DraftsOutboxManagerView: View {
         .accessibilityElement(children: .combine)
     }
 
-    // ── outbox ───────────────────────────────────────────────
+    // outbox
 
     private var outboxCard: some View {
         settingsCard(title: "Offline queue", icon: "cloud.slash", count: queued.count) {
             if queued.isEmpty {
-                emptyNote("Empty — every composed message has been delivered.")
+                emptyNote("Empty - every composed message has been delivered.")
             } else {
                 ForEach(queued, id: \.clientId) { row in
                     outboxRow(row)
@@ -169,7 +169,7 @@ struct DraftsOutboxManagerView: View {
         .accessibilityElement(children: .combine)
     }
 
-    // ── primitives ───────────────────────────────────────────
+    // primitives
 
     private func settingsCard<Content: View>(
         title: String,
@@ -253,7 +253,7 @@ struct DraftsOutboxManagerView: View {
         return formatter.string(from: date)
     }
 
-    // ── actions (real GRDB rows) ─────────────────────────────
+    // actions (real GRDB rows)
 
     private func reload() {
         guard let store = session.store else { return }

@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/messages/[id]/pin — toggle pinned state for a message
-// ─────────────────────────────────────────────────────────────
+// /api/messages/[id]/pin - toggle pinned state for a message
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {

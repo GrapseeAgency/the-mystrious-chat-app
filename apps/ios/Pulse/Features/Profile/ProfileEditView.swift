@@ -1,17 +1,15 @@
 import SwiftUI
 import PhotosUI
 
-// ─────────────────────────────────────────────────────────────
-// Wave 6 — profile edit (F-CP-04 + F-CP-09, profile-tab.tsx /
+// Wave 6 - profile edit (F-CP-04 + F-CP-09, profile-tab.tsx /
 // handle-editor.tsx / avatar-editor.tsx parity): name (32), bio (140,
 // web placeholder), status glyph picker (the 11 fixed stored values) +
 // status text (48), 8 avatar color swatches, @handle editor (350 ms
 // debounced live check with the verbatim copy), avatar upload
 // (square ≤512 JPEG q0.85 → /api/uploads → PATCH). Save is optimistic
 // with rollback ("Profile updated").
-// ─────────────────────────────────────────────────────────────
 
-/// Pure @handle availability state — the verdict derivation is testable
+/// Pure @handle availability state - the verdict derivation is testable
 /// (handle-validation + suggestion tests) with zero networking involved.
 struct HandleCheckState: Equatable {
     var value = ""
@@ -67,12 +65,13 @@ struct ProfileEditView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    // field limits — the exact server contract (users/[id] route.ts)
+    // field limits - the exact server contract (users/[id] route.ts)
     static let nameMax = 32
     static let aboutMax = 140
     static let statusMax = 48
-    /// The 11 fixed stored status values (audit 6-a — web STATUS_GLYPH_CHOICES).
-    static let statusGlyphs = ["🔥", "✨", "🎯", "☕", "🎧", "🌙", "💡", "🚀", "😴", "🍽️", "vacation"]
+    /// R18-b - the 11 stored status IDS (web STATUS_ICON_IDS); each renders
+    /// through its PulseStatusIconId SF Symbol, never as a raw emoji.
+    static let statusGlyphs = PulseStatusIconId.allCases.map(\.rawValue)
     /// The 8 avatar colors (web PULSE_COLORS).
     static let colors = ["emerald", "rose", "amber", "violet", "teal", "orange", "pink", "cyan"]
 
@@ -120,11 +119,11 @@ struct ProfileEditView: View {
                 Task { await uploadAvatar(item) }
             }
         }
-        // R17 Neo — sheets at 28pt (web sheet radius parity).
+        // R17 Neo - sheets at 28pt (web sheet radius parity).
         .presentationCornerRadius(28)
     }
 
-    // ── sections ─────────────────────────────────────────────
+    // sections
 
     private var identitySection: some View {
         Section("Identity") {
@@ -152,9 +151,9 @@ struct ProfileEditView: View {
                     }
                 }
                 .tint(PulseTheme.accent)
-                // R14 5-b — the remove branch (web avatar-editor.tsx
+                // R14 5-b - the remove branch (web avatar-editor.tsx
                 // runRemovePhoto): shown only while a photo exists, PATCHes
-                // { avatar: "" } — the server nulls the column.
+                // { avatar: "" } - the server nulls the column.
                 if viewer?.avatar != nil {
                     if avatarUploading {
                         EmptyView()
@@ -201,14 +200,15 @@ struct ProfileEditView: View {
     }
 
     private func glyphButton(_ glyph: String) -> some View {
-        let display = pulseStatusGlyphDisplay(glyph)
+        let id = PulseStatusIconId(rawValue: glyph) ?? PulseStatusIconId.fallback
         let selected = statusEmoji == glyph
         return Button {
             PulseHaptics.tap()
             statusEmoji = selected ? "" : glyph
         } label: {
-            Text(display)
-                .font(.system(size: 18))
+            Image(systemName: id.symbolName)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(selected ? PulseTheme.accent : PulseTheme.textSecondary)
                 .frame(width: 44, height: 44)
                 .background(RoundedRectangle(cornerRadius: 12).fill(selected ? PulseTheme.emerald.opacity(0.16) : PulseTheme.chipFill))
                 .overlay(
@@ -217,7 +217,7 @@ struct ProfileEditView: View {
                 )
         }
         .buttonStyle(PulseButtonStyle())
-        .accessibilityLabel("\(glyph == "vacation" ? "On vacation" : display)\(selected ? ", selected" : "")")
+        .accessibilityLabel("\(id.label)\(selected ? ", selected" : "")")
     }
 
     private var colorSection: some View {
@@ -352,11 +352,11 @@ struct ProfileEditView: View {
                     .foregroundStyle(PulseTheme.amber600)
             }
         } footer: {
-            Text("Changes appear everywhere instantly — profile, chats and mentions.")
+            Text("Changes appear everywhere instantly - profile, chats and mentions.")
         }
     }
 
-    // ── derived ──────────────────────────────────────────────
+    // derived
 
     private var nameDirty: Bool {
         name.trimmingCharacters(in: .whitespaces) != (viewer?.name ?? "")
@@ -382,7 +382,7 @@ struct ProfileEditView: View {
         return nameDirty || aboutDirty || statusDirty || colorDirty || handleDirty
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     private func seedFromViewer() {
         guard !loaded, let viewer else { return }
@@ -395,7 +395,7 @@ struct ProfileEditView: View {
         handleState.value = viewer.username ?? ""
     }
 
-    /// 350 ms debounced live availability — skipped while re-typing the
+    /// 350 ms debounced live availability - skipped while re-typing the
     /// current handle (web HANDLE_DEBOUNCE_MS parity).
     private func scheduleHandleCheck() {
         handleCheckTask?.cancel()
@@ -429,7 +429,7 @@ struct ProfileEditView: View {
         }
     }
 
-    /// R14 5-b — the remove branch (web avatar-editor.tsx runRemovePhoto
+    /// R14 5-b - the remove branch (web avatar-editor.tsx runRemovePhoto
     /// :141-163): PATCH { avatar: "" } (the server nulls the column) with an
     /// optimistic viewer mirror + honest rollback on failure.
     private func removePhoto() async {
@@ -459,7 +459,7 @@ struct ProfileEditView: View {
         guard let viewer, !avatarUploading else { return }
         guard let raw = try? await item.loadTransferable(type: Data.self),
               let jpeg = PulseAvatarImage.jpegData(from: raw) else {
-            notice = "Couldn't read that image — try another one"
+            notice = "Couldn't read that image - try another one"
             return
         }
         avatarUploading = true
@@ -477,7 +477,7 @@ struct ProfileEditView: View {
         }
     }
 
-    /// Optimistic save — the viewer prefs flip immediately, the PATCH runs,
+    /// Optimistic save - the viewer prefs flip immediately, the PATCH runs,
     /// and any failure rolls the snapshot back (never a silent lie).
     private func save() async {
         guard let viewer, canSave, !saving else { return }
@@ -522,7 +522,7 @@ struct ProfileEditView: View {
             session.toasts.show("Profile updated")
             dismiss()
         } catch let failure as PulseAPIClient.Failure where failure.status == 409 {
-            // Handle clash between check and save — surface the server suggestion.
+            // Handle clash between check and save - surface the server suggestion.
             prefs.setViewer(snapshot)
             handleState.clashSuggestion = failure.suggestion
             notice = failure.message ?? "That handle was just taken"
@@ -545,11 +545,11 @@ struct ProfileEditView: View {
     }
 }
 
-// ── small prefs extensions (Wave 6 additive seam) ─────────────
+// small prefs extensions (Wave 6 additive seam)
 
 extension PulsePrefs {
     /// The full viewer profile fields live on the WIRE user, not the stored
-    /// PulseViewer — mirror them here (UserDefaults-backed JSON on the same
+    /// PulseViewer - mirror them here (UserDefaults-backed JSON on the same
     /// pulse.viewer payload keys) so the edit form seeds + persists status.
     var viewerAbout: String? { extraProfile["about"] }
     var viewerStatusEmoji: String? { extraProfile["statusEmoji"] }
@@ -573,7 +573,7 @@ extension PulsePrefs {
     }
 }
 
-// ── tiny modifiers/helpers ────────────────────────────────────
+// tiny modifiers/helpers
 
 private extension TextField {
     /// Hard cap while typing (web maxLength parity, no local state echo).

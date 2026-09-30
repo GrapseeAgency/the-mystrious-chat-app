@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Wave 8 — session-token crypto seam. The STORE logic is JVM-testable with a
+ * Wave 8 - session-token crypto seam. The STORE logic is JVM-testable with a
  * fake cipher; the production cipher is [KeystoreSessionTokenCipher] (real
  * AndroidKeyStore AES-GCM, validated by the androidTest suite).
  */
@@ -27,7 +27,7 @@ interface SessionTokenCipher {
     /** Encrypt/encode a plaintext token into its at-rest form. */
     fun encrypt(plain: String): String
 
-    /** Decode the at-rest form back (null = unreadable — treated as absent). */
+    /** Decode the at-rest form back (null = unreadable - treated as absent). */
     fun decryptOrNull(stored: String): String?
 }
 
@@ -42,7 +42,7 @@ interface SessionTokenPersistence {
 }
 
 /**
- * Wave 8 session tokens (spec §3.11 A-1/A-2) — the durable, encrypted-at-rest
+ * Wave 8 session tokens (spec §3.11 A-1/A-2) - the durable, encrypted-at-rest
  * copy of the caller's bearer credential.
  *
  * - The token is 64 hex chars, issued by POST /api/users and rotated by
@@ -52,10 +52,10 @@ interface SessionTokenPersistence {
  * - [cached] mirrors the loaded token for synchronous consumers (the Ktor
  *   request pipeline reads it per-request; no suspend hops on the hot path).
  * - [invalidated] flips when a live 401 / socket join:error proves the token
- *   rotated away — the app clears the session and surfaces an honest
+ *   rotated away - the app clears the session and surfaces an honest
  *   re-login notice.
  *
- * API < 23 has no AndroidKeyStore AES — the token degrades to prefixed
+ * API < 23 has no AndroidKeyStore AES - the token degrades to prefixed
  * cleartext in the app-private DataStore (honest, documented; the same
  * degradation [SecureSessionStore] has shipped since Wave 0).
  */
@@ -87,7 +87,7 @@ class SessionTokenStore @Inject constructor(
         val plain = cipher.decryptOrNull(stored)
         if (plain.isNullOrBlank()) {
             // unreadable at-rest payload (key invalidated by a backup restore,
-            // format drift) — drop it rather than loop on guaranteed 401s
+            // format drift) - drop it rather than loop on guaranteed 401s
             scope.launch { persistence.clear() }
             return null
         }
@@ -103,7 +103,7 @@ class SessionTokenStore @Inject constructor(
         _invalidated.value = false
     }
 
-    /** Identity forget/switch — the credential must not outlive the identity. */
+    /** Identity forget/switch - the credential must not outlive the identity. */
     suspend fun clear() {
         persistence.clear()
         cached = null
@@ -113,12 +113,12 @@ class SessionTokenStore @Inject constructor(
     /**
      * The gateway answered 401 (or the relay refused our join): the stored
      * token is invalid or has been rotated. Clear the credential and raise
-     * the invalidated flag — the app routes to onboarding with an honest
+     * the invalidated flag - the app routes to onboarding with an honest
      * notice (web parity: session-rotated handling).
      */
     suspend fun markInvalid(reason: String?) {
         if (cached == null && !_invalidated.value) return
-        Log.w(TAG, "session token rejected — clearing ($reason)")
+        Log.w(TAG, "session token rejected - clearing ($reason)")
         persistence.clear()
         cached = null
         _invalidated.value = true
@@ -134,7 +134,7 @@ class SessionTokenStore @Inject constructor(
 }
 
 /**
- * Production persistence — the shared `pulse.prefs` DataStore file under the
+ * Production persistence - the shared `pulse.prefs` DataStore file under the
  * key "session.token.enc" (one file: prefs + session vault + this token).
  */
 class DataStoreSessionTokenPersistence @Inject constructor(
@@ -157,11 +157,11 @@ class DataStoreSessionTokenPersistence @Inject constructor(
 }
 
 /**
- * Production cipher — AndroidKeyStore AES-GCM, byte-compatible with the
+ * Production cipher - AndroidKeyStore AES-GCM, byte-compatible with the
  * [SecureSessionStore] vault format ("enc:v1:" + base64(iv‖ct), GCM tag 128
  * bits, dedicated alias "pulse.session.token.key"). API < 23 (and any
  * unexpected Keystore failure) degrades to "plain:"-prefixed cleartext in the
- * app-private DataStore — honest, the same trade the session vault ships.
+ * app-private DataStore - honest, the same trade the session vault ships.
  */
 class KeystoreSessionTokenCipher @Inject constructor() : SessionTokenCipher {
 
@@ -172,7 +172,7 @@ class KeystoreSessionTokenCipher @Inject constructor() : SessionTokenCipher {
 
     override fun decryptOrNull(stored: String): String? {
         if (stored.startsWith(PREFIX_PLAIN)) return stored.removePrefix(PREFIX_PLAIN)
-        if (!stored.startsWith(PREFIX_ENC)) return null // unknown format — treat as absent
+        if (!stored.startsWith(PREFIX_ENC)) return null // unknown format - treat as absent
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
         return runCatching { keystoreDecrypt(stored.removePrefix(PREFIX_ENC)) }.getOrNull()
     }

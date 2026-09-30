@@ -1,14 +1,20 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — sticker picker (LINE/Kakao-grade packs).
-// 5 packs of emoji-art tiles on gradient cards. Tapping a tile
-// posts a REAL message: kind:'sticker', payload {emoji, pack}.
-// "Recent stickers" is a local UI preference (localStorage) —
-// the sent data itself is always real chat data.
-// ─────────────────────────────────────────────────────────────
+// Pulse sticker picker. Five packs of emoji-art tiles on gradient
+// cards. Tapping a tile posts a REAL message: kind 'sticker',
+// payload { emoji, pack }. "Recent stickers" is a local UI
+// preference (localStorage); the sent data itself is chat data.
+// Pack badges are designed glyphs; the emoji tiles are user content.
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { History } from 'lucide-react'
+import {
+  PulseBolt,
+  PulseHeart,
+  PulsePaw,
+  PulseSmiley,
+  PulseThumb,
+  type PulseGlyph,
+} from '@/components/ui/icons'
 import { haptic } from '@/lib/pulse-settings'
 import { cn } from '@/lib/utils'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
@@ -21,7 +27,7 @@ export interface StickerPick {
 
 interface StickerPack {
   name: string
-  badge: string
+  badge: PulseGlyph
   /** tailwind gradient classes for the pack tiles */
   gradient: string
   items: string[]
@@ -30,31 +36,31 @@ interface StickerPack {
 export const STICKER_PACKS: readonly StickerPack[] = [
   {
     name: 'Pulse',
-    badge: '⚡️',
+    badge: PulseBolt,
     gradient: 'from-emerald-400 to-teal-500',
     items: ['⚡️', '🔥', '💥', '🎉', '✨', '🌟', '💫', '🚀', '🎯', '🏆'],
   },
   {
     name: 'Faces',
-    badge: '😄',
+    badge: PulseSmiley,
     gradient: 'from-amber-400 to-orange-500',
     items: ['😂', '😍', '😎', '🤯', '😭', '😡', '🥳', '😴', '🤔', '🫠'],
   },
   {
     name: 'Reactions',
-    badge: '👍',
+    badge: PulseThumb,
     gradient: 'from-violet-400 to-fuchsia-500',
     items: ['👍', '👎', '🙏', '👏', '💪', '🤝', '😅', '🫡', '🤌', '🤗'],
   },
   {
     name: 'Love',
-    badge: '❤️',
+    badge: PulseHeart,
     gradient: 'from-rose-400 to-pink-500',
     items: ['❤️', '🧡', '💛', '💚', '💜', '🖤', '💖', '💘', '💞', '🫶'],
   },
   {
     name: 'Critters',
-    badge: '🐾',
+    badge: PulsePaw,
     gradient: 'from-lime-400 to-green-500',
     items: ['🐶', '🐱', '🐼', '🦊', '🐸', '🐵', '🦄', '🐙', '🦋', '🐢'],
   },
@@ -93,7 +99,7 @@ function persistRecents(list: StickerPick[]): void {
   try {
     window.localStorage.setItem(RECENTS_KEY, JSON.stringify(list))
   } catch {
-    // storage full/blocked — recents are a nicety, never a failure
+    // storage full/blocked - recents are a nicety, never a failure
   }
 }
 
@@ -190,7 +196,7 @@ export function StickerPicker({
                   aria-label={`${p.name} pack`}
                   className="h-7 flex-1 rounded-xl px-1 text-base data-[state=active]:bg-white data-[state=active]:shadow-sm dark:data-[state=active]:bg-zinc-700"
                 >
-                  <span aria-hidden>{p.badge}</span>
+                  <p.badge className="size-4" aria-hidden />
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -202,7 +208,7 @@ export function StickerPicker({
                 ))}
               </div>
               <p className="mt-1.5 text-center text-[10.5px] font-medium text-zinc-400 dark:text-zinc-500">
-                {activePack.name} pack · tap to send — stays open for combos
+                {activePack.name} pack · tap to send - stays open for combos
               </p>
             </TabsContent>
           </Tabs>

@@ -1,5 +1,5 @@
 /**
- * Pulse premium motion system (R22) — single source of truth for springs,
+ * Pulse premium motion system (R22) - single source of truth for springs,
  * easings and the app-wide particle FX contract. Every surface imports from
  * here so the whole app moves with one physical language.
  *
@@ -11,7 +11,7 @@
  */
 import type { Transition } from 'framer-motion'
 
-/** Spring presets — pick by intent, never hand-roll one-off transitions. */
+/** Spring presets - pick by intent, never hand-roll one-off transitions. */
 export const spring = {
   /** UI chrome: tabs, pills, indicators. Fast settle, no wobble. */
   snappy: { type: 'spring', stiffness: 500, damping: 34, mass: 0.9 },
@@ -25,7 +25,7 @@ export const spring = {
 
 /** Signature cubic-beziers for non-spring (opacity/blur/color) transitions. */
 export const ease = {
-  /** "Swift out" — content appearing. */
+  /** "Swift out" - content appearing. */
   out: [0.16, 1, 0.3, 1] as [number, number, number, number],
   /** Balanced in-out for crossfades/morphs. */
   inOut: [0.65, 0, 0.35, 1] as [number, number, number, number],
@@ -37,12 +37,12 @@ export const ease = {
 export const stagger = (i: number, step = 0.04, cap = 10) =>
   Math.min(i, cap) * step
 
-/** Press micro-interaction — pair with `whileTap` for tactile buttons. */
+/** Press micro-interaction - pair with `whileTap` for tactile buttons. */
 export const pressTap = { scale: 0.94 }
 export const pressSpring = spring.snappy
 
-// ── App-wide particle FX contract (decoupled via a window event so any
-// surface can fire bursts without importing the FX layer) ────────────────
+//  App-wide particle FX contract (decoupled via a window event so any
+// surface can fire bursts without importing the FX layer) 
 
 export type ParticleKind = 'confetti' | 'hearts' | 'stars' | 'burst'
 

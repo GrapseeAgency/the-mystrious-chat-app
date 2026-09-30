@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * R5-B ITEM 2 — A–Z directory grouping parity with web contacts-tab.tsx
+ * R5-B ITEM 2 - A–Z directory grouping parity with web contacts-tab.tsx
  * (indexLetterOf :54-57, sections :126-137): case-insensitive first letter,
  "#" bucket for non-letter glyphs, "#" sorts LAST, input order preserved
  * within a bucket.

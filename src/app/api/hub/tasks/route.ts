@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/hub/tasks — personal kanban (Hub → Tasks panel)
-// ─────────────────────────────────────────────────────────────
+// /api/hub/tasks - personal kanban (Hub → Tasks panel)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

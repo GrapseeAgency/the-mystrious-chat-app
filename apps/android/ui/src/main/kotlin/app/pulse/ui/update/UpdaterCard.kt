@@ -47,12 +47,12 @@ import app.pulse.ui.pulsePress
 import app.pulse.ui.rememberPressSource
 
 /**
- * LiveUpdate surfaces — same emerald design language as the rest of Pulse,
+ * LiveUpdate surfaces - same emerald design language as the rest of Pulse,
  * Compose-native mechanics (AnimatedVisibility springs, pulsePress, haptics).
  * Two shapes:
- *  - [UpdaterBanner] — slim strip above the Chats list; renders NOTHING when
+ *  - [UpdaterBanner] - slim strip above the Chats list; renders NOTHING when
  *    there is no update (GS-style pill).
- *  - [UpdaterDetail] — the Profile "App updates" card body with progress.
+ *  - [UpdaterDetail] - the Profile "App updates" card body with progress.
  */
 @Composable
 fun UpdaterBanner(modifier: Modifier = Modifier) {
@@ -114,7 +114,7 @@ fun UpdaterBanner(modifier: Modifier = Modifier) {
                 is UpdateState.Downloading -> Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Downloading update — ${s.percent}%",
+                            "Downloading update - ${s.percent}%",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f),
@@ -153,7 +153,7 @@ fun UpdaterBanner(modifier: Modifier = Modifier) {
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "Installing — confirm the system dialog",
+                        "Installing - confirm the system dialog",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f),
@@ -200,7 +200,7 @@ fun UpdaterBanner(modifier: Modifier = Modifier) {
     }
 }
 
-/** Profile "App updates" card — installed version, live state, progress. */
+/** Profile "App updates" card - installed version, live state, progress. */
 @Composable
 fun UpdaterDetail(modifier: Modifier = Modifier) {
     val state by LiveUpdater.state.collectAsStateWithLifecycle()
@@ -240,25 +240,25 @@ fun UpdaterDetail(modifier: Modifier = Modifier) {
 
         when (val s = state) {
             is UpdateState.Available -> Text(
-                "v${s.versionName} available — tap CHECK NOW to download",
+                "v${s.versionName} available - tap CHECK NOW to download",
                 style = MaterialTheme.typography.bodySmall,
                 color = PulsePalette.Emerald,
             )
             is UpdateState.Downloading -> {
                 UpdateProgressBar(s.percent)
                 Text(
-                    "${s.percent}% — interruptions resume from the exact byte",
+                    "${s.percent}% - interruptions resume from the exact byte",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             is UpdateState.Ready -> Text(
-                "Ready — the system installer is opening",
+                "Ready - the system installer is opening",
                 style = MaterialTheme.typography.bodySmall,
                 color = PulsePalette.Emerald,
             )
             is UpdateState.Installing -> Text(
-                "Handed to the system installer — confirm to finish",
+                "Handed to the system installer - confirm to finish",
                 style = MaterialTheme.typography.bodySmall,
                 color = PulsePalette.Emerald,
             )

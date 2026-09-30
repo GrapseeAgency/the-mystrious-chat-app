@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users/[id]/saved — saved/starred messages library
-// ─────────────────────────────────────────────────────────────
+// /api/users/[id]/saved - saved/starred messages library
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'

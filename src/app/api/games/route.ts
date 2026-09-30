@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/games — in-chat game matches (R23-b wave, tic-tac-toe first)
+// /api/games - in-chat game matches (R23-b wave, tic-tac-toe first)
 //
 // A match lives in the chat as a REAL Message row (kind: "game",
 // payload {matchId, game}) so it scrolls with history exactly like
@@ -14,8 +13,7 @@
 //          and differ from userId (400)
 //   GET  ?conversationId= → { matches: SerializedMatch[] }  (recent, desc)
 //
-// No mocks — every row lands in Prisma/SQLite.
-// ─────────────────────────────────────────────────────────────
+// No mocks - every row lands in Prisma/SQLite.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -33,7 +31,7 @@ const GAMES = ['tictactoe'] as const
 const MATCHES_LIST_LIMIT = 25
 const BOARD_SIZE = 9
 
-/** Wire shape of a match — winLine is parsed back into number[] | null. */
+/** Wire shape of a match - winLine is parsed back into number[] | null. */
 interface SerializedMatch {
   id: string
   conversationId: string
@@ -74,7 +72,7 @@ function serializeMatch(row: {
         winLine = parsed.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
       }
     } catch {
-      // corrupt row — ship null rather than crashing the card
+      // corrupt row - ship null rather than crashing the card
     }
   }
   return {
@@ -95,7 +93,7 @@ function serializeMatch(row: {
 }
 
 /**
- * POST /api/games — create a match + its game-invite chat message.
+ * POST /api/games - create a match + its game-invite chat message.
  * Direct challenge (opponentId set) or open challenge (any room member
  * can claim the O seat via POST /api/games/[id]/join).
  */
@@ -160,7 +158,7 @@ export async function POST(req: Request) {
       data: {
         conversationId,
         senderId: userId,
-        content: opponentId ? '⚔️ Tic-tac-toe challenge' : '⚔️ Tic-tac-toe — open challenge',
+        content: opponentId ? 'Tic-tac-toe challenge' : 'Tic-tac-toe open challenge',
         kind: 'game',
         payload: JSON.stringify({ matchId: created.id, game: 'tictactoe' }),
         ...(expiresAt ? { expiresAt } : {}),
@@ -197,7 +195,7 @@ export async function POST(req: Request) {
 }
 
 /**
- * GET /api/games?conversationId= — recent matches for a room (newest first).
+ * GET /api/games?conversationId= - recent matches for a room (newest first).
  * Read-only mirror of the messages GET policy (no membership gate on reads).
  */
 export async function GET(req: Request) {

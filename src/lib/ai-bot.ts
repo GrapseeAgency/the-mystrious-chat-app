@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse AI bot — server-only LLM companion (Discord-bot parity).
+// Pulse AI bot - server-only LLM companion (Discord-bot parity).
 // A REAL user row in the DB ("Pulse AI"), invitable to DMs and
 // groups like anyone else. Replies when mentioned in groups, or
-// to every message in a direct conversation. Zero canned lines —
+// to every message in a direct conversation. Zero canned lines -
 // every answer comes from the z-ai-web-dev-sdk chat completion.
-// ─────────────────────────────────────────────────────────────
 import ZAI from 'z-ai-web-dev-sdk'
 import { db } from '@/lib/db'
 import {
@@ -32,8 +30,8 @@ export async function ensurePulseBot(): Promise<string> {
     data: {
       name: BOT_NAME,
       color: 'violet',
-      about: 'Your AI companion · DM me or @mention me in groups ✨',
-      statusEmoji: '✨',
+      about: 'Your AI companion. DM me or @mention me in groups.',
+      statusEmoji: 'sparkles',
       statusText: 'happy to help with anything',
     },
     select: { id: true },
@@ -62,7 +60,7 @@ async function emitBotTyping(
       signal: AbortSignal.timeout(1500),
     })
   } catch {
-    // typing is decorative — ignore failures
+    // typing is decorative - ignore failures
   }
 }
 
@@ -125,7 +123,7 @@ async function runReply(conversationId: string, trigger: ChatMessage): Promise<v
       `You are ${BOT_NAME}, the friendly AI member of the Pulse mobile chat app.`,
       `You are chatting inside a ${conv.isGroup ? 'group conversation' : 'direct one-on-one conversation'}.`,
       'Style: warm, concise (usually under 80 words), natural messenger tone.',
-      'Plain text only — no markdown headings or bullet lists; emoji sparingly (max two per answer).',
+      'Plain text only - no markdown headings or bullet lists; emoji sparingly (max two per answer).',
       'You may use WhatsApp-style formatting: *bold* or _italic_.',
       `If someone addresses you, answer their actual question or request. Never invent facts about people you cannot see.`,
       `The latest message is from ${humanUser}. Respond to that message (and keep earlier context in mind).`,

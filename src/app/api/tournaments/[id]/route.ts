@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/tournaments/[id] — season detail + lifecycle (Task R24-d)
+// /api/tournaments/[id] - season detail + lifecycle (Task R24-d)
 //
 // GET → { tournament: TournamentSummary }   (src/lib/types.ts)
 //   · entries sorted points desc → wins desc → joinedAt asc
@@ -10,7 +9,6 @@
 //   · idempotent-ish: finishing a finished season is a no-op 200
 //   · sets endsAt = now (the real moment the season closed) and
 //     writes a LogEvent row
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -73,7 +71,7 @@ function serializeTournament(row: {
 
 /**
  * Load a tournament + its standings. Users are resolved in a SEPARATE query
- * (by id list) instead of via the TournamentPlayer.user relation — keeps the
+ * (by id list) instead of via the TournamentPlayer.user relation - keeps the
  * route runnable even against a dev server holding a pre-relation Prisma
  * client (no :3000 restart needed).
  */

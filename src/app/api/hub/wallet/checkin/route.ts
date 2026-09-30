@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/hub/wallet/checkin — daily +25 PC with streak bonus
+// /api/hub/wallet/checkin - daily +25 PC with streak bonus
 // Streak logic: consecutive UTC days → +2 PC per streak day (max +20).
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField, dayKey } from '@/lib/serializers'
@@ -65,7 +63,7 @@ export async function POST(req: Request) {
       },
     }),
     db.logEvent.create({
-      data: { userId, kind: 'checkin', message: `checked in — day ${streak} streak, +${reward} PC` },
+      data: { userId, kind: 'checkin', message: `checked in - day ${streak} streak, +${reward} PC` },
     }),
   ])
 

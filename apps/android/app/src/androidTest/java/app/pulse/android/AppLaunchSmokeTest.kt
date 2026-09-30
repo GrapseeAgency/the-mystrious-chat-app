@@ -7,7 +7,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Wave-0 launch smoke — MainActivity reaches RESUMED and hands back a live
+ * Wave-0 launch smoke - MainActivity reaches RESUMED and hands back a live
  * activity instance. Dependency-light on purpose (androidx.test:core-ktx +
  * ext-junit); the Hilt graph (repository, DB, socket, vault) must come up
  * cleanly or launch itself fails.

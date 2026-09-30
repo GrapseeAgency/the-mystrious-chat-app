@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// /api/webhooks/[token] — Discord-style webhook ingest + cleanup.
+// /api/webhooks/[token] - Discord-style webhook ingest + cleanup.
 // POST   (PUBLIC) { content, username? } → lands a real Message row
 //        into the webhook's conversation, authored by the bot user
 //        ("pulseai") when it participates, else the first participant.
-// DELETE ?requesterId= (or JSON body) — participant-admin only.
-// ─────────────────────────────────────────────────────────────
+// DELETE ?requesterId= (or JSON body) - participant-admin only.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -19,7 +17,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-/** Permissive CORS — external services (CI bots, scripts, other apps) post here. */
+/** Permissive CORS - external services (CI bots, scripts, other apps) post here. */
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, DELETE, OPTIONS',
@@ -30,7 +28,7 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
-// ── In-memory rate limit: 20 posts / minute / token ──────────
+// In-memory rate limit: 20 posts / minute / token 
 
 const RATE_LIMIT = 20
 const RATE_WINDOW_MS = 60_000
@@ -54,7 +52,7 @@ function rateLimited(token: string): boolean {
   return false
 }
 
-// ── POST — public ingest ─────────────────────────────────────
+// POST - public ingest 
 
 /**
  * POST /api/webhooks/[token] { content, username? }
@@ -79,7 +77,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   }
   if (rateLimited(token)) {
     return NextResponse.json(
-      { error: 'Rate limit exceeded — max 20 posts per minute.' },
+      { error: 'Rate limit exceeded - max 20 posts per minute.' },
       { status: 429, headers: CORS_HEADERS },
     )
   }
@@ -161,11 +159,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   return NextResponse.json({ success: true }, { headers: CORS_HEADERS })
 }
 
-// ── DELETE — participant-admin only ──────────────────────────
+// DELETE - participant-admin only 
 
 /**
  * DELETE /api/webhooks/[token]?requesterId=X (also accepts JSON body)
- * → { ok: true } — X must be an admin of the webhook's conversation.
+ * → { ok: true } - X must be an admin of the webhook's conversation.
  */
 export async function DELETE(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params

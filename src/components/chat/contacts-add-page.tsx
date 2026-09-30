@@ -1,13 +1,11 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — #/contacts/add sub-page (R27-a).
+// Pulse - #/contacts/add sub-page (R27-a).
 // Renders INSIDE the contacts tab when the hash matches
 // (same internal-hash pattern as the settings tree). Real
 // search-as-you-type over GET /api/users (client filter on the
-// shared ['users'] cache — real data, no mocks), keyboard-focused
+// shared ['users'] cache - real data, no mocks), keyboard-focused
 // glass search field, presence dots, and a Message action that
 // creates/dedupes a DM via POST /api/conversations and opens the
 // room through the shell's onOpenConversation contract.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useMemo, useState } from 'react'
@@ -114,7 +112,7 @@ export function ContactsAddPage({
       role="dialog"
       aria-label="Add contact"
     >
-      {/* ── glass sub-header: back + focused search field ── */}
+      {/*  glass sub-header: back + focused search field  */}
       <div className="glass-deep glass-sheen flex h-14 shrink-0 items-center gap-2 px-2.5">
         <button
           type="button"
@@ -163,7 +161,7 @@ export function ContactsAddPage({
         </div>
       </div>
 
-      {/* ── results ── */}
+      {/*  results  */}
       <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-6 pt-2">
         <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
           {searchQuery.trim() ? `${results.length} ${results.length === 1 ? 'match' : 'matches'}` : 'Everyone'}

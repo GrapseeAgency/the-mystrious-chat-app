@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- R10-a — static launcher shortcuts. Every intent carries ONLY the custom
-     app.pulse.android.action.SHORTCUT action — the implicit intent resolves
+<!-- R10-a - static launcher shortcuts. Every intent carries ONLY the custom
+     app.pulse.android.action.SHORTCUT action - the implicit intent resolves
      against the publishing app's own manifest (MainActivity is the only
      declared handler), so no package name is baked in and the debug
      applicationIdSuffix stays valid. MainActivity.handleIntent receives it:
        · chats       → pulse.shortcut.tab = "chats" (tab jump, existing dock nav)
        · new-message → pulse.shortcut.action = "new_message" (the shell-hosted
-                       NewChatSheet — the dock FAB's own screen)
-       · search      → pulse.shortcut.action = "search" (chats search focus —
+                       NewChatSheet - the dock FAB's own screen)
+       · search      → pulse.shortcut.action = "search" (chats search focus -
                        the dock search button's own path) -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut

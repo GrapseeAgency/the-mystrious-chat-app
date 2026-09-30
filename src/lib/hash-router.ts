@@ -1,15 +1,13 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — hash-based sub-page router (R26).
+// Pulse - hash-based sub-page router (R26).
 // The sandbox exposes a single Next.js route (/), but the product
 // needs REAL sub-page navigation: Settings → Appearance, Profile →
 // Edit Profile, user profile pages, etc. This module provides a
 // tiny hash router (#/settings/appearance) with:
-//   • useHashRoute()  — reactive current path (+ helpers)
-//   • navigate(path)  — push a hash entry (browser back works)
-//   • replacePath(p)  — rewrite the current entry
-//   • back()          — history.back() when we pushed, else root
+//   • useHashRoute()  - reactive current path (+ helpers)
+//   • navigate(path)  - push a hash entry (browser back works)
+//   • replacePath(p)  - rewrite the current entry
+//   • back()          - history.back() when we pushed, else root
 // Paths are normalized: no leading '#' and always a leading '/'.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useSyncExternalStore } from 'react'
@@ -36,13 +34,13 @@ function readHash(): string {
 let lastSnapshot = '/'
 /**
  * How many hash entries THIS app session pushed. Browser-back on a
- * deep-link boot (pushDepth 0) would exit the site — so backHash only
+ * deep-link boot (pushDepth 0) would exit the site - so backHash only
  * pops history when we actually pushed, else it replaces in place.
  */
 let pushDepth = 0
 
 function subscribe(onChange: () => void): () => void {
-  // always notify — useSyncExternalStore re-reads getSnapshot and skips the
+  // always notify - useSyncExternalStore re-reads getSnapshot and skips the
   // render itself when nothing changed. Gating here races the snapshot cache
   // (a render between replaceState and dispatch would swallow the update).
   const handler = () => onChange()
@@ -50,7 +48,7 @@ function subscribe(onChange: () => void): () => void {
   return () => window.removeEventListener('hashchange', handler)
 }
 
-/** Exported raw subscription — lets shells gate UI on the live hash. */
+/** Exported raw subscription - lets shells gate UI on the live hash. */
 export const subscribeHash = subscribe
 
 // keep the depth honest when the user browser-backs through our pushes
@@ -76,7 +74,7 @@ export function useHashRoute(): HashRoute {
   return { path, segments }
 }
 
-/** Push a hash entry — creates a history step so browser/gesture back works. */
+/** Push a hash entry - creates a history step so browser/gesture back works. */
 export function navigateHash(path: string): void {
   if (typeof window === 'undefined') return
   const target = `#${normalize(path)}`
@@ -92,7 +90,7 @@ export function replaceHash(path: string): void {
   const before = window.location.hash
   const url = window.location.pathname + window.location.search + target
   window.history.replaceState(null, '', url)
-  // replaceState does not fire hashchange — always notify when the URL moved
+  // replaceState does not fire hashchange - always notify when the URL moved
   if (before !== target) {
     lastSnapshot = normalize(target)
     window.dispatchEvent(new HashChangeEvent('hashchange'))

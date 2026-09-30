@@ -9,9 +9,9 @@ import kotlinx.coroutines.flow.asStateFlow
  * effects this machine produces against the real platform (socket emits,
  * playback resets, capture stop); the machine itself never touches I/O.
  *
- * Replays every roster wholesale (`voice:roster` is authoritative — joiners
+ * Replays every roster wholesale (`voice:roster` is authoritative - joiners
  * AND leavers), prunes the speaking ring to live peers (WEB DEFECT: stale
- * glow), and — FIX #2 seam — returns the ids that DISAPPEARED so the engine
+ * glow), and - FIX #2 seam - returns the ids that DISAPPEARED so the engine
  * resets their playback state (lastSeq→0) and rejoin audio resumes instantly.
  */
 class VoiceRoomStateMachine {
@@ -40,19 +40,19 @@ class VoiceRoomStateMachine {
     }
 
     sealed interface Event {
-        /** Mic button pressed for [conversationId] — the optimistic JOINING state (VR-1). */
+        /** Mic button pressed for [conversationId] - the optimistic JOINING state (VR-1). */
         data class JoinRequested(val conversationId: String) : Event
 
-        /** S→C voice:roster — replaces the roster WHOLESALE (VR-2). */
+        /** S→C voice:roster - replaces the roster WHOLESALE (VR-2). */
         data class RosterArrived(val conversationId: String, val peers: List<Peer>) : Event
 
-        /** S→C voice:ptt — echoed to the sender too, which lights the self ring (VR-3). */
+        /** S→C voice:ptt - echoed to the sender too, which lights the self ring (VR-3). */
         data class PttArrived(val conversationId: String, val userId: String, val on: Boolean) : Event
 
         /** Relay connection truth (VR-8). */
         data class ConnectionChanged(val connected: Boolean) : Event
 
-        /** Software mute gate — muting while transmitting FORCE-STOPS PTT (VR-6). */
+        /** Software mute gate - muting while transmitting FORCE-STOPS PTT (VR-6). */
         data class MuteChanged(val muted: Boolean) : Event
 
         /** Local PTT latch state changed (the engine drives this from press/release). */
@@ -61,7 +61,7 @@ class VoiceRoomStateMachine {
         /** Mic denied / busy / relay unreachable → honest inline error (VR-10). */
         data class Failed(val message: String) : Event
 
-        /** Explicit leave — full local reset, seq restarts at 1 on next join (VR-9). */
+        /** Explicit leave - full local reset, seq restarts at 1 on next join (VR-9). */
         data object Left : Event
     }
 
@@ -121,7 +121,7 @@ class VoiceRoomStateMachine {
         is Event.ConnectionChanged -> {
             var next = current.copy(connected = event.connected)
             if (!event.connected && next.transmitting) {
-                // Offline transmit is a lie — chunks would drop anyway (VR-8).
+                // Offline transmit is a lie - chunks would drop anyway (VR-8).
                 effects += Effect.StopTransmission
                 next = next.copy(transmitting = false)
             }
@@ -131,7 +131,7 @@ class VoiceRoomStateMachine {
         is Event.MuteChanged -> {
             var next = current.copy(micMuted = event.muted)
             if (event.muted && next.transmitting) {
-                // Mute force-stops PTT — the software gate is the source of truth (VR-6).
+                // Mute force-stops PTT - the software gate is the source of truth (VR-6).
                 effects += Effect.StopTransmission
                 next = next.copy(transmitting = false)
             }

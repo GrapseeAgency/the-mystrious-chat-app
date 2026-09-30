@@ -1,16 +1,14 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — SpotlightOverlay: macOS-Spotlight-style unified
+// Pulse Chat - SpotlightOverlay: macOS-Spotlight-style unified
 // search palette for the whole app.
 // Groups (all REAL data, nothing fabricated):
-//   · Chats    — the viewer's conversations (TanStack cache shared
+//   · Chats    - the viewer's conversations (TanStack cache shared
 //                with the Chats tab via ['conversations', me.id])
-//   · People   — the real user directory (GET /api/users)
-//   · Messages — server-side message search (GET /api/search
+//   · People   - the real user directory (GET /api/users)
+//   · Messages - server-side message search (GET /api/search
 //                → { messages: SearchResultMessage[], total })
-//   · Actions  — New chat · Check in to Hub · Toggle theme
+//   · Actions  - New chat · Check in to Hub · Toggle theme
 //                (all backed by real endpoints/stores)
 // Recents (last 5 queries) persist in localStorage.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -42,7 +40,7 @@ import { glassSurface } from '@/components/ui/glass-card'
 import { Input } from '@/components/ui/input'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
 
-// ── Recents (localStorage) ───────────────────────────────────
+// Recents (localStorage) 
 
 const RECENTS_KEY = 'pulse.spotlight.recents.v1'
 const RECENTS_MAX = 5
@@ -66,7 +64,7 @@ function pushRecent(query: string): void {
   try {
     window.localStorage.setItem(RECENTS_KEY, JSON.stringify(next))
   } catch {
-    // storage unavailable — recents are best-effort
+    // storage unavailable - recents are best-effort
   }
 }
 
@@ -78,7 +76,7 @@ function clearRecents(): void {
   }
 }
 
-// ── Row model ────────────────────────────────────────────────
+// Row model 
 
 interface ChatRow {
   kind: 'chat'
@@ -124,7 +122,7 @@ interface Section {
   rows: SpotlightRow[]
 }
 
-// ── Highlight ────────────────────────────────────────────────
+// Highlight 
 
 function Highlight({ text, query }: { text: string; query: string }) {
   const q = query.trim()
@@ -142,7 +140,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   )
 }
 
-// ── Overlay ──────────────────────────────────────────────────
+// Overlay 
 
 export function SpotlightOverlay({
   open,
@@ -172,7 +170,7 @@ export function SpotlightOverlay({
   const [query, setQuery] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
   const [recents, setRecents] = useState<string[]>(() => readRecents())
-  /** highlighted row key — stale keys fall back to the first row (derived) */
+  /** highlighted row key - stale keys fall back to the first row (derived) */
   const [selKey, setSelKey] = useState<string | null>(null)
   const [checkinPending, setCheckinPending] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -198,7 +196,7 @@ export function SpotlightOverlay({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  // ── real data ──────────────────────────────────────────────
+  // real data 
   const conversations = useQuery({
     queryKey: ['conversations', me?.id ?? '-'],
     enabled: open && !!me,
@@ -233,7 +231,7 @@ export function SpotlightOverlay({
   const q = query.trim()
   const ql = q.toLowerCase()
 
-  // ── actions (real endpoints/stores only) ───────────────────
+  // actions (real endpoints/stores only) 
   const runCheckin = async () => {
     if (!me || checkinPending) return
     setCheckinPending(true)
@@ -247,7 +245,7 @@ export function SpotlightOverlay({
         },
       )
       void queryClient.invalidateQueries({ queryKey: ['hub-wallet', me.id] })
-      toast.success(`Checked in — +${res.reward} PC · ${res.streak}-day streak`)
+      toast.success(`Checked in - +${res.reward} PC · ${res.streak}-day streak`)
       onClose()
       onOpenHub?.()
     } catch (err) {
@@ -290,7 +288,7 @@ export function SpotlightOverlay({
       !ql || a.label.toLowerCase().includes(ql) || a.hint.toLowerCase().includes(ql),
   )
 
-  // ── grouped + flattened rows ───────────────────────────────
+  // grouped + flattened rows 
   const sections: Section[] = useMemo(() => {
     if (!q) {
       const out: Section[] = []
@@ -446,7 +444,7 @@ export function SpotlightOverlay({
         aria-hidden
       />
 
-      {/* card — liquid-glass surface (R22 recipe) with a spring entrance */}
+      {/* card - liquid-glass surface (R22 recipe) with a spring entrance */}
       <motion.div
         initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -558,7 +556,7 @@ export function SpotlightOverlay({
   )
 }
 
-// ── One result row (discriminated render, no `any`) ──────────
+// One result row (discriminated render, no `any`) 
 
 function SpotlightItemRow({
   row,
@@ -655,7 +653,7 @@ function SpotlightItemRow({
                   row.hit.content.length > 0 &&
                   row.hit.content.toLowerCase().includes(query.toLowerCase())
                 )
-                  ? `Document — ${row.hit.fileName}`
+                  ? `Document - ${row.hit.fileName}`
                   : row.hit.content
               }
               query={query}
@@ -699,7 +697,7 @@ function SpotlightItemRow({
       onClick={onSelect}
       onMouseEnter={onHover}
       className={base}
-      // shared-token entrance: 25ms stagger, swift-out — rows flow in
+      // shared-token entrance: 25ms stagger, swift-out - rows flow in
       initial={reducedMotion ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={

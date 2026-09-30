@@ -54,7 +54,7 @@ import org.webrtc.VideoTrack
 import org.webrtc.audio.JavaAudioDeviceModule
 
 /**
- * R8 Task 3-c — the GROUP call engine: a Kotlin mirror of the web session in
+ * R8 Task 3-c - the GROUP call engine: a Kotlin mirror of the web session in
  * src/components/chat/group-call-overlay.tsx (useGroupCallSession), driving
  * the `gcall:*` signaling contract served by the pulse-socket relay.
  *
@@ -67,7 +67,7 @@ import org.webrtc.audio.JavaAudioDeviceModule
  * Joining an ONGOING call NEVER re-rings (joinCall/joinOngoing path); only
  * the starting member POSTs /calls/ring. Teardown happens on gcall:ended,
  * relay disconnect (the server removes us from the roster when our socket
- * dies) and explicit leave — the honest ended/summary cards follow.
+ * dies) and explicit leave - the honest ended/summary cards follow.
  *
  * HARDWARE GATE: mic capture, AEC, camera capture here require
  * physical-device evidence (CODE-VERIFIED ONLY in CI).
@@ -76,7 +76,7 @@ import org.webrtc.audio.JavaAudioDeviceModule
 class GroupCallEngine @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repo: PulseRepository,
-    /** Busy guard — one live call per device (web main-shell.tsx:255-259). */
+    /** Busy guard - one live call per device (web main-shell.tsx:255-259). */
     private val oneToOne: CallEngine,
 ) {
     /** The four UI surfaces the web session exposes (web GroupCallUiState). */
@@ -90,7 +90,7 @@ class GroupCallEngine @Inject constructor(
         val title: String,
     )
 
-    /** Immutable UI snapshot — the single thing the group call overlay renders. */
+    /** Immutable UI snapshot - the single thing the group call overlay renders. */
     data class Snapshot(
         /** The viewer identity (roster self-split for the UI grid). */
         val meId: String = "",
@@ -121,13 +121,13 @@ class GroupCallEngine @Inject constructor(
     private val _snapshot = MutableStateFlow(Snapshot())
     val snapshot: StateFlow<Snapshot> = _snapshot.asStateFlow()
 
-    /** One-shot toast/snackbar copy — surfaced by the shell host (web toasts). */
+    /** One-shot toast/snackbar copy - surfaced by the shell host (web toasts). */
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
-    // ── video mirrors (renderer flow, same idiom as CallEngine) ──
+    // video mirrors (renderer flow, same idiom as CallEngine)
 
-    /** Process-lifetime EGL base — the group renderers MUST share this context. */
+    /** Process-lifetime EGL base - the group renderers MUST share this context. */
     private val eglBase: EglBase by lazy { EglBase.create() }
     val eglBaseContext: EglBase.Context get() = eglBase.eglBaseContext
 
@@ -138,13 +138,13 @@ class GroupCallEngine @Inject constructor(
     /** Remote video tracks keyed by remote member id (the group video grid). */
     val remoteVideoTracks: StateFlow<Map<String, VideoTrack>> = _remoteVideoTracks.asStateFlow()
 
-    // ── identity (set by the shell, voice-rooms idiom) ──────────
+    // identity (set by the shell, voice-rooms idiom)
 
     @Volatile private var meId: String = ""
     @Volatile private var meName: String = "Pulse user"
     @Volatile private var meColor: String = "emerald"
 
-    /** The OPEN conversation — probe target + outsider-banner gate (web openConversationId). */
+    /** The OPEN conversation - probe target + outsider-banner gate (web openConversationId). */
     @Volatile private var activeConversationId: String = ""
     @Volatile private var activeTitle: String = ""
 
@@ -159,7 +159,7 @@ class GroupCallEngine @Inject constructor(
     @Volatile private var relayConnected: Boolean = PulseEndpoints.isConfigured
     private var probeJob: Job? = null
 
-    // ── WebRTC handles ──────────────────────────────────────────
+    // WebRTC handles
     private var factory: PeerConnectionFactory? = null
     private var adm: JavaAudioDeviceModule? = null
     private var localAudioSource: AudioSource? = null
@@ -175,19 +175,19 @@ class GroupCallEngine @Inject constructor(
 
     private var started = false
 
-    // ── lifecycle ───────────────────────────────────────────────
+    // lifecycle
 
     fun start() {
         if (started) return
         started = true
-        // gcall:* signal intake — the engine's event side.
+        // gcall:* signal intake - the engine's event side.
         scope.launch {
             repo.events().collect { event ->
                 if (event is PulseEvent.GroupCallSignal) onGroupCallSignal(event.signal)
             }
         }
         // Relay drop = the server removed us from the roster (leaveGroupCall
-        // runs on socket disconnect) — tear down honestly, never fake a live
+        // runs on socket disconnect) - tear down honestly, never fake a live
         // call. The same flow mirrors connection truth for the offline gate.
         scope.launch {
             repo.observeConnected().collect { connected ->
@@ -231,7 +231,7 @@ class GroupCallEngine @Inject constructor(
 
     /**
      * Web probe (group-call-overlay.tsx:621-666): while idle, ask the gateway
-     * whether the OPEN conversation has a live call — a late-opening room
+     * whether the OPEN conversation has a live call - a late-opening room
      * learns about it without a live ring. Roster including me → clear the
      * banner; roster NOT including me → honest ongoing-banner state.
      */
@@ -261,7 +261,7 @@ class GroupCallEngine @Inject constructor(
         _snapshot.value = now.copy(durationSec = maxOf(0L, elapsed))
     }
 
-    // ── public actions (UI surface) ─────────────────────────────
+    // public actions (UI surface)
 
     /**
      * Start a NEW group call in the OPEN conversation (rings everyone).
@@ -272,14 +272,14 @@ class GroupCallEngine @Inject constructor(
         startJoin(activeConversationId, wanted, ringOthers = true, title = title)
     }
 
-    /** Join from the incoming ring — the ring already went out, NEVER re-rings. */
+    /** Join from the incoming ring - the ring already went out, NEVER re-rings. */
     fun joinCall() {
         val target = pendingRing ?: return
         if (phase != UiPhase.IDLE) return
         startJoin(target.conversationId, target.kind, ringOthers = false, title = target.title)
     }
 
-    /** Silently join the ONGOING call in the open room — never re-rings. */
+    /** Silently join the ONGOING call in the open room - never re-rings. */
     fun joinOngoing() {
         if (phase != UiPhase.IDLE) return
         val conv = activeConversationId
@@ -331,7 +331,7 @@ class GroupCallEngine @Inject constructor(
         _snapshot.value = _snapshot.value.copy(summary = null, phase = UiPhase.IDLE)
     }
 
-    /** Mute/unmute the local mic track (web toggleMic — the wire never learns). */
+    /** Mute/unmute the local mic track (web toggleMic - the wire never learns). */
     fun toggleMic(): Boolean {
         val track = localAudioTrack
         val next = !(track?.enabled() ?: _snapshot.value.micEnabled)
@@ -340,7 +340,7 @@ class GroupCallEngine @Inject constructor(
         return next
     }
 
-    /** Camera toggle (web toggleCamera — track.enabled flip, video kind only). */
+    /** Camera toggle (web toggleCamera - track.enabled flip, video kind only). */
     fun toggleCamera(): Boolean {
         if (kind != CallKind.VIDEO || localVideoTrackRef == null) return _snapshot.value.cameraEnabled
         val next = !localVideoTrackRef!!.enabled()
@@ -349,14 +349,14 @@ class GroupCallEngine @Inject constructor(
         return next
     }
 
-    /** Front ⇄ back flip — honest no-op without an attached camera. */
+    /** Front ⇄ back flip - honest no-op without an attached camera. */
     fun switchCamera(): Boolean {
         val capturer = videoCapturer ?: return false
         if (localVideoTrackRef == null) return false
         return runCatching { capturer.switchCamera(null); true }.getOrDefault(false)
     }
 
-    // ── the join path (web startJoin verbatim) ──────────────────
+    // the join path (web startJoin verbatim)
 
     private fun startJoin(targetConvId: String, wanted: CallKind, ringOthers: Boolean, title: String) {
         if (targetConvId.isBlank()) return
@@ -371,7 +371,7 @@ class GroupCallEngine @Inject constructor(
             return
         }
         if (!relayConnected) {
-            _notices.tryEmit("You are offline — calls need a connection")
+            _notices.tryEmit("You are offline - calls need a connection")
             return
         }
         joinIntent = true
@@ -422,9 +422,9 @@ class GroupCallEngine @Inject constructor(
     }
 
     /**
-     * Mic (+ camera when wanted) capture — web acquireMedia parity. Camera
+     * Mic (+ camera when wanted) capture - web acquireMedia parity. Camera
      * failure NEVER fails the join: the call degrades to voice honestly
-     * (web toast 'Camera unavailable — joining as a voice call').
+     * (web toast 'Camera unavailable - joining as a voice call').
      */
     private fun acquireMedia(wanted: CallKind) {
         ensureFactory()
@@ -442,8 +442,8 @@ class GroupCallEngine @Inject constructor(
         runCatching { localAudioTrack?.setEnabled(true) }
 
         if (wanted == CallKind.VIDEO && !attachLocalVideo()) {
-            Log.w(TAG, "camera unavailable — joining as a voice call")
-            _notices.tryEmit("Camera unavailable — joining as a voice call")
+            Log.w(TAG, "camera unavailable - joining as a voice call")
+            _notices.tryEmit("Camera unavailable - joining as a voice call")
             kind = CallKind.VOICE
             _snapshot.value = _snapshot.value.copy(kind = CallKind.VOICE, cameraEnabled = false)
         }
@@ -456,7 +456,7 @@ class GroupCallEngine @Inject constructor(
         CallForegroundService.start(context, label, video = kind == CallKind.VIDEO && localVideoTrackRef != null)
     }
 
-    // ── signaling intake (web handleGroupCallEvent verbatim) ────
+    // signaling intake (web handleGroupCallEvent verbatim)
 
     private fun onGroupCallSignal(s: GroupCallSignalData) {
         when (s.event) {
@@ -474,7 +474,7 @@ class GroupCallEngine @Inject constructor(
                     kind = s.kind,
                     title = s.title.orEmpty(),
                 )
-                // Only ring when idle — a participant never sees their own ring.
+                // Only ring when idle - a participant never sees their own ring.
                 val idle = phase == UiPhase.IDLE && joinedConvId == null
                 if (GroupCallMesh.shouldShowRing(sessionIdle = idle, fromSelf = ring.caller.id == meId)) {
                     pendingRing = ring
@@ -667,7 +667,7 @@ class GroupCallEngine @Inject constructor(
     }
 
     /**
-     * The relay died — the server already removed us from the roster
+     * The relay died - the server already removed us from the roster
      * (leaveGroupCall fires on socket disconnect server-side). Honest end.
      */
     private fun onTransportLost() {
@@ -681,13 +681,13 @@ class GroupCallEngine @Inject constructor(
                 error = null,
             )
         } else if (phase == UiPhase.IDLE) {
-            // A join in flight never became real — reset quietly to idle.
+            // A join in flight never became real - reset quietly to idle.
             teardownMedia()
             _snapshot.value = _snapshot.value.copy(phase = UiPhase.IDLE)
         }
     }
 
-    // ── peer connections ────────────────────────────────────────
+    // peer connections
 
     private fun ensurePeerConnection(peerId: String): PeerConnection {
         peers[peerId]?.let { return it }
@@ -709,7 +709,7 @@ class GroupCallEngine @Inject constructor(
     }
 
     /**
-     * ICE servers — the same deployment-manifest override the 1:1 engine
+     * ICE servers - the same deployment-manifest override the 1:1 engine
      * uses ([PulseEndpoints.iceServersJson]); built-in Google STUN otherwise.
      */
     private fun iceServers(): List<PeerConnection.IceServer> {
@@ -769,7 +769,7 @@ class GroupCallEngine @Inject constructor(
     }
 
     /**
-     * REAL camera capture start — returns false when no camera exists / the
+     * REAL camera capture start - returns false when no camera exists / the
      * start fails (the join continues voice-only, never rethrows).
      */
     private fun attachLocalVideo(): Boolean {
@@ -863,7 +863,7 @@ class GroupCallEngine @Inject constructor(
             .onFailure { Log.w(TAG, "emit ${signal.event} failed", it) }
     }
 
-    // ── peer observer (per remote member) ───────────────────────
+    // peer observer (per remote member)
 
     private inner class GroupPeerObserver(
         private val peerId: String,
@@ -897,13 +897,13 @@ class GroupCallEngine @Inject constructor(
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
         override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
         override fun onRemoveStream(stream: org.webrtc.MediaStream) {
-            // Peer gone — drop their tile's video source.
+            // Peer gone - drop their tile's video source.
             main.post { _remoteVideoTracks.value = _remoteVideoTracks.value - peerId }
         }
         override fun onDataChannel(channel: org.webrtc.DataChannel) = Unit
         override fun onRenegotiationNeeded() = Unit
 
-        /** UNIFIED_PLAN remote video intake — audio goes through the ADM path. */
+        /** UNIFIED_PLAN remote video intake - audio goes through the ADM path. */
         override fun onTrack(transceiver: org.webrtc.RtpTransceiver) {
             val track = transceiver.receiver?.track() as? VideoTrack ?: return
             main.post { _remoteVideoTracks.value = _remoteVideoTracks.value + (peerId to track) }

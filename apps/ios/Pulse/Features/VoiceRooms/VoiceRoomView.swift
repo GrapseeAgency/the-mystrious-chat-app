@@ -1,13 +1,11 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — W5-f voice room surface (walkie-talkie PTT).
+// Pulse - W5-f voice room surface (walkie-talkie PTT).
 // Native rebuild of web voice-room-sheet.tsx (R21-b + R48):
 // roster tiles with speaking glow, hold ≥260 ms = talk while held,
 // tap <260 ms = latch (tap again stops), mute + banner, captions
 // toggle + strip, honest status/error states, Join/Leave, and the
 // footer contract "never recorded or stored" (spec §1.1).
-// ─────────────────────────────────────────────────────────────
 
 struct VoiceRoomView: View {
     @ObservedObject var model: VoiceRoomSessionModel
@@ -32,7 +30,7 @@ struct VoiceRoomView: View {
         }
     }
 
-    // ── status + honest states ───────────────────────────
+    // status + honest states
 
     private var statusStrip: some View {
         HStack(spacing: 8) {
@@ -85,7 +83,7 @@ struct VoiceRoomView: View {
         .accessibilityElement(children: .combine)
     }
 
-    // ── roster tiles (VR-2) ──────────────────────────────
+    // roster tiles (VR-2)
 
     private let columns = [GridItem(.adaptive(minimum: 84), spacing: 12)]
 
@@ -118,7 +116,7 @@ struct VoiceRoomView: View {
         }
     }
 
-    // ── captions (VR-7) ──────────────────────────────────
+    // captions (VR-7)
 
     private var captionsStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -158,7 +156,7 @@ struct VoiceRoomView: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
     }
 
-    // ── controls (join / PTT / leave) ────────────────────
+    // controls (join / PTT / leave)
 
     private var controls: some View {
         VStack(spacing: 14) {
@@ -225,7 +223,7 @@ struct VoiceRoomView: View {
     }
 
     private var footer: some View {
-        Text("Walkie-talkie is live audio — never recorded or stored.")
+        Text("Walkie-talkie is live audio - never recorded or stored.")
             .font(.caption2)
             .foregroundStyle(PulseTheme.textTertiary)
             .frame(maxWidth: .infinity)
@@ -233,7 +231,7 @@ struct VoiceRoomView: View {
     }
 }
 
-// ── shared room primitives ───────────────────────────────────
+// shared room primitives
 
 /// One roster tile with the speaking glow (voice:ptt drives it).
 struct PeerTile: View {
@@ -347,7 +345,7 @@ struct PTTButton: View {
                 holdTask = Task { [weak model] in
                     try? await Task.sleep(nanoseconds: holdThresholdMs * 1_000_000)
                     guard !Task.isCancelled else { return }
-                    model?.setPtt(on: true) // hold mode — talk while pressed
+                    model?.setPtt(on: true) // hold mode - talk while pressed
                     PulseHaptics.success()
                 }
             }

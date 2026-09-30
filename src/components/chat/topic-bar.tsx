@@ -1,28 +1,26 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — Zulip-style topic chip rail (R24-b).
-// "General" is the implicit default (topicId null); real Topic rows
-// render as glass chips with a live filed-message count badge. The
-// "+" chip opens a tiny inline composer. Horizontal scroll, spring
-// taps, layout-animated active fill — emerald/zinc only.
-// ─────────────────────────────────────────────────────────────
+// Zulip-style topic chip rail. "General" is the implicit default
+// (topicId null); real Topic rows render as glass chips with a live
+// filed-message count badge. The "+" chip opens a small inline
+// composer with an icon preset row. Horizontal scroll, spring taps,
+// layout-animated active fill.
 'use client'
 
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, LoaderCircle, Plus, X } from 'lucide-react'
-import { TOPIC_GLYPHS } from '@/components/ui/icons'
+import { TOPIC_ICON_GLYPHS } from '@/components/ui/icons'
+import { TOPIC_ICON_DEFAULT, TOPIC_ICON_IDS, topicIconId, type TopicIconId } from '@/lib/icon-ids'
 import type { TopicSummary } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { spring, stagger, pressTap } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
 
-const TOPIC_EMOJI_CHOICES = ['💬', '🎨', '🚀', '🧠', '🎉', '🛠️', '📌', '☕'] as const
+const GeneralGlyph = TOPIC_ICON_GLYPHS.chat
 
-const TOPIC_FALLBACK_GLYPH = TOPIC_GLYPHS['💬']
-
-/** Renders a persisted topic value as a real icon — never an emoji. */
-function TopicGlyphIcon({ value, className }: { value: string; className?: string }) {
-  const Glyph = (value && TOPIC_GLYPHS[value]) || TOPIC_FALLBACK_GLYPH
+/** Renders a persisted topic icon id as its designed glyph. */
+function TopicIconGlyph({ value, className }: { value: string; className?: string }) {
+  // module-scope record member access: stable component reference
+  const Glyph = TOPIC_ICON_GLYPHS[topicIconId(value)]
   return <Glyph className={className} aria-hidden />
 }
 
@@ -36,25 +34,25 @@ export function TopicBar({
   topics: TopicSummary[]
   activeTopicId: string | null
   onSelect: (topicId: string | null) => void
-  /** creates (or dedupes to) a topic, resolves its id — null on failure */
-  onCreate: (name: string, emoji: string) => Promise<string | null>
+  /** creates (or dedupes to) a topic, resolves its id; null on failure */
+  onCreate: (name: string, icon: TopicIconId) => Promise<string | null>
   reducedMotion?: boolean
 }) {
   const [createOpen, setCreateOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
-  const [emojiDraft, setEmojiDraft] = useState<string>('💬')
+  const [iconDraft, setIconDraft] = useState<TopicIconId>(TOPIC_ICON_DEFAULT)
   const [submitting, setSubmitting] = useState(false)
 
   const submitCreate = async () => {
     const name = nameDraft.trim()
     if (name.length === 0 || submitting) return
     setSubmitting(true)
-    const id = await onCreate(name, emojiDraft)
+    const id = await onCreate(name, iconDraft)
     setSubmitting(false)
     if (id !== null) {
       setCreateOpen(false)
       setNameDraft('')
-      setEmojiDraft('💬')
+      setIconDraft(TOPIC_ICON_DEFAULT)
     }
   }
 
@@ -69,7 +67,7 @@ export function TopicBar({
       className="relative z-20 shrink-0 border-b border-zinc-200/80 bg-white/85 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/80"
     >
       <div className="pulse-scroll flex items-center gap-1.5 overflow-x-auto px-2.5 py-1.5">
-        {/* General — the implicit topic (topicId null) */}
+        {/* General - the implicit topic (topicId null) */}
         <motion.button
           key="topic-general"
           type="button"
@@ -88,7 +86,7 @@ export function TopicBar({
               : 'border border-zinc-200/80 bg-white/70 text-zinc-600 backdrop-blur hover:border-emerald-300 hover:text-emerald-600 dark:border-white/10 dark:bg-zinc-900/60 dark:text-zinc-300 dark:hover:text-emerald-400',
           )}
         >
-          <TopicGlyphIcon value="💬" className="size-3.5" />
+          <GeneralGlyph className="size-3.5" aria-hidden />
           General
         </motion.button>
 
@@ -116,7 +114,7 @@ export function TopicBar({
                   : 'border border-zinc-200/80 bg-white/70 text-zinc-600 backdrop-blur hover:border-emerald-300 hover:text-emerald-600 dark:border-white/10 dark:bg-zinc-900/60 dark:text-zinc-300 dark:hover:text-emerald-400',
               )}
             >
-              <TopicGlyphIcon value={topic.emoji} className="size-3.5 shrink-0" />
+              <TopicIconGlyph value={topic.emoji} className="size-3.5 shrink-0" />
               <span className="max-w-[120px] truncate">{topic.name}</span>
               <span
                 className={cn(
@@ -132,7 +130,7 @@ export function TopicBar({
           )
         })}
 
-        {/* "+" — create a topic */}
+        {/* plus chip: create a topic */}
         <motion.button
           key="topic-create"
           type="button"
@@ -155,7 +153,7 @@ export function TopicBar({
         </motion.button>
       </div>
 
-      {/* inline topic composer — anchored under the rail */}
+      {/* inline topic composer, anchored under the rail */}
       <AnimatePresence>
         {createOpen ? (
           <motion.div
@@ -192,7 +190,7 @@ export function TopicBar({
                     void submitCreate()
                   }
                 }}
-                placeholder="Topic name…"
+                placeholder="Topic name..."
                 aria-label="Topic name"
                 className="h-10 min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm outline-none transition-colors focus:border-emerald-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
               />
@@ -211,25 +209,29 @@ export function TopicBar({
               </button>
             </div>
             <div className="flex gap-1 pt-2" role="radiogroup" aria-label="Topic icon">
-              {TOPIC_EMOJI_CHOICES.map((emoji) => (
-                <motion.button
-                  key={emoji}
-                  type="button"
-                  role="radio"
-                  aria-checked={emojiDraft === emoji}
-                  whileTap={reducedMotion ? undefined : { scale: 0.85 }}
-                  transition={{ duration: 0.15 }}
-                  onClick={() => setEmojiDraft(emoji)}
-                  className={cn(
-                    'flex size-8 items-center justify-center rounded-lg text-emerald-600 outline-none transition-colors dark:text-emerald-400',
-                    emojiDraft === emoji
-                      ? 'bg-emerald-500/15 ring-1 ring-emerald-400'
-                      : 'hover:bg-zinc-100 dark:hover:bg-zinc-800',
-                  )}
-                >
-                  <TopicGlyphIcon value={emoji} className="size-4" />
-                </motion.button>
-              ))}
+              {TOPIC_ICON_IDS.map((id) => {
+                const active = iconDraft === id
+                return (
+                  <motion.button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    aria-label={`Topic icon ${id}`}
+                    whileTap={reducedMotion ? undefined : { scale: 0.85 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={() => setIconDraft(id)}
+                    className={cn(
+                      'flex size-8 items-center justify-center rounded-lg text-emerald-600 outline-none transition-colors dark:text-emerald-400',
+                      active
+                        ? 'bg-emerald-500/15 ring-1 ring-emerald-400'
+                        : 'hover:bg-zinc-100 dark:hover:bg-zinc-800',
+                    )}
+                  >
+                    <TopicIconGlyph value={id} className="size-4" />
+                  </motion.button>
+                )
+              })}
             </div>
           </motion.div>
         ) : null}

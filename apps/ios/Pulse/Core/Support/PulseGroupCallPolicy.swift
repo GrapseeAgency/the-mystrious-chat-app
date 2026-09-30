@@ -1,7 +1,6 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — GROUP call decision logic (PURE Foundation — unit tested).
+// Pulse - GROUP call decision logic (PURE Foundation - unit tested).
 //
 // Behavioral spec = the web useGroupCallSession hook
 // (src/components/chat/group-call-overlay.tsx), mirrored verbatim:
@@ -19,14 +18,13 @@ import Foundation
 //
 // Kept free of WebRTC/AVFoundation/UIKit types so PulseTests exercises
 // the exact production decision path with no device hardware.
-// ─────────────────────────────────────────────────────────────
 
 /// Pure mesh decisions for the group call engine.
 public enum PulseGroupCallPolicy {
 
     /// Web-verbatim JS string `<`: lexicographic by UTF-16 code units.
     /// Swift's String `<` compares Unicode scalars with normalization
-    /// semantics — for the ASCII ids Pulse issues (cuid/uuid) both agree,
+    /// semantics - for the ASCII ids Pulse issues (cuid/uuid) both agree,
     /// but the UTF-16 comparison is the EXACT web rule, so it is pinned here.
     public static func isLowerId(_ a: String, than b: String) -> Bool {
         var ai = a.utf16.makeIterator()
@@ -36,7 +34,7 @@ public enum PulseGroupCallPolicy {
             case let (lhs?, rhs?) where lhs != rhs:
                 return lhs < rhs
             case (.some, .some):
-                continue // equal code units — keep comparing
+                continue // equal code units - keep comparing
             case (.none, .some):
                 return true // a is a strict prefix of b → a < b
             default:
@@ -46,7 +44,7 @@ public enum PulseGroupCallPolicy {
     }
 
     /// The deterministic offer rule: I create the offer for this pair iff
-    /// my id sorts STRICTLY below the remote id (equal ids never offer —
+    /// my id sorts STRICTLY below the remote id (equal ids never offer -
     /// the relay refuses self-targeted signaling anyway).
     public static func shouldOffer(myId: String, remoteId: String) -> Bool {
         guard !myId.isEmpty, !remoteId.isEmpty, myId != remoteId else { return false }
@@ -54,9 +52,9 @@ public enum PulseGroupCallPolicy {
     }
 
     /// The roster diff web applyRoster computes on every gcall:state:
-    ///   departing — live peer connections whose id is no longer on the
+    ///   departing - live peer connections whose id is no longer on the
     ///               roster (their pc is closed by the engine);
-    ///   toOffer   — roster members (excluding me) with NO live connection
+    ///   toOffer   - roster members (excluding me) with NO live connection
     ///               whose id sorts below mine (deterministic offer rule).
     public struct RosterPlan: Equatable {
         public let departing: [String]
@@ -91,15 +89,15 @@ public enum PulseGroupCallPolicy {
         elapsedSec >= 1 ? "You left · \(CallFormat.duration(elapsedSec))" : "You left"
     }
 
-    /// The 45s local ring guard — group rings have NO server-side timeout
+    /// The 45s local ring guard - group rings have NO server-side timeout
     /// (web banners sit until dismissed), but a stuck CallKit incoming
     /// screen is worse than a missed ring, so the iOS path self-clears.
     public static let ringTimeoutSec: TimeInterval = 45
 }
 
-// ── wire structs (tolerant decode, web fallback parity) ──────
+// wire structs (tolerant decode, web fallback parity)
 
-/// One roster member — the wire shape is { id, name, color, avatar }
+/// One roster member - the wire shape is { id, name, color, avatar }
 /// (server gcallStatePayload :655; the ring payload's caller uses the same
 /// four keys). Codable so the REST probe decodes it straight from JSON.
 public struct PulseGroupCallMember: Codable, Equatable, Hashable, Sendable {
@@ -115,7 +113,7 @@ public struct PulseGroupCallMember: Codable, Equatable, Hashable, Sendable {
         self.avatar = avatar
     }
 
-    /// Tolerant decode from a raw relay payload — web fallbacks
+    /// Tolerant decode from a raw relay payload - web fallbacks
     /// ('Someone' / 'emerald' / null avatar, overlay.tsx :477-482).
     public static func decode(_ raw: [String: Any]) -> PulseGroupCallMember? {
         let id = (raw["id"] as? String) ?? ""
@@ -126,14 +124,14 @@ public struct PulseGroupCallMember: Codable, Equatable, Hashable, Sendable {
         return PulseGroupCallMember(id: id, name: name, color: color, avatar: avatar)
     }
 
-    /// Roster decode — skips entries without a usable id (web :473-483).
+    /// Roster decode - skips entries without a usable id (web :473-483).
     public static func decodeList(_ raw: Any?) -> [PulseGroupCallMember] {
         guard let array = raw as? [[String: Any]] else { return [] }
         return array.compactMap { decode($0) }
     }
 }
 
-/// GET /api/group-call-state response — { callId, kind, startedAt, members }
+/// GET /api/group-call-state response - { callId, kind, startedAt, members }
 /// or { members: [] } (honest empty). kind falls back to 'voice' (the route
 /// always emits a valid one; the tolerant parse mirrors CallKind).
 public struct PulseGroupCallStateSnapshot: Decodable, Equatable, Sendable {
@@ -170,10 +168,10 @@ public struct PulseGroupCallStateSnapshot: Decodable, Equatable, Sendable {
     public var resolvedKind: CallKind { CallKind(wireValue: kind) }
 }
 
-// ── gcall:* wire payload builders (C→S, exact relay-validated shapes) ──
+// gcall:* wire payload builders (C→S, exact relay-validated shapes)
 
 /// Builders for the C→S group-call events. NOTE: unlike call:*, the
-/// targeted gcall events carry NO callId from the client — the relay
+/// targeted gcall events carry NO callId from the client - the relay
 /// injects the conversation call's id server-side (mini-services
 /// pulse-socket gcall:offer/answer/ice handlers). Shapes mirror the web
 /// emit payloads verbatim; pinned by PulseGroupCallPolicyTests.

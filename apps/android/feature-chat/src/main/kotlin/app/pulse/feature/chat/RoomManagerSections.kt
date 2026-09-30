@@ -57,18 +57,18 @@ import app.pulse.domain.model.Webhook
 import app.pulse.ui.PulsePalette
 
 /**
- * R2-A items 6/7 — the room-info manager sections, ports of:
- *  · AutomationsSection — src/components/chat/automations-sheet.tsx:54
+ * R2-A items 6/7 - the room-info manager sections, ports of:
+ *  · AutomationsSection - src/components/chat/automations-sheet.tsx:54
  *    (keyword-triggered auto-replies; list / optimistic toggle / R41 trigger
  *    rename / honest delete / create sheet).
- *  · WebhooksSection    — src/components/chat/group-info-sheet.tsx:503
+ *  · WebhooksSection    - src/components/chat/group-info-sheet.tsx:503
  *    (Discord-style incoming hooks; list / copy ingest URL / admin create+delete).
  * Both read live server truth through GroupInfoViewModel → /api/automations
  * and /api/webhooks. Members see rows; management actions are admin-gated in
  * the UI exactly like the web (the server enforces it authoritatively).
  */
 
-// ── AUTOMATIONS ──────────────────────────────────────────────────────
+// AUTOMATIONS
 
 private const val TRIGGER_MIN = 2
 private const val TRIGGER_MAX = 40
@@ -98,7 +98,7 @@ internal fun AutomationsSection(
                 Text("${state.rows.size}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
-                "Trigger a reply by keyword — admins store a phrase and the answer lands as a message.",
+                "Trigger a reply by keyword - admins store a phrase and the answer lands as a message.",
                 fontSize = 11.5.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp),
@@ -114,7 +114,7 @@ internal fun AutomationsSection(
                 }
                 state.rows.isEmpty() -> Text(
                     if (isAdmin) {
-                        "No automations yet — create one to auto-answer a keyword."
+                        "No automations yet - create one to auto-answer a keyword."
                     } else {
                         "Admins can add keyword auto-replies here."
                     },
@@ -248,7 +248,7 @@ private fun AutomationRow(
     }
 }
 
-/** Create form — trigger 2-40 chars, reply 1-500 (server-side caps mirrored). */
+/** Create form - trigger 2-40 chars, reply 1-500 (server-side caps mirrored). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AutomationCreateSheet(
@@ -276,7 +276,7 @@ private fun AutomationCreateSheet(
             OutlinedTextField(
                 value = trigger,
                 onValueChange = { if (it.length <= TRIGGER_MAX) trigger = it },
-                placeholder = { Text("Trigger phrase — e.g. “hours”") },
+                placeholder = { Text("Trigger phrase - e.g. “hours”") },
                 singleLine = true,
                 isError = triggerInvalid,
                 supportingText = {
@@ -294,7 +294,7 @@ private fun AutomationCreateSheet(
             OutlinedTextField(
                 value = reply,
                 onValueChange = { if (it.length <= REPLY_MAX) reply = it },
-                placeholder = { Text("Reply — e.g. “We're open 9am–5pm Mon–Fri.”") },
+                placeholder = { Text("Reply - e.g. “We're open 9am–5pm Mon–Fri.”") },
                 supportingText = { Text("${trimmedReply.length}/$REPLY_MAX", fontSize = 10.5.sp) },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -310,7 +310,7 @@ private fun AutomationCreateSheet(
     }
 }
 
-/** R41 — rename a rule's trigger in place. */
+/** R41 - rename a rule's trigger in place. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AutomationRenameSheet(
@@ -328,7 +328,7 @@ private fun AutomationRenameSheet(
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text("Edit trigger", fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text(
-                "The reply stays the same — only the matching phrase changes.",
+                "The reply stays the same - only the matching phrase changes.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
@@ -352,7 +352,7 @@ private fun AutomationRenameSheet(
     }
 }
 
-// ── WEBHOOKS ─────────────────────────────────────────────────────────
+// WEBHOOKS
 
 @Composable
 internal fun WebhooksSection(
@@ -386,7 +386,7 @@ internal fun WebhooksSection(
                 }
                 state.rows.isEmpty() -> Text(
                     if (isAdmin) {
-                        "No webhooks yet — create one to let outside services post into this chat."
+                        "No webhooks yet - create one to let outside services post into this chat."
                     } else {
                         "Admins can add Discord-style integrations here."
                     },
@@ -401,7 +401,7 @@ internal fun WebhooksSection(
                             isAdmin = isAdmin,
                             onCopy = {
                                 // Web pairs the relative ingest URL with the app
-                                // origin (location.origin) — here the configured
+                                // origin (location.origin) - here the configured
                                 // gateway origin plays that role.
                                 val fullUrl = PulseEndpoints.gatewayHttpUrl.trimEnd('/') + webhook.url
                                 clipboard.setText(AnnotatedString(fullUrl))

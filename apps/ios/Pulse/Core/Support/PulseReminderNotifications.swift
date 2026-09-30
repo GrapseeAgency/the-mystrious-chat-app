@@ -1,20 +1,18 @@
 import Foundation
 import UserNotifications
 
-// ─────────────────────────────────────────────────────────────
-// Wave 7 F-RO-06 — Tier-1 local reminder notifications.
+// Wave 7 F-RO-06 - Tier-1 local reminder notifications.
 //
 // Two independent delivery paths (spec: "local schedule fires
 // offline; the due loop polls the API when online"):
-//  1. UNCalendarNotificationTrigger at remindAt — scheduled at
+//  1. UNCalendarNotificationTrigger at remindAt - scheduled at
 //     create/refresh time, survives reboot, fires without network.
-//  2. The shell due-loop (PulseSession, 30 s foreground) — server
+//  2. The shell due-loop (PulseSession, 30 s foreground) - server
 //     truth, PATCHes firedAt after the nudge so the web sheet and
 //     other devices converge.
 //
 // Authorization is requested lazily when the first reminder lands;
 // denial is honest (in-app surfaces stay live, no crash).
-// ─────────────────────────────────────────────────────────────
 
 public enum PulseReminderNotifications {
 
@@ -25,13 +23,13 @@ public enum PulseReminderNotifications {
             if let error {
                 NSLog("Pulse reminders: authorization error %@", error.localizedDescription)
             } else if !granted {
-                NSLog("Pulse reminders: authorization denied — local fires stay silent")
+                NSLog("Pulse reminders: authorization denied - local fires stay silent")
             }
         }
     }
 
     /// Schedule the offline-capable one-shot; replaces any pending copy.
-    /// R2-D — `conversationId` rides the userInfo so the tap routes to the
+    /// R2-D - `conversationId` rides the userInfo so the tap routes to the
     /// room (web reminder-tap parity); nil keeps the notification tapless.
     public static func schedule(reminderId: String, note: String, remindAtEpochMs: Int64, conversationId: String? = nil) {
         let content = UNMutableNotificationContent()
@@ -39,9 +37,9 @@ public enum PulseReminderNotifications {
         content.body = "Reminder"
         content.sound = .default
         content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId)
-        // R10-b — conversation-bound postings carry the quick-reply category
+        // R10-b - conversation-bound postings carry the quick-reply category
         // ("Reply" text-input action → PulseQuickReplyCoordinator). Tapless
-        // postings stay tapless — a Reply control without a routable room
+        // postings stay tapless - a Reply control without a routable room
         // would be a dead control.
         if PulseQuickReply.applies(toConversationId: conversationId) {
             content.categoryIdentifier = PulseQuickReply.categoryId
@@ -74,7 +72,7 @@ public enum PulseReminderNotifications {
         content.body = String(body.prefix(178))
         content.sound = .default
         content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId)
-        // R10-b — same category stamp as schedule() (see above).
+        // R10-b - same category stamp as schedule() (see above).
         if PulseQuickReply.applies(toConversationId: conversationId) {
             content.categoryIdentifier = PulseQuickReply.categoryId
         }
@@ -86,12 +84,12 @@ public enum PulseReminderNotifications {
         UNUserNotificationCenter.current().add(request)
     }
 
-    /// The reminder payload — reminderId + (R2-D) the conversationId the tap
+    /// The reminder payload - reminderId + (R2-D) the conversationId the tap
     /// deep-links into. Kept in one place so schedule/showNow stay in lockstep.
     /// Internal (not private) so the tests can pin the exact payload shape.
     static func userInfo(reminderId: String, conversationId: String?) -> [String: String] {
         var info = ["reminderId": reminderId]
-        // Whitespace-only ids count as blank — a tap would deep-link nowhere.
+        // Whitespace-only ids count as blank - a tap would deep-link nowhere.
         if let conversationId, !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             info["conversationId"] = conversationId
         }
@@ -99,8 +97,7 @@ public enum PulseReminderNotifications {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-// R2-D — notification-tap routing (web reminder tap parity).
+// R2-D - notification-tap routing (web reminder tap parity).
 //
 // willPresent keeps reminder alerts visible while the app is foregrounded
 // (the due-loop fires while the user is IN the app); didReceive maps the
@@ -108,12 +105,11 @@ public enum PulseReminderNotifications {
 // RootView-assigned onOpenRoom closure. The delegate is registered once in
 // PulseApp.init; the last tapped room survives the cold-start window before
 // RootView.onAppear attaches (consumeLastTappedRoomId replays it).
-// ─────────────────────────────────────────────────────────────
 
 public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     public static let shared = PulseReminderNotificationDelegate()
 
-    /// RootView assigns — receives the deep link parsed from the tapped
+    /// RootView assigns - receives the deep link parsed from the tapped
     /// notification (reminder taps produce PulseDeepLink.room).
     public var onDeepLink: ((PulseDeepLink) -> Void)?
 
@@ -134,9 +130,9 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void,
     ) {
-        // R10-b — quick reply: a text-input response on the PULSE_MSG
+        // R10-b - quick reply: a text-input response on the PULSE_MSG
         // category carries the typed message. Route it to the coordinator
-        // (live-session send, or the honest open-room fallback — never a
+        // (live-session send, or the honest open-room fallback - never a
         // fake send). Any other response keeps the tap routing below.
         if let textResponse = response as? UNTextInputNotificationResponse,
            response.actionIdentifier == PulseQuickReply.replyActionId {
@@ -152,7 +148,7 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
         }
         let userInfo = response.notification.request.content.userInfo
         if let link = Self.deepLink(from: userInfo), case .room(let conversationId) = link {
-            // The routing closure is formed on the main actor (RootView) —
+            // The routing closure is formed on the main actor (RootView) -
             // hop there before invoking so the session handoff is isolated.
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -163,7 +159,7 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
         completionHandler()
     }
 
-    /// Cold-start replay — returns (and clears) a tap that arrived before the
+    /// Cold-start replay - returns (and clears) a tap that arrived before the
     /// RootView closure was assigned. Nil when nothing is pending.
     public func consumeLastTappedRoomId() -> String? {
         let pending = lastTappedRoomId
@@ -172,14 +168,14 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
     }
 
     /// userInfo → deep link. Reminder notifications map to
-    /// PulseDeepLink.room(conversationId) — the exact value the pulse://room
+    /// PulseDeepLink.room(conversationId) - the exact value the pulse://room
     /// scheme produces, so tap routing stays single-sourced with F-DL.
     static func deepLink(from userInfo: [AnyHashable: Any]) -> PulseDeepLink? {
         guard let conversationId = roomId(from: userInfo) else { return nil }
         return PulseDeepLink.room(conversationId: conversationId)
     }
 
-    /// Pure userInfo decode — "conversationId" must be a non-empty string.
+    /// Pure userInfo decode - "conversationId" must be a non-empty string.
     static func roomId(from userInfo: [AnyHashable: Any]) -> String? {
         guard let raw = userInfo["conversationId"] else { return nil }
         guard let value = raw as? String else { return nil }

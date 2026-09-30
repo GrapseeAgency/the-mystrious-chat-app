@@ -1,7 +1,7 @@
 package app.pulse.protocol
 
 /**
- * R4-B item 3 / R14 — navigation-style registry (web src/lib/nav-registry.ts
+ * R4-B item 3 / R14 - navigation-style registry (web src/lib/nav-registry.ts
  * port, now 13/13). The web ships 13 architectures; Android ports ALL of
  * them as honest mobile adaptations of the desktop/keyboard idioms:
  *
@@ -18,7 +18,7 @@ package app.pulse.protocol
  *
  * Persistence is byte-parity with the web: the raw id strings ARE the web
  * value strings, stored under the EXACT web key "pulse.navStyle.v2".
- * Anything unreadable (junk, wrong case, null) resolves to CAPSULE — the
+ * Anything unreadable (junk, wrong case, null) resolves to CAPSULE - the
  * web DEFAULT_NAV_STYLE.
  */
 enum class PulseNavStyle(val id: String) {
@@ -37,7 +37,7 @@ enum class PulseNavStyle(val id: String) {
     CONTEXTUAL_DOCK("contextual-dock");
 
     companion object {
-        /** Web zustand persist key (nav-registry.ts:90) — byte-identical. */
+        /** Web zustand persist key (nav-registry.ts:90) - byte-identical. */
         const val PREFS_KEY = "pulse.navStyle.v2"
 
         const val DEFAULT_ID = "capsule"

@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — @handle editor dialog (R25-b, logic preserved from the
+// Pulse - @handle editor dialog (R25-b, logic preserved from the
 // original Profile tab; visual shell modernized). Live availability
 // check via GET /api/users/check-username, save via PATCH
 // /api/users/[id] { username }. 3–20 chars: a-z 0-9 _.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -73,7 +71,7 @@ function HandleEditorBody({
   const changed = trimmed !== (me.username ?? '')
   const valid = isValidHandle(trimmed)
 
-  // live availability — debounced, skipped while re-typing the current handle
+  // live availability - debounced, skipped while re-typing the current handle
   const checkEnabled = valid && debounced !== (me.username ?? '')
   const checkQ = useQuery({
     queryKey: ['username-check', debounced],
@@ -115,7 +113,7 @@ function HandleEditorBody({
     onError: async (error: Error) => {
       toast.error(error.message || 'Could not save the handle')
       if (error instanceof ApiError && error.status === 409) {
-        // the PATCH route's 409 carries a suggestion but ApiError drops it —
+        // the PATCH route's 409 carries a suggestion but ApiError drops it -
         // re-ask the availability endpoint for the nearest free variant
         try {
           const res = await apiJson<{ available: boolean; suggestion: string | null }>(

@@ -42,7 +42,7 @@ class SessionViewModel @Inject constructor(
         // keys were folded away.
         viewModelScope.launch {
             runCatching { manifestEndpoints.applyPersisted() }
-            // Wave 8 — the session credential warms the synchronous cache
+            // Wave 8 - the session credential warms the synchronous cache
             // before the first REST call so the Bearer header rides along.
             runCatching { sessionTokenStore.load() }
             runCatching {
@@ -53,7 +53,7 @@ class SessionViewModel @Inject constructor(
                 }
             }
         }
-        // Wave 8 — a 401 or relay join:error proved the stored token invalid
+        // Wave 8 - a 401 or relay join:error proved the stored token invalid
         // or rotated: clear the device session and surface the honest
         // re-login notice on the onboarding screen.
         viewModelScope.launch {
@@ -61,7 +61,7 @@ class SessionViewModel @Inject constructor(
                 if (invalid && prefs.viewerId.first() != null) {
                     _sessionNotice.value =
                         "Your session ended. Log in again to reclaim your identity."
-                    // Task 5-d — the identity is going away here too (401 /
+                    // Task 5-d - the identity is going away here too (401 /
                     // join:error teardown): the push registry row must not
                     // outlive it. Fire-and-forget, never blocks the clear.
                     runCatching { PulsePush.signOut(repo) }
@@ -88,7 +88,7 @@ class SessionViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
-     * True once the persisted prefs have emitted at least once — gates the
+     * True once the persisted prefs have emitted at least once - gates the
      * onboarding screen so a fresh launch doesn't flash it before DataStore
      * hands back an existing viewer.
      */
@@ -108,11 +108,11 @@ class SessionViewModel @Inject constructor(
     val darkOverride: StateFlow<String> = prefs.darkOverride
         .stateIn(viewModelScope, SharingStarted.Eagerly, "system")
 
-    /** R2-C item 3 — design language (web pulse.uiTheme.v2 value string). */
+    /** R2-C item 3 - design language (web pulse.uiTheme.v2 value string). */
     val uiTheme: StateFlow<String> = prefs.uiTheme
         .stateIn(viewModelScope, SharingStarted.Eagerly, "glass")
 
-    /** R4-B item 3 — navigation architecture (web pulse.navStyle.v2 parity). */
+    /** R4-B item 3 - navigation architecture (web pulse.navStyle.v2 parity). */
     val navStyle: StateFlow<app.pulse.protocol.PulseNavStyle> = prefs.navStyle
         .stateIn(viewModelScope, SharingStarted.Eagerly, app.pulse.protocol.PulseNavStyle.CAPSULE)
 
@@ -124,7 +124,7 @@ class SessionViewModel @Inject constructor(
 
     fun chooseViewer(id: String, name: String, color: String? = null) {
         viewModelScope.launch {
-            // Identity switch — the old identity's credential must not ride along.
+            // Identity switch - the old identity's credential must not ride along.
             runCatching { repo.clearSessionToken() }
             prefs.setViewer(id, name, color)
             saveVaultIdentity(id, name, null, color)
@@ -134,9 +134,9 @@ class SessionViewModel @Inject constructor(
 
     fun forgetViewer() {
         viewModelScope.launch {
-            // Task 5-d — BEFORE the identity is cleared: DELETE /api/push/register
+            // Task 5-d - BEFORE the identity is cleared: DELETE /api/push/register
             // { token } with the stored FCM token (token-only body, no userId
-            // needed), fire-and-forget — sign-out never blocks or fails on it.
+            // needed), fire-and-forget - sign-out never blocks or fails on it.
             // PulsePush also clears its stored token so a stale one is not
             // re-registered after a re-login before a fresh token arrives.
             runCatching { PulsePush.signOut(repo) }
@@ -156,7 +156,7 @@ class SessionViewModel @Inject constructor(
         viewModelScope.launch { prefs.setServerBase(value) }
     }
 
-    /** Header theme toggle — cycles system → light → dark (web ThemeToggleButton). */
+    /** Header theme toggle - cycles system → light → dark (web ThemeToggleButton). */
     fun setDarkOverride(value: String) {
         viewModelScope.launch { prefs.setDarkOverride(value) }
     }
@@ -170,7 +170,7 @@ class SessionViewModel @Inject constructor(
         setDarkOverride(next)
     }
 
-    /** Vault write — viewer identity only; endpoint override fields stay untouched. */
+    /** Vault write - viewer identity only; endpoint override fields stay untouched. */
     private suspend fun saveVaultIdentity(id: String, name: String, username: String?, color: String?) {
         runCatching {
             val current = secureSessionStore.load()

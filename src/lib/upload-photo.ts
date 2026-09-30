@@ -1,11 +1,9 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — shared client upload chain (R33-b).
+// Pulse - shared client upload chain (R33-b).
 // Mirrors the profile-photo flow (components/profile/avatar-editor.tsx):
 //   file → canvas center-crop square + ≤max-edge downscale →
 //   JPEG(0.85) data URL → POST /api/uploads →
 //   returns the stored "/api/uploads/<file>" path ready to attach to a
-//   conversation PATCH / channel POST. No mocks — the real upload API.
-// ─────────────────────────────────────────────────────────────
+//   conversation PATCH / channel POST. No mocks - the real upload API.
 
 const DEFAULT_MAX_EDGE = 512
 const JPEG_QUALITY = 0.85

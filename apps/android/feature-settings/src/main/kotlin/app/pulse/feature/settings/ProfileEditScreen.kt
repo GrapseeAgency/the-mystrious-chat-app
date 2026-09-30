@@ -59,7 +59,12 @@ import androidx.lifecycle.viewModelScope
 import app.pulse.core.PulseEndpoints
 import app.pulse.domain.model.ProfilePatch
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.protocol.STATUS_ICON_IDS
+import app.pulse.protocol.statusIconIdOrNull
 import app.pulse.ui.PulseAvatar
+import app.pulse.ui.pulseStatusLabel
+import app.pulse.ui.pulseStatusGlyph
+import app.pulse.ui.pulseStatusGlyphFor
 import coil.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -76,12 +81,11 @@ private val EDIT_COLORS = listOf(
     "teal" to "#14B8A6", "orange" to "#F97316", "pink" to "#EC4899", "cyan" to "#06B6D4",
 )
 
-/** The 11 fixed status glyphs the web stores (raw values, rendered as text). */
-private val STATUS_GLYPHS = listOf("🔥", "✨", "🎯", "☕", "🎧", "🌙", "💡", "🚀", "😴", "🍽️", "vacation")
-private val GLYPH_LABELS = mapOf(
-    "🔥" to "🔥", "✨" to "✨", "🎯" to "🎯", "☕" to "☕", "🎧" to "🎧", "🌙" to "🌙",
-    "💡" to "💡", "🚀" to "🚀", "😴" to "😴", "🍽️" to "🍽️", "vacation" to "🏝️",
-)
+/**
+ * R18 icon-id contract - the status picker persists stable icon ids
+ * (app.pulse.protocol.STATUS_ICON_IDS, mirroring web icon-ids.ts), never raw
+ * emoji. Glyphs/labels resolve through the ui registry (pulseStatusGlyph).
+ */
 
 @HiltViewModel
 class ProfileEditViewModel @Inject constructor(
@@ -105,7 +109,7 @@ class ProfileEditViewModel @Inject constructor(
         val error: String? = null,
         val handleCheck: HandleCheck = HandleCheck("idle"),
         val uploading: Boolean = false,
-        /** R14 gap 8 — the remove-photo PATCH in flight. */
+        /** R14 gap 8 - the remove-photo PATCH in flight. */
         val removing: Boolean = false,
     )
 
@@ -123,7 +127,9 @@ class ProfileEditViewModel @Inject constructor(
                 handle = me?.handle.orEmpty(),
                 color = me?.color ?: "emerald",
                 avatar = me?.avatar,
-                statusEmoji = me?.statusEmoji.orEmpty(),
+                // Normalize on read: stale/unknown values (legacy emoji) never
+                // ride along - the editor seeds a registry id or nothing.
+                statusEmoji = statusIconIdOrNull(me?.statusEmoji).orEmpty(),
                 statusText = me?.statusText.orEmpty(),
             )
         }
@@ -135,7 +141,9 @@ class ProfileEditViewModel @Inject constructor(
             "name" -> s.copy(name = value.take(32))
             "bio" -> s.copy(bio = value.take(140))
             "statusText" -> s.copy(statusText = value.take(48))
-            "statusEmoji" -> s.copy(statusEmoji = value.take(8))
+            // Persist registry ids only; blank clears the status. Stale raw
+            // emoji can never round-trip through the editor.
+            "statusEmoji" -> s.copy(statusEmoji = statusIconIdOrNull(value).orEmpty())
             "color" -> s.copy(color = value)
             else -> s
         }
@@ -187,15 +195,15 @@ class ProfileEditViewModel @Inject constructor(
                     _state.value = _state.value.copy(uploading = false, avatar = path)
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(uploading = false, error = e.message ?: "Upload failed — try again")
+                    _state.value = _state.value.copy(uploading = false, error = e.message ?: "Upload failed - try again")
                 }
         }
     }
 
     /**
-     * R14 gap 8 — "Remove photo" (web avatar-editor.tsx runRemovePhoto):
-     * an immediate PATCH /api/users/{id} with avatar:"" — the server nulls
-     * the column — with the same optimistic-preview + rollback contract the
+     * R14 gap 8 - "Remove photo" (web avatar-editor.tsx runRemovePhoto):
+     * an immediate PATCH /api/users/{id} with avatar:"" - the server nulls
+     * the column - with the same optimistic-preview + rollback contract the
      * set/replace path honors (failure restores the previous avatar).
      */
     fun removeAvatar() {
@@ -238,7 +246,7 @@ class ProfileEditViewModel @Inject constructor(
                     _state.value = _state.value.copy(saving = false, notice = "Profile updated")
                 }
                 .onFailure { e ->
-                    val message = e.message ?: "Could not save the profile — try again"
+                    val message = e.message ?: "Could not save the profile - try again"
                     _state.value = _state.value.copy(saving = false, error = message)
                     if (message.contains("already taken") || message.contains("taken")) {
                         _state.value = _state.value.copy(handleCheck = HandleCheck("taken"))
@@ -336,11 +344,11 @@ fun ProfileEditScreen(
             Column {
                 Text("Tap the avatar to change it", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Text(
-                    "Square crop, ≤512 px — stored on the server",
+                    "Square crop, ≤512 px - stored on the server",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                 )
-                // R14 gap 8 — "Remove photo" (web avatar-editor remove branch):
+                // R14 gap 8 - "Remove photo" (web avatar-editor remove branch):
                 // only while a photo exists; immediate PATCH avatar:"".
                 if (state.avatar != null) {
                     TextButton(
@@ -410,20 +418,33 @@ fun ProfileEditScreen(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            STATUS_GLYPHS.forEach { glyph ->
-                val selected = state.statusEmoji == glyph
+            STATUS_ICON_IDS.forEach { id ->
+                val selected = state.statusEmoji == id
                 Surface(
                     shape = RoundedCornerShape(999.dp),
                     color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier.clickable {
-                        viewModel.set("statusEmoji", if (selected) "" else glyph)
+                        viewModel.set("statusEmoji", if (selected) "" else id)
                     },
                 ) {
-                    Text(
-                        GLYPH_LABELS[glyph] ?: glyph,
+                    Row(
                         Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        fontSize = 16.sp,
-                    )
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            pulseStatusGlyphFor(id),
+                            contentDescription = null,
+                            tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Text(
+                            pulseStatusLabel(id),
+                            fontSize = 13.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 }
             }
         }
@@ -461,7 +482,7 @@ fun ProfileEditScreen(
         }
         Spacer(Modifier.height(10.dp))
         Text(
-            "Changes appear everywhere instantly — profile, chats and mentions.",
+            "Changes appear everywhere instantly - profile, chats and mentions.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
         )

@@ -1,14 +1,12 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — chat-list casual actions (R27-e).
+// Pulse - chat-list casual actions (R27-e).
 // Shared pieces behind the chats list:
-//   • fetchFullHistory()      — real paginated GET of a room's messages
-//   • downloadTranscript()    — .txt Blob export of the real history
-//   • ChatOptionsSheet        — compact frosted GlassMenu (pin/archive,
+//   • fetchFullHistory()      - real paginated GET of a room's messages
+//   • downloadTranscript()    - .txt Blob export of the real history
+//   • ChatOptionsSheet        - compact frosted GlassMenu (pin/archive,
 //                               mute-duration strip, export, clear chat)
 // Clear chat only deletes MY OWN messages (DELETE /api/messages/[id]
 // is sender-gated server-side) and the confirm copy says so honestly.
-// Zero emojis — Lucide icons + the shared glass/motion language.
-// ─────────────────────────────────────────────────────────────
+// Zero emojis - Lucide icons + the shared glass/motion language.
 'use client'
 
 import { Fragment, useEffect, useState } from 'react'
@@ -52,13 +50,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
-// ── real history: paginate the WHOLE room through the public API ──
+// real history: paginate the WHOLE room through the public API 
 
 const HISTORY_PAGE_SIZE = 500 // server cap (MESSAGES_MAX_LIMIT)
 const HISTORY_MAX_PAGES = 24 // hard stop: 12k messages is plenty for an export
 
 /**
- * Every message in the room (oldest → newest), tombstones included —
+ * Every message in the room (oldest → newest), tombstones included -
  * fetched page by page through GET /api/conversations/[id]/messages
  * with the `before` cursor the route documents.
  */
@@ -77,11 +75,11 @@ export async function fetchFullHistory(conversationId: string): Promise<ChatMess
     before = window[0]?.createdAt ?? null
     if (!before) break
   }
-  // pages were collected newest-window-first — flipping yields oldest → newest
+  // pages were collected newest-window-first - flipping yields oldest → newest
   return pages.reverse().flat()
 }
 
-// ── transcript building + .txt download ──────────────────────
+// transcript building + .txt download 
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
@@ -102,7 +100,7 @@ function transcriptBody(m: ChatMessage): string {
   if (m.poll) return `[poll] ${m.poll.question}`.trim()
   if (m.imagePath) return '[photo]'
   if (m.audioPath) {
-    return m.durationMs !== null ? `[voice note — ${Math.max(1, Math.round(m.durationMs / 1000))}s]` : '[voice note]'
+    return m.durationMs !== null ? `[voice note - ${Math.max(1, Math.round(m.durationMs / 1000))}s]` : '[voice note]'
   }
   if (m.kind === 'sticker') return '[sticker]'
   if (m.kind === 'location') return '[location]'
@@ -121,7 +119,7 @@ function slugForRoom(name: string): string {
 
 /**
  * Build + download `pulse-<room>-<date>.txt`. Returns the file name for
- * the completion toast. Blob download — no server round-trip, no storage.
+ * the completion toast. Blob download - no server round-trip, no storage.
  */
 export function downloadTranscript(
   conv: ConversationSummary,
@@ -131,11 +129,11 @@ export function downloadTranscript(
   const title = conversationDisplayName(conv, meId)
   const exportedAt = new Date()
   const lines = [
-    'Pulse — chat export',
+    'Pulse - chat export',
     `Chat: ${title}`,
     `Exported: ${exportedAt.toLocaleString()}`,
     `Messages: ${messages.length}`,
-    '──────────────────────',
+    '',
     '',
     ...messages.map((m) => {
       const who = m.anon && m.anonAlias ? m.anonAlias : (m.sender?.name ?? 'Unknown')
@@ -168,7 +166,7 @@ export function muteLabel(mutedUntil: string | null): string {
       })}`
 }
 
-// ── the compact glass option sheet ───────────────────────────
+// the compact glass option sheet 
 
 export interface ChatOptionsSheetProps {
   /** the conversation under the long-press (null = closed) */
@@ -245,12 +243,12 @@ export function ChatOptionsSheet({
   return (
     <AnimatePresence>
       {conv !== null && !confirmClear ? (
-        /* R44 fix: the fragment MUST carry a key — framer's AnimatePresence
+        /* R44 fix: the fragment MUST carry a key - framer's AnimatePresence
            tracks its direct child by key, and a bare <> renders as an
            empty-keyed child that collides with itself on every open/close
            transition ("two children with the same key``"). */
         <Fragment key="chat-options">
-          {/* backdrop — tap anywhere outside to dismiss */}
+          {/* backdrop - tap anywhere outside to dismiss */}
           <motion.div
             key="chat-options-backdrop"
             initial={{ opacity: 0 }}
@@ -261,7 +259,7 @@ export function ChatOptionsSheet({
             aria-hidden
             className="fixed inset-0 z-[60] bg-zinc-950/25 backdrop-blur-[2px] dark:bg-black/45"
           />
-          {/* bottom-anchored frosted panel — same anatomy as the message menu */}
+          {/* bottom-anchored frosted panel - same anatomy as the message menu */}
           <div
             key="chat-options-anchor"
             className="pointer-events-none fixed inset-x-0 bottom-0 z-[61] flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
@@ -294,7 +292,7 @@ export function ChatOptionsSheet({
                     disabled={archivePending}
                     onClick={onArchive}
                   />
-                  {/* R44 — mark as unread/read: badges MY row until the room
+                  {/* R44 - mark as unread/read: badges MY row until the room
                       is opened again (the read route clears the flag). */}
                   <GlassMenuItem
                     icon={markUnreadPending ? LoaderCircle : manualUnread ? MailOpen : Mail}
@@ -307,7 +305,7 @@ export function ChatOptionsSheet({
                     <>
                       <p className="flex items-center gap-1.5 px-3 pb-1 pt-0.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
                         <BellOff className="size-3 shrink-0" aria-hidden />
-                        Muted — {muteLabel(conv.mutedUntil)}
+                        Muted - {muteLabel(conv.mutedUntil)}
                       </p>
                       <GlassMenuItem icon={BellRing} label="Unmute notifications" disabled={mutePending} onClick={onUnmute} />
                     </>
@@ -375,7 +373,7 @@ export function ChatOptionsSheet({
         </Fragment>
       ) : null}
 
-      {/* destructive confirm — real copy: only MY messages are deletable */}
+      {/* destructive confirm - real copy: only MY messages are deletable */}
       <AlertDialog
         open={conv !== null && confirmClear}
         onOpenChange={(open) => {
@@ -386,7 +384,7 @@ export function ChatOptionsSheet({
           <AlertDialogHeader>
             <AlertDialogTitle>Clear this chat?</AlertDialogTitle>
             <AlertDialogDescription>
-              Your messages will be deleted for everyone — messages from other people stay in the
+              Your messages will be deleted for everyone - messages from other people stay in the
               chat. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

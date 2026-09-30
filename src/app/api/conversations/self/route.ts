@@ -1,19 +1,17 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/self — Note to Self (Task R24-a)
+// /api/conversations/self - Note to Self (Task R24-a)
 //
 // Contract:
 //   POST { userId }
 //        → find-first-or-create the Signal-style private notebook
 //          chat: Conversation.isSelf === true with EXACTLY one
-//          ConversationParticipant (the user). Idempotent — the
+//          ConversationParticipant (the user). Idempotent - the
 //          second call resolves the SAME conversation. → 200 when
 //          found, 201 when created, { conversation: <summary> } in
 //          the exact GET /api/conversations row shape (built with
 //          buildConversationSummary from '@/lib/serializers').
 //          isSelf rows flow through GET /api/conversations
-//          unfiltered (verified — the list route never filters
+//          unfiltered (verified - the list route never filters
 //          isSelf), so the chat appears in the normal chats list.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {

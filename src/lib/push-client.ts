@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Pulse web push client — subscription lifecycle for the browser.
+// Pulse web push client - subscription lifecycle for the browser.
 //
 // registerWebPush(me):
 //   1. asks /api/push/vapid-public (empty key → feature honestly disabled),
@@ -8,9 +7,8 @@
 //   4. POSTs the serialized subscription to /api/push/register.
 // unregisterWebPush(): deletes the subscription + the registry row.
 //
-// Result is a status string the settings screen can render honestly — this
+// Result is a status string the settings screen can render honestly - this
 // module NEVER fakes success (sandbox browsers may deny or lack the API).
-// ─────────────────────────────────────────────────────────────────────────────
 'use client'
 
 export type WebPushStatus =

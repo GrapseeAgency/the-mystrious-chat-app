@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/hub/tasks/[id] — move / rename / delete one kanban task
+// /api/hub/tasks/[id] - move / rename / delete one kanban task
 // Owner-guarded: only the task's creator can touch it.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users/[id]/report — R48 "Report account" (WhatsApp-style)
-// ─────────────────────────────────────────────────────────────
+// /api/users/[id]/report - R48 "Report account" (WhatsApp-style)
 // Private by design: the reported account is NEVER notified and reports
-// are not readable by other users — rows land in AccountReport for
+// are not readable by other users - rows land in AccountReport for
 // moderation review. One row per (reporter, reported, reason): a repeat
 // submission refreshes the details/timestamp instead of duplicating.
 import { NextResponse } from 'next/server'
@@ -89,9 +87,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
 }
 
 /**
- * GET /api/users/[id]/report?userId=X — self-service: the reporter's OWN
+ * GET /api/users/[id]/report?userId=X - self-service: the reporter's OWN
  * submissions about this account (drives the "already reported" hint).
- * Cross-viewing someone else's reports is impossible — reports stay private.
+ * Cross-viewing someone else's reports is impossible - reports stay private.
  */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id: reportedId } = await params

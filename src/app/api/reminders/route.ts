@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// /api/reminders — Beeper/Zulip-style per-message reminders.
+// /api/reminders - Beeper/Zulip-style per-message reminders.
 // Each user reminds THEMSELVES about a message (or a whole chat):
 // GET lists the viewer's rows, POST creates one. The client due-loop
 // marks rows fired via PATCH /api/reminders/[id].
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseIsoDate, safeJson, strField } from '@/lib/serializers'

@@ -3,7 +3,7 @@ package app.pulse.protocol
 import kotlinx.serialization.json.Json
 
 /**
- * Wave 7 — pure, UI-free logic kernels (Collaboration & Hub).
+ * Wave 7 - pure, UI-free logic kernels (Collaboration & Hub).
  * Ported 1:1 from the web so native behaviour matches bit-for-bit:
  *   parseRelativeReminder   ← src/components/chat/reminders-sheet.tsx:132
  *   durationToMs/endOfDay   ← reminders-sheet.tsx:118-130
@@ -15,7 +15,7 @@ object PulseWave7Logic {
 
     private const val DURATION_TOKEN = "(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)"
 
-    /** Minutes→ms etc. — unit is matched on its first char exactly like the web. */
+    /** Minutes→ms etc. - unit is matched on its first char exactly like the web. */
     internal fun durationToMs(value: Long, unit: String): Long? = when (unit.firstOrNull()) {
         'm' -> value * 60_000
         'h' -> value * 3_600_000
@@ -89,7 +89,7 @@ object PulseWave7Logic {
         return runCatching { PulseJson.decodeFromString(TournamentPayloadDto.serializer(), payload) }.getOrNull()
     }
 
-    /** R1-W2A — tolerant decode of a sticker message payload ({emoji,pack}). */
+    /** R1-W2A - tolerant decode of a sticker message payload ({emoji,pack}). */
     fun stickerPayload(payload: String?): StickerPayloadDto? {
         if (payload.isNullOrBlank()) return null
         return runCatching { PulseJson.decodeFromString(StickerPayloadDto.serializer(), payload) }
@@ -97,14 +97,14 @@ object PulseWave7Logic {
             ?.takeIf { it.emoji.isNotEmpty() }
     }
 
-    /** R1-W2A — tolerant decode of an effect-carried payload ({effect}) — whitelisted names only. */
+    /** R1-W2A - tolerant decode of an effect-carried payload ({effect}) - whitelisted names only. */
     fun effectPayload(payload: String?): EffectPayloadDto? {
         if (payload.isNullOrBlank()) return null
         val decoded = runCatching { PulseJson.decodeFromString(EffectPayloadDto.serializer(), payload) }.getOrNull() ?: return null
         return decoded.takeIf { it.effect in EFFECT_NAMES }
     }
 
-    /** F-MS-23 whitelist — confetti · lasers · echo · sparkles (web parity). */
+    /** F-MS-23 whitelist - confetti · lasers · echo · sparkles (web parity). */
     val EFFECT_NAMES: Set<String> = setOf("confetti", "lasers", "echo", "sparkles")
 
     /** Cell getter over the 9-char board string; out-of-range/short board → ' '. */
@@ -118,7 +118,7 @@ object PulseWave7Logic {
         listOf(0, 4, 8), listOf(2, 4, 6),
     )
 
-    /** Mirror of the server's win scan — used to strike the winning line while polling. */
+    /** Mirror of the server's win scan - used to strike the winning line while polling. */
     fun detectWinLine(board: String): Pair<Char, List<Int>>? {
         if (board.length != 9) return null
         for (line in WIN_LINES) {
@@ -159,9 +159,9 @@ object PulseWave7Logic {
     /** Streak bonus display rule: +2/day capped +20 on the 25 PC base (server checkin:44-51). */
     fun checkinReward(streakAfter: Int): Long = 25 + minOf((streakAfter - 1).coerceAtLeast(0) * 2L, 20L)
 
-    // ── R5-B — hub app-detail relative stamp (web app-detail-sheet.tsx:92-108) ──
+    // R5-B - hub app-detail relative stamp (web app-detail-sheet.tsx:92-108)
 
-    /** "Jan 15, 2026" — web formatDay (toLocaleDateString month short, day, year). */
+    /** "Jan 15, 2026" - web formatDay (toLocaleDateString month short, day, year). */
     fun formatDay(iso: String): String = runCatching {
         val d = java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
         val month = d.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())
@@ -169,7 +169,7 @@ object PulseWave7Logic {
     }.getOrDefault("")
 
     /**
-     * Relative stamp for the viewer's OWN connector row ("3h ago") — web
+     * Relative stamp for the viewer's OWN connector row ("3h ago") - web
      * formatRelative verbatim: <1min "just now", <60m "Xm ago", <24h "Xh ago",
      * <7d "Xd ago", else the [formatDay] date. Non-finite/unparsable → "".
      */

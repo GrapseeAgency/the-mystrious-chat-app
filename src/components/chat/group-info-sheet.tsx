@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — Group Info Sheet (full-screen, Telegram-grade).
+// Pulse - Group Info Sheet (full-screen, Telegram-grade).
 // Real APIs only:
 //  - GET    /api/conversations/[id]?userId=me          → { conversation: ConversationDetail }
 //  - PATCH  /api/conversations/[id]                    { requesterId, name }              (admin rename)
@@ -10,7 +9,6 @@
 //  - GET    /api/users                                 → { users: AppUser[] }             (add-member picker)
 // Member taps open <UserProfileSheet>. Cache shares the
 // ['conversation', conversationId] key used by chat-room.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -62,6 +60,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { UserAvatar } from '@/components/chat/user-avatar'
+import { statusLabelFor } from '@/components/profile/status-glyph'
 import { UserProfileSheet } from '@/components/chat/user-profile-sheet'
 import {
   LEADERBOARD_OPEN_EVENT,
@@ -93,7 +92,7 @@ interface LeaveResponse {
   promotedUserId: string | null
 }
 
-/** Row of GET /api/webhooks?conversationId= — Discord-style incoming hook. */
+/** Row of GET /api/webhooks?conversationId= - Discord-style incoming hook. */
 interface WebhookItem {
   id: string
   name: string
@@ -121,7 +120,7 @@ const webhookRowVariants = {
   },
 }
 
-/** Modal identity — parameterized variants carry the target member id. */
+/** Modal identity - parameterized variants carry the target member id. */
 type SheetModalKind = 'rename' | 'add' | 'leave' | `promote:${string}` | `demote:${string}` | `remove:${string}` | null
 
 function modalTarget(kind: SheetModalKind): { kind: string; userId: string | null } {
@@ -198,7 +197,7 @@ function GroupInfoInner({
   const isAdmin = myRole === 'admin'
   const adminCount = detail?.members.filter((m) => m.role === 'admin').length ?? 0
 
-  // R24-d — leaderboard + tournament sheets (nodes render below; the
+  // R24-d - leaderboard + tournament sheets (nodes render below; the
   // section cards dispatch `pulse:open-leaderboard` / `pulse:open-tournament`).
   const meMember = detail?.members.find((m) => m.id === meId) ?? null
   const lb = useLeaderboardSheet(conversationId, meId)
@@ -234,7 +233,7 @@ function GroupInfoInner({
         ? (detail?.members.find((m) => m.id === data.promotedUserId)?.name ?? null)
         : null
       toast.success(
-        promoted ? `You left the group — ${promoted} is now an admin` : 'You left the group',
+        promoted ? `You left the group - ${promoted} is now an admin` : 'You left the group',
       )
       void queryClient.invalidateQueries({ queryKey: ['conversations', meId] })
       void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
@@ -295,7 +294,7 @@ function GroupInfoInner({
         <DmInfoBody detail={detail} meId={meId} onOpenProfile={setProfileUser} />
       )}
 
-      {/* nested modals — absolute inside the sheet so they layer above z-[70] */}
+      {/* nested modals - absolute inside the sheet so they layer above z-[70] */}
       {detail !== null && isGroup ? (
         <>
           <RenameModal
@@ -333,14 +332,14 @@ function GroupInfoInner({
         onCloseProfile={() => setProfileUser(null)}
       />
 
-      {/* R24-d — leaderboard + tournament sheets (opened via window events) */}
+      {/* R24-d - leaderboard + tournament sheets (opened via window events) */}
       {lb.node}
       {ts.node}
     </>
   )
 }
 
-// ── group body ───────────────────────────────────────────────
+// group body 
 
 function GroupInfoBody({
   detail,
@@ -416,7 +415,7 @@ function GroupInfoBody({
         />
       </div>
 
-      {/* webhooks — Discord-style incoming integrations */}
+      {/* webhooks - Discord-style incoming integrations */}
       <WebhooksSection conversationId={detail.id} meId={meId} isAdmin={isAdmin} />
 
       {/* leaderboard + tournaments (R24-d, Twitch-style XP seasons) */}
@@ -493,7 +492,7 @@ function ActionTile({
   )
 }
 
-// ── webhooks (Discord-style incoming integrations) ───────────
+// webhooks (Discord-style incoming integrations) 
 
 /**
  * Management card for incoming webhooks. Everyone sees the list and can
@@ -841,7 +840,7 @@ function WebhookDeleteModal({
   )
 }
 
-// ── leaderboard (R24-d, Twitch-style XP ranks) ───────────────
+// leaderboard (R24-d, Twitch-style XP ranks) 
 
 /** Wire shape mirror of GET /api/leaderboard (LeaderboardRow in types.ts). */
 interface LeaderboardMiniRow {
@@ -963,7 +962,7 @@ function LeaderboardSection({
   )
 }
 
-// ── tournaments (R24-d, season ladders) ──────────────────────
+// tournaments (R24-d, season ladders) 
 
 /** Wire shape mirror of GET /api/tournaments?conversationId=. */
 interface TournamentListRow {
@@ -1035,7 +1034,7 @@ function TournamentSection({
           </p>
         ) : seasons.length === 0 ? (
           <p className="px-2.5 py-3 text-center text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            No seasons yet — start one below.
+            No seasons yet - start one below.
           </p>
         ) : (
           seasons.map((season) => {
@@ -1095,7 +1094,7 @@ function TournamentSection({
   )
 }
 
-// ── member row ───────────────────────────────────────────────
+// member row 
 
 function MemberRow({
   member,
@@ -1234,7 +1233,7 @@ function PromoteDemoteItems({
   )
 }
 
-// ── DM fallback body ─────────────────────────────────────────
+// DM fallback body 
 
 function DmInfoBody({
   detail,
@@ -1269,7 +1268,7 @@ function DmInfoBody({
             ) : null}
             {other.statusText ? (
               <p className="mt-0.5 truncate text-xs text-white/80">
-                {other.statusEmoji ? `${other.statusEmoji} ` : ''}
+                {other.statusEmoji ? `${statusLabelFor(other.statusEmoji)} ` : ''}
                 {other.statusText}
               </p>
             ) : null}
@@ -1293,7 +1292,7 @@ function DmInfoBody({
   )
 }
 
-// ── loading skeleton ─────────────────────────────────────────
+// loading skeleton 
 
 function InfoSkeleton({ isGroup }: { isGroup: boolean }) {
   return (
@@ -1339,7 +1338,7 @@ function InfoSkeleton({ isGroup }: { isGroup: boolean }) {
   )
 }
 
-// ── modal shell (inside the sheet's stacking context) ────────
+// modal shell (inside the sheet's stacking context) 
 
 function SheetModal({
   open,
@@ -1391,7 +1390,7 @@ function SheetModal({
   )
 }
 
-// ── rename ───────────────────────────────────────────────────
+// rename 
 
 function RenameModal({
   open,
@@ -1428,7 +1427,7 @@ function RenameModal({
       return { prev }
     },
     onSuccess: (data) => {
-      // route returns the detail built for the requester (me) — safe to cache directly
+      // route returns the detail built for the requester (me) - safe to cache directly
       queryClient.setQueryData(['conversation', conversationId], data.conversation)
       void queryClient.invalidateQueries({ queryKey: ['conversations', meId] })
       toast.success('Group renamed')
@@ -1495,7 +1494,7 @@ function RenameModal({
   )
 }
 
-// ── add members ──────────────────────────────────────────────
+// add members 
 
 function AddMembersModal({
   open,
@@ -1558,7 +1557,7 @@ function AddMembersModal({
       return { prev }
     },
     onSuccess: (data) => {
-      // route returns the detail built for the requester (me) — safe to cache directly
+      // route returns the detail built for the requester (me) - safe to cache directly
       queryClient.setQueryData(['conversation', conversationId], data.conversation)
       void queryClient.invalidateQueries({ queryKey: ['conversations', meId] })
       toast.success(
@@ -1691,7 +1690,7 @@ function AddMembersModal({
   )
 }
 
-// ── leave confirm ────────────────────────────────────────────
+// leave confirm 
 
 function LeaveModal({
   open,
@@ -1737,7 +1736,7 @@ function LeaveModal({
   )
 }
 
-// ── role change + removal confirms + member profile drawer ───
+// role change + removal confirms + member profile drawer 
 
 function MemberActionHost({
   conversationId,
@@ -1788,7 +1787,7 @@ function MemberActionHost({
       if (ctx?.prev && conversationId !== null) {
         queryClient.setQueryData(['conversation', conversationId], ctx.prev)
       }
-      // surfaces the API verbatim — e.g. "Cannot demote the last admin — promote someone else first."
+      // surfaces the API verbatim - e.g. "Cannot demote the last admin - promote someone else first."
       toast.error(error.message || 'Could not change the role')
     },
     onSettled: () => setModal(null),

@@ -1,12 +1,10 @@
 package app.pulse.ui
 
-// ─────────────────────────────────────────────────────────────
-// Wave 8 — chat wallpaper tokens (F-SE-02/03). The picker lives in
+// Wave 8 - chat wallpaper tokens (F-SE-02/03). The picker lives in
 // feature-settings; the room background render lives in feature-chat;
 // both consume THIS single source so the tokens can never drift.
-// Native-native decision: subtle color washes behind the timeline —
+// Native-native decision: subtle color washes behind the timeline -
 // never a heavy photo wallpaper (P1: platform-idiomatic, restrained).
-// ─────────────────────────────────────────────────────────────
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 

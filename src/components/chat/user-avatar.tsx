@@ -1,15 +1,13 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — shared avatar component (people + groups).
+// Pulse Chat - shared avatar component (people + groups).
 // Gradient keyed by the user's chosen color; presence dot support.
 // R27-d: optional `avatar` photo (path from /api/uploads) renders
 // above the palette fallback; a subtle glass rim ring (shared
 // --glass-rim token) gives photo + palette a specular edge.
-// Backward compatible — callers that pass only name/color keep
+// Backward compatible - callers that pass only name/color keep
 // the palette glyph (photo simply absent → falsy avatar).
 // R33-b: GroupAvatar gains the same optional `photo` (channels and
-// groups) — a circular image above the gradient+initials fallback.
+// groups) - a circular image above the gradient+initials fallback.
 // Callers that never pass it keep the exact palette tile.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { memo } from 'react'
@@ -25,7 +23,7 @@ import {
 export interface UserAvatarProps {
   name: string
   color?: string
-  /** profile photo path ("/api/uploads/<uuid>.<ext>") — null/undefined = palette fallback */
+  /** profile photo path ("/api/uploads/<uuid>.<ext>") - null/undefined = palette fallback */
   avatar?: string | null
   /** diameter px */
   size?: number
@@ -59,7 +57,7 @@ export const UserAvatar = memo(function UserAvatar({
             alt={name}
             className="size-full rounded-full object-cover"
             // photos are immutable uploaded files, but never let a broken
-            // path crash the surface — Radix re-shows the palette fallback
+            // path crash the surface - Radix re-shows the palette fallback
             referrerPolicy="no-referrer"
           />
         ) : null}
@@ -73,7 +71,7 @@ export const UserAvatar = memo(function UserAvatar({
           {initialsOf(name)}
         </AvatarFallback>
       </Avatar>
-      {/* subtle glass rim — specular edge shared with the design language */}
+      {/* subtle glass rim - specular edge shared with the design language */}
       <span
         aria-hidden
         className="pointer-events-none absolute inset-0 rounded-full"
@@ -98,7 +96,7 @@ export interface GroupAvatarProps {
   id: string
   size?: number
   className?: string
-  /** R33-b: channel/group photo path ("/api/uploads/<file>") — null/undefined = palette tile */
+  /** R33-b: channel/group photo path ("/api/uploads/<file>") - null/undefined = palette tile */
   photo?: string | null
 }
 
@@ -113,7 +111,7 @@ export const GroupAvatar = memo(function GroupAvatar({
   const gradient = groupGradientFor(id)
   const initials = title.trim().length > 0 ? initialsOf(title) : null
   if (hasPhoto) {
-    // R33-b — circular photo with the SAME gradient+initials as fallback
+    // R33-b - circular photo with the SAME gradient+initials as fallback
     // (a broken path can never crash the surface: Radix re-shows the tile)
     return (
       <div className={cn('relative shrink-0', className)} style={{ width: size, height: size }}>

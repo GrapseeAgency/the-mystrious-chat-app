@@ -1,18 +1,16 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Wave 7 — pure, UI-free logic kernels (Collaboration & Hub).
+// Wave 7 - pure, UI-free logic kernels (Collaboration & Hub).
 // Ported 1:1 from the web so native behaviour matches exactly:
 //   parseRelativeReminder ← src/components/chat/reminders-sheet.tsx:132
 //   durationToMs/endOfDay ← reminders-sheet.tsx:118-130
 //   tic-tac-toe win scan  ← src/app/api/games/[id]/move/route.ts:29-38
-// ─────────────────────────────────────────────────────────────
 
 public enum PulseWave7Logic {
 
     private static let durationToken = "(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)"
 
-    /// Minutes→ms etc. — unit is matched on its first char exactly like the web.
+    /// Minutes→ms etc. - unit is matched on its first char exactly like the web.
     static func durationToMs(_ value: Int, _ unit: String) -> Int64? {
         switch unit.first {
         case "m": return Int64(value) * 60_000
@@ -64,7 +62,7 @@ public enum PulseWave7Logic {
                 return nil
             }
         }
-        // Pattern 2: bare trailing "30m" — a leftover "in" is stripped from the note.
+        // Pattern 2: bare trailing "30m" - a leftover "in" is stripped from the note.
         if let m = firstMatch("\\s+(\\d+)\\s*" + durationToken + "$") {
             let value = Int((input as NSString).substring(with: m.range(at: 1))) ?? 0
             let unit = (input as NSString).substring(with: m.range(at: 2))
@@ -139,7 +137,7 @@ public enum PulseWave7Logic {
         return chars[index]
     }
 
-    /// Mirror of the server win scan — used to strike the winning line while polling.
+    /// Mirror of the server win scan - used to strike the winning line while polling.
     public static func detectWinLine(_ board: String?) -> (Character, [Int])? {
         guard let board, board.count == 9 else { return nil }
         let chars = Array(board)

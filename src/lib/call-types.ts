@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — 1:1 call wire contract (R33-a).
+// Pulse - 1:1 call wire contract (R33-a).
 //
 // Single source of truth for EVERYTHING that crosses the wire for
 // WhatsApp/Signal-style voice + video calls:
@@ -9,20 +8,19 @@
 // Deliberately NOT in src/lib/types.ts (file ownership: R33-a owns this
 // module). Client-only DOM types (MediaStream) are kept OUT of here so the
 // socket service can adopt the payload interfaces without lib.dom.
-// ─────────────────────────────────────────────────────────────
 
 /** Audio-only vs camera call. */
 export type CallKind = 'voice' | 'video'
 
-/** Terminal CallLog states — the CALLER's client writes all rows. */
+/** Terminal CallLog states - the CALLER's client writes all rows. */
 export type CallStatus = 'completed' | 'missed' | 'declined'
 
 /**
  * Why a ringing call ended without an answer:
- *  • 'timeout' — 30s ring elapsed (server timer) or caller vanished
- *  • 'cancel'  — caller hung up before the callee answered
- *  • 'busy'    — callee was already ringing/in another call
- *  • 'offline' — callee had no live socket when the offer arrived
+ *  • 'timeout' - 30s ring elapsed (server timer) or caller vanished
+ *  • 'cancel'  - caller hung up before the callee answered
+ *  • 'busy'    - callee was already ringing/in another call
+ *  • 'offline' - callee had no live socket when the offer arrived
  */
 export type CallCancelReason = 'timeout' | 'cancel' | 'busy' | 'offline'
 
@@ -91,7 +89,7 @@ export type CallSignalEvent =
   | 'call:cancel'
   | 'call:hangup'
 
-// ── REST (/api/calls) ────────────────────────────────────────
+// REST (/api/calls) 
 
 /** Peer info resolved server-side for history rows. */
 export interface CallPeerInfo {
@@ -118,7 +116,7 @@ export interface CallLogItem {
   peer: CallPeerInfo
 }
 
-/** POST /api/calls body — viewer is always the caller (single-writer rule). */
+/** POST /api/calls body - viewer is always the caller (single-writer rule). */
 export interface CallLogCreateInput {
   userId: string
   conversationId: string

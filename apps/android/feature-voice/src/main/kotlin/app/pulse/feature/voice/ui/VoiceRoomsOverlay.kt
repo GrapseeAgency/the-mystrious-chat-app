@@ -33,12 +33,12 @@ import app.pulse.feature.voice.vm.VoiceRoomsViewModel
 import app.pulse.ui.PulsePalette
 
 /**
- * Wave 5 — the single overlay host for all three room surfaces (the
+ * Wave 5 - the single overlay host for all three room surfaces (the
  * CallOverlay hosting idiom: mounted once next to the call overlay at the
  * shell root; the [VoiceRoomsEngine] surface state selects WHICH surface
  * renders). The compact kind switcher moves between Voice/Stage/Space for
  * the SAME conversation without leaving anything: voice membership survives
- * surface switches (VR-1), stage/space leave on close (ST-7/SP-1) — the
+ * surface switches (VR-1), stage/space leave on close (ST-7/SP-1) - the
  * engine owns all of that.
  */
 @Composable

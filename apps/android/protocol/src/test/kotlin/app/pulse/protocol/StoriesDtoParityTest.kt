@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Stories wire parity — the widened StoryItemDto decodes the EXACT shape the
+ * Stories wire parity - the widened StoryItemDto decodes the EXACT shape the
  * gateway emits (src/app/api/stories/route.ts mapStory: id/kind/imagePath/
  * caption/background/createdAt/expiresAt/viewCount/viewedByMe), tolerates
  * unknown future keys, degrades to defaults on missing keys, and the POST
@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test
  */
 class StoriesDtoParityTest {
 
-    /** Captured-shape GET payload — one image story (mine) + one text story, unknown keys sprinkled. */
+    /** Captured-shape GET payload - one image story (mine) + one text story, unknown keys sprinkled. */
     private val storiesPageJson = """
     {
       "groups": [
@@ -174,7 +174,7 @@ class StoriesDtoParityTest {
         assertEquals("2026-02-20T09:05:00.000Z", viewers.viewers[0].viewedAt)
     }
 
-    /** POST /api/stories body — text mode sends caption+background, photo mode sends imagePath. */
+    /** POST /api/stories body - text mode sends caption+background, photo mode sends imagePath. */
     @Test
     fun `post story body shape - text vs photo modes`() {
         val textBody = PulseJson.parseToJsonElement(

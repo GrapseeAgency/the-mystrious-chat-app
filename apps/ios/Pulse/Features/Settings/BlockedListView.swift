@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Wave 6 — blocked accounts (F-CP-05, settings-screen.tsx parity): the REAL
+/// Wave 6 - blocked accounts (F-CP-05, settings-screen.tsx parity): the REAL
 /// GET /api/users/{self}/blocks feed, "Blocked {Mon d}" stamps, and the
 /// unblock action with the verbatim "Account unblocked" toast. Unblock uses
 /// the Wave-6-defect-fixed route (DELETE /api/users/{id}/block?userId=).
@@ -116,7 +116,7 @@ struct BlockedListView: View {
         .accessibilityLabel("\(account.name ?? "Account"), \(blockedStamp(account.blockedAt) ?? "blocked"), unblock button")
     }
 
-    /// "Blocked {Mon d}" — month short + day numeric (en-US, web parity).
+    /// "Blocked {Mon d}" - month short + day numeric (en-US, web parity).
     private func blockedStamp(_ iso: String?) -> String? {
         guard let iso, !iso.isEmpty, let date = PulseFormat.date(iso) else { return nil }
         let formatter = DateFormatter()

@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — profile primitives (R25-b).
+// Pulse - profile primitives (R25-b).
 // Shared building blocks for the Profile tab and its sub-pickers:
 // section cards, chevron rows, switch rows and spring counters.
-// One motion language via @/lib/motion — never hand-rolled springs.
-// ─────────────────────────────────────────────────────────────
+// One motion language via @/lib/motion - never hand-rolled springs.
 'use client'
 
 import { useEffect, type ComponentType } from 'react'
@@ -14,13 +12,13 @@ import { cn } from '@/lib/utils'
 import { ease, pressSpring, pressTap, spring, stagger } from '@/lib/motion'
 import { haptic } from '@/lib/pulse-settings'
 
-/** Icon prop accepted by rows — Lucide + Phosphor-based glyphs both fit. */
+/** Icon prop accepted by rows - Lucide + Phosphor-based glyphs both fit. */
 export type RowIcon = ComponentType<{
   className?: string
   'aria-hidden'?: boolean | 'true' | 'false'
 }>
 
-/** R35 Neo card — hairline, quiet glass, no carnival shadows. */
+/** R35 Neo card - hairline, quiet glass, no carnival shadows. */
 export const PROFILE_CARD =
   'rounded-2xl border border-zinc-200/60 bg-white/55 backdrop-blur-xl dark:border-white/8 dark:bg-white/[0.04]'
 
@@ -58,7 +56,7 @@ export const ROW_VARIANTS = { rest: { scale: 1 }, tap: { scale: 0.98 } } as cons
 export const CHEVRON_VARIANTS = { rest: { x: 0 }, tap: { x: 2 } } as const
 
 /**
- * Mature chevron row — icon tile, title + optional description, trailing
+ * Mature chevron row - icon tile, title + optional description, trailing
  * value / control, animated chevron. min-h 56px = comfortable touch target.
  */
 export function ChevronRow({
@@ -138,7 +136,7 @@ export function ChevronRow({
   )
 }
 
-/** Static preference row with a Switch — label stays a real <label> target. */
+/** Static preference row with a Switch - label stays a real <label> target. */
 export function SwitchRow({
   icon: Icon,
   iconClassName,
@@ -192,7 +190,7 @@ export function SwitchRow({
 }
 
 /**
- * Spring counter — the motion value renders straight to the DOM
+ * Spring counter - the motion value renders straight to the DOM
  * (no per-frame React state), spring-popping on mount and retargeting on change.
  */
 export function CountUp({ value, cap = false }: { value: number; cap?: boolean }) {
@@ -214,7 +212,7 @@ export function CountUp({ value, cap = false }: { value: number; cap?: boolean }
 
   return <motion.span>{text}</motion.span>
 }
-/** One stat tile of the hero stats row (real data only — callers pass values). */
+/** One stat tile of the hero stats row (real data only - callers pass values). */
 export function StatTile({
   label,
   value,

@@ -1,27 +1,25 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// REM-B — pure logic parity ports (no transport, no UI):
-//   • anonAliasFor       — verbatim port of chat-room.tsx anonStableHash /
+// REM-B - pure logic parity ports (no transport, no UI):
+//   • anonAliasFor       - verbatim port of chat-room.tsx anonStableHash /
 //                          anonAliasPreview AND the server's messages route
 //                          FNV-1a (identical word lists, "Adjective the Animal")
-//   • isJumboEmoji       — port of src/lib/pulse-utils.ts isJumboEmoji
-//   • MessageTextParser  — port of the chat-room.tsx FORMAT_RE bubble formatter
-//   • TtlFilter          — client-side hiding of expired rows (F-MS-19)
-//   • PulseSlash         — the 25 web slash commands + applySlash outcome parser
-//   • PulseStickers      — the web sticker-picker packs (kind:"sticker" payload)
-// ─────────────────────────────────────────────────────────────
+//   • isJumboEmoji       - port of src/lib/pulse-utils.ts isJumboEmoji
+//   • MessageTextParser  - port of the chat-room.tsx FORMAT_RE bubble formatter
+//   • TtlFilter          - client-side hiding of expired rows (F-MS-19)
+//   • PulseSlash         - the 25 web slash commands + applySlash outcome parser
+//   • PulseStickers      - the web sticker-picker packs (kind:"sticker" payload)
 public enum PulseRemediationLogic {
 
-    // ── F-MS-17 — deterministic incognito alias ──────────────
+    // F-MS-17 - deterministic incognito alias
 
-    /// Server word lists (messages/route.ts:38-39) — order is load-bearing.
+    /// Server word lists (messages/route.ts:38-39) - order is load-bearing.
     static let anonAdjectives = ["Swift", "Quiet", "Neon", "Ember", "Frost", "Lucky", "Cosmic", "Silent"]
     static let anonAnimals = ["Falcon", "Otter", "Panda", "Wolf", "Comet", "Tiger", "Raven", "Fox"]
 
     /// Stable 32-bit FNV-1a string hash. JS parity: `charCodeAt` walks UTF-16
     /// code units, `Math.imul` is 32-bit truncating multiply, `>>> 0` widens
-    /// to unsigned — so iterate `utf16` and mask to UInt32.
+    /// to unsigned - so iterate `utf16` and mask to UInt32.
     public static func fnv1a(_ value: String) -> UInt32 {
         var hash: UInt32 = 0x811c_9dc5
         for unit in value.utf16 {
@@ -31,7 +29,7 @@ public enum PulseRemediationLogic {
         return hash
     }
 
-    /// "Adjective the Animal" — client mirror of the server's deterministic
+    /// "Adjective the Animal" - client mirror of the server's deterministic
     /// incognito alias so the OPTIMISTIC bubble already shows the exact alias
     /// the server will store (web anonAliasPreview parity). Key is
     /// "userId:conversationId".
@@ -42,7 +40,7 @@ public enum PulseRemediationLogic {
         return "\(adjective) the \(animal)"
     }
 
-    // ── F-MS-03 — jumbo emoji (pulse-utils.ts) ───────────────
+    // F-MS-03 - jumbo emoji (pulse-utils.ts)
 
     /// Port of the web JUMBO_EMOJI_RE check: ≤24 UTF-16 units (JS .length),
     /// every code point is pictographic / emoji-component / whitespace /
@@ -56,7 +54,7 @@ public enum PulseRemediationLogic {
             in: trimmed,
             range: NSRange(trimmed.startIndex..., in: trimmed),
         ) {
-            // The web's final /\p{Extended_Pictographic}/u check — folded in
+            // The web's final /\p{Extended_Pictographic}/u check - folded in
             // by requiring the whole-string scan to contain a pictograph.
             return match.range.length > 0 && jumboRegexPictograph.firstMatch(
                 in: trimmed,
@@ -74,7 +72,7 @@ public enum PulseRemediationLogic {
         pattern: #"\p{Extended_Pictographic}"#,
     )
 
-    // ── F-MS-19 — expired-row filter ─────────────────────────
+    // F-MS-19 - expired-row filter
 
     /// Rows with a non-nil expiresAt in the past never render (web parity:
     /// the TTL sweep deletes server-side, the client hides until then).
@@ -84,7 +82,7 @@ public enum PulseRemediationLogic {
         return expires > now
     }
 
-    // ── F-MS-02 — bubble text formatting ─────────────────────
+    // F-MS-02 - bubble text formatting
 
     public enum TextSegment: Equatable {
         case plain(String)
@@ -97,7 +95,7 @@ public enum PulseRemediationLogic {
         case italic(String)
     }
 
-    /// Port of the web FORMAT_RE (chat-room.tsx:6586) — multi-char tokens
+    /// Port of the web FORMAT_RE (chat-room.tsx:6586) - multi-char tokens
     /// first so ** wins over *, pre/code span newlines, the rest don't.
     /// Group order: 1 pre · 2 code · 3 **bold** · 4 __underline__ ·
     /// 5 ~~strike~~ · 6 ||spoiler|| · 7 *bold* · 8 _italic_ · 9 ~strike~.
@@ -137,7 +135,7 @@ public enum PulseRemediationLogic {
         return segments
     }
 
-    // ── F-MS-22 — slash commands (web PULSE_SLASH_COMMANDS verbatim) ──
+    // F-MS-22 - slash commands (web PULSE_SLASH_COMMANDS verbatim)
 
     public struct SlashCommand: Equatable, Identifiable {
         public var id: String { cmd }
@@ -174,7 +172,7 @@ public enum PulseRemediationLogic {
         .init(cmd: "/help", args: "", help: "Show every command"),
     ]
 
-    /// R3-A — web slash-palette fuzzyMatch parity (slash-palette.tsx:127-140):
+    /// R3-A - web slash-palette fuzzyMatch parity (slash-palette.tsx:127-140):
     /// every needle character (whitespace stripped, case-insensitive) must
     /// appear IN ORDER in the haystack, with total jump distance ≤ 6× the
     /// needle length ("tolerate sloppy typing, keep ranking sane").
@@ -204,7 +202,7 @@ public enum PulseRemediationLogic {
         return gap <= compact.count * 6
     }
 
-    /// applySlash outcome — the send-shaped results the room handles;
+    /// applySlash outcome - the send-shaped results the room handles;
     /// sheet/tool commands surface as explicit intents.
     public enum SlashOutcome: Equatable {
         case send(String)
@@ -221,7 +219,7 @@ public enum PulseRemediationLogic {
     /// R21-a bot commands pass through as plain messages (server answers).
     static let botCommands: Set<String> = ["math", "flip", "8ball", "rps", "dice", "time", "wallet"]
 
-    /// Port of the web applySlash — leading-slash parsing into real content
+    /// Port of the web applySlash - leading-slash parsing into real content
     /// or UI actions. Non-slash input is returned as `.send` verbatim; a
     /// leading token that is not a \w+ word (like the web's `^\/(\w+)…`
     /// regex) also falls through to `.send`.
@@ -251,7 +249,7 @@ public enum PulseRemediationLogic {
                 let total = Int.random(in: 1...6)
                 return .send("Rolled **1d6**: *\(total)*")
             }
-            guard let roll = rollDice(arg) else { return .error("Usage: /roll AdM — e.g. /roll 2d6") }
+            guard let roll = rollDice(arg) else { return .error("Usage: /roll AdM - e.g. /roll 2d6") }
             return .send("Rolled **\(arg.lowercased())**: \(roll.rolls.joined(separator: " + ")) = *\(roll.total)*")
         case "poll": return .sheet("poll")
         case "schedule": return .sheet("schedule")
@@ -275,11 +273,11 @@ public enum PulseRemediationLogic {
         case "help": return .help
         default:
             if botCommands.contains(word) { return .send(input) }
-            return .error("Unknown command \"/\(word)\" — try /help")
+            return .error("Unknown command \"/\(word)\" - try /help")
         }
     }
 
-    /// "AdM" dice spec — web rollDice parity (1..100 dice, 2..1000 sides).
+    /// "AdM" dice spec - web rollDice parity (1..100 dice, 2..1000 sides).
     public static func rollDice(_ spec: String) -> (rolls: [String], total: Int)? {
         let trimmed = spec.trimmingCharacters(in: .whitespaces).lowercased()
         guard let m = diceRegex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
@@ -301,10 +299,10 @@ public enum PulseRemediationLogic {
 
     private static let diceRegex = try! NSRegularExpression(pattern: #"^(\d{1,3})d(\d{1,4})$"#)
 
-    // ── F-MS-23 — incoming effect → ParticleBus mapping ──────
+    // F-MS-23 - incoming effect → ParticleBus mapping
 
     /// Web EFFECT_PARTICLES: confetti→confetti · sparkles→stars ·
-    /// R14 5-b — lasers/echo now carry their OWN canvas kinds (web
+    /// R14 5-b - lasers/echo now carry their OWN canvas kinds (web
     /// message-effects.tsx distinct visuals) instead of the generic burst.
     /// Unknown/absent effects → nil (no burst).
     public static func particleKind(forEffect effect: String?) -> String? {
@@ -325,12 +323,12 @@ public enum PulseRemediationLogic {
         return effectNames.contains(effect) ? effect : nil
     }
 
-    // ── R1-W2B F-MD-07 — location payload decode (kind "location" rows) ──
+    // R1-W2B F-MD-07 - location payload decode (kind "location" rows)
 
     /// Web LocationPayload parity (location-share.tsx:20-24 + chat-room.tsx
     /// sendLocation L3129-3135): { lat: number, lng: number, label: string }.
     /// The wire payload is a JSON STRING (messages/route.ts L286 stringify);
-    /// decode tolerantly — a corrupt payload yields nil (plain-text fallback).
+    /// decode tolerantly - a corrupt payload yields nil (plain-text fallback).
     public static func locationOfPayload(_ payload: String?) -> (lat: Double, lng: Double, label: String)? {
         guard let payload, !payload.isEmpty,
               let data = payload.data(using: .utf8),
@@ -343,7 +341,7 @@ public enum PulseRemediationLogic {
     }
 
     /// Apple Maps deep link for a pin (web uses maps.google.com; native opens
-    /// Apple Maps — spec F-MD-07 "Map card tap → platform maps"). Coordinates
+    /// Apple Maps - spec F-MD-07 "Map card tap → platform maps"). Coordinates
     /// formatted with 6-decimal precision; label rides as the `q` when present.
     public static func appleMapsURL(lat: Double, lng: Double, label: String) -> URL? {
         var components = URLComponents(string: "https://maps.apple.com/")
@@ -357,7 +355,7 @@ public enum PulseRemediationLogic {
     }
 
     /// Human coordinate line under the pin (web LocationBubble coordText
-    /// parity — location-share.tsx:54): "12.3456° N, 45.6789° W".
+    /// parity - location-share.tsx:54): "12.3456° N, 45.6789° W".
     public static func coordinateText(lat: Double, lng: Double) -> String {
         func component(_ value: Double, positive: String, negative: String) -> String {
             "\(String(format: "%.4f", abs(value)))° \(value >= 0 ? positive : negative)"
@@ -365,20 +363,22 @@ public enum PulseRemediationLogic {
         return "\(component(lat, positive: "N", negative: "S")), \(component(lng, positive: "E", negative: "W"))"
     }
 
-    // ── F-MS-24 — sticker packs (web sticker-picker.tsx verbatim) ──
+    // F-MS-24 - sticker packs (web sticker-picker.tsx). Badges are SF Symbol
+    // names (web renders designed glyph badges); items are user content.
 
     public struct StickerPack: Equatable, Identifiable {
         public var id: String { name }
         public let name: String
+        /// SF Symbol name rendered as the pack badge (never an emoji).
         public let badge: String
         public let items: [String]
     }
 
     public static let stickerPacks: [StickerPack] = [
-        .init(name: "Pulse", badge: "⚡️", items: ["⚡️", "🔥", "💥", "🎉", "✨", "🌟", "💫", "🚀", "🎯", "🏆"]),
-        .init(name: "Faces", badge: "😄", items: ["😂", "😍", "😎", "🤯", "😭", "😡", "🥳", "😴", "🤔", "🫠"]),
-        .init(name: "Reactions", badge: "👍", items: ["👍", "👎", "🙏", "👏", "💪", "🤝", "😅", "🫡", "🤌", "🤗"]),
-        .init(name: "Love", badge: "❤️", items: ["❤️", "🧡", "💛", "💚", "💜", "🖤", "💖", "💘", "💞", "🫶"]),
-        .init(name: "Critters", badge: "🐾", items: ["🐶", "🐱", "🐼", "🦊", "🐸", "🐵", "🦄", "🐙", "🦋", "🐢"]),
+        .init(name: "Pulse", badge: "bolt.fill", items: ["⚡️", "🔥", "💥", "🎉", "✨", "🌟", "💫", "🚀", "🎯", "🏆"]),
+        .init(name: "Faces", badge: "face.smiling", items: ["😂", "😍", "😎", "🤯", "😭", "😡", "🥳", "😴", "🤔", "🫠"]),
+        .init(name: "Reactions", badge: "hand.thumbsup.fill", items: ["👍", "👎", "🙏", "👏", "💪", "🤝", "😅", "🫡", "🤌", "🤗"]),
+        .init(name: "Love", badge: "heart.fill", items: ["❤️", "🧡", "💛", "💚", "💜", "🖤", "💖", "💘", "💞", "🫶"]),
+        .init(name: "Critters", badge: "pawprint.fill", items: ["🐶", "🐱", "🐼", "🦊", "🐸", "🐵", "🦄", "🐙", "🦋", "🐢"]),
     ]
 }

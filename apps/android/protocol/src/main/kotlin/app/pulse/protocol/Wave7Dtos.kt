@@ -3,7 +3,7 @@ package app.pulse.protocol
 import kotlinx.serialization.Serializable
 
 /**
- * Wave 7 — Collaboration & Hub wire DTOs (red packets, whiteboard, kanban,
+ * Wave 7 - Collaboration & Hub wire DTOs (red packets, whiteboard, kanban,
  * events, reminders, games, tournaments, leaderboard, hub economy).
  * Tolerant house style: every field defaulted so shape drift can never
  * crash a surface (stories rule).
@@ -42,7 +42,7 @@ import kotlinx.serialization.Serializable
  *   GET|POST /api/hub/apps/[appId]/community → { conversation, memberCount, joined }
  */
 
-// ── Red packets (F-RO-02) ────────────────────────────────────────────────
+// Red packets (F-RO-02)
 
 @Serializable
 data class RedPacketStubDto(
@@ -52,7 +52,7 @@ data class RedPacketStubDto(
     val grabbed: Int = 0,
     val note: String? = null,
     val expiresAt: String? = null,
-    /** open | exhausted | expired — only present on the detail endpoint. */
+    /** open | exhausted | expired - only present on the detail endpoint. */
     val status: String? = null,
     val senderId: String? = null,
 )
@@ -96,7 +96,7 @@ data class RedPacketPayloadDto(
     val note: String? = null,
 )
 
-/** R1-W2A — `kind=="sticker"` payload string: {emoji, pack} (web parseSticker shape). */
+/** R1-W2A - `kind=="sticker"` payload string: {emoji, pack} (web parseSticker shape). */
 @Serializable
 data class StickerPayloadDto(
     val emoji: String = "",
@@ -104,13 +104,13 @@ data class StickerPayloadDto(
     val pack: String = "Pulse",
 )
 
-/** R1-W2A — effect-carried `kind=="text"` payload string: { effect } (F-MS-23/D29). */
+/** R1-W2A - effect-carried `kind=="text"` payload string: { effect } (F-MS-23/D29). */
 @Serializable
 data class EffectPayloadDto(
     val effect: String = "",
 )
 
-// ── Whiteboard (F-RO-03) ─────────────────────────────────────────────────
+// Whiteboard (F-RO-03)
 
 @Serializable
 data class WhiteboardStrokeDto(
@@ -160,7 +160,7 @@ data class WhiteboardClearResultDto(
     val serverTime: Long? = null,
 )
 
-// ── Kanban (F-RO-04) ─────────────────────────────────────────────────────
+// Kanban (F-RO-04)
 
 @Serializable
 data class KanbanCardDto(
@@ -183,7 +183,7 @@ data class KanbanCardDto(
 @Serializable
 data class KanbanPageDto(val cards: List<KanbanCardDto> = emptyList())
 
-// ── Events (F-RO-05) ─────────────────────────────────────────────────────
+// Events (F-RO-05)
 
 @Serializable
 data class EventRsvpDto(
@@ -242,7 +242,7 @@ data class CheckinResultDto(
     val alreadyCheckedIn: Boolean = false,
 )
 
-// ── Reminders (F-RO-06) ──────────────────────────────────────────────────
+// Reminders (F-RO-06)
 
 @Serializable
 data class ReminderConversationDto(
@@ -267,7 +267,7 @@ data class ReminderItemDto(
 @Serializable
 data class RemindersPageDto(val items: List<ReminderItemDto> = emptyList())
 
-// ── Quick phrases (F-MS-29) — GET/POST/DELETE /api/users/{id}/phrases ─────
+// Quick phrases (F-MS-29) - GET/POST/DELETE /api/users/{id}/phrases
 
 /** GET → { phrases: [{id,text,position}] } · POST → { phrase: {…} }. */
 @Serializable
@@ -289,7 +289,7 @@ data class ReminderResolveDto(
     val firedAt: String? = null,
 )
 
-// ── Games (F-RO-07) ──────────────────────────────────────────────────────
+// Games (F-RO-07)
 
 @Serializable
 data class GamePlayerDto(
@@ -341,7 +341,7 @@ data class GamePayloadDto(
     val game: String = "tictactoe",
 )
 
-// ── Tournaments (F-RO-08) ────────────────────────────────────────────────
+// Tournaments (F-RO-08)
 
 @Serializable
 data class TournamentSummaryDto(
@@ -391,7 +391,7 @@ data class TournamentPayloadDto(
     val game: String = "tictactoe",
 )
 
-// ── Leaderboard (F-RO-09) ────────────────────────────────────────────────
+// Leaderboard (F-RO-09)
 
 @Serializable
 data class LeaderboardRowDto(
@@ -407,7 +407,7 @@ data class LeaderboardRowDto(
 @Serializable
 data class LeaderboardPageDto(val rows: List<LeaderboardRowDto> = emptyList())
 
-// ── Hub economy (F-HB-01…10) ─────────────────────────────────────────────
+// Hub economy (F-HB-01…10)
 
 @Serializable
 data class WalletDto(
@@ -416,7 +416,7 @@ data class WalletDto(
     val gems: Long = 0,
     val streak: Int = 0,
     val lastCheckIn: String? = null,
-    /** Present on GET /wallet; absent on raw checkin rows — treat null as unknown. */
+    /** Present on GET /wallet; absent on raw checkin rows - treat null as unknown. */
     val checkedInToday: Boolean? = null,
 )
 
@@ -543,7 +543,7 @@ data class HubLogDto(
     val id: String = "",
     val kind: String = "",
     val message: String = "",
-    /** RAW JSON string on the wire — never parsed server-side. */
+    /** RAW JSON string on the wire - never parsed server-side. */
     val meta: String? = null,
     val createdAt: String? = null,
     val user: HubLogUserDto? = null,

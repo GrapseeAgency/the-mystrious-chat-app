@@ -1,24 +1,22 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// R2-D ITEM 1 — the DM info surface (web header-menu parity,
+// R2-D ITEM 1 - the DM info surface (web header-menu parity,
 // chat-room.tsx:4108-4287: "Manage chat" covers DMs with the SAME privacy
 // entries groups get). Compact sheet presented from the dmPartner toolbar
 // branch of ChatRoomView:
 //   • disappearing-message TTL presets (0 · 24h · 7d · 30d, wire :2153-2171)
-//   • screen security — personal veil + room-wide switch (R2-B paths reused)
+//   • screen security - personal veil + room-wide switch (R2-B paths reused)
 //   • notification mute presets (8h · 1w · always + unmute, wire :2421-2455)
 //   • per-chat theme entry (ConvThemeSheet, R1-W2B F-FX-05)
 //   • safety-number entry (SafetySheetView, Wave 6 F-CP-07)
-// GROUP behavior is untouched — GroupInfoView keeps serving group rooms.
-// ─────────────────────────────────────────────────────────────
+// GROUP behavior is untouched - GroupInfoView keeps serving group rooms.
 
 struct RoomInfoSheet: View {
     let conversation: WireConversationSummary
     let partner: WireConversationMember
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
-    /// R2-B parity — pushes the fresh room-wide veil flag back into the open
+    /// R2-B parity - pushes the fresh room-wide veil flag back into the open
     /// room view model so the river re-veils without a refetch.
     var onDetailUpdated: ((WireConversationSummary) -> Void)? = nil
 
@@ -32,7 +30,7 @@ struct RoomInfoSheet: View {
 
     private var viewerId: String { session.viewer?.id ?? "" }
 
-    /// The DM display name — partner name, "Saved messages" on self-chats
+    /// The DM display name - partner name, "Saved messages" on self-chats
     /// (the summary name is nil for DMs on the wire).
     private var displayName: String {
         if conversation.isSelf == true { return "Saved messages" }
@@ -75,7 +73,7 @@ struct RoomInfoSheet: View {
         .task { await load() }
     }
 
-    // ── data ─────────────────────────────────────────────────
+    // data
 
     /// One quiet detail GET (GroupInfoView pattern): TTL, mute state and the
     /// room-wide veil flag all read from the fresh server truth.
@@ -89,7 +87,7 @@ struct RoomInfoSheet: View {
         }
     }
 
-    // ── content ──────────────────────────────────────────────
+    // content
 
     private func content(_ detail: WireConversationSummary) -> some View {
         List {
@@ -119,8 +117,8 @@ struct RoomInfoSheet: View {
                 .padding(.vertical, 2)
             }
 
-            // ── disappearing messages (web header-menu TTL presets, chat-room
-            // tsx:4223-4261 — Off · 24h · 7d · 30d) — the same ladder groups use.
+            // disappearing messages (web header-menu TTL presets, chat-room
+            // tsx:4223-4261 - Off · 24h · 7d · 30d) - the same ladder groups use.
             Section {
                 ForEach(GroupInfoView.ttlPresets, id: \.seconds) { preset in
                     Button {
@@ -147,7 +145,7 @@ struct RoomInfoSheet: View {
                 Text("New messages vanish after the selected time.")
             }
 
-            // ── R2-D — notification mute presets (web :2419-2455 parity:
+            // R2-D - notification mute presets (web :2419-2455 parity:
             // 8h · 1w · always, unmute while active). The optimistic summary
             // helper rides the SAME setMuted route as the chats-list sheet.
             Section {
@@ -169,7 +167,7 @@ struct RoomInfoSheet: View {
                 Text("Notifications")
             }
 
-            // ── R2-D — screen security (the R2-B veil paths, reused verbatim
+            // R2-D - screen security (the R2-B veil paths, reused verbatim
             // for DMs): the personal veil frosts MY view; the room-wide
             // switch frosts every member's view. Both OR inside the room.
             Section {
@@ -180,7 +178,7 @@ struct RoomInfoSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Screen security", systemImage: "eye.slash")
                             .font(.subheadline.weight(.medium))
-                        Text("Blur messages when Pulse loses focus — just for you")
+                        Text("Blur messages when Pulse loses focus - just for you")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -201,7 +199,7 @@ struct RoomInfoSheet: View {
                 .accessibilityLabel("Screen security for everyone")
             }
 
-            // ── R2-D — theme + safety-number entries (web "Manage chat"
+            // R2-D - theme + safety-number entries (web "Manage chat"
             // parity: the DM header menu reaches both).
             Section {
                 Button {
@@ -241,9 +239,9 @@ struct RoomInfoSheet: View {
         }
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
-    /// PATCH disappearing { userId, ttlSeconds } — the exact call
+    /// PATCH disappearing { userId, ttlSeconds } - the exact call
     /// GroupInfoView makes; toast copy follows the web setTtl onSuccess.
     private func setTtl(_ seconds: Int) {
         Task {
@@ -261,7 +259,7 @@ struct RoomInfoSheet: View {
         }
     }
 
-    /// R2-D — mute presets through the real route (ChatsViewModel.setMuted
+    /// R2-D - mute presets through the real route (ChatsViewModel.setMuted
     /// parity: optimistic watermark, honest failure restores the old value).
     private func setMuted(_ preset: String?) {
         guard let current = detail else { return }
@@ -285,7 +283,7 @@ struct RoomInfoSheet: View {
                 if preset == nil {
                     session.toasts.show("Notifications unmuted")
                 } else if preset == "always" {
-                    session.toasts.show("Muted — always")
+                    session.toasts.show("Muted - always")
                 } else {
                     let stamp = Date().addingTimeInterval(preset == "1w" ? 7 * 86_400 : 8 * 3_600)
                     session.toasts.show("Muted until \(PulseFormat.listStamp(stamp))")
@@ -299,7 +297,7 @@ struct RoomInfoSheet: View {
     }
 
     /// withMutedUntil resets the defaulted detail vars (they sit behind the
-    /// memberwise init) — restore them so the veil/throttle state survives
+    /// memberwise init) - restore them so the veil/throttle state survives
     /// the optimistic mute swap.
     private static func withMuted(_ summary: WireConversationSummary, until: String?) -> WireConversationSummary {
         var fresh = summary.withMutedUntil(until)
@@ -310,7 +308,7 @@ struct RoomInfoSheet: View {
         return fresh
     }
 
-    /// R42 — MY veil (prefs write-through + per-viewer route mirror), the
+    /// R42 - MY veil (prefs write-through + per-viewer route mirror), the
     /// GroupInfoView path verbatim.
     private func setMyScreenPrivacy(_ on: Bool) {
         prefs.setScreenPrivacy(conversationId: conversation.id, on: on)
@@ -325,7 +323,7 @@ struct RoomInfoSheet: View {
         }
     }
 
-    /// R38 — the room-wide switch: PATCH conversation { screenPrivacy }, then
+    /// R38 - the room-wide switch: PATCH conversation { screenPrivacy }, then
     /// push the fresh detail into the open room (onDetailUpdated) and the
     /// sheet's own state.
     private func setRoomScreenPrivacy(_ on: Bool) {

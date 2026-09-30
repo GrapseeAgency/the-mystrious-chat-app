@@ -1,17 +1,17 @@
 import XCTest
 @testable import Pulse
 
-/// Wave R1-W2D — the PURE video decision contract (web useCallSession parity,
+/// Wave R1-W2D - the PURE video decision contract (web useCallSession parity,
 /// src/components/chat/call-overlay.tsx + src/lib/call-types.ts):
 ///   • the wire video flag is the call's `kind` ("voice" | "video");
 ///   • a wanted video call degrades to voice BEFORE the offer without a
 ///     camera (acquireMedia NotFound/Overconstrained/NotReadable fallback);
 ///   • the callee only opens the camera when the offer SDP really declares a
 ///     usable m=video line.
-/// Pure Foundation — no WebRTC, no device hardware (capture stays Wave 3-HW).
+/// Pure Foundation - no WebRTC, no device hardware (capture stays Wave 3-HW).
 final class PulseCallVideoPolicyTests: XCTestCase {
 
-    // ── PulseCallSdp.hasVideo ────────────────────────────────────
+    // PulseCallSdp.hasVideo
 
     private let audioOnlySdp =
         "v=0\r\no=- 46117317 2 IN IP4 127.0.0.1\r\n" +
@@ -60,7 +60,7 @@ final class PulseCallVideoPolicyTests: XCTestCase {
         XCTAssertFalse(PulseCallSdp.hasVideo("v=0\r\nbroken-line"))
     }
 
-    // ── kind resolution (web acquireMedia fallback) ─────────────
+    // kind resolution (web acquireMedia fallback)
 
     func testWantedVideoWithNoCameraDegradesToVoice() {
         XCTAssertEqual(.voice, PulseCallVideoPolicy.resolveOutgoingKind(.video, cameraCapable: false))
@@ -75,7 +75,7 @@ final class PulseCallVideoPolicyTests: XCTestCase {
         XCTAssertEqual(.voice, PulseCallVideoPolicy.resolveOutgoingKind(.voice, cameraCapable: true))
     }
 
-    // ── shouldAttachVideo — the callee/caller camera gate ───────
+    // shouldAttachVideo - the callee/caller camera gate
 
     func testCalleeAttachesVideoOnlyForVideoKindAndUsableMLineAndCamera() {
         let hasVideo: Bool = PulseCallSdp.hasVideo(videoSdp)
@@ -101,7 +101,7 @@ final class PulseCallVideoPolicyTests: XCTestCase {
     }
 
     func testWireVideoWithNoUsableVideoMLineKeepsTheCameraClosed() {
-        // Caller fell back to voice after dispatching kind 'video' — the
+        // Caller fell back to voice after dispatching kind 'video' - the
         // honest callee answer keeps its camera closed.
         XCTAssertFalse(
             PulseCallVideoPolicy.shouldAttachVideo(kind: .video, offerSdp: audioOnlySdp, cameraCapable: true)

@@ -27,62 +27,62 @@ public final class PulseSession: ObservableObject {
     /// Bumped whenever a surface mutates the inbox (e.g. a fresh DM create)
     /// so the Chats view model can re-fetch without polling.
     @Published public private(set) var inboxRefreshTick = 0
-    /// Wave 0 — bumped on every background mutation that should make live
+    /// Wave 0 - bumped on every background mutation that should make live
     /// surfaces re-fetch (message:edited/pinned/viewed, poll:voted,
     /// link:preview, translation:added, conversation:updated, outbox
     /// deliveries). Features subscribe; later waves consume more cases.
     @Published public private(set) var realtimeRefreshTick = 0
     /// Live total unread feeding the dock badge (Chats view model writes it).
     @Published public var dockUnreadCount = 0
-    /// True while a chat room owns the screen — the dock hides itself.
+    /// True while a chat room owns the screen - the dock hides itself.
     @Published public var roomVisible = false
     /// Dock "More → Search" asks the Chats tab to enter search mode.
     @Published public private(set) var searchRequestTick = 0
     /// Dock compose / More → Saved hand a freshly-resolved conversation to the
     /// Chats tab's NavigationStack (the dock lives above the shell, the stack
-    /// lives inside ChatsView — this is the bridge, same pattern as search).
+    /// lives inside ChatsView - this is the bridge, same pattern as search).
     @Published public private(set) var pendingOpenRoom: WireConversationSummary?
-    /// Wave 2 saved library — jump-to-message handoff consumed by ChatsView
+    /// Wave 2 saved library - jump-to-message handoff consumed by ChatsView
     /// together with pendingOpenRoom (the SAME path search hits already use).
     @Published public private(set) var pendingJumpMessageId: String?
-    /// Wave 6 deep links — user-route handoff consumed by the Contacts tab's
+    /// Wave 6 deep links - user-route handoff consumed by the Contacts tab's
     /// NavigationStack (same bridge pattern as pendingOpenRoom). Consumers
     /// call `consumePendingUserRoute()` when received.
     @Published public private(set) var pendingUserRoute: UserRoute?
-    /// R2-D — the linked-room bridge (conversation ID only): reminder-
+    /// R2-D - the linked-room bridge (conversation ID only): reminder-
     /// notification taps (PulseReminderNotificationDelegate) and calls-
     /// history rows set this; RootView consumes it and follows the exact
     /// pulse://room path (detail fetch → Chats tab → requestOpenRoom).
     /// Writable by the feature surfaces; RootView clears it on consumption.
     @Published public var pendingLinkedRoomId: String?
-    /// Opened on session start (nil before onboarding) — @Published so late
+    /// Opened on session start (nil before onboarding) - @Published so late
     /// view models can rehydrate the offline cache the moment it exists.
     @Published public private(set) var store: PulseStore?
     /// Outbox engine (nil before identity exists).
     @Published public private(set) var outbox: PulseOutboxEngine?
-    /// W3-b — Wave 3 call engine (nil before identity exists). RootView hosts
+    /// W3-b - Wave 3 call engine (nil before identity exists). RootView hosts
     /// the full-screen overlay; surfaces call startOutgoing/accept/decline.
     @Published public private(set) var callEngine: PulseCallEngine?
-    /// 3-d — the GROUP (mesh) call engine (nil before identity exists).
+    /// 3-d - the GROUP (mesh) call engine (nil before identity exists).
     /// RootView hosts the group overlay + ring/ongoing banners; group rooms
     /// dial through startCall(kind:conversationId:title:).
     @Published public private(set) var groupCallEngine: PulseGroupCallEngine?
-    /// W4 — Wave 4 stories feed owner (nil before identity exists). Tray,
+    /// W4 - Wave 4 stories feed owner (nil before identity exists). Tray,
     /// dock sheet, viewer and composer share this one instance.
     @Published public private(set) var stories: StoriesSessionModel?
-    /// W5-f — Wave 5 voice rooms / stage / space owner (nil before identity
+    /// W5-f - Wave 5 voice rooms / stage / space owner (nil before identity
     /// exists). Room MEMBERSHIP SURVIVES surface close (VR-1); the
     /// ChatRoomView mic entry + fullScreenCover host share this instance.
     @Published public private(set) var voiceRooms: VoiceRoomSessionModel?
-    /// Wave 8 — bumped when the server rejects our session token (API 401
+    /// Wave 8 - bumped when the server rejects our session token (API 401
     /// or join:error). The token is already cleared + re-login surfaced by
     /// `noteAuthFailure`; the tick lets deep surfaces react if they must.
     @Published public private(set) var authRejectedTick = 0
-    /// Wave 8 — the conversation currently owning the screen (ChatRoomView
+    /// Wave 8 - the conversation currently owning the screen (ChatRoomView
     /// writes it). The incoming-attention gate uses it as the "you are
-    /// reading this room" check — no ping for the room in front of you.
+    /// reading this room" check - no ping for the room in front of you.
     @Published public var activeRoomId: String?
-    /// Wave 8 — weak handoff to the RootView-owned PulsePrefs (incoming
+    /// Wave 8 - weak handoff to the RootView-owned PulsePrefs (incoming
     /// attention gating + the settings PATCH funnel + quiet-gate refresh).
     public private(set) weak var prefs: PulsePrefs?
 
@@ -91,7 +91,7 @@ public final class PulseSession: ObservableObject {
 
     public private(set) var api: PulseAPIClient
     public let particles = ParticleBus()
-    /// R1-W2I — PiP pane store (F-PI-01..03): the pop-out mini-chat panes
+    /// R1-W2I - PiP pane store (F-PI-01..03): the pop-out mini-chat panes
     /// (web usePipChat). One session-level owner, rendered by the
     /// RootView-level overlay + toggled from the room toolbar.
     public let pip = PulsePiPStore()
@@ -114,16 +114,16 @@ public final class PulseSession: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.pruneTypers()
-                self?.prefs?.refreshQuietGate() // Wave 8 — quiet window opens/closes on the minute
+                self?.prefs?.refreshQuietGate() // Wave 8 - quiet window opens/closes on the minute
             }
             .store(in: &cancellables)
     }
 
-    // ── Wave 8 — prefs handoff ───────────────────────────
+    // Wave 8 - prefs handoff
 
     /// RootView owns PulsePrefs; the session needs it for the incoming
     /// attention gate, the quiet-gate refresh and the settings PATCH
-    /// funnel. Idempotent — the closures attach exactly once.
+    /// funnel. Idempotent - the closures attach exactly once.
     public func attach(prefs: PulsePrefs) {
         self.prefs = prefs
         guard prefs.patchRemote == nil else { return }
@@ -149,15 +149,15 @@ public final class PulseSession: ObservableObject {
             } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
                 self.noteAuthFailure(failure.message)
             } catch {
-                self.prefs?.notePatchSettled(successful: false, note: "Saved on this device — the server didn't answer.")
+                self.prefs?.notePatchSettled(successful: false, note: "Saved on this device - the server didn't answer.")
             }
         }
     }
 
-    /// Wave 8 — the server rejected our session token (API 401 with
+    /// Wave 8 - the server rejected our session token (API 401 with
     /// "Session token is invalid or has been rotated." or join:error).
     /// Reaction: clear the Keychain token, drop it from future requests
-    /// AND socket joins (token-less is accepted — degraded honest mode),
+    /// AND socket joins (token-less is accepted - degraded honest mode),
     /// surface re-login. No forced onboarding (offline-first stays).
     public func noteAuthFailure(_ message: String? = nil) {
         PulseKeychain.shared.clearSessionToken()
@@ -165,11 +165,11 @@ public final class PulseSession: ObservableObject {
             api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: nil)
         }
         socket?.updateToken(nil)
-        toasts.show(message ?? "Session expired — log in again to stay in sync.")
+        toasts.show(message ?? "Session expired - log in again to stay in sync.")
         authRejectedTick += 1
     }
 
-    /// R1-W2B D23 — identity teardown for "Forget this viewer": the viewer
+    /// R1-W2B D23 - identity teardown for "Forget this viewer": the viewer
     /// deliberately signed out of this device. Drops the socket, releases
     /// the viewer-bound live models (rebuilt by the next `start(as:)`) and
     /// rebinds a token-less pre-login client. The caller (identity switcher)
@@ -178,10 +178,10 @@ public final class PulseSession: ObservableObject {
     /// (it belongs to the store, not the session) and flushes again once a
     /// new identity starts.
     public func stop() {
-        // Task 5-d — the viewer becomes nil here (the ONLY identity-teardown
+        // Task 5-d - the viewer becomes nil here (the ONLY identity-teardown
         // path): the push registry row (token → THIS viewer) must not
         // outlive it. Fire-and-forget DELETE /api/push/register { token } +
-        // the stored token cleared synchronously — sign-out never blocks.
+        // the stored token cleared synchronously - sign-out never blocks.
         PulsePushNotifications.deactivate()
         viewer = nil
         socket?.disconnect()
@@ -200,12 +200,12 @@ public final class PulseSession: ObservableObject {
         api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL)
     }
 
-    /// R14 5-b — boot identity probe (web app-root.tsx:88-105 parity): a
+    /// R14 5-b - boot identity probe (web app-root.tsx:88-105 parity): a
     /// restored session is validated against GET /api/users/{id}; a 404
     /// means the identity no longer exists on this Pulse → stop the live
     /// layer and hand the wipe to the caller (prefs.setViewer(nil) lands on
     /// onboarding). Network flakes and every other error proceed
-    /// optimistically — same contract as the web BootGate. Offline-created
+    /// optimistically - same contract as the web BootGate. Offline-created
     /// `local_` identities never probe (they are honest offline accounts,
     /// not stale server rows).
     public func validateStoredIdentity(onWiped: @escaping (String) -> Void) {
@@ -218,19 +218,19 @@ public final class PulseSession: ObservableObject {
                 self.stop()
                 onWiped(viewer.name)
             } catch {
-                // Offline / unknown gateway — keep the session (web parity:
+                // Offline / unknown gateway - keep the session (web parity:
                 // validation.isError && !404 → status .ready).
             }
         }
     }
 
-    // ── lifecycle ────────────────────────────────────────────
+    // lifecycle
     public func start(as viewer: PulseViewer) {
         self.viewer = viewer
         socket?.disconnect()
         socket = nil
 
-        // Wave 8 — the rebuilt client carries the Keychain session token.
+        // Wave 8 - the rebuilt client carries the Keychain session token.
         api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: PulseKeychain.shared.loadSessionToken())
         store = Self.openStore()
         startOutbox()
@@ -239,21 +239,21 @@ public final class PulseSession: ObservableObject {
         startVoiceRooms(viewer: viewer)
         startReminderDueLoop(viewer: viewer)
 
-        // 3-d — remote push activates with EVERY identity start (bootstrap,
+        // 3-d - remote push activates with EVERY identity start (bootstrap,
         // onboarding, identity switch): notification authorization (ask-once
         // per install) → APNs registration → the hex token POSTs to
-        // /api/push/register platform 'ios'. Honest verdicts only — a
+        // /api/push/register platform 'ios'. Honest verdicts only - a
         // simulator / unsigned build surfaces the registration failure, it
         // is never faked (PulsePushRegistrationCenter.status).
         PulsePushRegistrationCenter.shared.noteViewerChanged()
         PulsePushNotifications.activate()
 
         // Realtime bootstraps asynchronously: the manifest override must land
-        // BEFORE the socket (and API rebinding) — non-blocking for first paint.
+        // BEFORE the socket (and API rebinding) - non-blocking for first paint.
         Task { await startRealtime(as: viewer) }
     }
 
-    /// Wave 7 F-RO-06 — the reminder due-loop (web useReminderDueLoop parity,
+    /// Wave 7 F-RO-06 - the reminder due-loop (web useReminderDueLoop parity,
 /// 30 s foreground): GET ?due=1 → local notification → PATCH firedAt so the
 /// web sheet and other devices converge. Failures are honest silence (the
 /// next tick retries); local fires (offline) ride the scheduled triggers.
@@ -269,7 +269,7 @@ public final class PulseSession: ObservableObject {
                     for item in due {
                         let note = (item.note?.isEmpty == false) ? item.note! : "Reminder"
                         let body = item.snippet ?? item.conversation?.name ?? ""
-                        // R2-D — the conversationId rides the userInfo so the
+                        // R2-D - the conversationId rides the userInfo so the
                         // tap deep-links into the room (web reminder parity).
                         PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId)
                         _ = try? await api.resolveReminder(item.id)
@@ -283,18 +283,18 @@ public final class PulseSession: ObservableObject {
     private func startRealtime(as viewer: PulseViewer) async {
         // 1. Manifest-driven endpoint override (cached in the Keychain from a
         //    previous launch is applied first, then a fresh fetch may refine;
-        //    the probe targets the distribution CDN — the manifest lives there
-        //    — and the user's Settings → Connection field always wins over it).
+        //    the probe targets the distribution CDN - the manifest lives there
+        //    - and the user's Settings → Connection field always wins over it).
         PulseEndpoints.loadPersistedOverride()
         await PulseEndpoints.fetchManifestOverride()
 
-        // 2. Rebind the API client — the override may have moved the gateway.
+        // 2. Rebind the API client - the override may have moved the gateway.
         api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: PulseKeychain.shared.loadSessionToken())
 
         // 3. Drain anything queued offline (flush trigger: session start).
         await flushOutboxNow()
 
-        // 4. Wave 8 — pull the server-merged prefs blob (server value wins;
+        // 4. Wave 8 - pull the server-merged prefs blob (server value wins;
         //    optimistic local values keep working when this fails).
         await prefs?.syncFromServer(api: api)
 
@@ -319,13 +319,13 @@ public final class PulseSession: ObservableObject {
         return try? PulseStore() // in-memory fallback
     }
 
-    // ── calls (W3-b — Wave 3 native calls) ───────────────
+    // calls (W3-b - Wave 3 native calls)
 
     /// Builds the call engines (real WebRTC provider + session-bound
     /// signaling) and drains any queued single-writer call-log rows from a
     /// previous offline session (app-start flush trigger).
     ///
-    /// 3-d — BOTH engines share ONE PulseRTCMediaProvider (one WebRTC peer
+    /// 3-d - BOTH engines share ONE PulseRTCMediaProvider (one WebRTC peer
     /// connection factory for the whole process) and the same signaling
     /// funnel. Cross-engine exclusion: the 1:1 engine checks
     /// PulseGroupCallEngine.active?.isBusy before dialing; the group engine
@@ -355,16 +355,16 @@ public final class PulseSession: ObservableObject {
         )
         groupCallEngine = groupEngine
 
-        // 3-d — CallKit OS-call integration: the coordinator observes BOTH
+        // 3-d - CallKit OS-call integration: the coordinator observes BOTH
         // engines and reports every call to the system CXProvider (incoming
         // ring, dial, answer/end/mute actions drive the engines back).
-        // attach/attachGroup are idempotent per instance — identity restarts
+        // attach/attachGroup are idempotent per instance - identity restarts
         // build fresh engines and re-attach here.
         PulseCallKitCoordinator.shared.attach(engine: engine)
         PulseCallKitCoordinator.shared.attachGroup(engine: groupEngine)
     }
 
-    // ── stories (W4 — Wave 4 native stories) ─────────────────
+    // stories (W4 - Wave 4 native stories)
 
     /// Builds the shared feed owner (REST + 60s poll parity; GRDB snapshot
     /// cache) once identity exists.
@@ -372,15 +372,15 @@ public final class PulseSession: ObservableObject {
         stories = StoriesSessionModel(session: self)
     }
 
-    // ── voice rooms / stage / space (W5-f) ───────────────
+    // voice rooms / stage / space (W5-f)
 
-    /// Builds the rooms owner once identity exists — pure models + the
+    /// Builds the rooms owner once identity exists - pure models + the
     /// audio engine live here; the socket stays session-owned.
     private func startVoiceRooms(viewer: PulseViewer) {
         voiceRooms = VoiceRoomSessionModel(session: self)
     }
 
-    /// The rooms owner's emit funnel — the socket is session-owned
+    /// The rooms owner's emit funnel - the socket is session-owned
     /// (mirrors emitCallSignal). Payloads come from the pure
     /// VoiceRoomWire builders (unit-tested).
     public func emitRoomSignal(event: String, payload: [String: Any]) {
@@ -392,7 +392,7 @@ public final class PulseSession: ObservableObject {
         socket?.emitCallSignal(event: event, payload: payload)
     }
 
-    // ── outbox ───────────────────────────────────────────────
+    // outbox
 
     private func startOutbox() {
         guard let store, let viewer else { return }
@@ -415,7 +415,7 @@ public final class PulseSession: ObservableObject {
             outboxEvents.send(.delivered(message: message, conversationId: conversationId))
         case .dropped(let clientId, let conversationId, let reason):
             outboxEvents.send(.dropped(clientId: clientId, conversationId: conversationId))
-            toasts.show(reason.isEmpty ? "A queued message could not be delivered" : "Message not sent — \(reason)")
+            toasts.show(reason.isEmpty ? "A queued message could not be delivered" : "Message not sent - \(reason)")
         }
     }
 
@@ -430,7 +430,7 @@ public final class PulseSession: ObservableObject {
         await outbox.flush()
     }
 
-    // ── outbound ─────────────────────────────────────────────
+    // outbound
     public func emitTyping(conversationId: String, recipients: [String], isTyping: Bool) {
         guard let viewer else { return }
         socket?.emitTyping(
@@ -454,7 +454,7 @@ public final class PulseSession: ObservableObject {
     /// Single enqueue entry point for queued sends (room send-path failures).
     /// The engine owns trimming + the heal timer; without one yet (no session)
     /// the store row still lands and the engine picks it up on start.
-    /// R1-W2B D28 — `payloadJson` carries the queued forward envelope
+    /// R1-W2B D28 - `payloadJson` carries the queued forward envelope
     /// (PulseOutboxForward); plain sends leave it nil.
     public func enqueueOutbox(conversationId: String, clientId: String, content: String, kind: String = "text", payloadJson: String? = nil) {
         if let outbox {
@@ -469,16 +469,16 @@ public final class PulseSession: ObservableObject {
         flushOutbox()
     }
 
-    /// Dock "More → Search" — the Chats tab listens for this tick and opens
+    /// Dock "More → Search" - the Chats tab listens for this tick and opens
     /// its search mode (real search, not a fake).
     public func requestChatsSearch() {
         searchRequestTick += 1
     }
 
-    /// Dock compose / More → Saved — hand a conversation to the Chats tab to
+    /// Dock compose / More → Saved - hand a conversation to the Chats tab to
     /// push onto its NavigationStack. Consumers must call `consumePendingOpenRoom()`
     /// when received (the published value also replays on re-subscription).
-    /// Wave 2 — `jumpMessageId` rides along so the room scrolls to + flashes
+    /// Wave 2 - `jumpMessageId` rides along so the room scrolls to + flashes
     /// that message (saved-library "open original", spec §1 row 14).
     public func requestOpenRoom(_ conversation: WireConversationSummary, jumpMessageId: String? = nil) {
         pendingJumpMessageId = jumpMessageId
@@ -493,7 +493,7 @@ public final class PulseSession: ObservableObject {
         pendingJumpMessageId = nil
     }
 
-    /// Deep links / avatars — hand a user id to the Contacts tab so it pushes
+    /// Deep links / avatars - hand a user id to the Contacts tab so it pushes
     /// the full user page (F-CP-03). `name` seeds the nav title while the
     /// page fetches (nil-safe).
     public func requestOpenUser(_ userId: String, name: String?) {
@@ -509,14 +509,14 @@ public final class PulseSession: ObservableObject {
         return all.filter { $0.userId != userId }
     }
 
-    // ── inbound ──────────────────────────────────────────────
+    // inbound
     private func handle(_ signal: PulseSocketClient.Signal) {
         switch signal {
         case .joined(let ids), .presenceSnapshot(let ids):
             connected = true
             onlineUserIds = Set(ids)
         case .joinError(let message):
-            // Wave 8 — the relay verified our presented join token and
+            // Wave 8 - the relay verified our presented join token and
             // refused it (rotated elsewhere / invalid). Clear + degrade to
             // token-less so the reconnect lands instead of looping.
             noteAuthFailure(message)
@@ -526,15 +526,15 @@ public final class PulseSession: ObservableObject {
             // Flush trigger: socket connect / reconnect.
             if isOn {
                 flushOutbox()
-                // W3-b — same trigger for the queued single-writer call rows.
+                // W3-b - same trigger for the queued single-writer call rows.
                 callEngine?.flushCallLogQueueOnReconnect()
             } else {
-                // 3-d — a live mesh is dead once the relay drops us (media
+                // 3-d - a live mesh is dead once the relay drops us (media
                 // flowing to a socket that stopped routing). Honest teardown
                 // instead of ghosting audio after a suspension.
                 groupCallEngine?.handleSocketDisconnected()
             }
-            // W5-f — the rooms owner consumes connect/reconnect too (voice
+            // W5-f - the rooms owner consumes connect/reconnect too (voice
             // re-join VR-8, stage resync ST-8, space attempts FIX #5).
             voiceRooms?.handle(signal)
         case .typing(let conversationId, let userId, let userName, let isTyping):
@@ -546,23 +546,23 @@ public final class PulseSession: ObservableObject {
             cacheMessage(from: raw)
         case .messageEnvelope(_, _, let raw):
             // message:edited/pinned/viewed, poll:voted, link:preview,
-            // translation:added — live surfaces re-fetch on this tick.
+            // translation:added - live surfaces re-fetch on this tick.
             realtimeRefreshTick += 1
             cacheMessage(from: raw)
         case .conversationUpdated:
             realtimeRefreshTick += 1
         case .callSignal(let event, let raw):
-            // W3-b — offer/answer/ice/reject/cancel/hangup → the call engine
+            // W3-b - offer/answer/ice/reject/cancel/hangup → the call engine
             // (machine + WebRTC + single-writer log). Also relayed to feature
             // subscribers below.
             callEngine?.handleCallSignal(event: event, raw: raw)
         case .groupCallSignal(let event, let raw):
-            // 3-d — gcall:ring/state/offer/answer/ice/ended/full → the mesh
+            // 3-d - gcall:ring/state/offer/answer/ice/ended/full → the mesh
             // group call engine (roster, deterministic offers, probe state).
             groupCallEngine?.handleGroupCallSignal(event: event, raw: raw)
         case .voiceRoster, .voicePtt, .voiceChunk, .voiceTranscript,
              .stageState, .stageEnded, .spaceState:
-            // W5-f — the rooms owner consumes the 7 rooms signals (they
+            // W5-f - the rooms owner consumes the 7 rooms signals (they
             // still reach every other subscriber via signals.send below).
             voiceRooms?.handle(signal)
         default:
@@ -571,14 +571,14 @@ public final class PulseSession: ObservableObject {
         signals.send(signal)
     }
 
-    /// Wave 0 offline hardening — every relayed message row lands in the
+    /// Wave 0 offline hardening - every relayed message row lands in the
     /// cache so relaunch reads it back even when the surface is closed.
     private func cacheMessage(from raw: [String: Any]) {
         guard let store, let message = Self.decodeMessage(from: raw) else { return }
         try? store.upsert(messages: [message])
     }
 
-    /// Wave 8 — incoming attention (web pulse-realtime-provider parity):
+    /// Wave 8 - incoming attention (web pulse-realtime-provider parity):
     /// a message from SOMEONE ELSE, not a thread reply, in a room you are
     /// NOT reading → soft ping + buzz + preview toast, each behind its own
     /// toggle, all behind the LOCAL quiet-hours window.
@@ -588,8 +588,8 @@ public final class PulseSession: ObservableObject {
               message.deletedAt == nil,
               message.parentId == nil,
               activeRoomId != conversationId else { return }
-        guard !(prefs?.isQuietHoursNow ?? false) else { return } // quiet — stay silent
-        // R14 5-b — the web gate chain (pulse-realtime-provider.tsx :602-605):
+        guard !(prefs?.isQuietHoursNow ?? false) else { return } // quiet - stay silent
+        // R14 5-b - the web gate chain (pulse-realtime-provider.tsx :602-605):
         // device soundOn AND quiet hours AND the per-account notifSound all
         // pass before the pop plays.
         if prefs?.soundOn == true, prefs?.notifSound == true {
@@ -632,9 +632,9 @@ public final class PulseSession: ObservableObject {
         if changed { typers = next }
     }
 
-    // ── shared socket payload decoding ───────────────────────
+    // shared socket payload decoding
     /// message:new / message:deleted / message:react all carry `message`.
-    /// nonisolated: a pure decoder — safe from any queue (socket handlers,
+    /// nonisolated: a pure decoder - safe from any queue (socket handlers,
     /// tests) with no session state touched.
     public nonisolated static func decodeMessage(from raw: [String: Any]) -> WireChatMessage? {
         let payload = raw["message"] as? [String: Any] ?? raw
@@ -644,7 +644,7 @@ public final class PulseSession: ObservableObject {
     }
 }
 
-/// Real call-signaling sender — the engine emits through the session-owned
+/// Real call-signaling sender - the engine emits through the session-owned
 /// socket (PulseSocketClient.emitCallSignal). @MainActor to match the engine.
 @MainActor
 private final class PulseSessionCallSignaling: PulseCallSignalingSending {

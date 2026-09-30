@@ -1,17 +1,16 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — PiP chat-inside-chat (Telegram "chat-in-chat" grade).
+// Pulse - PiP chat-inside-chat (Telegram "chat-in-chat" grade).
 // R28-a pane-management rework:
-//   · real pane physics — framer drag constrained to the phone
+//   · real pane physics - framer drag constrained to the phone
 //     frame with elastic edges, then a magnetic spring settle to
 //     the nearest horizontal edge; momentum fling from release
 //     velocity; the pane always settles above the composer /
 //     bottom nav capsule and below the room header
 //   · tap-vs-drag: a tap on the header opens the conversation in
 //     the main shell (pulse:open-conversation), a drag moves the
-//     pane — threshold-guarded so they never fight
+//     pane - threshold-guarded so they never fight
 //   · normalized positions (0..1) persisted per pane in
 //     pulse.pip.v2 and re-derived from the live frame on
-//     resize/orientation change — a restored pane can never be
+//     resize/orientation change - a restored pane can never be
 //     off-screen
 //   · >1 pane: the compact pill stack (pip-stack.tsx) holds the
 //     collapsed ones; max 3 live panes, oldest auto-evicts
@@ -19,9 +18,8 @@
 //     (ChevronDown) and close (X) on a 48px drag-handle header
 //   · data flow untouched: same shared TanStack caches the main
 //     room uses (seeded lazily, merged by the realtime provider)
-//     — no second socket, no extra polling beyond the old 12s
+//     - no second socket, no extra polling beyond the old 12s
 //     detail refresh
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -81,7 +79,7 @@ interface DetailResponse {
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v))
 
-/** Tiny bubble renderer — compact subset of the main room's MessageRow. */
+/** Tiny bubble renderer - compact subset of the main room's MessageRow. */
 function PipBubble({ message, myId }: { message: ChatMessage; myId: string }) {
   const mine = message.senderId === myId
   const deleted = message.deletedAt !== null
@@ -149,7 +147,7 @@ function PipBubble({ message, myId }: { message: ChatMessage; myId: string }) {
   )
 }
 
-/** The single expanded (focused) pane — a draggable glass window. */
+/** The single expanded (focused) pane - a draggable glass window. */
 function PipWindow({
   me,
   pane,
@@ -192,11 +190,11 @@ function PipWindow({
   const pressRef = useRef<{ x: number; y: number; t: number } | null>(null)
   const draggedRef = useRef(false)
 
-  // ── data: seed the shared cache if this conversation was never loaded,
+  //  data: seed the shared cache if this conversation was never loaded,
   // then observe it (enabled:false → this observer never fetches; incoming
   // socket events arrive via the realtime provider's cache merge).
   useEffect(() => {
-    // deferred one tick — opening the window never cascades a sync re-render
+    // deferred one tick - opening the window never cascades a sync re-render
     const kick = setTimeout(() => {
       setSeedStatus('idle')
       const cached = queryClient.getQueryData<ChatMessage[]>(['messages', conversationId])
@@ -252,7 +250,7 @@ function PipWindow({
     if (el) el.scrollTop = el.scrollHeight
   }, [messages.length, seedStatus])
 
-  // the expanded window is the reading surface — incoming history is seen
+  // the expanded window is the reading surface - incoming history is seen
   useEffect(() => {
     if (messages.length === 0) return
     onSeen(conversationId, Date.now())
@@ -307,7 +305,7 @@ function PipWindow({
     [conversationId, me.id, me.name, recipients, realtime],
   )
 
-  // ── pane physics ─────────────────────────────────────────────
+  // pane physics 
   const stopSnap = useCallback(() => {
     for (const ctrl of snapAnimsRef.current) ctrl.stop()
     snapAnimsRef.current = []
@@ -378,7 +376,7 @@ function PipWindow({
     [settle],
   )
 
-  // ── tap-vs-drag on the header (the drag handle) ──────────────
+  // tap-vs-drag on the header (the drag handle) 
   const onHeaderPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if ((event.target as HTMLElement).closest('button')) return
@@ -410,7 +408,7 @@ function PipWindow({
   return (
     <motion.div
       role="dialog"
-      aria-label={`Mini chat — ${displayName}`}
+      aria-label={`Mini chat - ${displayName}`}
       initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.86 }}
       animate={reduced ? { opacity: 1 } : { opacity: 1, scale: 1 }}
       exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
@@ -436,7 +434,7 @@ function PipWindow({
         transition={{ duration: 0.18 }}
       />
       <div className="glass-deep glass-sheen flex h-full w-full flex-col overflow-hidden rounded-2xl">
-        {/* header — the drag handle + tap-to-open target */}
+        {/* header - the drag handle + tap-to-open target */}
         <div
           onPointerDown={onHeaderPointerDown}
           onPointerUp={onHeaderPointerUp}
@@ -508,13 +506,13 @@ function PipWindow({
           ) : seedStatus === 'error' ? (
             <div className="flex flex-1 items-center justify-center px-4 text-center">
               <p className="text-[11.5px] font-medium text-zinc-400 dark:text-zinc-500">
-                Couldn&apos;t load this chat — check your connection and reopen.
+                Couldn&apos;t load this chat - check your connection and reopen.
               </p>
             </div>
           ) : messages.length === 0 ? (
             <div className="flex flex-1 items-center justify-center px-4 text-center">
               <p className="text-[11.5px] font-medium text-zinc-400 dark:text-zinc-500">
-                No messages here yet — say hi from the mini chat.
+                No messages here yet - say hi from the mini chat.
               </p>
             </div>
           ) : (
@@ -554,7 +552,7 @@ function PipWindow({
 }
 
 /**
- * Floating pane manager — mounted once inside the room overlay.
+ * Floating pane manager - mounted once inside the room overlay.
  * Renders the focused glass window plus the compact pill stack for
  * every collapsed pane. The wrapper stays mounted (pointer-events
  * none, zero footprint) so close/minimize exit animations can play.
@@ -573,7 +571,7 @@ export function PipChat({ me }: { me: AppUser }) {
   const [frameSize, setFrameSize] = useState({ w: 0, h: 0 })
   const [safeArea, setSafeArea] = useState({ top: 0, bottom: 0 })
 
-  // restore persisted panes AFTER mount — server HTML and the first
+  // restore persisted panes AFTER mount - server HTML and the first
   // client render stay identical (no hydration mismatch)
   useEffect(() => {
     void usePipChat.persist.rehydrate()
@@ -604,7 +602,7 @@ export function PipChat({ me }: { me: AppUser }) {
     }
   }, [])
 
-  // env(safe-area-inset-*) only resolves through computed style — probe once
+  // env(safe-area-inset-*) only resolves through computed style - probe once
   useEffect(() => {
     if (typeof window === 'undefined') return
     const raf = requestAnimationFrame(() => {
@@ -625,7 +623,7 @@ export function PipChat({ me }: { me: AppUser }) {
     return () => cancelAnimationFrame(raf)
   }, [])
 
-  // pane geometry — derived from the live frame, mobile-first clamps
+  // pane geometry - derived from the live frame, mobile-first clamps
   const geo = useMemo<PipGeometry | null>(() => {
     if (frameSize.w < 120 || frameSize.h < 260) return null
     const paneW = Math.min(PIP_PANE_MAX_W, Math.max(PIP_PANE_MIN_W, Math.round(frameSize.w - 24)))
@@ -661,7 +659,7 @@ export function PipChat({ me }: { me: AppUser }) {
     [panes, focusedId],
   )
 
-  // the band the pill stack occupies (right edge, above the composer) —
+  // the band the pill stack occupies (right edge, above the composer) -
   // right-edge snaps keep the window clear of it
   const stackBand = useMemo<{ top: number; bottom: number } | null>(() => {
     const n = stackedPanes.length

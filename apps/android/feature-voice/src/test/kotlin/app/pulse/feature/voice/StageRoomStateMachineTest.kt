@@ -32,7 +32,7 @@ class StageRoomStateMachineTest {
 
     private fun join(cid: String = "c1") = machine.dispatchJoinRequested(cid)
 
-    // ── role derivation (ST-2) ─────────────────────────────────
+    // role derivation (ST-2)
 
     @Test
     fun `first joiner becomes host - role derives from state`() {
@@ -83,7 +83,7 @@ class StageRoomStateMachineTest {
         assertNull(state.error)
     }
 
-    // ── hands (ST-3) ────────────────────────────────────────────
+    // hands (ST-3)
 
     @Test
     fun `listener hand toggle emits stage hand - host cannot raise a hand`() {
@@ -110,7 +110,7 @@ class StageRoomStateMachineTest {
         assertTrue(state.hands.isEmpty())
     }
 
-    // ── demote + FIX #3 voice seat ──────────────────────────────
+    // demote + FIX #3 voice seat
 
     @Test
     fun `demote moves speaker to listener and keeps the voice seat`() {
@@ -156,7 +156,7 @@ class StageRoomStateMachineTest {
         assertTrue(machine.noteVoiceSeatLost().isEmpty())
     }
 
-    // ── end stage (ST-5) ────────────────────────────────────────
+    // end stage (ST-5)
 
     @Test
     fun `two-tap end confirm fires inside 2600ms and re-arms after reset`() {
@@ -182,7 +182,7 @@ class StageRoomStateMachineTest {
         assertFalse(machine.armEndConfirm(nowMs = now)) // listener can never end
     }
 
-    // ── claim host (ST-7) ───────────────────────────────────────
+    // claim host (ST-7)
 
     @Test
     fun `claim host is legal only while joined and the host seat is empty`() {
@@ -195,7 +195,7 @@ class StageRoomStateMachineTest {
         assertFalse(state.canClaimHost)
     }
 
-    // ── resync (ST-8) ───────────────────────────────────────────
+    // resync (ST-8)
 
     @Test
     fun `missing-me resync is rate-limited at 2500ms and carries wasHost`() {
@@ -222,7 +222,7 @@ class StageRoomStateMachineTest {
         assertEquals(StageRoomStateMachine.Role.LISTENER, state.myRole)
     }
 
-    // ── glow + lifecycle ────────────────────────────────────────
+    // glow + lifecycle
 
     @Test
     fun `speaking glow prunes to live speakers on every state`() {

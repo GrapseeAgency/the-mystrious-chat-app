@@ -111,7 +111,7 @@ class AddContactViewModel @Inject constructor(
                 }
                 .onFailure { e ->
                     busyId.value = null
-                    error.value = e.message ?: "Could not open the direct chat — try again"
+                    error.value = e.message ?: "Could not open the direct chat - try again"
                 }
         }
     }

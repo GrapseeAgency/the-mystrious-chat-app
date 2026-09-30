@@ -1,23 +1,23 @@
 package app.pulse.core.link
 
 /**
- * Wave 6 deep links (F-DL) — the `pulse://` scheme the app registers in the
+ * Wave 6 deep links (F-DL) - the `pulse://` scheme the app registers in the
  * manifest. Mirrors the web hash routes and the iOS PulseDeepLink parser:
  *   pulse://invite/{code}   → JoinGroupSheet parity (web ?join=CODE)
  *   pulse://user/{id}       → the full user page (web #/user/:id)
  *   pulse://room/{id}       → open the conversation (web #/chat/:id)
- * Both `pulse://room/abc` and `pulse:room/abc` (no "//") parse — Android
+ * Both `pulse://room/abc` and `pulse:room/abc` (no "//") parse - Android
  * hands over either shape depending on how the link was built. Percent-
  * encoded path segments decode so hand-built NFC/QR links behave exactly
  * like in-app taps. Pure + total: anything unparseable is null (the caller
- * ignores it — no crash, no half-state).
+ * ignores it - no crash, no half-state).
  */
 sealed interface PulseDeepLink {
     data class Invite(val code: String) : PulseDeepLink
     data class User(val userId: String) : PulseDeepLink
 
     /**
-     * R7 item 4 — [jumpMessageId] optionally carries a reminder's anchored
+     * R7 item 4 - [jumpMessageId] optionally carries a reminder's anchored
      * message: the notification deep-link becomes `pulse://room/<id>?jump=<mid>`
      * and the room auto-jumps + flashes on open (web REMINDER_JUMP_EVENT parity).
      */
@@ -27,7 +27,7 @@ sealed interface PulseDeepLink {
         const val SCHEME = "pulse"
 
         /**
-         * Pure route builder for room deep links — `pulse://room/<id>` with an
+         * Pure route builder for room deep links - `pulse://room/<id>` with an
          * optional `?jump=<messageId>` payload (ReminderNotifier uses it).
          */
         fun roomUri(conversationId: String, jumpMessageId: String? = null): String =
@@ -51,9 +51,9 @@ sealed interface PulseDeepLink {
                 runCatching { java.net.URLDecoder.decode(segment, "UTF-8") }.getOrNull()
                     ?.takeIf { it.isNotBlank() }
 
-            // R7 item 4 — the `jump` query param rides along (first one wins).
+            // R7 item 4 - the `jump` query param rides along (first one wins).
             // NOTE: java.net.URI marks the bare-ssp shape (pulse:chat/c9?jump=m9,
-            // no "//") OPAQUE — rawQuery is null there and the query lives inside
+            // no "//") OPAQUE - rawQuery is null there and the query lives inside
             // the scheme-specific part, so fall back to the substring after '?'.
             val query = uri.rawQuery
                 ?: uri.rawSchemeSpecificPart?.takeIf { it.contains('?') }?.substringAfter('?')

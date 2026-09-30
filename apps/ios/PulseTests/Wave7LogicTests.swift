@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 7 — pure-logic parity tests (Collaboration & Hub):
+/// Wave 7 - pure-logic parity tests (Collaboration & Hub):
 /// relative-reminder parse (web reminders-sheet.tsx:132), tic-tac-toe
 /// board scan, check-in window/reward rules, payload decode.
 @MainActor
@@ -13,7 +13,7 @@ final class Wave7LogicTests: XCTestCase {
         Int64(zone.date(from: comps)!.timeIntervalSince1970) * 1000
     }
 
-    // ── parseRelativeReminder ────────────────────────────────────
+    // parseRelativeReminder
 
     func testInRelativeMinutes() throws {
         let now: Int64 = 1_768_450_800_000
@@ -80,7 +80,7 @@ final class Wave7LogicTests: XCTestCase {
         XCTAssertEqual(parsed?.note, "Ping")
     }
 
-    // ── payload decoders ─────────────────────────────────────────
+    // payload decoders
 
     func testRedPacketPayloadDecodes() throws {
         let p = PulseWave7Logic.redPacketPayload(#"{"packetId":"p1","total":100,"count":5,"note":"新年快乐"}"#)
@@ -98,7 +98,7 @@ final class Wave7LogicTests: XCTestCase {
         XCTAssertEqual(PulseWave7Logic.tournamentPayload(#"{"tournamentId":"t1","name":"Friday","game":"tictactoe"}"#)?.tournamentId, "t1")
     }
 
-    // ── tic-tac-toe board ────────────────────────────────────────
+    // tic-tac-toe board
 
     func testDetectWinLine() {
         XCTAssertEqual(PulseWave7Logic.detectWinLine("XXX      ")?.1, [0, 1, 2])
@@ -140,7 +140,7 @@ final class Wave7LogicTests: XCTestCase {
         XCTAssertTrue(PulseWave7Logic.isMyTurn(makeMatch(turn: "O", playerOId: "u2"), "u2"))
     }
 
-    // ── check-in window + wallet rules ───────────────────────────
+    // check-in window + wallet rules
 
     func testCheckinWindow() {
         let start: Int64 = 1_768_500_000_000

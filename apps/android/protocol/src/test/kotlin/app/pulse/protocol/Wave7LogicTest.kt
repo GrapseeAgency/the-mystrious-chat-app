@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Wave 7 — pure logic parity tests (Collaboration & Hub).
+ * Wave 7 - pure logic parity tests (Collaboration & Hub).
  * parseRelativeReminder mirrors src/components/chat/reminders-sheet.tsx:132
  * exactly (tokens, tomorrow/tonight hour shifts, "log in in 30m" case).
  */
@@ -23,7 +23,7 @@ class Wave7LogicTest {
 
     private val now: Long = at(10)
 
-    // ── parseRelativeReminder ────────────────────────────────────
+    // parseRelativeReminder
 
     @Test
     fun `in 30m parses relative minutes`() {
@@ -83,7 +83,7 @@ class Wave7LogicTest {
         assertEquals("Ping", r.note)
     }
 
-    // ── red packet / game / tournament payload decode ────────────
+    // red packet / game / tournament payload decode
 
     @Test
     fun `red packet payload decodes and tolerates junk`() {
@@ -109,7 +109,7 @@ class Wave7LogicTest {
         assertEquals("t1", p.tournamentId)
     }
 
-    // ── tictactoe board helpers ──────────────────────────────────
+    // tictactoe board helpers
 
     @Test
     fun `detectWinLine finds rows columns diagonals`() {
@@ -144,7 +144,7 @@ class Wave7LogicTest {
         assertTrue(PulseWave7Logic.isMyTurn(match.copy(turn = "O", playerOId = "u2"), "u2"))
     }
 
-    // ── check-in window + wallet reward rules ────────────────────
+    // check-in window + wallet reward rules
 
     @Test
     fun `checkin window is -15min to +2h`() {
@@ -163,7 +163,7 @@ class Wave7LogicTest {
         assertEquals(45L, PulseWave7Logic.checkinReward(30))
     }
 
-    // ── wire DTO tolerant decode (populated + absent) ─────────────
+    // wire DTO tolerant decode (populated + absent)
 
     @Test
     fun `wire page DTOs decode populated and empty`() {
@@ -203,7 +203,7 @@ class Wave7LogicTest {
         assertEquals(3, t.entries[0].points)
     }
 
-    // ── R5-B — send envelope + streak nudge (web chat-room.tsx:1736-1751) ──
+    // R5-B - send envelope + streak nudge (web chat-room.tsx:1736-1751)
 
     @Test
     fun `send envelope decodes message streak and xpAwarded`() {
@@ -245,11 +245,11 @@ class Wave7LogicTest {
         assertEquals(null, MessageStreakDto(count = 1, best = 4, continued = true).nudgeText()) // first day
         assertEquals(null, MessageStreakDto(count = 5, best = 9, continued = false).nudgeText()) // restart w/ history
         assertEquals(null, (null as MessageStreakDto?).nudgeText()) // same-day resend / no bump
-        assertEquals("2-day streak — keep it alive", MessageStreakDto(count = 2, best = 2, continued = true).nudgeText())
+        assertEquals("2-day streak - keep it alive", MessageStreakDto(count = 2, best = 2, continued = true).nudgeText())
         assertEquals("7-day streak", MessageStreakDto(count = 7, best = 9, continued = true).nudgeText())
     }
 
-    // ── R5-B — hub connector relative stamp (web app-detail-sheet.tsx:97-108) ──
+    // R5-B - hub connector relative stamp (web app-detail-sheet.tsx:97-108)
 
     @Test
     fun `relative stamp mirrors web formatRelative branches`() {
@@ -263,8 +263,8 @@ class Wave7LogicTest {
         assertEquals("", PulseWave7Logic.relativeStamp("not-a-date", now))
     }
 
-    // ── R7 item 4 — reminder rows carry the anchored message id (the Jump
-    // action + the room route ?jump= arg are dead without it on the wire) ──
+    // R7 item 4 - reminder rows carry the anchored message id (the Jump
+    // action + the room route ?jump= arg are dead without it on the wire)
 
     @Test
     fun `reminder item decodes messageId present and absent`() {

@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// /api/reminders/[id] — resolve or cancel one of YOUR reminders.
+// /api/reminders/[id] - resolve or cancel one of YOUR reminders.
 // PATCH marks the row fired (the client due-loop calls this after
 // showing the nudge); DELETE cancels it outright. Owner-only, both.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

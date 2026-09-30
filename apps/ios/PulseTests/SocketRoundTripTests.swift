@@ -2,14 +2,14 @@ import XCTest
 import Foundation
 @testable import Pulse
 
-/// Wave 0 — REAL Socket.IO round trip against a relay the environment provides.
+/// Wave 0 - REAL Socket.IO round trip against a relay the environment provides.
 ///
 /// The iOS SDK has no Process type: a test bundle compiled for the simulator
 /// cannot spawn the node fixture itself (that limitation is what killed the
 /// original in-test spawn design at compile time). CI (ios-ci.yml) therefore
 /// starts PulseTests/Fixtures/server.js as a runner-side step on
 /// 127.0.0.1:3995 and hands the URL to the test host through the Pulse scheme
-/// environment (PULSE_RELAY_URL — see project.yml). The simulator shares the
+/// environment (PULSE_RELAY_URL - see project.yml). The simulator shares the
 /// host loopback, so 127.0.0.1 from the test process IS the runner.
 /// Locally: start `node server.js 3995` inside PulseTests/Fixtures (any port,
 /// exported as PULSE_RELAY_URL). Without a relay the test skips honestly.
@@ -23,7 +23,7 @@ final class SocketRoundTripTests: XCTestCase {
     private let peerId = "peer-b"
     private let conversationId = "conv-rt"
 
-    // ── relay discovery ──────────────────────────────────────
+    // relay discovery
 
     /// PULSE_RELAY_URL (CI/scheme) first, then the documented local default.
     /// Only a relay that answers /health with 200 counts as present.
@@ -49,21 +49,21 @@ final class SocketRoundTripTests: XCTestCase {
         return false
     }
 
-    // ── the round trip ───────────────────────────────────────
+    // the round trip
 
     func testJoinPresenceTypingAndNotifyRoundTrip() async throws {
         guard let base = await Self.relayBase() else {
-            throw XCTSkip("no pulse relay on PULSE_RELAY_URL / 127.0.0.1:3995 — start Fixtures/server.js (CI does)")
+            throw XCTSkip("no pulse relay on PULSE_RELAY_URL / 127.0.0.1:3995 - start Fixtures/server.js (CI does)")
         }
 
-        // 1. Client A — join ack.
+        // 1. Client A - join ack.
         let joinedA = expectation(description: "client A received joined ack")
         let presenceBoth = expectation(description: "presence snapshot contains both ids")
         let typingRelay = expectation(description: "typing relay arrived from peer")
         let notifyArrived = expectation(description: "POST /notify message:new arrived")
 
         let clientA = PulseSocketClient(socketURL: base)
-        // Explicit `self.x` capture expressions — no ambiguity about whether
+        // Explicit `self.x` capture expressions - no ambiguity about whether
         // a bare `[prop]` capture-list shorthand resolves instance properties,
         // and the closure retains only the values (not the test case).
         clientA.signals = { [viewerId = self.viewerId, peerId = self.peerId, conversationId = self.conversationId] signal in
@@ -86,11 +86,11 @@ final class SocketRoundTripTests: XCTestCase {
             }
         }
         clientA.connect(userId: viewerId)
-        // 30s: this is the FIRST socket against the CI fixture — it eats the
+        // 30s: this is the FIRST socket against the CI fixture - it eats the
         // cold-boot + full handshake (measured 19.8s warm on this runner).
         await fulfillment(of: [joinedA], timeout: 30)
 
-        // 2. Client B — second participant shows up in presence.
+        // 2. Client B - second participant shows up in presence.
         let clientB = PulseSocketClient(socketURL: base)
         clientB.connect(userId: peerId)
         await fulfillment(of: [presenceBoth], timeout: 10)
@@ -105,7 +105,7 @@ final class SocketRoundTripTests: XCTestCase {
         )
         await fulfillment(of: [typingRelay], timeout: 10)
 
-        // 4. HTTP /notify relay — the exact contract the Next.js API uses.
+        // 4. HTTP /notify relay - the exact contract the Next.js API uses.
         let payload: [String: Any] = [
             "event": "message:new",
             "recipients": [viewerId],

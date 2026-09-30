@@ -1,12 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — shared Signal-style safety-number sheet (R37).
+// Pulse - shared Signal-style safety-number sheet (R37).
 // Extracted from room-info-page.tsx (R35-a) so BOTH the room info
 // Encryption row and the new chat-room header ShieldCheck badge can
 // open the same compare-and-verify surface. The glass sheet, the
 // 3x4 digit-tile grid and the real verify/reset actions (queries +
-// toasts) are unchanged — only the mount contract moved to
+// toasts) are unchanged - only the mount contract moved to
 // open/onOpenChange so callers no longer hand-roll AnimatePresence.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useMemo } from 'react'
@@ -36,7 +34,7 @@ export function safetyKey(peerId: string, meId: string): ['safety', string, stri
 
 /**
  * "##### ##### …" → the 12 five-digit group strings for the sheet's grid.
- * Pure local split — src/lib/safety.ts is server-only (node:crypto), so the
+ * Pure local split - src/lib/safety.ts is server-only (node:crypto), so the
  * client never imports it; the API already returns the formatted string.
  */
 function safetyGroups(safetyNumber: string): string[] {
@@ -49,7 +47,7 @@ function safetyGroups(safetyNumber: string): string[] {
 export interface SafetySheetProps {
   peer: AppUser
   meId: string
-  /** reactive open state — the sheet mounts/unmounts with its spring */
+  /** reactive open state - the sheet mounts/unmounts with its spring */
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -116,7 +114,7 @@ function SafetySheetInner({
       toast.error(
         error instanceof Error ? error.message : 'Could not verify the safety number',
       ),
-    // No optimistic lies — refetch the server truth on settle.
+    // No optimistic lies - refetch the server truth on settle.
     onSettled: () =>
       void queryClient.invalidateQueries({ queryKey: safetyKey(peer.id, meId) }),
   })
@@ -143,7 +141,7 @@ function SafetySheetInner({
 
   return (
     <>
-      {/* backdrop — tap anywhere outside to dismiss */}
+      {/* backdrop - tap anywhere outside to dismiss */}
       <motion.button
         type="button"
         aria-hidden
@@ -155,7 +153,7 @@ function SafetySheetInner({
         onClick={onClose}
         className="absolute inset-0 z-[60] cursor-default bg-zinc-950/25 outline-none backdrop-blur-[2px] dark:bg-black/45"
       />
-      {/* glass bottom sheet — rounded top, spring entrance */}
+      {/* glass bottom sheet - rounded top, spring entrance */}
       <motion.div
         role="dialog"
         aria-label={`Safety number with ${peer.name}`}
@@ -184,7 +182,7 @@ function SafetySheetInner({
           </div>
         </div>
 
-        {/* the 60 digits — 12 groups of 5, 3 × 4 glass tiles */}
+        {/* the 60 digits - 12 groups of 5, 3 × 4 glass tiles */}
         {safetyQuery.isPending && !state ? (
           <div
             className="mt-3 grid grid-cols-3 gap-1.5"
@@ -220,7 +218,7 @@ function SafetySheetInner({
           contact as verified.
         </p>
 
-        {/* actions — real API calls, loading states, no optimistic lies */}
+        {/* actions - real API calls, loading states, no optimistic lies */}
         <div className="mt-3 flex flex-col gap-2">
           {verified ? (
             <>

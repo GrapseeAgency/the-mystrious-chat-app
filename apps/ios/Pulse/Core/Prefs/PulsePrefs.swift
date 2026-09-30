@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-/// The persisted viewer identity — stored as JSON in UserDefaults.
+/// The persisted viewer identity - stored as JSON in UserDefaults.
 public struct PulseViewer: Codable, Equatable {
     public var id: String
     public var name: String
@@ -22,7 +22,7 @@ public struct PulseViewer: Codable, Equatable {
     }
 }
 
-// ── Wave 8 — prefs value tokens (src/lib/prefs-defaults.ts parity) ──
+// Wave 8 - prefs value tokens (src/lib/prefs-defaults.ts parity)
 
 /// Chat bubble corner style consumed by chat-room bubbles. Native corner
 /// radii: md=10, lg=16, pill=26 (the "tail" corner stays 6 on all tokens).
@@ -84,20 +84,20 @@ public enum PulseWallpaper: String, CaseIterable, Sendable {
 }
 
 /// Where a navigation style lives visually (web NavStyleMeta.zone parity;
-/// 'overlay' belongs to the radial FAB — RootView reserves the bottom
+/// 'overlay' belongs to the radial FAB - RootView reserves the bottom
 /// footprint for it exactly like the bottom zone).
 public enum PulseNavZone: Equatable, Sendable {
     case bottom, top, side, overlay
 }
 
-/// R4-A item 3 — the navigation architectures, ported from web
+/// R4-A item 3 - the navigation architectures, ported from web
 /// src/lib/nav-registry.ts (:50-64; label + hint strings VERBATIM). Raw
 /// values are byte-same with the web store under the EXACT key
-/// "pulse.navStyle.v2". R14 5-b — the registry is 13/13: the five
+/// "pulse.navStyle.v2". R14 5-b - the registry is 13/13: the five
 /// previously-excluded web idioms ship as honest mobile adaptations
 /// (floating-dock = magnify-emphasis dock, command-bar = top text strip,
 /// radial = FAB arc overlay, gesture = drag pill switcher, contextual-dock
-/// = per-tab trailing chip — web nav-router.tsx CONTEXT_ACTION parity).
+/// = per-tab trailing chip - web nav-router.tsx CONTEXT_ACTION parity).
 public enum PulseNavStyle: String, CaseIterable, Sendable {
     case capsule
     case floatingTop = "floating-top"
@@ -113,7 +113,7 @@ public enum PulseNavStyle: String, CaseIterable, Sendable {
     case gesture
     case contextualDock = "contextual-dock"
 
-    /// Web NavStyleMeta.label — byte-identical strings.
+    /// Web NavStyleMeta.label - byte-identical strings.
     public var label: String {
         switch self {
         case .capsule: return "Floating Capsule"
@@ -132,10 +132,10 @@ public enum PulseNavStyle: String, CaseIterable, Sendable {
         }
     }
 
-    /// Web NavStyleMeta.hint — byte-identical strings.
+    /// Web NavStyleMeta.hint - byte-identical strings.
     public var hint: String {
         switch self {
-        case .capsule: return "Detached glass capsule dock — the default"
+        case .capsule: return "Detached glass capsule dock - the default"
         case .floatingTop: return "Capsule bar floating beneath the top edge"
         case .floatingDock: return "Desktop-style dock with magnifying icons"
         case .pill: return "Single segmented pill with sliding fill"
@@ -183,7 +183,7 @@ public enum PulseNavStyle: String, CaseIterable, Sendable {
     /// Web DEFAULT_NAV_STYLE.
     public static let defaultValue: PulseNavStyle = .capsule
 
-    /// Tolerant decode — every shipped id parses through; EVERY other
+    /// Tolerant decode - every shipped id parses through; EVERY other
     /// token (junk, legacy values, nil) falls back to capsule so a stored
     /// future-style survives an app update and a junk value never breaks
     /// the shell (web getNavStyleMeta parity).
@@ -193,7 +193,7 @@ public enum PulseNavStyle: String, CaseIterable, Sendable {
     }
 }
 
-/// Resolved (non-optional) preference values — the device-side mirror of
+/// Resolved (non-optional) preference values - the device-side mirror of
 /// web DEFAULT_PREFERENCES. PulseWave8Logic.mergedPrefs shallow-merges a
 /// server patch over a base of these (web mergePrefs parity).
 public struct PulsePrefsValues: Equatable, Sendable {
@@ -235,8 +235,8 @@ public struct PulsePrefsValues: Equatable, Sendable {
 
 /// UserDefaults-backed prefs (web parity keys where they exist):
 /// viewer identity, ambient FX mode ("fx.ambientMode"), appearance override,
-/// chats-list filter (All / Unread / Groups — persisted like the web).
-/// Wave 8 — adds the server-synced PulsePrefs blob (bubble radius, density,
+/// chats-list filter (All / Unread / Groups - persisted like the web).
+/// Wave 8 - adds the server-synced PulsePrefs blob (bubble radius, density,
 /// wallpaper, notification + privacy toggles, reduced motion) with
 /// optimistic local-first writes and a fire-and-forget PATCH funnel, plus
 /// the LOCAL-only quiet-hours window and haptics master toggle (web
@@ -248,13 +248,13 @@ public final class PulsePrefs: ObservableObject {
     public static let ambientModeKey = "fx.ambientMode"
     public static let appearanceKey = "appearance"
     public static let chatsFilterKey = "chats.listFilter"
-    /// W5-f — live-caption toggle for PTT voice rooms (web parity key
+    /// W5-f - live-caption toggle for PTT voice rooms (web parity key
     /// "pulse-voice-captions"; house prefix "voice.captions"). The ONLY
-    /// persisted artefact of the rooms feature — rooms themselves are
+    /// persisted artefact of the rooms feature - rooms themselves are
     /// ephemeral (spec §1.4).
     public static let voiceCaptionsKey = "voice.captions"
     private static let viewerKey = "pulse.viewer"
-    // Wave 8 — server-synced blob + local alert keys (house "prefs." prefix).
+    // Wave 8 - server-synced blob + local alert keys (house "prefs." prefix).
     public static let bubbleRadiusKey = "prefs.bubbleRadius"
     public static let densityKey = "prefs.density"
     public static let wallpaperKey = "prefs.wallpaper"
@@ -269,39 +269,39 @@ public final class PulsePrefs: ObservableObject {
     public static let quietStartKey = "quiet.start"
     public static let quietEndKey = "quiet.end"
     public static let hapticsOnKey = "haptics.on"
-    /// R14 5-b — the device-local MASTER ding gate (web pulse-settings.ts
+    /// R14 5-b - the device-local MASTER ding gate (web pulse-settings.ts
     /// `pulse.settings.v1.soundOn`, default true). Sits ABOVE the per-account
     /// notifSound toggle in the gate chain (soundOn AND quiet AND notifSound
     /// for the incoming pop) and, exactly like quiet hours + haptics, is
     /// deliberately NOT part of the server-synced prefs blob.
     public static let soundOnKey = "sound.on"
-    /// R1-W2B F-FX-05 — local mirror of the per-conversation theme map (the
+    /// R1-W2B F-FX-05 - local mirror of the per-conversation theme map (the
     /// SERVER copy rides the settings blob under the web's "chat.convThemes"
     /// key; this UserDefaults key follows the house "prefs." namespace).
     public static let convThemesKey = "prefs.convThemes"
-    /// R2-B R42 — local mirror of the per-conversation PERSONAL screen-
+    /// R2-B R42 - local mirror of the per-conversation PERSONAL screen-
     /// security veil (myScreenPrivacy). The server copy rides the dedicated
     /// PATCH /api/conversations/[id]/screen-privacy route; this map is the
     /// instant local write-through so the veil engages without a round-trip.
     public static let screenPrivacyKey = "prefs.screenPrivacy"
-    /// R2-D — the design-language selection. Key AND values are byte-identical
+    /// R2-D - the design-language selection. Key AND values are byte-identical
     /// to the web store (ui-theme.ts `pulse.uiTheme.v2`:
     /// glass|kinetic|minimal|dynamic|aero) so the two platforms converge.
     public static let uiThemeKey = "pulse.uiTheme.v2"
-    /// R4-A item 3 — the navigation architecture. Key AND values byte-identical
+    /// R4-A item 3 - the navigation architecture. Key AND values byte-identical
     /// to the web store (nav-registry.ts `pulse.navStyle.v2`); the 5 excluded
     /// web ids + junk decode to capsule via PulseNavStyle.parse.
     public static let navStyleKey = "pulse.navStyle.v2"
-    /// R10-b — the biometric app lock (PulseAppLock). LOCAL-only device
+    /// R10-b - the biometric app lock (PulseAppLock). LOCAL-only device
     /// security: there is no web/account equivalent to sync with (same
     /// precedent as the screenPrivacy veil), so this stays a direct-defaults
     /// key outside the server-synced blob.
     public static let appLockEnabledKey = "pulse.appLock.enabled"
 
-    /// R1-W2G D46 — namespaced key builder for the durable last-position
+    /// R1-W2G D46 - namespaced key builder for the durable last-position
     /// cache per space room ("space:lastpos:<roomId>"). The relay keeps the
     /// previous position in-memory only (mini-services/pulse-socket/index.ts
-    /// :1288-1299; web client falls back to 0.5/0.5) — this key is the
+    /// :1288-1299; web client falls back to 0.5/0.5) - this key is the
     /// native DURABLE twin: a JSON-encoded SpaceLastPosition written by
     /// VoiceRoomSessionModel with the voiceCaptions direct-defaults pattern.
     public static func spaceLastPositionKey(_ roomId: String) -> String {
@@ -312,7 +312,7 @@ public final class PulsePrefs: ObservableObject {
         case all, unread, groups
     }
 
-    // ── remote sync seams (attached by PulseSession.attach(prefs:)) ──
+    // remote sync seams (attached by PulseSession.attach(prefs:))
     /// Every server-backed toggle calls this after the optimistic local
     /// write. The session PATCHes { userId, preferences } and reports the
     /// verdict back via `notePatchSettled`.
@@ -332,7 +332,7 @@ public final class PulsePrefs: ObservableObject {
         appearance = defaults.string(forKey: Self.appearanceKey) ?? "system"
         chatsFilter = ChatsFilter(rawValue: defaults.string(forKey: Self.chatsFilterKey) ?? "") ?? .all
         voiceCaptions = defaults.bool(forKey: Self.voiceCaptionsKey)
-        // Wave 8 — server blob (tolerant: bad/absent tokens fall back to
+        // Wave 8 - server blob (tolerant: bad/absent tokens fall back to
         // the web DEFAULT_PREFERENCES values below).
         bubbleRadius = PulseBubbleRadius(rawValue: defaults.string(forKey: Self.bubbleRadiusKey) ?? "") ?? .lg
         density = PulseDensity(rawValue: defaults.string(forKey: Self.densityKey) ?? "") ?? .cozy
@@ -344,25 +344,25 @@ public final class PulsePrefs: ObservableObject {
         readReceipts = Self.bool(defaults, Self.readReceiptsKey, default: true)
         typingVisible = Self.bool(defaults, Self.typingVisibleKey, default: true)
         reducedMotion = Self.bool(defaults, Self.reducedMotionKey, default: false)
-        // Wave 8 — LOCAL quiet hours + haptics master (pulse.settings.v1
+        // Wave 8 - LOCAL quiet hours + haptics master (pulse.settings.v1
         // defaults: off / 22:00 / 07:00, haptics on).
         quietHoursOn = defaults.bool(forKey: Self.quietHoursOnKey)
         quietStart = defaults.string(forKey: Self.quietStartKey) ?? "22:00"
         quietEnd = defaults.string(forKey: Self.quietEndKey) ?? "07:00"
         hapticsOn = Self.bool(defaults, Self.hapticsOnKey, default: true)
-        // R14 5-b — the local master ding gate (web soundOn default true).
+        // R14 5-b - the local master ding gate (web soundOn default true).
         soundOn = Self.bool(defaults, Self.soundOnKey, default: true)
-        // R1-W2B F-FX-05 — cached theme map (tolerant: bad JSON → empty map;
+        // R1-W2B F-FX-05 - cached theme map (tolerant: bad JSON → empty map;
         // the server blob overwrites it on the next successful sync).
         convThemes = Self.readConvThemes(defaults)
-        // R2-B R42 — cached personal-veil map (tolerant: bad JSON → empty).
+        // R2-B R42 - cached personal-veil map (tolerant: bad JSON → empty).
         screenPrivacy = Self.readScreenPrivacy(defaults)
-        // R2-D — design language (tolerant: junk/legacy → glass, web parity).
+        // R2-D - design language (tolerant: junk/legacy → glass, web parity).
         uiTheme = PulseUiTheme.parse(defaults.string(forKey: Self.uiThemeKey))
-        // R4-A item 3 — nav architecture (tolerant: excluded ids/junk →
+        // R4-A item 3 - nav architecture (tolerant: excluded ids/junk →
         // capsule, web parity).
         navStyle = PulseNavStyle.parse(defaults.string(forKey: Self.navStyleKey))
-        // R10-b — biometric app lock (local-only device security).
+        // R10-b - biometric app lock (local-only device security).
         appLockEnabled = defaults.bool(forKey: Self.appLockEnabledKey)
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
     }
@@ -371,10 +371,10 @@ public final class PulsePrefs: ObservableObject {
     @Published public private(set) var ambientMode: AmbientMode
     @Published public private(set) var appearance: String
     @Published public private(set) var chatsFilter: ChatsFilter
-    /// W5-f — voice-room live captions (default off, setChatsFilter pattern).
+    /// W5-f - voice-room live captions (default off, setChatsFilter pattern).
     @Published public private(set) var voiceCaptions: Bool
 
-    // ── Wave 8 — server-synced PulsePrefs blob ──────────────
+    // Wave 8 - server-synced PulsePrefs blob
     @Published public private(set) var bubbleRadius: PulseBubbleRadius
     @Published public private(set) var density: PulseDensity
     @Published public private(set) var wallpaper: PulseWallpaper
@@ -386,28 +386,28 @@ public final class PulsePrefs: ObservableObject {
     @Published public private(set) var typingVisible: Bool
     @Published public private(set) var reducedMotion: Bool
 
-    // ── Wave 8 — LOCAL quiet hours + haptics master ─────────
+    // Wave 8 - LOCAL quiet hours + haptics master
     @Published public private(set) var quietHoursOn: Bool
     @Published public private(set) var quietStart: String
     @Published public private(set) var quietEnd: String
     @Published public private(set) var hapticsOn: Bool
-    // ── R14 5-b — LOCAL master ding gate (web soundOn) ──────
+    // R14 5-b - LOCAL master ding gate (web soundOn)
     @Published public private(set) var soundOn: Bool
 
-    // ── R1-W2B F-FX-05 — per-conversation themes (server-synced) ──
+    // R1-W2B F-FX-05 - per-conversation themes (server-synced)
     @Published public private(set) var convThemes: [String: WireConvTheme]
-    // ── R2-B R42 — per-conversation PERSONAL screen-security veil ──
+    // R2-B R42 - per-conversation PERSONAL screen-security veil
     @Published public private(set) var screenPrivacy: [String: Bool]
-    // ── R2-D — the five locked design languages (ui-theme.ts parity) ──
+    // R2-D - the five locked design languages (ui-theme.ts parity)
     @Published public private(set) var uiTheme: PulseUiThemeId
-    // ── R4-A item 3 — the navigation architecture (nav-registry parity) ──
+    // R4-A item 3 - the navigation architecture (nav-registry parity)
     @Published public private(set) var navStyle: PulseNavStyle
-    // ── R10-b — biometric app lock (local-only, PulseAppLock gate) ──
+    // R10-b - biometric app lock (local-only, PulseAppLock gate)
     @Published public private(set) var appLockEnabled: Bool
 
     public var hasIdentity: Bool { viewer != nil }
 
-    /// The resolved (non-optional) snapshot — the merge helper's base.
+    /// The resolved (non-optional) snapshot - the merge helper's base.
     public var resolvedValues: PulsePrefsValues {
         PulsePrefsValues(
             bubbleRadius: bubbleRadius,
@@ -423,13 +423,13 @@ public final class PulsePrefs: ObservableObject {
         )
     }
 
-    /// Wave 8 — quiet-hours verdict at call time (web isQuietHoursNow
+    /// Wave 8 - quiet-hours verdict at call time (web isQuietHoursNow
     /// parity; gates the incoming attention toasts + PulseHaptics).
     public var isQuietHoursNow: Bool {
         PulseWave8Logic.isQuietHoursNow(enabled: quietHoursOn, start: quietStart, end: quietEnd)
     }
 
-    // ── identity ─────────────────────────────────────────────
+    // identity
 
     public func setViewer(_ viewer: PulseViewer?) {
         let previousId = self.viewer?.id
@@ -441,10 +441,10 @@ public final class PulsePrefs: ObservableObject {
         } else {
             defaults.removeObject(forKey: Self.viewerKey)
         }
-        // Wave 0 — secure mirror (viewer.identity + token slot for later).
+        // Wave 0 - secure mirror (viewer.identity + token slot for later).
         // Best effort: UserDefaults stays the source of truth.
         PulseKeychain.shared.saveViewer(viewer)
-        // Wave 8 — the session token is IDENTITY-BOUND: forgetting (nil)
+        // Wave 8 - the session token is IDENTITY-BOUND: forgetting (nil)
         // and switching identities clears it so no request ever carries a
         // stale Bearer. The create/login flows re-persist the fresh token
         // AFTER setViewer, so rotation lands intact.
@@ -477,7 +477,7 @@ public final class PulsePrefs: ObservableObject {
         defaults.set(filter.rawValue, forKey: Self.chatsFilterKey)
     }
 
-    /// R2-D — pick a design language (glass | kinetic | minimal | dynamic |
+    /// R2-D - pick a design language (glass | kinetic | minimal | dynamic |
     /// aero). The raw value stored under "pulse.uiTheme.v2" is byte-identical
     /// to the web's zustand-persist payload.
     public func setUiTheme(_ theme: PulseUiThemeId) {
@@ -485,7 +485,7 @@ public final class PulsePrefs: ObservableObject {
         defaults.set(theme.rawValue, forKey: Self.uiThemeKey)
     }
 
-    /// R4-A item 3 — pick a navigation architecture (the raw value stored
+    /// R4-A item 3 - pick a navigation architecture (the raw value stored
     /// under "pulse.navStyle.v2" is byte-identical to the web's payload;
     /// RootView mirrors the change into the dock renderer).
     public func setNavStyle(_ style: PulseNavStyle) {
@@ -493,13 +493,13 @@ public final class PulsePrefs: ObservableObject {
         defaults.set(style.rawValue, forKey: Self.navStyleKey)
     }
 
-    /// W5-f — persist the voice captions toggle (L89-92 pattern).
+    /// W5-f - persist the voice captions toggle (L89-92 pattern).
     public func setVoiceCaptions(_ enabled: Bool) {
         voiceCaptions = enabled
         defaults.set(enabled, forKey: Self.voiceCaptionsKey)
     }
 
-    /// R10-b — persist the app-lock toggle. The enable path in SettingsView
+    /// R10-b - persist the app-lock toggle. The enable path in SettingsView
     /// only calls this AFTER the LAContext confirmation passed, so a device
     /// that cannot enforce the lock never stores `true`.
     public func setAppLockEnabled(_ enabled: Bool) {
@@ -507,10 +507,10 @@ public final class PulsePrefs: ObservableObject {
         defaults.set(enabled, forKey: Self.appLockEnabledKey)
     }
 
-    // ── R1-W2B F-FX-05 — per-conversation theme setters ──
+    // R1-W2B F-FX-05 - per-conversation theme setters
 
     /// Web setConvTheme parity (conv-theme.ts:195-215): merges the patch into
-    /// the conversation's entry — a fresh entry seeds from the CURRENT global
+    /// the conversation's entry - a fresh entry seeds from the CURRENT global
     /// wallpaper so tint-only rooms stay deterministic. Optimistic local
     /// write + full-map PATCH through the settings funnel.
     public func setConvTheme(conversationId: String, wallpaper: PulseWallpaper?, tint: String?) {
@@ -527,7 +527,7 @@ public final class PulsePrefs: ObservableObject {
         patch { $0.convThemes = map }
     }
 
-    /// Web clearConvTheme parity — the room falls back to the global default.
+    /// Web clearConvTheme parity - the room falls back to the global default.
     public func clearConvTheme(conversationId: String) {
         var map = convThemes ?? [:]
         guard map[conversationId] != nil else { return }
@@ -543,7 +543,7 @@ public final class PulsePrefs: ObservableObject {
         }
     }
 
-    // ── R2-B R42 — personal screen-security veil ──
+    // R2-B R42 - personal screen-security veil
 
     /// Instant local write-through for MY veil on one conversation; the
     /// server mirror PATCH runs from the caller (GroupInfoView) and the
@@ -555,7 +555,7 @@ public final class PulsePrefs: ObservableObject {
     }
 
     /// Server truth landed (detail fetch or PATCH echo): the server value
-    /// wins for that conversation — the same shallow-merge contract as every
+    /// wins for that conversation - the same shallow-merge contract as every
     /// other server-backed blob field.
     public func adoptServerScreenPrivacy(conversationId: String, on: Bool) {
         guard screenPrivacy[conversationId] != on else { return }
@@ -570,10 +570,10 @@ public final class PulsePrefs: ObservableObject {
     }
 
     /// The accent tints the per-conversation picker offers (web CONV_TINTS
-    /// verbatim — conv-theme.ts:51).
+    /// verbatim - conv-theme.ts:51).
     public static let convTints = ["emerald", "rose", "amber", "violet", "teal"]
 
-    // ── Wave 8 — server-synced setters (optimistic local first) ──
+    // Wave 8 - server-synced setters (optimistic local first)
 
     public func setBubbleRadius(_ value: PulseBubbleRadius) {
         bubbleRadius = value
@@ -636,7 +636,7 @@ public final class PulsePrefs: ObservableObject {
         patch { $0.reducedMotion = enabled }
     }
 
-    // ── Wave 8 — LOCAL quiet hours + haptics setters ─────────
+    // Wave 8 - LOCAL quiet hours + haptics setters
 
     public func setQuietHoursOn(_ enabled: Bool) {
         quietHoursOn = enabled
@@ -662,14 +662,14 @@ public final class PulsePrefs: ObservableObject {
         Self.applyHapticGate(enabled: enabled, quietNow: isQuietHoursNow)
     }
 
-    /// R14 5-b — the master ding gate (web pulseSettingsStore.setSoundOn
+    /// R14 5-b - the master ding gate (web pulseSettingsStore.setSoundOn
     /// parity). Local-only: no PATCH, no server round-trip.
     public func setSoundOn(_ enabled: Bool) {
         soundOn = enabled
         defaults.set(enabled, forKey: Self.soundOnKey)
     }
 
-    /// Wave 8 — the haptic gate lives in PulseHaptics (evaluated at call
+    /// Wave 8 - the haptic gate lives in PulseHaptics (evaluated at call
     /// time); the prefs model owns the two inputs (master toggle + the
     /// quiet-hours snapshot, kept fresh by the session's 1s loop).
     nonisolated private static func applyHapticGate(enabled: Bool, quietNow: Bool) {
@@ -683,9 +683,9 @@ public final class PulsePrefs: ObservableObject {
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
     }
 
-    // ── Wave 8 — server sync ─────────────────────────────────
+    // Wave 8 - server sync
 
-    /// GET /api/settings — the SERVER value wins (web mergePrefs parity:
+    /// GET /api/settings - the SERVER value wins (web mergePrefs parity:
     /// defaults → stored blob). Local values act as the base; every server
     /// field that decoded real value clamps over it. Offline-first: a
     /// failed fetch keeps the local state untouched.
@@ -694,16 +694,16 @@ public final class PulsePrefs: ObservableObject {
             let server = try await api.settings()
             applyServer(server)
         } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
-            // Present-but-invalid token — the session layer clears it and
+            // Present-but-invalid token - the session layer clears it and
             // surfaces re-login (server contract, Wave 8).
             authRejectionHandler?(failure.message)
         } catch {
-            // Offline / unknown user (local_ ids) — local values stay
+            // Offline / unknown user (local_ ids) - local values stay
             // authoritative. Honest, by design.
         }
     }
 
-    /// Server blob landed (fresh fetch or PATCH echo) — merge server-wins
+    /// Server blob landed (fresh fetch or PATCH echo) - merge server-wins
     /// over the local resolved values and persist. No PATCH loopback: the
     /// server IS the source here.
     public func applyServer(_ server: WirePulsePrefs) {
@@ -729,7 +729,7 @@ public final class PulsePrefs: ObservableObject {
         reducedMotion = merged.reducedMotion
         defaults.set(merged.reducedMotion, forKey: Self.reducedMotionKey)
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
-        // R1-W2B F-FX-05 — the server's theme map wins when present (same
+        // R1-W2B F-FX-05 - the server's theme map wins when present (same
         // shallow-merge contract as every other blob field).
         if let serverThemes = server.convThemes {
             convThemes = serverThemes
@@ -742,7 +742,7 @@ public final class PulsePrefs: ObservableObject {
     /// PATCH verdict from the session funnel: success clears the hint,
     /// failure keeps the local value + surfaces the honest offline note.
     public func notePatchSettled(successful: Bool, note: String?) {
-        lastSyncNote = successful ? nil : (note ?? "Saved on this device — the server didn't answer.")
+        lastSyncNote = successful ? nil : (note ?? "Saved on this device - the server didn't answer.")
     }
 
     /// Optimistic write funnel: the local field is ALREADY updated; this
@@ -754,9 +754,9 @@ public final class PulsePrefs: ObservableObject {
         patchRemote(wire)
     }
 
-    // ── plumbing ─────────────────────────────────────────────
+    // plumbing
 
-    /// Bool with a default — UserDefaults.bool() reads absent keys as false,
+    /// Bool with a default - UserDefaults.bool() reads absent keys as false,
     /// which would flip the true-defaulted toggles on first launch.
     private static func bool(_ defaults: UserDefaults, _ key: String, default defaultValue: Bool) -> Bool {
         defaults.object(forKey: key) == nil ? defaultValue : defaults.bool(forKey: key)

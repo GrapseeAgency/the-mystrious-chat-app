@@ -1,6 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/events — group calendar + RSVP
-// (Task R23-d "Beyond Chat" wave 2 — Pulse group events)
+// /api/conversations/[id]/events - group calendar + RSVP
+// (Task R23-d "Beyond Chat" wave 2 - Pulse group events)
 //
 // Every event is a REAL persisted GroupEvent row; RSVPs are real
 // EventRsvp rows upserted on @@unique(eventId, userId). No mocks.
@@ -16,11 +15,10 @@
 //        descending, capped at 50 rows total. Non-member → 403.
 //   POST body { userId, title (1..120), startsAt (ISO, parseable),
 //               description?, location? }
-//        → 201 { event } (rsvps: [] — creator does not auto-RSVP)
+//        → 201 { event } (rsvps: [] - creator does not auto-RSVP)
 //
-// All handlers verify conversation participation — no anonymous
+// All handlers verify conversation participation - no anonymous
 // access, everything lands in Prisma/SQLite.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -31,7 +29,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-// ── validation bounds (client mirrors them on the form) ──────
+// validation bounds (client mirrors them on the form) 
 const TITLE_MAX = 120
 const DESCRIPTION_MAX = 1000
 const LOCATION_MAX = 200
@@ -189,7 +187,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
 
 /**
  * POST /api/conversations/[id]/events  body { userId, title, startsAt, description?, location? }
- * → 201 { event } — brand-new event, zero RSVPs.
+ * → 201 { event } - brand-new event, zero RSVPs.
  */
 export async function POST(req: Request, { params }: RouteCtx) {
   const { id } = await params

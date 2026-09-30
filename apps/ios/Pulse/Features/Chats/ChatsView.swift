@@ -4,7 +4,7 @@ import Combine
 /// Navigation payload pushed onto any tab's NavigationStack.
 struct RoomRoute: Hashable {
     let conversation: WireConversationSummary
-    /// Wave 1 — global-search jump target (scroll + flash after load).
+    /// Wave 1 - global-search jump target (scroll + flash after load).
     var jumpMessageId: String? = nil
 
     static func == (lhs: RoomRoute, rhs: RoomRoute) -> Bool {
@@ -22,7 +22,7 @@ struct SheetTarget: Identifiable, Equatable {
     var id: String { conversation.id }
 }
 
-/// One list row, fully resolved — the exact web ConversationRowData shape
+/// One list row, fully resolved - the exact web ConversationRowData shape
 /// (chats-row.tsx props) translated for the native row.
 struct ChatRowModel: Identifiable {
     let conv: WireConversationSummary
@@ -53,7 +53,7 @@ struct ChatRowModel: Identifiable {
 
     var hasUnread: Bool { unreadCount > 0 || manualUnread }
 
-    /// Search haystack — name, draft and the last non-deleted message body.
+    /// Search haystack - name, draft and the last non-deleted message body.
     func matches(query needle: String) -> Bool {
         let q = needle.lowercased()
         if name.lowercased().contains(q) { return true }
@@ -64,12 +64,10 @@ struct ChatRowModel: Identifiable {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Chats — the home screen. Custom header (normal + search modes),
+// Chats - the home screen. Custom header (normal + search modes),
 // filter chips, stories row, folder rail, Note to Self, entry pills,
 // pinned/All-chats sections, Telegram multi-select, swipe glass
 // chips, action sheet, archived sub-page. 6s REST poll while visible.
-// ─────────────────────────────────────────────────────────────
 struct ChatsView: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
@@ -82,16 +80,16 @@ struct ChatsView: View {
     @State private var path = NavigationPath()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-    // Wave 4 — full-screen stories surfaces (rail is the entry point).
+    // Wave 4 - full-screen stories surfaces (rail is the entry point).
     @State private var storiesViewerPresent = false
     @State private var storiesViewerStart: String?
     @State private var composerPresent = false
-    // R3-A items 9/10 — the header phone/compose buttons are LIVE chrome:
+    // R3-A items 9/10 - the header phone/compose buttons are LIVE chrome:
     // the calls page (CallsHistoryView) and the real new-chat composer
     // (the SAME NewChatSheet the dock's compose button hosts).
     @State private var callsOpen = false
     @State private var newChatOpen = false
-    // R14 5-b — the spotlight actions block's check-in pending flag.
+    // R14 5-b - the spotlight actions block's check-in pending flag.
     @State private var spotlightCheckinPending = false
 
     var body: some View {
@@ -113,7 +111,7 @@ struct ChatsView: View {
                     onChanged: { Task { await viewModel.refreshQuiet(session: session) } },
                 )
             }
-            // Wave 6 — the three real discovery surfaces (stub toasts retired).
+            // Wave 6 - the three real discovery surfaces (stub toasts retired).
             .sheet(isPresented: $viewModel.mentionsOpen) {
                 MentionsView(session: session) { conversation in
                     openRoom(conversation)
@@ -149,7 +147,7 @@ struct ChatsView: View {
                     }, onClose: { composerPresent = false })
                 }
             }
-            // R3-A item 9 — the calls page (web calls-page parity). A row tap
+            // R3-A item 9 - the calls page (web calls-page parity). A row tap
             // rides the EXISTING linked-room bridge: RootView's
             // pendingLinkedRoomId receiver fetches the detail and opens the
             // chat exactly like pulse://room (R2-D item 6 path, untouched).
@@ -159,7 +157,7 @@ struct ChatsView: View {
                     session.pendingLinkedRoomId = conversationId
                 })
             }
-            // R3-A item 10 — the real new-chat composer (the SAME sheet the
+            // R3-A item 10 - the real new-chat composer (the SAME sheet the
             // dock's compose button hosts); a created/picked room opens right
             // here on the chats tab.
             .sheet(isPresented: $newChatOpen) {
@@ -196,7 +194,7 @@ struct ChatsView: View {
         .onReceive(session.$pendingOpenRoom) { pending in
             // Dock compose / More → Saved hand a conversation here. The
             // Published value also replays on re-subscription, so consume
-            // immediately (nil re-fire is guarded). Wave 2 — a saved-library
+            // immediately (nil re-fire is guarded). Wave 2 - a saved-library
             // "open original" rides the SAME path with a jump target.
             guard let conv = pending else { return }
             let jump = session.pendingJumpMessageId
@@ -206,12 +204,12 @@ struct ChatsView: View {
         }
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     private func enterSearch() {
         if viewModel.selectMode { viewModel.exitSelect() }
         withAnimation(.pulse(.pulseSnappy, reduceMotion: reduceMotion)) {
-            // R2-D ITEM 8 — entering search reloads the recents rail.
+            // R2-D ITEM 8 - entering search reloads the recents rail.
             viewModel.enterSearchMode()
         }
         viewModel.searchFocused = true
@@ -222,13 +220,13 @@ struct ChatsView: View {
     }
 
     private func openRoom(_ conv: WireConversationSummary, jumpMessageId: String? = nil) {
-        // R2-D ITEM 8 — a room opened from search makes its query a recent
+        // R2-D ITEM 8 - a room opened from search makes its query a recent
         // (web pushRecent on chat/message activation parity).
         viewModel.noteQueryUsed()
         path.append(RoomRoute(conversation: conv, jumpMessageId: jumpMessageId))
     }
 
-    // ── fixed top chrome (header · chips · stories · folders) ──
+    // fixed top chrome (header · chips · stories · folders)
 
     @ViewBuilder
     private var topChrome: some View {
@@ -246,13 +244,13 @@ struct ChatsView: View {
                     session: session,
                     prefs: prefs,
                     onGoProfile: onGoProfile,
-                    // R3-A item 9 — the dead toast is gone: the phone button
+                    // R3-A item 9 - the dead toast is gone: the phone button
                     // opens the real call-history page.
                     onPhone: {
                         PulseHaptics.tap()
                         callsOpen = true
                     },
-                    // R3-A item 10 — the dead toast is gone: the compose
+                    // R3-A item 10 - the dead toast is gone: the compose
                     // button opens the SAME NewChatSheet the dock uses.
                     onCompose: {
                         PulseHaptics.tap()
@@ -304,7 +302,7 @@ struct ChatsView: View {
                     },
                     onManage: {
                         PulseHaptics.tap()
-                        // Wave 6 — the real folder manager (F-FD-01…03).
+                        // Wave 6 - the real folder manager (F-FD-01…03).
                         viewModel.foldersManageOpen = true
                     },
                 )
@@ -318,7 +316,7 @@ struct ChatsView: View {
         }
     }
 
-    // ── scroll area states (priority order per spec §7) ──────
+    // scroll area states (priority order per spec §7)
 
     @ViewBuilder
     private var content: some View {
@@ -340,7 +338,7 @@ struct ChatsView: View {
             }
 
             if viewModel.selectMode {
-                // Pinned near the bottom, centered (web §7.5: bottom-[86px]) —
+                // Pinned near the bottom, centered (web §7.5: bottom-[86px]) -
                 // the outer ZStack is top-aligned, so pin via a filling spacer.
                 VStack {
                     Spacer(minLength: 0)
@@ -370,7 +368,7 @@ struct ChatsView: View {
                     creating: viewModel.selfCreating,
                     onPress: {
                         if let conv = viewModel.selfConv {
-                            // Existing Note to Self — open directly (the id never
+                            // Existing Note to Self - open directly (the id never
                             // changes, so the onChange replay hook can't fire).
                             viewModel.sheet = nil
                             openRoom(conv)
@@ -395,7 +393,7 @@ struct ChatsView: View {
                     badgeCount: viewModel.mentionCount ?? 0,
                     onPress: {
                         PulseHaptics.tap()
-                        // Wave 6 — the REAL mentions feed (no clear-on-open:
+                        // Wave 6 - the REAL mentions feed (no clear-on-open:
                         // the pill count is feed length, web parity).
                         viewModel.mentionsOpen = true
                     },
@@ -407,7 +405,7 @@ struct ChatsView: View {
                     badgeCount: 0,
                     onPress: {
                         PulseHaptics.tap()
-                        // Wave 6 — the broadcast directory (F-CH-01…03).
+                        // Wave 6 - the broadcast directory (F-CH-01…03).
                         viewModel.channelsOpen = true
                     },
                 )
@@ -495,24 +493,24 @@ struct ChatsView: View {
 
     private var filterEmptyCopy: String {
         if viewModel.activeFolderId != nil {
-            return "This folder is empty — tap the folder button on the rail to add chats."
+            return "This folder is empty - tap the folder button on the rail to add chats."
         }
         switch prefs.chatsFilter {
-        case .unread: return "No unread chats — you are all caught up."
-        case .groups: return "No groups yet — start one from Contacts."
+        case .unread: return "No unread chats - you are all caught up."
+        case .groups: return "No groups yet - start one from Contacts."
         default: return "Nothing here yet."
         }
     }
 
-    // ── search results (§10) ─────────────────────────────────
+    // search results (§10)
 
-    /// R14 5-b — the resolved dark verdict for the spotlight theme toggle
+    /// R14 5-b - the resolved dark verdict for the spotlight theme toggle
     /// (web resolvedTheme parity).
     private var spotlightIsDark: Bool {
         prefs.appearance == "dark" || (prefs.appearance == "system" && colorScheme == .dark)
     }
 
-    /// R14 5-b — one spotlight action row (the recents-row visual language:
+    /// R14 5-b - one spotlight action row (the recents-row visual language:
     /// leading glyph, label, tertiary hint, full-row tap).
     private func spotlightActionRow(
         icon: String,
@@ -546,10 +544,10 @@ struct ChatsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(label) — \(hint)")
+        .accessibilityLabel("\(label) - \(hint)")
     }
 
-    /// R14 5-b — the real daily check-in (web spotlight runCheckin →
+    /// R14 5-b - the real daily check-in (web spotlight runCheckin →
     /// POST /api/hub/wallet/checkin parity; the toast + haptic + confetti
     /// match the HubView check-in response handling exactly).
     private func runSpotlightCheckin() {
@@ -562,7 +560,7 @@ struct ChatsView: View {
                 let streak = result.streak ?? 1
                 session.particles.fire(kind: .confetti, count: 60)
                 PulseHaptics.success()
-                session.toasts.show("Checked in — +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
+                session.toasts.show("Checked in - +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
             } catch {
                 session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Check-in failed")
             }
@@ -572,7 +570,7 @@ struct ChatsView: View {
     private var searchResults: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                // R14 5-b — the ACTIONS block (web spotlight.tsx :260-291):
+                // R14 5-b - the ACTIONS block (web spotlight.tsx :260-291):
                 // New chat · Check in to Hub (the real POST
                 // /api/hub/wallet/checkin with the HubView response
                 // handling) · theme toggle. Shown on the empty query exactly
@@ -598,13 +596,13 @@ struct ChatsView: View {
                         label: spotlightIsDark ? "Switch to light theme" : "Switch to dark theme",
                         hint: "Appearance",
                     ) {
-                        // Web setTheme(resolved) parity — resolved light/dark,
+                        // Web setTheme(resolved) parity - resolved light/dark,
                         // system keeps resolving like every other surface.
                         prefs.setAppearance(spotlightIsDark ? "light" : "dark")
                     }
                 }
 
-                // R2-D ITEM 8 — the recent-searches rail (web spotlight.tsx
+                // R2-D ITEM 8 - the recent-searches rail (web spotlight.tsx
                 // Recents section + footer "Clear recents"): last 5 used
                 // queries, newest first, tap re-runs the query.
                 if viewModel.query.isEmpty, !viewModel.spotlightRecents.isEmpty {
@@ -717,9 +715,7 @@ struct ChatsView: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Header bars
-// ─────────────────────────────────────────────────────────────
 
 private struct ChatsHeaderBar: View {
     @ObservedObject var session: PulseSession
@@ -830,18 +826,18 @@ private struct ChatsHeaderBar: View {
 }
 
 private extension PulseTheme {
-    /// 6pt title dot — emerald 400→600.
+    /// 6pt title dot - emerald 400→600.
     static var emeraldGradient: LinearGradient {
         LinearGradient(colors: [emerald400, emerald600], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
-/// Search mode — glass pill with a live text field, springing clear button,
+/// Search mode - glass pill with a live text field, springing clear button,
 /// emerald focus halo, ghost close. Web §3b.
 private struct SearchHeaderBar: View {
     @Binding var query: String
     @Binding var focused: Bool
-    // .focused() requires a FocusState projection, not a plain Binding —
+    // .focused() requires a FocusState projection, not a plain Binding -
     // keep the view-local FocusState and mirror it both ways with the
     // parent-owned binding (pill tap sets searchFocused = true → keyboard).
     @FocusState private var keyFocus: Bool
@@ -920,9 +916,7 @@ private struct SearchHeaderBar: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Filter chips · stories · folders
-// ─────────────────────────────────────────────────────────────
 
 private struct FilterChipsRow: View {
     let filter: PulsePrefs.ChatsFilter
@@ -1017,7 +1011,7 @@ private struct StoriesRowView: View {
         }
     }
 
-    // R1-W2G — the ring partition lives in PulseStoryRing (StoryEngine.swift),
+    // R1-W2G - the ring partition lives in PulseStoryRing (StoryEngine.swift),
     // pinned by PulseStoryChannelTests.
     private var myStoryGroup: WireStoryGroup? {
         PulseStoryRing.mine(groups)
@@ -1038,11 +1032,11 @@ private struct FolderRailView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                railPill(id: nil, emoji: nil, label: "All", count: 0)
+                railPill(id: nil, icon: nil, label: "All", count: 0)
                 ForEach(folders ?? [], id: \.id) { folder in
                     railPill(
                         id: folder.id,
-                        emoji: folder.emoji,
+                        icon: PulseFolderIconId.normalize(folder.emoji).symbolName,
                         label: folder.name,
                         count: counts[folder.id] ?? 0,
                     )
@@ -1063,14 +1057,18 @@ private struct FolderRailView: View {
         }
     }
 
-    private func railPill(id: String?, emoji: String?, label: String, count: Int) -> some View {
+    /// R18-b - folder pills render the icon-ID registry's SF Symbol; unknown
+    /// or stale stored values normalize to the default (never raw emoji).
+    private func railPill(id: String?, icon: String?, label: String, count: Int) -> some View {
         let active = activeFolderId == id
         return Button {
             onSelectFolder(id)
         } label: {
             HStack(spacing: 6) {
-                if let emoji {
-                    Text(emoji).font(.system(size: 13))
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(active ? Color.white : PulseTheme.accent)
                 }
                 Text(label)
                     .lineLimit(1)
@@ -1102,11 +1100,9 @@ private struct FolderRailView: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Cards & pills
-// ─────────────────────────────────────────────────────────────
 
-/// Note to Self hero card — deep glass, glyph tile, Create/Open chip.
+/// Note to Self hero card - deep glass, glyph tile, Create/Open chip.
 private struct NoteToSelfCard: View {
     let exists: Bool
     let creating: Bool
@@ -1138,7 +1134,7 @@ private struct NoteToSelfCard: View {
                         .font(.system(size: 14, weight: .semibold))
                         .tracking(-0.2)
                         .foregroundStyle(PulseTheme.titleOnWash)
-                    Text("Your private space — notes, links, ideas")
+                    Text("Your private space - notes, links, ideas")
                         .font(.system(size: 11.5))
                         .foregroundStyle(PulseTheme.textSecondary)
                 }
@@ -1182,11 +1178,11 @@ private struct NoteToSelfCard: View {
         .padding(.horizontal, 8)
         .padding(.top, 4)
         .padding(.bottom, 4)
-        .accessibilityLabel(exists ? "Open Note to Self — your private space" : "Create Note to Self — your private space")
+        .accessibilityLabel(exists ? "Open Note to Self - your private space" : "Create Note to Self - your private space")
     }
 }
 
-/// Mentions / Channels / Archived entry pill — glass, h-11.
+/// Mentions / Channels / Archived entry pill - glass, h-11.
 private struct EntryPill: View {
     let icon: String
     let title: String
@@ -1232,13 +1228,11 @@ private struct EntryPill: View {
         .buttonStyle(PulseButtonStyle())
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .accessibilityLabel("\(title) — \(trailing)")
+        .accessibilityLabel("\(title) - \(trailing)")
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Conversation row (spec §7.4)
-// ─────────────────────────────────────────────────────────────
 
 private struct ConversationRow: View {
     let row: ChatRowModel
@@ -1374,6 +1368,17 @@ private struct ConversationRow: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(PulseTheme.rowRim, lineWidth: 1),
             )
+            .overlay(alignment: .leading) {
+                // R18-b design push - Discord-grade unread signal pinned to
+                // the row edge (accent token; none while muted).
+                if row.hasUnread && !row.isMuted {
+                    Capsule()
+                        .fill(PulseTheme.accent)
+                        .frame(width: 3, height: 26)
+                        .padding(.leading, 3)
+                        .accessibilityHidden(true)
+                }
+            }
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(RowPressStyle(selectMode: selectMode))
@@ -1393,7 +1398,7 @@ private struct ConversationRow: View {
         .accessibilityLabel("\(row.name), \(row.time), \(row.previewText)")
     }
 
-    // avatar 48pt — presence halo + heat ring + presence dot / squircle group
+    // avatar 48pt - presence halo + heat ring + presence dot / squircle group
     private var avatarBlock: some View {
         ZStack {
             if !row.isGroup && row.online {
@@ -1436,14 +1441,15 @@ private struct ConversationRow: View {
             Spacer(minLength: 8)
             streakChip
             Text(row.time)
-                .font(.system(size: 11, weight: row.hasUnread ? .semibold : .regular))
+                // R18-b design push - mono numerals (web stat-mono voice).
+                .font(.system(size: 11, weight: row.hasUnread ? .semibold : .regular, design: .monospaced))
                 .foregroundStyle(row.hasUnread ? PulseTheme.accent : PulseTheme.textTertiary)
         }
     }
 
     @ViewBuilder
     private var streakChip: some View {
-        // Priority: at-risk > live > lost — never two at once (web R33-b/R37).
+        // Priority: at-risk > live > lost - never two at once (web R33-b/R37).
         if let risk = row.streakAtRisk, (risk.count ?? 0) >= 2 {
             StreakChipView(icon: "hourglass", text: "ends tonight", lost: false)
         } else if row.streakCount > 0 {
@@ -1515,7 +1521,7 @@ private struct ConversationRow: View {
     }
 }
 
-/// Row press style — slight scale + press overlay, web 0.975 tap.
+/// Row press style - slight scale + press overlay, web 0.975 tap.
 private struct RowPressStyle: ButtonStyle {
     let selectMode: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1566,7 +1572,7 @@ struct RowTypingDots: View {
     }
 }
 
-/// Streak chip — amber live count / "ends tonight" / rose lost.
+/// Streak chip - amber live count / "ends tonight" / rose lost.
 private struct StreakChipView: View {
     let icon: String
     let text: String
@@ -1594,7 +1600,7 @@ private struct StreakChipView: View {
     }
 }
 
-/// Swipe-reveal glass chip — 48pt icon + 9pt label.
+/// Swipe-reveal glass chip - 48pt icon + 9pt label.
 private struct SwipeActionChip: View {
     let icon: String
     let iconTint: Color
@@ -1650,9 +1656,7 @@ private struct SelectCheckmark: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Multi-select floating bar (spec §7.5)
-// ─────────────────────────────────────────────────────────────
 
 private struct MultiSelectBar: View {
     let count: Int
@@ -1673,7 +1677,7 @@ private struct MultiSelectBar: View {
                 .padding(.trailing, 4)
             barAction(icon: "archivebox", pending: archivePending, label: "Archive selected chats", action: onArchive)
             barAction(icon: "bell.slash", pending: mutePending, label: "Mute selected chats for 8 hours", action: onMute)
-            barAction(icon: "checkmark.double", pending: readPending, label: "Mark selected chats read", action: onRead)
+            barAction(icon: "checkmark.circle.fill", pending: readPending, label: "Mark selected chats read", action: onRead)
             Button(action: onExit) {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .medium))
@@ -1717,9 +1721,7 @@ private struct MultiSelectBar: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Search message hit row (spec §10)
-// ─────────────────────────────────────────────────────────────
 
 private struct SearchMessageRowView: View {
     let hit: WireSearchMessage
@@ -1787,7 +1789,7 @@ private struct SearchMessageRowView: View {
                 .lineLimit(1)
         } else if isFileHit && !captionMatches {
             HighlightedSnippet(
-                content: hit.fileName.map { "Document — \($0)" } ?? (content.isEmpty ? "Document" : content),
+                content: hit.fileName.map { "Document - \($0)" } ?? (content.isEmpty ? "Document" : content),
                 query: query,
             )
         } else {
@@ -1807,7 +1809,7 @@ struct HighlightedSnippet: View {
         let lower = content.lowercased()
         let q = query.lowercased()
         let idx = q.isEmpty ? -1 : (lower.range(of: q)?.lowerBound).map { lower.distance(from: lower.startIndex, to: $0) } ?? -1
-        // (recomputed below — kept simple and total)
+        // (recomputed below - kept simple and total)
         let window = Self.window(content: content, query: q)
         return HStack(spacing: 0) {
             if window.clippedHead {
@@ -1848,7 +1850,7 @@ struct HighlightedSnippet: View {
     static func window(content: String, query: String) -> Window {
         let lower = content.lowercased()
         guard let found = lower.range(of: query), !query.isEmpty else {
-            // No highlightable hit — show a plain head clip.
+            // No highlightable hit - show a plain head clip.
             if content.count > 64 {
                 let head = content.prefix(64)
                 return Window(body: Substring(head), matchRange: nil, clippedTail: true)
@@ -1876,9 +1878,7 @@ struct HighlightedSnippet: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Skeleton · Empty · Error (spec §11)
-// ─────────────────────────────────────────────────────────────
 
 private struct ChatsSkeletonView: View {
     var body: some View {
@@ -1894,7 +1894,7 @@ private struct ChatsSkeletonView: View {
     }
 }
 
-/// Empty state — deep glass card, emerald glow, EmptyChats illustration.
+/// Empty state - deep glass card, emerald glow, EmptyChats illustration.
 private struct EmptyChatsCard: View {
     let onSayHi: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1948,7 +1948,7 @@ private struct EmptyChatsCard: View {
                         .overlay(Capsule().strokeBorder(PulseTheme.accent.opacity(0.4), lineWidth: 1))
                     }
                     .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Say hi to someone — open contacts")
+                    .accessibilityLabel("Say hi to someone - open contacts")
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 32)
@@ -2017,9 +2017,7 @@ private struct ErrorCard: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Row action sheet (spec §8)
-// ─────────────────────────────────────────────────────────────
 
 private struct ChatActionSheet: View {
     let conversation: WireConversationSummary
@@ -2077,7 +2075,7 @@ private struct ChatActionSheet: View {
             Button("Clear chat", role: .destructive, action: { Task { await clearChat() } })
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your messages will be deleted for everyone — messages from other people stay in the chat. This cannot be undone.")
+            Text("Your messages will be deleted for everyone - messages from other people stay in the chat. This cannot be undone.")
         }
         .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
             if let shareURL {
@@ -2218,7 +2216,7 @@ private struct ChatActionSheet: View {
         .accessibilityLabel(label)
     }
 
-    // ── actions (exact verbs + bodies per spec §14) ─────────
+    // actions (exact verbs + bodies per spec §14)
 
     private func togglePin() async {
         PulseHaptics.tap()
@@ -2264,7 +2262,7 @@ private struct ChatActionSheet: View {
             await MainActor.run {
                 if let preset {
                     if preset == "always" {
-                        session.toasts.show("Muted — always")
+                        session.toasts.show("Muted - always")
                     } else {
                         let until = Date().addingTimeInterval(preset == "1w" ? 7 * 86_400 : 8 * 3_600)
                         session.toasts.show("Muted until \(PulseFormat.listStamp(until))")
@@ -2298,12 +2296,12 @@ private struct ChatActionSheet: View {
             return
         }
         await MainActor.run {
-            session.toasts.show("Chat exported — Saved \(fileURL.lastPathComponent)")
+            session.toasts.show("Chat exported - Saved \(fileURL.lastPathComponent)")
             shareURL = fileURL
         }
     }
 
-    /// Clear chat — soft-delete MY OWN non-deleted messages, sequentially.
+    /// Clear chat - soft-delete MY OWN non-deleted messages, sequentially.
     private func clearChat() async {
         clearPending = true
         defer { clearPending = false }
@@ -2314,14 +2312,14 @@ private struct ChatActionSheet: View {
         let mine = history.filter { $0.senderId == viewerId && $0.deletedAt == nil }
         var cleared = 0
         for message in mine {
-            // Keep going — clear as many of my own messages as the server allows.
+            // Keep going - clear as many of my own messages as the server allows.
             if (try? await session.api.deleteOwnMessage(id: message.id)) != nil {
                 cleared += 1
             }
         }
         await MainActor.run {
             if cleared == 0 {
-                session.toasts.show("Nothing to clear — none of your messages are left in this chat.")
+                session.toasts.show("Nothing to clear - none of your messages are left in this chat.")
             } else {
                 session.toasts.show("Cleared \(cleared) message\(cleared == 1 ? "" : "s")")
             }
@@ -2330,7 +2328,7 @@ private struct ChatActionSheet: View {
         }
     }
 
-    // ── transcript building (web chats-actions.tsx parity) ──
+    // transcript building (web chats-actions.tsx parity)
 
     static func transcript(for conversation: WireConversationSummary, viewerId: String, messages: [WireChatMessage]) -> String {
         let title = conversation.name
@@ -2340,11 +2338,11 @@ private struct ChatActionSheet: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         var lines = [
-            "Pulse — chat export",
+            "Pulse - chat export",
             "Chat: \(title)",
             "Exported: \(formatter.string(from: Date()))",
             "Messages: \(messages.count)",
-            "──────────────────────",
+            "----------------------",
             "",
         ]
         for message in messages {
@@ -2363,7 +2361,7 @@ private struct ChatActionSheet: View {
         if message.imagePath != nil { return "[photo]" }
         if message.audioPath != nil {
             if let durationMs = message.durationMs, durationMs > 0 {
-                return "[voice note — \(max(1, Int((durationMs / 1000).rounded())))s]"
+                return "[voice note - \(max(1, Int((durationMs / 1000).rounded())))s]"
             }
             return "[voice note]"
         }
@@ -2381,9 +2379,7 @@ private struct ChatActionSheet: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Archived sub-page (spec §9)
-// ─────────────────────────────────────────────────────────────
 
 private struct ArchivedPageView: View {
     @ObservedObject var session: PulseSession
@@ -2465,7 +2461,7 @@ private struct ArchivedPageView: View {
                         .frame(minWidth: 18, minHeight: 18)
                         .background(Capsule().fill(PulseTheme.emerald500.opacity(0.15)))
                 }
-                Text("Muted here — a new message moves a chat back to your inbox")
+                Text("Muted here - a new message moves a chat back to your inbox")
                     .font(.system(size: 11))
                     .foregroundStyle(PulseTheme.textTertiary)
                     .lineLimit(1)
@@ -2490,7 +2486,7 @@ private struct ArchivedPageView: View {
             Text("No archived chats")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(PulseTheme.titleOnPanel)
-            Text("Swipe left on a chat and tap Archive — it waits here. A new message brings it straight back to your inbox.")
+            Text("Swipe left on a chat and tap Archive - it waits here. A new message brings it straight back to your inbox.")
                 .font(.system(size: 13))
                 .foregroundStyle(PulseTheme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -2501,10 +2497,8 @@ private struct ArchivedPageView: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Chats state holder (UDF) — transport in PulseSession, this
+// Chats state holder (UDF) - transport in PulseSession, this
 // owns home list state + the 6s poll + search + multi-select.
-// ─────────────────────────────────────────────────────────────
 @MainActor
 final class ChatsViewModel: ObservableObject {
     enum Phase: Equatable {
@@ -2514,10 +2508,10 @@ final class ChatsViewModel: ObservableObject {
     // list data
     @Published private(set) var summaries: [WireConversationSummary] = []
     @Published private(set) var phase: Phase = .idle
-    /// Offline rehydration — cached rows published FIRST (before the network
+    /// Offline rehydration - cached rows published FIRST (before the network
     /// answers), replaced once live summaries arrive.
     @Published private(set) var cachedRows: [ChatRowModel] = []
-    /// Local composer drafts — a non-empty local draft wins over myDraft.
+    /// Local composer drafts - a non-empty local draft wins over myDraft.
     @Published private(set) var localDrafts: [String: String] = [:]
 
     // search
@@ -2528,7 +2522,7 @@ final class ChatsViewModel: ObservableObject {
     @Published private(set) var serverHits: [WireSearchMessage]?
     @Published private(set) var serverTotal: Int?
     @Published private(set) var serverSearching = false
-    // R2-D ITEM 8 — spotlight recent searches (web spotlight.tsx parity):
+    // R2-D ITEM 8 - spotlight recent searches (web spotlight.tsx parity):
     // last 5 queries, newest-first, surfaced while the query is empty.
     @Published private(set) var spotlightRecents: [String] = []
     private let recentsStore = PulseSpotlightRecents()
@@ -2549,7 +2543,7 @@ final class ChatsViewModel: ObservableObject {
     // overlays
     @Published var sheet: SheetTarget?
     @Published var archivedOpen = false
-    // Wave 6 — discovery surfaces replace the honest stub toasts (F-SM-03 /
+    // Wave 6 - discovery surfaces replace the honest stub toasts (F-SM-03 /
     // F-CH-01 / F-FD-01): mentions feed, channel directory, folder manager.
     @Published var mentionsOpen = false
     @Published var channelsOpen = false
@@ -2570,7 +2564,7 @@ final class ChatsViewModel: ObservableObject {
     private var observing = false
     private var cancellables: Set<AnyCancellable> = []
 
-    // ── derived rows ─────────────────────────────────────────
+    // derived rows
 
     func row(for conv: WireConversationSummary, session: PulseSession) -> ChatRowModel {
         let viewerId = session.viewer?.id ?? ""
@@ -2581,7 +2575,7 @@ final class ChatsViewModel: ObservableObject {
             : conv.members.filter { $0.id != viewerId }.map(\.name).joined(separator: ", ")
         let displayName = conv.isGroup
             ? groupName
-            // Cached rows carry no members — fall back to the stored title.
+            // Cached rows carry no members - fall back to the stored title.
             : (other?.name ?? conv.name ?? "You")
 
         // Preview (web conversationPreview parity).
@@ -2603,7 +2597,7 @@ final class ChatsViewModel: ObservableObject {
                     : isAudio
                         ? "Voice message"
                         : isFile
-                            ? "Document — \(last.fileName ?? "file")"
+                            ? "Document - \(last.fileName ?? "file")"
                             : collapsed
                 let mine = last.senderId == viewerId
                 let replyArrow = last.replyTo != nil ? "↩ " : ""
@@ -2719,7 +2713,7 @@ final class ChatsViewModel: ObservableObject {
         return counts
     }
 
-    /// Filter preference lives on prefs (persisted, OBSERVED — the Wave 0 fix
+    /// Filter preference lives on prefs (persisted, OBSERVED - the Wave 0 fix
     /// for the stale filter: chips re-filter the list without a tab remount).
     @Published private(set) var prefsFilter: PulsePrefs.ChatsFilter = .all
 
@@ -2728,14 +2722,14 @@ final class ChatsViewModel: ObservableObject {
     private var storeBinding = false
     private var storeAttached = false
 
-    /// Web `local ?? conv.myDraft` parity — the local draft wins when present.
+    /// Web `local ?? conv.myDraft` parity - the local draft wins when present.
     static func draftPreview(local: String?, server: String?) -> String? {
         if let local, !local.isEmpty { return local }
         if let server, !server.isEmpty { return server }
         return nil
     }
 
-    // ── lifecycle ────────────────────────────────────────────
+    // lifecycle
 
     func start(session: PulseSession, prefs: PulsePrefs) {
         observedSession = session
@@ -2762,7 +2756,7 @@ final class ChatsViewModel: ObservableObject {
         pollTask = nil
     }
 
-    /// Wave 0 — bind the filter to the LIVE prefs object (the old code read a
+    /// Wave 0 - bind the filter to the LIVE prefs object (the old code read a
     /// throwaway PulsePrefs() in start(), so chips never re-filtered the list).
     private func bind(prefs: PulsePrefs) {
         guard boundPrefs !== prefs else { return }
@@ -2776,7 +2770,7 @@ final class ChatsViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// Wave 0 — offline rehydration: publish cached conversations the moment
+    /// Wave 0 - offline rehydration: publish cached conversations the moment
     /// the store exists (before the first network answer lands).
     private func bindStore(_ session: PulseSession) {
         guard !storeBinding else { return }
@@ -2840,7 +2834,7 @@ final class ChatsViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Wave 0 — the message:* envelope family + conversation:updated bump
+        // Wave 0 - the message:* envelope family + conversation:updated bump
         // the session's realtimeRefreshTick; the inbox re-fetches on it.
         session.$realtimeRefreshTick
             .dropFirst()
@@ -2852,7 +2846,7 @@ final class ChatsViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // ── refresh ──────────────────────────────────────────────
+    // refresh
 
     func refresh(session: PulseSession, force: Bool = false) async {
         if force || summaries.isEmpty { phase = phase == .loaded ? phase : .loading }
@@ -2881,25 +2875,25 @@ final class ChatsViewModel: ObservableObject {
             phase = .loaded
             session.dockUnreadCount = unreadTotal
         } catch {
-            // Poll failures stay silent — the list keeps its cached rows.
+            // Poll failures stay silent - the list keeps its cached rows.
         }
         reloadDrafts(session: session)
     }
 
     private func loadSideQueries(session: PulseSession) async {
-        // Stories — unreachable today → row degrades to My status only.
+        // Stories - unreachable today → row degrades to My status only.
         if let storiesPage = await session.api.stories() {
             storyGroups = storiesPage.groups ?? []
         } else {
             storyGroups = []
         }
-        // Folders — nil keeps the rail at All + manage.
+        // Folders - nil keeps the rail at All + manage.
         folders = await session.api.folders()
-        // Mentions — nil → pill shows 0.
+        // Mentions - nil → pill shows 0.
         mentionCount = await session.api.mentionsCount() ?? 0
     }
 
-    /// Wave 6 — refetch JUST the folder rail (folder-manager mutations call
+    /// Wave 6 - refetch JUST the folder rail (folder-manager mutations call
     /// this through onChanged) and clear a dead selection honestly.
     func reloadFolders(session: PulseSession) async {
         folders = await session.api.folders()
@@ -2916,7 +2910,7 @@ final class ChatsViewModel: ObservableObject {
         }
     }
 
-    // ── search ───────────────────────────────────────────────
+    // search
 
     func searchTextChanged(_ value: String, session: PulseSession) {
         query = value
@@ -2926,7 +2920,7 @@ final class ChatsViewModel: ObservableObject {
             deferredQuery = ""
             serverHits = nil
             serverTotal = nil
-            // R2-D ITEM 8 — back to the empty query: the recents rail shows.
+            // R2-D ITEM 8 - back to the empty query: the recents rail shows.
             spotlightRecents = recentsStore.read()
             return
         }
@@ -2944,7 +2938,7 @@ final class ChatsViewModel: ObservableObject {
         }
     }
 
-    /// R2-D ITEM 8 — a query actually used (the user opened a chat or a
+    /// R2-D ITEM 8 - a query actually used (the user opened a chat or a
     /// message hit while it was active) becomes a recent (web pushRecent
     /// fires on the same activations).
     func noteQueryUsed() {
@@ -2954,7 +2948,7 @@ final class ChatsViewModel: ObservableObject {
         spotlightRecents = recentsStore.read()
     }
 
-    /// R2-D ITEM 8 — web clearRecents parity (the footer "Clear recents").
+    /// R2-D ITEM 8 - web clearRecents parity (the footer "Clear recents").
     func clearSpotlightRecents() {
         recentsStore.clear()
         spotlightRecents = []
@@ -2970,14 +2964,14 @@ final class ChatsViewModel: ObservableObject {
         serverTotal = nil
     }
 
-    /// R2-D ITEM 8 — reload the recents rail when entering search mode so
+    /// R2-D ITEM 8 - reload the recents rail when entering search mode so
     /// it reflects every push since the last visit.
     func enterSearchMode() {
         searching = true
         spotlightRecents = recentsStore.read()
     }
 
-    // ── multi-select ─────────────────────────────────────────
+    // multi-select
 
     func enterSelect(_ conversationId: String) {
         PulseHaptics.tap()
@@ -3004,7 +2998,7 @@ final class ChatsViewModel: ObservableObject {
         summaries = summaries.map { ids.contains($0.id) ? transform($0) : $0 }
     }
 
-    // ── single-row actions (optimistic, web copies) ──────────
+    // single-row actions (optimistic, web copies)
 
     func togglePin(_ conv: WireConversationSummary, session: PulseSession) async {
         let wasPinned = conv.isPinned
@@ -3037,7 +3031,7 @@ final class ChatsViewModel: ObservableObject {
             try await session.api.setMuted(conversationId: conv.id, until: until)
             if let until {
                 if until == "always" {
-                    session.toasts.show("Muted — always")
+                    session.toasts.show("Muted - always")
                 } else {
                     let stamp = Date().addingTimeInterval(until == "1w" ? 7 * 86_400 : 8 * 3_600)
                     session.toasts.show("Muted until \(PulseFormat.listStamp(stamp))")
@@ -3078,7 +3072,7 @@ final class ChatsViewModel: ObservableObject {
         await refreshQuiet(session: session)
     }
 
-    // ── batch actions (spec §7.5) ────────────────────────────
+    // batch actions (spec §7.5)
 
     private var selectedConvs: [WireConversationSummary] {
         summaries.filter { selection.contains($0.id) }
@@ -3142,7 +3136,7 @@ final class ChatsViewModel: ObservableObject {
         var read = 0
         var failed = 0
         for conv in convs {
-            // POST /read { userId } — per-chat failures counted honestly.
+            // POST /read { userId } - per-chat failures counted honestly.
             if (try? await session.api.markRead(conversationId: conv.id)) != nil {
                 read += 1
             } else {
@@ -3154,14 +3148,14 @@ final class ChatsViewModel: ObservableObject {
             session.toasts.show("\(read) chat\(read == 1 ? "" : "s") marked as read")
         }
         if failed > 0 {
-            session.toasts.show("\(failed) chat\(failed == 1 ? "" : "s") could not be marked read — try again")
+            session.toasts.show("\(failed) chat\(failed == 1 ? "" : "s") could not be marked read - try again")
         } else {
             exitSelect()
         }
         await refreshQuiet(session: session)
     }
 
-    // ── Note to Self ─────────────────────────────────────────
+    // Note to Self
 
     func pressSelf(session: PulseSession) async {
         PulseHaptics.tap()
@@ -3190,12 +3184,10 @@ final class ChatsViewModel: ObservableObject {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Transitions
-// ─────────────────────────────────────────────────────────────
 
 extension AnyTransition {
-    /// Folder change replays the list — opacity + 10pt rise, soft spring.
+    /// Folder change replays the list - opacity + 10pt rise, soft spring.
     static var folderReplay: AnyTransition {
         .asymmetric(
             insertion: .opacity.combined(with: .offset(y: 10)),

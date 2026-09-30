@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/redpackets — WeChat-style red packets (Task R23-a)
+// /api/redpackets - WeChat-style red packets (Task R23-a)
 //
 // POST { userId, conversationId, total, count, note? }
 //   → 201 { message: ChatMessage, packet: {...} }
@@ -11,7 +10,6 @@
 // LogEvent. The sender's message is serialized EXACTLY like the
 // messages API returns it (same mapMessage + MESSAGE_FULL_INCLUDE),
 // so the client can append it with zero reshaping.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -65,7 +63,7 @@ function cutRopeSlices(total: number, count: number): number[] {
   return slices
 }
 
-/** POST /api/redpackets — create a packet, debit the sender, post the message. */
+/** POST /api/redpackets - create a packet, debit the sender, post the message. */
 export async function POST(req: Request) {
   const body = await safeJson(req)
   const userId = strField(body.userId)
@@ -98,7 +96,7 @@ export async function POST(req: Request) {
     )
   }
   const note = strField(body.note).slice(0, NOTE_MAX)
-  const content = note || '🧧 Red packet'
+  const content = note || 'Red packet'
   const payload = (packetId: string) => JSON.stringify({ packetId, total, count, note })
 
   // Existence + membership up-front → clean 404 / 403 semantics.
@@ -129,14 +127,14 @@ export async function POST(req: Request) {
       await tx.userWallet.upsert({ where: { userId }, create: { userId }, update: {} })
       const wallet = await tx.userWallet.findUniqueOrThrow({ where: { userId } })
       if (wallet.coins < total) {
-        throw new RedPacketError(402, `Insufficient PC — you have ${wallet.coins}, tried to send ${total}.`)
+        throw new RedPacketError(402, `Insufficient PC - you have ${wallet.coins}, tried to send ${total}.`)
       }
       const after = await tx.userWallet.update({
         where: { userId },
         data: { coins: { decrement: total } },
       })
       if (after.coins < 0) {
-        throw new RedPacketError(402, 'Insufficient PC — balance changed, try again.')
+        throw new RedPacketError(402, 'Insufficient PC - balance changed, try again.')
       }
 
       // carrier message (payload patched with the real packetId below)
@@ -215,7 +213,7 @@ export async function POST(req: Request) {
 
   const mapped = mapMessage(created.message, userId)
 
-  // Realtime relay to every OTHER member (sender appends via the response —
+  // Realtime relay to every OTHER member (sender appends via the response -
   // the sheet additionally fires `pulse:external-message` for instant append).
   const recipients = (await memberIdsOf(conversationId)).filter((memberId) => memberId !== userId)
   await notifySocket('message:new', recipients, {

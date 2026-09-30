@@ -1,15 +1,13 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — per-conversation composer drafts.
+// Pulse Chat - per-conversation composer drafts.
 // localStorage-persisted so a half-typed message survives
 // leaving/re-entering a chat room (per browser profile).
-// R45 — every local mutation ALSO mirrors to the server
+// R45 - every local mutation ALSO mirrors to the server
 // (PATCH /api/conversations/[id]/draft, debounced ~600ms), making drafts
 // cross-device: the chats list "Draft: …" preview renders from the
 // summary on any device and the composer restores a server draft when the
-// local store is empty. This store is the single funnel — every existing
+// local store is empty. This store is the single funnel - every existing
 // save/clear call site (send, edit-cancel, slash commands, clear-all…)
 // syncs with zero per-site wiring.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { create } from 'zustand'
@@ -29,11 +27,11 @@ const syncTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 /**
  * Mirror a local draft mutation to the server (best-effort, silent on
- * failure — drafts keep working offline/local-first either way).
+ * failure - drafts keep working offline/local-first either way).
  */
 function scheduleServerSync(conversationId: string, text: string) {
   const user = getPulseUser()
-  if (!user) return // logged out — nothing to sync against
+  if (!user) return // logged out - nothing to sync against
   const prev = syncTimers.get(conversationId)
   if (prev) clearTimeout(prev)
   syncTimers.set(

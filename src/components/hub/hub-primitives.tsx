@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Hub — shared glass primitives for the sub-page system
+// Pulse Hub - shared glass primitives for the sub-page system
 // (R27-b): accent icon tiles, the glass sub-page header, install
 // state badges and the stagger choreography used by both the
 // category page and the app page. Glass language per the locked
-// R26 refs; zero emojis — Lucide icons + spring motion only.
-// ─────────────────────────────────────────────────────────────
+// R26 refs; zero emojis - Lucide icons + spring motion only.
 'use client'
 
 import { motion, type Variants } from 'framer-motion'
@@ -27,7 +25,7 @@ import { cn } from '@/lib/utils'
 import { spring } from '@/lib/motion'
 import { CATEGORY_META, appAccent, type MatrixApp, type MatrixCategory } from '@/lib/hub-catalog'
 
-// ── Stagger choreography ─────────────────────────────────────
+// Stagger choreography 
 
 export const staggerParent: Variants = {
   hidden: {},
@@ -39,7 +37,7 @@ export const staggerChild: Variants = {
   show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 460, damping: 32 } },
 }
 
-// ── Category icons (static map — catalog stays dependency-free) ──
+// Category icons (static map - catalog stays dependency-free) 
 
 export const CATEGORY_ICONS: Record<MatrixCategory, LucideIcon> = {
   'Dev-Ops / Community Boards': MessagesSquare,
@@ -54,10 +52,10 @@ export const CATEGORY_ICONS: Record<MatrixCategory, LucideIcon> = {
   'Spatial 2D/3D Art': Palette,
 }
 
-// ── App icon tile ────────────────────────────────────────────
+// App icon tile 
 
 /**
- * Accent-gradient icon tile — brand-true per-app gradient with a
+ * Accent-gradient icon tile - brand-true per-app gradient with a
  * specular top highlight and soft shadow. Sizes keep initials legible.
  */
 export function AppIconTile({
@@ -92,7 +90,7 @@ export function AppIconTile({
   )
 }
 
-// ── Category accent tile (for the root rails) ────────────────
+// Category accent tile (for the root rails) 
 
 export function CategoryIconTile({
   category,
@@ -126,7 +124,7 @@ export function CategoryIconTile({
   )
 }
 
-// ── Glass sub-page header (settings SectionPage pattern) ─────
+// Glass sub-page header (settings SectionPage pattern) 
 
 export function HubSubHeader({
   title,
@@ -168,7 +166,7 @@ export function HubSubHeader({
   )
 }
 
-// ── Install state badge (real AppInstall data) ───────────────
+// Install state badge (real AppInstall data) 
 
 export function ConnectedBadge({ appName, className }: { appName: string; className?: string }) {
   return (

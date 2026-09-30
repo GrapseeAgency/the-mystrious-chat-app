@@ -2,12 +2,12 @@ import Foundation
 import Combine
 import Network
 
-/// Sender boundary for the outbox engine — PulseAPIClient conforms in the
+/// Sender boundary for the outbox engine - PulseAPIClient conforms in the
 /// app; tests stub it HERE (this is the only mock seam Wave 0 allows).
-/// W1-DATA-B — the requirement mirrors PulseAPIClient.sendMessage's FULL
+/// W1-DATA-B - the requirement mirrors PulseAPIClient.sendMessage's FULL
 /// parameter list (Swift witness matching ignores default arguments, so a
 /// defaulted-param method would no longer witness a shorter requirement).
-/// The engine only ever fills the text fields — media/thread sends are
+/// The engine only ever fills the text fields - media/thread sends are
 /// online-only and never queued (spec §1.2). R1-W2B D28 relaxes exactly one
 /// case: FORWARDS (F-MS-10 "queued if offline") queue with their stored
 /// kind + media paths via PulseOutboxForward.
@@ -33,7 +33,7 @@ public protocol PulseOutboxSending: Sendable {
 
 extension PulseAPIClient: PulseOutboxSending {}
 
-/// R1-W2B D28 — the queued forward envelope (F-MS-10 offline column).
+/// R1-W2B D28 - the queued forward envelope (F-MS-10 offline column).
 /// Mirrors web forward-sheet.tsx ForwardPayload (L23-33): the copy re-POSTs
 /// with the ORIGINAL stored media paths (no re-upload) and the matching
 /// kind (documents ride kind "file" with their name/size). Encoded as the
@@ -71,10 +71,10 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
     }
 }
 
-/// Outbox engine — offline sends, mirroring src/lib/pulse-outbox.ts:
+/// Outbox engine - offline sends, mirroring src/lib/pulse-outbox.ts:
 ///   • FIFO queue, hard cap 50 (oldest dropped beyond it)
 ///   • flush drains in order and STOPS at the first network-class failure
-///     (temporal order — later sends must never overtake earlier ones)
+///     (temporal order - later sends must never overtake earlier ones)
 ///   • success → real row upserted, `local_<clientId>` temp row deleted,
 ///     outbox entry deleted, UI notified
 ///   • 4xx (validation/forbidden/404/…) → entry dropped + temp row deleted +
@@ -82,7 +82,7 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
 ///   • network failure → attempts++, retried on the next trigger
 /// Triggers: session start with pending entries, socket (re)connect, app
 /// foreground, BGAppRefreshTask, a 60s self-heal timer while entries exist
-/// and — R1-W2B D41 — the NWPathMonitor satisfaction edge (spec F-OF-04:
+/// and - R1-W2B D41 - the NWPathMonitor satisfaction edge (spec F-OF-04:
 /// "online" flush trigger; the path turning satisfied flushes immediately
 /// instead of waiting up to 60 s for the heal sweep).
 @MainActor
@@ -100,7 +100,7 @@ public final class PulseOutboxEngine: ObservableObject {
     /// Self-heal cadence while entries remain queued.
     static let healIntervalNanos: UInt64 = 60_000_000_000
 
-    /// BGTaskScheduler bridge — the launch handler has no view graph, so the
+    /// BGTaskScheduler bridge - the launch handler has no view graph, so the
     /// live engine registers itself here (weak-style swap on each session).
     public static var active: PulseOutboxEngine?
 
@@ -114,7 +114,7 @@ public final class PulseOutboxEngine: ObservableObject {
     private let senderProvider: () -> (any PulseOutboxSending)?
     private var healTask: Task<Void, Never>?
     private var working = false
-    // R1-W2B D41 — NWPathMonitor flush trigger (spec F-OF-04). The monitor
+    // R1-W2B D41 - NWPathMonitor flush trigger (spec F-OF-04). The monitor
     // lives as long as the engine (its handler only weakly references self,
     // so engine teardown releases it) and its satisfaction EDGE calls the
     // same flush every other trigger uses.
@@ -133,24 +133,24 @@ public final class PulseOutboxEngine: ObservableObject {
     }
 
     // The heal task holds `weak self`; after deallocation the loop exits on
-    // the next tick (no explicit cancel needed in deinit — keeps this class
+    // the next tick (no explicit cancel needed in deinit - keeps this class
     // free of nonisolated deinit actor-isolation questions).
 
-    // ── queue management ─────────────────────────────────────
+    // queue management
 
     /// Enqueues one outgoing message (clientId dedupes via UNIQUE).
     public func append(conversationId: String, clientId: String, content: String, kind: String = "text") {
         do {
             try store.appendOutbox(conversationId: conversationId, clientId: clientId, content: content, kind: kind)
         } catch {
-            // Duplicate clientId (double-tap) — already queued, nothing to do.
+            // Duplicate clientId (double-tap) - already queued, nothing to do.
         }
         trimToLimit()
         pendingCount = store.countOutbox()
         startHealTimer()
     }
 
-    /// R1-W2B D28 — enqueues one queued FORWARD. `forward` carries the
+    /// R1-W2B D28 - enqueues one queued FORWARD. `forward` carries the
     /// stored kind + media paths; the flush re-POSTs the exact body.
     public func appendForward(conversationId: String, clientId: String, content: String, forward: PulseOutboxForward) {
         do {
@@ -162,7 +162,7 @@ public final class PulseOutboxEngine: ObservableObject {
                 payloadJson: PulseOutboxForward.encode(forward),
             )
         } catch {
-            // Duplicate clientId — already queued.
+            // Duplicate clientId - already queued.
         }
         trimToLimit()
         pendingCount = store.countOutbox()
@@ -184,9 +184,9 @@ public final class PulseOutboxEngine: ObservableObject {
         pendingCount
     }
 
-    // ── flushing ─────────────────────────────────────────────
+    // flushing
 
-    /// Drains the queue in FIFO order. Safe to call from every trigger —
+    /// Drains the queue in FIFO order. Safe to call from every trigger -
     /// re-entrant calls are ignored while a flush is running.
     public func flush() async {
         guard !working else { return }
@@ -210,7 +210,7 @@ public final class PulseOutboxEngine: ObservableObject {
         for entry in entries {
             if Task.isCancelled { break }
             do {
-                // R1-W2B D28 — a forward entry re-POSTs its stored kind +
+                // R1-W2B D28 - a forward entry re-POSTs its stored kind +
                 // media paths (web ForwardPayload parity); plain sends keep
                 // the text-only body.
                 let forward = PulseOutboxForward.decode(entry.payloadJson)
@@ -244,7 +244,7 @@ public final class PulseOutboxEngine: ObservableObject {
                     onEvent?(.dropped(clientId: entry.clientId, conversationId: entry.conversationId, reason: Self.describe(error)))
                     continue
                 }
-                // Network-class failure — keep the entry, stop the drain so
+                // Network-class failure - keep the entry, stop the drain so
                 // later sends never overtake this one (web break parity).
                 try? store.bumpOutboxAttempts(id: entry.id ?? 0)
                 break
@@ -252,9 +252,9 @@ public final class PulseOutboxEngine: ObservableObject {
         }
     }
 
-    // ── self-heal timer ──────────────────────────────────────
+    // self-heal timer
 
-    /// 60s sweep while entries exist — recovers from triggers the app missed
+    /// 60s sweep while entries exist - recovers from triggers the app missed
     /// (killed mid-flush, missed reconnect, …).
     private func startHealTimer() {
         guard healTask == nil else { return }
@@ -273,10 +273,10 @@ public final class PulseOutboxEngine: ObservableObject {
         healTask = nil
     }
 
-    // ── connectivity trigger (R1-W2B D41 — NWPathMonitor, F-OF-04) ──
+    // connectivity trigger (R1-W2B D41 - NWPathMonitor, F-OF-04)
 
     /// Watches the network path; the moment it turns satisfied (wifi/cell
-    /// comes back) with entries still queued, the SAME flush runs — no
+    /// comes back) with entries still queued, the SAME flush runs - no
     /// waiting for the 60 s heal sweep. Idempotent: re-entrant flushes are
     /// already ignored while one is draining.
     private func startPathMonitor() {
@@ -284,7 +284,7 @@ public final class PulseOutboxEngine: ObservableObject {
         pathMonitorStarted = true
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let satisfied = path.status == NWPath.Status.satisfied
-            // The handler fires on the monitor's private queue — hop to the
+            // The handler fires on the monitor's private queue - hop to the
             // engine's MainActor before touching state.
             Task { @MainActor in
                 self?.handlePathUpdate(satisfied: satisfied)
@@ -302,14 +302,14 @@ public final class PulseOutboxEngine: ObservableObject {
         }
     }
 
-    // ── helpers ──────────────────────────────────────────────
+    // helpers
 
     /// Optimistic bubble id for a queued send (web `temp-<clientId>` parity).
     public static func tempMessageId(clientId: String) -> String {
         "local_\(clientId)"
     }
 
-    /// 4xx-class failures can never succeed by retrying — drop them.
+    /// 4xx-class failures can never succeed by retrying - drop them.
     /// Everything else (network / 5xx / unknown transport errors) retries.
     public static func isDroppable(_ error: Error) -> Bool {
         guard let failure = error as? PulseAPIClient.Failure else { return false }

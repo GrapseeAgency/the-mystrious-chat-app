@@ -1,8 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — XP economy constants (client-safe, zero deps).
+// 
+// Pulse - XP economy constants (client-safe, zero deps).
 // Single source of truth so the REST routes and any UI copy
 // reference the same numbers (imported by the messages route).
-// ─────────────────────────────────────────────────────────────
+// 
 
 /**
  * Daily XP ceiling for message-XP (R31-a). A sender earns at most this

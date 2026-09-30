@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users/check-username?username=x — live handle availability
+// /api/users/check-username?username=x - live handle availability
 // Powers the onboarding username picker ("@x is free" / taken+suggestion).
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { normalizeUsername, suggestUsername } from '@/lib/serializers'

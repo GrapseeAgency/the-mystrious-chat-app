@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Wave 6 — the full user page (F-CP-03, user-route-page.tsx +
+/// Wave 6 - the full user page (F-CP-03, user-route-page.tsx +
 /// user-profile-sheet.tsx parity): hero + presence, @handle, status
 /// glyph+text, bio, REAL stats grid (GET /api/users/{id}/stats), rooms in
 /// common (max 3 + "+N more"), member-since/last-seen stamps, and the
@@ -60,7 +60,7 @@ struct UserPageView: View {
         .background(PulseTheme.pageWash.ignoresSafeArea())
     }
 
-    // ── hero ─────────────────────────────────────────────────
+    // hero
 
     private var online: Bool { session.isOnline(userId) }
 
@@ -118,15 +118,20 @@ struct UserPageView: View {
         .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
     }
 
-    // ── status + bio ─────────────────────────────────────────
+    // status + bio
 
     @ViewBuilder
     private func statusAndBio(_ user: WireUser) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if user.statusEmoji != nil || (user.statusText ?? "").isEmpty == false {
                 HStack(spacing: 6) {
-                    if let emoji = user.statusEmoji {
-                        Text(pulseStatusGlyphDisplay(emoji))
+                    // R18-b - the stored value is an icon ID; unknown/stale
+                    // values normalize to the registry default (never raw emoji).
+                    if let id = PulseStatusIconId.normalize(user.statusEmoji) {
+                        Image(systemName: id.symbolName)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(PulseTheme.accent)
+                            .accessibilityLabel(id.label)
                     }
                     if let text = user.statusText {
                         Text(text)
@@ -147,10 +152,7 @@ struct UserPageView: View {
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(PulseTheme.rowRim, lineWidth: 1))
     }
 
-    /// The 11 fixed stored values are emoji glyphs + the literal "vacation"
-    /// (web renders Lucide icons; the native picker shows the emoji set and
-    /// maps the vacation token to its plane glyph for display only).
-    // ── stats (real GET /stats numbers) ──────────────────────
+    /// stats (real GET /stats numbers)
 
     @ViewBuilder
     private var statsGrid: some View {
@@ -200,7 +202,7 @@ struct UserPageView: View {
         .accessibilityLabel("\(value ?? 0) \(label)")
     }
 
-    // ── rooms in common (max 3 + "+N more") ──────────────────
+    // rooms in common (max 3 + "+N more")
 
     @ViewBuilder
     private var roomsInCommon: some View {
@@ -240,7 +242,7 @@ struct UserPageView: View {
         }
     }
 
-    // ── member since / last seen ─────────────────────────────
+    // member since / last seen
 
     private func stampsFooter(_ user: WireUser) -> some View {
         let joined = model.stats?.joinedAt ?? user.createdAt
@@ -259,7 +261,7 @@ struct UserPageView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     private func actions(_ user: WireUser) -> some View {
         let isViewer = user.id == session.viewer?.id
@@ -319,10 +321,8 @@ struct UserPageView: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // UserPage state holder (UDF): user + stats + pair block state +
 // rooms-in-common overlap from the live conversations list.
-// ─────────────────────────────────────────────────────────────
 @MainActor
 final class UserPageModel: ObservableObject {
     @Published private(set) var user: WireUser?
@@ -356,7 +356,7 @@ final class UserPageModel: ObservableObject {
                 stats = try await session.api.userStats(userId)
                 statsFailed = false
             } catch {
-                statsFailed = true // honest empty — "Stats unavailable right now."
+                statsFailed = true // honest empty - "Stats unavailable right now."
             }
         }
         blocked = (try? await session.api.blockState(target: userId)) ?? false
@@ -368,8 +368,8 @@ final class UserPageModel: ObservableObject {
         }
     }
 
-    /// Message {firstName} — create-or-dedupe DM, then open via the session
-    /// handoff (Chats tab pushes the room — same path the dock compose uses).
+    /// Message {firstName} - create-or-dedupe DM, then open via the session
+    /// handoff (Chats tab pushes the room - same path the dock compose uses).
     func message() async {
         guard let session, !messaging else { return }
         messaging = true
@@ -384,7 +384,7 @@ final class UserPageModel: ObservableObject {
         }
     }
 
-    /// Block/unblock with the honest toasts — the pair state refetches
+    /// Block/unblock with the honest toasts - the pair state refetches
     /// afterwards (server truth, no optimistic lies).
     func toggleBlock() async {
         guard let session, !blockBusy else { return }

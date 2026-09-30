@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Palette avatar — photo when present, else initials over a member-color
+/// Palette avatar - photo when present, else initials over a member-color
 /// gradient, with an emerald presence ring. Web outcome, SwiftUI implementation.
 public struct PulseAvatar: View {
     public let name: String
@@ -54,7 +54,7 @@ public struct PulseAvatar: View {
     }
 }
 
-/// Three drifting dots for "typing…" — bouncy ease, respects nothing since it
+/// Three drifting dots for "typing…" - bouncy ease, respects nothing since it
 /// is content signaling, but scales down under Reduce Motion instead of animating.
 public struct TypingDotsView: View {
     @State private var animating = false
@@ -80,7 +80,7 @@ public struct TypingDotsView: View {
     }
 }
 
-/// Emerald unread capsule — bouncy scale-in like the web badge.
+/// Emerald unread capsule - bouncy scale-in like the web badge.
 public struct UnreadBadge: View {
     public let count: Int
 
@@ -117,12 +117,10 @@ public struct CapsuleLabel: View {
     }
 }
 
-// ══════════════════════════════════════════════════════════════
-// Home-rebuild primitives (N10-b) — squircle, glass recipes,
+// Home-rebuild primitives (N10-b) - squircle, glass recipes,
 // presence halo, streak heat ring, story rings, badges, chips.
-// ══════════════════════════════════════════════════════════════
 
-/// Superellipse ("squircle") silhouette — the web .pulse-squircle mask.
+/// Superellipse ("squircle") silhouette - the web .pulse-squircle mask.
 /// Groups and channels are THINGS (squircle); people stay circular.
 public struct SuperellipseShape: Shape {
     public init() {}
@@ -173,7 +171,7 @@ struct GlassSheen: View {
     }
 }
 
-/// One row of the chats loading skeleton — 48pt circle + two shimmer bars.
+/// One row of the chats loading skeleton - 48pt circle + two shimmer bars.
 struct RowSkeletonView: View {
     @State private var shimmering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -236,7 +234,7 @@ struct PresenceHalo: View {
     }
 }
 
-/// Snapchat-style live-streak heat ring — conic amber/rose sweep around a
+/// Snapchat-style live-streak heat ring - conic amber/rose sweep around a
 /// DM avatar. `level` 1/2/3 sets ring thickness and overhang (web §7.4).
 struct StreakHeatRing: View {
     let level: Int
@@ -250,7 +248,7 @@ struct StreakHeatRing: View {
     }
 }
 
-/// Row unread capsule — 18pt emerald pill, white 2pt ring, "99+" cap.
+/// Row unread capsule - 18pt emerald pill, white 2pt ring, "99+" cap.
 struct RowUnreadBadge: View {
     let count: Int
 
@@ -266,7 +264,7 @@ struct RowUnreadBadge: View {
     }
 }
 
-/// Muted BellOff chip — count when unread, "Muted" text when read.
+/// Muted BellOff chip - count when unread, "Muted" text when read.
 struct MutedChip: View {
     let unreadCount: Int
 
@@ -326,7 +324,7 @@ struct SectionHeader: View {
     }
 }
 
-/// List-row avatar — DM circle (member gradient + initials + glass rim +
+/// List-row avatar - DM circle (member gradient + initials + glass rim +
 /// presence dot) or group squircle (violet gradient by id hash + initials,
 /// circular photo override). Web user-avatar.tsx / GroupAvatar outcome.
 struct RowAvatar: View {
@@ -411,7 +409,7 @@ struct RowAvatar: View {
     }
 }
 
-/// One cell of the stories row — 56pt ring with an animated conic sweep for
+/// One cell of the stories row - 56pt ring with an animated conic sweep for
 /// unseen status, static zinc ring for seen/none, and the emerald plus badge
 /// on "My status" when no live story exists.
 struct StoryRingCell: View {
@@ -479,7 +477,7 @@ struct StoryRingCell: View {
             }
         }
         .buttonStyle(PulseButtonStyle())
-        .accessibilityLabel(ring == .unseen ? "\(label) — new status" : label)
+        .accessibilityLabel(ring == .unseen ? "\(label) - new status" : label)
     }
 }
 

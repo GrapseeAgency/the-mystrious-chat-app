@@ -27,25 +27,25 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
 
 /**
- * Room cache — offline-first inbox. v2 added the UI-era columns: members,
+ * Room cache - offline-first inbox. v2 added the UI-era columns: members,
  * accent color, streaks, drafts, reactions and reply denormalization.
  * v3 (N10) adds the home-page-era columns: manual unread, streak at-risk/lost,
  * last-message shape flags, mute window epoch, other-user id and channel flag.
  * v4 (Wave 0) adds the offline core WITHOUT touching v3 rows: the FIFO
- * `outbox` (queued sends) and the per-conversation `draft` table — migrated
+ * `outbox` (queued sends) and the per-conversation `draft` table - migrated
  * non-destructively (MIGRATION_3_4).
  * v5 (Wave 1) adds the messaging-surface columns: message media
  * (imagePath/audioPath/filePath/fileName/fileSize/viewOnce) and the
- * conversation `membersJson` (id/name/color/lastReadAt/role per member —
- * powers read ticks + the info sheet) — all additive (MIGRATION_4_5).
+ * conversation `membersJson` (id/name/color/lastReadAt/role per member -
+ * powers read ticks + the info sheet) - all additive (MIGRATION_4_5).
  * v6 (Wave 2) adds the messaging-depth columns: viewedAt/transcript/
  * transcribedAt/pollJson/linkPreviewJson/topicId on messages, plus the NEW
- * `topics` rail and `savedMessages` library tables — all additive
+ * `topics` rail and `savedMessages` library tables - all additive
  * (MIGRATION_5_6).
  * v7 (Wave 3) adds the call-history cache `callLogCache` and the single-writer
  * offline queue `callLogQueue` (MIGRATION_6_7).
  * v8 (Wave 4) adds the stories snapshot cache `story_cache` (one canonical
- * JSON blob per key mirroring the GET /api/stories DTO page) — additive
+ * JSON blob per key mirroring the GET /api/stories DTO page) - additive
  * (MIGRATION_7_8).
  */
 @Entity(tableName = "conversations")
@@ -180,21 +180,21 @@ data class MessageEntity(
     val senderColor: String?,
     val viaAutomation: Boolean,
     val durationMs: Long?,
-    // Wave 1 media columns (v5) — nullable TEXT / INTEGER, viewOnce render gate.
+    // Wave 1 media columns (v5) - nullable TEXT / INTEGER, viewOnce render gate.
     val imagePath: String?,
     val audioPath: String?,
     val filePath: String?,
     val fileName: String?,
     val fileSize: Long?,
     @ColumnInfo(defaultValue = "0") val viewOnce: Boolean = false,
-    // Wave 2 depth columns (v6) — nullable TEXT, ISO timestamps verbatim.
+    // Wave 2 depth columns (v6) - nullable TEXT, ISO timestamps verbatim.
     val viewedAt: String? = null,
     val transcript: String? = null,
     val transcribedAt: String? = null,
     val pollJson: String? = null,
     val linkPreviewJson: String? = null,
     val topicId: String? = null,
-    // Wave 7 (v9) — raw rich-object payload JSON (red packet / game / tournament).
+    // Wave 7 (v9) - raw rich-object payload JSON (red packet / game / tournament).
     val payloadJson: String? = null,
 ) {
     fun toDomain(): Message {
@@ -208,7 +208,7 @@ data class MessageEntity(
             val userId = dto.userId ?: return@mapNotNull null
             app.pulse.domain.model.Reaction(emoji = emoji, userId = userId)
         }
-        // REM-A — reserved pulse:* keys ride payloadJson (schema v9 frozen);
+        // REM-A - reserved pulse:* keys ride payloadJson (schema v9 frozen);
         // pop them back out so the domain payload stays the clean wire blob.
         val (payloadClean, anon, anonAlias, expiresAt) = payloadPulseKeys(payloadJson)
         return Message(
@@ -242,7 +242,7 @@ data class MessageEntity(
     }
 
     companion object {
-        // ── REM-A reserved payload keys (Room v9 is FROZEN — no new columns) ──
+        // REM-A reserved payload keys (Room v9 is FROZEN - no new columns)
         // incognito + disappearing fields persist inside payloadJson as
         // "pulse:*" keys. Every payload consumer (web + natives) reads known
         // keys only and ignores the rest, so the extras are inert on the wire.
@@ -304,7 +304,7 @@ data class MessageEntity(
             viewedAt = m.viewedAt?.let { java.time.Instant.ofEpochMilli(it).toString() },
             transcript = m.transcript,
             transcribedAt = m.transcribedAt?.let { java.time.Instant.ofEpochMilli(it).toString() },
-            // Wire-shape JSON (PollDto/LinkPreviewDto) — same compact form the
+            // Wire-shape JSON (PollDto/LinkPreviewDto) - same compact form the
             // gateway emits, so the column decodes identically no matter which
             // upsert path wrote it (REST row, socket relay, optimistic copy).
             pollJson = m.poll?.let { poll ->
@@ -323,7 +323,7 @@ data class MessageEntity(
     }
 }
 
-// ── Wave 2 wire-shape ⇄ domain converters (poll + link preview) ─────
+// Wave 2 wire-shape ⇄ domain converters (poll + link preview)
 
 fun PollDto.toInfo(): PollInfo = PollInfo(
     id = id,
@@ -377,7 +377,15 @@ fun LinkPreviewInfo.toDto(): LinkPreviewDto = LinkPreviewDto(
 
 /**
  * One Zulip-style topic chip cached for the rail (Wave 2 v6). "General" is
- * NOT a row — it is the implicit whole room (messages with topicId = null).
+ * NOT a row - it is the implicit whole room (messages with topicId = null).
+ *
+ * R18 icon-id contract: `emoji` carries a stable topic icon id. The Room
+ * @ColumnInfo DDL default is deliberately FROZEN at the shipped value so the
+ * compiled schema bundle (and the room_master_table identity hash) stays
+ * byte-identical - changing it would brick every installed v9 database on
+ * open. Correctness is owned at the boundaries instead: [toDomain] and
+ * [from] normalize through the registry, so stale emoji never reaches the
+ * UI and every cache rewrite persists ids.
  */
 @Entity(
     tableName = "topics",
@@ -387,14 +395,14 @@ data class TopicEntity(
     @PrimaryKey val id: String,
     val conversationId: String,
     val name: String,
-    @ColumnInfo(defaultValue = "💬") val emoji: String = "💬",
+    @ColumnInfo(defaultValue = "💬") val emoji: String = app.pulse.protocol.TOPIC_ICON_DEFAULT,
     val lastMessageAt: String?,
     @ColumnInfo(defaultValue = "0") val messageCount: Int = 0,
 ) {
     fun toDomain(): app.pulse.domain.model.Topic = app.pulse.domain.model.Topic(
         id = id,
         name = name,
-        emoji = emoji,
+        emoji = app.pulse.protocol.topicIconId(emoji),
         lastMessageAt = app.pulse.core.time.PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
         messageCount = messageCount,
     )
@@ -404,14 +412,15 @@ data class TopicEntity(
             id = t.id,
             conversationId = conversationId,
             name = t.name,
-            emoji = t.emoji,
+            // Normalize on write too: ids only ever land in the cache.
+            emoji = app.pulse.protocol.topicIconId(t.emoji),
             lastMessageAt = t.lastMessageAt?.let { java.time.Instant.ofEpochMilli(it).toString() },
             messageCount = t.messageCount,
         )
     }
 }
 
-/** One saved-library row (Wave 2 v6) — the message itself lives in `messages`. */
+/** One saved-library row (Wave 2 v6) - the message itself lives in `messages`. */
 @Entity(
     tableName = "savedMessages",
     indices = [Index(value = ["conversationId"])],
@@ -423,7 +432,7 @@ data class SavedMessageEntity(
 )
 
 /**
- * One cached call-history row (Wave 3 v7) — the offline mirror of
+ * One cached call-history row (Wave 3 v7) - the offline mirror of
  * GET /api/calls (server cap 50, newest first). Peer identity is
  * denormalized exactly like the server resolves it: the OTHER party
  * relative to the viewer, so the cache renders offline precisely what the
@@ -484,7 +493,7 @@ data class CallLogCacheEntity(
 }
 
 /**
- * One queued single-writer POST /api/calls row (Wave 3 v7) — a call that
+ * One queued single-writer POST /api/calls row (Wave 3 v7) - a call that
  * TERMINATED while the gateway was unreachable. `payloadJson` is UNIQUE:
  * it dedupes double-enqueues exactly like outbox.clientId. Flushed FIFO on
  * app start / socket reconnect (mirrors the outbox trigger style).
@@ -502,7 +511,7 @@ data class CallLogQueueEntity(
 
 
 /**
- * One queued outgoing message (Wave 0 offline core — web pulse-outbox parity).
+ * One queued outgoing message (Wave 0 offline core - web pulse-outbox parity).
  * `clientId` is UNIQUE: it links the optimistic `local_<clientId>` message row
  * to the queue row through enqueue → flush → resolve/drop.
  */
@@ -545,7 +554,7 @@ data class OutboxEntity(
     }
 }
 
-/** Per-conversation composer draft (Wave 0 — web pulse-drafts parity). */
+/** Per-conversation composer draft (Wave 0 - web pulse-drafts parity). */
 @Entity(tableName = "draft")
 data class DraftEntity(
     @PrimaryKey val conversationId: String,
@@ -573,7 +582,7 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
-    /** Thread screen rehydration — replies asc from the Room cache. */
+    /** Thread screen rehydration - replies asc from the Room cache. */
     @Query("SELECT * FROM messages WHERE threadRootId = :rootId ORDER BY createdAt ASC")
     fun observeThread(rootId: String): Flow<List<MessageEntity>>
 
@@ -581,9 +590,9 @@ interface MessageDao {
     suspend fun countByThread(rootId: String): Int
 
     /**
-     * R2-C item 2 (D47 delta sync) — the newest SERVER row's ISO createdAt
+     * R2-C item 2 (D47 delta sync) - the newest SERVER row's ISO createdAt
      * for one conversation; the `since=` cursor. Optimistic temp bubbles
-     * (`local_*` ids) never anchor the cursor — their fake stamps would skip
+     * (`local_*` ids) never anchor the cursor - their fake stamps would skip
      * real rows. Null = the cache is empty → the caller keeps the full-window
      * first-load fetch.
      */
@@ -602,7 +611,7 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteById(id: String)
 
-    /** Wave 8 — Data & Storage "Clear outbox": every optimistic temp bubble at once. */
+    /** Wave 8 - Data & Storage "Clear outbox": every optimistic temp bubble at once. */
     @Query("DELETE FROM messages WHERE id LIKE 'local_%'")
     suspend fun deleteAllTempMessages()
 
@@ -610,7 +619,7 @@ interface MessageDao {
     suspend fun deleteByIds(ids: List<String>)
 
     /**
-     * One batched "N replies ↳" lookup for the river — Room expands the IN
+     * One batched "N replies ↳" lookup for the river - Room expands the IN
      * list; empty root list returns an empty sheet (Room requires non-empty).
      */
     @Query(
@@ -627,7 +636,7 @@ interface MessageDao {
     suspend fun tempEchoes(conversationId: String, authorId: String, body: String, keepId: String): List<MessageEntity>
 
     /**
-     * Targeted ASR patch (Wave 2) — transcribe() writes ONLY the transcript
+     * Targeted ASR patch (Wave 2) - transcribe() writes ONLY the transcript
      * columns so reactions/media/poll JSON on the row are never rewritten.
      */
     @Query("UPDATE messages SET transcript = :transcript, transcribedAt = :transcribedAt WHERE id = :id")
@@ -639,7 +648,7 @@ data class ThreadCountRow(val rootId: String, val cnt: Int)
 
 @Dao
 interface OutboxDao {
-    /** Insert/replace by autoGenerate id — clientId uniqueness is enforced by the index. */
+    /** Insert/replace by autoGenerate id - clientId uniqueness is enforced by the index. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: OutboxEntity): Long
 
@@ -661,11 +670,11 @@ interface OutboxDao {
     @Query("SELECT COUNT(*) FROM outbox")
     suspend fun count(): Int
 
-    /** Wave 8 — Data & Storage "Clear outbox": drop every held row. */
+    /** Wave 8 - Data & Storage "Clear outbox": drop every held row. */
     @Query("DELETE FROM outbox")
     suspend fun clearAll()
 
-    /** FIFO cap — keep only the newest [max] rows (web MAX_QUEUE = 50). */
+    /** FIFO cap - keep only the newest [max] rows (web MAX_QUEUE = 50). */
     @Query("DELETE FROM outbox WHERE id NOT IN (SELECT id FROM outbox ORDER BY id DESC LIMIT :max)")
     suspend fun trimBeyond(max: Int)
 }
@@ -678,7 +687,7 @@ interface DraftDao {
     @Query("SELECT * FROM draft WHERE conversationId = :conversationId")
     fun observe(conversationId: String): Flow<DraftEntity?>
 
-    /** All drafts at once — the chats-list "Draft:" preview merge (local wins). */
+    /** All drafts at once - the chats-list "Draft:" preview merge (local wins). */
     @Query("SELECT * FROM draft")
     fun observeAll(): Flow<List<DraftEntity>>
 
@@ -692,7 +701,7 @@ interface DraftDao {
     suspend fun clearAll()
 }
 
-/** Live topic rail for one conversation (Wave 2 — General is NOT a row). */
+/** Live topic rail for one conversation (Wave 2 - General is NOT a row). */
 @Dao
 interface TopicDao {
     @Upsert
@@ -716,7 +725,7 @@ interface TopicDao {
 }
 
 /**
- * Call-history store (Wave 3 v7) — cache mirror of GET /api/calls plus the
+ * Call-history store (Wave 3 v7) - cache mirror of GET /api/calls plus the
  * offline queue for the single-writer POST /api/calls.
  */
 @Dao
@@ -734,7 +743,7 @@ interface CallLogDao {
     @Query("SELECT * FROM callLogCache WHERE id = :callId")
     suspend fun get(callId: String): CallLogCacheEntity?
 
-    /** Prune after refresh — rows the server no longer lists. */
+    /** Prune after refresh - rows the server no longer lists. */
     @Query("DELETE FROM callLogCache WHERE id NOT IN (:keepIds)")
     suspend fun deleteNotIn(keepIds: List<String>)
 
@@ -762,7 +771,7 @@ interface CallLogDao {
     suspend fun queueCount(): Int
 }
 
-/** Saved-library index (Wave 2) — server cap 100, newest first, no pagination. */
+/** Saved-library index (Wave 2) - server cap 100, newest first, no pagination. */
 @Dao
 interface SavedDao {
     @Upsert
@@ -777,7 +786,7 @@ interface SavedDao {
     @Query("DELETE FROM savedMessages WHERE messageId = :messageId")
     suspend fun deleteById(messageId: String)
 
-    /** Prune after refreshSavedLibrary — rows the server no longer lists. */
+    /** Prune after refreshSavedLibrary - rows the server no longer lists. */
     @Query("DELETE FROM savedMessages WHERE messageId IN (:messageIds)")
     suspend fun deleteByIds(messageIds: List<String>)
 
@@ -786,9 +795,9 @@ interface SavedDao {
 }
 
 /**
- * Stories offline cache (Wave 4 v8) — ONE canonical JSON blob per key
+ * Stories offline cache (Wave 4 v8) - ONE canonical JSON blob per key
  * ("stories:<viewerId>") mirroring the exact GET /api/stories DTO page the
- * network returned. Stories are ephemeral 24h rows (no per-row Room table —
+ * network returned. Stories are ephemeral 24h rows (no per-row Room table -
  * the whole page is replaced atomically on every refresh), so the cache is a
  * snapshot store: network success overwrites it, network failure serves it.
  */
@@ -818,7 +827,7 @@ interface StoryDao {
 }
 
 /**
- * Wave 7 collaboration & hub offline cache (v9) — ONE canonical JSON blob per
+ * Wave 7 collaboration & hub offline cache (v9) - ONE canonical JSON blob per
  * key (story_cache precedent): `hub:wallet:<viewerId>`, `kanban:<convId>`,
  * `events:<convId>`, `whiteboard:<convId>`, `games:<convId>`, `tournaments:<convId>`,
  * `leaderboard:<scope>`, `hub:tasks:<viewerId>`, `hub:market`, `hub:logs`,
@@ -878,7 +887,7 @@ abstract class PulseDatabase : RoomDatabase() {
         const val NAME = "pulse.db"
 
         /**
-         * v3 → v4 (Wave 0): add the outbox + draft tables. Non-destructive —
+         * v3 → v4 (Wave 0): add the outbox + draft tables. Non-destructive -
          * every deployed v3 conversation/message row survives untouched.
          * DDL mirrors Room's generated schema exactly (see schemas/4.json).
          */
@@ -900,7 +909,7 @@ abstract class PulseDatabase : RoomDatabase() {
 
         /**
          * v4 → v5 (Wave 1): message media columns + conversation membersJson.
-         * All ADD COLUMNs — every v4 row survives; NOT NULL columns carry
+         * All ADD COLUMNs - every v4 row survives; NOT NULL columns carry
          * defaults so old rows backfill (viewOnce=0, members='[]').
          * DDL mirrors Room's generated schema exactly (see schemas/5.json).
          */
@@ -919,7 +928,7 @@ abstract class PulseDatabase : RoomDatabase() {
         /**
          * v5 → v6 (Wave 2): message depth columns (view-once burn stamp,
          * ASR transcript, poll/linkPreview JSON, topic filing) + the NEW
-         * `topics` and `savedMessages` tables. All additive — every v5 row
+         * `topics` and `savedMessages` tables. All additive - every v5 row
          * survives; nullable columns need no defaults. DDL mirrors Room's
          * generated schema exactly (see schemas/6.json).
          */
@@ -947,7 +956,7 @@ abstract class PulseDatabase : RoomDatabase() {
 
         /**
          * v6 → v7 (Wave 3): call history cache + offline call-log queue.
-         * Two NEW tables — every v6 row survives untouched. DDL mirrors
+         * Two NEW tables - every v6 row survives untouched. DDL mirrors
          * Room's generated schema exactly (see schemas/7.json) and matches
          * the iOS callLogCache/callLogQueue columns 1:1.
          */
@@ -972,7 +981,7 @@ abstract class PulseDatabase : RoomDatabase() {
 
         /**
          * v7 → v8 (Wave 4): add the stories snapshot cache (one JSON blob per
-         * key mirroring the GET /api/stories DTO page). Additive CREATE — every
+         * key mirroring the GET /api/stories DTO page). Additive CREATE - every
          * deployed row survives untouched.
          */
         val MIGRATION_7_8: Migration = object : Migration(7, 8) {
@@ -986,7 +995,7 @@ abstract class PulseDatabase : RoomDatabase() {
 
         /**
          * v8 → v9 (Wave 7): add the collaboration & hub snapshot cache.
-         * Non-destructive — every deployed v8 row survives untouched.
+         * Non-destructive - every deployed v8 row survives untouched.
          */
         val MIGRATION_8_9: Migration = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -994,7 +1003,7 @@ abstract class PulseDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS `wave7_cache` (`key` TEXT NOT NULL PRIMARY KEY, " +
                         "`json` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL)",
                 )
-                // Wave 7 rich-object carriers (red packet / game / tournament) —
+                // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
             }

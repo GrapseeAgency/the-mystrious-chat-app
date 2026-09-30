@@ -2,8 +2,7 @@ import Foundation
 import AVFoundation
 import Combine
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — Wave 3 call audio session (AVFoundation).
+// Pulse - Wave 3 call audio session (AVFoundation).
 //
 // Shared design: .playAndRecord + .voiceChat (+ .defaultToSpeaker,
 // .allowBluetooth) on call start/accept; speaker toggle via
@@ -12,9 +11,8 @@ import Combine
 //
 // Hardware-gated (documented honestly): the actual earpiece/speaker switch,
 // bluetooth SCO pickup and the pre-call session restoration behavior can
-// only be PROVEN on a physical device — the simulator answers these APIs
+// only be PROVEN on a physical device - the simulator answers these APIs
 // with defaults and never exhibits real routes.
-// ─────────────────────────────────────────────────────────────
 
 @MainActor
 public final class PulseCallAudioSession: ObservableObject {
@@ -26,7 +24,7 @@ public final class PulseCallAudioSession: ObservableObject {
         let mode: AVAudioSession.Mode
     }
 
-    /// The pre-call session snapshot — restored exactly once, on call end.
+    /// The pre-call session snapshot - restored exactly once, on call end.
     private var saved: SavedSession?
     private var routeObserver: NSObjectProtocol?
 
@@ -42,11 +40,11 @@ public final class PulseCallAudioSession: ObservableObject {
         observeRouteChanges()
     }
 
-    // ── call lifecycle ───────────────────────────────────────
+    // call lifecycle
 
-    /// Call start / accept — snapshot the pre-call session once, then apply
+    /// Call start / accept - snapshot the pre-call session once, then apply
     /// the voice-chat configuration. Nested calls (accept while already
-    /// active — cannot happen, the machine guards it) would keep the FIRST
+    /// active - cannot happen, the machine guards it) would keep the FIRST
     /// snapshot so the original session always wins the restore.
     public func activateForCall() {
         guard !isActiveCallSession else { return }
@@ -64,13 +62,13 @@ public final class PulseCallAudioSession: ObservableObject {
             refreshRouteDescription()
         } catch {
             // Audio hardware refused (simulator edge, hardened device policy).
-            // The call still rings/talks over the default route — honest
+            // The call still rings/talks over the default route - honest
             // degradation, never a crash.
             isActiveCallSession = true
         }
     }
 
-    /// Call end — restore the saved category/mode/options and deactivate with
+    /// Call end - restore the saved category/mode/options and deactivate with
     /// notifyOthers so background audio (music, voice-note playback) resumes.
     public func restore() {
         let session = AVAudioSession.sharedInstance()
@@ -85,11 +83,11 @@ public final class PulseCallAudioSession: ObservableObject {
         currentOutputRoute = ""
     }
 
-    // ── speaker toggle ───────────────────────────────────────
+    // speaker toggle
 
     /// .defaultToSpeaker is set at activation, so the default is speaker-on;
     /// toggling overrides the output port between .speaker and .none
-    /// (receiver/earpiece). Requires the .playAndRecord category — which the
+    /// (receiver/earpiece). Requires the .playAndRecord category - which the
     /// activation above guarantees while a call is live.
     public func setSpeaker(_ enabled: Bool) {
         let session = AVAudioSession.sharedInstance()
@@ -98,12 +96,12 @@ public final class PulseCallAudioSession: ObservableObject {
             speakerOverride = enabled
             refreshRouteDescription()
         } catch {
-            // Route override refused — keep the published state honest.
+            // Route override refused - keep the published state honest.
             refreshRouteDescription()
         }
     }
 
-    // ── mic permission ───────────────────────────────────────
+    // mic permission
 
     /// The honest gate before any call: asks when undetermined, reports the
     /// real verdict otherwise. Denied → the engine shows the error card.
@@ -125,7 +123,7 @@ public final class PulseCallAudioSession: ObservableObject {
         }
     }
 
-    // ── route observation ────────────────────────────────────
+    // route observation
 
     private func observeRouteChanges() {
         routeObserver = NotificationCenter.default.addObserver(

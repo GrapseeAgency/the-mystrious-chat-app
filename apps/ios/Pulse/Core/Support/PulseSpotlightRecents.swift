@@ -1,16 +1,14 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// R2-D ITEM 8 — spotlight recent searches (web spotlight.tsx:46-73
+// R2-D ITEM 8 - spotlight recent searches (web spotlight.tsx:46-73
 // parity, iOS ChatsView search field). Persisted under the web's exact
 // localStorage key `pulse.spotlight.recents.v1` as a JSON array of strings:
 //   • newest-first push, case-insensitive dedupe (web pushRecent);
 //   • capped at the newest 5 (RECENTS_MAX);
 //   • empty/whitespace queries never stored;
 //   • clear action removes the key (web clearRecents).
-// Storage failures degrade honestly — recents are best-effort, the search
+// Storage failures degrade honestly - recents are best-effort, the search
 // itself never depends on them.
-// ─────────────────────────────────────────────────────────────
 
 public struct PulseSpotlightRecents: Sendable {
     /// Byte-same key as the web store (spotlight.tsx RECENTS_KEY).
@@ -25,7 +23,7 @@ public struct PulseSpotlightRecents: Sendable {
     }
 
     /// The persisted recents, newest first. Junk payloads (non-array, non-
-    /// string rows, wrong JSON) degrade to an empty list — web readRecents.
+    /// string rows, wrong JSON) degrade to an empty list - web readRecents.
     public func read() -> [String] {
         guard let raw = defaults.string(forKey: Self.storageKey),
               let data = raw.data(using: .utf8),
@@ -45,7 +43,7 @@ public struct PulseSpotlightRecents: Sendable {
         write(Self.sanitize(next))
     }
 
-    /// Web clearRecents parity — the key goes away entirely.
+    /// Web clearRecents parity - the key goes away entirely.
     public func clear() {
         defaults.removeObject(forKey: Self.storageKey)
     }
@@ -56,7 +54,7 @@ public struct PulseSpotlightRecents: Sendable {
         defaults.set(raw, forKey: Self.storageKey)
     }
 
-    /// Pure normalization — shared by read/push (and tests): drops empty and
+    /// Pure normalization - shared by read/push (and tests): drops empty and
     /// whitespace-only rows, case-insensitive dedupe keeping the FIRST
     /// (newest) occurrence, capped at RECENTS_MAX.
     public static func sanitize(_ items: [String]) -> [String] {

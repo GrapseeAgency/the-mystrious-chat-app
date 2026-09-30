@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/scheduled/[id] — cancel a pending delayed-send (owner only)
-// ─────────────────────────────────────────────────────────────
+// /api/scheduled/[id] - cancel a pending delayed-send (owner only)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

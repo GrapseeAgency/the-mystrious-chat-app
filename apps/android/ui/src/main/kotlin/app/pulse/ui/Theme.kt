@@ -20,9 +20,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Pulse design tokens — the native translation of the web design language.
+ * Pulse design tokens - the native translation of the web design language.
  *
- * R2-C item 3 — the FIVE locked design languages of the web (R25) now ride
+ * R2-C item 3 - the FIVE locked design languages of the web (R25) now ride
  * this file too: `PulseUiTheme` is the port of src/lib/ui-theme.ts:35-76 +
  * the per-theme token blocks in globals.css (`[data-ui='ui-*']`: accent,
  * accent-2, radius-panel, page-bg, panel-bg, panel-border + the motion
@@ -50,7 +50,7 @@ data class PulsePageRadial(
  * values come from the globals.css light/dark token blocks per theme.
  */
 enum class PulseUiTheme(
-    /** The web value string — persisted verbatim under `pulse.uiTheme.v2`. */
+    /** The web value string - persisted verbatim under `pulse.uiTheme.v2`. */
     val id: String,
     val label: String,
     val tagline: String,
@@ -226,7 +226,7 @@ enum class PulseUiTheme(
     /** Opaque surface for Material panels: the translucent panel fill over the base. */
     fun surface(dark: Boolean): Color = panelBg(dark).compositeOver(pageBase(dark))
 
-    /** The page backdrop — vertical base (web linear-gradients) + radial washes. */
+    /** The page backdrop - vertical base (web linear-gradients) + radial washes. */
     fun pageBrush(dark: Boolean): Brush {
         val top = pageBaseTop(dark)
         val base = if (top != null) {
@@ -236,7 +236,7 @@ enum class PulseUiTheme(
         }
         val washes = radials(dark)
         if (washes.isEmpty()) return base
-        // Compose draws one Brush per node — layered washes ride
+        // Compose draws one Brush per node - layered washes ride
         // Modifier.pulseUiThemePageBackground below; a lone-wash fallback
         // keeps plain .background(theme.pageBrush(dark)) callers honest.
         return if (washes.size == 1) {
@@ -251,7 +251,7 @@ enum class PulseUiTheme(
     }
 }
 
-/** Current design language — provided by [PulseTheme], read by any surface. */
+/** Current design language - provided by [PulseTheme], read by any surface. */
 val LocalPulseUiTheme = staticCompositionLocalOf { PulseUiTheme.GLASS }
 
 private val Ink = Color(0xFF09090B)
@@ -259,7 +259,7 @@ private val Ink = Color(0xFF09090B)
 private fun onAccent(color: Color): Color =
     if (color.luminanceCompat() > 0.6f) Color(0xFF04120C) else Color.White
 
-/** Stand-in for androidx.core luminance — keeps the ui module dependency-lean. */
+/** Stand-in for androidx.core luminance - keeps the ui module dependency-lean. */
 private fun Color.luminanceCompat(): Float =
     0.2126f * red + 0.7152f * green + 0.0722f * blue
 
@@ -328,7 +328,7 @@ private fun shapesFor(theme: PulseUiTheme): Shapes = Shapes(
 @Composable
 fun PulseTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    /** R2-C — the selected design language (web `pulse.uiTheme.v2` value). */
+    /** R2-C - the selected design language (web `pulse.uiTheme.v2` value). */
     uiTheme: PulseUiTheme = PulseUiTheme.GLASS,
     content: @Composable () -> Unit,
 ) {
@@ -345,7 +345,7 @@ fun PulseTheme(
 }
 
 /**
- * R2-C — the theme's page backdrop, drawn on the app-shell root: the base
+ * R2-C - the theme's page backdrop, drawn on the app-shell root: the base
  * (flat or vertical, per the web linear-gradient) plus every radial wash
  * layered in draw order (glass's aurora blobs, dynamic's amber/pink, aero's
  * top beam). Resolves fraction geometry at draw time so it tracks the canvas.

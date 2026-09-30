@@ -1,17 +1,15 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — shared whiteboard sheet (Zoom/Miro-grade, Task R21-c).
+// Pulse - shared whiteboard sheet (Zoom/Miro-grade, Task R21-c).
 // A full-height dark board over the chat: draw with mouse or
 // touch, strokes persist as REAL WhiteboardStroke rows and sync
 // across every member by 900ms delta-polling (?since= watermark
 // + overlap window + id dedupe). "Clear board" wipes the rows
 // and bumps a `resetAt` marker every client obeys.
 //
-// Wiring contract for chat-room (lead): mount once per room —
+// Wiring contract for chat-room (lead): mount once per room -
 //   const wb = useWhiteboardSheet(conversationId, me.id)
 //   ... {wb.node}
 // and the /whiteboard slash entry opens it via the
 // `pulse:open-whiteboard` CustomEvent (see slash-palette.tsx).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -25,7 +23,7 @@ import { cn } from '@/lib/utils'
 import { WHITEBOARD_OPEN_EVENT } from '@/components/chat/slash-palette'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 
-// ── wire types (mirror of the REST contract) ─────────────────
+// wire types (mirror of the REST contract) 
 
 export interface WhiteboardStroke {
   id: string
@@ -61,10 +59,10 @@ interface WhiteboardDeleteResponse {
   at: number
 }
 
-// ── constants ────────────────────────────────────────────────
+// constants 
 
 const POLL_MS = 900
-/** delta fetch overlap — swallows clock skew between poll cycles */
+/** delta fetch overlap - swallows clock skew between poll cycles */
 const SYNC_OVERLAP_MS = 1500
 /** safety cap on committed strokes kept on-canvas (oldest dropped) */
 const STROKES_CAP = 2000
@@ -83,7 +81,7 @@ const STROKE_WIDTHS = [2, 5, 10] as const
 
 /**
  * A committed stroke on the local canvas. Points are a FLAT
- * normalized array [x0, y0, x1, y1, …] — allocation-free to draw
+ * normalized array [x0, y0, x1, y1, …] - allocation-free to draw
  * and resize-safe (converted to pixels only inside the tracer).
  */
 interface BoardStroke {
@@ -94,7 +92,7 @@ interface BoardStroke {
   points: number[]
 }
 
-// ── canvas engine (module-level, allocation-free) ────────────
+// canvas engine (module-level, allocation-free) 
 
 function clamp01(v: number): number {
   return Math.min(Math.max(v, 0), 1)
@@ -151,7 +149,7 @@ function traceSmooth(
   ctx.lineTo(X(n - 1), Y(n - 1))
 }
 
-/** One incremental live segment — cheap enough for every pointermove. */
+/** One incremental live segment - cheap enough for every pointermove. */
 function drawLiveSegment(
   ctx: CanvasRenderingContext2D,
   pts: number[],
@@ -188,7 +186,7 @@ function drawLiveSegment(
   ctx.stroke()
 }
 
-// ── component ────────────────────────────────────────────────
+// component 
 
 export function WhiteboardSheet({
   open,
@@ -207,7 +205,7 @@ export function WhiteboardSheet({
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 })
 
-  // board state lives in refs — the canvas is imperative
+  // board state lives in refs - the canvas is imperative
   const strokesRef = useRef<BoardStroke[]>([])
   const idsRef = useRef<Set<string>>(new Set())
   /** my strokes whose POST is still in flight (adopted by id later) */
@@ -234,7 +232,7 @@ export function WhiteboardSheet({
   const colorRef = useRef(color)
   const widthRef = useRef(width)
 
-  // ── painting ────────────────────────────────────────────────
+  // painting 
 
   const drawAll = useCallback(() => {
     const ctx = ctxRef.current
@@ -293,7 +291,7 @@ export function WhiteboardSheet({
     }
   }, [open, resizeCanvas])
 
-  // ── local board mutations ───────────────────────────────────
+  // local board mutations 
 
   const pushStroke = useCallback((stroke: BoardStroke) => {
     strokesRef.current.push(stroke)
@@ -326,13 +324,13 @@ export function WhiteboardSheet({
     setStrokeCount(0)
   }, [])
 
-  // ── remote sync (delta poll + reset marker) ─────────────────
+  // remote sync (delta poll + reset marker) 
 
   const applyServerStroke = useCallback(
     (s: WhiteboardStroke) => {
       if (idsRef.current.has(s.id)) return // already drawn (own echo or re-fetch overlap)
       const flat = flattenPoints(s.points)
-      if (flat.length < 2) return // corrupt row — skip honestly
+      if (flat.length < 2) return // corrupt row - skip honestly
       // adopt my own pending copy when the poll echoes it before the
       // POST response lands (both directions are covered)
       const pendingIdx = pendingRef.current.findIndex(
@@ -361,7 +359,7 @@ export function WhiteboardSheet({
       let changed = false
       const resetAt = typeof res.resetAt === 'number' ? res.resetAt : null
       if (resetAtRef.current !== undefined && resetAt !== resetAtRef.current) {
-        // someone cleared the board — wipe and let the (post-clear)
+        // someone cleared the board - wipe and let the (post-clear)
         // strokes in this very response re-populate the canvas
         wipeBoard()
         changed = true
@@ -417,7 +415,7 @@ export function WhiteboardSheet({
     drawAll()
   }, [conversationId, drawAll])
 
-  // ── drawing (pointer events, single active pointer) ─────────
+  // drawing (pointer events, single active pointer) 
 
   const normalizeEvent = (e: React.PointerEvent<HTMLCanvasElement>): [number, number] => {
     const canvas = canvasRef.current
@@ -434,7 +432,7 @@ export function WhiteboardSheet({
     try {
       e.currentTarget.setPointerCapture(e.pointerId)
     } catch {
-      // capture unsupported — moves still flow while over the canvas
+      // capture unsupported - moves still flow while over the canvas
     }
     const ctx = ctxRef.current
     if (ctx) {
@@ -482,7 +480,7 @@ export function WhiteboardSheet({
             idsRef.current.add(serverId)
           }
         } else if (serverId) {
-          // pending copy vanished (board was cleared mid-flight) — the
+          // pending copy vanished (board was cleared mid-flight) - the
           // stroke still exists server-side, so mirror server truth
           idsRef.current.add(serverId)
           if (!strokesRef.current.some((s) => s.id === serverId)) {
@@ -494,10 +492,10 @@ export function WhiteboardSheet({
           sinceRef.current = Math.max(sinceRef.current, res.serverTime - SYNC_OVERLAP_MS)
         }
       } catch {
-        // never reached the server — remove the local ghost honestly
+        // never reached the server - remove the local ghost honestly
         removeLocal(board.id)
         drawAll()
-        toast.error('Stroke did not sync — check your connection.')
+        toast.error('Stroke did not sync - check your connection.')
       }
     },
     [conversationId, meId, drawAll, pushStroke, removeLocal],
@@ -512,7 +510,7 @@ export function WhiteboardSheet({
         const off = 1.2 / Math.max(sizeRef.current.w, 1)
         pts = [pts[0], pts[1], Math.min(pts[0] + off, 1), Math.min(pts[1] + off, 1)]
       }
-      // respect the 500-point cap — downsample, always keep the last point
+      // respect the 500-point cap - downsample, always keep the last point
       const pointCount = pts.length / 2
       if (pointCount > POINTS_MAX_PER_STROKE) {
         const keepEvery = Math.ceil(pointCount / POINTS_MAX_PER_STROKE)
@@ -548,18 +546,18 @@ export function WhiteboardSheet({
     if (!active || e.pointerId !== active.pointerId) return
     activeRef.current = null
     if (active.pts.length > 3) {
-      finalizeStroke(active) // gesture mostly completed — keep the work
+      finalizeStroke(active) // gesture mostly completed - keep the work
     } else {
       drawAll() // discard the dab
     }
   }
 
-  // ── undo / clear ────────────────────────────────────────────
+  // undo / clear 
 
   const undoMine = useCallback(async () => {
     if (undoBusy) return
     if (pendingRef.current.length > 0) {
-      toast('Hold on — still syncing your last stroke.')
+      toast('Hold on - still syncing your last stroke.')
       return
     }
     if (!strokesRef.current.some((s) => s.userId === meId)) {
@@ -583,14 +581,14 @@ export function WhiteboardSheet({
         sinceRef.current = Math.max(sinceRef.current, res.serverTime - SYNC_OVERLAP_MS)
       }
     } catch {
-      toast.error('Undo failed — check your connection.')
+      toast.error('Undo failed - check your connection.')
     } finally {
       setUndoBusy(false)
     }
   }, [undoBusy, meId, conversationId, removeLocal, drawAll])
 
   const clearBoard = useCallback(async () => {
-    // two-tap confirm — a wipe is destructive for the whole room
+    // two-tap confirm - a wipe is destructive for the whole room
     if (!confirmClear) {
       setConfirmClear(true)
       haptic(12)
@@ -611,12 +609,12 @@ export function WhiteboardSheet({
         { method: 'DELETE' },
       )
       wipeBoard()
-      // only post-clear strokes from now on — with a small overlap window
+      // only post-clear strokes from now on - with a small overlap window
       sinceRef.current = Math.max(res.at - SYNC_OVERLAP_MS, 0)
       drawAll()
       toast.success('Board cleared for everyone.')
     } catch {
-      toast.error('Could not clear the board — check your connection.')
+      toast.error('Could not clear the board - check your connection.')
     } finally {
       setClearBusy(false)
     }
@@ -645,7 +643,7 @@ export function WhiteboardSheet({
       <DrawerContent className="mx-auto h-[97dvh] max-h-[97dvh] max-w-[420px] rounded-t-3xl border-white/10 bg-zinc-950 px-0 pb-0 [&>div:first-child]:bg-white/20 dark:border-white/10 dark:bg-zinc-950">
         <DrawerTitle className="sr-only">Shared whiteboard</DrawerTitle>
         <DrawerDescription className="sr-only">
-          Draw together in real time — every stroke syncs to everyone in this chat
+          Draw together in real time - every stroke syncs to everyone in this chat
         </DrawerDescription>
 
         <motion.div
@@ -722,7 +720,7 @@ export function WhiteboardSheet({
                   <PenLine className="size-5" aria-hidden />
                 </span>
                 <p className="max-w-[240px] text-[12.5px] font-medium leading-relaxed text-zinc-500">
-                  The board is empty — draw something, everyone in this chat sees it live.
+                  The board is empty - draw something, everyone in this chat sees it live.
                 </p>
               </div>
             ) : null}

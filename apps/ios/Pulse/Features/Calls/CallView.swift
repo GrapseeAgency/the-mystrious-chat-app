@@ -1,8 +1,7 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — Wave 3 native call overlay (full-screen, in-app; NO CallKit this
-// wave — documented hardware-gated next step alongside ringtone/background
+// Pulse - Wave 3 native call overlay (full-screen, in-app; NO CallKit this
+// wave - documented hardware-gated next step alongside ringtone/background
 // ring). Behavioral spec: web call-overlay.tsx.
 //
 //   incoming ring  → accept (emerald) / decline (rose)
@@ -13,12 +12,11 @@ import SwiftUI
 //   mic denied     → honest glass error card (+ Close that still logs the
 //                    unanswered attempt for outgoing calls)
 //
-// The overlay renders from PulseCallEngine's published state only — no local
+// The overlay renders from PulseCallEngine's published state only - no local
 // call logic lives here (single source of truth: the engine's machine).
-// ─────────────────────────────────────────────────────────────
 
-/// Hosted by RootView (topmost ZStack layer) — mounts the overlay whenever
-/// the engine is not idle. 3-d — no double-ring: while CallKit presents the
+/// Hosted by RootView (topmost ZStack layer) - mounts the overlay whenever
+/// the engine is not idle. 3-d - no double-ring: while CallKit presents the
 /// incoming call (PulseCallKitCoordinator), the in-app INCOMING ring stays
 /// hidden; every other state (connecting/connected/ended, and the fallback
 /// when CallKit refuses the report) renders normally.
@@ -50,7 +48,7 @@ struct CallView: View {
 
     var body: some View {
         ZStack {
-            // Ambient emerald wash — web overlay gradient parity.
+            // Ambient emerald wash - web overlay gradient parity.
             LinearGradient(
                 colors: [Color.black, PulseTheme.zinc(925), Color.black],
                 startPoint: .top,
@@ -67,7 +65,7 @@ struct CallView: View {
             )
             .ignoresSafeArea()
 
-            // Wave R1-W2D — REAL remote video full-bleed behind the UI
+            // Wave R1-W2D - REAL remote video full-bleed behind the UI
             // (renders only when the peer's m=video track actually arrives).
             if engine.state == .connecting || engine.state == .connected {
                 RemoteVideoLayer(engine: engine)
@@ -88,18 +86,18 @@ struct CallView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 26)
             } else {
-                // No peer (defensive — engine always has one when not idle).
+                // No peer (defensive - engine always has one when not idle).
                 ProgressView().tint(.white)
             }
 
-            // Wave R1-W2D — local camera PiP (web bottom-28 trailing parity).
+            // Wave R1-W2D - local camera PiP (web bottom-28 trailing parity).
             if engine.state == .connecting || engine.state == .connected {
                 LocalVideoPipLayer(engine: engine)
             }
         }
     }
 
-    // ── identity + status ────────────────────────────────────
+    // identity + status
 
     private func identityBlock(_ peer: CallPeer) -> some View {
         VStack(spacing: 14) {
@@ -144,7 +142,7 @@ struct CallView: View {
         }
     }
 
-    /// Web parity: the status line says what the WIRE carried — an incoming
+    /// Web parity: the status line says what the WIRE carried - an incoming
     /// 'video' offer rings as "Incoming video call". Wave R1-W2D: the answer
     /// now carries a REAL camera track (audio-only fallback stays honest).
     private var isVideoKind: Bool { engine.activeKind == .video }
@@ -200,7 +198,7 @@ struct CallView: View {
         .padding(.top, 22)
     }
 
-    // ── controls ─────────────────────────────────────────────
+    // controls
 
     @ViewBuilder
     private var controls: some View {
@@ -240,7 +238,7 @@ struct CallView: View {
                 }
             case .connected:
                 VStack(spacing: 14) {
-                    // Wave R1-W2D — video controls ONLY when a camera is
+                    // Wave R1-W2D - video controls ONLY when a camera is
                     // REALLY attached (audio-only fallback keeps the voice UI).
                     if engine.videoCaptureActive {
                         HStack(spacing: 26) {
@@ -293,7 +291,7 @@ struct CallView: View {
     }
 }
 
-// ── primitives ───────────────────────────────────────────────
+// primitives
 
 /// Pulsing halo rings around the avatar while ringing (web AvatarHalo parity).
 private struct AvatarHalo<Content: View>: View {
@@ -324,7 +322,7 @@ private struct AvatarHalo<Content: View>: View {
 }
 
 /// Timeline-driven halo pulse (no repeatForever animation leaks between
-/// call states — cancels with the modifier identity).
+/// call states - cancels with the modifier identity).
 private struct HaloPulse: ViewModifier {
     let targetScale: CGFloat
     let targetOpacity: Double
@@ -355,7 +353,7 @@ private struct HaloPulse: ViewModifier {
     }
 }
 
-/// Round glass action button (web CallButton parity). Internal since 3-d —
+/// Round glass action button (web CallButton parity). Internal since 3-d -
 /// the GroupCallView footer reuses the exact same control grammar.
 struct CallActionButton: View {
     enum Tone {

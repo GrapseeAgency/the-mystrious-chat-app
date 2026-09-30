@@ -1,23 +1,21 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — Spatial presence map (R24-c "Beyond Chat" wave 3).
+// Pulse - Spatial presence map (R24-c "Beyond Chat" wave 3).
 // Gather.town-style presence over the pulse-socket service:
 // a shared 2-D office you move through, where position IS the
 // social signal ("who is near me right now").
 //
 // REAL realtime, zero mocks:
 //  · positions live in the socket service's in-memory spaceRooms
-//    (`space:{conversationId}` rooms) — the genuine product, the
+//    (`space:{conversationId}` rooms) - the genuine product, the
 //    same trust model as the existing voice/stage rooms.
 //  · the server clamps moves to 0..1 and throttles to one accepted
 //    move per 80 ms; this client also self-throttles while dragging.
 //  · presence is deliberately EPHEMERAL (Gather parity): players
 //    idle >5 min are pruned server-side, disconnects clean up
 //    instantly. Nothing about presence is stored.
-//  · if you are alone the sheet says so — that is real presence,
+//  · if you are alone the sheet says so - that is real presence,
 //    not a placeholder.
 //
 // The sheet joins on open and emits space:leave on close/unmount.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -68,9 +66,9 @@ function initialsOf(name: string): string {
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase()
 }
 
-// ── static floor plan chrome (decorative geometry, not data) ──
+// static floor plan chrome (decorative geometry, not data) 
 // Drawn once per canvas resize: outer walls, two meeting rooms,
-// a lounge, desks — Gather-style top-down office in zinc strokes.
+// a lounge, desks - Gather-style top-down office in zinc strokes.
 function drawFloorPlan(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.clearRect(0, 0, w, h)
 
@@ -154,7 +152,7 @@ function drawFloorPlan(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.fillText('LOUNGE', w * 0.52, h * 0.75)
 }
 
-// ── one smoothed avatar ──
+// one smoothed avatar 
 function SpaceAvatar({
   player,
   isMe,
@@ -205,7 +203,7 @@ function SpaceAvatar({
   )
 }
 
-// ── the sheet ──
+// the sheet 
 export function SpaceSheetUI({
   conversationId,
   me,
@@ -374,7 +372,7 @@ export function SpaceSheetUI({
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-zinc-100">Space</h2>
             <p className="truncate text-[11px] text-zinc-500">
-              {connected ? 'Live — move around, get near people' : 'Connecting to the room…'}
+              {connected ? 'Live - move around, get near people' : 'Connecting to the room…'}
             </p>
           </div>
           <span
@@ -406,7 +404,7 @@ export function SpaceSheetUI({
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerLeave={endDrag}
-          aria-label="Office map — tap to move"
+          aria-label="Office map - tap to move"
         >
           <canvas ref={canvasRef} className="absolute inset-0 size-full" aria-hidden />
 
@@ -428,11 +426,11 @@ export function SpaceSheetUI({
         <div className="border-t border-zinc-800/80 px-4 py-3">
           {others.length === 0 ? (
             <p className="py-1 text-center text-xs text-zinc-500">
-              No one else here right now — invite people to the room.
+              No one else here right now - invite people to the room.
             </p>
           ) : nearby.length === 0 ? (
             <p className="py-1 text-center text-xs text-zinc-500">
-              {others.length} {others.length === 1 ? 'person' : 'people'} in the space — move closer to gather.
+              {others.length} {others.length === 1 ? 'person' : 'people'} in the space - move closer to gather.
             </p>
           ) : (
             <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -464,7 +462,7 @@ export function SpaceSheetUI({
   )
 }
 
-// ── the contract hook (mounted by chat-room; opens via CustomEvent) ──
+// the contract hook (mounted by chat-room; opens via CustomEvent) 
 
 export function useSpaceSheet(conversationId: string, me: SpaceMe) {
   const [open, setOpen] = useState(false)

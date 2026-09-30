@@ -30,11 +30,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/** One-shot user-facing notice — the snackbar/toast copy channel (web toast parity). */
+/** One-shot user-facing notice - the snackbar/toast copy channel (web toast parity). */
 data class HomeNotice(val text: String, val isError: Boolean = false)
 
 /**
- * Chats tab state holder — live inbox from Room + relay events, plus the
+ * Chats tab state holder - live inbox from Room + relay events, plus the
  * N10 home-page chrome state: filter, stories rail, folders rail, mention
  * count, server search and the 6s list poll (web refetchInterval parity).
  */
@@ -60,15 +60,15 @@ class ChatsViewModel @Inject constructor(
     private val _notice = MutableStateFlow<HomeNotice?>(null)
     val notice: StateFlow<HomeNotice?> = _notice.asStateFlow()
 
-    /** Persisted Telegram-style list filter — "all" | "unread" | "groups". */
+    /** Persisted Telegram-style list filter - "all" | "unread" | "groups". */
     val listFilter: StateFlow<String> = prefs.chatsListFilter
         .stateIn(viewModelScope, SharingStarted.Eagerly, "all")
 
-    /** 24h status rail — empty (honest) whenever the stories endpoint can't answer. */
+    /** 24h status rail - empty (honest) whenever the stories endpoint can't answer. */
     private val _stories = MutableStateFlow<List<StoryCell>>(emptyList())
     val stories: StateFlow<List<StoryCell>> = _stories.asStateFlow()
 
-    /** Signal-style folder rail — empty (honest) when the endpoint can't answer. */
+    /** Signal-style folder rail - empty (honest) when the endpoint can't answer. */
     private val _folders = MutableStateFlow<List<FolderSummary>>(emptyList())
     val folders: StateFlow<List<FolderSummary>> = _folders.asStateFlow()
 
@@ -83,7 +83,7 @@ class ChatsViewModel @Inject constructor(
     private val _searching = MutableStateFlow(false)
     val searching: StateFlow<Boolean> = _searching.asStateFlow()
 
-    /** R2-C item 7 — spotlight recent searches (last 5, web pulse.spotlight.recents.v1). */
+    /** R2-C item 7 - spotlight recent searches (last 5, web pulse.spotlight.recents.v1). */
     val spotlightRecents: StateFlow<List<String>> = prefs.spotlightRecents
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -96,16 +96,16 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch { prefs.clearSpotlightRecents() }
     }
 
-    // ── R14 gap 14 — spotlight Actions block (web spotlight.tsx:237-262) ──
+    // R14 gap 14 - spotlight Actions block (web spotlight.tsx:237-262)
 
-    /** Check-in flight flag — the row label flips to "Checking in…" while pending. */
+    /** Check-in flight flag - the row label flips to "Checking in…" while pending. */
     data class CheckinUi(val pending: Boolean = false)
 
     private val _checkin = MutableStateFlow(CheckinUi())
     val checkin: StateFlow<CheckinUi> = _checkin.asStateFlow()
 
     /**
-     * The spotlight "Check in to Hub" action — the REAL POST /api/hub/wallet/checkin
+     * The spotlight "Check in to Hub" action - the REAL POST /api/hub/wallet/checkin
      * (repo.checkinWallet), 409 "Already checked in today." surfaces verbatim
      * through the same notice channel the surface renders.
      */
@@ -119,7 +119,7 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch {
             repo.checkinWallet().fold(
                 onSuccess = { result ->
-                    notify("Checked in — +${result.reward} PC · ${result.streak}-day streak")
+                    notify("Checked in - +${result.reward} PC · ${result.streak}-day streak")
                 },
                 onFailure = { notify(it.message ?: "Check-in failed", isError = true) },
             )
@@ -130,7 +130,7 @@ class ChatsViewModel @Inject constructor(
     val chats: StateFlow<List<Conversation>> = repo.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Local DraftDao drafts keyed by conversation — the "local wins" merge over myDraft. */
+    /** Local DraftDao drafts keyed by conversation - the "local wins" merge over myDraft. */
     val drafts: StateFlow<Map<String, String>> = repo.observeDrafts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
@@ -173,7 +173,7 @@ class ChatsViewModel @Inject constructor(
         }
     }
 
-    /** Visible refresh — PullToRefresh + first load; flips the loading flag. */
+    /** Visible refresh - PullToRefresh + first load; flips the loading flag. */
     fun refresh() {
         if (repo.viewerId == null) return
         viewModelScope.launch {
@@ -187,7 +187,7 @@ class ChatsViewModel @Inject constructor(
         }
     }
 
-    /** Background 6s poll — no loading flips, exactly like web background refetch. */
+    /** Background 6s poll - no loading flips, exactly like web background refetch. */
     fun startPolling() {
         if (pollJob?.isActive == true) return
         pollJob = viewModelScope.launch {
@@ -207,11 +207,11 @@ class ChatsViewModel @Inject constructor(
     }
 
     /**
-     * Stories rail + folders + mention count — honest empty on transport failure.
+     * Stories rail + folders + mention count - honest empty on transport failure.
      *
      * Wave 4 polling decision (documented): the RAIL feed stays owned by this
      * VM and is refetched by the EXISTING 6s poll loop below (startPolling →
-     * loadChrome(quiet = true)) — stricter than the web's 60s refetchInterval,
+     * loadChrome(quiet = true)) - stricter than the web's 60s refetchInterval,
      * zero new machinery. The full-screen viewer/composer instead boot their
      * own StoriesViewModel (nav-entry scoped) with a fresh fetch + 60s poll on
      * entry; optimistic seen/delete/publish reconcile onto this rail within
@@ -248,7 +248,7 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch { prefs.setChatsListFilter(value) }
     }
 
-    /** Debounced server message search — ≥2 chars, 250ms (web rhythm). */
+    /** Debounced server message search - ≥2 chars, 250ms (web rhythm). */
     fun search(query: String) {
         searchJob?.cancel()
         val trimmed = query.trim()
@@ -275,7 +275,7 @@ class ChatsViewModel @Inject constructor(
         _notice.value = HomeNotice(text, isError)
     }
 
-    // ── row actions (web endpoint parity — see HOMEPAGE-SPEC §8/§14) ──
+    // row actions (web endpoint parity - see HOMEPAGE-SPEC §8/§14)
 
     fun togglePin(conversationId: String, pinned: Boolean) {
         viewModelScope.launch {
@@ -296,7 +296,7 @@ class ChatsViewModel @Inject constructor(
                     notify(
                         when (until) {
                             null -> "Notifications unmuted"
-                            "always" -> "Muted — always"
+                            "always" -> "Muted - always"
                             else -> {
                                 val offsetMs = if (until == "1w") 7L * 24 * 60 * 60 * 1000 else 8L * 60 * 60 * 1000
                                 val stamp = java.time.Instant.ofEpochMilli(System.currentTimeMillis() + offsetMs)
@@ -334,7 +334,7 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch { repo.markRead(conversationId) }
     }
 
-    // ── batch multi-select (web copies) ─────────────────────────
+    // batch multi-select (web copies)
 
     fun batchArchive(ids: List<String>, archived: Boolean) {
         viewModelScope.launch {
@@ -366,13 +366,13 @@ class ChatsViewModel @Inject constructor(
             val read = ids.size - failed.size
             if (read > 0) notify("$read ${if (read == 1) "chat" else "chats"} marked as read")
             if (failed.isNotEmpty()) {
-                notify("${failed.size} ${if (failed.size == 1) "chat" else "chats"} could not be marked read — try again", isError = true)
+                notify("${failed.size} ${if (failed.size == 1) "chat" else "chats"} could not be marked read - try again", isError = true)
             }
             onDone(failed)
         }
     }
 
-    // ── Note to Self ────────────────────────────────────────────
+    // Note to Self
 
     fun createSelfChat(onOpened: (String) -> Unit) {
         viewModelScope.launch {
@@ -382,12 +382,12 @@ class ChatsViewModel @Inject constructor(
         }
     }
 
-    // ── export / clear (long-press sheet) ───────────────────────
+    // export / clear (long-press sheet)
 
     fun exportChat(conversationId: String) {
         viewModelScope.launch {
             repo.exportChat(conversationId)
-                .onSuccess { notify("Chat exported — Saved $it") }
+                .onSuccess { notify("Chat exported - Saved $it") }
                 .onFailure { notify("Could not export this chat", isError = true) }
         }
     }
@@ -397,7 +397,7 @@ class ChatsViewModel @Inject constructor(
             repo.clearMyMessages(conversationId)
                 .onSuccess { cleared ->
                     if (cleared == 0) {
-                        notify("Nothing to clear — none of your messages are left in this chat.")
+                        notify("Nothing to clear - none of your messages are left in this chat.")
                     } else {
                         notify("Cleared $cleared ${if (cleared == 1) "message" else "messages"}")
                     }

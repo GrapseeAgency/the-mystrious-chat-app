@@ -18,7 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * R8 Task 3-c — the bridge between the 1:1 [CallEngine] state machine and the
+ * R8 Task 3-c - the bridge between the 1:1 [CallEngine] state machine and the
  * OS Telecom layer. The ENGINE stays the single source of truth; Telecom only
  * MIRRORS it into the system call UIs:
  *
@@ -27,11 +27,11 @@ import kotlinx.coroutines.launch
  *   engine CONNECTED         → Connection.setActive()
  *   engine ENDED/IDLE        → Connection.setDisconnected + destroy
  *
- * Connection callbacks (answer/reject/hangup/mute) drive the engine back —
+ * Connection callbacks (answer/reject/hangup/mute) drive the engine back -
  * see [PulseConnection]. When Telecom refuses (pre-O, unregistered account,
  * SecurityException from an OEM policy, missing role) the controller falls
  * back to the full-screen-intent ring notification ([CallRingNotifier]) and
- * the existing in-app ring UI — never a faked system call.
+ * the existing in-app ring UI - never a faked system call.
  */
 @Singleton
 class TelecomCallController @Inject constructor(
@@ -46,7 +46,7 @@ class TelecomCallController @Inject constructor(
         const val EXTRA_PULSE_KIND = "app.pulse.telecom.KIND"
         const val EXTRA_PULSE_CALL_ID = "app.pulse.telecom.CALL_ID"
 
-        /** Fallback ring notification id base — clear of the FCM call ids (700) and the foreground service. */
+        /** Fallback ring notification id base - clear of the FCM call ids (700) and the foreground service. */
         private const val RING_NOTIFICATION_BASE = 800
         private const val TAG = "PulseTelecom"
     }
@@ -57,7 +57,7 @@ class TelecomCallController @Inject constructor(
     /** The live Connection the service built for the mirrored engine call. */
     @Volatile var activeConnection: PulseConnection? = null
 
-    /** The posted fallback ring notification id (null = none posted) — cancelled on any exit. */
+    /** The posted fallback ring notification id (null = none posted) - cancelled on any exit. */
     @Volatile private var fallbackRingNotificationId: Int? = null
 
     @Volatile private var lastState: CallState = CallState.IDLE
@@ -87,7 +87,7 @@ class TelecomCallController @Inject constructor(
         lastState = state
         Log.d(TAG, "telecom mirror $previous -> $state")
         // Any exit from the ringing state clears the fallback ring notification
-        // (answered in-app, declined, expired, hung up — all of them).
+        // (answered in-app, declined, expired, hung up - all of them).
         if (previous == CallState.INCOMING_RINGING && state != CallState.INCOMING_RINGING) {
             cancelFallbackRing()
         }
@@ -115,7 +115,7 @@ class TelecomCallController @Inject constructor(
         if (shown) {
             fallbackRingNotificationId = notificationId
         } else {
-            Log.i(TAG, "ring notification not surfaced (permission) — in-app ring only")
+            Log.i(TAG, "ring notification not surfaced (permission) - in-app ring only")
         }
     }
 
@@ -130,14 +130,14 @@ class TelecomCallController @Inject constructor(
     private fun presentIncoming(snapshot: CallSnapshot) {
         val peer = snapshot.peer ?: return
         if (!TelecomRegistrar.isSupported()) {
-            Log.i(TAG, "telecom unsupported (pre-O) — full-screen ring notification fallback")
+            Log.i(TAG, "telecom unsupported (pre-O) - full-screen ring notification fallback")
             notifyFallback(snapshot, peer)
             return
         }
         val handle = TelecomRegistrar.phoneAccountHandle(context)
         val telecom = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
         if (handle == null || telecom == null) {
-            Log.i(TAG, "telecom handle/service unavailable — full-screen ring notification fallback")
+            Log.i(TAG, "telecom handle/service unavailable - full-screen ring notification fallback")
             notifyFallback(snapshot, peer)
             return
         }
@@ -153,7 +153,7 @@ class TelecomCallController @Inject constructor(
             telecom.addNewIncomingCall(handle, extras)
             Log.d(TAG, "telecom incoming presented for ${peer.id}")
         } catch (e: Throwable) {
-            Log.w(TAG, "telecom addNewIncomingCall refused — notification fallback", e)
+            Log.w(TAG, "telecom addNewIncomingCall refused - notification fallback", e)
             notifyFallback(snapshot, peer)
         }
     }
@@ -180,7 +180,7 @@ class TelecomCallController @Inject constructor(
             telecom.placeCall(TelecomRegistrar.handleUri(peer.id), extras)
             Log.d(TAG, "telecom outgoing presented for ${peer.id}")
         } catch (e: Throwable) {
-            Log.w(TAG, "telecom placeCall refused — in-app only", e)
+            Log.w(TAG, "telecom placeCall refused - in-app only", e)
         }
     }
 

@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — realtime context contract + consumer hook.
+// Pulse Chat - realtime context contract + consumer hook.
 // Implementation lives in components/chat/pulse-realtime-provider.tsx
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { createContext, useContext } from 'react'
@@ -26,7 +24,7 @@ export interface PulseRealtimeValue {
   typersIn: (conversationId: string, excludeUserId?: string) => TypingEntry[]
   /** mark which conversation is open & visible (drives auto-read) */
   setActiveConversation: (conversationId: string | null) => void
-  /** keystroke pump — throttles emits to ≤1 per 1.5s while typing */
+  /** keystroke pump - throttles emits to ≤1 per 1.5s while typing */
   signalTyping: (conversationId: string, options: TypingSignalOptions) => void
   /** immediate typing=false (blur / send / unmount) */
   cancelTyping: (conversationId: string, options: Omit<TypingSignalOptions, 'userName'>) => void

@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 7 — wire DTO tolerant-decode tests (populated + absent shapes for
+/// Wave 7 - wire DTO tolerant-decode tests (populated + absent shapes for
 /// every Collaboration & Hub family) + payload survival through the store.
 final class Wave7WireTests: XCTestCase {
 
@@ -9,7 +9,7 @@ final class Wave7WireTests: XCTestCase {
         try JSONDecoder().decode(T.self, from: Data(json.utf8))
     }
 
-    // ── red packets ──────────────────────────────────────────────
+    // red packets
 
     func testRedPacketCreateResultPopulated() throws {
         let r = try decode(
@@ -43,7 +43,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(r.grabbed, 2)
     }
 
-    // ── whiteboard ───────────────────────────────────────────────
+    // whiteboard
 
     func testWhiteboardPageDecodes() throws {
         let page = try decode(
@@ -66,7 +66,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(clear.cleared, 3)
     }
 
-    // ── kanban ───────────────────────────────────────────────────
+    // kanban
 
     func testKanbanCardAndEnvelope() throws {
         let card = try decode(
@@ -83,7 +83,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(page.cards.count, 2)
     }
 
-    // ── events ───────────────────────────────────────────────────
+    // events
 
     func testEventPopulatedAndCounts() throws {
         let e = try decode(
@@ -104,7 +104,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertTrue(checkin.alreadyCheckedIn == true)
     }
 
-    // ── reminders ────────────────────────────────────────────────
+    // reminders
 
     func testReminderItemAndPage() throws {
         let item = try decode(
@@ -119,7 +119,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(resolve.ok, true)
     }
 
-    // ── games / tournaments ──────────────────────────────────────
+    // games / tournaments
 
     func testGameDetailWithNullablePlayerO() throws {
         let d = try decode(
@@ -135,7 +135,7 @@ final class Wave7WireTests: XCTestCase {
     func testGameCreateResultCarriesMessage() throws {
         let r = try decode(
             WireGameMatchCreateResult.self,
-            #"{"match":{"id":"m1","status":"active"},"message":{"id":"gm1","conversationId":"c1","senderId":"u1","content":"⚔️ Tic-tac-toe — open challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"matchId\":\"m1\",\"game\":\"tictactoe\"}"}}"#,
+            #"{"match":{"id":"m1","status":"active"},"message":{"id":"gm1","conversationId":"c1","senderId":"u1","content":"⚔️ Tic-tac-toe - open challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"matchId\":\"m1\",\"game\":\"tictactoe\"}"}}"#,
         )
         XCTAssertEqual(r.message?.kind, "game")
         XCTAssertEqual(PulseWave7Logic.gamePayload(r.message?.payload)?.matchId, "m1")
@@ -157,7 +157,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(join.entry?.userId, "u1")
     }
 
-    // ── leaderboard ──────────────────────────────────────────────
+    // leaderboard
 
     func testLeaderboardRows() throws {
         let page = try decode(
@@ -169,7 +169,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertTrue((empty.rows ?? []).isEmpty)
     }
 
-    // ── hub economy ──────────────────────────────────────────────
+    // hub economy
 
     func testWalletPagePopulatedAndEmpty() throws {
         let page = try decode(
@@ -221,7 +221,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(community.joined, true)
     }
 
-    // ── payload survival through the store (v7 payloadJson) ──────
+    // payload survival through the store (v7 payloadJson)
 
     func testPayloadRoundTripsThroughStore() throws {
         let dir = FileManager.default.temporaryDirectory

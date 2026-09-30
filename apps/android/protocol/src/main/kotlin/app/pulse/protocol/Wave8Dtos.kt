@@ -6,25 +6,25 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 
 /**
- * Wave 8 — user preferences wire shape. The single source of truth is the
+ * Wave 8 - user preferences wire shape. The single source of truth is the
  * web app's src/lib/prefs-defaults.ts (PulsePrefs + DEFAULT_PREFERENCES +
  * mergePrefs); this DTO and [PulseWave8Logic.mergePrefs] are a 1:1 port so
  * the server blob decodes identically on both platforms.
  *
  * Tolerance rules (house standard):
  *  - unknown keys are dropped (PulseJson ignoreUnknownKeys);
- *  - every field is nullable/optional — a missing field falls back to the
+ *  - every field is nullable/optional - a missing field falls back to the
  *    DEFAULT (never a half-zeroed object);
  *  - enum fields that arrive as unknown strings are DISCARDED (default wins),
- *    exactly like the web mergePrefs whitelist — never surface junk.
+ *    exactly like the web mergePrefs whitelist - never surface junk.
  */
 @Serializable
 data class WirePulsePrefs(
-    /** Chat bubble corner style — 'md' | 'lg' | 'pill'. */
+    /** Chat bubble corner style - 'md' | 'lg' | 'pill'. */
     val bubbleRadius: String? = null,
-    /** Message list density — 'cozy' | 'compact'. */
+    /** Message list density - 'cozy' | 'compact'. */
     val density: String? = null,
-    /** Chat wallpaper token — 'none' | 'aurora' | 'dusk' | 'forest' | 'mono'. */
+    /** Chat wallpaper token - 'none' | 'aurora' | 'dusk' | 'forest' | 'mono'. */
     val wallpaper: String? = null,
     /** Show message text in notification-style toasts. */
     val notifPreviews: Boolean? = null,
@@ -32,15 +32,15 @@ data class WirePulsePrefs(
     val notifSound: Boolean? = null,
     /** Vibrate on incoming messages (where supported). */
     val notifVibrate: Boolean? = null,
-    /** Broadcast last-seen to other users (privacy — server-enforced). */
+    /** Broadcast last-seen to other users (privacy - server-enforced). */
     val lastSeenVisible: Boolean? = null,
-    /** Send read receipts (privacy — server-enforced). */
+    /** Send read receipts (privacy - server-enforced). */
     val readReceipts: Boolean? = null,
-    /** Broadcast typing indicators (privacy — server-enforced). */
+    /** Broadcast typing indicators (privacy - server-enforced). */
     val typingVisible: Boolean? = null,
     /** Reduce non-essential motion (effects/parallax) app-wide. */
     val reducedMotion: Boolean? = null,
-    /** WebGL ambient field mode — 'off'|'aurora'|'caustics'|'mesh'|'stars'|'liquid'. */
+    /** WebGL ambient field mode - 'off'|'aurora'|'caustics'|'mesh'|'stars'|'liquid'. */
     val fxWebglMode: String? = null,
 )
 
@@ -59,12 +59,12 @@ data class SettingsEnvelopeDto(
 @Serializable
 data class UserAuthEnvelopeDto(
     val user: UserDto? = null,
-    /** 64 hex chars, shown once, stored hashed server-side — persist in Keystore. */
+    /** 64 hex chars, shown once, stored hashed server-side - persist in Keystore. */
     val token: String? = null,
 )
 
 /**
- * PATCH /api/settings body builder — serializes ONLY the fields the patch
+ * PATCH /api/settings body builder - serializes ONLY the fields the patch
  * actually carries (null = "leave untouched" on the server's shallow merge).
  */
 fun WirePulsePrefs.toPatchJson(userId: String): JsonObject {
@@ -87,7 +87,7 @@ fun WirePulsePrefs.toPatchJson(userId: String): JsonObject {
     return JsonObject(body)
 }
 
-/** A raw wire JSON object → [WirePulsePrefs] with only the fields present (no clamping — see mergePrefs). */
+/** A raw wire JSON object → [WirePulsePrefs] with only the fields present (no clamping - see mergePrefs). */
 fun JsonObject.toWirePrefsOrNull(): WirePulsePrefs? = runCatching {
     PulseJson.decodeFromJsonElement(WirePulsePrefs.serializer(), this)
 }.getOrNull()
@@ -99,7 +99,7 @@ fun String.decodeSettingsEnvelope(): SettingsEnvelopeDto = runCatching {
         val raw = PulseJson.decodeFromJsonElement(SettingsEnvelopeDto.serializer(), root)
         SettingsEnvelopeDto(preferences = raw.preferences?.let { PulseWave8Logic.resolved(it) })
     } else {
-        // Some proxies wrap — accept the prefs object at the root too.
+        // Some proxies wrap - accept the prefs object at the root too.
         SettingsEnvelopeDto(preferences = root.jsonObject.toWirePrefsOrNull()?.let { PulseWave8Logic.resolved(it) })
     }
 }.getOrDefault(SettingsEnvelopeDto(preferences = null))

@@ -64,6 +64,7 @@ import app.pulse.domain.model.UserStats
 import app.pulse.domain.model.Conversation
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.pulseStatusGlyph
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -153,7 +154,7 @@ class UserPageViewModel @Inject constructor(
                 notice = if (result.isSuccess) {
                     (if (fresh) "Blocked " else "Unblocked ") + profile.firstName
                 } else {
-                    "Could not update the block — try again"
+                    "Could not update the block - try again"
                 },
             )
         }
@@ -171,7 +172,7 @@ class UserPageViewModel @Inject constructor(
                 notice = if (result.isSuccess) {
                     "Report submitted. Thanks for helping keep Pulse safe."
                 } else {
-                    "Could not submit the report — try again"
+                    "Could not submit the report - try again"
                 },
             )
         }
@@ -189,7 +190,7 @@ class UserPageViewModel @Inject constructor(
                 .onFailure { error ->
                     _state.value = _state.value.copy(
                         busy = false,
-                        notice = error.message ?: "Could not open the direct chat — try again",
+                        notice = error.message ?: "Could not open the direct chat - try again",
                     )
                 }
         }
@@ -267,9 +268,22 @@ fun UserPageScreen(
                         )
                     }
                 }
+                // R18 icon-id contract - the status value is a stable icon id;
+                // the glyph renders as a registry-normalized vector, and an
+                // unknown value never surfaces the raw stored text.
                 if (!profile.statusEmoji.isNullOrBlank() || !profile.statusText.isNullOrBlank()) {
                     Spacer(Modifier.height(8.dp))
-                    Text("${profile.statusEmoji.orEmpty()} ${profile.statusText.orEmpty()}".trim(), fontSize = 14.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        pulseStatusGlyph(profile.statusEmoji)?.let { glyph ->
+                            Icon(
+                                glyph,
+                                contentDescription = "Status",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                        Text(profile.statusText.orEmpty(), fontSize = 14.sp)
+                    }
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -323,7 +337,7 @@ fun UserPageScreen(
 
                 // Member since / last seen
                 val joined = state.stats?.joinedAtIso ?: profile.createdAtIso
-                MemberRow("Member since", joined?.let { formatStamp(it, monthOnly = true) } ?: "—")
+                MemberRow("Member since", joined?.let { formatStamp(it, monthOnly = true) } ?: "-")
                 MemberRow(
                     "Last seen",
                     profile.lastSeenIso?.let { "Active " + relative(it) } ?: "Last seen hidden",
@@ -478,7 +492,7 @@ fun ReportPanel(
             Text("Report $firstName", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Tell us what's happening. Reports are private — $firstName will not be notified.",
+                "Tell us what's happening. Reports are private - $firstName will not be notified.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
             )

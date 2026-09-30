@@ -22,7 +22,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Wave 8 — REST contract tests (JVM, MockEngine):
+ * Wave 8 - REST contract tests (JVM, MockEngine):
  *  - settings GET/PATCH verbs, paths and bodies;
  *  - POST /api/users/login parse incl. the honest 404;
  *  - create response carries the session token;
@@ -71,7 +71,7 @@ class Wave8ApiTest {
 
     private fun configured() = PulseEndpoints.applyBase("https://gw.example")
 
-    // ── settings GET ─────────────────────────────────────────────
+    // settings GET
 
     @Test
     fun `settings GET hits the right path and decodes the preferences envelope`() = runTest {
@@ -109,7 +109,7 @@ class Wave8ApiTest {
         assertTrue(prefs?.readReceipts == true)
     }
 
-    // ── settings PATCH ───────────────────────────────────────────
+    // settings PATCH
 
     @Test
     fun `settings PATCH sends userId plus only the carried fields`() = runTest {
@@ -130,7 +130,7 @@ class Wave8ApiTest {
         assertFalse(lastBody.contains("reducedMotion"))
     }
 
-    // ── login + create token envelope ────────────────────────────
+    // login + create token envelope
 
     @Test
     fun `login posts the name and decodes user plus token`() = runTest {
@@ -185,7 +185,7 @@ class Wave8ApiTest {
         assertTrue(lastBody.contains("\"username\":\"grace\""))
     }
 
-    // ── Bearer attach on every request family ────────────────────
+    // Bearer attach on every request family
 
     @Test
     fun `bearer header attaches on GET POST PATCH and stays absent without a token`() = runTest {
@@ -209,7 +209,7 @@ class Wave8ApiTest {
         assertNull(lastAuthHeader)
     }
 
-    // ── 401 handling ─────────────────────────────────────────────
+    // 401 handling
 
     @Test
     fun `401 maps to Kind AUTH fires the invalid hook and keeps the verbatim copy`() = runTest {
@@ -237,7 +237,7 @@ class Wave8ApiTest {
         assertEquals(0, authInvalidCalls)
     }
 
-    // ── logic glue lives in protocol — sanity smoke here too ─────
+    // logic glue lives in protocol - sanity smoke here too
 
     @Test
     fun `settings envelope decode helper tolerates a root-level preferences object`() = runTest {

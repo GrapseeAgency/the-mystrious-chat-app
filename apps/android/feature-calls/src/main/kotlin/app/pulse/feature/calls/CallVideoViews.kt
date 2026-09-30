@@ -19,7 +19,7 @@ import org.webrtc.SurfaceViewRenderer
 import org.webrtc.VideoTrack
 
 /**
- * Wave R1-W2D — REAL WebRTC video renderers for the call overlay (web
+ * Wave R1-W2D - REAL WebRTC video renderers for the call overlay (web
  * call-overlay.tsx parity):
  *   • remote video  → full-bleed surface (web `absolute inset-0 object-cover`)
  *   • local camera  → small PiP self-view, mirrored (web `scaleX(-1)`, 96×144dp
@@ -31,7 +31,7 @@ import org.webrtc.VideoTrack
  */
 
 /**
- * One video track on one renderer. Recreated per track instance — addSink
+ * One video track on one renderer. Recreated per track instance - addSink
  * happens after the effect commits, release on dispose (no double-sink).
  */
 @Composable
@@ -75,7 +75,7 @@ fun RemoteVideoSurface(engine: CallEngine, modifier: Modifier = Modifier) {
 }
 
 /**
- * The local camera PiP — mirrored self-view (web parity), bottom-end tile
+ * The local camera PiP - mirrored self-view (web parity), bottom-end tile
  * above the controls. Only rendered while capture is actually running AND
  * the camera toggle is on (muted camera ⇒ hidden, web cameraEnabled parity).
  */

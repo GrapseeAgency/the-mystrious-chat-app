@@ -75,12 +75,12 @@ import java.time.format.DateTimeFormatter
  * Wave 7 collaboration sheets (F-RO-03…09). Poll transports are web parity:
  * kanban 1500 ms while open (kanban-sheet.tsx:65), whiteboard since-delta
  * 900 ms (whiteboard-sheet.tsx:66). Server error copy surfaces verbatim
- * through the room snackbar — the sheets never invent success.
+ * through the room snackbar - the sheets never invent success.
  */
 
 private val W7_COLORS = listOf("#22c55e", "#0ea5e9", "#f59e0b", "#ef4444", "#a855f7", "#e2e8f0")
 
-// ── Red packet create (F-RO-02) ──────────────────────────────────────────
+// Red packet create (F-RO-02)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,7 +96,7 @@ fun RedPacketSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Text("Red packet", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("Whole PC only — every grab wins at least 1.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text("Whole PC only - every grab wins at least 1.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = total, onValueChange = { total = it.filter(Char::isDigit).take(5) },
@@ -135,7 +135,7 @@ fun RedPacketSheet(
     }
 }
 
-// ── Tic-tac-toe create (F-RO-07) ─────────────────────────────────────────
+// Tic-tac-toe create (F-RO-07)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -177,7 +177,7 @@ fun GameSheet(
     }
 }
 
-// ── Tournament create (F-RO-08) ──────────────────────────────────────────
+// Tournament create (F-RO-08)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -213,7 +213,7 @@ fun TournamentSheet(
     }
 }
 
-// ── Kanban board (F-RO-04) ───────────────────────────────────────────────
+// Kanban board (F-RO-04)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -302,7 +302,7 @@ fun KanbanSheet(
                                 Text(who, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
-                        // move controls — native-native equivalent of web drag/drop
+                        // move controls - native-native equivalent of web drag/drop
                         if (col != "todo") {
                             Text("‹", Modifier.clickable { onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) - 1], null) }.padding(6.dp), fontSize = 18.sp)
                         }
@@ -331,10 +331,10 @@ fun KanbanSheet(
 
 private fun colIndex(col: String): Int = PulseWave7Logic.KANBAN_COLUMNS.indexOf(col).coerceAtLeast(0)
 
-// ── Whiteboard (F-RO-03) ─────────────────────────────────────────────────
+// Whiteboard (F-RO-03)
 
 /**
- * R2-C item 4 — the durable pending-stroke draft hooks (iOS
+ * R2-C item 4 - the durable pending-stroke draft hooks (iOS
  * PulseWhiteboardDraft parity): the sheet writes through on every drawn
  * stroke, restores + dedupes on open, purges on the server flush verdict
  * and on the board-reset path. Backed by the per-conversation prefs store
@@ -370,7 +370,7 @@ fun WhiteboardSheet(
     onUndo: () -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
-    /** R2-C item 4 — the durable pending-stroke draft (required). */
+    /** R2-C item 4 - the durable pending-stroke draft (required). */
     draft: WhiteboardDraftHooks,
 ) {
     var color by remember { mutableStateOf(W7_COLORS[0]) }
@@ -383,9 +383,9 @@ fun WhiteboardSheet(
 
     LaunchedEffect(Unit) {
         load(null)?.let { remote = it; lastServerTime = it.serverTime ?: 0; resetAt = it.resetAt ?: 0 }
-        // R2-C item 4 — restore the durable draft on open, minus the strokes
+        // R2-C item 4 - restore the durable draft on open, minus the strokes
         // the snapshot ALREADY carries (they landed before the crash; the
-        // dedupe pass rewrites the store — iOS PulseWhiteboardDraft
+        // dedupe pass rewrites the store - iOS PulseWhiteboardDraft
         // .droppingSynced/.replaceAll parity).
         val pending = draft.load()
         if (pending.isNotEmpty()) {
@@ -472,7 +472,7 @@ fun WhiteboardSheet(
                                 if (currentPts.size >= 2) {
                                     val stroke = Triple(color, width, currentPts.takeLast(500))
                                     localStrokes = localStrokes + listOf(stroke)
-                                    // R2-C item 4 — draw-time write-through: the
+                                    // R2-C item 4 - draw-time write-through: the
                                     // stroke is durable BEFORE any sync attempt.
                                     draft.append(stroke.toStrokePost())
                                 }
@@ -515,7 +515,7 @@ fun WhiteboardSheet(
             )
             Spacer(Modifier.height(12.dp))
 
-            // flush pending strokes in batches of ≤40 — a batch leaves the
+            // flush pending strokes in batches of ≤40 - a batch leaves the
             // durable draft only when the server verdicts the POST
             // (R2-C item 4: failures keep the strokes pending; the VM toast
             // stays honest and the next sheet open re-syncs them).
@@ -535,7 +535,7 @@ fun WhiteboardSheet(
     }
 }
 
-// ── Events (F-RO-05) ─────────────────────────────────────────────────────
+// Events (F-RO-05)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -595,7 +595,7 @@ fun EventsSheet(
                 Spacer(Modifier.height(10.dp))
             }
             if (events.isEmpty()) {
-                Text("No events yet — schedule the first one.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No events yet - schedule the first one.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             events.forEach { e ->
                 val counts = e.counts ?: EventCountsDto()
@@ -684,7 +684,7 @@ internal fun formatEventTime(iso: String?): String {
     return d.format(DateTimeFormatter.ofPattern("EEE, MMM d · HH:mm"))
 }
 
-// ── Reminders (F-RO-06) ──────────────────────────────────────────────────
+// Reminders (F-RO-06)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -694,7 +694,7 @@ fun RemindersSheet(
     onCreate: (note: String, remindAtIso: String, anchoredMessageId: String?) -> Unit,
     onResolve: (id: String) -> Unit,
     onDelete: (id: String) -> Unit,
-    // R7 item 4 — web REMINDER_JUMP_EVENT parity: rows anchored to a message
+    // R7 item 4 - web REMINDER_JUMP_EVENT parity: rows anchored to a message
     // offer Jump (host dismisses the sheet + jumps/flash-engines there).
     onJump: (item: app.pulse.protocol.ReminderItemDto) -> Unit = {},
     anchoredMessageId: String?,
@@ -723,7 +723,7 @@ fun RemindersSheet(
             OutlinedTextField(
                 value = when_,
                 onValueChange = { when_ = it },
-                label = { Text("When — \"in 30m\", \"tomorrow\", \"2026-01-20 09:00\"") },
+                label = { Text("When - \"in 30m\", \"tomorrow\", \"2026-01-20 09:00\"") },
                 modifier = Modifier.fillMaxWidth(),
             )
             error?.let {
@@ -741,7 +741,7 @@ fun RemindersSheet(
                     } ?: parseEventDate(when_)
                     val finalNote = parsed?.note ?: note.trim()
                     when {
-                        iso == null -> error = "No sane time found — try \"in 30m\", \"tomorrow\" or an exact date."
+                        iso == null -> error = "No sane time found - try \"in 30m\", \"tomorrow\" or an exact date."
                         finalNote.isEmpty() -> error = "Note can't be empty."
                         else -> {
                             error = null
@@ -767,13 +767,13 @@ fun RemindersSheet(
                     Column(Modifier.weight(1f)) {
                         Text(r.note.ifBlank { "Reminder" }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (due) FontWeight.SemiBold else FontWeight.Normal)
                         Text(
-                            (if (due) "DUE NOW — " else "") + formatEventTime(r.remindAt) + (r.conversation.name.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                            (if (due) "DUE NOW - " else "") + formatEventTime(r.remindAt) + (r.conversation.name.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
                             fontSize = 12.sp,
                             color = if (due) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     if (r.messageId != null && r.firedAt == null) {
-                        // R7 item 4 — jump to the anchored message (web row tap
+                        // R7 item 4 - jump to the anchored message (web row tap
                         // parity, reminders-sheet.tsx jump()); the host closes
                         // the sheet and routes the jump.
                         Text(
@@ -814,7 +814,7 @@ fun RemindersSheet(
     }
 }
 
-// ── Leaderboard (F-RO-09) ────────────────────────────────────────────────
+// Leaderboard (F-RO-09)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -834,7 +834,7 @@ fun LeaderboardSheet(
                 TextButton(onClick = { scope = !scope }) { Text(if (scope) "This room" else "Global") }
             }
             val rows = page?.rows ?: emptyList()
-            if (rows.isEmpty()) Text("No standings yet — send messages, win games, join tournaments.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (rows.isEmpty()) Text("No standings yet - send messages, win games, join tournaments.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             rows.forEachIndexed { i, r ->
                 Row(
                     Modifier

@@ -1,18 +1,17 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — Profile tab (R26-d): social-media-style profile.
+// Pulse - Profile tab (R26-d): social-media-style profile.
 //
 // ROOT PAGE (what others see):
-//   • Glass hero — gradient cover from the user's identity color
+//   • Glass hero - gradient cover from the user's identity color
 //     (gradientFor), specular-ring avatar, name + verified-style
 //     member badge, tap-to-copy @handle chip, status glyph + text,
 //     bio, quick-action pills (Edit profile · Share).
-//   • REAL stats row — /api/users/[id]/stats + /api/hub/wallet
+//   • REAL stats row - /api/users/[id]/stats + /api/hub/wallet
 //     (messages · rooms · coins · member-since). No mock numbers.
 //   • Saved messages (real flow via onOpenSavedMessage) and a
 //     compact Account group (copy ID · sign out).
 //
 // EDIT PROFILE IS A REAL SUB-PAGE (user's #1 fix): a full-screen
-// panel portaled above the nav, driven by the hash router —
+// panel portaled above the nav, driven by the hash router -
 // open = navigateHash('/profile/edit'), close = backHash(), and
 // the hash is read reactively on mount so #/profile/edit
 // deep-links and browser back works. The form edits display name,
@@ -21,9 +20,8 @@
 // updates + toast + rollback.
 //
 // Appearance / Navigation / Preferences / Data & Storage / About
-// were REMOVED from the profile on purpose — Settings owns them.
-// Zero emojis — Lucide icons + framer-motion microinteractions.
-// ─────────────────────────────────────────────────────────────
+// were REMOVED from the profile on purpose - Settings owns them.
+// Zero emojis - Lucide icons + framer-motion microinteractions.
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -133,7 +131,7 @@ function ProfileEditor({
   const { onlineIds } = usePulseRealtime()
   const mounted = useMounted()
 
-  // ── real sub-page routing — '/profile/edit' is owned here ──
+  // real sub-page routing - '/profile/edit' is owned here 
   // open = push the hash, close = history back, and reading the
   // hash on mount makes #/profile/edit a deep-link.
   const { path, navigate, back } = useHashNav()
@@ -159,7 +157,7 @@ function ProfileEditor({
     }
   }, [])
 
-  // ── real data: profile stats + hub wallet + saved library ──
+  // real data: profile stats + hub wallet + saved library 
   const statsQ = useQuery({
     queryKey: ['user-stats', me.id],
     queryFn: async (): Promise<UserStats> => {
@@ -199,7 +197,7 @@ function ProfileEditor({
     statusEmoji.trim() !== (me.statusEmoji ?? '') ||
     statusText.trim() !== (me.statusText ?? '')
 
-  // real save: PATCH /api/users/[id] — optimistic update across the
+  // real save: PATCH /api/users/[id] - optimistic update across the
   // session store + query caches, toast, and rollback on failure
   const saveProfile = useMutation({
     mutationFn: async () => {
@@ -281,11 +279,11 @@ function ProfileEditor({
   const shareProfile = async () => {
     haptic(10)
     if (!me.username) {
-      toast.info('Claim a handle first — it is how people find you')
+      toast.info('Claim a handle first - it is how people find you')
       setHandleOpen(true)
       return
     }
-    const text = `Find me on Pulse — @${me.username}`
+    const text = `Find me on Pulse - @${me.username}`
     try {
       if (typeof navigator.share === 'function') {
         await navigator.share({ text })
@@ -294,7 +292,7 @@ function ProfileEditor({
       await navigator.clipboard.writeText(text)
       toast.success('Share text copied')
     } catch (error) {
-      // user dismissed the share sheet — not an error
+      // user dismissed the share sheet - not an error
       if (error instanceof DOMException && error.name === 'AbortError') return
       toast.error('Could not share right now')
     }
@@ -324,9 +322,9 @@ function ProfileEditor({
 
   return (
     <div className="absolute inset-0 flex flex-col">
-      {/* ── ROOT PAGE ───────────────────────────────────────── */}
+      {/*  ROOT PAGE  */}
       <div className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(104px+env(safe-area-inset-bottom))]">
-        {/* ── HERO — identity beam, zero carnival blobs ── */}
+        {/*  HERO - identity beam, zero carnival blobs  */}
         <section aria-label="Profile" className="relative">
           {/* flat identity cover with a scanline texture + signal edge */}
           <div className={cn('scan-fx relative isolate h-28 overflow-hidden sm:h-32', gradient)}>
@@ -334,7 +332,7 @@ function ProfileEditor({
               aria-hidden
               className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16),transparent_60%),radial-gradient(130%_150%_at_88%_-12%,rgba(255,255,255,0.2),transparent_55%)]"
             />
-            {/* the signal line — hairline bright edge grounding the cover */}
+            {/* the signal line - hairline bright edge grounding the cover */}
             <span
               aria-hidden
               className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-white/80 to-transparent"
@@ -374,7 +372,7 @@ function ProfileEditor({
               />
             </motion.div>
 
-            {/* @handle — tap to copy (editing lives on the sub-page) */}
+            {/* @handle - tap to copy (editing lives on the sub-page) */}
             <motion.div
               initial={reducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
@@ -432,7 +430,7 @@ function ProfileEditor({
               {me.about.trim() || 'No bio yet'}
             </motion.p>
 
-            {/* quick actions — one signal, one ghost */}
+            {/* quick actions - one signal, one ghost */}
             <motion.div
               initial={reducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
@@ -468,27 +466,27 @@ function ProfileEditor({
           </div>
         </section>
 
-        {/* ── STATS — one flat instrument row, mono numerals ── */}
+        {/*  STATS - one flat instrument row, mono numerals  */}
         <section aria-label="Your activity" className="mt-6 px-5">
           <div className="grid grid-cols-4 divide-x divide-zinc-200/70 rounded-2xl border border-zinc-200/60 bg-white/55 py-3 backdrop-blur-xl dark:divide-white/8 dark:border-white/8 dark:bg-white/[0.04]">
             <StatCell
               label="Messages"
-              value={statsQ.isPending ? '·' : statsQ.isError ? '—' : (statsQ.data?.messages ?? 0).toLocaleString('en-US')}
+              value={statsQ.isPending ? '·' : statsQ.isError ? '-' : (statsQ.data?.messages ?? 0).toLocaleString('en-US')}
             />
             <StatCell
               label="Rooms"
-              value={statsQ.isPending ? '·' : statsQ.isError ? '—' : (statsQ.data?.chats ?? 0).toLocaleString('en-US')}
+              value={statsQ.isPending ? '·' : statsQ.isError ? '-' : (statsQ.data?.chats ?? 0).toLocaleString('en-US')}
             />
             <StatCell
               label="Coins"
               accent
-              value={walletQ.isPending ? '·' : walletQ.isError ? '—' : (walletQ.data?.coins ?? 0).toLocaleString('en-US')}
+              value={walletQ.isPending ? '·' : walletQ.isError ? '-' : (walletQ.data?.coins ?? 0).toLocaleString('en-US')}
             />
-            <StatCell label="Since" value={memberSinceShort || '—'} small />
+            <StatCell label="Since" value={memberSinceShort || '-'} small />
           </div>
         </section>
 
-        {/* ── SAVED — real starred-message library ── */}
+        {/*  SAVED - real starred-message library  */}
         <div className="px-5">
           <ProfileSection title="Saved" delay={0.02}>
             <ChevronRow
@@ -501,7 +499,7 @@ function ProfileEditor({
           </ProfileSection>
         </div>
 
-        {/* ── ACCOUNT ── */}
+        {/*  ACCOUNT  */}
         <div className="px-5">
           <ProfileSection title="Account" delay={0.06}>
             <div className="p-1">
@@ -516,7 +514,7 @@ function ProfileEditor({
                 icon={PulseSignOut}
                 destructive
                 title="Sign out"
-                description="Return to the welcome screen — nothing is deleted"
+                description="Return to the welcome screen - nothing is deleted"
                 onPress={() => setSwitchOpen(true)}
               />
             </div>
@@ -524,7 +522,7 @@ function ProfileEditor({
         </div>
       </div>
 
-      {/* ── EDIT PROFILE — real full-screen sub-page (hash-driven) ── */}
+      {/*  EDIT PROFILE - real full-screen sub-page (hash-driven)  */}
       {mounted
         ? createPortal(
             <AnimatePresence>
@@ -541,7 +539,7 @@ function ProfileEditor({
                   className="fixed inset-0 z-[46] flex flex-col"
                   style={{ background: 'var(--ui-page-bg, #09090b)' }}
                 >
-                  {/* glass sub-header — back pill + title + save */}
+                  {/* glass sub-header - back pill + title + save */}
                   <div className="glass-deep glass-sheen isolate flex h-14 shrink-0 items-center gap-2 px-3">
                     <motion.button
                       type="button"
@@ -589,7 +587,7 @@ function ProfileEditor({
 
                   {/* form body */}
                   <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-4">
-                    {/* R27-d — profile photo editor above the identity fields */}
+                    {/* R27-d - profile photo editor above the identity fields */}
                     <AvatarPhotoEditor me={me} />
 
                     <ProfileSection title="Identity" className="mt-6">
@@ -709,7 +707,7 @@ function ProfileEditor({
                           icon={PulseAt}
                           iconClassName="bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)] text-[var(--ui-accent,#10b981)]"
                           title="Your handle"
-                          description={me.username ? `@${me.username}` : 'Claim yours — friends can find you by it'}
+                          description={me.username ? `@${me.username}` : 'Claim yours - friends can find you by it'}
                           onPress={() => setHandleOpen(true)}
                           ariaLabel={me.username ? `Change your handle, currently @${me.username}` : 'Set your handle'}
                         />
@@ -735,7 +733,7 @@ function ProfileEditor({
                         )}
                       </Button>
                       <p className="mt-2.5 text-center text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                        Changes appear everywhere instantly — profile, chats and mentions.
+                        Changes appear everywhere instantly - profile, chats and mentions.
                       </p>
                     </div>
                   </div>
@@ -833,7 +831,7 @@ function ProfileEditor({
           <AlertDialogHeader>
             <AlertDialogTitle className="tracking-tight">Sign out of this account?</AlertDialogTitle>
             <AlertDialogDescription className="text-[13px] leading-relaxed">
-              You&apos;ll return to the welcome screen. Nothing is deleted — you can always create or join back in later.
+              You&apos;ll return to the welcome screen. Nothing is deleted - you can always create or join back in later.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">

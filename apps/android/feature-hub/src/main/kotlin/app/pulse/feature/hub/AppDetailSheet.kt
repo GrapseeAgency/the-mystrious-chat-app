@@ -54,19 +54,19 @@ import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
 
 /**
- * R5-B ITEM 3 — the Hub app-detail sheet at web depth
+ * R5-B ITEM 3 - the Hub app-detail sheet at web depth
  * (src/components/hub/app-detail-sheet.tsx):
- *  • Overview — hero + live install stats + InstallerStack (≤6 avatars + "+N"
+ *  • Overview - hero + live install stats + InstallerStack (≤6 avatars + "+N"
  *    overflow, hidden when empty :110-133) + "Connected on <day>" + connect
  *    actions + the related-apps rail (same catalog category :924-968);
- *  • Community — the existing community join/open block (web :537-757, the
+ *  • Community - the existing community join/open block (web :537-757, the
  *    native block rides the SAME joinCommunity mutation);
- *  • Connectors — the viewer's own connect card + the live connected-members
+ *  • Connectors - the viewer's own connect card + the live connected-members
  *    roster (≤6 rows, "@username"/"Pulse member" line, relative "3h ago"
  *    stamp for the VIEWER'S OWN row :880-909) + "+N more connected".
  * Tabs mirror the web DetailTabBar :137-213 (Overview | Community | Connectors
  * with live count badges). All mutations are the EXISTING install/community
- * engine — no new endpoints, zero mocks.
+ * engine - no new endpoints, zero mocks.
  */
 
 private enum class DetailTab(val label: String) { OVERVIEW("Overview"), COMMUNITY("Community"), CONNECTORS("Connectors") }
@@ -75,7 +75,7 @@ private enum class DetailTab(val label: String) { OVERVIEW("Overview"), COMMUNIT
 internal fun relatedAppsOf(catalog: HubCatalog, app: HubCatalogApp): List<HubCatalogApp> =
     catalog.apps.filter { it.category == app.category && it.n != app.n }.take(10)
 
-/** Web InstallerStack (:110-133) — ≤6 avatars + "+N" chip, hidden when empty. */
+/** Web InstallerStack (:110-133) - ≤6 avatars + "+N" chip, hidden when empty. */
 @Composable
 private fun InstallerStack(installers: List<HubLogUserDto>, extra: Int) {
     if (installers.isEmpty()) return
@@ -114,7 +114,7 @@ private fun InstallerStack(installers: List<HubLogUserDto>, extra: Int) {
     }
 }
 
-/** Web CountUp (hub-data.tsx:275-283) — 300ms ease-out count animation. */
+/** Web CountUp (hub-data.tsx:275-283) - 300ms ease-out count animation. */
 @Composable
 private fun CountUpText(value: Int, fontSize: Int = 24) {
     val animated by animateIntAsState(
@@ -125,7 +125,7 @@ private fun CountUpText(value: Int, fontSize: Int = 24) {
     Text(animated.toString(), fontSize = fontSize.sp, fontWeight = FontWeight.Black, color = PulsePalette.Emerald)
 }
 
-/** App icon tile — the existing gradient monogram cube. */
+/** App icon tile - the existing gradient monogram cube. */
 @Composable
 private fun AppIconTile(app: HubCatalogApp, size: Int) {
     Box(
@@ -166,7 +166,7 @@ internal fun AppDetailSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
-            // ── hero (identity + live install card + installer stack) ──
+            // hero (identity + live install card + installer stack)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppIconTile(app, 44)
                 Spacer(Modifier.width(10.dp))
@@ -216,7 +216,7 @@ internal fun AppDetailSheet(
             }
             Spacer(Modifier.height(10.dp))
 
-            // ── tabs (web DetailTabBar :137-213) ──
+            // tabs (web DetailTabBar :137-213)
             TabRow(selectedTabIndex = tab) {
                 DetailTab.entries.forEachIndexed { index, t ->
                     val badge = when (t) {
@@ -252,7 +252,7 @@ internal fun AppDetailSheet(
     }
 }
 
-/** Overview — installer-stack stats + blueprint fields + connect actions + related rail. */
+/** Overview - installer-stack stats + blueprint fields + connect actions + related rail. */
 @Composable
 private fun OverviewPanel(
     app: HubCatalogApp,
@@ -281,12 +281,12 @@ private fun OverviewPanel(
         }
         Spacer(Modifier.height(12.dp))
 
-        // connect + community — the EXISTING mutations (web AppHero actions :331-395)
+        // connect + community - the EXISTING mutations (web AppHero actions :331-395)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { if (installed) vm.uninstallApp(appId, app.name) else vm.installApp(appId, app.name) },
                 modifier = Modifier.weight(1f),
-            ) { Text(if (installed) "Connected — disconnect?" else "Install / Connect") }
+            ) { Text(if (installed) "Connected - disconnect?" else "Install / Connect") }
             OutlinedButton(
                 onClick = { onOpenCommunity(appId, app.name) },
                 modifier = Modifier.weight(1f),
@@ -294,7 +294,7 @@ private fun OverviewPanel(
         }
         Spacer(Modifier.height(14.dp))
 
-        // related-apps rail (web RelatedRail :924-968) — same category, tap swaps detail
+        // related-apps rail (web RelatedRail :924-968) - same category, tap swaps detail
         val related = relatedAppsOf(catalog, app)
         if (related.isNotEmpty()) {
             Text(
@@ -338,7 +338,7 @@ private fun OverviewPanel(
     }
 }
 
-/** Community — the existing join/open block (kept verbatim semantics). */
+/** Community - the existing join/open block (kept verbatim semantics). */
 @Composable
 private fun CommunityPanel(
     app: HubCatalogApp,
@@ -359,7 +359,7 @@ private fun CommunityPanel(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "Auto-provisioned on first join — founders become admins.",
+                        "Auto-provisioned on first join - founders become admins.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -374,7 +374,7 @@ private fun CommunityPanel(
     }
 }
 
-/** Connectors — the viewer's connect card + the live roster (web :781-920). */
+/** Connectors - the viewer's connect card + the live roster (web :781-920). */
 @Composable
 private fun ConnectorsPanel(
     app: HubCatalogApp,
@@ -460,7 +460,7 @@ private fun ConnectorsPanel(
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text("connected", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            // installedAt is per-viewer truth — others get no invented date
+                            // installedAt is per-viewer truth - others get no invented date
                             if (isViewer && installed) {
                                 Text(
                                     PulseWave7Logic.relativeStamp(row?.installedAt, System.currentTimeMillis()),

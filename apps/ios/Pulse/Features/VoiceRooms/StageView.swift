@@ -1,14 +1,12 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — W5-f stage surface (Clubhouse hierarchy).
+// Pulse - W5-f stage surface (Clubhouse hierarchy).
 // Native rebuild of web stage-room-sheet.tsx (R24-c): join always as
 // listener (first joiner of a fresh room = host server-side), host
 // card + speaker tiles + FIFO hand queue + listeners row, raise-hand
 // toggle, host approve/decline/mute, two-tap End (2600 ms reset),
-// Claim host when the seat is empty, and DEFECT FIX #3 — every joined
+// Claim host when the seat is empty, and DEFECT FIX #3 - every joined
 // role holds a voice seat, so the AUDIENCE HEARS (spec §1.2).
-// ─────────────────────────────────────────────────────────────
 
 struct StageView: View {
     @ObservedObject var model: VoiceRoomSessionModel
@@ -47,7 +45,7 @@ struct StageView: View {
             }
         }
         .onDisappear {
-            // ST-7 — close = leave (reopen lands as a plain listener).
+            // ST-7 - close = leave (reopen lands as a plain listener).
             if model.stage.joined {
                 model.leaveStage()
             }
@@ -55,7 +53,7 @@ struct StageView: View {
         }
     }
 
-    // ── header ───────────────────────────────────────────
+    // header
 
     private var header: some View {
         HStack(spacing: 8) {
@@ -81,7 +79,7 @@ struct StageView: View {
         }
     }
 
-    // ── entry states ─────────────────────────────────────
+    // entry states
 
     private var joinCard: some View {
         Button {
@@ -111,7 +109,7 @@ struct StageView: View {
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(PulseTheme.glassFill))
     }
 
-    // ── host + speakers (ST-2) ───────────────────────────
+    // host + speakers (ST-2)
 
     private func hostCard(_ host: WireStagePerson) -> some View {
         HStack(spacing: 12) {
@@ -150,7 +148,7 @@ struct StageView: View {
             Image(systemName: "crown")
                 .font(.title3)
                 .foregroundStyle(PulseTheme.textTertiary)
-            Text("The host seat is empty — no auto-promotion.")
+            Text("The host seat is empty - no auto-promotion.")
                 .font(.footnote)
                 .foregroundStyle(PulseTheme.textSecondary)
             Button {
@@ -208,7 +206,7 @@ struct StageView: View {
         }
     }
 
-    // ── hand queue (ST-3) ────────────────────────────────
+    // hand queue (ST-3)
 
     private var handQueue: some View {
         let hands = model.stage.handQueue
@@ -266,7 +264,7 @@ struct StageView: View {
         }
     }
 
-    // ── listeners row (ST-2) ─────────────────────────────
+    // listeners row (ST-2)
 
     private var listenersRow: some View {
         let listeners = model.stage.listenerRow
@@ -294,7 +292,7 @@ struct StageView: View {
         }
     }
 
-    // ── controls ─────────────────────────────────────────
+    // controls
 
     private var controls: some View {
         VStack(spacing: 12) {
@@ -336,7 +334,7 @@ struct StageView: View {
         }
     }
 
-    /// ST-5 — two-tap End with a 2600 ms reset (pure StageEndConfirm).
+    /// ST-5 - two-tap End with a 2600 ms reset (pure StageEndConfirm).
     private var endStageButton: some View {
         Button {
             let nowMs = Date().timeIntervalSince1970 * 1000
@@ -367,7 +365,7 @@ struct StageView: View {
     }
 
     private var footer: some View {
-        Text("Stage roles are claimed live — nothing is recorded or stored.")
+        Text("Stage roles are claimed live - nothing is recorded or stored.")
             .font(.caption2)
             .foregroundStyle(PulseTheme.textTertiary)
             .frame(maxWidth: .infinity)

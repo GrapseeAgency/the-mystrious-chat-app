@@ -148,6 +148,7 @@ import app.pulse.ui.PulseMonoFamily
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.isPulseDarkTheme
+import app.pulse.ui.pulseFolderGlyph
 import app.pulse.ui.pulseGlass
 import app.pulse.ui.shimmer
 import app.pulse.ui.update.UpdaterBanner
@@ -157,7 +158,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// ── zinc shades the Material scheme does not carry (web token mirrors) ──
+// zinc shades the Material scheme does not carry (web token mirrors)
 private val Zinc300 = Color(0xFFD4D4D8)
 private val Zinc400 = Color(0xFFA1A1AA)
 private val Zinc500 = Color(0xFF71717A)
@@ -171,7 +172,7 @@ private val Emerald600 = Color(0xFF059669)
 private val Teal500 = Color(0xFF14B8A6)
 private val Teal600 = Color(0xFF0D9488)
 
-/** Web `streakHeatLevel` — 2-4 → warm, 5-9 → hot, 10+ → blazing. */
+/** Web `streakHeatLevel` - 2-4 → warm, 5-9 → hot, 10+ → blazing. */
 private fun streakHeat(count: Int): Int = when {
     count >= 10 -> 3
     count >= 5 -> 2
@@ -181,17 +182,17 @@ private fun streakHeat(count: Int): Int = when {
 private fun countLabel(count: Int): String = if (count > 99) "99+" else "$count"
 
 /**
- * R1-W2H D24 — ChatsViewModel's export-success notice is the only surface the
+ * R1-W2H D24 - ChatsViewModel's export-success notice is the only surface the
  * VM (owned upstream this round) exposes the exported file name on:
- * `notify("Chat exported — Saved $it")` where `it` is the file written under
+ * `notify("Chat exported - Saved $it")` where `it` is the file written under
  * cacheDir/exports (PulseRepositoryImpl.exportChat). The screens parse THAT
  * contract, rebuild the absolute path and fire MediaSupport's FileProvider
- * ACTION_SEND chooser — D24's share sheet with zero VM edits.
+ * ACTION_SEND chooser - D24's share sheet with zero VM edits.
  */
-private const val EXPORT_NOTICE_PREFIX = "Chat exported — Saved "
+private const val EXPORT_NOTICE_PREFIX = "Chat exported - Saved "
 
 /**
- * The Chats tab — the native home page. Design + logic parity with the web
+ * The Chats tab - the native home page. Design + logic parity with the web
  * `chats-tab.tsx` per apps/HOMEPAGE-SPEC.md (binding spec).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -206,14 +207,14 @@ fun ChatsScreen(
     onSwitchTab: (String) -> Unit,
     onOpenArchived: () -> Unit,
     onCycleTheme: () -> Unit,
-    /** Wave 4 — ring tap on a cell with a live story; arg = author id (viewer start group). */
+    /** Wave 4 - ring tap on a cell with a live story; arg = author id (viewer start group). */
     onOpenStoriesViewer: (String?) -> Unit = {},
-    /** Wave 4 — the own-cell "+" affordance (or empty "My status" cell) → composer. */
+    /** Wave 4 - the own-cell "+" affordance (or empty "My status" cell) → composer. */
     onOpenStoriesComposer: () -> Unit = {},
-    /** Wave 6 — mentions / channels surfaces + the folders manage sheet. */
+    /** Wave 6 - mentions / channels surfaces + the folders manage sheet. */
     onOpenMentions: () -> Unit = {},
     onOpenChannels: () -> Unit = {},
-    // R2-A item 2/1 — the header phone icon opens the calls history page and
+    // R2-A item 2/1 - the header phone icon opens the calls history page and
     // the pencil icon opens the REAL new-chat composer (web chats header).
     onOpenCalls: () -> Unit = {},
     onOpenNewChat: () -> Unit = {},
@@ -232,9 +233,9 @@ fun ChatsScreen(
     val mentionCount by viewModel.mentionCount.collectAsStateWithLifecycle()
     val searchHits by viewModel.searchHits.collectAsStateWithLifecycle()
     val searchRunning by viewModel.searching.collectAsStateWithLifecycle()
-    // R2-C item 7 — recent searches for the search bar (last 5).
+    // R2-C item 7 - recent searches for the search bar (last 5).
     val spotlightRecents by viewModel.spotlightRecents.collectAsStateWithLifecycle()
-    // R14 gap 14 — the spotlight check-in flight flag (Actions block).
+    // R14 gap 14 - the spotlight check-in flight flag (Actions block).
     val checkin by viewModel.checkin.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
 
@@ -246,7 +247,7 @@ fun ChatsScreen(
     var actionTarget by remember { mutableStateOf<Conversation?>(null) }
     var activeFolderId by remember { mutableStateOf<String?>(null) }
     var foldersSheet by remember { mutableStateOf(false) }
-    // R1-W2H D24 — the exported file path awaiting the share-sheet launch.
+    // R1-W2H D24 - the exported file path awaiting the share-sheet launch.
     var pendingShareFile by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
@@ -259,7 +260,7 @@ fun ChatsScreen(
             viewModel.loadChrome()
         }
     }
-    // Audit D25 fix — poll ONLY while this surface is visible AND the app is
+    // Audit D25 fix - poll ONLY while this surface is visible AND the app is
     // foregrounded: start on enter + ON_START, stop on leave + ON_STOP.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -279,7 +280,7 @@ fun ChatsScreen(
     }
     LaunchedEffect(notice) {
         val n = notice ?: return@LaunchedEffect
-        // R1-W2H D24 — intercept the export-success notice (VM contract, see
+        // R1-W2H D24 - intercept the export-success notice (VM contract, see
         // EXPORT_NOTICE_PREFIX) and arm the ACTION_SEND share sheet launch.
         n.text.removePrefix(EXPORT_NOTICE_PREFIX).takeIf { it != n.text }?.let { fileName ->
             pendingShareFile = File(context.cacheDir, "exports/$fileName").absolutePath
@@ -287,7 +288,7 @@ fun ChatsScreen(
         snackbar.showSnackbar(n.text, withDismissAction = false)
         viewModel.consumeNotice()
     }
-    // R1-W2H D24 — fire the system chooser for the exported .txt via
+    // R1-W2H D24 - fire the system chooser for the exported .txt via
     // MediaSupport's FileProvider intent (state cleared first so a rejected
     // launch can't loop; the toast still told the user where it saved).
     LaunchedEffect(pendingShareFile) {
@@ -305,7 +306,7 @@ fun ChatsScreen(
             focused = true
         }
     }
-    // R2-C item 7 — the debounced server message search (the VM owns the
+    // R2-C item 7 - the debounced server message search (the VM owns the
     // 250ms rhythm; the screen only feeds it). Chats filter live above it.
     LaunchedEffect(search, query) {
         if (search) viewModel.search(query)
@@ -355,7 +356,7 @@ fun ChatsScreen(
     }
 
     // Clear the system nav bar (gesture pill / 3-button strip) that draws over
-    // the app under edge-to-edge — the dock lifts by the same amount.
+    // the app under edge-to-edge - the dock lifts by the same amount.
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(Modifier.fillMaxSize()) {
@@ -379,9 +380,9 @@ fun ChatsScreen(
                     viewerColor = viewerColor,
                     dark = dark,
                     onAvatar = { onSwitchTab("profile") },
-                    // R2-A item 2 — real calls history (route owned by the shell).
+                    // R2-A item 2 - real calls history (route owned by the shell).
                     onCalls = onOpenCalls,
-                    // R2-A item 1 — real new-chat composer (shell-hosted sheet).
+                    // R2-A item 1 - real new-chat composer (shell-hosted sheet).
                     onCompose = onOpenNewChat,
                     onTheme = onCycleTheme,
                     onSearch = {
@@ -426,7 +427,7 @@ fun ChatsScreen(
                 )
             }
 
-            // Wave 6 — the folders manage sheet (create/rename/emoji/membership/delete).
+            // Wave 6 - the folders manage sheet (create/rename/emoji/membership/delete).
             if (foldersSheet) {
                 FoldersManageSheet(onDismiss = { foldersSheet = false })
             }
@@ -445,7 +446,7 @@ fun ChatsScreen(
                     )
                     state.error != null && all.isEmpty() -> EmptyStateCard(
                         title = "Could not reach the gateway",
-                        body = state.error ?: "Network error — the inbox will retry.",
+                        body = state.error ?: "Network error - the inbox will retry.",
                         actionLabel = "Retry",
                         onAction = { viewModel.refresh() },
                     )
@@ -457,7 +458,7 @@ fun ChatsScreen(
                         searching = searchRunning,
                         typing = typing,
                         presence = presence,
-                        // R2-C item 7 — recent-search suggestions + push-on-open.
+                        // R2-C item 7 - recent-search suggestions + push-on-open.
                         recents = spotlightRecents,
                         onPickRecent = { picked ->
                             query = picked
@@ -472,7 +473,7 @@ fun ChatsScreen(
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
                             onOpenRoom(hit.conversationId, hit.id)
                         },
-                        // R14 gap 14 — the Actions block atop the empty-query
+                        // R14 gap 14 - the Actions block atop the empty-query
                         // surface (web spotlight.tsx:237-291).
                         checkinPending = checkin.pending,
                         onNewChat = {
@@ -585,9 +586,9 @@ fun ChatsScreen(
                             item(key = "filter-empty") {
                                 Text(
                                     text = when {
-                                        activeFolderId != null -> "This folder is empty — tap the folder button on the rail to add chats."
-                                        listFilter == "unread" -> "No unread chats — you are all caught up."
-                                        else -> "No groups yet — start one from Contacts."
+                                        activeFolderId != null -> "This folder is empty - tap the folder button on the rail to add chats."
+                                        listFilter == "unread" -> "No unread chats - you are all caught up."
+                                        else -> "No groups yet - start one from Contacts."
                                     },
                                     fontSize = 13.sp,
                                     lineHeight = 20.sp,
@@ -702,7 +703,7 @@ private fun Conversation.withLocalDraft(local: String?): Conversation =
     if (local.isNullOrBlank()) this else copy(myDraft = local)
 
 /**
- * Archived sub-page (spec §9) — same rows, same swipe/sheet actions, the
+ * Archived sub-page (spec §9) - same rows, same swipe/sheet actions, the
  * Archive chip reads "Unarchive". Real hash-sub-page parity on the web.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -720,7 +721,7 @@ fun ArchivedScreen(
     val typing by viewModel.typing.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     var actionTarget by remember { mutableStateOf<Conversation?>(null) }
-    // R1-W2H D24 — same export share hand-off as the main tab.
+    // R1-W2H D24 - same export share hand-off as the main tab.
     var pendingShareFile by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
@@ -747,14 +748,14 @@ fun ArchivedScreen(
     }
     LaunchedEffect(notice) {
         val n = notice ?: return@LaunchedEffect
-        // R1-W2H D24 — intercept the export-success notice (see ChatsScreen).
+        // R1-W2H D24 - intercept the export-success notice (see ChatsScreen).
         n.text.removePrefix(EXPORT_NOTICE_PREFIX).takeIf { it != n.text }?.let { fileName ->
             pendingShareFile = File(context.cacheDir, "exports/$fileName").absolutePath
         }
         snackbar.showSnackbar(n.text, withDismissAction = false)
         viewModel.consumeNotice()
     }
-    // R1-W2H D24 — same ACTION_SEND chooser launch as the main tab.
+    // R1-W2H D24 - same ACTION_SEND chooser launch as the main tab.
     LaunchedEffect(pendingShareFile) {
         val path = pendingShareFile ?: return@LaunchedEffect
         pendingShareFile = null
@@ -880,7 +881,7 @@ fun ArchivedScreen(
     }
 }
 
-// ── header ───────────────────────────────────────────────────────────
+// header
 
 @Composable
 private fun HomeHeader(
@@ -1059,7 +1060,7 @@ private fun SearchHeader(
     }
 }
 
-// ── filter chips ─────────────────────────────────────────────────────
+// filter chips
 
 @Composable
 private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) -> Unit) {
@@ -1113,16 +1114,16 @@ private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) 
     }
 }
 
-// ── stories rail (spec §5) ───────────────────────────────────────────
+// stories rail (spec §5)
 
 @Composable
 private fun StoriesRail(
     viewerName: String,
     viewerColor: String?,
     cells: List<StoryCell>,
-    /** Ring tap on a cell with a live story — arg = author userId (viewer start). */
+    /** Ring tap on a cell with a live story - arg = author userId (viewer start). */
     onOpenViewer: (String?) -> Unit,
-    /** The "+" affordance / empty own cell — opens the composer (D1). */
+    /** The "+" affordance / empty own cell - opens the composer (D1). */
     onOpenComposer: () -> Unit,
 ) {
     val dark = isPulseDarkTheme()
@@ -1142,7 +1143,7 @@ private fun StoriesRail(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // D1: the own cell carries BOTH affordances when a live story
-            // exists — ring tap = viewer seeded at my group, "+" tap =
+            // exists - ring tap = viewer seeded at my group, "+" tap =
             // composer; with NO live story the whole cell is the composer
             // entry (web "My status" parity).
             StoryRingCell(
@@ -1251,7 +1252,7 @@ private fun StoryRingCell(
     }
 }
 
-// ── folder rail (spec §6) ────────────────────────────────────────────
+// folder rail (spec §6)
 
 @Composable
 private fun FolderRail(
@@ -1271,7 +1272,7 @@ private fun FolderRail(
     ) {
         RailPill(
             label = "All",
-            emoji = null,
+            icon = null,
             count = 0,
             active = activeFolderId == null,
             dark = dark,
@@ -1280,7 +1281,7 @@ private fun FolderRail(
         folders.forEach { folder ->
             RailPill(
                 label = folder.name,
-                emoji = folder.emoji.ifBlank { null },
+                icon = pulseFolderGlyph(folder.emoji),
                 count = folderCounts(folder.id),
                 active = activeFolderId == folder.id,
                 dark = dark,
@@ -1305,7 +1306,7 @@ private fun FolderRail(
 }
 
 @Composable
-private fun RailPill(label: String, emoji: String?, count: Int, active: Boolean, dark: Boolean, onClick: () -> Unit) {
+private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Boolean, dark: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .height(44.dp)
@@ -1313,11 +1314,20 @@ private fun RailPill(label: String, emoji: String?, count: Int, active: Boolean,
             .background(if (active) Emerald500 else Color.Transparent)
             .then(if (active) Modifier else Modifier.pulseGlass(dark, RoundedCornerShape(50)))
             .clickable(onClick = onClick)
-            .padding(horizontal = if (emoji == null) 16.dp else 14.dp),
+            .padding(horizontal = if (icon == null) 16.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (emoji != null) Text(emoji, fontSize = 14.sp)
+        // R18 icon-id contract - the folder glyph is the registry vector for
+        // the stored icon id (stale values normalize to the default).
+        if (icon != null) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (active) Color.White else Emerald600,
+                modifier = Modifier.size(14.dp),
+            )
+        }
         Text(
             label,
             fontSize = 13.sp,
@@ -1342,7 +1352,7 @@ private fun RailPill(label: String, emoji: String?, count: Int, active: Boolean,
     }
 }
 
-// ── Note to Self card (spec §7.1) ────────────────────────────────────
+// Note to Self card (spec §7.1)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1377,7 +1387,7 @@ private fun NoteToSelfCard(exists: Boolean, onOpen: () -> Unit, onCreate: () -> 
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "Your private space — notes, links, ideas",
+                "Your private space - notes, links, ideas",
                 fontSize = 11.sp,
                 color = Zinc500,
                 maxLines = 1,
@@ -1404,7 +1414,7 @@ private fun NoteToSelfCard(exists: Boolean, onOpen: () -> Unit, onCreate: () -> 
     }
 }
 
-// ── entry pills — Mentions / Channels / Archived (spec §7.2) ─────────
+// entry pills - Mentions / Channels / Archived (spec §7.2)
 
 @Composable
 private fun EntryPill(
@@ -1446,7 +1456,7 @@ private fun EntryPill(
     }
 }
 
-// ── section headers (spec §7.3) ──────────────────────────────────────
+// section headers (spec §7.3)
 
 @Composable
 private fun SectionHeader(label: String, count: Int) {
@@ -1485,7 +1495,7 @@ private fun SectionHeader(label: String, count: Int) {
     }
 }
 
-// ── conversation row (spec §7.4) ─────────────────────────────────────
+// conversation row (spec §7.4)
 
 private const val SWIPE_REVEAL_DP = 112
 private const val SWIPE_OPEN_THRESHOLD_DP = 56
@@ -1514,7 +1524,7 @@ private fun ConversationRowItem(
     val offsetX = remember { Animatable(0f) }
     var swipeOpen by remember { mutableStateOf(false) }
 
-    // First-load entrance stagger — 28ms × index capped at 12 items (web parity).
+    // First-load entrance stagger - 28ms × index capped at 12 items (web parity).
     val entranceAlpha = remember { Animatable(if (entranceIndex != null) 0f else 1f) }
     val entranceY = remember { Animatable(if (entranceIndex != null) 14f else 0f) }
     LaunchedEffect(entranceIndex) {
@@ -1618,7 +1628,7 @@ private fun ConversationRowItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // avatar block (48dp) — presence halo, streak heat ring, squircle groups
+            // avatar block (48dp) - presence halo, streak heat ring, squircle groups
             Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
                 if (online && !conversation.isGroupish) PresenceGlow()
                 if (heat > 0) StreakHeatRing(heat)
@@ -1658,9 +1668,12 @@ private fun ConversationRowItem(
                         )
                         Spacer(Modifier.width(4.dp))
                     }
+                    // R18 Neo row polish - display tracking tightens the Space
+                    // Grotesk voice; unread keeps the web semibold emphasis.
                     Text(
                         conversation.title,
                         fontSize = 15.sp,
+                        letterSpacing = (-0.2).sp,
                         fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onBackground,
                         maxLines = 1,
@@ -1668,7 +1681,7 @@ private fun ConversationRowItem(
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     Spacer(Modifier.weight(1f))
-                    // streak chips — priority: at-risk > live > lost (never two)
+                    // streak chips - priority: at-risk > live > lost (never two)
                     if (conversation.streakAtRiskCount > 0) {
                         StreakChip(icon = Icons.Filled.HourglassEmpty, text = "ends tonight", amber = true)
                     } else if (conversation.streakCount > 0) {
@@ -1677,16 +1690,20 @@ private fun ConversationRowItem(
                         StreakChip(icon = Icons.Filled.LocalFireDepartment, text = "streak lost", amber = false)
                     }
                     Spacer(Modifier.width(6.dp))
+                    // R18 Neo row polish - JetBrains Mono stamp with open
+                    // tracking; the unread signal rides the theme accent token
+                    // (neon mint on carbon) instead of a hardcoded emerald.
                     Text(
                         PulseTime.listStamp(conversation.lastActivityAt),
                         fontFamily = PulseMonoFamily,
                         fontSize = 11.sp,
+                        letterSpacing = 0.3.sp,
                         fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (hasUnread) Emerald600 else Zinc400,
+                        color = if (hasUnread) MaterialTheme.colorScheme.primary else Zinc400,
                     )
                 }
                 Spacer(Modifier.height(2.dp))
-                // preview line — typing > draft > preview
+                // preview line - typing > draft > preview
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     when {
                         typing -> TypingDots()
@@ -1705,9 +1722,18 @@ private fun ConversationRowItem(
                             )
                         }
                         else -> {
+                            // R18 Neo row polish - the group sender prefix reads
+                            // as a Discord-grade byline: accent ink, semibold,
+                            // one line, before the muted preview body.
                             val prefix = previewPrefix(conversation)
                             if (prefix.isNotEmpty()) {
-                                Text(prefix, fontSize = 13.sp, color = Zinc400, maxLines = 1)
+                                Text(
+                                    prefix,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                )
                             }
                             Text(
                                 previewText(conversation),
@@ -1733,7 +1759,7 @@ private fun ConversationRowItem(
                                 .padding(horizontal = 3.dp)
                                 .size(12.dp)
                                 .clip(CircleShape)
-                                .background(Emerald500)
+                                .background(MaterialTheme.colorScheme.primary)
                                 .border(2.dp, MaterialTheme.colorScheme.background, CircleShape),
                         )
                         muted -> MutedChip(hasUnread = hasUnread, unread = conversation.unreadCount)
@@ -1741,19 +1767,20 @@ private fun ConversationRowItem(
                 }
             }
         }
-        // hairline divider indented past the avatar (64dp)
+        // hairline divider indented past the avatar (64dp) - dark rides the
+        // locked PulsePalette.Hairline token (white 8%), light stays paper.
         Box(
             Modifier
                 .align(Alignment.BottomStart)
                 .padding(start = 64.dp)
                 .fillMaxWidth()
                 .height(0.5.dp)
-                .background(if (dark) Color.White.copy(alpha = 0.06f) else Color(0xFFF4F4F5)),
+                .background(if (dark) PulsePalette.Hairline else Color(0xFFF4F4F5)),
         )
     }
 }
 
-/** Web conversationPreviewPrefix — You: / Name: / ↩ rules. */
+/** Web conversationPreviewPrefix - You: / Name: / ↩ rules. */
 private fun previewPrefix(c: Conversation): String = when {
     c.lastMessageDeleted -> ""
     c.lastMessageIsReply && c.lastMessageMine -> "↩ You: "
@@ -1769,7 +1796,7 @@ private fun previewText(c: Conversation): String = when {
     c.lastMessageDeleted -> "Message deleted"
     c.lastMessageIsImage && c.lastMessagePreview.isNullOrBlank() -> "Photo"
     c.lastMessageIsAudio && c.lastMessagePreview.isNullOrBlank() -> "Voice message"
-    c.lastMessageIsFile -> "Document — ${c.lastMessageFileName ?: "file"}"
+    c.lastMessageIsFile -> "Document - ${c.lastMessageFileName ?: "file"}"
     !c.lastMessagePreview.isNullOrBlank() -> c.lastMessagePreview ?: "No messages yet"
     else -> "No messages yet"
 }
@@ -1799,17 +1826,25 @@ private fun UnreadBadge(count: Int) {
         animationSpec = PulseMotion.bouncy(),
         label = "unreadPop",
     )
+    // R18 Neo row polish - the unread pill is the accent token itself
+    // (neon mint on carbon) with the locked on-accent ink, so the highest
+    // attention signal in the list is exactly the theme's signal color.
     Box(
         Modifier
             .scale(scale)
             .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
             .clip(RoundedCornerShape(50))
-            .background(Emerald500)
+            .background(MaterialTheme.colorScheme.primary)
             .border(2.dp, MaterialTheme.colorScheme.background, RoundedCornerShape(50))
             .padding(horizontal = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(countLabel(count), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text(
+            countLabel(count),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimary,
+        )
     }
 }
 
@@ -1821,8 +1856,10 @@ private fun MutedChip(hasUnread: Boolean, unread: Int) {
             .clip(RoundedCornerShape(50))
             .background(
                 when {
+                    // R18 Neo row polish - muted-state fill rides the locked
+                    // secondary-surface token on carbon (light keeps zinc).
                     hasUnread && !dark -> Zinc300
-                    hasUnread -> Color(0xFF3F3F46)
+                    hasUnread -> PulsePalette.NeoSurface2
                     else -> Color.Transparent
                 },
             )
@@ -1833,11 +1870,11 @@ private fun MutedChip(hasUnread: Boolean, unread: Int) {
         Icon(
             Icons.Outlined.NotificationsOff,
             contentDescription = "Muted",
-            tint = if (hasUnread) (if (dark) Color(0xFFD4D4D8) else Zinc600) else Zinc400,
+            tint = if (hasUnread) (if (dark) PulsePalette.NeoTextDim else Zinc600) else Zinc400,
             modifier = Modifier.size(12.dp),
         )
         if (hasUnread) {
-            Text(countLabel(unread), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (dark) Color(0xFFD4D4D8) else Zinc600)
+            Text(countLabel(unread), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (dark) PulsePalette.NeoTextDim else Zinc600)
         } else {
             Text("Muted", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Zinc400, letterSpacing = 0.5.sp)
         }
@@ -1859,11 +1896,11 @@ private fun PresenceGlow() {
             .size(56.dp)
             .graphicsLayer { scaleX = 1.10f; scaleY = 1.10f }
             .clip(CircleShape)
-            .border(2.dp, Emerald500.copy(alpha = pulse), CircleShape),
+            .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = pulse), CircleShape),
     )
 }
 
-/** Snapchat-style streak heat ring — conic amber→rose arc, width scales with heat. */
+/** Snapchat-style streak heat ring - conic amber→rose arc, width scales with heat. */
 @Composable
 private fun StreakHeatRing(heat: Int) {
     val inset = when (heat) {
@@ -1944,7 +1981,7 @@ private fun SwipeChip(icon: ImageVector, tint: Color, label: String, dark: Boole
     }
 }
 
-// ── multi-select bar (spec §7.5) ─────────────────────────────────────
+// multi-select bar (spec §7.5)
 
 @Composable
 private fun MultiSelectBar(
@@ -1983,7 +2020,7 @@ private fun BarAction(icon: ImageVector, label: String, onClick: () -> Unit, tin
     }
 }
 
-// ── long-press action sheet (spec §8) ────────────────────────────────
+// long-press action sheet (spec §8)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2048,7 +2085,7 @@ private fun SheetAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     }
 }
 
-// ── search results (spec §10) ────────────────────────────────────────
+// search results (spec §10)
 
 @Composable
 private fun SearchResults(
@@ -2060,11 +2097,11 @@ private fun SearchResults(
     presence: Set<String>,
     onPress: (Conversation) -> Unit,
     onOpenHit: (MessageHit) -> Unit,
-    // R2-C item 7 — recent searches (web spotlight.tsx recents parity).
+    // R2-C item 7 - recent searches (web spotlight.tsx recents parity).
     recents: List<String> = emptyList(),
     onPickRecent: (String) -> Unit = {},
     onClearRecents: () -> Unit = {},
-    // R14 gap 14 — the Actions block (web spotlight.tsx:237-291: New chat /
+    // R14 gap 14 - the Actions block (web spotlight.tsx:237-291: New chat /
     // Check in to Hub via POST /api/hub/wallet/checkin / Toggle theme).
     checkinPending: Boolean = false,
     onNewChat: () -> Unit = {},
@@ -2074,7 +2111,7 @@ private fun SearchResults(
     val q = query.trim()
     val darkSurface = isPulseDarkTheme()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 128.dp)) {
-        // R14 gap 14 — ACTIONS (web runs this block atop the search results;
+        // R14 gap 14 - ACTIONS (web runs this block atop the search results;
         // on the empty-query surface it sits above Recents, like the web's
         // actions-before-recents flatten order).
         if (q.isEmpty()) {
@@ -2110,7 +2147,7 @@ private fun SearchResults(
                 onClick = onToggleTheme,
             )
         }
-        // R2-C item 7 — recent searches surface while the query is EMPTY
+        // R2-C item 7 - recent searches surface while the query is EMPTY
         // (last 5, deduped, newest first; tap refills the field, Clear wipes).
         if (q.isEmpty() && recents.isNotEmpty()) {
             Row(
@@ -2202,7 +2239,7 @@ private fun SearchResults(
 }
 
 /**
- * R14 gap 14 — one row of the spotlight Actions block (web spotlight.tsx
+ * R14 gap 14 - one row of the spotlight Actions block (web spotlight.tsx
  * SpotlightRow 'action' rendering): icon tile + label + hint, tap to run.
  */
 @Composable
@@ -2266,7 +2303,7 @@ private fun SearchSectionHeader(label: String, count: Int) {
     }
 }
 
-/** One server-side message hit — sender avatar, chat title, highlighted snippet. */
+/** One server-side message hit - sender avatar, chat title, highlighted snippet. */
 @Composable
 private fun SearchHitRow(hit: MessageHit, query: String, onOpen: () -> Unit) {
     Row(
@@ -2322,7 +2359,7 @@ private fun SearchHitRow(hit: MessageHit, query: String, onOpen: () -> Unit) {
                 else -> Text(
                     snippetAnnotated(
                         if (hit.isFile && !hit.content.contains(query, ignoreCase = true)) {
-                            "Document — ${hit.fileName ?: "file"}"
+                            "Document - ${hit.fileName ?: "file"}"
                         } else {
                             hit.content
                         },
@@ -2338,7 +2375,7 @@ private fun SearchHitRow(hit: MessageHit, query: String, onOpen: () -> Unit) {
     }
 }
 
-// ── skeleton + empty/error cards (spec §11) ──────────────────────────
+// skeleton + empty/error cards (spec §11)
 
 @Composable
 private fun SkeletonList() {
@@ -2372,7 +2409,7 @@ private fun EmptyStateCard(
         verticalArrangement = Arrangement.Center,
     ) {
         Box(Modifier.fillMaxWidth().padding(horizontal = 32.dp)) {
-            // soft emerald radial glow blooming behind the illustration —
+            // soft emerald radial glow blooming behind the illustration -
             // drawn first so the glass card paints over it
             Box(
                 Modifier

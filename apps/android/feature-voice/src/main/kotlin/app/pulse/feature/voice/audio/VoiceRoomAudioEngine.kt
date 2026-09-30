@@ -25,10 +25,10 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Wave 5 — the REAL raw-audio engine for voice rooms (spec §1.1 VR-4/VR-5):
+ * Wave 5 - the REAL raw-audio engine for voice rooms (spec §1.1 VR-4/VR-5):
  *  • capture: AudioRecord(MIC, 16kHz mono PCM16) read in 100ms blocks into the
  *    pure [VoicePcmChunker] ONLY while the software gate (transmitting &&
- *    !muted) is open — the gate is the source of truth; AudioRecord itself
+ *    !muted) is open - the gate is the source of truth; AudioRecord itself
  *    only runs [startRecording] while a transmission is live;
  *  • playback: per-peer AudioTrack (USAGE_VOICE_COMMUNICATION /
  *    CONTENT_TYPE_SPEECH, 16k mono PCM16 MODE_STREAM) fed by the pure
@@ -48,10 +48,10 @@ class VoiceRoomAudioEngine(context: Context) {
     /** Caption path: raw 16kHz samples of every read while captions are on. */
     var captionSink: ((samples: ShortArray) -> Unit)? = null
 
-    /** Transmit ended — the engine flushes caption tails here. */
+    /** Transmit ended - the engine flushes caption tails here. */
     var onTransmitEnd: (() -> Unit)? = null
 
-    /** Capture could not start (mic denied / busy / absent) — honest error (VR-10). */
+    /** Capture could not start (mic denied / busy / absent) - honest error (VR-10). */
     var onCaptureError: ((message: String) -> Unit)? = null
 
     private val router = RoomAudioRouter(context)
@@ -64,15 +64,15 @@ class VoiceRoomAudioEngine(context: Context) {
     private var record: AudioRecord? = null
     private var captureJob: Job? = null
 
-    /** Room session start — focus + communication mode. */
+    /** Room session start - focus + communication mode. */
     fun start() {
         router.acquire()
     }
 
-    // ── capture (transmit) leg ──────────────────────────────────
+    // capture (transmit) leg
 
     /**
-     * Opens the mic gate. [muted] mirrors the current mute state — a muted
+     * Opens the mic gate. [muted] mirrors the current mute state - a muted
      * press never opens the AudioRecord at all (the software gate, VR-6).
      */
     fun startTransmit(muted: Boolean) {
@@ -83,7 +83,7 @@ class VoiceRoomAudioEngine(context: Context) {
                 val rec = ensureRecord()
                 if (rec == null) {
                     transmitting.set(false)
-                    onCaptureError?.invoke("Microphone unavailable — check permission or close other apps using it.")
+                    onCaptureError?.invoke("Microphone unavailable - check permission or close other apps using it.")
                     return@withLock
                 }
                 runCatching { rec.startRecording() }
@@ -147,7 +147,7 @@ class VoiceRoomAudioEngine(context: Context) {
         }
     }.getOrNull()
 
-    // ── playback leg ────────────────────────────────────────────
+    // playback leg
 
     /** One peer chunk arrived: decode → dedupe/schedule → write at the jitter playhead. */
     fun onPeerChunk(userId: String, seq: Long, data: String) {
@@ -204,7 +204,7 @@ class VoiceRoomAudioEngine(context: Context) {
         }.getOrNull()
     }
 
-    /** Roster drop — reset the peer's playhead AND its track (WEB DEFECT FIX #2). */
+    /** Roster drop - reset the peer's playhead AND its track (WEB DEFECT FIX #2). */
     fun dropPeer(userId: String) {
         scheduler.resetPeer(userId)
         tracks.remove(userId)?.let { track ->
@@ -216,9 +216,9 @@ class VoiceRoomAudioEngine(context: Context) {
         }
     }
 
-    // ── teardown ────────────────────────────────────────────────
+    // teardown
 
-    /** Full teardown — capture, every peer track, focus, mode (VR-9). */
+    /** Full teardown - capture, every peer track, focus, mode (VR-9). */
     fun teardown() {
         transmitting.set(false)
         runCatching { captureJob?.cancel() }

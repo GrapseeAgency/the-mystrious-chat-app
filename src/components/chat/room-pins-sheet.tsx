@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — compact glass pinned-messages sheet (R27-c).
+// Pulse - compact glass pinned-messages sheet (R27-c).
 // Opens from the slim pinned banner under the room header. A
 // GlassMenu-based bottom panel (NOT a giant overlay): one hairline
 // header, then pin rows with jump + unpin (any participant per the
 // real POST /api/messages/[id]/pin toggle contract).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import type { CSSProperties } from 'react'
@@ -28,7 +26,7 @@ export interface RoomPinsSheetProps {
   unpinPending: boolean
   /** close + scroll-to-and-flash the pinned message */
   onJump: (messageId: string) => void
-  /** real unpin — POST /api/messages/[id]/pin toggle */
+  /** real unpin - POST /api/messages/[id]/pin toggle */
   onUnpin: (messageId: string) => void
 }
 
@@ -52,7 +50,7 @@ export function RoomPinsSheet({
 }: RoomPinsSheetProps) {
   return (
     <>
-      {/* backdrop — tap anywhere outside to dismiss */}
+      {/* backdrop - tap anywhere outside to dismiss */}
       <motion.button
         type="button"
         aria-hidden
@@ -94,7 +92,7 @@ export function RoomPinsSheet({
             </div>
           ) : pins.length === 0 ? (
             <p className="px-4 pb-3 pt-1 text-center text-xs text-zinc-400 dark:text-zinc-500">
-              Nothing pinned yet — long-press a message and choose Pin.
+              Nothing pinned yet - long-press a message and choose Pin.
             </p>
           ) : (
             <ul className="pulse-scroll min-h-0 space-y-0.5 overflow-y-auto px-1 pb-1.5">

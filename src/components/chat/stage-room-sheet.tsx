@@ -1,26 +1,24 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — Live stage room (R24-c "Beyond Chat" wave 3).
+// Pulse - Live stage room (R24-c "Beyond Chat" wave 3).
 // Clubhouse-style stage hierarchy over the pulse-socket service:
 //   host → speakers → listeners (+ FIFO raised-hands queue).
 //
 // REAL realtime, zero mocks:
 //  · rosters/roles/hands live in the socket service's in-memory
-//    stage state (`stage:{conversationId}` rooms) — the genuine
+//    stage state (`stage:{conversationId}` rooms) - the genuine
 //    product, same trust model as the existing voice rooms.
 //  · speakers (incl. the host) ALSO join the existing
 //    `voice:{conversationId}` room, so the proven voice:ptt /
-//    voice:chunk relay carries stage audio — the mic button below
+//    voice:chunk relay carries stage audio - the mic button below
 //    uses the exact same AudioWorklet→16 kHz PCM→250 ms chunk
 //    capture pipeline as voice-room-sheet (copied, not imported,
 //    to keep both files independently owned).
 //  · the mic arms lazily on the first PTT press (a real user
 //    gesture) so pure listeners are never asked for permission.
-//  · nothing is recorded or stored — chunks are relayed and dropped.
+//  · nothing is recorded or stored - chunks are relayed and dropped.
 //
 // The sheet auto-joins as a LISTENER when opened and emits
 // stage:leave on close/unmount. Host seat: first joiner of a fresh
 // room becomes host; an empty seat can be re-claimed (asHost).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -53,8 +51,8 @@ import type { ConversationDetail } from '@/lib/types'
 
 export const STAGE_OPEN_EVENT = 'pulse:open-stage'
 
-// ── audio pipeline constants (copied from voice-room-sheet — same codec) ──
-const TARGET_RATE = 16_000 // Hz — wideband voice, keeps chunks small
+// audio pipeline constants (copied from voice-room-sheet - same codec) 
+const TARGET_RATE = 16_000 // Hz - wideband voice, keeps chunks small
 const CHUNK_MS = 250 // emit a chunk every 250 ms
 const CHUNK_SAMPLES = Math.round((TARGET_RATE * CHUNK_MS) / 1000) // 4000 samples
 const JITTER_BUFFER_S = 0.085 // playback pre-roll for smooth-ish scheduling
@@ -101,7 +99,7 @@ export interface StageController {
   speakingIds: ReadonlySet<string>
   micMuted: boolean
   transmitting: boolean
-  /** honest mic-arming failure (permission denied etc.) — the session continues */
+  /** honest mic-arming failure (permission denied etc.) - the session continues */
   micError: string
   /** bumps every time the host ends the stage while we were in the room */
   endedTick: number
@@ -116,7 +114,7 @@ export interface StageController {
   toggleMute: () => void
 }
 
-// ── binary helpers (copied from voice-room-sheet — same codec) ──
+// binary helpers (copied from voice-room-sheet - same codec) 
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = ''
@@ -218,7 +216,7 @@ function deriveRole(state: StageState | null, meId: string): StageRole {
   return 'listener'
 }
 
-// ── the engine hook ──────────────────────────────────────────
+// the engine hook 
 
 export function useStageRoom(conversationId: string, me: StageMe): StageController {
   const [status, setStatus] = useState<StageStatus>('idle')
@@ -261,7 +259,7 @@ export function useStageRoom(conversationId: string, me: StageMe): StageControll
 
   const stopTransmitRef = useRef<() => void>(() => undefined)
 
-  // ── socket plumbing ────────────────────────────────────────
+  // socket plumbing 
 
   const emitStageJoin = useCallback(
     (sock: Socket, convId: string, asHost: boolean) => {
@@ -291,7 +289,7 @@ export function useStageRoom(conversationId: string, me: StageMe): StageControll
     sock.on('connect', () => {
       if (!mountedRef.current) return
       setConnected(true)
-      // the relay wipes rosters on reconnect/restart — re-register the seat
+      // the relay wipes rosters on reconnect/restart - re-register the seat
       const convId = joinedConvRef.current
       if (convId) {
         emitStageJoin(sock, convId, wasHostRef.current)
@@ -340,11 +338,11 @@ export function useStageRoom(conversationId: string, me: StageMe): StageControll
       const convId = typeof r.conversationId === 'string' ? r.conversationId : ''
       if (!convId || convId !== joinedConvRef.current) return
       setEndedTick((t) => t + 1)
-      // leaving from inside a handler is unsafe — defer the teardown one tick
+      // leaving from inside a handler is unsafe - defer the teardown one tick
       queueMicrotask(() => leaveRef.current())
     })
 
-    // ── voice-room relay (only while my stage seat is a speaker seat) ──
+    // voice-room relay (only while my stage seat is a speaker seat) 
     sock.on('voice:ptt', (raw: unknown) => {
       if (!mountedRef.current) return
       if (raw === null || typeof raw !== 'object') return
@@ -400,14 +398,14 @@ export function useStageRoom(conversationId: string, me: StageMe): StageControll
           }
         }
       } catch {
-        // a corrupt chunk must never take the room down — drop it
+        // a corrupt chunk must never take the room down - drop it
       }
     })
 
     return sock
   }, [emitStageJoin, me.id, me.name, me.username, me.color])
 
-  // ── capture pipeline (copied from voice-room-sheet) ────────
+  // capture pipeline (copied from voice-room-sheet) 
 
   const sendChunk = useCallback(
     (samples: Float32Array) => {
@@ -425,7 +423,7 @@ export function useStageRoom(conversationId: string, me: StageMe): StageControll
           data,
         })
       } catch {
-        // encode failure — drop this slice, the stream keeps flowing
+        // encode failure - drop this slice, the stream keeps flowing
       }
     },
     [me.id],
@@ -451,11 +449,11 @@ export function useStageRoom(conversationId: string, me: StageMe): StageControll
     [sendChunk],
   )
 
-  /** AudioWorklet source inlined as a Blob URL — no extra public file needed. */
+  /** AudioWorklet source inlined as a Blob URL - no extra public file needed. */
   const attachCapture = useCallback(async (ctx: AudioContext, stream: MediaStream) => {
     const source = ctx.createMediaStreamSource(stream)
     const sink = ctx.createGain()
-    sink.gain.value = 0 // capture only — never monitor locally (no echo loop)
+    sink.gain.value = 0 // capture only - never monitor locally (no echo loop)
     sink.connect(ctx.destination)
 
     const workletSrc = `class PulseStageCaptureProcessor extends AudioWorkletProcessor {
@@ -484,7 +482,7 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
       node = null // fall through to the ScriptProcessor path
     }
     if (!node) {
-      // ScriptProcessor fallback (deprecated but universal — incl. older Safari)
+      // ScriptProcessor fallback (deprecated but universal - incl. older Safari)
       const processor = ctx.createScriptProcessor(4096, 1, 1)
       processor.onaudioprocess = (event) => {
         const channel = event.inputBuffer.getChannelData(0)
@@ -567,13 +565,13 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
     } catch (error) {
       teardownAudio()
       const name = error instanceof DOMException ? error.name : ''
-      let message = 'Could not arm the microphone — try again.'
+      let message = 'Could not arm the microphone - try again.'
       if (name === 'NotAllowedError' || name === 'SecurityError') {
-        message = 'Microphone access was denied — allow it in your browser settings to speak on stage.'
+        message = 'Microphone access was denied - allow it in your browser settings to speak on stage.'
       } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
         message = 'No usable microphone was found on this device.'
       } else if (name === 'NotReadableError') {
-        message = 'Your microphone is busy in another app — close it and try again.'
+        message = 'Your microphone is busy in another app - close it and try again.'
       }
       setMicError(message)
       toast.error(message)
@@ -593,7 +591,7 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
     try {
       sock.emit('voice:ptt', { conversationId: convId, userId: me.id, on: true })
     } catch {
-      /* best effort — rings self-heal on the next toggle */
+      /* best effort - rings self-heal on the next toggle */
     }
   }, [me.id])
 
@@ -645,7 +643,7 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
       sock.once('connect_error', onError)
     })
 
-  // ── public controls ────────────────────────────────────────
+  // public controls 
 
   const leave = useCallback(() => {
     const convId = joinedConvRef.current
@@ -654,7 +652,7 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
       try {
         sock.emit('stage:leave', { conversationId: convId })
       } catch {
-        /* socket already gone — disconnect cleanup covers it */
+        /* socket already gone - disconnect cleanup covers it */
       }
       if (voiceJoinedRef.current) {
         voiceJoinedRef.current = false
@@ -695,7 +693,7 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
         return
       }
       if (joinedConvRef.current && joinedConvRef.current !== conversationId) {
-        leave() // conversation switch mid-session — the seat belongs to ONE room
+        leave() // conversation switch mid-session - the seat belongs to ONE room
       }
       if (statusRef.current === 'joining') return
       applyStatus('joining')
@@ -712,7 +710,7 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
           applyStatus('joined')
         } catch {
           if (!mountedRef.current) return
-          const message = 'Could not reach the stage relay — check your connection and retry.'
+          const message = 'Could not reach the stage relay - check your connection and retry.'
           applyStatus('error')
           setErrorMsg(message)
           toast.error(message)
@@ -768,7 +766,7 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
       try {
         sock.emit('stage:hand', { conversationId: convId, user: { id: me.id }, raised })
       } catch {
-        /* best effort — state resync repairs the view */
+        /* best effort - state resync repairs the view */
       }
     },
     [me.id],
@@ -812,7 +810,7 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
     try {
       sock.emit('stage:end', { conversationId: convId, byUserId: me.id })
     } catch {
-      /* best effort — stage:ended repair covers it */
+      /* best effort - stage:ended repair covers it */
     }
   }, [me.id])
 
@@ -888,7 +886,7 @@ registerProcessor('pulse-stage-capture-processor', PulseStageCaptureProcessor)`
   }
 }
 
-// ── the sheet UI ─────────────────────────────────────────────
+// the sheet UI 
 
 function SpeakingBars({ reduced }: { reduced: boolean }) {
   if (reduced) {
@@ -1168,7 +1166,7 @@ function StageRoomSheetUI({
   }
 
   const onEndStage = () => {
-    // two-tap confirm — ending the stage is destructive for the whole room
+    // two-tap confirm - ending the stage is destructive for the whole room
     if (!confirmEnd) {
       setConfirmEnd(true)
       haptic(12)
@@ -1195,7 +1193,7 @@ function StageRoomSheetUI({
     if (stage.inRoom && !stage.connected) {
       return { dot: 'bg-rose-400', text: 'Reconnecting to the relay…', pulse: true }
     }
-    return { dot: 'bg-zinc-500', text: 'Standby — not connected', pulse: false }
+    return { dot: 'bg-zinc-500', text: 'Standby - not connected', pulse: false }
   })()
 
   const speakersWithoutHost = state ? state.speakers.filter((s) => s.id !== state.host?.id) : []
@@ -1379,7 +1377,7 @@ function StageRoomSheetUI({
                   </ul>
                 ) : (
                   <p className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-3 text-center text-[11.5px] text-zinc-500">
-                    Only the host is on stage — approve a raised hand to add speakers.
+                    Only the host is on stage - approve a raised hand to add speakers.
                   </p>
                 )}
               </section>
@@ -1423,7 +1421,7 @@ function StageRoomSheetUI({
                   </div>
                 ) : (
                   <p className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-3 text-center text-[11.5px] text-zinc-500">
-                    Nobody is listening yet — share the room.
+                    Nobody is listening yet - share the room.
                   </p>
                 )}
               </section>
@@ -1438,7 +1436,7 @@ function StageRoomSheetUI({
 
               {stage.inRoom && stage.micMuted && (isHost || isSpeaker) ? (
                 <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-[11.5px] font-medium text-amber-300" role="status">
-                  Mic is muted — unmute to talk.
+                  Mic is muted - unmute to talk.
                 </p>
               ) : null}
             </div>
@@ -1489,7 +1487,7 @@ function StageRoomSheetUI({
                 {/* push-to-talk */}
                 <motion.button
                   type="button"
-                  aria-label={stage.transmitting ? 'Stop transmitting' : 'Push to talk — hold or tap to latch'}
+                  aria-label={stage.transmitting ? 'Stop transmitting' : 'Push to talk - hold or tap to latch'}
                   aria-pressed={stage.transmitting}
                   disabled={!canTalk}
                   onPointerDown={onPttDown}
@@ -1547,7 +1545,7 @@ function StageRoomSheetUI({
               </div>
               <p className="text-center text-[10px] leading-relaxed text-zinc-500">
                 Hold to talk · tap to latch · stage audio rides the live voice relay
-                <span className="mt-0.5 block text-zinc-600">Streamed in 250 ms chunks — never recorded or stored.</span>
+                <span className="mt-0.5 block text-zinc-600">Streamed in 250 ms chunks - never recorded or stored.</span>
               </p>
             </>
           ) : stage.inRoom && isListener ? (
@@ -1571,11 +1569,11 @@ function StageRoomSheetUI({
                 style={{ willChange: 'transform' }}
               >
                 <Hand className="size-4.5" aria-hidden />
-                {stage.handRaised ? 'Hand raised — waiting for the host' : 'Raise hand'}
+                {stage.handRaised ? 'Hand raised - waiting for the host' : 'Raise hand'}
               </motion.button>
               <div className="flex items-center justify-between pt-2.5">
                 <p className="text-[10px] leading-relaxed text-zinc-500">
-                  {stage.handRaised ? 'The host will approve you to speak.' : 'You are listening — raise a hand to speak.'}
+                  {stage.handRaised ? 'The host will approve you to speak.' : 'You are listening - raise a hand to speak.'}
                 </p>
                 <Button
                   variant="outline"
@@ -1599,7 +1597,7 @@ function StageRoomSheetUI({
   )
 }
 
-// ── the contract hook (mounted by chat-room; opens via CustomEvent) ──
+// the contract hook (mounted by chat-room; opens via CustomEvent) 
 
 export function useStageSheet(conversationId: string, me: StageMe) {
   const [open, setOpen] = useState(false)
@@ -1639,10 +1637,10 @@ export function useStageSheet(conversationId: string, me: StageMe) {
     prevRoleRef.current = stage.role
     if (!stage.inRoom) return
     if ((prev === 'audience' || prev === 'listener') && stage.role === 'host') {
-      toast.success('You are hosting the stage — your mic is live.')
+      toast.success('You are hosting the stage - your mic is live.')
       fireParticles({ kind: 'stars', x: 0.5, y: 0.5, count: 70 })
     } else if (prev === 'listener' && stage.role === 'speaker') {
-      toast.success('Approved! You are live on stage — your mic is unlocked.')
+      toast.success('Approved! You are live on stage - your mic is unlocked.')
       fireParticles({ kind: 'stars', x: 0.5, y: 0.5, count: 70 })
     }
   }, [stage.role, stage.inRoom])

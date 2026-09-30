@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — red packet composer sheet (Task R23-a, WeChat-style)
+// Pulse - red packet composer sheet (Task R23-a, WeChat-style)
 //
 // Bottom sheet to send a red packet into the current room: amount
 // (PC), grab count (1..50 stepper) and a 60-char festive note, with
@@ -9,12 +8,11 @@
 // (room polling remains the fallback).
 //
 // Wiring contract for chat-room (lead), same 2-line pattern as the
-// whiteboard —
+// whiteboard -
 //   const rp = useRedPacketSheet(conversationId, me.id)
 //   ... {rp.node}
 // and the composer opens it via the `pulse:open-redpacket`
 // CustomEvent (slash-palette entry is lead-owned).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
@@ -32,10 +30,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 
-/** Window CustomEvent that opens the sheet — fired by the composer/slash entry. */
+/** Window CustomEvent that opens the sheet - fired by the composer/slash entry. */
 export const REDPACKET_OPEN_EVENT = 'pulse:open-redpacket'
 
-// ── wire types (mirror of the REST contract) ─────────────────
+// wire types (mirror of the REST contract) 
 
 interface RedPacketCreateResponse {
   message: ChatMessage
@@ -53,7 +51,7 @@ interface WalletResponse {
   wallet: { userId: string; coins: number; gems: number }
 }
 
-// ── constants (mirror the server-side validation bounds) ─────
+// constants (mirror the server-side validation bounds) 
 
 const TOTAL_MIN = 1
 const TOTAL_MAX = 10_000
@@ -61,7 +59,7 @@ const COUNT_MIN = 1
 const COUNT_MAX = 50
 const NOTE_MAX = 60
 
-// ── sheet ────────────────────────────────────────────────────
+// sheet 
 
 export function RedPacketSheet({
   open,
@@ -124,7 +122,7 @@ export function RedPacketSheet({
       )
       onClose()
       toast.success('Red packet sent')
-      // instant local append — room polling is the fallback for stragglers
+      // instant local append - room polling is the fallback for stragglers
       window.dispatchEvent(
         new CustomEvent<ChatMessage>('pulse:external-message', { detail: res.message }),
       )
@@ -145,7 +143,7 @@ export function RedPacketSheet({
       <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl border-white/10 bg-zinc-950 dark:border-white/10 dark:bg-zinc-950">
         <DrawerTitle className="sr-only">Send a red packet</DrawerTitle>
         <DrawerDescription className="sr-only">
-          Split Pulse Coins into random grabs for this chat — the sender's wallet is debited now
+          Split Pulse Coins into random grabs for this chat - the sender's wallet is debited now
         </DrawerDescription>
 
         <motion.form
@@ -225,7 +223,7 @@ export function RedPacketSheet({
               </p>
             ) : !affordable ? (
               <p className="text-[11.5px] font-medium text-rose-400">
-                Insufficient PC — your balance is {coins}.
+                Insufficient PC - your balance is {coins}.
               </p>
             ) : null}
           </div>
@@ -301,7 +299,7 @@ export function RedPacketSheet({
           {/* live preview + balance */}
           <div className="rounded-2xl border border-white/10 bg-white/5 px-3.5 py-2.5">
             <p className="text-[12.5px] font-semibold text-zinc-200" aria-live="polite">
-              {totalValid ? `${total} PC` : '— PC'}
+              {totalValid ? `${total} PC` : '- PC'}
               <span className="font-medium text-zinc-500">
                 {' '}
                 · {count} grab{count === 1 ? '' : 's'}
@@ -344,7 +342,7 @@ export function RedPacketSheet({
   )
 }
 
-// ── hook (2-line wiring, mirrors useWhiteboardSheet) ─────────
+// hook (2-line wiring, mirrors useWhiteboardSheet) 
 
 /**
  * Mount once per room:

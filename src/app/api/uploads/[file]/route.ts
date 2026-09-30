@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/uploads/[file] — serve stored message images
-// ─────────────────────────────────────────────────────────────
+// /api/uploads/[file] - serve stored message images
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { NextResponse } from 'next/server'
@@ -39,7 +37,7 @@ export async function GET(_req: Request, { params }: RouteCtx) {
       },
     })
   } catch {
-    // R41 — durable fallback: the sandbox wipes disk files while DB rows
+    // R41 - durable fallback: the sandbox wipes disk files while DB rows
     // persist. Bytes uploaded since the UploadedFile store landed live in
     // SQLite and are served from there when the disk copy is gone.
     try {

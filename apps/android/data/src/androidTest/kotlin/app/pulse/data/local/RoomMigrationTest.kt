@@ -19,7 +19,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Wave-0 + Wave-1 + Wave-2 migration gate — REAL databases are built from raw SQL
+ * Wave-0 + Wave-1 + Wave-2 migration gate - REAL databases are built from raw SQL
  * matching the deployed schema exactly, seeded, then opened with Room:
  *   - v3 → MIGRATION_3_4: rows survive; outbox + draft DAOs round-trip;
  *   - v4 → MIGRATION_4_5: rows survive; message media columns + membersJson
@@ -39,7 +39,7 @@ class RoomMigrationTest {
     private val dbName = "pulse-migration-test.db"
     private lateinit var db: PulseDatabase
 
-    /** EXACT v3 DDL — mirrors the compiled ConversationEntity annotations. */
+    /** EXACT v3 DDL - mirrors the compiled ConversationEntity annotations. */
     private val createConversationsV3 =
         "CREATE TABLE IF NOT EXISTS `conversations` (" +
             "`id` TEXT NOT NULL, `kind` TEXT NOT NULL, `title` TEXT NOT NULL, " +
@@ -56,7 +56,7 @@ class RoomMigrationTest {
             "`mutedUntilEpoch` INTEGER NOT NULL, `otherUserId` TEXT, `isChannel` INTEGER NOT NULL, " +
             "PRIMARY KEY(`id`))"
 
-    /** EXACT v3 DDL — mirrors the compiled MessageEntity annotations. */
+    /** EXACT v3 DDL - mirrors the compiled MessageEntity annotations. */
     private val createMessagesV3 =
         "CREATE TABLE IF NOT EXISTS `messages` (" +
             "`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `authorId` TEXT NOT NULL, " +
@@ -114,7 +114,7 @@ class RoomMigrationTest {
         raw.close()
     }
 
-    /** EXACT v4 DDL — v4 = v3 tables + the Wave-0 outbox/draft tables. */
+    /** EXACT v4 DDL - v4 = v3 tables + the Wave-0 outbox/draft tables. */
     private fun createV4DatabaseWithSeedRows() {
         val raw = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName), null)
         raw.execSQL(createConversationsV3)
@@ -183,7 +183,7 @@ class RoomMigrationTest {
     }
 
     /**
-     * EXACT v5 DDL — v5 = v4 tables + Wave-1 media columns + membersJson.
+     * EXACT v5 DDL - v5 = v4 tables + Wave-1 media columns + membersJson.
      * Built from the v3 DDL strings by splicing the extra columns in before
      * the PRIMARY KEY clause (the deployed schema is exactly this).
      */
@@ -274,13 +274,13 @@ class RoomMigrationTest {
         createV3DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
             // Wave 1: the compiled schema is now v5, so the REAL open path is
-            // 3 → 4 → 5 — both migrations must be present (v5 columns are
+            // 3 → 4 → 5 - both migrations must be present (v5 columns are
             // additive; every assertion below still holds on the v5 state).
             .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9)
             .allowMainThreadQueries()
             .build()
 
-        // ── v3 rows intact ─────────────────────────────────────
+        // v3 rows intact
         val conversation = db.conversationDao().byId("c1")
         assertNotNull("v3 conversation row was destroyed by the migration", conversation)
         assertEquals("Alice", conversation!!.title)
@@ -290,7 +290,7 @@ class RoomMigrationTest {
         assertNotNull("v3 message row was destroyed by the migration", message)
         assertEquals("pre-migration hello", message!!.body)
 
-        // ── outbox DAO round-trip ──────────────────────────────
+        // outbox DAO round-trip
         assertEquals(0, db.outboxDao().count())
         db.outboxDao().insert(
             OutboxEntity(
@@ -324,7 +324,7 @@ class RoomMigrationTest {
         db.outboxDao().deleteByClientId("client-2")
         assertEquals(0, db.outboxDao().count())
 
-        // ── draft DAO round-trip ───────────────────────────────
+        // draft DAO round-trip
         assertNull(db.draftDao().get("c1"))
         db.draftDao().upsert(DraftEntity(conversationId = "c1", text = "half-typed", updatedAt = "t1"))
         assertEquals("half-typed", db.draftDao().get("c1")?.text)
@@ -343,7 +343,7 @@ class RoomMigrationTest {
 
     /**
      * Wave-1 gate: a REAL v4 database (conversations/messages/outbox/draft)
-     * migrates to v5 without destruction — old rows survive with the new
+     * migrates to v5 without destruction - old rows survive with the new
      * columns backfilled (viewOnce=false, members="[]"), and the new media
      * columns + membersJson are round-trippable through the DAOs.
      */
@@ -355,7 +355,7 @@ class RoomMigrationTest {
             .allowMainThreadQueries()
             .build()
 
-        // ── v4 rows intact + defaults backfilled ───────────────
+        // v4 rows intact + defaults backfilled
         val conversation = db.conversationDao().byId("c1")
         assertNotNull("v4 conversation row was destroyed by the migration", conversation)
         assertEquals("Wave Crew", conversation!!.title)
@@ -372,7 +372,7 @@ class RoomMigrationTest {
         assertEquals("queued pre-v5", db.outboxDao().all().first().content)
         assertEquals("half-typed pre-v5", db.draftDao().get("c1")?.text)
 
-        // ── media columns round-trip through the DAO ───────────
+        // media columns round-trip through the DAO
         val media = MessageEntity(
             id = "m-media",
             conversationId = "c1",
@@ -410,12 +410,12 @@ class RoomMigrationTest {
         assertEquals(true, roundTripped.viewOnce)
         assertEquals(1500L, roundTripped.durationMs)
 
-        // ── thread queries (v5 DAO surface) ────────────────────
+        // thread queries (v5 DAO surface)
         assertEquals(1, db.messageDao().countByThread("m-old"))
         val threadRows = db.messageDao().observeThread("m-old").first()
         assertEquals(listOf("m-media"), threadRows.map { it.id })
 
-        // ── membersJson round-trip (entity ⇄ domain) ───────────
+        // membersJson round-trip (entity ⇄ domain)
         val withMembers = conversation.copy(
             membersJson = """[{"id":"u1","name":"Alice","color":"emerald","lastReadAt":1739524860000,"role":"admin"}]""",
         )
@@ -437,7 +437,7 @@ class RoomMigrationTest {
 
     /**
      * Wave-2 gate: a REAL v5 database (v4 + media columns + membersJson)
-     * migrates to v6 without destruction — old rows survive with the six new
+     * migrates to v6 without destruction - old rows survive with the six new
      * nullable columns empty, the NEW topics/savedMessages tables are usable
      * through their DAOs, and Wave-2 message data (pollJson/viewedAt/topicId)
      * round-trips through the message DAO.
@@ -450,7 +450,7 @@ class RoomMigrationTest {
             .allowMainThreadQueries()
             .build()
 
-        // ── v5 rows intact + new columns empty ─────────────────
+        // v5 rows intact + new columns empty
         val oldMessage = db.messageDao().byId("m-v5")
         assertNotNull("v5 message row was destroyed by the migration", oldMessage)
         assertEquals("pre-v6 text row", oldMessage!!.body)
@@ -468,7 +468,7 @@ class RoomMigrationTest {
         assertNotNull(conversation)
         assertEquals("[]", conversation!!.membersJson)
 
-        // ── topics DAO round-trip (General is NOT a row) ────────
+        // topics DAO round-trip (General is NOT a row)
         assertEquals(0, db.topicDao().count())
         db.topicDao().upsertAll(
             listOf(
@@ -508,7 +508,7 @@ class RoomMigrationTest {
         db.topicDao().deleteByConversation("c1")
         assertEquals(0, db.topicDao().count())
 
-        // ── savedMessages DAO round-trip ────────────────────────
+        // savedMessages DAO round-trip
         assertEquals(0, db.savedDao().count())
         db.savedDao().upsertAll(
             listOf(
@@ -525,11 +525,11 @@ class RoomMigrationTest {
             ),
         )
         assertEquals(2, db.savedDao().count())
-        // Library order: savedAt DESC (newest first — wire parity).
+        // Library order: savedAt DESC (newest first - wire parity).
         val savedRows = db.savedDao().observeAll().first()
         assertEquals(listOf("m-v6", "m-v5"), savedRows.map { it.messageId })
 
-        // ── Wave-2 message columns round-trip through the DAO ──
+        // Wave-2 message columns round-trip through the DAO
         val pollJson = """
             {"id":"p1","question":"Lunch?","closed":false,
              "options":[{"id":"optA","text":"Ramen","position":0,"voteCount":2,
@@ -615,7 +615,7 @@ class RoomMigrationTest {
     }
 
     /**
-     * Wave-3 gate: a REAL v6 database migrates to v7 without destruction —
+     * Wave-3 gate: a REAL v6 database migrates to v7 without destruction -
      * every Wave-0/1/2 surface still works, the NEW callLogCache table is
      * usable through its DAO (cache row + history order), and the call-log
      * offline queue dedupes on payloadJson (UNIQUE) exactly like the outbox.
@@ -624,9 +624,9 @@ class RoomMigrationTest {
     fun migration6To7PreservesRowsAndAddsCallLogTables() = runBlocking {
         createV5DatabaseWithSeedRows()
         // Build the DB up to v6 first (the pre-Wave-3 truth), close, then
-        // migrate through v7 — the real deployed device path.
+        // migrate through v7 - the real deployed device path.
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            // Room ALWAYS upgrades to the compiled schema version — even the
+            // Room ALWAYS upgrades to the compiled schema version - even the
             // "stop at v6" probe must carry the full chain through v9.
             .addMigrations(
                 PulseDatabase.MIGRATION_3_4,
@@ -653,14 +653,14 @@ class RoomMigrationTest {
             .allowMainThreadQueries()
             .build()
 
-        // ── every earlier surface survives the v7 hop ──────────
+        // every earlier surface survives the v7 hop
         assertEquals("pre-v6 text row", db.messageDao().byId("m-v5")!!.body)
         assertEquals(1, db.outboxDao().count())
         assertEquals("half-typed pre-v6", db.draftDao().get("c1")?.text)
         assertEquals(0, db.topicDao().count())
         assertEquals(0, db.savedDao().count())
 
-        // ── callLogCache round-trip (Wave-3 v7) ─────────────────
+        // callLogCache round-trip (Wave-3 v7)
         assertEquals(0, db.callLogDao().count())
         val callerRow = CallLogCacheEntity(
             id = "call-1", conversationId = "c1", callerId = "me", calleeId = "peer",
@@ -683,7 +683,7 @@ class RoomMigrationTest {
         assertEquals("peer", domain.peer?.id)
         assertEquals("Ada Lovelace", domain.peer?.name)
 
-        // ── callLogQueue dedupe (UNIQUE payloadJson, outbox parity) ──
+        // callLogQueue dedupe (UNIQUE payloadJson, outbox parity)
         val payload = CallLogQueueEntity(
             payloadJson = "\"{\"userId\":\"me\",\"status\":\"missed\"}\"",
             createdAt = "2026-02-02T10:01:00.000Z",
@@ -715,7 +715,7 @@ class RoomMigrationTest {
             .build()
         // every earlier surface survives the v8 hop
         assertEquals("pre-v6 text row", db.messageDao().byId("m-v5")!!.body)
-        // ── story_cache round-trip (Wave-4 v8) ─────────────────
+        // story_cache round-trip (Wave-4 v8)
         assertEquals(0, db.storyDao().allCount())
         val snap = StoryCacheEntity(
             key = "stories:me",
@@ -748,13 +748,13 @@ class RoomMigrationTest {
             .allowMainThreadQueries()
             .build()
 
-        // ── every earlier surface survives the v9 hop ──────────
+        // every earlier surface survives the v9 hop
         assertEquals("pre-v6 text row", db.messageDao().byId("m-v5")!!.body)
         assertEquals(1, db.outboxDao().count())
         assertEquals("half-typed pre-v6", db.draftDao().get("c1")?.text)
         assertEquals(0, db.storyDao().allCount())
 
-        // ── wave7_cache round-trip (Wave-7 v9) ──────────────────
+        // wave7_cache round-trip (Wave-7 v9)
         assertNull(db.wave7Dao().get("hub:market"))
         db.wave7Dao().upsert(
             Wave7CacheEntity(key = "hub:market", json = "{\"apps\":3}", updatedAt = 1_725_000_000_000L),
@@ -771,7 +771,7 @@ class RoomMigrationTest {
         db.wave7Dao().delete("hub:market")
         assertNull(db.wave7Dao().get("hub:market"))
 
-        // ── messages.payloadJson column (v9 ALTER) round-trips ──
+        // messages.payloadJson column (v9 ALTER) round-trips
         // Rich-object carriers (red packet / game / tournament) must survive
         // offline restarts through the new column.
         db.openHelper.writableDatabase.execSQL(

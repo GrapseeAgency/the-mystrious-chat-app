@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — in-chat tic-tac-toe card (Task R23-b).
+// Pulse - in-chat tic-tac-toe card (Task R23-b).
 // A match rides the chat as a real kind:"game" message; this card
 // self-fetches GET /api/games/[id], polls every 1.5s while the
 // match is active (TanStack clears the timer on unmount and
@@ -8,11 +7,10 @@
 // win with the app-wide confetti layer.
 //
 // Wiring contract for chat-room (lead): render for kind:"game"
-// messages whose payload JSON carries {matchId, game:"tictactoe"} —
+// messages whose payload JSON carries {matchId, game:"tictactoe"} -
 //   <GameTicTacToeCard matchId={parsed.matchId} meId={me.id} />
 // Rematch dispatches the `pulse:external-message` CustomEvent
 // (detail = the fresh ChatMessage) for the room to append.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -34,7 +32,7 @@ export const GAME_EXTERNAL_MESSAGE_EVENT = 'pulse:external-message'
 const POLL_MS = 1500
 const BOARD_SIZE = 9
 
-// ── wire types (mirror of the REST contract) ─────────────────
+// wire types (mirror of the REST contract) 
 
 export interface GameMatchState {
   id: string
@@ -69,7 +67,7 @@ interface GameCreateResponse {
   message: ChatMessage
 }
 
-// ── name colors — same palette keys the avatars use ──────────
+// name colors - same palette keys the avatars use 
 
 const NAME_TEXT: Record<string, string> = {
   emerald: 'text-emerald-600 dark:text-emerald-400',
@@ -86,7 +84,7 @@ function nameClass(color: string): string {
   return NAME_TEXT[color] ?? NAME_TEXT.emerald
 }
 
-// ── helpers ──────────────────────────────────────────────────
+// helpers 
 
 function isFinished(status: string): boolean {
   return status !== 'active'
@@ -112,7 +110,7 @@ function StatusLine({ text, reducedMotion }: { text: string; reducedMotion: bool
   )
 }
 
-// ── the card ─────────────────────────────────────────────────
+// the card 
 
 export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; meId: string }) {
   const queryClient = useQueryClient()
@@ -161,7 +159,7 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
   const finished = match !== null && isFinished(match.status)
 
   // Confetti ONCE when a win by me is observed (live transition or a
-  // fresh mount on an already-finished match — never twice per mount).
+  // fresh mount on an already-finished match - never twice per mount).
   useEffect(() => {
     if (!data || !iWon || celebratedRef.current) return
     celebratedRef.current = true
@@ -184,7 +182,7 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
         queryClient.setQueryData(queryKey, res)
       } catch (err) {
         queryClient.invalidateQueries({ queryKey })
-        toast.error(err instanceof ApiError ? err.message : 'Move failed — try again.')
+        toast.error(err instanceof ApiError ? err.message : 'Move failed - try again.')
       } finally {
         setPendingCell(null)
       }
@@ -202,7 +200,7 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
         body: JSON.stringify({ userId: meId }),
       })
       queryClient.setQueryData(queryKey, res)
-      toast.success(`You are O — ${res.playerX.name} moves first.`)
+      toast.success(`You are O - ${res.playerX.name} moves first.`)
     } catch (err) {
       queryClient.invalidateQueries({ queryKey })
       toast.error(err instanceof ApiError ? err.message : 'Could not join this match.')
@@ -231,15 +229,15 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
       window.dispatchEvent(
         new CustomEvent<ChatMessage>(GAME_EXTERNAL_MESSAGE_EVENT, { detail: res.message }),
       )
-      toast.success('Rematch sent — new challenge in the chat.')
+      toast.success('Rematch sent - new challenge in the chat.')
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Rematch failed — try again.')
+      toast.error(err instanceof ApiError ? err.message : 'Rematch failed - try again.')
     } finally {
       setRematching(false)
     }
   }, [match, isPlayer, mySide, rematching, meId, queryClient, queryKey])
 
-  // ── loading / error / missing states ───────────────────────
+  // loading / error / missing states 
   if (gameQuery.isPending) {
     return (
       <div className={cn(glassSurface, 'w-full max-w-[300px] p-4')} aria-busy="true">
@@ -278,7 +276,7 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
   const winnerName = winnerOf(match, data)
   const winSet = new Set(match.winLine ?? [])
 
-  // Board cells — server truth overlaid with the optimistic pending move.
+  // Board cells - server truth overlaid with the optimistic pending move.
   const glyphs = match.board.split('')
   if (pendingCell !== null && glyphs[pendingCell] === ' ' && mySide) {
     glyphs[pendingCell] = mySide
@@ -287,13 +285,13 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
   const statusText = (() => {
     if (finished) {
       if (winnerName) return `${winnerName} wins!`
-      if (match.status === 'draw') return 'Draw — board is full.'
+      if (match.status === 'draw') return 'Draw - board is full.'
       return 'Match abandoned.'
     }
     if (isOpenChallenge) {
-      return mySide === 'X' ? 'Open challenge — waiting for an opponent…' : 'Open challenge'
+      return mySide === 'X' ? 'Open challenge - waiting for an opponent…' : 'Open challenge'
     }
-    if (isMyTurn) return 'Your move — tap a cell'
+    if (isMyTurn) return 'Your move - tap a cell'
     if (mySide === 'X' && match.playerOId === null) return 'Waiting for an opponent…'
     const other = mySide === 'X' ? playerO : playerX
     return `Waiting for ${other?.name ?? 'opponent'}…`
@@ -365,7 +363,7 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
               key={i}
               type="button"
               disabled={!canTap}
-              aria-label={`Cell ${i}${cellFilled ? ` — ${glyph}` : ''}`}
+              aria-label={`Cell ${i}${cellFilled ? ` - ${glyph}` : ''}`}
               onClick={() => playMove(i)}
               whileTap={canTap ? { scale: 0.92 } : undefined}
               transition={spring.snappy}
@@ -448,7 +446,7 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
         )}
       </div>
 
-      {/* rematch — finished matches with me as a player */}
+      {/* rematch - finished matches with me as a player */}
       {finished && isPlayer && match.playerOId !== null ? (
         <motion.button
           type="button"

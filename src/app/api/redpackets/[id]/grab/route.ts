@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/redpackets/[id]/grab — open a red packet (Task R23-a)
+// /api/redpackets/[id]/grab - open a red packet (Task R23-a)
 //
 // POST { userId }
 //   → 200 { amount, grabbed, count }
@@ -12,7 +11,6 @@
 // so two simultaneous grabs can never draw the same slice. The
 // winner's wallet is credited (+ WalletLedger 'redpacket_claim'
 // with the sender as counterparty + LogEvent) in the same tx.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -36,12 +34,12 @@ function parseSlices(raw: string): number[] {
       return parsed.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
     }
   } catch {
-    // corrupt row — fails the draw below instead of paying bogus money
+    // corrupt row - fails the draw below instead of paying bogus money
   }
   return []
 }
 
-/** POST /api/redpackets/[id]/grab { userId } — draw the next slice. */
+/** POST /api/redpackets/[id]/grab { userId } - draw the next slice. */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await safeJson(req)
@@ -94,20 +92,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         data: { grabbed: { increment: 1 } },
       })
       if (bumped.count !== 1) {
-        throw new GrabError(409, 'Someone grabbed at the same moment — try again.')
+        throw new GrabError(409, 'Someone grabbed at the same moment - try again.')
       }
 
       const slices = parseSlices(packet.slices)
       const amount = slices[packet.grabbed]
       if (!Number.isInteger(amount) || amount <= 0) {
-        throw new GrabError(500, 'Red packet slices are corrupted — grab aborted.')
+        throw new GrabError(500, 'Red packet slices are corrupted - grab aborted.')
       }
 
       await tx.redPacketGrab.create({
         data: { packetId: packet.id, userId, amount },
       })
 
-      // RedPacket carries only senderId — resolve the display name for the ledger.
+      // RedPacket carries only senderId - resolve the display name for the ledger.
       const sender = await tx.user.findUnique({
         where: { id: packet.senderId },
         select: { name: true },

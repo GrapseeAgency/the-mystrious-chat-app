@@ -1,27 +1,27 @@
 import XCTest
 @testable import Pulse
 
-/// W5-f — Wave 5 rooms PURE state machines (no device, no sockets, no
+/// W5-f - Wave 5 rooms PURE state machines (no device, no sockets, no
 /// AVAudioEngine instantiation). Deterministic clocks: every time-driven
 /// API takes nowMs, so tests never sleep.
 ///
 /// Covered (spec §1.1–§1.3):
-///   · VoicePcmChunker — 4000-sample blocks, seq from 1, proportional
+///   · VoicePcmChunker - 4000-sample blocks, seq from 1, proportional
 ///     partial flush, reset (WEB DEFECT FIX #1 proof).
-///   · VoiceRoomModel playback playhead — stale/dup drop, max(now+85, nextAt)
+///   · VoiceRoomModel playback playhead - stale/dup drop, max(now+85, nextAt)
 ///     chaining, roster-drop reset (WEB DEFECT FIX #2), roster replace +
 ///     speaking prune, mute force-stop, 2 s resync, honest status line.
-///   · StageModel — role derivation, hand raise/reconcile, FIX #3 seat
+///   · StageModel - role derivation, hand raise/reconcile, FIX #3 seat
 ///     re-arm on demotion + forced removal, two-tap end (2600 ms), claim
 ///     host eligibility, 2500 ms resync, ended teardown.
-///   · SpaceModel — 80 ms throttle + clamp, 300 ms reconcile (FIX #4),
+///   · SpaceModel - 80 ms throttle + clamp, 300 ms reconcile (FIX #4),
 ///     proximity 0.18, honest error after 6 attempts (FIX #5), full-state
 ///     replace self-heal.
-///   · CaptionWindowAccumulator — 64000 flush, 16000 min tail, single
+///   · CaptionWindowAccumulator - 64000 flush, 16000 min tail, single
 ///     flight, clear-on-off.
-///   · WavEncoder — the exact 44-byte RIFF header.
+///   · WavEncoder - the exact 44-byte RIFF header.
 final class VoiceRoomMachineTests: XCTestCase {
-    // ── helpers ──────────────────────────────────────────
+    // helpers
 
     private func peer(_ id: String) -> WireVoicePeer {
         WireVoicePeer(id: id, name: id, username: nil, color: "emerald", joinedAt: nil)
@@ -73,9 +73,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         return voice
     }
 
-    // ════════════════════════════════════════════════════
     // VoicePcmChunker (VR-4 / FIX #1)
-    // ════════════════════════════════════════════════════
 
     func testChunkerEmits4000SampleBlocksInSeqOrder() {
         var chunker = VoicePcmChunker()
@@ -120,9 +118,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertEqual(fresh.map(\.seq), [1])
     }
 
-    // ════════════════════════════════════════════════════
     // VoiceRoomModel playback (VR-5 / FIX #2)
-    // ════════════════════════════════════════════════════
 
     func testPlaybackSchedulesAtNowPlusJitterAndChains() {
         var voice = VoiceRoomModel()
@@ -157,9 +153,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertEqual(voice.decide(seq: 1, userId: "a", nowMs: 1000), .schedule(atMs: 1085))
     }
 
-    // ════════════════════════════════════════════════════
     // VoiceRoomModel roster / ptt / mute / resync (VR-2/3/6/8)
-    // ════════════════════════════════════════════════════
 
     func testRosterReplacesWholesaleAndPrunesSpeaking() {
         var voice = joinedVoice()
@@ -169,7 +163,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         voice.applyPtt(userId: "ghost", on: true)
         XCTAssertEqual(voice.speakingIds, ["a", "b", "ghost"])
 
-        // The next roster is the wholesale truth — gone peers lose the glow.
+        // The next roster is the wholesale truth - gone peers lose the glow.
         voice.applyRoster(WireVoiceRoster(conversationId: "conv", peers: [peer("a")]))
         XCTAssertEqual(voice.speakingIds, ["a"])
         voice.applyRoster(WireVoiceRoster(conversationId: "conv", peers: []))
@@ -224,9 +218,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertTrue(voice.playback.isEmpty)
     }
 
-    // ════════════════════════════════════════════════════
     // StageModel (ST-1…ST-8 / FIX #3)
-    // ════════════════════════════════════════════════════
 
     func testStageRoleDerivation() {
         var stage = StageModel(myId: "me")
@@ -285,11 +277,11 @@ final class VoiceRoomMachineTests: XCTestCase {
     func testFix3VoiceSeatReArmsOnDemotionAndForcedRemoval() {
         var stage = StageModel(myId: "me")
         stage.beginJoin(conversationId: "conv", asHost: false)
-        XCTAssertTrue(stage.needsVoiceSeat) // FIX #3 — the join claims a seat
+        XCTAssertTrue(stage.needsVoiceSeat) // FIX #3 - the join claims a seat
         XCTAssertTrue(stage.consumeVoiceSeatRequest())
         XCTAssertFalse(stage.consumeVoiceSeatRequest())
 
-        // Approved to speaker — the seat request stays consumed.
+        // Approved to speaker - the seat request stays consumed.
         stage.apply(state: stageState(host: person("host"), speakers: [person("me")]))
         XCTAssertFalse(stage.needsVoiceSeat)
 
@@ -303,7 +295,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         stage.markVoiceSeatRemoved()
         XCTAssertTrue(stage.needsVoiceSeat)
 
-        // Left the stage — no seat requests anymore.
+        // Left the stage - no seat requests anymore.
         stage.leave()
         stage.markVoiceSeatRemoved()
         XCTAssertFalse(stage.consumeVoiceSeatRequest())
@@ -316,7 +308,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertTrue(confirm.tap(nowMs: 1000 + 2600)) // inclusive window
         XCTAssertFalse(confirm.armed)
 
-        // Past the window the first tap decays — the next tap re-arms.
+        // Past the window the first tap decays - the next tap re-arms.
         XCTAssertFalse(confirm.tap(nowMs: 5000))
         XCTAssertFalse(confirm.tap(nowMs: 5000 + StageEndConfirm.resetMs + 1))
         XCTAssertTrue(confirm.tap(nowMs: 5000 + StageEndConfirm.resetMs + 11))
@@ -329,7 +321,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         var stage = StageModel(myId: "me")
         stage.beginJoin(conversationId: "conv", asHost: false)
         stage.apply(state: stageState(listeners: [person("me")])) // host seat null
-        XCTAssertTrue(stage.canClaimHost) // ST-7 — empty seat, no auto-promotion
+        XCTAssertTrue(stage.canClaimHost) // ST-7 - empty seat, no auto-promotion
 
         stage.apply(state: stageState(host: person("other"), listeners: [person("me")]))
         XCTAssertFalse(stage.canClaimHost)
@@ -347,7 +339,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         stage.beginJoin(conversationId: "conv", asHost: false)
         stage.apply(state: stageState(host: person("me")))
         XCTAssertTrue(stage.wasHost)
-        // A later state without the host seat does NOT forget the role —
+        // A later state without the host seat does NOT forget the role -
         // the ST-8 resync re-join rides asHost: wasHost.
         stage.apply(state: stageState(listeners: [person("me")]))
         XCTAssertTrue(stage.wasHost)
@@ -378,9 +370,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertFalse(stage.handRaised)
     }
 
-    // ════════════════════════════════════════════════════
     // SpaceModel (SP-3/SP-4/SP-5 / FIX #4 / FIX #5)
-    // ════════════════════════════════════════════════════
 
     func testSpaceMoveClampsAndThrottlesAt80ms() {
         var space = SpaceModel(myId: "me")
@@ -449,10 +439,10 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertEqual(space.status, .connecting) // still honest-connecting
         XCTAssertEqual(space.reconnectAttempts, 5)
         space.noteDisconnected() // the 6th
-        XCTAssertEqual(space.status, .error) // FIX #5 — web spun forever here
+        XCTAssertEqual(space.status, .error) // FIX #5 - web spun forever here
         XCTAssertEqual(space.errorText, "Can't reach the room right now.")
 
-        // A reconnect does NOT silently clear the error — the retry re-joins.
+        // A reconnect does NOT silently clear the error - the retry re-joins.
         space.noteConnected()
         XCTAssertEqual(space.status, .error)
 
@@ -472,7 +462,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         space.beginJoin()
         _ = space.apply(state: spaceState(("me", 0.1, 0.1), ("a", 0.2, 0.2), ("b", 0.3, 0.3)), nowMs: 0)
         XCTAssertEqual(space.players.map(\.id), ["me", "a", "b"])
-        // The next state IS the truth — the stale "a" heals away (server
+        // The next state IS the truth - the stale "a" heals away (server
         // prunes 5-minute idlers; native mirrors by full replace).
         _ = space.apply(state: spaceState(("me", 0.1, 0.1), ("c", 0.4, 0.4)), nowMs: 1000)
         XCTAssertEqual(space.players.map(\.id), ["me", "c"])
@@ -485,13 +475,13 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertEqual(SpaceModel.clamp01(1.5), 1)
     }
 
-    // ── R1-W2G D46 — durable last-position seeds (pure model side) ──
+    // R1-W2G D46 - durable last-position seeds (pure model side)
 
     func testSeedInitialPositionOverridesTheDefaultCenter() {
         var space = SpaceModel(myId: "me")
         XCTAssertEqual(space.targetX, 0.5)
         XCTAssertEqual(space.targetY, 0.5)
-        // The durable cache seeds the rejoin position — clamped 0..1 like
+        // The durable cache seeds the rejoin position - clamped 0..1 like
         // every other move input.
         space.seedInitialPosition(x: 1.4, y: -0.2)
         XCTAssertEqual(space.targetX, 1)
@@ -502,7 +492,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         var space = SpaceModel(myId: "me")
         space.seedInitialPosition(x: 0.8, y: 0.7)
         // Server state where OUR row carries no x/y (the server returned
-        // nothing for us): the seeded target must survive the reconcile —
+        // nothing for us): the seeded target must survive the reconcile -
         // the 0.5 decode fallback may not clobber it (D46).
         _ = space.apply(
             state: WireSpaceState(
@@ -524,9 +514,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertEqual(space.targetY, 0.35)
     }
 
-    // ════════════════════════════════════════════════════
     // CaptionWindowAccumulator (VR-7)
-    // ════════════════════════════════════════════════════
 
     func testCaptionWindowFlushesAt64000SamplesSingleFlight() {
         var acc = CaptionWindowAccumulator(enabled: true)
@@ -573,9 +561,7 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertEqual(off.pendingCount, 0)
     }
 
-    // ════════════════════════════════════════════════════
-    // WavEncoder (VR-7 — the exact 44-byte header)
-    // ════════════════════════════════════════════════════
+    // WavEncoder (VR-7 - the exact 44-byte header)
 
     func testWavHeaderIsByteExactForMono16k16bit() {
         let data = WavEncoder.wavData(samples: [1, -2])

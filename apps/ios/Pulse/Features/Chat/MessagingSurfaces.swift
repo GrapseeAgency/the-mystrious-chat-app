@@ -1,20 +1,18 @@
 import SwiftUI
 import CoreLocation
 
-// ─────────────────────────────────────────────────────────────
-// REM-B P2/P3 — messaging-flow surfaces (web parity, native sheets):
-//   • ScheduleSheet         — F-MS-18 delayed send (30 s – 30 d window)
-//   • ScheduledManagerSheet — F-MS-18 list + cancel pending rows
-//   • ReactionPickerSheet   — F-MS-08 the web's exact 24-emoji picker grid
-//   • WhoReactedSheet       — F-MS-08 long-press chip → who-reacted list
-//   • StickerPickerSheet    — F-MS-24 the web's 5 packs (kind "sticker")
-//   • SlashPaletteView      — F-MS-22 '/'-trigger palette above the composer
+// REM-B P2/P3 - messaging-flow surfaces (web parity, native sheets):
+//   • ScheduleSheet         - F-MS-18 delayed send (30 s – 30 d window)
+//   • ScheduledManagerSheet - F-MS-18 list + cancel pending rows
+//   • ReactionPickerSheet   - F-MS-08 the web's exact 24-emoji picker grid
+//   • WhoReactedSheet       - F-MS-08 long-press chip → who-reacted list
+//   • StickerPickerSheet    - F-MS-24 the web's 5 packs (kind "sticker")
+//   • SlashPaletteView      - F-MS-22 '/'-trigger palette above the composer
 // R1-W2B additions:
-//   • LocationShareSheet    — F-MD-07 CoreLocation fix → kind "location" pin
-//   • QuickPhrasesSheet     — F-MS-29 quick-phrase CRUD (rail manage surface)
-// ─────────────────────────────────────────────────────────────
+//   • LocationShareSheet    - F-MD-07 CoreLocation fix → kind "location" pin
+//   • QuickPhrasesSheet     - F-MS-29 quick-phrase CRUD (rail manage surface)
 
-/// F-MS-18 — arm a delayed send. The server enforces 30 s minimum and a
+/// F-MS-18 - arm a delayed send. The server enforces 30 s minimum and a
 /// 30-day horizon; the presets mirror the web schedule sheet.
 struct ScheduleSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -31,7 +29,7 @@ struct ScheduleSheet: View {
         ("In 1 week", 7 * 86_400),
     ]
 
-    /// Computed per open — the web remindPresets pattern (never cached).
+    /// Computed per open - the web remindPresets pattern (never cached).
     private var resolvedDate: Date? {
         switch mode {
         case .preset:
@@ -129,7 +127,7 @@ struct ScheduleSheet: View {
     var onSchedule: (Date) -> Void = { _ in }
 }
 
-/// F-MS-18 — the sender's pending scheduled rows with cancel (GET/POST
+/// F-MS-18 - the sender's pending scheduled rows with cancel (GET/POST
 /// conversations/{id}/scheduled + DELETE /api/scheduled/{id}).
 struct ScheduledManagerSheet: View {
     let conversationId: String
@@ -178,7 +176,7 @@ struct ScheduledManagerSheet: View {
             .listStyle(.insetGrouped)
             .overlay {
                 if !loading && items.isEmpty {
-                    ContentUnavailableCompat(title: "Nothing scheduled", systemImage: "clock.badge.questionmark", note: "Arm a delayed send from the composer banner.")
+                    ContentUnavailableCompat(title: "Nothing scheduled", systemImage: "hourglass", note: "Arm a delayed send from the composer banner.")
                 }
             }
             .navigationTitle("Scheduled messages")
@@ -212,7 +210,7 @@ struct ScheduledManagerSheet: View {
     }
 }
 
-/// F-MS-08 — the web's EXACT 24-emoji picker grid (EMOJI_PICKER_CHOICES,
+/// F-MS-08 - the web's EXACT 24-emoji picker grid (EMOJI_PICKER_CHOICES,
 /// pulse-utils.ts:146-150) used as the extended reaction picker.
 struct ReactionPickerSheet: View {
     let onPick: (String) -> Void
@@ -257,7 +255,7 @@ struct ReactionPickerSheet: View {
     }
 }
 
-/// F-MS-08 — who-reacted drawer: per-member list for one emoji group +
+/// F-MS-08 - who-reacted drawer: per-member list for one emoji group +
 /// the toggle action (web reactionInfo drawer parity).
 struct WhoReactedSheet: View {
     let message: WireChatMessage
@@ -331,7 +329,7 @@ struct WhoReactedSheet: View {
     }
 }
 
-/// F-MS-24 — the web sticker-picker packs (verbatim 5 × 10). Picking posts
+/// F-MS-24 - the web sticker-picker packs (verbatim 5 × 10). Picking posts
 /// kind "sticker" with payload { emoji, pack } (chat-room parseSticker shape).
 struct StickerPickerSheet: View {
     let onPick: (_ emoji: String, _ pack: String) -> Void
@@ -364,7 +362,7 @@ struct StickerPickerSheet: View {
             }
             Picker("Pack", selection: $packIndex) {
                 ForEach(Array(PulseRemediationLogic.stickerPacks.enumerated()), id: \.offset) { index, pack in
-                    Text(pack.badge).tag(index)
+                    Image(systemName: pack.badge).tag(index)
                 }
             }
             .pickerStyle(.segmented)
@@ -423,8 +421,8 @@ struct StickerPickerSheet: View {
     }
 }
 
-/// F-MS-22 — the '/'-triggered command palette (web slash-palette.tsx
-/// PULSE_SLASH_COMMANDS verbatim, fuzzy filter + tap to run — R3-A wires it
+/// F-MS-22 - the '/'-triggered command palette (web slash-palette.tsx
+/// PULSE_SLASH_COMMANDS verbatim, fuzzy filter + tap to run - R3-A wires it
 /// into the live composer: draft starts with '/' → palette; pick routes the
 /// outcome machine). Rendered right above the composer.
 struct SlashPaletteView: View {
@@ -474,7 +472,7 @@ struct SlashPaletteView: View {
                             }
                             .buttonStyle(.plain)
                             .background(index == 0 ? PulseTheme.emerald500.opacity(0.10) : Color.clear)
-                            .accessibilityLabel("\(command.cmd) — \(command.help)")
+                            .accessibilityLabel("\(command.cmd) - \(command.help)")
                         }
                     }
                 }
@@ -499,7 +497,7 @@ struct SlashPaletteView: View {
     }
 }
 
-// MARK: - R1-W2B F-MD-07 — location share
+// MARK: - R1-W2B F-MD-07 - location share
 
 /// CoreLocation one-shot fix provider. CLLocationManager guarantees its
 /// delegate callbacks on the main run loop, so plain @Published writes are
@@ -521,8 +519,8 @@ final class LocationFixModel: NSObject, ObservableObject, CLLocationManagerDeleg
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
 
-    /// Ask for a fix — triggers the when-in-use TCC prompt on first use,
-    /// then a single high-level location reading (no continuous tracking —
+    /// Ask for a fix - triggers the when-in-use TCC prompt on first use,
+    /// then a single high-level location reading (no continuous tracking -
     /// a static pin needs no background location, spec F-MD-07 PERMS).
     func requestFix() {
         status = .locating
@@ -565,12 +563,12 @@ final class LocationFixModel: NSObject, ObservableObject, CLLocationManagerDeleg
     }
 }
 
-/// F-MD-07 — the location confirm sheet (web location-share.tsx flow:
+/// F-MD-07 - the location confirm sheet (web location-share.tsx flow:
 /// locate → coords + label → REAL kind:'location' message with payload
-/// { lat, lng, label } — chat-room.tsx sendLocation L3120-3138).
+/// { lat, lng, label } - chat-room.tsx sendLocation L3120-3138).
 struct LocationShareSheet: View {
     /// Called with the confirmed pin once the sheet dismisses (the room then
-    /// POSTs the message — the sheet owns NO transport).
+    /// POSTs the message - the sheet owns NO transport).
     var onConfirm: (Double, Double, String) -> Void = { _, _, _ in }
 
     @Environment(\.dismiss) private var dismiss
@@ -606,12 +604,12 @@ struct LocationShareSheet: View {
                             }
                         }
                     case .denied:
-                        Label("Location access is off — enable it in Settings to share a pin", systemImage: "location.slash")
+                        Label("Location access is off - enable it in Settings to share a pin", systemImage: "location.slash")
                             .font(.footnote)
                             .foregroundStyle(.red)
                     case .failed:
                         VStack(alignment: .leading, spacing: 4) {
-                            Label("Couldn't get a fix — try again", systemImage: "location.slash")
+                            Label("Couldn't get a fix - try again", systemImage: "location.slash")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                             Button("Retry") { fix.requestFix() }
@@ -659,9 +657,9 @@ struct LocationShareSheet: View {
     }
 }
 
-// MARK: - R1-W2B F-MS-29 — quick phrases manager
+// MARK: - R1-W2B F-MS-29 - quick phrases manager
 
-/// F-MS-29 — quick-phrase CRUD (GET/POST/DELETE /api/users/{id}/phrases,
+/// F-MS-29 - quick-phrase CRUD (GET/POST/DELETE /api/users/{id}/phrases,
 /// phrases/route.ts: 1-120 chars, ≤12 rows, position asc). The composer rail
 /// renders the same list; this sheet manages it.
 struct QuickPhrasesSheet: View {

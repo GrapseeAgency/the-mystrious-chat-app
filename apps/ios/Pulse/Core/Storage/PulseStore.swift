@@ -1,27 +1,27 @@
 import Foundation
 import GRDB
 
-/// GRDB (SQLite) local cache — the iOS mirror of Android's Room schema.
+/// GRDB (SQLite) local cache - the iOS mirror of Android's Room schema.
 /// Offline-first: reads come from here, refreshes upsert from the wire.
 ///
-/// Wave 0 v2 — adds the offline core: `outbox` (queued sends) + `draft`
+/// Wave 0 v2 - adds the offline core: `outbox` (queued sends) + `draft`
 /// (per-conversation composer state), mirroring Android Room v4 and the web
 /// outbox/drafts stores. v1 stays untouched (non-destructive GRDB migrator
 /// applies v1 → v2 in order on any database).
-/// W1-DATA-B v3 — full-fidelity message cache (mirrors Android Room v5 / spec
-/// §3): the message table gains parentId (THREAD ROOT — replyToId keeps the
+/// W1-DATA-B v3 - full-fidelity message cache (mirrors Android Room v5 / spec
+/// §3): the message table gains parentId (THREAD ROOT - replyToId keeps the
 /// inline-quote id), the media columns, editedAt/deletedAt, reactionsJson
 /// (grouped [{emoji,userIds}] parity) and senderColor. `upsert(messages:)`
-/// persists ALL of them — the lossy v2 cache is over.
-/// W2-DATA-B v4 — Wave 2 message depth (spec §2.2, mirrors Android Room v6):
+/// persists ALL of them - the lossy v2 cache is over.
+/// W2-DATA-B v4 - Wave 2 message depth (spec §2.2, mirrors Android Room v6):
 /// the message table gains the view-once burn stamp (viewedAt), the voice
 /// transcript cache (transcript/transcribedAt), pollJson + linkPreviewJson
 /// objects and topicId; NEW tables topics (Zulip-style sub-streams) and
 /// savedMessages (saved-library mirror). All additive, same non-destructive
-/// migrator — v1 stays untouched.
-/// W3-b v5 — Wave 3 native calls: `callLogCache` (GET /api/calls mirror,
+/// migrator - v1 stays untouched.
+/// W3-b v5 - Wave 3 native calls: `callLogCache` (GET /api/calls mirror,
 /// server-capped at 50 rows) and `callLogQueue` (offline queue for the
-/// single-writer POST /api/calls — network-failed rows flush on socket
+/// single-writer POST /api/calls - network-failed rows flush on socket
 /// reconnect / app start, mirroring the PulseOutboxEngine trigger style).
 public final class PulseStore: Sendable {
     private let dbQueue: DatabaseQueue
@@ -65,7 +65,7 @@ public final class PulseStore: Sendable {
             // FTS5 mirror arrives with the offline-search wave (web parity).
         }
         m.registerMigration("v2") { db in
-            // Queued sends — web pulse-outbox.ts parity (MAX_QUEUE 50).
+            // Queued sends - web pulse-outbox.ts parity (MAX_QUEUE 50).
             try db.create(table: "outbox") { t in
                 t.column("id", .integer).primaryKey(autoincrement: true)
                 t.column("conversationId", .text).notNull()
@@ -84,7 +84,7 @@ public final class PulseStore: Sendable {
             }
         }
         m.registerMigration("v3") { db in
-            // W1-DATA-B — additive ALTERs only (spec §3): threads, media,
+            // W1-DATA-B - additive ALTERs only (spec §3): threads, media,
             // edit/delete tombstones, grouped reactions, sender color.
             try db.alter(table: "message") { t in
                 t.add(column: "parentId", .text)
@@ -101,7 +101,7 @@ public final class PulseStore: Sendable {
             }
         }
         m.registerMigration("v4") { db in
-            // W2-DATA-B — additive ALTERs only (spec §2.2): view-once burn
+            // W2-DATA-B - additive ALTERs only (spec §2.2): view-once burn
             // stamp, voice-transcript cache, poll + link-preview JSON cards,
             // topic filing. pollJson/linkPreviewJson are nullable (nil = no
             // card), unlike the NOT-NULL reactionsJson v3 default.
@@ -113,16 +113,17 @@ public final class PulseStore: Sendable {
                 t.add(column: "linkPreviewJson", .text)
                 t.add(column: "topicId", .text)
             }
-            // Zulip-style topic rail (General is NOT a row — unfiltered room).
+            // Zulip-style topic rail (General is NOT a row - unfiltered room).
             try db.create(table: "topics") { t in
                 t.column("id", .text).primaryKey()
                 t.column("conversationId", .text).notNull().indexed()
                 t.column("name", .text).notNull()
-                t.column("emoji", .text).notNull().defaults(to: "💬")
+                // R18-b - topic emoji values are icon IDS (server default 'chat').
+                t.column("emoji", .text).notNull().defaults(to: "chat")
                 t.column("lastMessageAt", .text)
                 t.column("messageCount", .integer).notNull().defaults(to: 0)
             }
-            // Saved-library mirror (GET /api/users/{id}/saved, cap 100) —
+            // Saved-library mirror (GET /api/users/{id}/saved, cap 100) -
             // the message row itself lives in `message` via upsert(savedItems:).
             try db.create(table: "savedMessages") { t in
                 t.column("messageId", .text).primaryKey()
@@ -132,7 +133,7 @@ public final class PulseStore: Sendable {
             try db.create(indexOn: "savedMessages", columns: ["conversationId"])
         }
         m.registerMigration("v5") { db in
-            // W3-b — Wave 3 call history cache. Peer identity is denormalized
+            // W3-b - Wave 3 call history cache. Peer identity is denormalized
             // (the server resolves the OTHER party per viewer; the cache must
             // render offline exactly what GET /api/calls renders online).
             try db.create(table: "callLogCache") { t in
@@ -162,10 +163,10 @@ public final class PulseStore: Sendable {
             }
         }
         m.registerMigration("v6") { db in
-            // W4 — stories snapshot cache. One canonical JSON blob per key
+            // W4 - stories snapshot cache. One canonical JSON blob per key
             // ("stories:<viewerId>"), mirroring Android's Room v8 story_cache:
             // the tray renders instantly on cold start and offline, and the
-            // next successful fetch overwrites it. Pure cache — server truth
+            // next successful fetch overwrites it. Pure cache - server truth
             // (viewedByMe/viewCount/expiresAt) always wins on reconcile.
             try db.create(table: "storyCache") { t in
                 t.column("key", .text).primaryKey()
@@ -174,7 +175,7 @@ public final class PulseStore: Sendable {
             }
         }
         m.registerMigration("v7") { db in
-            // W7 — collaboration & hub snapshot cache (storyCache precedent:
+            // W7 - collaboration & hub snapshot cache (storyCache precedent:
             // one canonical JSON blob per key) + the raw rich-object carrier
             // payload column on messages. Non-destructive additive only.
             try db.create(table: "wave7Cache") { t in
@@ -187,11 +188,11 @@ public final class PulseStore: Sendable {
             }
         }
         m.registerMigration("v8") { db in
-            // R1-W2B — additive ALTERs only:
-            //   • outbox.payloadJson — the queued FORWARD envelope (D28:
+            // R1-W2B - additive ALTERs only:
+            //   • outbox.payloadJson - the queued FORWARD envelope (D28:
             //     F-MS-10 "queued if offline"; carries kind + stored media
             //     paths so the flush re-POSTs the exact forward body).
-            //   • message.translationsJson — persisted LLM translations
+            //   • message.translationsJson - persisted LLM translations
             //     (F-MD-06; the translation:added relay + POST /translate
             //     responses cache offline).
             try db.alter(table: "outbox") { t in
@@ -204,7 +205,7 @@ public final class PulseStore: Sendable {
         return m
     }
 
-    // ── stories cache (Wave 4) ───────────────────────────────
+    // stories cache (Wave 4)
     public func saveStoryCache(key: String, groupsJson: String, updatedAt: Int64) throws {
         try dbQueue.write { db in
             try db.execute(
@@ -227,7 +228,7 @@ public final class PulseStore: Sendable {
         }
     }
 
-    // ── wave7 collaboration & hub snapshot cache (v7) ────────
+    // wave7 collaboration & hub snapshot cache (v7)
     public func saveWave7Cache(key: String, json: String, updatedAt: Int64) throws {
         try dbQueue.write { db in
             try db.execute(
@@ -250,7 +251,7 @@ public final class PulseStore: Sendable {
         }
     }
 
-    // ── conversation cache ───────────────────────────────────
+    // conversation cache
     public func upsert(conversations: [PulseConversation]) throws {
         try dbQueue.write { db in
             for c in conversations {
@@ -289,7 +290,7 @@ public final class PulseStore: Sendable {
         }
     }
 
-    // ── message cache (N3-b — room offline-first seed; v3/v4 full fidelity) ──
+    // message cache (N3-b - room offline-first seed; v3/v4 full fidelity)
     public func upsert(messages: [WireChatMessage]) throws {
         try dbQueue.write { db in
             for m in messages {
@@ -299,7 +300,7 @@ public final class PulseStore: Sendable {
     }
 
     /// One message row → message table (INSERT … ON CONFLICT full overwrite:
-    /// a fresh envelope row is AUTHORITATIVE — spec §0 — so every column,
+    /// a fresh envelope row is AUTHORITATIVE - spec §0 - so every column,
     /// v1 through v4, lands in both the INSERT and the conflict SET clause).
     /// Shared by the bulk cache upsert and the saved-library sync.
     private static func writeMessage(_ m: WireChatMessage, db: Database) throws {
@@ -379,7 +380,7 @@ public final class PulseStore: Sendable {
         }
     }
 
-    /// Thread replies for one root, oldest → newest (v3 parentId column —
+    /// Thread replies for one root, oldest → newest (v3 parentId column -
     /// replyToId keeps the inline-quote id and is never mixed in).
     public func messages(threadRootId: String, limit: Int = 300) throws -> [WireChatMessage] {
         let rows = try dbQueue.read { db in
@@ -392,7 +393,7 @@ public final class PulseStore: Sendable {
         return rows.compactMap(Self.messageRow(from:))
     }
 
-    /// Reply counts per cached thread root — one query powers every river
+    /// Reply counts per cached thread root - one query powers every river
     /// "N replies" chip (no per-thread COUNT round-trips).
     public func threadReplyCounts() throws -> [String: Int] {
         try dbQueue.read { db in
@@ -414,7 +415,7 @@ public final class PulseStore: Sendable {
     /// Rehydrate a wire-ish message from a cached row (v3 full fidelity:
     /// thread root, media, edit/delete stamps and grouped reactions all
     /// round-trip; only the sender OBJECT is reduced to name + color).
-    /// W2-DATA-B v4 — poll/linkPreview JSON cards, the burn stamp,
+    /// W2-DATA-B v4 - poll/linkPreview JSON cards, the burn stamp,
     /// transcript pair and topicId rebuild too (viewedBy/linkUrl are NOT
     /// cached columns; they arrive again with the next wire refresh).
     private static func messageRow(from row: Row) -> WireChatMessage? {
@@ -462,9 +463,9 @@ public final class PulseStore: Sendable {
         )
     }
 
-    // ── reactionsJson codec (v3 cache column ⇄ grouped wire reactions) ──
+    // reactionsJson codec (v3 cache column ⇄ grouped wire reactions)
 
-    /// [WireReactionGroup] → column text ("[]" for nil/empty — the v3 column
+    /// [WireReactionGroup] → column text ("[]" for nil/empty - the v3 column
     /// default keeps NOT NULL satisfied for rows written before a reaction).
     static func reactionsJsonData(_ groups: [WireReactionGroup]?) -> String {
         guard let groups, !groups.isEmpty,
@@ -479,10 +480,10 @@ public final class PulseStore: Sendable {
         return (try? JSONDecoder().decode([WireReactionGroup].self, from: data)) ?? []
     }
 
-    // ── poll/linkPreviewJson codecs (v4 cache columns ⇄ wire cards) ──
+    // poll/linkPreviewJson codecs (v4 cache columns ⇄ wire cards)
 
     /// WirePoll → column text; nil poll → NULL (the v4 column is nullable,
-    /// unlike the NOT-NULL reactionsJson v3 default — no card, no bytes).
+    /// unlike the NOT-NULL reactionsJson v3 default - no card, no bytes).
     static func pollJsonData(_ poll: WirePoll?) -> String? {
         guard let poll, let data = try? JSONEncoder().encode(poll) else { return nil }
         return String(data: data, encoding: .utf8)
@@ -507,7 +508,7 @@ public final class PulseStore: Sendable {
         return try? JSONDecoder().decode(WireLinkPreview.self, from: data)
     }
 
-    // ── translationsJson codec (v8 cache column ⇄ wire translations) ──
+    // translationsJson codec (v8 cache column ⇄ wire translations)
 
     /// [WireTranslation] → column text; nil/empty → NULL (no card, no bytes).
     static func translationsJsonData(_ translations: [WireTranslation]?) -> String? {
@@ -522,7 +523,7 @@ public final class PulseStore: Sendable {
         return try? JSONDecoder().decode([WireTranslation].self, from: data)
     }
 
-    // ── topics cache (W2-DATA-B — Zulip-style sub-streams) ──
+    // topics cache (W2-DATA-B - Zulip-style sub-streams)
 
     /// Server topics page → cache, one atomic transaction: prune rows the
     /// server no longer returns (a topic deleted by another member must not
@@ -549,7 +550,7 @@ public final class PulseStore: Sendable {
                     """,
                     arguments: [
                         "id": topic.id, "cid": conversationId, "name": topic.name,
-                        "emoji": topic.emoji ?? "💬", "lastMessageAt": topic.lastMessageAt,
+                        "emoji": topic.emoji ?? "chat", "lastMessageAt": topic.lastMessageAt,
                         "messageCount": topic.messageCount ?? 0,
                     ],
                 )
@@ -578,7 +579,7 @@ public final class PulseStore: Sendable {
         return WireTopic(id: id, name: name, emoji: emoji, lastMessageAt: lastMessageAt, messageCount: messageCount)
     }
 
-    // ── saved library cache (W2-DATA-B — GET /users/{id}/saved mirror) ──
+    // saved library cache (W2-DATA-B - GET /users/{id}/saved mirror)
 
     /// Saved-library sync: upserts every item's message row (full fidelity,
     /// shared writer) AND its savedMessages marker (savedAt ISO from wire).
@@ -602,7 +603,7 @@ public final class PulseStore: Sendable {
         }
     }
 
-    /// Keeps only the given saved rows — paired with upsert(savedItems:) to
+    /// Keeps only the given saved rows - paired with upsert(savedItems:) to
     /// make a full server-list refresh also prune what was unsaved elsewhere.
     public func replaceSaved(messageIds: [String]) throws {
         try dbQueue.write { db in
@@ -629,7 +630,7 @@ public final class PulseStore: Sendable {
     }
 
     /// Patches the cached voice-note row with a transcription verdict
-    /// (POST …/transcribe) — the transcript strip renders without a refetch.
+    /// (POST …/transcribe) - the transcript strip renders without a refetch.
     public func updateTranscription(messageId: String, transcript: String, transcribedAt: String) throws {
         _ = try dbQueue.write { db in
             try db.execute(
@@ -639,11 +640,11 @@ public final class PulseStore: Sendable {
         }
     }
 
-    // ── outbox (Wave 0 — queued sends, web pulse-outbox parity) ──
+    // outbox (Wave 0 - queued sends, web pulse-outbox parity)
 
     /// Appends one queued send (clientId dedupes; UNIQUE constraint drops
     /// double-enqueues exactly like the web store's `some(q.clientId === …)`).
-    /// `payloadJson` carries the queued FORWARD envelope (D28) — plain sends
+    /// `payloadJson` carries the queued FORWARD envelope (D28) - plain sends
     /// leave it nil.
     public func appendOutbox(conversationId: String, clientId: String, content: String, kind: String = "text", payloadJson: String? = nil) throws {
         let row = OutboxRow(
@@ -661,7 +662,7 @@ public final class PulseStore: Sendable {
         }
     }
 
-    /// Queue snapshot — FIFO drain order (oldest first).
+    /// Queue snapshot - FIFO drain order (oldest first).
     public func outboxAll() throws -> [OutboxRow] {
         try dbQueue.read { db in
             try OutboxRow.fetchAll(db, sql: "SELECT * FROM outbox ORDER BY id ASC")
@@ -692,7 +693,7 @@ public final class PulseStore: Sendable {
         }) ?? 0
     }
 
-    // ── drafts (Wave 0 — composer persistence, web pulse-drafts parity) ──
+    // drafts (Wave 0 - composer persistence, web pulse-drafts parity)
 
     /// Upserts the composer draft. Empty text clears the row (a blank local
     /// draft must never shadow the server's myDraft).
@@ -742,7 +743,7 @@ public final class PulseStore: Sendable {
         return Dictionary(rows, uniquingKeysWith: { _, later in later })
     }
 
-    /// Wave 8 — full draft rows (id + text + updatedAt) oldest-first, the
+    /// Wave 8 - full draft rows (id + text + updatedAt) oldest-first, the
     /// Drafts & outbox manager's feed. Blank rows never surface.
     public func allDraftRows() throws -> [DraftRow] {
         try dbQueue.read { db in
@@ -758,7 +759,7 @@ public final class PulseStore: Sendable {
         }
     }
 
-    // ── call log (W3-b — Wave 3 native calls) ─────────────
+    // call log (W3-b - Wave 3 native calls)
 
     /// GET /api/calls page → cache, one atomic transaction: full overwrite
     /// per row (the server row is authoritative) + prune beyond the server's
@@ -784,7 +785,7 @@ public final class PulseStore: Sendable {
         }
     }
 
-    /// GET /api/calls reconcile — maps the wire rows (peer identity already
+    /// GET /api/calls reconcile - maps the wire rows (peer identity already
     /// resolved per-viewer server-side) into the cache and prunes everything
     /// the server no longer lists.
     public func syncCallLog(from items: [WireCallLogItem]) throws {
@@ -807,7 +808,7 @@ public final class PulseStore: Sendable {
             )
         }
         try upsert(callLog: rows)
-        // Server truth — prune rows the endpoint no longer lists (the cap
+        // Server truth - prune rows the endpoint no longer lists (the cap
         // prune inside upsert(callLog:) is NOT enough: locally-written rows
         // that failed their POST must not outlive the server's own list).
         try dbQueue.write { db in
@@ -830,7 +831,7 @@ public final class PulseStore: Sendable {
     }
 
     public func clearCallLog() throws {
-        // Wipes the visible history cache only — queued single-writer rows
+        // Wipes the visible history cache only - queued single-writer rows
         // stay queued (they still owe the server a POST).
         _ = try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM callLogCache")
@@ -838,7 +839,7 @@ public final class PulseStore: Sendable {
     }
 
     /// Enqueues one terminal POST /api/calls body for the offline flush
-    /// (payload dedupe via the UNIQUE payloadJson column — double-enqueue is
+    /// (payload dedupe via the UNIQUE payloadJson column - double-enqueue is
     /// a no-op, mirroring the outbox clientId rule).
     public func appendCallLogQueue(payload: [String: Any]) throws {
         let data = try JSONSerialization.data(withJSONObject: payload)
@@ -862,7 +863,7 @@ public final class PulseStore: Sendable {
         }
     }
 
-    /// Queue snapshot — FIFO drain order (oldest first).
+    /// Queue snapshot - FIFO drain order (oldest first).
     public func callLogQueueAll() throws -> [CallLogQueueRow] {
         try dbQueue.read { db in
             try CallLogQueueRow.fetchAll(db, sql: "SELECT * FROM callLogQueue ORDER BY id ASC")
@@ -926,7 +927,7 @@ public struct OutboxRow: Codable, FetchableRecord, PersistableRecord, Equatable,
     public var kind: String
     public var createdAt: String
     public var attempts: Int
-    /// R1-W2B D28 — the queued forward envelope (JSON string of
+    /// R1-W2B D28 - the queued forward envelope (JSON string of
     /// PulseOutboxForward); nil for plain text sends. Optional decodes as
     /// nil on rows written before the v8 column existed.
     public var payloadJson: String?
@@ -959,7 +960,7 @@ public struct DraftRow: Codable, FetchableRecord, PersistableRecord, Equatable, 
     }
 }
 
-/// One call-history row (W3-b — mirror of the server CallLogItem with the
+/// One call-history row (W3-b - mirror of the server CallLogItem with the
 /// peer denormalized so the offline list renders exactly the online one).
 public struct CallLogEntry: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable, Identifiable {
     public static let databaseTableName = "callLogCache"
@@ -1022,13 +1023,13 @@ public struct CallLogEntry: Codable, FetchableRecord, PersistableRecord, Equatab
     }
 }
 
-/// One queued POST /api/calls body (offline flush — PulseOutboxEngine parity).
+/// One queued POST /api/calls body (offline flush - PulseOutboxEngine parity).
 public struct CallLogQueueRow: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {
     public static let databaseTableName = "callLogQueue"
 
     public var id: Int64?
     /// The serialized POST body ({ userId, conversationId, peerId, kind,
-    /// status, durationSec }) — UNIQUE, so a retry storm can't double-write.
+    /// status, durationSec }) - UNIQUE, so a retry storm can't double-write.
     public var payloadJson: String
     public var attempts: Int
     public var createdAt: String

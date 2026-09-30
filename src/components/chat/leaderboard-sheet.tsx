@@ -1,17 +1,15 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — leaderboard sheet (Task R24-d, Twitch-style XP ranks)
+// Pulse - leaderboard sheet (Task R24-d, Twitch-style XP ranks)
 //
 // Bottom sheet with the room's full ranked ladder: XP bars (spring
 // widths, relative to the room's XP leader), medals for the top 3
 // and real per-row mini-stats (messages / game wins / tournament
-// points). Every number comes from GET /api/leaderboard — the same
-// all-aggregates API — refreshed every 20s while open.
+// points). Every number comes from GET /api/leaderboard - the same
+// all-aggregates API - refreshed every 20s while open.
 //
 // Wiring contract for chat-room / group-info (lead + R24-d):
 //   const lb = useLeaderboardSheet(conversationId, me.id)
 //   ... {lb.node}
 // and open it via the `pulse:open-leaderboard` CustomEvent.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
@@ -25,7 +23,7 @@ import { cn } from '@/lib/utils'
 import { spring, stagger } from '@/lib/motion'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 
-/** Window CustomEvent that opens the sheet — fired by group-info/composer. */
+/** Window CustomEvent that opens the sheet - fired by group-info/composer. */
 export const LEADERBOARD_OPEN_EVENT = 'pulse:open-leaderboard'
 
 const REFRESH_MS = 20_000
@@ -45,7 +43,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
   const reducedMotion = useReducedMotion()
 
   const rowsQ = useQuery({
-    queryKey: ['leaderboard-full', conversationId], // distinct from the mini-section key: this query returns the RAW {rows} response, the section's returns the array — sharing a key poisoned the cache both ways
+    queryKey: ['leaderboard-full', conversationId], // distinct from the mini-section key: this query returns the RAW {rows} response, the section's returns the array - sharing a key poisoned the cache both ways
     queryFn: () =>
       apiJson<LeaderboardResponse>(
         `/api/leaderboard?conversationId=${encodeURIComponent(conversationId)}&userId=${encodeURIComponent(meId)}`,
@@ -71,7 +69,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
       <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl border-white/10 bg-zinc-950 dark:border-white/10 dark:bg-zinc-950">
         <DrawerTitle className="sr-only">Leaderboard</DrawerTitle>
         <DrawerDescription className="sr-only">
-          Ranked by tournament points, then game wins, then XP — every stat is a live aggregate
+          Ranked by tournament points, then game wins, then XP - every stat is a live aggregate
         </DrawerDescription>
 
         <motion.div
@@ -184,7 +182,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
                             </span>
                           ) : null}
                         </p>
-                        {/* XP bar — spring width relative to the room's XP leader */}
+                        {/* XP bar - spring width relative to the room's XP leader */}
                         <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                           <motion.div
                             aria-hidden
@@ -205,7 +203,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
                         </span>
                       </span>
                     </div>
-                    {/* mini-stats — real counts from the API */}
+                    {/* mini-stats - real counts from the API */}
                     <div className="mt-1.5 flex items-center gap-3 pl-[34px] text-[10.5px] font-semibold text-zinc-400">
                       <span className="flex items-center gap-1" title="Messages in this chat">
                         <MessageSquare className="size-3" aria-hidden />
@@ -231,7 +229,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
   )
 }
 
-// ── hook (2-line wiring, mirrors useRedPacketSheet) ──────────
+// hook (2-line wiring, mirrors useRedPacketSheet) 
 
 /**
  * Mount once per room:

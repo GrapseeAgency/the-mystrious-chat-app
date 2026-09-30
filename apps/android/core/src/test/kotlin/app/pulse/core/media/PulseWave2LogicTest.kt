@@ -6,12 +6,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Wave 2 depth logic — the PURE contracts the UI layers share (spec WAVE2 §1):
+ * Wave 2 depth logic - the PURE contracts the UI layers share (spec WAVE2 §1):
  * voice rounding/floor, the unfurl trigger, and the view-once state machine.
  */
 class PulseWave2LogicTest {
 
-    // ── voice notes ──────────────────────────────────────────
+    // voice notes
 
     @Test
     fun voiceDurationQuantizesTo100msAndNeverSendsZero() {
@@ -28,7 +28,7 @@ class PulseWave2LogicTest {
         assertEquals(600L, PulseMedia.MIN_VOICE_MS)
     }
 
-    // ── link previews ────────────────────────────────────────
+    // link previews
 
     @Test
     fun unfurlCandidateDetectsHttpAndBareWww() {
@@ -40,7 +40,7 @@ class PulseWave2LogicTest {
         assertFalse(PulseMedia.isUnfurlCandidate("htp://typo.example"))
     }
 
-    // ── view-once state machine (spec §1 row 6) ──────────────
+    // view-once state machine (spec §1 row 6)
 
     @Test
     fun viewOnceStateGatesThenBurnsForNonSenders() {

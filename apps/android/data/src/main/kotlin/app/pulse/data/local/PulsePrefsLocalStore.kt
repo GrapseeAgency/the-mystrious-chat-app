@@ -19,7 +19,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 
 /**
- * Wave 8 — DataStore-backed user-preferences blob (the `pulse.prefs` file
+ * Wave 8 - DataStore-backed user-preferences blob (the `pulse.prefs` file
  * shared with the identity prefs + session vault).
  *
  * Rules (web parity with src/lib/prefs.ts):
@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
  *    defaults back any missing/garbage field, so the UI never sees nulls;
  *  - the SERVER value wins on fetch ([replaceFromServer]);
  *  - a settings toggle applies locally FIRST ([applyLocal]) and the PATCH
- *    follows — a failed PATCH keeps the local change (honest offline parity).
+ *    follows - a failed PATCH keeps the local change (honest offline parity).
  */
 @Singleton
 class PulsePrefsLocalStore @Inject constructor(
@@ -36,30 +36,30 @@ class PulsePrefsLocalStore @Inject constructor(
     private object Keys {
         val PREFS = stringPreferencesKey("wave8.prefs.json")
         /**
-         * R1-W2F — per-conversation themes (F-FX-05). EXACTLY the web prefs
+         * R1-W2F - per-conversation themes (F-FX-05). EXACTLY the web prefs
          * blob key (src/lib/conv-theme.ts CONV_THEMES_KEY): one JSON object
          * { "<conversationId>": { "wallpaper": "aurora", "tint": "rose" } }
-         * — tint omitted when unset. Lives in the SAME DataStore file as the
+         * - tint omitted when unset. Lives in the SAME DataStore file as the
          * Wave-8 rendering prefs (the shared prefs mechanism).
          */
         val CONV_THEMES = stringPreferencesKey("chat.convThemes")
-        /** R2-C item 3 — design-language selection (web localStorage key). */
+        /** R2-C item 3 - design-language selection (web localStorage key). */
         val UI_THEME = stringPreferencesKey("pulse.uiTheme.v2")
-        /** R4-B item 3 — navigation style (web localStorage key, byte-exact). */
+        /** R4-B item 3 - navigation style (web localStorage key, byte-exact). */
         val NAV_STYLE = stringPreferencesKey(app.pulse.protocol.PulseNavStyle.PREFS_KEY)
-        /** R2-C item 7 — spotlight recent searches (web localStorage key). */
+        /** R2-C item 7 - spotlight recent searches (web localStorage key). */
         val SPOTLIGHT_RECENTS = stringPreferencesKey("pulse.spotlight.recents.v1")
     }
 
-    /** Resolved prefs — defaults guaranteed on every emission. */
+    /** Resolved prefs - defaults guaranteed on every emission. */
     val prefs: Flow<WirePulsePrefs> = context.pulsePrefs.data.map { p ->
         PulseWave8Logic.mergePrefs(p[Keys.PREFS])
     }
 
-    // ── R2-C item 3 — design-language selection (pulse.uiTheme.v2) ──
+    // R2-C item 3 - design-language selection (pulse.uiTheme.v2)
 
     /**
-     * Live design-language id — one of [UI_THEME_IDS] (the web value
+     * Live design-language id - one of [UI_THEME_IDS] (the web value
      * strings verbatim); anything unreadable falls back to "glass".
      */
     val uiTheme: Flow<String> = context.pulsePrefs.data.map { p ->
@@ -71,10 +71,10 @@ class PulsePrefsLocalStore @Inject constructor(
         context.pulsePrefs.edit { it[Keys.UI_THEME] = id }
     }
 
-    // ── R4-B item 3 — navigation style (pulse.navStyle.v2) ──
+    // R4-B item 3 - navigation style (pulse.navStyle.v2)
 
     /**
-     * Live navigation style — one of the 13 [PulseNavStyle] ids (the web
+     * Live navigation style - one of the 13 [PulseNavStyle] ids (the web
      * value strings verbatim); junk and wrong-case values fall back to the
      * capsule default (the same resolve the web's getNavStyleMeta fallback
      * performs).
@@ -87,7 +87,7 @@ class PulsePrefsLocalStore @Inject constructor(
         context.pulsePrefs.edit { it[Keys.NAV_STYLE] = style.id }
     }
 
-    // ── R2-C item 7 — spotlight recent searches ─────────────────
+    // R2-C item 7 - spotlight recent searches
 
     /**
      * Last 5 non-blank queries, deduped case-insensitively, newest first
@@ -128,7 +128,7 @@ class PulsePrefsLocalStore @Inject constructor(
         return PulseJson.encodeToString(kotlinx.serialization.json.JsonArray.serializer(), arr)
     }
 
-    // ── R2-C item 4 — whiteboard pending-stroke draft store ─────
+    // R2-C item 4 - whiteboard pending-stroke draft store
 
     /** Per-conversation DataStore key (iOS `whiteboard.draft:<id>` style). */
     private fun whiteboardDraftKey(conversationId: String) =
@@ -141,7 +141,7 @@ class PulsePrefsLocalStore @Inject constructor(
         return PulseWhiteboardDraftLogic.decode(raw)
     }
 
-    /** Draw-time write-through — persists the stroke BEFORE any sync attempt. */
+    /** Draw-time write-through - persists the stroke BEFORE any sync attempt. */
     suspend fun appendWhiteboardDraft(conversationId: String, stroke: app.pulse.protocol.WhiteboardStrokePostDto) {
         if (!CONV_ID_OK.matches(conversationId)) return
         context.pulsePrefs.edit { p ->
@@ -151,7 +151,7 @@ class PulsePrefsLocalStore @Inject constructor(
         }
     }
 
-    /** Flush-verdict purge — the acknowledged batch leaves the queue front. */
+    /** Flush-verdict purge - the acknowledged batch leaves the queue front. */
     suspend fun dropFirstWhiteboardDraft(conversationId: String, count: Int) {
         if (!CONV_ID_OK.matches(conversationId)) return
         context.pulsePrefs.edit { p ->
@@ -161,7 +161,7 @@ class PulsePrefsLocalStore @Inject constructor(
         }
     }
 
-    /** Undo purge — the newest pending stroke leaves the queue tail. */
+    /** Undo purge - the newest pending stroke leaves the queue tail. */
     suspend fun dropLastWhiteboardDraft(conversationId: String) {
         if (!CONV_ID_OK.matches(conversationId)) return
         context.pulsePrefs.edit { p ->
@@ -171,7 +171,7 @@ class PulsePrefsLocalStore @Inject constructor(
         }
     }
 
-    /** Restore-time swap — rewrites the whole draft (the dedupe pass). */
+    /** Restore-time swap - rewrites the whole draft (the dedupe pass). */
     suspend fun replaceAllWhiteboardDraft(conversationId: String, strokes: List<app.pulse.protocol.WhiteboardStrokePostDto>) {
         if (!CONV_ID_OK.matches(conversationId)) return
         context.pulsePrefs.edit { p ->
@@ -179,13 +179,13 @@ class PulsePrefsLocalStore @Inject constructor(
         }
     }
 
-    /** Server-side board reset — the pending queue is gone with the board. */
+    /** Server-side board reset - the pending queue is gone with the board. */
     suspend fun clearWhiteboardDraft(conversationId: String) {
         if (!CONV_ID_OK.matches(conversationId)) return
         context.pulsePrefs.edit { it.remove(whiteboardDraftKey(conversationId)) }
     }
 
-    // ── R1-W2F — per-conversation themes (F-FX-05) ────────────────
+    // R1-W2F - per-conversation themes (F-FX-05)
 
     /**
      * Live `chat.convThemes` map, sanitized like the web
@@ -201,7 +201,7 @@ class PulsePrefsLocalStore @Inject constructor(
      * Upsert/remove ONE conversation's theme (null = remove → follows the
      * global default). LRU semantics: a touched entry moves to the END of the
      * map; beyond [ConvTheme.MAX_MAP_ENTRIES] the OLDEST entry (map head) is
-     * evicted. Every write re-serializes the whole map — entries are ~70
+     * evicted. Every write re-serializes the whole map - entries are ~70
      * bytes so the DataStore write stays trivial.
      */
     suspend fun setConvTheme(conversationId: String, theme: ConvTheme?) {
@@ -219,7 +219,7 @@ class PulsePrefsLocalStore @Inject constructor(
         }
     }
 
-    /** Web sanitizeConvThemeMap parity — never throws, never stores junk. */
+    /** Web sanitizeConvThemeMap parity - never throws, never stores junk. */
     private fun sanitizeConvThemes(raw: String?): Map<String, ConvTheme> {
         if (raw.isNullOrBlank()) return emptyMap()
         val obj = runCatching { PulseJson.parseToJsonElement(raw) as? JsonObject }.getOrNull()
@@ -240,7 +240,7 @@ class PulsePrefsLocalStore @Inject constructor(
         return out
     }
 
-    /** { "<id>": { wallpaper, tint? } } — tint key omitted when null (web shape). */
+    /** { "<id>": { wallpaper, tint? } } - tint key omitted when null (web shape). */
     private fun encodeConvThemes(map: Map<String, ConvTheme>): String {
         val obj = buildJsonObject {
             map.forEach { (id, theme) ->
@@ -264,7 +264,7 @@ class PulsePrefsLocalStore @Inject constructor(
         }
     }
 
-    /** Local optimistic toggle — shallow merge over the CURRENT blob. */
+    /** Local optimistic toggle - shallow merge over the CURRENT blob. */
     suspend fun applyLocal(patch: WirePulsePrefs) {
         context.pulsePrefs.edit { p ->
             val current = PulseWave8Logic.mergePrefs(p[Keys.PREFS])
@@ -276,10 +276,10 @@ class PulsePrefsLocalStore @Inject constructor(
     }
 
     companion object {
-        /** Web conv-theme.ts CONV_ID_OK — cuid-style conversation keys only. */
+        /** Web conv-theme.ts CONV_ID_OK - cuid-style conversation keys only. */
         private val CONV_ID_OK = Regex("^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
-        /** R2-C — the web ui-theme value strings (src/lib/ui-theme.ts). */
+        /** R2-C - the web ui-theme value strings (src/lib/ui-theme.ts). */
         const val UI_THEME_GLASS = "glass"
         val UI_THEME_IDS = setOf("glass", "kinetic", "minimal", "dynamic", "aero")
 

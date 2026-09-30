@@ -1,11 +1,11 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 8 — pure-logic parity tests:
-///   • quiet-hours math — verbatim port of web isQuietHoursNow
+/// Wave 8 - pure-logic parity tests:
+///   • quiet-hours math - verbatim port of web isQuietHoursNow
 ///     (src/lib/pulse-settings.ts:73-83): normal window, wrap across
 ///     midnight, degenerate equal window, malformed HH:mm fallbacks.
-///   • prefs merge parity — port of web mergePrefs (src/lib/prefs-defaults.ts):
+///   • prefs merge parity - port of web mergePrefs (src/lib/prefs-defaults.ts):
 ///     defaults + whitelist-clamped shallow merge, server value wins.
 final class Wave8LogicTests: XCTestCase {
 
@@ -28,7 +28,7 @@ final class Wave8LogicTests: XCTestCase {
         )
     }
 
-    // ── isQuietHoursNow ──────────────────────────────────────────
+    // isQuietHoursNow
 
     /// Normal window fully inside one day.
     func testQuietHoursNormalWindow() {
@@ -57,7 +57,7 @@ final class Wave8LogicTests: XCTestCase {
     func testQuietHoursDegenerateEqualWindow() {
         XCTAssertFalse(quiet(9, 0, start: "09:00", end: "09:00"))
         XCTAssertFalse(quiet(15, 42, start: "00:00", end: "00:00"))
-        // minutesOf("24:61") clamps to 23*60+59 == 1439 too — equal + off.
+        // minutesOf("24:61") clamps to 23*60+59 == 1439 too - equal + off.
         XCTAssertFalse(quiet(23, 59, start: "24:61", end: "23:59"))
     }
 
@@ -79,7 +79,7 @@ final class Wave8LogicTests: XCTestCase {
         XCTAssertEqual(PulseWave8Logic.minutesOf("-1:30"), 0) // regex refuses the sign
     }
 
-    // ── mergedPrefs (web mergePrefs parity) ─────────────────────
+    // mergedPrefs (web mergePrefs parity)
 
     /// mergePrefs over an empty blob == DEFAULT_PREFERENCES.
     func testPrefsMergeDefaults() {
@@ -124,7 +124,7 @@ final class Wave8LogicTests: XCTestCase {
     }
 
     /// Malformed tokens are clamped away (web RADIUS/DENSITY/WALLPAPER
-    /// whitelists): the base value survives — never junk, never a throw.
+    /// whitelists): the base value survives - never junk, never a throw.
     func testPrefsMergeClampsUnknownTokens() {
         let patch = WirePulsePrefs(bubbleRadius: "xl", density: "squeezed", wallpaper: "ocean")
         let merged = PulseWave8Logic.mergedPrefs(base: PulsePrefsValues(), patch: patch)
@@ -151,10 +151,10 @@ final class Wave8LogicTests: XCTestCase {
         XCTAssertEqual(merged.density, .cozy)    // untouched default
     }
 
-    // ── native bubble/density token values ──────────────────────
+    // native bubble/density token values
 
     /// The native corner radii the ChatRoomView consumes (md=10, lg=16,
-    /// pill=26) and the density row spacing — pinned so a refactor can't
+    /// pill=26) and the density row spacing - pinned so a refactor can't
     /// silently drift the visual contract.
     func testNativeTokenValues() {
         XCTAssertEqual(PulseBubbleRadius.md.cornerRadius, 10)

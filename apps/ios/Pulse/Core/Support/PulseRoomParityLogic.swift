@@ -1,18 +1,16 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// R2-B — pure room-parity logic ports (no transport, no UI):
-//   • unreadAnchorMs       — web chats-tab.tsx:431-435 tap-time freeze
-//   • unreadDividerIndex   — web chat-room.tsx:1395-1420 anchor placement
-//   • MissedStep           — web chat-room.tsx:1594-1612 missed-count machine
-//   • automationValid / webhookNameValid — server validation mirrors
-//   • recapGate            — web requestRecap ≥5 live messages gate
+// R2-B - pure room-parity logic ports (no transport, no UI):
+//   • unreadAnchorMs       - web chats-tab.tsx:431-435 tap-time freeze
+//   • unreadDividerIndex   - web chat-room.tsx:1395-1420 anchor placement
+//   • MissedStep           - web chat-room.tsx:1594-1612 missed-count machine
+//   • automationValid / webhookNameValid - server validation mirrors
+//   • recapGate            - web requestRecap ≥5 live messages gate
 // No Date()/Date.now inside: every "now" arrives as a parameter so the
 // functions stay deterministic under test.
-// ─────────────────────────────────────────────────────────────
 public enum PulseRoomParityLogic {
 
-    // ── R30-c — the unread divider anchor ────────────────────
+    // R30-c - the unread divider anchor
 
     /// Web chats-tab handlePress parity: the anchor is MY lastReadAt from the
     /// list summary AT TAP TIME, but ONLY when the row carried an unread
@@ -44,7 +42,7 @@ public enum PulseRoomParityLogic {
         return nil
     }
 
-    // ── R26 — off-screen arrivals → jump-pill missed badge ───
+    // R26 - off-screen arrivals → jump-pill missed badge
 
     /// One step of the web missed-count machine (chat-room.tsx:1594-1612),
     /// extracted pure. Semantics verbatim:
@@ -55,10 +53,10 @@ public enum PulseRoomParityLogic {
     public struct MissedStep: Equatable {
         public let missed: Int
         public let lastSeenLen: Int
-        /// True when fresh rows landed while the viewer was away — the
+        /// True when fresh rows landed while the viewer was away - the
         /// caller flips the pill on (and haptics) from this flag alone.
         public let arrived: Bool
-        /// True when the badge/watermark were reset — the caller drops the pill.
+        /// True when the badge/watermark were reset - the caller drops the pill.
         public let reset: Bool
     }
 
@@ -90,7 +88,7 @@ public enum PulseRoomParityLogic {
         missed > 99 ? "99+" : String(missed)
     }
 
-    // ── R30-b — room-header reminders badge ─────────────────
+    // R30-b - room-header reminders badge
 
     /// The viewer's UNFIRED reminders = the header-badge count (web
     /// upcomingReminderCount, chat-room.tsx:2311-2313 `firedAt === null`;
@@ -106,7 +104,7 @@ public enum PulseRoomParityLogic {
         count > 9 ? "9+" : String(count)
     }
 
-    // ── R39 — automation rule validation (server mirrors) ────
+    // R39 - automation rule validation (server mirrors)
 
     /// Create/rename trigger bounds (automations route AUTOMATION_TRIGGER_*).
     public static let automationTriggerMin = 2
@@ -117,7 +115,7 @@ public enum PulseRoomParityLogic {
     public static let webhookNameMax = 32
 
     /// Trimmed trigger/reply pair must satisfy the server gates BEFORE the
-    /// POST/PATCH fires — the honest client-side mirror of the 400 paths.
+    /// POST/PATCH fires - the honest client-side mirror of the 400 paths.
     public static func automationValid(trigger: String, reply: String) -> Bool {
         let trimmedTrigger = trigger.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedReply = reply.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -132,7 +130,7 @@ public enum PulseRoomParityLogic {
         return !trimmed.isEmpty && trimmed.count <= webhookNameMax
     }
 
-    // ── R34-b — AI recap gate ────────────────────────────────
+    // R34-b - AI recap gate
 
     /// Web requestRecap parity: recap needs ≥5 LIVE (non-deleted) messages
     /// in the room. The caller passes the already-filtered live count.
@@ -140,7 +138,7 @@ public enum PulseRoomParityLogic {
         liveCount >= 5
     }
 
-    // ── R2-D — message-info receipts (seen vs delivered) ────
+    // R2-D - message-info receipts (seen vs delivered)
 
     /// One receipt candidate: the member identity + their read watermark.
     /// A plain value keeps the split pure and directly testable.
@@ -159,7 +157,7 @@ public enum PulseRoomParityLogic {
     ///   • the viewer is never a recipient (excluded first);
     ///   • "Seen by" = members whose lastReadAt >= the message's createdAt;
     ///   • "Delivered to" = the rest.
-    /// A missing or unparseable watermark counts as delivered (never seen) —
+    /// A missing or unparseable watermark counts as delivered (never seen) -
     /// web `Number.isNaN(readMs)` parity.
     public struct ReceiptSplit: Equatable, Sendable {
         public let seenBy: [ReceiptMember]
@@ -191,13 +189,13 @@ public enum PulseRoomParityLogic {
         return ReceiptSplit(seenBy: seen, deliveredTo: delivered)
     }
 
-    // ── R7 — message clustering lives in PulseCluster (file scope below) ──
+    // R7 - message clustering lives in PulseCluster (file scope below)
 
-    // ── R4-A item 2 — one-shot incognito (web + Android parity) ──
+    // R4-A item 2 - one-shot incognito (web + Android parity)
 
     /// The web disarms the mask after a SERVER-ACCEPTED send
     /// (chat-room.tsx:1747-1751 onSuccess; Android R3-B one-shot disarm,
-    /// ChatRoomViewModel.kt:566-570) — the old iOS behavior kept it armed
+    /// ChatRoomViewModel.kt:566-570) - the old iOS behavior kept it armed
     /// until manually disarmed. This pure step is the exact shared verdict:
     ///   • armed + server-accepted send → DISARMED (the one-shot consume);
     ///   • queued / offline / 429 / any failure → STILL ARMED (the text may
@@ -210,8 +208,7 @@ public enum PulseRoomParityLogic {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// R7 — message clustering kernel (web buildItems, chat-room.tsx:1367-1424).
+// R7 - message clustering kernel (web buildItems, chat-room.tsx:1367-1424).
 // A row is a HEAD when it is the first visible row, OR the calendar day
 // changed, OR the sender changed, OR the incognito mask (anon/anonAlias)
 // changed, OR the gap to the previous row exceeds 5 minutes. A row is a
@@ -220,14 +217,13 @@ public enum PulseRoomParityLogic {
 // timestamps so the kernel stays deterministic under test; the day
 // comparison uses the SAME `Calendar.current` start-of-day rule the day
 // chip (PulseFormat.dayLabel) already uses.
-// ─────────────────────────────────────────────────────────────────
 public enum PulseCluster {
     /// Web chat-room.tsx:277 `CLUSTER_WINDOW_MS = 5 * 60 * 1000`.
     public static let clusterWindowMs: Double = 5 * 60 * 1000
 
     /// One row's cluster verdict. `head` opens a cluster (sender name renders
     /// only there, web MessageRow `head` gate); `tail` closes one (the next
-    /// row is a head — spacing relaxes after it).
+    /// row is a head - spacing relaxes after it).
     public struct Flags: Equatable, Sendable {
         public let head: Bool
         public let tail: Bool

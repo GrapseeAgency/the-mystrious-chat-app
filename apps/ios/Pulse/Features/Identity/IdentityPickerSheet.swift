@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "Who are you?" — native onboarding + identity switcher, mirroring the web
+/// "Who are you?" - native onboarding + identity switcher, mirroring the web
 /// identity picker: pick a seeded identity or create one (name + palette
 /// color, 409 username-taken surfaces the server's suggestion).
 struct IdentityPickerSheet: View {
@@ -13,7 +13,7 @@ struct IdentityPickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel = IdentityViewModel()
-    // R1-W2B D23 — "Forget this viewer" arms a confirmation before the
+    // R1-W2B D23 - "Forget this viewer" arms a confirmation before the
     // identity teardown (F-ID-06: PulsePrefs.setViewer(nil) had zero callers).
     @State private var forgetArmed = false
 
@@ -32,7 +32,7 @@ struct IdentityPickerSheet: View {
                 } header: {
                     Text("Pick an identity")
                 } footer: {
-                    Text("Pulse has no passwords in this build — identities are name-keyed, exactly like the web app.")
+                    Text("Pulse has no passwords in this build - identities are name-keyed, exactly like the web app.")
                 }
 
                 Section("Create new identity") {
@@ -98,9 +98,9 @@ struct IdentityPickerSheet: View {
                     .disabled(viewModel.creating || viewModel.newName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
-                // R1-W2B D23 — explicit forget control (switcher only; the
+                // R1-W2B D23 - explicit forget control (switcher only; the
                 // onboarding flow has no viewer to forget). Confirmation
-                // dialog first — this signs the device out of the identity.
+                // dialog first - this signs the device out of the identity.
                 if mode == .switcher, prefs.viewer != nil {
                     Section {
                         Button(role: .destructive) {
@@ -109,7 +109,7 @@ struct IdentityPickerSheet: View {
                             Label("Forget this viewer", systemImage: "person.crop.circle.badge.minus")
                         }
                     } footer: {
-                        Text("Signs out of \(prefs.viewer?.name ?? "this identity") on this device — the session token is wiped and the app returns to onboarding. Chat history on the server is untouched.")
+                        Text("Signs out of \(prefs.viewer?.name ?? "this identity") on this device - the session token is wiped and the app returns to onboarding. Chat history on the server is untouched.")
                     }
                 }
             }
@@ -146,7 +146,7 @@ struct IdentityPickerSheet: View {
         .interactiveDismissDisabled(mode == .onboarding)
     }
 
-    /// R1-W2B D23 — the forget flow: session teardown first (socket drop,
+    /// R1-W2B D23 - the forget flow: session teardown first (socket drop,
     /// live models released, token-less client rebound), then setViewer(nil)
     /// which wipes the UserDefaults viewer, the Keychain mirror AND the
     /// identity-bound session token (PulsePrefs.setViewer nil branch).
@@ -161,8 +161,8 @@ struct IdentityPickerSheet: View {
 
     private func pick(_ user: WireUser) {
         let viewer = PulseViewer(from: user)
-        // Wave 8 — switching to an existing identity CLEARS the previous
-        // identity's session token (identity-bound; setViewer does it) —
+        // Wave 8 - switching to an existing identity CLEARS the previous
+        // identity's session token (identity-bound; setViewer does it) -
         // the switcher does not authenticate, so the app runs token-less
         // (accepted by the optional-verify proxy) until the next login.
         prefs.setViewer(viewer)
@@ -175,7 +175,7 @@ struct IdentityPickerSheet: View {
     private func create() {
         viewModel.create(api: session.api) { user, token in
             let viewer = PulseViewer(from: user)
-            // Wave 8 — ORDER MATTERS: setViewer first (drops the previous
+            // Wave 8 - ORDER MATTERS: setViewer first (drops the previous
             // identity's token), then persist the fresh token, then start.
             prefs.setViewer(viewer)
             if let token, !token.isEmpty {
@@ -223,7 +223,7 @@ private struct IdentityRow: View {
     }
 }
 
-/// Web AVATAR_COLORS registry — the server normalizes colors to these names.
+/// Web AVATAR_COLORS registry - the server normalizes colors to these names.
 enum SerializerPalette {
     static let names = ["emerald", "rose", "amber", "violet", "teal", "orange", "pink", "cyan"]
 }
@@ -259,7 +259,7 @@ final class IdentityViewModel: ObservableObject {
             guard let self else { return }
             defer { creating = false }
             do {
-                // Wave 8 — the 201 envelope carries the session token.
+                // Wave 8 - the 201 envelope carries the session token.
                 let envelope = try await api.createAccount(name: name, color: newColor)
                 newName = ""
                 onSuccess(envelope.user, envelope.token)

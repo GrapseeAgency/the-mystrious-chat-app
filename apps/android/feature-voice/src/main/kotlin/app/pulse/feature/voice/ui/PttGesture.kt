@@ -13,8 +13,8 @@ const val PTT_LATCH_THRESHOLD_MS = 260L
  * Push-to-talk gesture (spec §1.1 VR-3, web parity):
  *  • press → [onDown] fires once (the engine latches transmit on; a second tap
  *    while latched is the engine's job to read as unlatch);
- *  • release ≥ [PTT_LATCH_THRESHOLD_MS] → [onUp](heldMs) fires — hold-to-talk;
- *  • release < threshold → NO [onUp] — tap-to-latch (transmission continues).
+ *  • release ≥ [PTT_LATCH_THRESHOLD_MS] → [onUp](heldMs) fires - hold-to-talk;
+ *  • release < threshold → NO [onUp] - tap-to-latch (transmission continues).
  *
  * A cancelled/dragged-off pointer counts as release (honest stop, never a
  * ghost hot mic), matching the web's pointer-leave rule.

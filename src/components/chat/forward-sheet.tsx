@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — "Forward message" bottom sheet.
+// Pulse Chat - "Forward message" bottom sheet.
 // Multi-select destination chats → re-posts the original payload
 // (text / image / voice note / document) into each picked
-// conversation via the standard message API. No schema changes —
+// conversation via the standard message API. No schema changes -
 // attachments reuse the already-uploaded file paths.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useMemo, useState } from 'react'
@@ -25,7 +23,7 @@ export interface ForwardPayload {
   imagePath: string | null
   audioPath: string | null
   durationMs: number | null
-  /** R41 additive — document attachment (kind 'file'): forwarded copies are
+  /** R41 additive - document attachment (kind 'file'): forwarded copies are
    *  REAL downloadable documents at the destination, not caption text. */
   filePath: string | null
   fileName: string | null
@@ -115,7 +113,7 @@ export function ForwardSheet({
                     ...(payload.durationMs ? { durationMs: payload.durationMs } : {}),
                   }
                 : {}),
-              // R41 — documents forward as REAL kind 'file' messages (the API
+              // R41 - documents forward as REAL kind 'file' messages (the API
               // requires kind 'file' + filePath + fileName; fileSize optional).
               ...(payload.filePath
                 ? {
@@ -139,7 +137,7 @@ export function ForwardSheet({
       onOpenChange(false)
     },
     onError: () => {
-      toast.error('Could not forward — check your connection and try again')
+      toast.error('Could not forward - check your connection and try again')
     },
   })
 

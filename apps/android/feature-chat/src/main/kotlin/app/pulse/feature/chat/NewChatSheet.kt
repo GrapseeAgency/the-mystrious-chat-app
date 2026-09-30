@@ -72,7 +72,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * R2-A item 1 — the "New chat" composer VM (web new-chat-sheet.tsx parity):
+ * R2-A item 1 - the "New chat" composer VM (web new-chat-sheet.tsx parity):
  * searchable people directory + create DM / create group / create channel
  * through the REAL POST /api/conversations + /api/channels paths. The created
  * rows land in the Room cache via the repo, so the open chats list refreshes
@@ -89,7 +89,7 @@ class NewChatViewModel @Inject constructor(
         val loading: Boolean = false,
         val creating: Boolean = false,
         val error: String? = null,
-        /** R14 gap 11 — the staged channel photo (uploaded "/api/uploads/…" path). */
+        /** R14 gap 11 - the staged channel photo (uploaded "/api/uploads/…" path). */
         val channelPhoto: String? = null,
         /** The pick → convert → upload chain in flight. */
         val channelPhotoBusy: Boolean = false,
@@ -98,7 +98,7 @@ class NewChatViewModel @Inject constructor(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    /** One-shot created-conversation signal — the shell navigates into the room. */
+    /** One-shot created-conversation signal - the shell navigates into the room. */
     private val _openedConversation = MutableStateFlow<String?>(null)
     val openedConversation: StateFlow<String?> = _openedConversation.asStateFlow()
 
@@ -117,7 +117,7 @@ class NewChatViewModel @Inject constructor(
         _notice.value = text
     }
 
-    /** Directory refresh — the web sheet queries GET /api/users on open. */
+    /** Directory refresh - the web sheet queries GET /api/users on open. */
     fun loadUsers() {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
@@ -169,7 +169,7 @@ class NewChatViewModel @Inject constructor(
         if (_state.value.creating) return
         _state.value = _state.value.copy(creating = true)
         viewModelScope.launch {
-            // R14 gap 11 — the staged channel photo rides the create (web
+            // R14 gap 11 - the staged channel photo rides the create (web
             // new-chat-sheet.tsx:282-381: POST /api/uploads then create with
             // photo; the route validates "/api/uploads/<file>").
             val result: kotlin.Result<app.pulse.domain.model.Channel> = repo.createChannel(
@@ -182,7 +182,7 @@ class NewChatViewModel @Inject constructor(
                     _state.value = _state.value.copy(creating = false)
                     notify("Channel “${channel.name}” created")
                     // The wire's channel row id IS the created conversation id
-                    // (channels/route.ts: id: conv.id) — open it directly.
+                    // (channels/route.ts: id: conv.id) - open it directly.
                     _openedConversation.value = channel.id
                 }
                 .onFailure { failure ->
@@ -193,7 +193,7 @@ class NewChatViewModel @Inject constructor(
     }
 
     /**
-     * R14 gap 11 — the optional channel photo (web new-chat-sheet.tsx
+     * R14 gap 11 - the optional channel photo (web new-chat-sheet.tsx
      * handleChannelPhotoPicked): pick → MediaSupport data-url conversion →
      * the REAL /api/uploads chain at pick time → the validated path is held
      * until the create call. Honest failure via the existing notice channel.
@@ -231,7 +231,7 @@ private const val CHANNEL_DESCRIPTION_MAX = 200
 private const val GROUP_NAME_MAX = 48
 
 /**
- * R2-A item 1 — the "New chat" bottom sheet (web new-chat-sheet.tsx): a
+ * R2-A item 1 - the "New chat" bottom sheet (web new-chat-sheet.tsx): a
  * Direct/Group/Channel segmented mode switch, searchable people rows (DM
  * tap-through, group multi-select with live member count), and the footer
  * create actions against the REAL conversation/channel endpoints.
@@ -241,9 +241,9 @@ private const val GROUP_NAME_MAX = 48
 fun NewChatSheet(
     viewerId: String?,
     onDismiss: () -> Unit,
-    /** Fired after a successful create — the shell navigates into the room. */
+    /** Fired after a successful create - the shell navigates into the room. */
     onConversationOpened: (String) -> Unit,
-    /** Create outcomes (web toast parity) — surfaced by the host's snackbar. */
+    /** Create outcomes (web toast parity) - surfaced by the host's snackbar. */
     onNotice: (String) -> Unit = {},
     viewModel: NewChatViewModel = hiltViewModel(),
 ) {
@@ -254,13 +254,13 @@ fun NewChatSheet(
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var channelName by remember { mutableStateOf("") }
     var channelDescription by remember { mutableStateOf("") }
-    // R14 gap 11 — the optional channel photo (web R33-b round glass tile).
+    // R14 gap 11 - the optional channel photo (web R33-b round glass tile).
     val channelPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(viewModel::uploadChannelPhoto)
     }
 
     LaunchedEffect(Unit) { viewModel.loadUsers() }
-    // Create outcomes ride the host's snackbar (web toast parity) — the sheet
+    // Create outcomes ride the host's snackbar (web toast parity) - the sheet
     // itself is closing on success, so it cannot host its own transient UI.
     LaunchedEffect(Unit) {
         viewModel.notice.collect { notice ->
@@ -307,7 +307,7 @@ fun NewChatSheet(
                 }
             }
 
-            // segmented control (web :213-253 — three-way mode switch)
+            // segmented control (web :213-253 - three-way mode switch)
             Surface(
                 shape = RoundedCornerShape(999.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
@@ -377,7 +377,7 @@ fun NewChatSheet(
                     )
                 }
                 NewChatMode.CHANNEL -> Column {
-                    // R14 gap 11 — round glass photo tile (web :289-350): the
+                    // R14 gap 11 - round glass photo tile (web :289-350): the
                     // upload runs at PICK time; the create call only carries
                     // the validated "/api/uploads/<file>" path.
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
@@ -418,7 +418,7 @@ fun NewChatSheet(
                         Column(Modifier.weight(1f)) {
                             Text("Channel photo", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             Text(
-                                if (state.channelPhoto != null) "Uploaded — shown everywhere" else "Optional — you can add one later from the channel info",
+                                if (state.channelPhoto != null) "Uploaded - shown everywhere" else "Optional - you can add one later from the channel info",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -439,14 +439,14 @@ fun NewChatSheet(
                     OutlinedTextField(
                         value = channelDescription,
                         onValueChange = { if (it.length <= CHANNEL_DESCRIPTION_MAX) channelDescription = it },
-                        placeholder = { Text("Description — what is this channel about? (optional)") },
+                        placeholder = { Text("Description - what is this channel about? (optional)") },
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                     )
                     Text(
                         if (channelDescription.isNotEmpty()) {
                             "${CHANNEL_DESCRIPTION_MAX - channelDescription.length} characters left"
                         } else {
-                            "You will be the admin — only admins can post in a channel."
+                            "You will be the admin - only admins can post in a channel."
                         },
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -455,7 +455,7 @@ fun NewChatSheet(
                 }
             }
 
-            // people list (hidden on the channel step — web :384-445)
+            // people list (hidden on the channel step - web :384-445)
             if (mode != NewChatMode.CHANNEL) {
                 Box(Modifier.fillMaxWidth().height(280.dp).padding(top = 10.dp)) {
                     when {

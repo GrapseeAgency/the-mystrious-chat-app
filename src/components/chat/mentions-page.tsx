@@ -1,20 +1,18 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — #/mentions sub-page (R35-b).
+// Pulse - #/mentions sub-page (R35-b).
 // Discord mobile "Mentions" tab paradigm INSIDE the chats tab,
 // mounted exactly like #/calls: glass page, hash-routed
 // (navigate('/mentions') opens, backHash() closes), staggered row
-// entrances. Data is the REAL GET /api/mentions feed (R35-b) — no
+// entrances. Data is the REAL GET /api/mentions feed (R35-b) - no
 // mocks:
-//   • author avatar stays CIRCULAR (people, not things — shapes system)
+//   • author avatar stays CIRCULAR (people, not things - shapes system)
 //   • author name semibold, snippet with the @Me token highlighted in
-//     an emerald glass chip (mirrors the API's matching regex — keep
+//     an emerald glass chip (mirrors the API's matching regex - keep
 //     the two in sync)
 //   • conversation name (or "Direct message") + relative time, chevron
 //   • tap a row → opens that conversation via the same navigation call
 //     the chats list and calls page use
-// Empty state is honest: no mentions yet — when someone @mentions you,
+// Empty state is honest: no mentions yet - when someone @mentions you,
 // it shows up here.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useMemo } from 'react'
@@ -29,7 +27,7 @@ import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { UserAvatar } from '@/components/chat/user-avatar'
 
-// ── wire contract (must match /api/mentions) ─────────────────
+// wire contract (must match /api/mentions) 
 
 export interface MentionItem {
   messageId: string
@@ -64,7 +62,7 @@ export interface MentionsPageProps {
   open: boolean
   me: AppUser
   onBack: () => void
-  /** open the conversation a mention belongs to — same call the chats list uses */
+  /** open the conversation a mention belongs to - same call the chats list uses */
   onOpenConversation: (conversationId: string) => void
 }
 
@@ -93,7 +91,7 @@ function MentionSnippet({ snippet, meName }: { snippet: string; meName: string }
   )
 }
 
-/** One mention row — 56px target, circular author avatar, emerald token chip. */
+/** One mention row - 56px target, circular author avatar, emerald token chip. */
 function MentionRow({
   item,
   index,
@@ -125,7 +123,7 @@ function MentionRow({
       role="row"
       aria-label={`Mention from ${authorName} in ${where}, ${formatListStamp(item.createdAt)}`}
     >
-      {/* people are CIRCLES — the shapes system only squircles things */}
+      {/* people are CIRCLES - the shapes system only squircles things */}
       <span className="pt-0.5">
         <UserAvatar name={authorName} color={authorColor} avatar={authorAvatar} size={44} />
       </span>
@@ -177,7 +175,7 @@ export function MentionsPage({ open, me, onBack, onOpenConversation }: MentionsP
           role="region"
           aria-label="Mentions"
         >
-          {/* frosted sub-page header — same glass recipe as #/calls */}
+          {/* frosted sub-page header - same glass recipe as #/calls */}
           <header className="glass-deep glass-sheen shrink-0 border-b border-zinc-200/70 pt-[max(0px,env(safe-area-inset-top))] dark:border-white/10">
             <div className="flex items-center gap-2 px-3 py-2.5">
               <motion.button
@@ -203,7 +201,7 @@ export function MentionsPage({ open, me, onBack, onOpenConversation }: MentionsP
                   ) : null}
                 </h1>
                 <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-                  Messages that mention you — tap a row to jump in
+                  Messages that mention you - tap a row to jump in
                 </p>
               </div>
               {mentions.isFetching ? (
@@ -259,7 +257,7 @@ export function MentionsPage({ open, me, onBack, onOpenConversation }: MentionsP
                   No mentions yet
                 </h2>
                 <p className="max-w-[260px] text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  No mentions yet — when someone @mentions you, it shows up here.
+                  No mentions yet - when someone @mentions you, it shows up here.
                 </p>
               </motion.div>
             ) : (

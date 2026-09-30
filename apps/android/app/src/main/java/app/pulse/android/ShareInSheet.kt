@@ -52,9 +52,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * R10-a — the share-in payload MainActivity forwards from [ShareInActivity].
+ * R10-a - the share-in payload MainActivity forwards from [ShareInActivity].
  * Text rides [text], an image rides [stream] (a caller-granted content:// Uri
- * — the app can read it: the grant belongs to OUR package).
+ * - the app can read it: the grant belongs to OUR package).
  */
 data class ShareInPayload(val text: String? = null, val stream: Uri? = null) {
     val isImage: Boolean get() = stream != null
@@ -62,11 +62,11 @@ data class ShareInPayload(val text: String? = null, val stream: Uri? = null) {
 }
 
 /**
- * R10-a — picker + sender state for the share-in sheet. The conversation list
+ * R10-a - picker + sender state for the share-in sheet. The conversation list
  * is the SAME live source the chats surface uses (repo.observeConversations);
  * text shares go through repo.sendMessage (the offline-queueable path the
  * room composer uses), image shares through the EXISTING staging pipeline
- * (MediaSupport.imageToDataUrl → repo.uploadMedia → repo.sendMediaMessage —
+ * (MediaSupport.imageToDataUrl → repo.uploadMedia → repo.sendMediaMessage -
  * media is online-only by spec and surfaces honest errors, never fake rows).
  */
 @HiltViewModel
@@ -124,7 +124,7 @@ class ShareInViewModel @Inject constructor(
 }
 
 /**
- * R10-a — the share-in sheet at shell level (ModalBottomSheet, the house
+ * R10-a - the share-in sheet at shell level (ModalBottomSheet, the house
  * sheet idiom). Lists recent conversations; picking one sends the payload
  * through the pipeline above, then opens the room so the send is visible.
  */
@@ -177,7 +177,7 @@ fun ShareInSheet(
             }
             if (conversations.isEmpty()) {
                 Text(
-                    "No conversations yet — create one from the Chats tab.",
+                    "No conversations yet - create one from the Chats tab.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 18.dp),

@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — room info sub-page (#/room/<id>/info) — R27-c · R28-b.
+// Pulse - room info sub-page (#/room/<id>/info) - R27-c · R28-b.
 // Full-screen glass sheet above the chat room: hero by room type,
 // member list with roles (Lucide Crown) + live socket presence,
 // tap-to-profile (routes to the global #/user/:id page), REAL
@@ -7,7 +6,6 @@
 // demote via the members API · invite link per /invite API),
 // mute toggle (real mute API), disappearing-TTL display and
 // honest quick-stats computed from the room's loaded messages.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useRef, useMemo, useState } from 'react'
@@ -67,14 +65,14 @@ export interface RoomInfoPageProps {
   detail?: ConversationDetail
   /** live presence from the socket context */
   onlineIds: ReadonlySet<string>
-  /** the room's real loaded message window — quick-stats source */
+  /** the room's real loaded message window - quick-stats source */
   loadedMessages: ChatMessage[]
   /** authoritative pinned count (GET /pinned cache) */
   pinnedCount: number
   /** true when older history exists beyond the loaded window */
   historyPartial: boolean
   reducedMotion?: boolean
-  /** backHash() — returns to the room */
+  /** backHash() - returns to the room */
   onClose: () => void
   /** open the classic full group-manager sheet (kept reachable) */
   onOpenManager: () => void
@@ -97,7 +95,7 @@ function ttlLong(ttlSeconds: number): string {
   return `${Math.max(1, Math.round(ttlSeconds / 86_400))} days`
 }
 
-// ── R34-b: Signal-style disappearing timer ──────────────────
+// R34-b: Signal-style disappearing timer 
 /** The EXACT TTL presets the disappearing API accepts (seconds). 0 = off. */
 const TTL_STOPS = [0, 86_400, 604_800, 2_592_000] as const // off · 24h · 7d · 30d
 const TTL_STOP_LABELS = ['Off', '24h', '7d', '30d'] as const
@@ -213,7 +211,7 @@ function DisappearingSlider({
             style={{ left: `${(idx / (TTL_STOPS.length - 1)) * 100}%` }}
           />
         ))}
-        {/* springy thumb — scales on grab for the haptic feel */}
+        {/* springy thumb - scales on grab for the haptic feel */}
         <motion.span
           aria-hidden
           animate={{ left: `${stopPct}%`, scale: dragging ? 1.18 : 1 }}
@@ -225,7 +223,7 @@ function DisappearingSlider({
         </motion.span>
       </div>
 
-      {/* the old preset pills — kept as tap-to-commit tick labels */}
+      {/* the old preset pills - kept as tap-to-commit tick labels */}
       <div className="mt-1.5 grid grid-cols-4 gap-1" role="group" aria-label="Timer presets">
         {TTL_STOPS.map((t, idx) => (
           <button
@@ -248,7 +246,7 @@ function DisappearingSlider({
   )
 }
 
-// ── R35-a → R37: the Signal-style safety-number sheet moved to the shared
+//  R35-a → R37: the Signal-style safety-number sheet moved to the shared
 // src/components/chat/safety-sheet.tsx (also mounted by the chat-room header
 // ShieldCheck badge). The Encryption row below keeps its own useQuery on the
 // SAME ['safety', peerId, meId] cache key exported from the shared file.
@@ -272,13 +270,13 @@ export function RoomInfoPage({
   const title = isGroup ? detail?.name || 'Group' : other?.name ?? 'Chat'
   const myRole = detail?.members.find((m) => m.id === me.id)?.role
   const isAdmin = myRole === 'admin'
-  /** R30-c — broadcast channel (WhatsApp-Channels style): subscribers language */
+  /** R30-c - broadcast channel (WhatsApp-Channels style): subscribers language */
   const isChannel = isGroup && (detail?.broadcastMode ?? false)
 
   const isMuted =
     detail?.myMutedUntil != null && Date.parse(detail.myMutedUntil) > Date.now()
 
-  /** honest quick-stats — counts over the real loaded messages only */
+  /** honest quick-stats - counts over the real loaded messages only */
   const stats = useMemo(() => {
     let media = 0
     let links = 0
@@ -295,7 +293,7 @@ export function RoomInfoPage({
     [detail, onlineIds],
   )
 
-  /** admins first, then name — stable view order */
+  /** admins first, then name - stable view order */
   const members = useMemo(() => {
     const list = [...(detail?.members ?? [])]
     list.sort((a, b) => {
@@ -311,13 +309,13 @@ export function RoomInfoPage({
     [members],
   )
 
-  /** directory ids already in the group — the add-members view subtracts them */
+  /** directory ids already in the group - the add-members view subtracts them */
   const existingIds = useMemo(
     () => new Set((detail?.members ?? []).map((m) => m.id)),
     [detail],
   )
 
-  // ── member-list search (only surfaced past 8 members) ─────
+  // member-list search (only surfaced past 8 members) 
 
   const [memberFilter, setMemberFilter] = useState('')
   const memberQuery = memberFilter.trim().toLowerCase()
@@ -330,7 +328,7 @@ export function RoomInfoPage({
     )
   }, [members, memberQuery])
 
-  // ── real actions ─────────────────────────────────────────
+  // real actions 
 
   const muteMutation = useMutation({
     mutationFn: async (until: '8h' | '1w' | 'always' | null) => {
@@ -366,7 +364,7 @@ export function RoomInfoPage({
       toast.error(error instanceof Error ? error.message : 'Could not create the invite link'),
   })
 
-  // POST /members/{userId} is DELETE-only (PATCH = role change) — the R27
+  // POST /members/{userId} is DELETE-only (PATCH = role change) - the R27
   // draft sent method:POST via jsonBody and got a silent 405. Fixed here.
   const removeMutation = useMutation({
     mutationFn: async (userId: string) => {
@@ -405,7 +403,7 @@ export function RoomInfoPage({
       )
     },
     onSuccess: (_data, vars) => {
-      // Surgical role patch — the response detail is built for the TARGET
+      // Surgical role patch - the response detail is built for the TARGET
       // viewer (its myMutedUntil is not ours), so never cache it wholesale.
       queryClient.setQueryData<ConversationDetail>(['conversation', conversationId], (old) =>
         old
@@ -463,7 +461,7 @@ export function RoomInfoPage({
       armConfirm(kind, userId)
     }
   }
-  // remove keeps the R27 two-tap shape — armRemove / tapRemove
+  // remove keeps the R27 two-tap shape - armRemove / tapRemove
   const armRemove = (userId: string) => armConfirm('remove', userId)
   const tapRemove = (userId: string) =>
     tapConfirm('remove', userId, () => removeMutation.mutate(userId))
@@ -473,7 +471,7 @@ export function RoomInfoPage({
   // R28-b: full-screen add-members sub-view INSIDE the info page
   const [addOpen, setAddOpen] = useState(false)
 
-  // R33-b — channel/group photo: admins get an "Edit photo" overlay on the
+  // R33-b - channel/group photo: admins get an "Edit photo" overlay on the
   // hero avatar (real upload chain: file → /api/uploads → PATCH photo).
   const photoInputRef = useRef<HTMLInputElement | null>(null)
   const [photoBusy, setPhotoBusy] = useState(false)
@@ -519,9 +517,9 @@ export function RoomInfoPage({
     }
   }
 
-  // R33-b — honest channel succession: leaving a broadcast channel. An admin
+  // R33-b - honest channel succession: leaving a broadcast channel. An admin
   // may leave while another admin remains; the LAST admin is blocked (the
-  // server 403s — the UI says so before it ever fires).
+  // server 403s - the UI says so before it ever fires).
   const leaveMutation = useMutation({
     mutationFn: async () => {
       return apiJson<{ ok: boolean }>(
@@ -542,17 +540,17 @@ export function RoomInfoPage({
   })
   const leaveArmed = confirm?.id === me.id && confirm.kind === 'leave'
 
-  // R29-a: per-conversation chat theme (wallpaper/tint) — inline picker
+  // R29-a: per-conversation chat theme (wallpaper/tint) - inline picker
   const prefs = usePrefsValues()
   const themeSummary = convThemeSummary(prefs, conversationId)
   const [themeOpen, setThemeOpen] = useState(false)
 
-  // R34-b: Signal-style disappearing-timer slider — any participant may
+  // R34-b: Signal-style disappearing-timer slider - any participant may
   // change it (the disappearing API allows every participant; mirrors the
   // room header menu's TTL submenu, which stays reachable).
   const [ttlOpen, setTtlOpen] = useState(false)
   const [slowOpen, setSlowOpen] = useState(false) // R44 slow-mode preset tray
-  /** R44 — the EXACT preset ladder the slow-mode API accepts (seconds). */
+  /** R44 - the EXACT preset ladder the slow-mode API accepts (seconds). */
   const SLOW_PRESETS: Array<{ seconds: number; label: string; long: string }> = [
     { seconds: 0, label: 'Off', long: 'Off' },
     { seconds: 5, label: '5s', long: '5 seconds' },
@@ -578,9 +576,9 @@ export function RoomInfoPage({
       toast.error(error instanceof Error ? error.message : 'Could not update disappearing messages'),
   })
 
-  // R38 — Signal "Screen security": frosts the room's message area whenever
+  // R38 - Signal "Screen security": frosts the room's message area whenever
   // the Pulse window loses focus (blur / hidden tab). Gated like the
-  // disappearing TTL above — any participant may toggle it (the main PATCH
+  // disappearing TTL above - any participant may toggle it (the main PATCH
   // route keeps name/photo/broadcast admin-only; screenPrivacy is a comfort
   // setting, so it is deliberately NOT admin-gated). Optimistic flip with
   // honest rollback + toast on failure.
@@ -611,7 +609,7 @@ export function RoomInfoPage({
     },
   })
 
-  // R42 — per-VIEWER screen security: the personal veil. Frost MY view only,
+  // R42 - per-VIEWER screen security: the personal veil. Frost MY view only,
   // never anyone else's (the row above is the room-wide switch). Same
   // optimistic flip with honest rollback; hits the dedicated participant route.
   const myPrivacyMutation = useMutation({
@@ -640,7 +638,7 @@ export function RoomInfoPage({
     },
   })
 
-  // R44 — Telegram-style slow mode: admin picks the wait window between
+  // R44 - Telegram-style slow mode: admin picks the wait window between
   // member sends (admins are always exempt; the server enforces with 429 +
   // retryAfter). Optimistic flip on the detail cache with honest rollback.
   const slowModeMutation = useMutation({
@@ -659,7 +657,7 @@ export function RoomInfoPage({
     },
     onSuccess: (_data, seconds) => {
       toast.success(
-        seconds > 0 ? `Slow mode on — members wait ${seconds < 60 ? `${seconds}s` : `${seconds / 60}m`}` : 'Slow mode off',
+        seconds > 0 ? `Slow mode on - members wait ${seconds < 60 ? `${seconds}s` : `${seconds / 60}m`}` : 'Slow mode off',
       )
       haptic(12)
     },
@@ -671,9 +669,9 @@ export function RoomInfoPage({
     },
   })
 
-  // R35-a — Signal-style safety number (DMs ONLY): the shared GET feeds the
+  // R35-a - Signal-style safety number (DMs ONLY): the shared GET feeds the
   // Encryption row's trailing state; the sheet reads the same cache key.
-  // Groups render nothing extra — honest per-room-type UI.
+  // Groups render nothing extra - honest per-room-type UI.
   const peer = !isGroup ? other : undefined
   const [safetyOpen, setSafetyOpen] = useState(false)
   const safetyQuery = useQuery({
@@ -739,9 +737,9 @@ export function RoomInfoPage({
             {isGroup ? (
               <span className="relative shrink-0">
                 <GroupAvatar title={title} id={conversationId} size={68} photo={detail?.photo ?? null} />
-                {/* R33-b → R37 — "Edit photo" overlay for admins of ANY group
+                {/* R33-b → R37 - "Edit photo" overlay for admins of ANY group
                     (channels and plain groups alike; the PATCH route has always
-                    accepted photo for every group) — opens the real upload
+                    accepted photo for every group) - opens the real upload
                     chain (file → /api/uploads → PATCH conversation). */}
                 {isAdmin && detail !== undefined ? (
                   <button
@@ -795,7 +793,7 @@ export function RoomInfoPage({
                   {other ? (onlineIds.has(other.id) ? 'Online now' : 'Offline') : 'Direct chat'}
                 </p>
               )}
-              {/* R30-c — channel purpose line (display-only: the info page has no
+              {/* R30-c - channel purpose line (display-only: the info page has no
                   inline-edit pattern; renames live in the classic group manager) */}
               {detail !== undefined && detail.description ? (
                 <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
@@ -820,7 +818,7 @@ export function RoomInfoPage({
           </div>
         </motion.div>
 
-        {/* quick stats — real counts over the loaded window */}
+        {/* quick stats - real counts over the loaded window */}
         <motion.div {...anim} transition={{ ...spring.soft, delay: stagger(1) }} className="mt-3 grid grid-cols-3 gap-2">
           {[
             { icon: ImageIcon, label: 'Photos', value: stats.media },
@@ -843,7 +841,7 @@ export function RoomInfoPage({
         </motion.div>
         {historyPartial ? (
           <p className="mt-1.5 px-1 text-center text-[10px] text-zinc-400 dark:text-zinc-500">
-            Counted from loaded history — older messages exist.
+            Counted from loaded history - older messages exist.
           </p>
         ) : null}
 
@@ -853,7 +851,7 @@ export function RoomInfoPage({
           transition={{ ...spring.soft, delay: stagger(2) }}
           className="glass-deep glass-sheen mt-3 overflow-hidden rounded-3xl p-1.5"
         >
-          {/* mute — real per-user watermark API */}
+          {/* mute - real per-user watermark API */}
           <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
             {isMuted ? (
               <VolumeX className="size-4 shrink-0 text-emerald-500" aria-hidden />
@@ -896,7 +894,7 @@ export function RoomInfoPage({
             )}
           </div>
 
-          {/* disappearing TTL — Signal-style inline slider (R34-b). The
+          {/* disappearing TTL - Signal-style inline slider (R34-b). The
               collapsed row shows the current state; expanding reveals a
               draggable track over the EXACT stops the disappearing API
               accepts (off / 24h / 7d / 30d), with the old preset pills kept
@@ -970,7 +968,7 @@ export function RoomInfoPage({
             </AnimatePresence>
           </div>
 
-          {/* R42 — Signal "Screen security", per-VIEWER half. The switch
+          {/* R42 - Signal "Screen security", per-VIEWER half. The switch
               below frosts MY view only; a second row offers the room-wide
               switch. Both flags OR together inside the room. */}
           <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
@@ -984,7 +982,7 @@ export function RoomInfoPage({
                 Screen security
               </p>
               <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-                Blur messages when Pulse loses focus — just for you
+                Blur messages when Pulse loses focus - just for you
               </p>
             </div>
             <Switch
@@ -995,8 +993,8 @@ export function RoomInfoPage({
             />
           </div>
 
-          {/* R38/R42 — the room-wide half: frosts the message area for EVERY
-              member. Gated like the disappearing TTL — any participant may
+          {/* R38/R42 - the room-wide half: frosts the message area for EVERY
+              member. Gated like the disappearing TTL - any participant may
               toggle it (deliberately NOT admin-gated; a comfort setting). */}
           <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
             {detail?.screenPrivacy ? (
@@ -1020,10 +1018,10 @@ export function RoomInfoPage({
             />
           </div>
 
-          {/* R44 — Telegram-style slow mode (groups only). Admins pick the
+          {/* R44 - Telegram-style slow mode (groups only). Admins pick the
               wait window between member sends via preset chips; members see
               an honest read-only state (the room shows a live countdown when
-              the server answers 429). Admin-gated — it throttles members. */}
+              the server answers 429). Admin-gated - it throttles members. */}
           {isGroup ? (
             <div className="glass-row-hover rounded-2xl px-3 py-2.5">
               <div className="flex items-center gap-3">
@@ -1122,7 +1120,7 @@ export function RoomInfoPage({
             </div>
           ) : null}
 
-          {/* R31-a: viewer's chat streak in THIS conversation — R33-b adds the
+          {/* R31-a: viewer's chat streak in THIS conversation - R33-b adds the
               honest at-risk tone: a live chain whose lastDay is yesterday dies
               at tonight's UTC midnight unless the viewer sends a message.
               R37 adds the end-state: a chain whose lastDay already passed is
@@ -1156,9 +1154,9 @@ export function RoomInfoPage({
                 {detail === undefined
                   ? '…'
                   : detail.deadStreak
-                    ? `${detail.deadStreak.count}-day streak ends tonight — say something`
+                    ? `${detail.deadStreak.count}-day streak ends tonight - say something`
                     : detail.lostStreak
-                      ? `${detail.lostStreak.count}-day streak lost · best ${detail.lostStreak.best} — start a new one`
+                      ? `${detail.lostStreak.count}-day streak lost · best ${detail.lostStreak.best} - start a new one`
                       : detail.myStreak
                         ? `${detail.myStreak.count}-day streak · best ${detail.myStreak.best}`
                         : 'No active streak yet'}
@@ -1166,7 +1164,7 @@ export function RoomInfoPage({
             </div>
           </div>
 
-          {/* R29-a: chat theme — per-conversation wallpaper/tint override.
+          {/* R29-a: chat theme - per-conversation wallpaper/tint override.
               Row shows the effective theme; Customize expands the picker
               inline (slide inside the page, not a route/overlay). */}
           <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
@@ -1206,7 +1204,7 @@ export function RoomInfoPage({
             ) : null}
           </AnimatePresence>
 
-          {/* invite link — real /invite API, groups + admin only (hidden honestly) */}
+          {/* invite link - real /invite API, groups + admin only (hidden honestly) */}
           {isGroup && isAdmin ? (
             <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
               <Users className="size-4 shrink-0 text-zinc-400" aria-hidden />
@@ -1238,8 +1236,8 @@ export function RoomInfoPage({
             </div>
           ) : null}
 
-          {/* add members — POST /members is admins-only server-side (403 otherwise),
-              so the row renders for admins only — no dead UI for members */}
+          {/* add members - POST /members is admins-only server-side (403 otherwise),
+              so the row renders for admins only - no dead UI for members */}
           {isGroup && isAdmin && detail ? (
             <button
               type="button"
@@ -1262,7 +1260,7 @@ export function RoomInfoPage({
             </button>
           ) : null}
 
-          {/* classic group manager — kept reachable from its natural home */}
+          {/* classic group manager - kept reachable from its natural home */}
           {isGroup ? (
             <button
               type="button"
@@ -1275,15 +1273,15 @@ export function RoomInfoPage({
             >
               <Users className="size-4 shrink-0 text-zinc-400" aria-hidden />
               <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
-                Manage group — roles, webhooks, more
+                Manage group - roles, webhooks, more
               </p>
               <ChevronRight className="size-4 shrink-0 text-zinc-400" aria-hidden />
             </button>
           ) : null}
 
-          {/* R33-b — leave channel (broadcast rooms only; group leave lives in
+          {/* R33-b - leave channel (broadcast rooms only; group leave lives in
               the classic manager). Honest succession: the LAST admin cannot
-              leave until they promote a successor via "Make admin" above —
+              leave until they promote a successor via "Make admin" above -
               the row says so, and the server 403s as the backstop. */}
           {isChannel ? (
             <button
@@ -1294,7 +1292,7 @@ export function RoomInfoPage({
                 haptic(8)
                 if (isAdmin && adminCount <= 1) {
                   toast.error(
-                    'You are the last admin — promote another admin ("Make admin") before leaving.',
+                    'You are the last admin - promote another admin ("Make admin") before leaving.',
                   )
                   return
                 }
@@ -1330,7 +1328,7 @@ export function RoomInfoPage({
           ) : null}
         </motion.div>
 
-        {/* R39 — Automations: keyword-triggered auto-replies. One glass section
+        {/* R39 - Automations: keyword-triggered auto-replies. One glass section
             (rows + optimistic switch + honest delete + create sheet live in
             automations-sheet.tsx to keep this file's diff surgical). Admins
             manage; members read rows or the honest manage caption. */}
@@ -1341,7 +1339,7 @@ export function RoomInfoPage({
           reducedMotion={reducedMotion}
         />
 
-        {/* R35-a — Encryption section (DMs only): Signal-paradigm safety-number
+        {/* R35-a - Encryption section (DMs only): Signal-paradigm safety-number
             verification. One row; tap opens the compare-and-verify sheet. */}
         {!isGroup && peer ? (
           <>
@@ -1421,7 +1419,7 @@ export function RoomInfoPage({
             </div>
           ) : (
             <>
-              {/* R28-b: glass filter — only surfaced past 8 members */}
+              {/* R28-b: glass filter - only surfaced past 8 members */}
               {members.length > 8 ? (
                 <motion.div
                   initial={reducedMotion ? false : { opacity: 0, y: 6 }}
@@ -1458,7 +1456,7 @@ export function RoomInfoPage({
                   const isMe = member.id === me.id
                   const online = onlineIds.has(member.id)
                   // mirror of the API's real guards: DELETE /members/[userId] is
-                  // admin-only, 400s on self, 403s on admin targets — no dead UI
+                  // admin-only, 400s on self, 403s on admin targets - no dead UI
                   const canRemove =
                     isAdmin && !isMe && member.role !== 'admin' && !removeMutation.isPending
                   const rolePendingHere =
@@ -1484,7 +1482,7 @@ export function RoomInfoPage({
                         onClick={() => {
                           haptic(8)
                           // push straight through: info unmounts, browser back
-                          // returns to #/room/<id>/info — no async back-race
+                          // returns to #/room/<id>/info - no async back-race
                           navigateHash(`#/user/${encodeURIComponent(member.id)}`)
                         }}
                         className="shrink-0 rounded-full outline-none transition-transform active:scale-90"
@@ -1503,7 +1501,7 @@ export function RoomInfoPage({
                         onClick={() => {
                           haptic(8)
                           // push straight through: info unmounts, browser back
-                          // returns to #/room/<id>/info — no async back-race
+                          // returns to #/room/<id>/info - no async back-race
                           navigateHash(`#/user/${encodeURIComponent(member.id)}`)
                         }}
                         className="min-w-0 flex-1 text-left outline-none"
@@ -1524,7 +1522,7 @@ export function RoomInfoPage({
                           {member.username ? `@${member.username}` : member.about || 'Member'}
                         </span>
                       </button>
-                      {/* R28-b: role actions — PATCH /members/[userId] is admin-only;
+                      {/* R28-b: role actions - PATCH /members/[userId] is admin-only;
                           the last admin is never dismissable (server 400s, we hide) */}
                       {isAdmin && !isMe ? (
                         member.role === 'member' ? (
@@ -1610,7 +1608,7 @@ export function RoomInfoPage({
         </motion.div>
       </div>
 
-      {/* R28-b: add-members glass sub-view — slides INSIDE the info page (not a route) */}
+      {/* R28-b: add-members glass sub-view - slides INSIDE the info page (not a route) */}
       <AnimatePresence>
         {addOpen ? (
           <RoomMemberAddPage
@@ -1624,7 +1622,7 @@ export function RoomInfoPage({
         ) : null}
       </AnimatePresence>
 
-      {/* R35-a → R37 — safety-number glass sheet (DMs only, mounts over this
+      {/* R35-a → R37 - safety-number glass sheet (DMs only, mounts over this
           page): the shared sheet owns its AnimatePresence; open state stays
           here so the Encryption row and any future caller share one surface. */}
       {peer ? (
@@ -1636,7 +1634,7 @@ export function RoomInfoPage({
         />
       ) : null}
 
-      {/* R33-b: hidden photo picker — the real upload chain handles the rest */}
+      {/* R33-b: hidden photo picker - the real upload chain handles the rest */}
       <input
         ref={photoInputRef}
         type="file"

@@ -1,20 +1,18 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — tournament composer sheet (Task R24-d, Twitch-style XP)
+// Pulse - tournament composer sheet (Task R24-d, Twitch-style XP)
 //
 // Bottom sheet to open a season in the current room: a 1..40 char
-// name and the game (tic-tac-toe is the only shipped season game —
+// name and the game (tic-tac-toe is the only shipped season game -
 // shown as a locked chip). POSTs /api/tournaments, then closes,
 // toasts and fires the `pulse:external-message` CustomEvent with
 // the server-serialized kind:'tournament' message so the room
 // appends it instantly (room polling remains the fallback).
 //
 // Wiring contract for chat-room (lead), same 2-line pattern as the
-// red packet —
+// red packet -
 //   const ts = useTournamentSheet(conversationId, me)
 //   ... {ts.node}
 // and the composer opens it via the `pulse:open-tournament`
 // CustomEvent.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
@@ -31,14 +29,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 
-/** Window CustomEvent that opens the sheet — fired by the composer/slash entry. */
+/** Window CustomEvent that opens the sheet - fired by the composer/slash entry. */
 export const TOURNAMENT_OPEN_EVENT = 'pulse:open-tournament'
 
 /** Matches NAME_MIN/NAME_MAX in /api/tournaments (server enforces 1–40). */
 const NAME_MIN = 1
 const NAME_MAX = 40
 
-// ── wire types (mirror of the REST contract) ─────────────────
+// wire types (mirror of the REST contract) 
 
 interface TournamentCreateResponse {
   tournament: {
@@ -58,7 +56,7 @@ export interface SheetMe {
   color: string
 }
 
-// ── sheet ────────────────────────────────────────────────────
+// sheet 
 
 export function TournamentSheet({
   open,
@@ -101,7 +99,7 @@ export function TournamentSheet({
       )
       onClose()
       toast.success('Tournament started')
-      // instant local append — room polling is the fallback for stragglers
+      // instant local append - room polling is the fallback for stragglers
       window.dispatchEvent(
         new CustomEvent<ChatMessage>('pulse:external-message', { detail: res.message }),
       )
@@ -126,7 +124,7 @@ export function TournamentSheet({
       <DrawerContent className="mx-auto max-w-[420px] rounded-t-3xl border-white/10 bg-zinc-950 dark:border-white/10 dark:bg-zinc-950">
         <DrawerTitle className="sr-only">Start a tournament</DrawerTitle>
         <DrawerDescription className="sr-only">
-          Open a season in this chat — every won tic-tac-toe match scores one standings point
+          Open a season in this chat - every won tic-tac-toe match scores one standings point
         </DrawerDescription>
 
         <motion.form
@@ -196,7 +194,7 @@ export function TournamentSheet({
             ) : null}
           </div>
 
-          {/* game — single shipped season game, locked chip */}
+          {/* game - single shipped season game, locked chip */}
           <div className="flex flex-col gap-1.5">
             <span className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">
               Game
@@ -252,7 +250,7 @@ export function TournamentSheet({
   )
 }
 
-// ── hook (2-line wiring, mirrors useRedPacketSheet) ──────────
+// hook (2-line wiring, mirrors useRedPacketSheet) 
 
 /**
  * Mount once per room:

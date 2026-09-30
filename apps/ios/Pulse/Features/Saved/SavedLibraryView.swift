@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Wave 2 saved library (spec §1 row 14) — GET /api/users/{id}/saved (newest
+/// Wave 2 saved library (spec §1 row 14) - GET /api/users/{id}/saved (newest
 /// first, cap 100, NO server pagination/search) mirrored into the GRDB cache
 /// via upsert(savedItems:) + replaceSaved(messageIds:), then rendered with a
 /// LOCAL search over sender/content/conversation, an honest loading/error/
@@ -9,7 +9,7 @@ import SwiftUI
 /// jump-to-message target (the same path global search uses).
 struct SavedLibraryView: View {
     @ObservedObject var session: PulseSession
-    /// (conversation, messageId) — RootView dismisses + switches to Chats +
+    /// (conversation, messageId) - RootView dismisses + switches to Chats +
     /// requestOpenRoom(jumpMessageId:).
     var onOpenOriginal: (WireConversationSummary, String) -> Void
 
@@ -41,7 +41,7 @@ struct SavedLibraryView: View {
         .task { await load() }
     }
 
-    // ── data ─────────────────────────────────────────────────
+    // data
 
     private func load() async {
         guard let viewer = session.viewer else {
@@ -56,7 +56,7 @@ struct SavedLibraryView: View {
             items = fresh
             phase = .loaded
         } catch {
-            // Offline fallback — the cache mirror stays usable.
+            // Offline fallback - the cache mirror stays usable.
             if let store = session.store, let ids = try? store.savedIds(), !ids.isEmpty {
                 phase = .loaded
             } else {
@@ -97,7 +97,7 @@ struct SavedLibraryView: View {
         }
     }
 
-    // ── views ────────────────────────────────────────────────
+    // views
 
     private var searchField: some View {
         HStack(spacing: 8) {
@@ -148,7 +148,7 @@ struct SavedLibraryView: View {
                     systemImage: "bookmark",
                     note: query.isEmpty
                         ? "Long-press any message and choose Save to keep it here"
-                        : "Try a different search — the library keeps the 100 most recent saves",
+                        : "Try a different search - the library keeps the 100 most recent saves",
                 )
             } else {
                 List(filtered, id: \.message.id) { item in
@@ -195,7 +195,7 @@ struct SavedLibraryView: View {
         }
     }
 
-    // ── row text helpers ─────────────────────────────────────
+    // row text helpers
 
     private var filtered: [WireSavedItem] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -216,7 +216,7 @@ struct SavedLibraryView: View {
         return "\(sender) in \(place)"
     }
 
-    /// Bracketed kind tag + body excerpt ≤64 (spec §1 row 14) — plain text
+    /// Bracketed kind tag + body excerpt ≤64 (spec §1 row 14) - plain text
     /// tags instead of emoji prefixes (R17 Neo de-emoji pass).
     private func snippet(_ item: WireSavedItem) -> String {
         let message = item.message

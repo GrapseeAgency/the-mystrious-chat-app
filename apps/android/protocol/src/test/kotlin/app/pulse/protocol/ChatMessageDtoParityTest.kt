@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Wave-1 wire parity — ChatMessageDto decodes the FULL messaging surface
+ * Wave-1 wire parity - ChatMessageDto decodes the FULL messaging surface
  * (threads + media + lifecycle) from real gateway JSON, tolerates unknown
  * keys, and degrades to nulls when optional keys are missing entirely.
  * Shapes mirror /api/conversations/[id]/messages + /api/messages/[id]/thread.
@@ -48,7 +48,7 @@ class ChatMessageDtoParityTest {
         assertEquals("m2", row.id)
         // thread axis
         assertEquals("m0", row.parentId)
-        // quote axis — SEPARATE from parentId, never merged
+        // quote axis - SEPARATE from parentId, never merged
         assertEquals("m1", row.replyTo?.id)
         // media
         assertEquals("9c1f...e7.jpg", row.imagePath)

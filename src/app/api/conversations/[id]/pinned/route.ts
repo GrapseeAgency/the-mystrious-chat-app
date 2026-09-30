@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/pinned — list pinned messages
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/pinned - list pinned messages
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
@@ -14,7 +12,7 @@ interface RouteCtx {
 /**
  * GET /api/conversations/[id]/pinned?userId=
  * Participant-guarded list of pinned messages (oldest pin first).
- * → { messages: ChatMessage[] } — 403 for non-participants.
+ * → { messages: ChatMessage[] } - 403 for non-participants.
  */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params

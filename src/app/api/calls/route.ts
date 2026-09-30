@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/calls — 1:1 call history (R33-a).
+// /api/calls - 1:1 call history (R33-a).
 //
 // GET  ?userId=X → the viewer's call log, newest first, cap 50.
 //      Rows where the viewer was the caller OR the callee are merged;
@@ -9,10 +8,9 @@
 //
 // POST { userId, conversationId, peerId, kind, status, durationSec? }
 //      → 201 { item }. SINGLE-WRITER RULE: the CALLER's client writes every
-//      terminal row (completed / missed / declined) exactly once — the callee
+//      terminal row (completed / missed / declined) exactly once - the callee
 //      never writes, so no double rows are possible. The viewer is therefore
 //      always the caller (callerId = userId, calleeId = peerId).
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

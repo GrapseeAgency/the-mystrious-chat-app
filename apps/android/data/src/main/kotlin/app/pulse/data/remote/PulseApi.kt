@@ -131,11 +131,11 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Ktor REST client — REAL wiring to the Next.js API (gateway :81 in dev).
+ * Ktor REST client - REAL wiring to the Next.js API (gateway :81 in dev).
  * The API identifies the caller with `userId` params (same as the web client);
  * every method maps failures onto PulseResult kinds identical to iOS.
  *
- * Wave 8 — session tokens: every request carries
+ * Wave 8 - session tokens: every request carries
  * `Authorization: Bearer <token>` when the [bearerToken] provider hands back
  * a credential (server-side optional-verify: no header = accepted for the
  * web-migration window, present-but-invalid = 401). A 401 response invokes
@@ -143,11 +143,11 @@ import kotlinx.serialization.json.put
  * app surfaces the honest re-login path.
  */
 private const val OFFLINE_COPY =
-    "No gateway configured — set your server in Profile → Connection."
+    "No gateway configured - set your server in Profile → Connection."
 
 class PulseApi(
     private val http: HttpClient,
-    /** Current session credential — null = ride header-less (web migration window). */
+    /** Current session credential - null = ride header-less (web migration window). */
     private val bearerToken: () -> String? = { null },
     /** Fired on any 401 so the token store can clear + surface re-login. */
     private val onAuthInvalid: (String?) -> Unit = {},
@@ -155,12 +155,12 @@ class PulseApi(
 
     /**
      * Honest offline-first gate. With NO configured gateway, `PulseEndpoints.http`
-     * returns a bare relative path — and Ktor's URLBuilder resolves that against
+     * returns a bare relative path - and Ktor's URLBuilder resolves that against
      * its implicit `http://localhost` default (ktor-http URLBuilder host default),
      * so OkHttp fires a cleartext request at the PHONE ITSELF and Android's
      * network security policy blocks it: the "CLEARTEXT communication to
      * localhost not permitted" field report on the Home inbox. The request is
-     * never fired now — users get actionable copy instead of a policy dump.
+     * never fired now - users get actionable copy instead of a policy dump.
      * The security policy is untouched (cleartext stays blocked); the accidental
      * request is what's removed.
      */
@@ -184,7 +184,7 @@ class PulseApi(
     private suspend fun <T> post(
         path: String,
         body: JsonObject?,
-        /** Per-request requestTimeout override (Ktor 2 `timeout {}` extension) — null = plugin default. */
+        /** Per-request requestTimeout override (Ktor 2 `timeout {}` extension) - null = plugin default. */
         timeoutMillis: Long? = null,
         parse: ((String) -> T)? = null,
     ): PulseResult<T> {
@@ -211,7 +211,7 @@ class PulseApi(
     }
 
     /**
-     * PATCH verb — the conversation flag routes (pin/mute/archive/mark-unread) are
+     * PATCH verb - the conversation flag routes (pin/mute/archive/mark-unread) are
      * PATCH on the wire; POST was the N3-era wrong verb (spec §14 transport fixes).
      */
     private suspend fun <T> patch(path: String, body: JsonObject?, parse: ((String) -> T)? = null): PulseResult<T> {
@@ -237,7 +237,7 @@ class PulseApi(
     }
 
     /**
-     * Wave 8 — attach `Authorization: Bearer <token>` when a credential is
+     * Wave 8 - attach `Authorization: Bearer <token>` when a credential is
      * present. The server's optional-verify proxy accepts header-less calls
      * (web migration window) but rejects PRESENT-but-invalid tokens with 401,
      * so we attach only when the store actually holds a token.
@@ -247,7 +247,7 @@ class PulseApi(
     }
 
     /**
-     * HTTP failure → Failure with the body's error/code/suggestion intact —
+     * HTTP failure → Failure with the body's error/code/suggestion intact -
      * the onboarding username_taken flow needs the server's suggestion to
      * survive the trip (web parity: createUserRequest in onboarding-screen.tsx).
      */
@@ -268,16 +268,16 @@ class PulseApi(
                 (json["suggestion"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
                     if (it.isString) suggestion = it.content
                 }
-                // R44 slow mode — the 429 body carries { error, retryAfter } and a
+                // R44 slow mode - the 429 body carries { error, retryAfter } and a
                 // Retry-After header (same value). The body wins (web parity).
                 (json["retryAfter"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
                     retryAfter = runCatching { it.content.toInt() }.getOrNull()
                 }
             }
         } catch (_: Exception) {
-            // non-JSON body — keep the raw text as the message
+            // non-JSON body - keep the raw text as the message
         }
-        // Wave 8 — a 401 means the presented token is invalid/rotated. The
+        // Wave 8 - a 401 means the presented token is invalid/rotated. The
         // typed Kind.AUTH failure rides back to the caller AND the hook lets
         // the store layer clear the credential + raise the re-login flow.
         if (status == 401) onAuthInvalid(message)
@@ -285,7 +285,7 @@ class PulseApi(
         return base.copy(code = code, suggestion = suggestion, status = status, retryAfter = retryAfter)
     }
 
-    // ── conversations ───────────────────────────────────────────
+    // conversations
     suspend fun conversations(userId: String): PulseResult<ConversationsPageDto> =
         get("/api/conversations?userId=$userId") {
             PulseJson.decodeFromString(ConversationsPageDto.serializer(), it)
@@ -297,7 +297,7 @@ class PulseApi(
         before: String? = null,
         topicId: String? = null,
         /**
-         * R2-C item 2 (D47 delta sync) — ISO-date cursor; the server returns
+         * R2-C item 2 (D47 delta sync) - ISO-date cursor; the server returns
          * only messages strictly NEWER than it, same { messages, hasMore,
          * total } shape and limits as the newest window (route contract:
          * when both after=/since= arrive the LATER one wins). Null = the
@@ -314,12 +314,12 @@ class PulseApi(
     }
 
     /**
-     * POST /api/conversations/{id}/messages — the full Wave-1 wire body
+     * POST /api/conversations/{id}/messages - the full Wave-1 wire body
      * (spec §1.1): thread replies ride `parentId`, inline quotes `replyToId`,
-     * media rides imagePath/audioPath/filePath — only non-null keys are sent.
+     * media rides imagePath/audioPath/filePath - only non-null keys are sent.
      * `kind` whitelist: text|image|audio|sticker|location|file.
      *
-     * R5-B — the response is the server envelope `{ message, streak?, xpAwarded }`
+     * R5-B - the response is the server envelope `{ message, streak?, xpAwarded }`
      * (messages/route.ts:704-708); [app.pulse.protocol.decodeMessageSend]
      * unwraps it (bare-row bodies from alternate gateways still decode).
      */
@@ -338,9 +338,9 @@ class PulseApi(
         kind: String? = null,
         viewOnce: Boolean? = null,
         topicId: String? = null,
-        /** R24-b incognito — group-only server-side; DMs silently ignore it. */
+        /** R24-b incognito - group-only server-side; DMs silently ignore it. */
         anon: Boolean? = null,
-        /** Rich payload blob — sticker {emoji,pack} · location {lat,lng,label} · effects {effect}. */
+        /** Rich payload blob - sticker {emoji,pack} · location {lat,lng,label} · effects {effect}. */
         payload: JsonObject? = null,
     ): PulseResult<app.pulse.protocol.MessageSendEnvelopeDto> =
         post(
@@ -376,8 +376,8 @@ class PulseApi(
             },
         ) { PulseJson.decodeFromString(ConversationSummaryDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString()) }
 
-    // ── reactions ───────────────────────────────────────────────
-    /** POST /api/messages/{id}/react { userId, emoji } — server toggles. */
+    // reactions
+    /** POST /api/messages/{id}/react { userId, emoji } - server toggles. */
     suspend fun react(messageId: String, userId: String, emoji: String): PulseResult<Unit> =
         post(
             "/api/messages/$messageId/react",
@@ -387,7 +387,7 @@ class PulseApi(
             },
         )
 
-    // ── users / identity ────────────────────────────────────────
+    // users / identity
     /** GET /api/users → { users: [...] } (identity picker + contacts). */
     suspend fun users(): PulseResult<UsersPageDto> =
         get("/api/users") { PulseJson.decodeFromString(UsersPageDto.serializer(), it) }
@@ -398,14 +398,14 @@ class PulseApi(
             PulseJson.decodeFromString(UsernameCheckDto.serializer(), it)
         }
 
-    /** GET registry/handles.json — the static CDN availability registry (the
+    /** GET registry/handles.json - the static CDN availability registry (the
      *  offline-first fallback when no live gateway answers). */
     suspend fun fetchHandleRegistry(): PulseResult<HandleRegistryDto> =
         get("/registry/handles.json") {
             PulseJson.decodeFromString(HandleRegistryDto.serializer(), it)
         }
 
-    /** GET /api/users?name=X → { user } — case-insensitive lookup (404 when free). */
+    /** GET /api/users?name=X → { user } - case-insensitive lookup (404 when free). */
     suspend fun lookupUserByName(name: String): PulseResult<UserDto> =
         get("/api/users?name=" + java.net.URLEncoder.encode(name, "UTF-8")) {
             PulseJson.decodeFromString(UserDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("user").toString())
@@ -428,14 +428,14 @@ class PulseApi(
 
     /**
      * POST /api/users/login { name } → 200 { user, token } (ROTATES the
-     * stored hash — the old token goes invalid) | 400 "Name is required." |
-     * 404 "No identity with that name on this Pulse." — the honest copy
+     * stored hash - the old token goes invalid) | 400 "Name is required." |
+     * 404 "No identity with that name on this Pulse." - the honest copy
      * surfaces verbatim through the Failure.
      */
     suspend fun login(name: String): PulseResult<UserAuthEnvelopeDto> =
         post("/api/users/login", jsonOf("name" to name)) { decodeUserAuth(it) }
 
-    // ── settings (Wave 8 — src/app/api/settings contract) ───────
+    // settings (Wave 8 - src/app/api/settings contract)
 
     /** GET /api/settings?userId= → { preferences } (defaults merged server-side). */
     suspend fun settings(userId: String): PulseResult<SettingsEnvelopeDto> =
@@ -469,7 +469,7 @@ class PulseApi(
     suspend fun patchAction(path: String, body: JsonObject? = null): PulseResult<Unit> =
         patch(path, body)
 
-    // ── Wave 1 messaging surface (spec §1.1) ───────────────────
+    // Wave 1 messaging surface (spec §1.1)
 
     /** `{message: ChatMessage}` unwrap shared by the edit/pin actions. */
     private fun messageOf(json: String): ChatMessageDto =
@@ -504,7 +504,7 @@ class PulseApi(
             PulseJson.decodeFromString(ThreadPageDto.serializer(), it)
         }
 
-    /** GET /api/conversations/{id}/messages?limit=100&q= — in-conversation search
+    /** GET /api/conversations/{id}/messages?limit=100&q= - in-conversation search
      *  (case-insensitive substring on content + fileName, asc, hasMore:false). */
     suspend fun searchInConversation(conversationId: String, query: String, limit: Int = 100): PulseResult<MessagesPageDto> =
         get(
@@ -514,14 +514,14 @@ class PulseApi(
             PulseJson.decodeFromString(MessagesPageDto.serializer(), it)
         }
 
-    /** POST /api/uploads { dataUrl } → 201 { filePath, imagePath } — base64 data URL, NOT multipart. */
+    /** POST /api/uploads { dataUrl } → 201 { filePath, imagePath } - base64 data URL, NOT multipart. */
     suspend fun uploadMedia(dataUrl: String): PulseResult<UploadResultDto> =
         post("/api/uploads", jsonOf("dataUrl" to dataUrl)) {
             PulseJson.decodeFromString(UploadResultDto.serializer(), it)
         }
 
     /**
-     * GET /api/uploads/{file} → raw bytes — the media-download leg of Wave 1
+     * GET /api/uploads/{file} → raw bytes - the media-download leg of Wave 1
      * (file bubbles save to cacheDir/downloads and open through FileProvider).
      */
     suspend fun downloadMedia(filePath: String): PulseResult<ByteArray> {
@@ -551,7 +551,7 @@ class PulseApi(
             )
         }
 
-    /** POST /api/conversations/self {userId} — the viewer's Note to Self chat. */
+    /** POST /api/conversations/self {userId} - the viewer's Note to Self chat. */
     suspend fun createSelfChat(userId: String): PulseResult<ConversationSummaryDto> =
         post(
             "/api/conversations/self",
@@ -563,7 +563,7 @@ class PulseApi(
             )
         }
 
-    /** GET /api/search?userId=&q= — server message search (≥2 chars upstream). */
+    /** GET /api/search?userId=&q= - server message search (≥2 chars upstream). */
     suspend fun search(userId: String, query: String): PulseResult<SearchPageDto> =
         get(
             "/api/search?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
@@ -572,18 +572,18 @@ class PulseApi(
             PulseJson.decodeFromString(SearchPageDto.serializer(), it)
         }
 
-    /** GET /api/stories?requesterId= — 24h status rail (tolerant subset). */
+    /** GET /api/stories?requesterId= - 24h status rail (tolerant subset). */
     suspend fun stories(requesterId: String): PulseResult<StoriesPageDto> =
         get("/api/stories?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")) {
             PulseJson.decodeFromString(StoriesPageDto.serializer(), it)
         }
 
-    // ── Wave 4 stories — full native status surface (REST only, no sockets) ──
+    // Wave 4 stories - full native status surface (REST only, no sockets)
 
     /**
      * POST /api/stories { requesterId, caption?, background?, imagePath? } → 201 { story }.
      * Text mode sends caption + background (palette key), photo mode sends
-     * imagePath (+ optional caption) — background is NEVER sent for photos
+     * imagePath (+ optional caption) - background is NEVER sent for photos
      * (the server forces "emerald" there and 400s on the combo).
      */
     suspend fun postStory(
@@ -613,7 +613,7 @@ class PulseApi(
             PulseJson.decodeFromString(StoryViewAckDto.serializer(), it)
         }
 
-    /** GET /api/stories/{id}/view?requesterId= — owner-only (403 otherwise), oldest first. */
+    /** GET /api/stories/{id}/view?requesterId= - owner-only (403 otherwise), oldest first. */
     suspend fun storyViewers(storyId: String, requesterId: String): PulseResult<StoryViewersDto> =
         get(
             "/api/stories/$storyId/view?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
@@ -642,13 +642,13 @@ class PulseApi(
         }
     }
 
-    /** GET /api/folders?userId= — Signal-style folder rail. */
+    /** GET /api/folders?userId= - Signal-style folder rail. */
     suspend fun folders(userId: String): PulseResult<FoldersPageDto> =
         get("/api/folders?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
             PulseJson.decodeFromString(FoldersPageDto.serializer(), it)
         }
 
-    /** GET /api/mentions?userId=&limit=50 — @mention feed (count consumer). */
+    /** GET /api/mentions?userId=&limit=50 - @mention feed (count consumer). */
     suspend fun mentions(userId: String): PulseResult<MentionsPageDto> =
         get(
             "/api/mentions?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&limit=50",
@@ -657,8 +657,8 @@ class PulseApi(
         }
 
     /**
-     * DELETE /api/messages/{id} {requesterId} — sender-gated soft delete
-     * (clear chat). The route echoes the tombstoned row as { message } —
+     * DELETE /api/messages/{id} {requesterId} - sender-gated soft delete
+     * (clear chat). The route echoes the tombstoned row as { message } -
      * R2-C item 2 upserts it repo-side (the tombstone's ORIGINAL createdAt
      * can never re-arrive through a since= delta refetch).
      */
@@ -676,7 +676,7 @@ class PulseApi(
         }
     }
 
-    // ── Wave 2 messaging depth (spec §0 — every route exists on the wire) ──
+    // Wave 2 messaging depth (spec §0 - every route exists on the wire)
 
     /** POST /api/messages/{id}/transcribe {requesterId} → { transcript, transcribedAt, cached }. */
     suspend fun transcribe(messageId: String, requesterId: String): PulseResult<TranscribeResultDto> =
@@ -689,12 +689,12 @@ class PulseApi(
         post("/api/messages/$messageId/viewed", jsonOf("userId" to userId)) { messageOf(it) }
 
     /**
-     * R1-W2F — POST /api/messages/{id}/translate {userId, lang?} → { message }.
+     * R1-W2F - POST /api/messages/{id}/translate {userId, lang?} → { message }.
      * The LLM result persists per language server-side (translate/route.ts);
-     * the mapped fresh row carries `translations: [{lang, text}]` — a field
+     * the mapped fresh row carries `translations: [{lang, text}]` - a field
      * ChatMessageDto (tolerantly) ignores, so the TEXT is lifted straight from
      * the wire JSON here, same manual extraction as [unfurl]. `lang` is
-     * omitted — the server defaults to "en". LLM round-trips are slow: 30 s
+     * omitted - the server defaults to "en". LLM round-trips are slow: 30 s
      * cap (iOS parity, timeoutCap: 30).
      */
     suspend fun translate(messageId: String, userId: String): PulseResult<String> =
@@ -741,7 +741,7 @@ class PulseApi(
 
     /**
      * POST /api/messages/{id}/unfurl {userId} → { message: ChatMessage | null }.
-     * null is a VALID result (nothing unfurled) — decoded tolerantly. Own
+     * null is a VALID result (nothing unfurled) - decoded tolerantly. Own
      * runner (the shared `post` helper cannot carry a null parse result).
      */
     suspend fun unfurl(messageId: String, userId: String): PulseResult<ChatMessageDto?> {
@@ -782,7 +782,7 @@ class PulseApi(
         }
 
     /**
-     * POST /api/conversations/{id}/topics {userId, name, emoji?} — 200 existing
+     * POST /api/conversations/{id}/topics {userId, name, emoji?} - 200 existing
      * (case-insensitive dedupe) / 201 new; both carry { topic }.
      */
     suspend fun createTopic(conversationId: String, userId: String, name: String, emoji: String?): PulseResult<TopicDto> =
@@ -800,7 +800,7 @@ class PulseApi(
             )
         }
 
-    /** DELETE /api/topics/{id}?userId= → { ok: true } (creator/admin only — query-param identity). */
+    /** DELETE /api/topics/{id}?userId= → { ok: true } (creator/admin only - query-param identity). */
     suspend fun deleteTopic(topicId: String, userId: String): PulseResult<OkDto> {
         if (!PulseEndpoints.isConfigured) return offlineFailure
         return try {
@@ -818,9 +818,9 @@ class PulseApi(
         }
     }
 
-    // ── Wave 3 native calls — REST /api/calls (call-types.ts parity) ──
+    // Wave 3 native calls - REST /api/calls (call-types.ts parity)
 
-    /** GET /api/calls?userId= → { items } — newest-first history, server cap 50. */
+    /** GET /api/calls?userId= → { items } - newest-first history, server cap 50. */
     suspend fun callLogs(userId: String): PulseResult<CallLogsPageDto> =
         get("/api/calls?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
             PulseJson.decodeFromString(CallLogsPageDto.serializer(), it)
@@ -829,7 +829,7 @@ class PulseApi(
     /**
      * POST /api/calls { userId, conversationId, peerId, kind, status, durationSec? }
      * → 201 { item }. SINGLE-WRITER RULE: the viewer is always the CALLER
-     * (callerId = userId, calleeId = peerId) — the callee never writes.
+     * (callerId = userId, calleeId = peerId) - the callee never writes.
      */
     suspend fun createCallLog(
         userId: String,
@@ -851,13 +851,13 @@ class PulseApi(
             },
         ) { PulseJson.decodeFromString(CallLogCreatedDto.serializer(), it) }
 
-    // ── R8 Task 3-c — group calls + remote push (web R8 parity) ──
+    // R8 Task 3-c - group calls + remote push (web R8 parity)
 
     /**
-     * POST /api/conversations/{id}/calls/ring { userId, kind } — group-call
+     * POST /api/conversations/{id}/calls/ring { userId, kind } - group-call
      * ring fanout: the starting member calls this AFTER gcall:join; online
      * members get the `gcall:ring` relay, offline ones the push. Fire-and-
-     * forget for the caller UX — only validation errors matter here.
+     * forget for the caller UX - only validation errors matter here.
      */
     suspend fun postGroupCallRing(
         conversationId: String,
@@ -873,9 +873,9 @@ class PulseApi(
         )
 
     /**
-     * GET /api/group-call-state?conversationId= — probe for an ONGOING group
+     * GET /api/group-call-state?conversationId= - probe for an ONGOING group
      * call (late room open). Response = { callId, kind, startedAt, members }
-     * or the honest empty { members: [] } — GroupCallStatePayload defaults
+     * or the honest empty { members: [] } - GroupCallStatePayload defaults
      * tolerate both shapes.
      */
     suspend fun groupCallState(conversationId: String): PulseResult<GroupCallStatePayload> =
@@ -883,7 +883,7 @@ class PulseApi(
             PulseJson.decodeFromString(GroupCallStatePayload.serializer(), it)
         }
 
-    /** POST /api/push/register { userId, platform: 'android', token } — upsert the FCM token. */
+    /** POST /api/push/register { userId, platform: 'android', token } - upsert the FCM token. */
     suspend fun registerPushToken(userId: String, token: String): PulseResult<Unit> =
         post(
             "/api/push/register",
@@ -894,20 +894,20 @@ class PulseApi(
             },
         )
 
-    /** DELETE /api/push/register { token } — unregister on rotation/sign-out. */
+    /** DELETE /api/push/register { token } - unregister on rotation/sign-out. */
     suspend fun unregisterPushToken(token: String): PulseResult<Unit> =
         deleteWithJson(
             "/api/push/register",
             buildJsonObject { put("token", token) },
         )
 
-    // ── Wave 5 voice rooms — live-caption transcription ─────────
+    // Wave 5 voice rooms - live-caption transcription
 
     /**
      * POST /api/voice/transcribe {conversationId, requesterId, audioBase64} →
      * { transcript } (≤280 chars). Server: 400 missing fields, 403
      * non-participant, 413 >512K b64, 422 empty, 502 service failure.
-     * ASR is slow by nature — this ONE route carries a 60s per-request
+     * ASR is slow by nature - this ONE route carries a 60s per-request
      * timeout (Ktor 2 `timeout {}` request extension); every other call keeps
      * the plugin defaults untouched.
      */
@@ -926,9 +926,9 @@ class PulseApi(
             timeoutMillis = TRANSCRIBE_TIMEOUT_MS,
         ) { PulseJson.decodeFromString(VoiceTranscriptResultDto.serializer(), it) }
 
-    // ── Wave 6 — social graph & discovery (users / safety / blocks / reports / invites / channels / folders) ──
+    // Wave 6 - social graph & discovery (users / safety / blocks / reports / invites / channels / folders)
 
-    /** PUT helper — the folder membership full-replace is the one PUT on the wire. */
+    /** PUT helper - the folder membership full-replace is the one PUT on the wire. */
     private suspend fun <T> put(path: String, body: JsonObject, parse: ((String) -> T)? = null): PulseResult<T> {
         if (!PulseEndpoints.isConfigured) return offlineFailure
         return try {
@@ -972,7 +972,7 @@ class PulseApi(
         }
     }
 
-    /** DELETE helper with the FULL path (query already embedded — webhook delete's requesterId). */
+    /** DELETE helper with the FULL path (query already embedded - webhook delete's requesterId). */
     private suspend fun <T> deleteAt(path: String, parse: ((String) -> T)? = null): PulseResult<T> {
         if (!PulseEndpoints.isConfigured) return offlineFailure
         return try {
@@ -1014,7 +1014,7 @@ class PulseApi(
         }
     }
 
-    /** DELETE helper with a caller-shaped JSON body (group kick/leave + scheduled cancel — { requesterId }). */
+    /** DELETE helper with a caller-shaped JSON body (group kick/leave + scheduled cancel - { requesterId }). */
     private suspend fun <T> deleteWithJson(path: String, body: JsonObject, parse: ((String) -> T)? = null): PulseResult<T> {
         if (!PulseEndpoints.isConfigured) return offlineFailure
         return try {
@@ -1043,7 +1043,7 @@ class PulseApi(
             PulseJson.decodeFromString(UserEnvelopeDto.serializer(), it).user ?: FullUserDto()
         }
 
-    /** PATCH /api/users/{id} — only non-null fields ride the body ('' clears where the wire allows). */
+    /** PATCH /api/users/{id} - only non-null fields ride the body ('' clears where the wire allows). */
     suspend fun patchUser(userId: String, body: JsonObject): PulseResult<FullUserDto> =
         patch("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8"), body) {
             PulseJson.decodeFromString(UserEnvelopeDto.serializer(), it).user ?: FullUserDto()
@@ -1087,21 +1087,21 @@ class PulseApi(
             PulseJson.decodeFromString(BlockStateDto.serializer(), it)
         }
 
-    /** POST /api/users/{id}/block { userId } — idempotent (actor in the BODY). */
+    /** POST /api/users/{id}/block { userId } - idempotent (actor in the BODY). */
     suspend fun blockUser(targetId: String, actorId: String): PulseResult<BlockStateDto> =
         post(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
             jsonOf("userId" to actorId),
         ) { PulseJson.decodeFromString(BlockStateDto.serializer(), it) }
 
-    /** DELETE /api/users/{id}/block?userId= — idempotent unblock (POST /unblock does NOT exist). */
+    /** DELETE /api/users/{id}/block?userId= - idempotent unblock (POST /unblock does NOT exist). */
     suspend fun unblockUser(targetId: String, actorId: String): PulseResult<BlockStateDto> =
         deleteWithQuery(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
             actorId,
         ) { PulseJson.decodeFromString(BlockStateDto.serializer(), it) }
 
-    /** GET /api/users/{id}/blocks?userId= — self-service list (403 otherwise). */
+    /** GET /api/users/{id}/blocks?userId= - self-service list (403 otherwise). */
     suspend fun blockedAccounts(ownerId: String): PulseResult<BlockedPageDto> =
         get(
             "/api/users/" + java.net.URLEncoder.encode(ownerId, "UTF-8") + "/blocks?userId=" +
@@ -1121,7 +1121,7 @@ class PulseApi(
             },
         ) { PulseJson.decodeFromString(ReportAckDto.serializer(), it) }
 
-    /** GET /api/users/{id}/report?userId= — the reporter's OWN prior reasons (hint). */
+    /** GET /api/users/{id}/report?userId= - the reporter's OWN prior reasons (hint). */
     suspend fun reportReasons(targetId: String, reporterId: String): PulseResult<ReportReasonsPageDto> =
         get(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/report?userId=" +
@@ -1146,7 +1146,7 @@ class PulseApi(
             jsonOf("userId" to userId),
         ) { PulseJson.decodeFromString(InviteJoinResultDto.serializer(), it) }
 
-    /** GET /api/channels?userId=[&mine=1] — directory with viewer-aware flags. */
+    /** GET /api/channels?userId=[&mine=1] - directory with viewer-aware flags. */
     suspend fun channels(userId: String, mineOnly: Boolean): PulseResult<ChannelsPageDto> =
         get(
             "/api/channels?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
@@ -1207,13 +1207,13 @@ class PulseApi(
             PulseJson.decodeFromString(FolderDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("folder").toString())
         }
 
-    /** DELETE /api/folders/[id] → { ok } — membership rows cascade, chats stay. */
+    /** DELETE /api/folders/[id] → { ok } - membership rows cascade, chats stay. */
     suspend fun deleteFolder(folderId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8"), "") {
             PulseJson.decodeFromString(OkDto.serializer(), it)
         }
 
-    /** PUT /api/folders/[id]/conversations { conversationIds[] } — FULL ordered replace. */
+    /** PUT /api/folders/[id]/conversations { conversationIds[] } - FULL ordered replace. */
     suspend fun setFolderConversations(folderId: String, conversationIds: List<String>): PulseResult<OkDto> =
         put(
             "/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8") + "/conversations",
@@ -1227,7 +1227,7 @@ class PulseApi(
             PulseJson.decodeFromString(OkDto.serializer(), it)
         }
 
-    // ── Wave 7 — collaboration & hub (red packets / whiteboard / kanban / events / reminders / games / tournaments / leaderboard / hub economy) ──
+    // Wave 7 - collaboration & hub (red packets / whiteboard / kanban / events / reminders / games / tournaments / leaderboard / hub economy)
 
     private fun redPacketStubOf(json: String): RedPacketStubDto =
         PulseJson.decodeFromString(
@@ -1287,13 +1287,13 @@ class PulseApi(
             },
         ) { PulseJson.decodeFromString(RedPacketCreateResultDto.serializer(), it) }
 
-    /** GET /api/redpackets/{id}?userId= — lazy refund settles on first read after expiry. */
+    /** GET /api/redpackets/{id}?userId= - lazy refund settles on first read after expiry. */
     suspend fun redPacket(packetId: String, userId: String): PulseResult<RedPacketDetailDto> =
         get("/api/redpackets/" + java.net.URLEncoder.encode(packetId, "UTF-8") + "?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
             PulseJson.decodeFromString(RedPacketDetailDto.serializer(), it)
         }
 
-    /** POST /api/redpackets/{id}/grab { userId } — atomic; 409 copy verbatim from the server. */
+    /** POST /api/redpackets/{id}/grab { userId } - atomic; 409 copy verbatim from the server. */
     suspend fun grabRedPacket(packetId: String, userId: String): PulseResult<RedPacketGrabResultDto> =
         post("/api/redpackets/" + java.net.URLEncoder.encode(packetId, "UTF-8") + "/grab", jsonOf("userId" to userId)) {
             PulseJson.decodeFromString(RedPacketGrabResultDto.serializer(), it)
@@ -1307,7 +1307,7 @@ class PulseApi(
         }
     }
 
-    /** POST /api/conversations/{id}/whiteboard — strokes: 1..40 per call, 2..500 points each, 0..1 coords. */
+    /** POST /api/conversations/{id}/whiteboard - strokes: 1..40 per call, 2..500 points each, 0..1 coords. */
     suspend fun postWhiteboardStrokes(
         conversationId: String,
         requesterId: String,
@@ -1329,13 +1329,13 @@ class PulseApi(
             },
         ) { PulseJson.decodeFromString(WhiteboardPostResultDto.serializer(), it) }
 
-    /** POST /api/conversations/{id}/whiteboard {action:'undo'} — deletes only the caller's latest stroke. */
+    /** POST /api/conversations/{id}/whiteboard {action:'undo'} - deletes only the caller's latest stroke. */
     suspend fun undoWhiteboardStroke(conversationId: String, requesterId: String): PulseResult<WhiteboardUndoResultDto> =
         post("/api/conversations/$conversationId/whiteboard", jsonOf("action" to "undo", "requesterId" to requesterId)) {
             PulseJson.decodeFromString(WhiteboardUndoResultDto.serializer(), it)
         }
 
-    /** DELETE /api/conversations/{id}/whiteboard?requesterId= — clear all + resetAt watermark. */
+    /** DELETE /api/conversations/{id}/whiteboard?requesterId= - clear all + resetAt watermark. */
     suspend fun clearWhiteboard(conversationId: String, requesterId: String): PulseResult<WhiteboardClearResultDto> {
         if (!PulseEndpoints.isConfigured) return offlineFailure
         return try {
@@ -1400,13 +1400,13 @@ class PulseApi(
             },
         ) { cardOf(it) }
 
-    /** DELETE /api/kanban/{cardId}?userId= — creator OR group admin (403 copy verbatim). */
+    /** DELETE /api/kanban/{cardId}?userId= - creator OR group admin (403 copy verbatim). */
     suspend fun deleteKanbanCard(cardId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/kanban/" + java.net.URLEncoder.encode(cardId, "UTF-8"), userId) {
             PulseJson.decodeFromString(OkDto.serializer(), it)
         }
 
-    /** GET /api/conversations/{id}/events?userId= — upcoming asc then past desc, merged ≤50. */
+    /** GET /api/conversations/{id}/events?userId= - upcoming asc then past desc, merged ≤50. */
     suspend fun events(conversationId: String, userId: String): PulseResult<EventsPageDto> =
         get("/api/conversations/$conversationId/events?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
             PulseJson.decodeFromString(EventsPageDto.serializer(), it)
@@ -1432,7 +1432,7 @@ class PulseApi(
             },
         ) { eventOf(it) }
 
-    /** DELETE /api/events/{id}?userId= — creator OR group admin. */
+    /** DELETE /api/events/{id}?userId= - creator OR group admin. */
     suspend fun deleteEvent(eventId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8"), userId) {
             PulseJson.decodeFromString(OkDto.serializer(), it)
@@ -1444,13 +1444,13 @@ class PulseApi(
             PulseJson.decodeFromString(RsvpResultDto.serializer(), it)
         }
 
-    /** POST /api/events/{id}/checkin { userId } — window +15 XP; 409 outside window is a real failure. */
+    /** POST /api/events/{id}/checkin { userId } - window +15 XP; 409 outside window is a real failure. */
     suspend fun checkinEvent(eventId: String, userId: String): PulseResult<CheckinResultDto> =
         post("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8") + "/checkin", jsonOf("userId" to userId)) {
             PulseJson.decodeFromString(CheckinResultDto.serializer(), it)
         }
 
-    /** GET /api/reminders?userId=[&due=1] — due = remindAt ≤ now && firedAt null. */
+    /** GET /api/reminders?userId=[&due=1] - due = remindAt ≤ now && firedAt null. */
     suspend fun reminders(userId: String, dueOnly: Boolean): PulseResult<RemindersPageDto> =
         get("/api/reminders?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + if (dueOnly) "&due=1" else "") {
             PulseJson.decodeFromString(RemindersPageDto.serializer(), it)
@@ -1480,19 +1480,19 @@ class PulseApi(
             )
         }
 
-    /** PATCH /api/reminders/{id} { userId } — owner-only resolve; the due loop calls this after the nudge. */
+    /** PATCH /api/reminders/{id} { userId } - owner-only resolve; the due loop calls this after the nudge. */
     suspend fun resolveReminder(reminderId: String, userId: String): PulseResult<ReminderResolveDto> =
         patch("/api/reminders/" + java.net.URLEncoder.encode(reminderId, "UTF-8"), jsonOf("userId" to userId)) {
             PulseJson.decodeFromString(ReminderResolveDto.serializer(), it)
         }
 
-    /** DELETE /api/reminders/{id} { userId } — owner-only cancel. */
+    /** DELETE /api/reminders/{id} { userId } - owner-only cancel. */
     suspend fun deleteReminder(reminderId: String, userId: String): PulseResult<OkDto> =
         deleteWithBody("/api/reminders/" + java.net.URLEncoder.encode(reminderId, "UTF-8"), userId) {
             PulseJson.decodeFromString(OkDto.serializer(), it)
         }
 
-    // ── quick phrases (F-MS-29) ────────────────────────────────────
+    // quick phrases (F-MS-29)
 
     /** GET /api/users/{id}/phrases → { phrases: [{id,text,position}] } (position asc). */
     suspend fun phrases(userId: String): PulseResult<PhrasesPageDto> =
@@ -1542,13 +1542,13 @@ class PulseApi(
     suspend fun game(matchId: String): PulseResult<GameDetailDto> =
         get("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8")) { matchOf(it) }
 
-    /** POST /api/games/{id}/move { userId, cell 0..8 } — 409s for turn/occupied/race surface verbatim. */
+    /** POST /api/games/{id}/move { userId, cell 0..8 } - 409s for turn/occupied/race surface verbatim. */
     suspend fun gameMove(matchId: String, userId: String, cell: Int): PulseResult<GameDetailDto> =
         post("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8") + "/move", jsonOf("userId" to userId, "cell" to cell)) {
             matchOf(it)
         }
 
-    /** POST /api/games/{id}/join { userId } — first-come O seat; 409 when taken. */
+    /** POST /api/games/{id}/join { userId } - first-come O seat; 409 when taken. */
     suspend fun joinGame(matchId: String, userId: String): PulseResult<GameDetailDto> =
         post("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8") + "/join", jsonOf("userId" to userId)) {
             matchOf(it)
@@ -1570,13 +1570,13 @@ class PulseApi(
     suspend fun tournament(tournamentId: String): PulseResult<TournamentSummaryDto> =
         get("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8")) { tournamentOf(it) }
 
-    /** PATCH /api/tournaments/{id} { userId, status:'finished' } — creator/admin, idempotent. */
+    /** PATCH /api/tournaments/{id} { userId, status:'finished' } - creator/admin, idempotent. */
     suspend fun finishTournament(tournamentId: String, userId: String): PulseResult<TournamentSummaryDto> =
         patch("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8"), jsonOf("userId" to userId, "status" to "finished")) {
             tournamentOf(it)
         }
 
-    /** POST /api/tournaments/{id}/join { userId } — idempotent upsert. */
+    /** POST /api/tournaments/{id}/join { userId } - idempotent upsert. */
     suspend fun joinTournament(tournamentId: String, userId: String): PulseResult<TournamentJoinResultDto> =
         post("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8") + "/join", jsonOf("userId" to userId)) {
             PulseJson.decodeFromString(TournamentJoinResultDto.serializer(), it)
@@ -1592,19 +1592,19 @@ class PulseApi(
         return get("/api/leaderboard$q") { PulseJson.decodeFromString(LeaderboardPageDto.serializer(), it) }
     }
 
-    /** GET /api/hub/wallet?userId=[&ledger=30] — upserts a zero wallet; ledger desc. */
+    /** GET /api/hub/wallet?userId=[&ledger=30] - upserts a zero wallet; ledger desc. */
     suspend fun wallet(userId: String, ledger: Int = 30): PulseResult<WalletPageDto> =
         get("/api/hub/wallet?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&ledger=$ledger") {
             PulseJson.decodeFromString(WalletPageDto.serializer(), it)
         }
 
-    /** POST /api/hub/wallet/checkin { userId } — 409 body carries { error, wallet }. */
+    /** POST /api/hub/wallet/checkin { userId } - 409 body carries { error, wallet }. */
     suspend fun checkinWallet(userId: String): PulseResult<CheckinWalletResultDto> =
         post("/api/hub/wallet/checkin", jsonOf("userId" to userId)) {
             PulseJson.decodeFromString(CheckinWalletResultDto.serializer(), it)
         }
 
-    /** POST /api/hub/wallet/transfer { userId, toUsername, amount, note? } — handle lowercased/@-stripped client-side too. */
+    /** POST /api/hub/wallet/transfer { userId, toUsername, amount, note? } - handle lowercased/@-stripped client-side too. */
     suspend fun transferCoins(userId: String, toUsername: String, amount: Long, note: String?): PulseResult<TransferResultDto> =
         post(
             "/api/hub/wallet/transfer",
@@ -1638,7 +1638,7 @@ class PulseApi(
             taskOf(it)
         }
 
-    /** PATCH /api/hub/tasks/{id} { userId, title?, status? } — owner-only. */
+    /** PATCH /api/hub/tasks/{id} { userId, title?, status? } - owner-only. */
     suspend fun updateHubTask(taskId: String, userId: String, title: String?, status: String?): PulseResult<HubTaskDto> =
         patch(
             "/api/hub/tasks/" + java.net.URLEncoder.encode(taskId, "UTF-8"),
@@ -1649,13 +1649,13 @@ class PulseApi(
             },
         ) { taskOf(it) }
 
-    /** DELETE /api/hub/tasks/{id}?userId= — owner-only. */
+    /** DELETE /api/hub/tasks/{id}?userId= - owner-only. */
     suspend fun deleteHubTask(taskId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/hub/tasks/" + java.net.URLEncoder.encode(taskId, "UTF-8"), userId) {
             PulseJson.decodeFromString(OkDto.serializer(), it)
         }
 
-    /** GET /api/hub/market?userId= — open listings + viewer's own (any status), ≤60. */
+    /** GET /api/hub/market?userId= - open listings + viewer's own (any status), ≤60. */
     suspend fun market(userId: String): PulseResult<MarketPageDto> =
         get("/api/hub/market?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
             PulseJson.decodeFromString(MarketPageDto.serializer(), it)
@@ -1686,19 +1686,19 @@ class PulseApi(
         return get("/api/hub/logs$q") { PulseJson.decodeFromString(HubLogsPageDto.serializer(), it) }
     }
 
-    /** GET /api/hub/apps/{appId}/install?userId= — appId is the numeric matrix id as a string. */
+    /** GET /api/hub/apps/{appId}/install?userId= - appId is the numeric matrix id as a string. */
     suspend fun appInstallState(appId: String, userId: String): PulseResult<AppInstallStateDto> =
         get("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
             PulseJson.decodeFromString(AppInstallStateDto.serializer(), it)
         }
 
-    /** POST /api/hub/apps/{appId}/install { userId } — idempotent connect. */
+    /** POST /api/hub/apps/{appId}/install { userId } - idempotent connect. */
     suspend fun installApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
         post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", jsonOf("userId" to userId)) {
             PulseJson.decodeFromString(AppInstallResultDto.serializer(), it)
         }
 
-    /** DELETE /api/hub/apps/{appId}/install { userId } — hard remove. */
+    /** DELETE /api/hub/apps/{appId}/install { userId } - hard remove. */
     suspend fun uninstallApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
         deleteWithBody("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", userId) {
             PulseJson.decodeFromString(AppInstallResultDto.serializer(), it)
@@ -1710,17 +1710,17 @@ class PulseApi(
             PulseJson.decodeFromString(AppCommunityDto.serializer(), it)
         }
 
-    /** POST /api/hub/apps/{appId}/community { userId } — auto-provisions the group; founder = admin. */
+    /** POST /api/hub/apps/{appId}/community { userId } - auto-provisions the group; founder = admin. */
     suspend fun joinAppCommunity(appId: String, userId: String): PulseResult<AppCommunityDto> =
         post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/community", jsonOf("userId" to userId)) {
             PulseJson.decodeFromString(AppCommunityDto.serializer(), it)
         }
 
-    // ── REM-A group governance (web group-info-sheet parity) ──────────
+    // REM-A group governance (web group-info-sheet parity)
 
     /**
      * PATCH /api/conversations/{id} { requesterId, name?/broadcast?/photo?/screenPrivacy? }
-     * Group meta changes — name/broadcast/photo are ADMIN-only server-side,
+     * Group meta changes - name/broadcast/photo are ADMIN-only server-side,
      * screenPrivacy is any-participant. → { conversation: ConversationDetail }.
      */
     suspend fun patchConversation(
@@ -1747,7 +1747,7 @@ class PulseApi(
             )
         }
 
-    /** POST /api/conversations/{id}/members { requesterId, userIds[] } — admin-only add. */
+    /** POST /api/conversations/{id}/members { requesterId, userIds[] } - admin-only add. */
     suspend fun addMembers(conversationId: String, requesterId: String, userIds: List<String>): PulseResult<MembersAddedDto> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members",
@@ -1757,7 +1757,7 @@ class PulseApi(
             },
         ) { PulseJson.decodeFromString(MembersAddedDto.serializer(), it) }
 
-    /** PATCH /api/conversations/{id}/members { requesterId, userId, role } — promote/demote (admin-only). */
+    /** PATCH /api/conversations/{id}/members { requesterId, userId, role } - promote/demote (admin-only). */
     suspend fun setMemberRole(conversationId: String, requesterId: String, userId: String, role: String): PulseResult<Unit> =
         patch(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members",
@@ -1765,7 +1765,7 @@ class PulseApi(
         )
 
     /**
-     * PATCH /api/conversations/{id}/members/{userId} { requesterId, action } —
+     * PATCH /api/conversations/{id}/members/{userId} { requesterId, action } -
      * the same promote/demote contract on the member-scoped path (the web
      * group-info sheet uses THIS route; both exist server-side).
      */
@@ -1781,7 +1781,7 @@ class PulseApi(
             )
         }
 
-    /** DELETE /api/conversations/{id}/members/{userId} { requesterId } — kick a NON-admin member. */
+    /** DELETE /api/conversations/{id}/members/{userId} { requesterId } - kick a NON-admin member. */
     suspend fun kickMember(conversationId: String, requesterId: String, userId: String): PulseResult<GroupMutationAckDto> =
         deleteWithJson(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members/" +
@@ -1790,7 +1790,7 @@ class PulseApi(
         ) { PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it) }
 
     /**
-     * DELETE /api/conversations/{id}/members { requesterId } — LEAVE group.
+     * DELETE /api/conversations/{id}/members { requesterId } - LEAVE group.
      * Self-removal path with last-admin succession; kicking yourself on the
      * member-scoped route is a 400 with a "Leave group" pointer (web parity).
      */
@@ -1800,14 +1800,14 @@ class PulseApi(
             jsonOf("requesterId" to requesterId),
         ) { PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it) }
 
-    /** POST /api/conversations/{id}/invite { requesterId, regenerate? } — admin-only lazy create/regenerate. */
+    /** POST /api/conversations/{id}/invite { requesterId, regenerate? } - admin-only lazy create/regenerate. */
     suspend fun createInvite(conversationId: String, requesterId: String, regenerate: Boolean): PulseResult<InviteCodeDto> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/invite",
             jsonOf("requesterId" to requesterId, "regenerate" to regenerate),
         ) { PulseJson.decodeFromString(InviteCodeDto.serializer(), it) }
 
-    /** PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } — any participant; presets 0/1d/7d/30d. */
+    /** PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } - any participant; presets 0/1d/7d/30d. */
     suspend fun setDisappearingTtl(conversationId: String, userId: String, ttlSeconds: Int): PulseResult<ConversationSummaryDto> =
         patch(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/disappearing",
@@ -1819,16 +1819,16 @@ class PulseApi(
             )
         }
 
-    /** PATCH /api/conversations/{id}/slow-mode { userId, seconds } — admin-only; presets 0/5/10/30/60/300. */
+    /** PATCH /api/conversations/{id}/slow-mode { userId, seconds } - admin-only; presets 0/5/10/30/60/300. */
     suspend fun setSlowMode(conversationId: String, userId: String, seconds: Int): PulseResult<SlowModeAckDto> =
         patch(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/slow-mode",
             jsonOf("userId" to userId, "seconds" to seconds),
         ) { PulseJson.decodeFromString(SlowModeAckDto.serializer(), it) }
 
-    // ── REM-A scheduled sends (F-MS-18) ─────────────────────────────
+    // REM-A scheduled sends (F-MS-18)
 
-    /** GET /api/conversations/{id}/scheduled?userId= — the caller's OWN pending rows, soonest first. */
+    /** GET /api/conversations/{id}/scheduled?userId= - the caller's OWN pending rows, soonest first. */
     suspend fun scheduledMessages(conversationId: String, userId: String): PulseResult<ScheduledPageDto> =
         get(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
@@ -1842,30 +1842,30 @@ class PulseApi(
             jsonOf("senderId" to senderId, "content" to content, "scheduledAt" to scheduledAtIso),
         ) { PulseJson.decodeFromString(ScheduledItemDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("item").toString()) }
 
-    /** DELETE /api/scheduled/{id} { requesterId } → { ok: true } — cancel a pending delayed send. */
+    /** DELETE /api/scheduled/{id} { requesterId } → { ok: true } - cancel a pending delayed send. */
     suspend fun cancelScheduled(scheduledId: String, requesterId: String): PulseResult<OkDto> =
         deleteWithJson(
             "/api/scheduled/" + java.net.URLEncoder.encode(scheduledId, "UTF-8"),
             jsonOf("requesterId" to requesterId),
         ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
 
-    // ── R2-A round-2 parity (automations · webhooks · AI recap · per-viewer privacy) ──
+    // R2-A round-2 parity (automations · webhooks · AI recap · per-viewer privacy)
 
-    /** GET /api/conversations/{id}/automations?userId= — participant-only rows. */
+    /** GET /api/conversations/{id}/automations?userId= - participant-only rows. */
     suspend fun automations(conversationId: String, userId: String): PulseResult<AutomationsPageDto> =
         get(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
                 "/automations?userId=" + java.net.URLEncoder.encode(userId, "UTF-8"),
         ) { PulseJson.decodeFromString(AutomationsPageDto.serializer(), it) }
 
-    /** POST /api/conversations/{id}/automations { userId, trigger, reply } — admin-only → 201 { automation }. */
+    /** POST /api/conversations/{id}/automations { userId, trigger, reply } - admin-only → 201 { automation }. */
     suspend fun createAutomation(conversationId: String, userId: String, trigger: String, reply: String): PulseResult<AutomationEnvelopeDto> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/automations",
             jsonOf("userId" to userId, "trigger" to trigger, "reply" to reply),
         ) { PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), it) }
 
-    /** PATCH /api/automations/{id} { userId, enabled?/trigger? } — admin-only → { automation }. */
+    /** PATCH /api/automations/{id} { userId, enabled?/trigger? } - admin-only → { automation }. */
     suspend fun patchAutomation(automationId: String, userId: String, enabled: Boolean?, trigger: String?): PulseResult<AutomationEnvelopeDto> =
         patch(
             "/api/automations/" + java.net.URLEncoder.encode(automationId, "UTF-8"),
@@ -1876,35 +1876,35 @@ class PulseApi(
             },
         ) { PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), it) }
 
-    /** DELETE /api/automations/{id} { userId } — admin-only → { ok: true }. */
+    /** DELETE /api/automations/{id} { userId } - admin-only → { ok: true }. */
     suspend fun deleteAutomation(automationId: String, userId: String): PulseResult<OkDto> =
         deleteWithJson(
             "/api/automations/" + java.net.URLEncoder.encode(automationId, "UTF-8"),
             jsonOf("userId" to userId),
         ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
 
-    /** GET /api/webhooks?conversationId=&requesterId= → { webhooks[] } — everyone may read. */
+    /** GET /api/webhooks?conversationId=&requesterId= → { webhooks[] } - everyone may read. */
     suspend fun webhooks(conversationId: String, requesterId: String): PulseResult<WebhooksPageDto> =
         get(
             "/api/webhooks?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
                 "&requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
         ) { PulseJson.decodeFromString(WebhooksPageDto.serializer(), it) }
 
-    /** POST /api/webhooks { conversationId, name, requesterId } — admin-only → 201 WebhookDTO. */
+    /** POST /api/webhooks { conversationId, name, requesterId } - admin-only → 201 WebhookDTO. */
     suspend fun createWebhook(conversationId: String, name: String, requesterId: String): PulseResult<WebhookDto> =
         post(
             "/api/webhooks",
             jsonOf("conversationId" to conversationId, "name" to name, "requesterId" to requesterId),
         ) { PulseJson.decodeFromString(WebhookDto.serializer(), it) }
 
-    /** DELETE /api/webhooks/{token}?requesterId= — admin-only → { ok: true }. */
+    /** DELETE /api/webhooks/{token}?requesterId= - admin-only → { ok: true }. */
     suspend fun deleteWebhook(token: String, requesterId: String): PulseResult<OkDto> =
         deleteAt(
             "/api/webhooks/" + java.net.URLEncoder.encode(token, "UTF-8") +
                 "?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
         ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
 
-    /** POST /api/ai/recap { userId, conversationId } — LLM summary of the last ~30 messages. */
+    /** POST /api/ai/recap { userId, conversationId } - LLM summary of the last ~30 messages. */
     suspend fun aiRecap(userId: String, conversationId: String): PulseResult<AiRecapDto> =
         post(
             "/api/ai/recap",
@@ -1913,7 +1913,7 @@ class PulseApi(
         ) { PulseJson.decodeFromString(AiRecapDto.serializer(), it) }
 
     /**
-     * PATCH /api/conversations/{id}/screen-privacy { userId, on } — R42 the
+     * PATCH /api/conversations/{id}/screen-privacy { userId, on } - R42 the
      * per-VIEWER veil flag → { ok, screenPrivacy }.
      */
     suspend fun setMyScreenPrivacy(conversationId: String, userId: String, on: Boolean): PulseResult<ScreenPrivacyAckDto> =
@@ -1926,10 +1926,10 @@ class PulseApi(
         /** Per-request cap for the slow voice-caption ASR round-trip. */
         private const val TRANSCRIBE_TIMEOUT_MS = 60_000L
 
-        /** R1-W2F — LLM translate round-trip cap (iOS parity, timeoutCap: 30). */
+        /** R1-W2F - LLM translate round-trip cap (iOS parity, timeoutCap: 30). */
         private const val TRANSLATE_TIMEOUT_MS = 30_000L
 
-        /** R2-A — the recap LLM round-trip can crawl; same cap class as translate. */
+        /** R2-A - the recap LLM round-trip can crawl; same cap class as translate. */
         private const val RECAP_TIMEOUT_MS = 30_000L
 
         fun jsonOf(vararg pairs: Pair<String, Any?>): JsonObject = buildJsonObject {

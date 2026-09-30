@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — per-conversation chat theme picker (R29-a).
+// Pulse - per-conversation chat theme picker (R29-a).
 // Inline glass panel rendered INSIDE the room info page: wallpaper
 // swatch tiles (same preview visuals as the global Appearance picker,
 // see WALLPAPER_META in conv-theme.ts) + optional tint chips +
@@ -8,7 +7,6 @@
 // Writes go through the app's normal prefs persistence path:
 // usePrefs().save() → optimistic store → debounced PATCH /api/settings
 // → User.preferences JSON blob under `chat.convThemes`.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { motion } from 'framer-motion'
@@ -59,7 +57,7 @@ export function ConvThemePicker({
 
   return (
     <div className="space-y-3 px-2 pt-1 pb-1.5">
-      {/* wallpaper swatches — same tile visuals as Settings → Appearance */}
+      {/* wallpaper swatches - same tile visuals as Settings → Appearance */}
       <div>
         <p className="px-1 pb-1.5 text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase dark:text-zinc-500">
           Wallpaper
@@ -121,7 +119,7 @@ export function ConvThemePicker({
         </p>
       </div>
 
-      {/* tint chips — per-conversation accent over the wallpaper glows */}
+      {/* tint chips - per-conversation accent over the wallpaper glows */}
       <div>
         <p className="px-1 pb-1.5 text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase dark:text-zinc-500">
           Tint
@@ -168,7 +166,7 @@ export function ConvThemePicker({
         </div>
       </div>
 
-      {/* reset — only when an override exists; falls back to the global default */}
+      {/* reset - only when an override exists; falls back to the global default */}
       {override ? (
         <motion.button
           type="button"

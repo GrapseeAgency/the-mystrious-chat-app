@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * R8 Task 3-c — the GROUP call mesh kernels, pinned web-verbatim against
+ * R8 Task 3-c - the GROUP call mesh kernels, pinned web-verbatim against
  * src/components/chat/group-call-overlay.tsx (useGroupCallSession):
  * offer-direction rule, roster sync plan, ICE queue gate, duration format,
  * leave summary copy, ring/ongoing banner copy + gates, and the wire-perfect
@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test
  */
 class GroupCallMeshTest {
 
-    // ── MESH RULE — deterministic lower-id-offers (:287) ─────────────────────
+    // MESH RULE - deterministic lower-id-offers (:287)
 
     @Test
     fun `offer direction - the lexicographically smaller id offers`() {
@@ -27,7 +27,7 @@ class GroupCallMeshTest {
 
     @Test
     fun `offer direction - both sides of a pair agree exactly once`() {
-        // For every unordered pair exactly one direction offers — glare-free.
+        // For every unordered pair exactly one direction offers - glare-free.
         val ids = listOf("u1", "u2", "u10", "zz", "aa")
         for (a in ids) for (b in ids) {
             if (a == b) continue
@@ -37,18 +37,18 @@ class GroupCallMeshTest {
 
     @Test
     fun `offer direction - string sort matches web JS lexicographic order`() {
-        // JS string comparison: "10" < "2" (character-wise) — Kotlin `<` on
+        // JS string comparison: "10" < "2" (character-wise) - Kotlin `<` on
         // String is the same lexicographic rule, so ids like these still agree.
         assertTrue(GroupCallMesh.shouldOffer("10", "2"))
         assertFalse(GroupCallMesh.shouldOffer("2", "10"))
     }
 
-    // ── roster sync plan — applyRoster (:252-312) ────────────────────────────
+    // roster sync plan - applyRoster (:252-312)
 
     @Test
     fun `roster plan - joiner offers to every smaller id it has no pc for`() {
         // Join order b, c, a with me="a": the JOIN ORDER never decides direction
-        // — the id sort does, and "a" sorts below "b"/"c" → I offer to BOTH.
+        // - the id sort does, and "a" sorts below "b"/"c" → I offer to BOTH.
         val plan = GroupCallMesh.planRoster(
             meId = "a",
             rosterIdsJoinOrdered = listOf("b", "c", "a"),
@@ -90,7 +90,7 @@ class GroupCallMeshTest {
         assertEquals(listOf("b"), plan.offerToPeerIds)
     }
 
-    // ── ICE queue gate (:555-578) ────────────────────────────────────────────
+    // ICE queue gate (:555-578)
 
     @Test
     fun `ice - applies immediately only with pc AND remote description`() {
@@ -100,7 +100,7 @@ class GroupCallMeshTest {
         assertFalse(GroupCallMesh.applyIceNow(pcExists = false, remoteDescriptionSet = false))
     }
 
-    // ── duration + summaries (formatCallDuration :97, leaveCall :389-392) ────
+    // duration + summaries (formatCallDuration :97, leaveCall :389-392)
 
     @Test
     fun `duration - M-SS below an hour, H-MM-SS above`() {
@@ -121,7 +121,7 @@ class GroupCallMeshTest {
         assertEquals("You left · 12:34", GroupCallMesh.leaveSummary(754))
     }
 
-    // ── honest copy constants (web :354/:595) ────────────────────────────────
+    // honest copy constants (web :354/:595)
 
     @Test
     fun `copy - mic denied and full-call strings are web-verbatim`() {
@@ -133,7 +133,7 @@ class GroupCallMeshTest {
         assertEquals(8, GroupCallEvents.MAX_PARTICIPANTS)
     }
 
-    // ── banners (:442-465 ring, :940-975 ongoing) ────────────────────────────
+    // banners (:442-465 ring, :940-975 ongoing)
 
     @Test
     fun `ring - title prefers the conversation title with web suffix`() {
@@ -177,7 +177,7 @@ class GroupCallMeshTest {
         assertFalse(GroupCallMesh.shouldShowOngoing(iAmMember = false, sessionIdle = true, notJoinedElsewhere = false))
     }
 
-    // ── C→S wire builders (exact relay expectations) ─────────────────────────
+    // C→S wire builders (exact relay expectations)
 
     @Test
     fun `join payload - kind and user ride top-level like the relay reads them`() {
@@ -220,7 +220,7 @@ class GroupCallMeshTest {
         assertEquals("a", leave["from"]!!.jsonPrimitive.content)
     }
 
-    // ── tolerant S→C decodes (PulseJson ignoreUnknownKeys) ───────────────────
+    // tolerant S→C decodes (PulseJson ignoreUnknownKeys)
 
     @Test
     fun `state payload - decodes join-ordered roster and tolerates unknown keys`() {

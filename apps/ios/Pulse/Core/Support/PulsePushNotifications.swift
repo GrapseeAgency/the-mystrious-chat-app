@@ -2,21 +2,20 @@ import Foundation
 import UIKit
 import UserNotifications
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — remote push client wiring (3-d; server transport = R8-web).
+// Pulse - remote push client wiring (3-d; server transport = R8-web).
 //
 // Three honest layers:
-//   1. Authorization + APNs registration — UNUserNotificationCenter
+//   1. Authorization + APNs registration - UNUserNotificationCenter
 //      requestAuthorization (alert/sound/badge) →
 //      UIApplication.registerForRemoteNotifications(). The hex device
-//      token arrives through the AppDelegate (didRegister/ didFail) —
+//      token arrives through the AppDelegate (didRegister/ didFail) -
 //      failures are LOGGED + SURFACED, never faked (the simulator and
 //      unsigned builds cannot get an APNs token at all).
-//   2. Token forwarding — POST /api/push/register { userId, platform:
+//   2. Token forwarding - POST /api/push/register { userId, platform:
 //      'ios', token } (server upserts by unique token; DELETE removes).
 //      Re-bound on every identity start and every token refresh (APNs
 //      tokens rotate; the launch path re-registers each run).
-//   3. Tap routing — the ALREADY-REGISTERED UNUserNotificationCenter
+//   3. Tap routing - the ALREADY-REGISTERED UNUserNotificationCenter
 //      delegate (PulseReminderNotificationDelegate, PulseApp.init) maps
 //      any userInfo carrying `conversationId` (message | gcall | call
 //      pushes) to PulseDeepLink.room → the RootView linked-room bridge.
@@ -24,30 +23,29 @@ import UserNotifications
 //      remote pushes surface in-app exactly like the local reminders.
 //
 // Credential gate (honest): delivery arms ONLY when Apple-side
-// credentials exist — the aps-environment entitlement + a signed build
+// credentials exist - the aps-environment entitlement + a signed build
 // + the server's PULSE_APNS_* env (transport.ts sendIos). None of that
 // is present in this sandbox; the client wiring above is complete and
 // the failure states stay truthful about it.
-// ─────────────────────────────────────────────────────────────
 
 public enum PulsePushNotifications {
 
-    /// Ask once per install (idempotent — a determined verdict returns
+    /// Ask once per install (idempotent - a determined verdict returns
     /// immediately without a prompt); on grant, register with APNs. The
     /// verdict is logged + published, never asserted. @MainActor: the
-    /// registration center lives on the main actor (every caller — session
-    /// start, RootView, Settings — is main-actor context already).
+    /// registration center lives on the main actor (every caller - session
+    /// start, RootView, Settings - is main-actor context already).
     @MainActor
     public static func activate() {
         PulsePushRegistrationCenter.shared.beginAuthorization()
     }
 
-    /// Identity teardown (Task 5-d) — the mirror of [activate()]: on
+    /// Identity teardown (Task 5-d) - the mirror of [activate()]: on
     /// sign-out / "Forget this viewer" the registry row (token → THAT user)
     /// must die with the identity, or the device keeps receiving the
     /// signed-out account's pushes. Unregisters the stored APNs token
     /// (DELETE /api/push/register { token }) fire-and-forget + clears the
-    /// stored token. Called from PulseSession.stop() — the only path where
+    /// stored token. Called from PulseSession.stop() - the only path where
     /// the viewer becomes nil. @MainActor: same center, same rules.
     @MainActor
     public static func deactivate() {
@@ -55,7 +53,7 @@ public enum PulsePushNotifications {
     }
 }
 
-/// The SwiftUI-lifecycle AppDelegate — captures the APNs token lifecycle
+/// The SwiftUI-lifecycle AppDelegate - captures the APNs token lifecycle
 /// (didRegister / didFail). Wired via @UIApplicationDelegateAdaptor in
 /// PulseApp; registration itself is requested by activate() above.
 public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
@@ -64,7 +62,7 @@ public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // 3-d — arm the PushKit VoIP registry at launch. Arming needs NO
+        // 3-d - arm the PushKit VoIP registry at launch. Arming needs NO
         // credentials; DELIVERY needs the voips entitlement + a server VoIP
         // transport that does not exist yet (the alert-push path is the live
         // one). The report-a-call branch runs ONLY when a real VoIP push
@@ -73,11 +71,11 @@ public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
-    /// R10-b — home-screen quick actions: install PulseSceneDelegate so the
+    /// R10-b - home-screen quick actions: install PulseSceneDelegate so the
     /// shortcut delivery hooks exist (cold launch reads
     /// connectionOptions.shortcutItem, warm launch rides
-    /// windowScene(_:performActionFor:)). The delegate owns NO window —
-    /// SwiftUI's WindowGroup keeps providing the UI — it only observes the
+    /// windowScene(_:performActionFor:)). The delegate owns NO window -
+    /// SwiftUI's WindowGroup keeps providing the UI - it only observes the
     /// shortcuts into PulseQuickActions.pendingRoute, which RootView
     /// consumes. This is the minimal scene-configuration touch that keeps
     /// the SwiftUI lifecycle intact.
@@ -91,7 +89,7 @@ public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
         return configuration
     }
 
-    /// The APNs device token — converted to the lowercase hex string the
+    /// The APNs device token - converted to the lowercase hex string the
     /// server transport addresses pushes with (transport.ts sendIos).
     public func application(
         _ application: UIApplication,
@@ -101,7 +99,7 @@ public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
     }
 
     /// Registration refused (simulator, unsigned build, missing entitlement,
-    /// provisioning mismatch) — the honest failure path, never faked.
+    /// provisioning mismatch) - the honest failure path, never faked.
     public func application(
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
@@ -148,7 +146,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         }
     }
 
-    // ── honest status copy (Settings row + logs) ─────────────
+    // honest status copy (Settings row + logs)
 
     public var statusLabel: String {
         switch status {
@@ -172,7 +170,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         case .permissionDenied:
             return "Enable notifications for Pulse in Settings to receive pushes."
         case .tokenCaptured:
-            return "Device token captured — it registers as soon as a server connection is configured."
+            return "Device token captured - it registers as soon as a server connection is configured."
         case .registering:
             return "Registering this device for pushes…"
         case .registered:
@@ -184,7 +182,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         }
     }
 
-    // ── lifecycle entry points ───────────────────────────────
+    // lifecycle entry points
 
     /// Authorization → registerForRemoteNotifications. Honest verdicts.
     /// Idempotent: a determined permission verdict returns immediately
@@ -192,7 +190,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
     /// rotated APNs token re-binds.
     func beginAuthorization() {
         if status == .registered {
-            // Already authorized + bound — just refresh the token.
+            // Already authorized + bound - just refresh the token.
             UIApplication.shared.registerForRemoteNotifications()
             return
         }
@@ -208,16 +206,16 @@ public final class PulsePushRegistrationCenter: ObservableObject {
                 }
                 guard granted else {
                     self.status = .permissionDenied
-                    NSLog("Pulse push: authorization denied — remote pushes stay silent")
+                    NSLog("Pulse push: authorization denied - remote pushes stay silent")
                     return
                 }
-                NSLog("Pulse push: authorization granted — registering for remote notifications")
+                NSLog("Pulse push: authorization granted - registering for remote notifications")
                 UIApplication.shared.registerForRemoteNotifications()
             }
         }
     }
 
-    /// APNs answered with a token — hex-encode, persist, forward.
+    /// APNs answered with a token - hex-encode, persist, forward.
     public func noteDeviceToken(_ token: Data) {
         let hex = token.map { String(format: "%02x", $0) }.joined()
         guard !hex.isEmpty else {
@@ -231,31 +229,31 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         scheduleRegistration()
     }
 
-    /// APNs refused registration — honest, logged, surfaced.
+    /// APNs refused registration - honest, logged, surfaced.
     public func noteRegistrationFailed(_ error: Error) {
         status = .failed("Push registration failed: \(error.localizedDescription)")
         NSLog("Pulse push: registration FAILED %@", error.localizedDescription)
     }
 
-    /// RootView/session handoff — the API client provider (rebuilt per
+    /// RootView/session handoff - the API client provider (rebuilt per
     /// gateway override + identity). Triggers a pending registration.
     public func attach(apiProvider: @escaping () -> PulseAPIClient?) {
         self.apiProvider = apiProvider
         scheduleRegistration()
     }
 
-    /// A new identity started — the token must re-bind to THIS user.
+    /// A new identity started - the token must re-bind to THIS user.
     public func noteViewerChanged() {
         lastRegisteredUserId = nil
         scheduleRegistration()
     }
 
-    /// Task 5-d — identity teardown (sign-out). Order matters and is the
+    /// Task 5-d - identity teardown (sign-out). Order matters and is the
     /// point: the stored token is cleared SYNCHRONOUSLY (so a racing
-    /// registration can never re-bind the stale token after a re-login —
+    /// registration can never re-bind the stale token after a re-login -
     /// the next activation fetches a fresh APNs token), then the
     /// DELETE /api/push/register { token } fires fire-and-forget. Sign-out
-    /// NEVER blocks on the network and NEVER fails because of it — failures
+    /// NEVER blocks on the network and NEVER fails because of it - failures
     /// are logged, honestly (fail-closed in the privacy-safe direction:
     /// local state is dead either way; a failed DELETE can only leave the
     /// SERVER row behind, which the next successful register upserts away).
@@ -269,15 +267,15 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         UserDefaults.standard.removeObject(forKey: Self.tokenKey)
         status = .idle
         guard let hex, !hex.isEmpty else {
-            NSLog("Pulse push: deactivate — no stored token, nothing to unregister")
+            NSLog("Pulse push: deactivate - no stored token, nothing to unregister")
             return
         }
         guard PulseEndpoints.isConfigured else {
-            NSLog("Pulse push: deactivate — no server configured; a stale registry row (if any) cannot be removed from here")
+            NSLog("Pulse push: deactivate - no server configured; a stale registry row (if any) cannot be removed from here")
             return
         }
         guard let api = apiProvider?() else {
-            NSLog("Pulse push: deactivate — no API client attached; a stale registry row (if any) cannot be removed from here")
+            NSLog("Pulse push: deactivate - no API client attached; a stale registry row (if any) cannot be removed from here")
             return
         }
         Task {
@@ -285,7 +283,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
                 try await api.unregisterPushToken(token: hex)
                 NSLog("Pulse push: device token unregistered (sign-out)")
             } catch {
-                NSLog("Pulse push: unregister DELETE failed — the server row may linger until the next register: %@", error.localizedDescription)
+                NSLog("Pulse push: unregister DELETE failed - the server row may linger until the next register: %@", error.localizedDescription)
             }
         }
     }
@@ -299,7 +297,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
 
     private func registerCurrentToken() async {
         guard let hex = deviceTokenHex, !hex.isEmpty else { return }
-        guard let apiProvider else { return } // no session attached yet — waits
+        guard let apiProvider else { return } // no session attached yet - waits
         guard PulseEndpoints.isConfigured else {
             status = .gatewayUnconfigured
             return
@@ -307,7 +305,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         guard let api = apiProvider() else { return }
         let userId = api.userId
         guard !userId.isEmpty else {
-            // No identity yet — registers on noteViewerChanged.
+            // No identity yet - registers on noteViewerChanged.
             status = .tokenCaptured
             return
         }
@@ -318,13 +316,13 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         do {
             try await api.registerPushToken(userId: userId, platform: "ios", token: hex)
             if Task.isCancelled {
-                // Task 5-d — deactivate() (sign-out) or a re-schedule
+                // Task 5-d - deactivate() (sign-out) or a re-schedule
                 // superseded this run AFTER the request may have landed: the
                 // server row may exist again, but the identity it belonged to
                 // is gone. Log the residue honestly, never fake a
-                // "registered" state for a signed-out device — the next
+                // "registered" state for a signed-out device - the next
                 // successful register rebinds, the next sign-out deletes.
-                NSLog("Pulse push: register landed after cancellation — server row may exist; local state stays reset")
+                NSLog("Pulse push: register landed after cancellation - server row may exist; local state stays reset")
                 return
             }
             lastRegisteredUserId = userId
@@ -333,7 +331,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
             NSLog("Pulse push: device registered for user %@", userId)
         } catch {
             if Task.isCancelled {
-                // Superseded/deactivated mid-flight — no state writes after
+                // Superseded/deactivated mid-flight - no state writes after
                 // deactivate() has already reset everything.
                 NSLog("Pulse push: register cancelled (superseded/deactivated)")
                 return

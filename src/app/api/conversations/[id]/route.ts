@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id] — detail · group rename · photo (R33-b)
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id] - detail · group rename · photo (R33-b)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -19,7 +17,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-/** R33-b — accepted stored photo paths: "/api/uploads/<uuid>.<image-ext>". */
+/** R33-b - accepted stored photo paths: "/api/uploads/<uuid>.<image-ext>". */
 const PHOTO_PATH_RE = /^\/api\/uploads\/([A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp))$/
 
 /**
@@ -51,8 +49,8 @@ export async function GET(req: Request, { params }: RouteCtx) {
  * Group-only meta changes: `name` renames; `broadcast` toggles announcement
  * mode (Discord stage / Telegram channel: only admins may post while on);
  * `photo` (R33-b) sets the channel/group photo to a validated
- * "/api/uploads/<file>" path — '' clears it. ADMINS ONLY.
- * R38 — `screenPrivacy` (Signal screen security: frost the message area while
+ * "/api/uploads/<file>" path - '' clears it. ADMINS ONLY.
+ * R38 - `screenPrivacy` (Signal screen security: frost the message area while
  * the Pulse window is unfocused) is gated like the disappearing TTL
  * (/api/conversations/[id]/disappearing): ANY participant of ANY conversation
  * type (groups and DMs) may toggle it. Honest deviation note: on Signal this
@@ -81,7 +79,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
       )
     }
   }
-  // R33-b — photo is additive: '' clears (stored null), a validated upload
+  // R33-b - photo is additive: '' clears (stored null), a validated upload
   // path sets it, anything else is a 400.
   const hasPhoto = body.photo !== undefined
   let photo: string | null = null
@@ -98,12 +96,12 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
       )
     }
   }
-  // R38 — screenPrivacy mirrors broadcast's boolean validation; the TTL-style
+  // R38 - screenPrivacy mirrors broadcast's boolean validation; the TTL-style
   // participant-level gating (no admin check) happens below.
   const hasScreenPrivacy = typeof body.screenPrivacy === 'boolean'
   if (!hasName && !hasBroadcast && !hasPhoto && !hasScreenPrivacy) {
     return NextResponse.json(
-      { error: 'Nothing to update — provide name, broadcast, photo and/or screenPrivacy.' },
+      { error: 'Nothing to update - provide name, broadcast, photo and/or screenPrivacy.' },
       { status: 400 },
     )
   }
@@ -112,7 +110,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!conv) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
-  // Group-only rules apply to name/broadcast/photo only — a DM may toggle
+  // Group-only rules apply to name/broadcast/photo only - a DM may toggle
   // screenPrivacy (Signal screen security is a DM-relevant setting too).
   if (!conv.isGroup && (hasName || hasBroadcast || hasPhoto)) {
     return NextResponse.json(

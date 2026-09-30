@@ -23,10 +23,10 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 
 /**
- * R5-B ITEM 1 — the composer EMOJI picker (web chat-room.tsx:5382-5418).
+ * R5-B ITEM 1 - the composer EMOJI picker (web chat-room.tsx:5382-5418).
  *
  * This is a DRAFT-EDIT engine, deliberately distinct from the sticker picker
- * (StickerPickerSheet — F-MS-24): stickers SEND immediately as kind:"sticker"
+ * (StickerPickerSheet - F-MS-24): stickers SEND immediately as kind:"sticker"
  * messages, while this popup only APPENDS the chosen emoji to the current
  * draft text at cursor end and keeps the composer focused. The 24 choices are
  * byte-identical to web EMOJI_PICKER_CHOICES (src/lib/pulse-utils.ts:146-149),
@@ -46,7 +46,7 @@ internal val EMOJI_GRID_COLUMNS = 8
  * Compact emoji popup anchored above the composer. Web parity details:
  * rounded-2xl container, p-2 (8dp) padding, 8-col grid with 2dp gaps,
  * ~text-xl glyphs, per-cell aria-label "Insert {emoji}". Tapping a cell does
- * NOT close the popup (the web keeps it open for multi-append combos) —
+ * NOT close the popup (the web keeps it open for multi-append combos) -
  * dismissal is an outside tap or a second tap on the smile button.
  */
 @Composable

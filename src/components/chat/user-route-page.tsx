@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — standalone user profile route page (R27-a).
+// Pulse - standalone user profile route page (R27-a).
 // Mounted globally by the shell; self-driving from the hash:
 //   • reads the target id from '#/user/<id>' itself
 //   • subscribes to hash changes (useHashRoute → render gate)
@@ -13,9 +12,8 @@
 // Room-opening contract (Message / shared-group rows):
 //   • pass `onOpenConversation` to hand the conversation id to the
 //     shell (the page then backs out so the shell room shows); or
-//   • mount with no props — the page hosts <ChatRoom> itself.
-// Zero mocks — every value comes from Prisma-backed REST APIs.
-// ─────────────────────────────────────────────────────────────
+//   • mount with no props - the page hosts <ChatRoom> itself.
+// Zero mocks - every value comes from Prisma-backed REST APIs.
 'use client'
 
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
@@ -65,13 +63,13 @@ interface CreateConversationResponse {
 
 export interface UserRoutePageProps {
   /**
-   * Shell handoff — called with the conversation id after the DM is
+   * Shell handoff - called with the conversation id after the DM is
    * created/deduped. Omit it to let this page host the chat room itself.
    */
   onOpenConversation?: (conversationId: string, unreadAnchorMs?: number | null) => void
 }
 
-/** "Active 5m ago" — real relative stamp from lastSeenAt (refreshes every 30s). */
+/** "Active 5m ago" - real relative stamp from lastSeenAt (refreshes every 30s). */
 function activeAgoLabel(iso: string, now: number): string {
   const t = Date.parse(iso)
   if (Number.isNaN(t)) return 'Active a while ago'
@@ -88,7 +86,7 @@ function activeAgoLabel(iso: string, now: number): string {
 
 export default function UserRoutePage(props: UserRoutePageProps = {}) {
   const { path, back } = useHashNav()
-  // '#/user/<id>' — self-parsed from the live hash, reactive to changes
+  // '#/user/<id>' - self-parsed from the live hash, reactive to changes
   const match = /^\/user\/([A-Za-z0-9_-]+)$/.exec(path)
   const userId = match?.[1] ?? null
 
@@ -124,7 +122,7 @@ function UserPageBody({
   const queryClient = useQueryClient()
   const reducedMotion = useReducedMotion()
   const me = usePulseSession((s) => s.user)
-  // safe presence read — the page may mount before/outside the realtime provider
+  // safe presence read - the page may mount before/outside the realtime provider
   const realtime = useContext(PulseRealtimeContext)
   const onlineIds = realtime?.onlineIds ?? EMPTY_ONLINE_IDS
 
@@ -190,7 +188,7 @@ function UserPageBody({
     )
   }, [conversations.data, user])
 
-  /** open a known conversation — shell handoff when wired, in-page room otherwise */
+  /** open a known conversation - shell handoff when wired, in-page room otherwise */
   const openRoom = (conversationId: string) => {
     haptic(12)
     if (onOpenConversation) {
@@ -220,7 +218,7 @@ function UserPageBody({
     },
   })
 
-  // R47 — block pair-state + toggle (mirrors the profile sheet's row).
+  // R47 - block pair-state + toggle (mirrors the profile sheet's row).
   const blockQ = useQuery({
     queryKey: ['block-pair', me?.id ?? '-', userId],
     queryFn: async (): Promise<boolean> => {
@@ -250,7 +248,7 @@ function UserPageBody({
       haptic(14)
       if (me) {
         void queryClient.invalidateQueries({ queryKey: ['block-pair', me.id, userId] })
-        // DM dead-end notices read detail.dmBlocked — refresh live rooms too
+        // DM dead-end notices read detail.dmBlocked - refresh live rooms too
         void queryClient.invalidateQueries({ queryKey: ['conversation'] })
       }
       toast.success(next ? `Blocked ${user?.name ?? 'account'}` : `Unblocked ${user?.name ?? 'account'}`)
@@ -285,7 +283,7 @@ function UserPageBody({
     }
   }
 
-  // ── loading skeleton ──────────────────────────────────────
+  // loading skeleton 
   if (userQuery.isPending) {
     return (
       <div className="flex min-h-0 flex-1 flex-col" role="status" aria-label="Loading profile">
@@ -301,7 +299,7 @@ function UserPageBody({
     )
   }
 
-  // ── not found ─────────────────────────────────────────────
+  // not found 
   if (userQuery.isError || !user) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
@@ -335,7 +333,7 @@ function UserPageBody({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {/* floating back — glass pill over the cover, above safe area */}
+      {/* floating back - glass pill over the cover, above safe area */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-start px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <button
           type="button"
@@ -351,7 +349,7 @@ function UserPageBody({
       </div>
 
       <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
-        {/* ── color cover from the identity palette ── */}
+        {/*  color cover from the identity palette  */}
         <motion.div
           initial={reducedMotion ? false : { opacity: 0, scale: 1.04 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -365,7 +363,7 @@ function UserPageBody({
           <span aria-hidden className="absolute -bottom-16 -right-8 size-44 rounded-full bg-black/20 blur-2xl" />
         </motion.div>
 
-        {/* ── identity ── */}
+        {/*  identity  */}
         <motion.div
           initial={reducedMotion ? false : 'hidden'}
           animate="show"
@@ -464,7 +462,7 @@ function UserPageBody({
             {user.about?.trim() ? user.about : 'No bio yet'}
           </motion.p>
 
-          {/* ── real activity stamps ── */}
+          {/*  real activity stamps  */}
           <motion.div
             variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { ...spring.soft, delay: 0.12 } } }}
             className="glass-deep glass-sheen mt-4 overflow-hidden rounded-3xl p-1.5"
@@ -486,7 +484,7 @@ function UserPageBody({
             </div>
           </motion.div>
 
-          {/* ── shared rooms (real membership overlap) ── */}
+          {/*  shared rooms (real membership overlap)  */}
           <motion.div
             variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { ...spring.soft, delay: 0.15 } } }}
             className="glass-deep glass-sheen mt-3 overflow-hidden rounded-3xl p-1.5"
@@ -496,7 +494,7 @@ function UserPageBody({
             </p>
             {sharedGroups.length === 0 ? (
               <p className="px-2.5 pb-2.5 pt-1 text-[12px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                No shared groups yet — say hello in a room you both joined.
+                No shared groups yet - say hello in a room you both joined.
               </p>
             ) : (
               <ul>
@@ -553,7 +551,7 @@ function UserPageBody({
             ) : null}
           </motion.div>
 
-          {/* ── actions ── */}
+          {/*  actions  */}
           <motion.div
             variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { ...spring.soft, delay: 0.18 } } }}
             className="mt-4 flex items-center gap-2"
@@ -585,7 +583,7 @@ function UserPageBody({
             </motion.button>
           </motion.div>
 
-          {/* ── R47 — block / unblock (danger quiet row) + R48 report (expanding panel) ── */}
+          {/*  R47 - block / unblock (danger quiet row) + R48 report (expanding panel)  */}
           {me && user.id !== me.id ? (
             <>
               <motion.button
@@ -645,7 +643,7 @@ function UserPageBody({
         </motion.div>
       </div>
 
-      {/* ── in-page room host (used when the shell handoff prop is not wired) ── */}
+      {/*  in-page room host (used when the shell handoff prop is not wired)  */}
       <AnimatePresence>
         {roomId !== null && me ? (
           <motion.div

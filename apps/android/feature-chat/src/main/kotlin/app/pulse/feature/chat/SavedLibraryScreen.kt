@@ -67,7 +67,7 @@ import kotlinx.coroutines.launch
 /**
  * Saved library state holder (Wave 2, spec §1 row 14): refresh → Room-cached
  * flow, local search over sender/content/conversation (the server has NO
- * pagination/search — the fetch is capped at 100 newest), unsave via the save
+ * pagination/search - the fetch is capped at 100 newest), unsave via the save
  * toggle. "Open original" = navigate room + jump-to-message (the shell wires
  * the flash).
  */
@@ -149,7 +149,7 @@ class SavedLibraryViewModel @Inject constructor(
 }
 
 /**
- * Saved library — the Wave 2 dock "Saved" destination. Honest states end to
+ * Saved library - the Wave 2 dock "Saved" destination. Honest states end to
  * end: loading spinner, error card with Retry, empty state (Star + hint),
  * searchable rows with kind-aware snippets, unsave with confirm, and tap →
  * open the room jumped to the original message.
@@ -389,7 +389,7 @@ private fun SavedRow(
     }
 }
 
-/** "14:32" today, "Mar 3" older — list-row rhythm (no wire ISO here, epoch ms). */
+/** "14:32" today, "Mar 3" older - list-row rhythm (no wire ISO here, epoch ms). */
 private fun savedDateLabel(savedAtMs: Long): String {
     if (savedAtMs <= 0L) return ""
     val zone = ZoneId.systemDefault()

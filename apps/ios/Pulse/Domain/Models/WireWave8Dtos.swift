@@ -1,7 +1,6 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Wave 8 — platform & hardening wire DTOs (spec §7).
+// Wave 8 - platform & hardening wire DTOs (spec §7).
 // Mirror of the live-verified gateway contracts:
 //   • POST /api/users            → 201 { user: WireUser, token }
 //   • POST /api/users/login      → 200 { user, token } | 404 { error }
@@ -10,11 +9,10 @@ import Foundation
 // Tolerant decode house style: only id-critical fields stay required;
 // everything else decodes as nil/default so older relays never crash
 // the surface. `token` decodes tolerantly (the web ignores it today).
-// ─────────────────────────────────────────────────────────────
 
 // MARK: - Session tokens (A-1)
 
-/// { user, token } — create + login envelope. `token` is the raw 32-byte
+/// { user, token } - create + login envelope. `token` is the raw 32-byte
 /// hex session secret (shown/persisted exactly once; the server stores
 /// only its sha256). Optional so a pre-token gateway still decodes.
 public struct WireAuthEnvelope: Codable, Sendable {
@@ -24,7 +22,7 @@ public struct WireAuthEnvelope: Codable, Sendable {
 
 // MARK: - Conversation themes (R1-W2B F-FX-05)
 
-/// One conversation's theme override — web ConvTheme parity (src/lib/conv-theme.ts:28-31):
+/// One conversation's theme override - web ConvTheme parity (src/lib/conv-theme.ts:28-31):
 /// `wallpaper` uses the exact global wallpaper token set, `tint` is the
 /// optional per-room accent. Stored inside the prefs blob under
 /// `chat.convThemes` (conv-theme.ts:22) as { conversationId: theme }.
@@ -42,7 +40,7 @@ public struct WireConvTheme: Codable, Equatable, Sendable {
 
 /// Device-side mirror of repo-root src/lib/prefs-defaults.ts PulsePrefs.
 /// Every field is optional: a missing key decodes as nil (defaults apply),
-/// an unknown key is ignored by synthesis — the exact tolerance of the
+/// an unknown key is ignored by synthesis - the exact tolerance of the
 /// web's mergePrefs. Values are kept as raw strings so invalid server
 /// tokens ("xl" radius) can be clamped by PulseWave8Logic.mergedPrefs
 /// instead of failing the whole decode.
@@ -57,7 +55,7 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
     public var readReceipts: Bool?
     public var typingVisible: Bool?
     public var reducedMotion: Bool?
-    /// R1-W2B F-FX-05 — per-conversation theme map; the wire key is the
+    /// R1-W2B F-FX-05 - per-conversation theme map; the wire key is the
     /// web's dotted "chat.convThemes" (prefs-defaults.ts:35), so this field
     /// carries an explicit CodingKey. Absent/unknown entries decode nil.
     public var convThemes: [String: WireConvTheme]?
@@ -94,7 +92,7 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
         self.convThemes = convThemes
     }
 
-    /// PATCH body fragment — only the non-nil fields enter
+    /// PATCH body fragment - only the non-nil fields enter
     /// { userId, preferences: Partial<PulsePrefs> } (server shallow-merges).
     public func asPatchBody() -> [String: Any] {
         var body: [String: Any] = [:]
@@ -108,7 +106,7 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
         if let readReceipts { body["readReceipts"] = readReceipts }
         if let typingVisible { body["typingVisible"] = typingVisible }
         if let reducedMotion { body["reducedMotion"] = reducedMotion }
-        // F-FX-05 — the map rides the web's dotted key; only a non-nil map
+        // F-FX-05 - the map rides the web's dotted key; only a non-nil map
         // enters the patch (server shallow-merges + sanitizeConvThemeMap).
         if let convThemes {
             var wireMap: [String: Any] = [:]
@@ -124,7 +122,7 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
     }
 }
 
-/// { preferences } — GET/PATCH /api/settings envelope.
+/// { preferences } - GET/PATCH /api/settings envelope.
 public struct WirePrefsEnvelope: Codable, Sendable {
     public let preferences: WirePulsePrefs?
 }

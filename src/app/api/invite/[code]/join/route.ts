@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/invite/[code]/join — redeem an invite code (join group)
-// ─────────────────────────────────────────────────────────────
+// /api/invite/[code]/join - redeem an invite code (join group)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { notifySocket, safeJson, strField } from '@/lib/serializers'

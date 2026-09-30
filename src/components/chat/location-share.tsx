@@ -1,12 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — location share (WhatsApp/Telegram-grade).
+// Pulse - location share (WhatsApp/Telegram-grade).
 // navigator.geolocation → confirm sheet (coords + label) →
 // REAL message: kind:'location', payload {lat,lng,label}.
 // Bubbles render a stylized CSS map card with a pulsing pin and
-// an "Open in Google Maps" deep link. No static map images —
+// an "Open in Google Maps" deep link. No static map images -
 // the card is pure CSS so it works offline and never calls
 // third-party tile servers.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -199,8 +197,8 @@ export function LocationShareSheet({
           setStatus('error')
           setErrorMsg(
             error.code === error.PERMISSION_DENIED
-              ? 'Location access was denied — enable it in your browser settings to share a pin.'
-              : 'Could not determine your location — check connection and try again.',
+              ? 'Location access was denied - enable it in your browser settings to share a pin.'
+              : 'Could not determine your location - check connection and try again.',
           )
         },
         { enableHighAccuracy: true, timeout: 9000, maximumAge: 30_000 },
@@ -269,8 +267,8 @@ export function LocationShareSheet({
                           setStatus('error')
                           setErrorMsg(
                             error.code === error.PERMISSION_DENIED
-                              ? 'Location access was denied — enable it in your browser settings to share a pin.'
-                              : 'Could not determine your location — check connection and try again.',
+                              ? 'Location access was denied - enable it in your browser settings to share a pin.'
+                              : 'Could not determine your location - check connection and try again.',
                           )
                         },
                         { enableHighAccuracy: true, timeout: 9000, maximumAge: 30_000 },

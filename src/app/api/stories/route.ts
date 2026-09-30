@@ -1,14 +1,12 @@
-// ─────────────────────────────────────────────────────────────
-// /api/stories — BeReal/Telegram/WhatsApp-style 24h status stories
+// /api/stories - BeReal/Telegram/WhatsApp-style 24h status stories
 //
 // NOTE ON RAW SQL: this route talks to the real StatusStory/StoryView
 // tables through `db.$queryRaw` / `db.$executeRaw` instead of the typed
 // delegates. The tables were pushed AFTER the long-running dev server
 // process generated its (cached) Prisma client, so `db.statusStory` is
-// not yet defined in-process — raw SQL hits the identical schema and
+// not yet defined in-process - raw SQL hits the identical schema and
 // keeps working unchanged once a fresh client is loaded.
 // SQLite DateTime columns are stored as INTEGER epoch milliseconds.
-// ─────────────────────────────────────────────────────────────
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { Prisma } from '../../../../prisma/generated-client'
@@ -17,15 +15,15 @@ import { AVATAR_COLORS, safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
 
-/** Stories live exactly 24h — hard-filtered by expiresAt everywhere. */
+/** Stories live exactly 24h - hard-filtered by expiresAt everywhere. */
 const STORY_TTL_MS = 24 * 60 * 60 * 1000
 
 export const STORY_CAPTION_MAX = 280
 
-/** Uploads filenames only (uuid.ext) — matches /api/uploads/[file] whitelist. */
+/** Uploads filenames only (uuid.ext) - matches /api/uploads/[file] whitelist. */
 const STORY_IMAGE_RE = /^[A-Za-z0-9-]+\.(jpg|jpeg|png|webp)$/
 
-// ── Row types + serialization ───────────────────────────────
+// Row types + serialization 
 
 interface StoryRow {
   id: string
@@ -220,7 +218,7 @@ export async function POST(req: Request) {
     )
   }
 
-  // Gradient background is a text-story affordance — validated against the palette.
+  // Gradient background is a text-story affordance - validated against the palette.
   let background = 'emerald'
   if (!hasImage) {
     const requested = strField(body.background)

@@ -60,8 +60,12 @@ import app.pulse.domain.model.InviteJoinOutcome
 import app.pulse.domain.model.InvitePreview
 import app.pulse.domain.model.MentionItem
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.protocol.FOLDER_ICON_DEFAULT
+import app.pulse.protocol.FOLDER_ICON_IDS
+import app.pulse.protocol.folderIconId
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.pulseFolderGlyph
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -73,7 +77,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
-// ── Mentions (F-SM-03) ───────────────────────────────────────────────────
+// Mentions (F-SM-03)
 
 @HiltViewModel
 class MentionsViewModel @Inject constructor(
@@ -100,7 +104,7 @@ class MentionsViewModel @Inject constructor(
     }
 }
 
-/** Mentions feed — the 14-day server feed IS the badge count (no clear-on-open; no ack API exists, web parity). */
+/** Mentions feed - the 14-day server feed IS the badge count (no clear-on-open; no ack API exists, web parity). */
 @Composable
 fun MentionsScreen(
     onBack: () -> Unit,
@@ -123,7 +127,7 @@ fun MentionsScreen(
             Column {
                 Text("Mentions", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                 Text(
-                    "Messages that mention you — tap a row to jump in",
+                    "Messages that mention you - tap a row to jump in",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                 )
@@ -147,7 +151,7 @@ fun MentionsScreen(
                 Text("No mentions yet", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "No mentions yet — when someone @mentions you, it shows up here.",
+                    "No mentions yet - when someone @mentions you, it shows up here.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                 )
@@ -214,7 +218,7 @@ private fun stampOf(iso: String): String = runCatching {
     DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(iso))
 }.getOrDefault("")
 
-// ── Channels (F-CH-01…03) ────────────────────────────────────────────────
+// Channels (F-CH-01…03)
 
 @HiltViewModel
 class ChannelsViewModel @Inject constructor(
@@ -256,7 +260,7 @@ class ChannelsViewModel @Inject constructor(
                 }
                 .onFailure {
                     refresh()
-                    _state.value = _state.value.copy(busyId = null, notice = "Could not subscribe — try again")
+                    _state.value = _state.value.copy(busyId = null, notice = "Could not subscribe - try again")
                 }
         }
     }
@@ -272,7 +276,7 @@ class ChannelsViewModel @Inject constructor(
                 .onFailure { e ->
                     refresh()
                     // The last-admin 403 copy is surfaced verbatim (web parity).
-                    _state.value = _state.value.copy(busyId = null, notice = e.message ?: "Could not leave — try again")
+                    _state.value = _state.value.copy(busyId = null, notice = e.message ?: "Could not leave - try again")
                 }
         }
     }
@@ -287,7 +291,7 @@ class ChannelsViewModel @Inject constructor(
                     _state.value = _state.value.copy(notice = "Channel \"$name\" created")
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(notice = e.message ?: "Could not create the channel — try again")
+                    _state.value = _state.value.copy(notice = e.message ?: "Could not create the channel - try again")
                 }
         }
     }
@@ -324,7 +328,7 @@ fun ChannelsScreen(
                 Column(Modifier.weight(1f)) {
                     Text("Channels", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     Text(
-                        "Broadcast spaces — only admins post",
+                        "Broadcast spaces - only admins post",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                     )
@@ -373,7 +377,7 @@ fun ChannelsScreen(
                                 Text("No channels yet", fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    "Broadcast spaces you subscribe to — or create — land here.",
+                                    "Broadcast spaces you subscribe to - or create - land here.",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 13.sp,
                                 )
@@ -513,7 +517,7 @@ private fun CreateChannelSheet(onDismiss: () -> Unit, onCreate: (String, String)
     }
 }
 
-// ── Folders manage sheet (F-FD-01…03) ────────────────────────────────────
+// Folders manage sheet (F-FD-01…03)
 
 @HiltViewModel
 class FoldersManageViewModel @Inject constructor(
@@ -547,9 +551,11 @@ class FoldersManageViewModel @Inject constructor(
             repo.createFolder(name, emoji)
                 .onSuccess {
                     refresh()
-                    _state.value = _state.value.copy(busy = false, notice = "$emoji Folder \"$name\" created")
+                    // R18 icon-id contract - the icon is a stable id now, so the
+                    // notice carries the name only (never the raw id/glyph).
+                    _state.value = _state.value.copy(busy = false, notice = "Folder \"$name\" created")
                 }
-                .onFailure { _state.value = _state.value.copy(busy = false, notice = "Could not create the folder — try again") }
+                .onFailure { _state.value = _state.value.copy(busy = false, notice = "Could not create the folder - try again") }
         }
     }
 
@@ -561,7 +567,7 @@ class FoldersManageViewModel @Inject constructor(
                     refresh()
                     _state.value = _state.value.copy(busy = false, notice = "Renamed to \"$name\"")
                 }
-                .onFailure { _state.value = _state.value.copy(busy = false, notice = "Could not rename — try again") }
+                .onFailure { _state.value = _state.value.copy(busy = false, notice = "Could not rename - try again") }
         }
     }
 
@@ -581,7 +587,7 @@ class FoldersManageViewModel @Inject constructor(
             repo.deleteFolder(folderId)
                 .onSuccess {
                     refresh()
-                    _state.value = _state.value.copy(busy = false, notice = "Folder deleted — chats stay in your list")
+                    _state.value = _state.value.copy(busy = false, notice = "Folder deleted - chats stay in your list")
                 }
                 .onFailure { _state.value = _state.value.copy(busy = false) }
         }
@@ -596,7 +602,7 @@ class FoldersManageViewModel @Inject constructor(
                     val label = if (conversationIds.size == 1) "1 chat saved to the folder" else "${conversationIds.size} chats saved to the folder"
                     _state.value = _state.value.copy(busy = false, notice = label)
                 }
-                .onFailure { _state.value = _state.value.copy(busy = false, notice = "Could not save — try again") }
+                .onFailure { _state.value = _state.value.copy(busy = false, notice = "Could not save - try again") }
         }
     }
 
@@ -605,7 +611,12 @@ class FoldersManageViewModel @Inject constructor(
     }
 }
 
-private val FOLDER_EMOJI_PRESETS = listOf("📂", "💼", "🎮", "❤️", "🔥", "🎯", "🎵", "🧠")
+/**
+ * R18 icon-id contract - folder presets are stable registry ids (web
+ * icon-ids.ts FOLDER_ICON_IDS); glyphs render via [pulseFolderGlyph] and
+ * stale/unknown stored values normalize to the default.
+ */
+private val FOLDER_ICON_PRESETS = FOLDER_ICON_IDS
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -617,7 +628,7 @@ fun FoldersManageSheet(
     val sheetState = rememberModalBottomSheetState()
     var editing by remember { mutableStateOf<FolderSummary?>(null) }
     var createName by remember { mutableStateOf("") }
-    var createEmoji by remember { mutableStateOf("📂") }
+    var createEmoji by remember { mutableStateOf(FOLDER_ICON_DEFAULT) }
     var confirmingDelete by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.notice) {
@@ -635,15 +646,20 @@ fun FoldersManageSheet(
             // Create row
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    FOLDER_EMOJI_PRESETS.forEach { emoji ->
+                    FOLDER_ICON_PRESETS.forEach { id ->
                         Surface(
                             shape = RoundedCornerShape(999.dp),
-                            color = if (createEmoji == emoji) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            color = if (createEmoji == id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                             modifier = Modifier
                                 .padding(end = 6.dp)
-                                .clickable { createEmoji = emoji },
+                                .clickable { createEmoji = id },
                         ) {
-                            Text(emoji, Modifier.padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 15.sp)
+                            Icon(
+                                pulseFolderGlyph(id),
+                                contentDescription = null,
+                                tint = if (createEmoji == id) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp).size(16.dp),
+                            )
                         }
                     }
                 }
@@ -671,7 +687,7 @@ fun FoldersManageSheet(
 
             Spacer(Modifier.height(14.dp))
             Text(
-                "Folders filter your chat list — membership is managed per folder.",
+                "Folders filter your chat list - membership is managed per folder.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
             )
@@ -733,7 +749,14 @@ private fun FolderManageRow(
     ) {
         Column(Modifier.padding(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${folder.emoji} ${folder.name}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Icon(
+                    pulseFolderGlyph(folder.emoji),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(15.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(folder.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Text(
                     "${folder.conversationIds.size} chat" + if (folder.conversationIds.size == 1) "" else "s",
                     fontSize = 12.sp,
@@ -750,7 +773,7 @@ private fun FolderManageRow(
                 }
             }
             Text(
-                "Created from the rail — chats stay in your list when a folder is deleted.",
+                "Created from the rail - chats stay in your list when a folder is deleted.",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -776,11 +799,18 @@ private fun FolderMembershipSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 26.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${folder.emoji} ${folder.name}", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                Icon(
+                    pulseFolderGlyph(folder.emoji),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(17.dp),
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(folder.name, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { renameOpen = true }) { Text("Rename") }
             }
             Text(
-                "Pick the chats that belong to this folder — Save replaces the membership.",
+                "Pick the chats that belong to this folder - Save replaces the membership.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
             )
@@ -814,7 +844,7 @@ private fun FolderMembershipSheet(
     if (renameOpen) {
         val renameState = rememberModalBottomSheetState()
         var newName by remember { mutableStateOf(folder.name) }
-        var newEmoji by remember { mutableStateOf(folder.emoji) }
+        var newEmoji by remember { mutableStateOf(folderIconId(folder.emoji)) }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { renameOpen = false },
             title = { Text("Rename folder") },
@@ -823,19 +853,26 @@ private fun FolderMembershipSheet(
                     OutlinedTextField(value = name, onValueChange = { if (it.length <= 24) name = it }, singleLine = true)
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.horizontalScroll(rememberScrollState())) {
-                        FOLDER_EMOJI_PRESETS.forEach { emoji ->
+                        FOLDER_ICON_PRESETS.forEach { id ->
                             Surface(
                                 shape = RoundedCornerShape(999.dp),
-                                color = if (newEmoji == emoji) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                modifier = Modifier.padding(end = 6.dp).clickable { newEmoji = emoji },
-                            ) { Text(emoji, Modifier.padding(8.dp)) }
+                                color = if (newEmoji == id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(end = 6.dp).clickable { newEmoji = id },
+                            ) {
+                                Icon(
+                                    pulseFolderGlyph(id),
+                                    contentDescription = null,
+                                    tint = if (newEmoji == id) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(8.dp).size(16.dp),
+                                )
+                            }
                         }
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    onRename(name.trim(), newEmoji.ifBlank { "📂" })
+                    onRename(name.trim(), newEmoji.ifBlank { FOLDER_ICON_DEFAULT })
                     renameOpen = false
                 }) { Text("Save") }
             },
@@ -844,7 +881,7 @@ private fun FolderMembershipSheet(
     }
 }
 
-// ── Invite join sheet (F-DL / web ?join= parity) ─────────────────────────
+// Invite join sheet (F-DL / web ?join= parity)
 
 @HiltViewModel
 class JoinInviteViewModel @Inject constructor(
@@ -876,7 +913,7 @@ class JoinInviteViewModel @Inject constructor(
             _state.value = _state.value.copy(joining = true, error = null)
             repo.joinInvite(code)
                 .onSuccess { outcome -> _state.value = _state.value.copy(joining = false, joined = outcome) }
-                .onFailure { e -> _state.value = _state.value.copy(joining = false, error = e.message ?: "Could not join — try again") }
+                .onFailure { e -> _state.value = _state.value.copy(joining = false, error = e.message ?: "Could not join - try again") }
         }
     }
 }
@@ -928,7 +965,7 @@ fun JoinInviteSheet(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         if (preview?.alreadyMember == true) {
-                            "You are already in this group — jump back in?"
+                            "You are already in this group - jump back in?"
                         } else {
                             "You were invited to join this group on Pulse."
                         },

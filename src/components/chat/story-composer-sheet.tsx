@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — Status story composer (WhatsApp/Telegram-style).
+// Pulse - Status story composer (WhatsApp/Telegram-style).
 // Two modes: Text (caption + gradient background, live full-screen
 // preview) and Photo (upload via /api/uploads + optional caption).
 // Posts to POST /api/stories and invalidates ['stories', me.id].
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useRef, useState } from 'react'
@@ -90,7 +88,7 @@ export function StoryComposerSheet({ me, onClose }: StoryComposerSheetProps) {
       aria-modal="true"
       aria-label="New status"
     >
-      {/* live preview stage — full-screen gradient (text) or photo */}
+      {/* live preview stage - full-screen gradient (text) or photo */}
       {mode === 'text' ? (
         <div className={cn('absolute inset-0 bg-gradient-to-br', gradientFor(background))} aria-hidden />
       ) : (

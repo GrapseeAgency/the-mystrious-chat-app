@@ -8,7 +8,7 @@ import kotlin.math.sqrt
 /**
  * Pure spatial-presence reducer (spec §1.3 SP-1..SP-5).
  *
- * WEB DEFECT FIX #3 (throttle): the client move throttle is 80ms — exactly the
+ * WEB DEFECT FIX #3 (throttle): the client move throttle is 80ms - exactly the
  * server limit (web shipped 90 and lost every other tap).
  * WEB DEFECT FIX #4 (reconcile): the server self-position overwrites the
  * optimistic target once the finger has been idle for 300ms, so drift can
@@ -37,7 +37,7 @@ class SpaceBoardStateMachine(
         val conversationId: String = "",
         val selfId: String = "",
         val players: Map<String, Player> = emptyMap(),
-        /** Optimistic self target — shown immediately under the finger. */
+        /** Optimistic self target - shown immediately under the finger. */
         val myTarget: Point? = null,
         /** Server's latest self position (the optimistic target reconciles to it). */
         val myServerPos: Point? = null,
@@ -48,7 +48,7 @@ class SpaceBoardStateMachine(
         val lastEmitMs: Long = 0,
     ) {
         val count: Int get() = players.size
-        /** "N in room" pill — me plus every listed player (self is server-listed). */
+        /** "N in room" pill - me plus every listed player (self is server-listed). */
         val pill: Int get() = if (players.isEmpty()) 1 else players.size
     }
 
@@ -56,13 +56,13 @@ class SpaceBoardStateMachine(
         data class JoinRequested(val conversationId: String, val selfId: String) : Event
         data class Connected(val conversationId: String) : Event
 
-        /** One local move gesture sample — clamped + throttled here (SP-3). */
+        /** One local move gesture sample - clamped + throttled here (SP-3). */
         data class LocalMove(val x: Double, val y: Double) : Event
 
-        /** S→C space:state — wholesale board replace + self reconcile (SP-2/SP-3). */
+        /** S→C space:state - wholesale board replace + self reconcile (SP-2/SP-3). */
         data class BoardArrived(val conversationId: String, val players: List<Player>) : Event
 
-        /** Reconnect bookkeeping — honest ERROR after the budget (SP-5, FIX #5). */
+        /** Reconnect bookkeeping - honest ERROR after the budget (SP-5, FIX #5). */
         data object ReconnectAttempt : Event
         data object Disconnected : Event
         data object Left : Event
@@ -127,7 +127,7 @@ class SpaceBoardStateMachine(
                 val players = event.players.associateBy { it.id }
                 val serverSelf = players[current.selfId]?.let { Point(it.x, it.y) }
                 // Reconcile (WEB DEFECT FIX #4): adopt the server self position
-                // only after the finger has been idle for 300ms — an in-flight
+                // only after the finger has been idle for 300ms - an in-flight
                 // gesture never fights the user.
                 val reconciled = serverSelf?.takeIf {
                     current.myTarget == null || clock() - current.lastLocalMoveMs >= RECONCILE_IDLE_MS
@@ -145,11 +145,11 @@ class SpaceBoardStateMachine(
         is Event.Disconnected -> {
             val attempts = current.reconnectAttempts + 1
             if (attempts >= MAX_RECONNECT_ATTEMPTS) {
-                // Honest terminal state (WEB DEFECT FIX #5) — never spin forever.
+                // Honest terminal state (WEB DEFECT FIX #5) - never spin forever.
                 current.copy(
                     status = Status.ERROR,
                     reconnectAttempts = attempts,
-                    error = "Couldn't reach the room — your connection is down. Try again.",
+                    error = "Couldn't reach the room - your connection is down. Try again.",
                 )
             } else {
                 current.copy(reconnectAttempts = attempts)
@@ -174,7 +174,7 @@ class SpaceBoardStateMachine(
     }
 
     companion object {
-        /** Server move throttle: 80ms — the client budget matches it exactly. */
+        /** Server move throttle: 80ms - the client budget matches it exactly. */
         const val MOVE_THROTTLE_MS = 80L
         /** Idle window before the optimistic target reconciles to server truth. */
         const val RECONCILE_IDLE_MS = 300L

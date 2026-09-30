@@ -1,13 +1,13 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 0 + Wave 1 — GRDB migration + offline read-path tests.
+/// Wave 0 + Wave 1 - GRDB migration + offline read-path tests.
 /// The v1 schema (conversation/message), the v2 additions (outbox/draft) and
 /// the v3 additions (full-fidelity message columns) share one non-destructive
 /// migrator; a fresh open applies all in order and a reopen must be a no-op
 /// that keeps every row readable.
 final class PulseStoreMigrationTests: XCTestCase {
-    // ── fixture helpers ──────────────────────────────────────
+    // fixture helpers
 
     private func makeConversation(id: String) -> PulseConversation {
         PulseConversation(
@@ -59,7 +59,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         )
     }
 
-    /// Full-fidelity v3 row — every new column populated (thread reply +
+    /// Full-fidelity v3 row - every new column populated (thread reply +
     /// media + edit stamp + pin + grouped reactions + sender color).
     private func makeV3Message(id: String, conversationId: String, parentId: String?, createdAt: String) -> WireChatMessage {
         WireChatMessage(
@@ -99,7 +99,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         )
     }
 
-    /// Full-fidelity v4 row — a filed poll message with burn stamp, cached
+    /// Full-fidelity v4 row - a filed poll message with burn stamp, cached
     /// transcription and a link preview (every Wave 2 column populated).
     private func makeV4Message(id: String, conversationId: String, createdAt: String) -> WireChatMessage {
         WireChatMessage(
@@ -152,7 +152,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         )
     }
 
-    // ── v2 round-trips ───────────────────────────────────────
+    // v2 round-trips
 
     func testV2TablesRoundTripAlongsideV1Data() throws {
         let store = try PulseStore()
@@ -200,7 +200,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(store.draft(conversationId: "c1"), "second draft")
         XCTAssertEqual(store.allDrafts(), ["c1": "second draft"])
 
-        // A blank draft clears the row — it must never shadow myDraft.
+        // A blank draft clears the row - it must never shadow myDraft.
         try store.saveDraft(conversationId: "c1", text: "   ")
         XCTAssertNil(store.draft(conversationId: "c1"))
         XCTAssertEqual(store.allDrafts(), [:])
@@ -213,7 +213,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(store.countOutbox(), 1)
     }
 
-    // ── migration ordering / reopen survival ────────────────
+    // migration ordering / reopen survival
 
     func testReopenKeepsV1AndV2RowsReadable() throws {
         let dir = FileManager.default.temporaryDirectory
@@ -222,7 +222,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = dir.appendingPathComponent("pulse.sqlite").path
 
-        // First open — v1 + v2 migrations apply together, data is written.
+        // First open - v1 + v2 migrations apply together, data is written.
         do {
             let store = try PulseStore(path: path)
             try store.upsert(conversations: [makeConversation(id: "c1")])
@@ -231,7 +231,7 @@ final class PulseStoreMigrationTests: XCTestCase {
             try store.saveDraft(conversationId: "c1", text: "survives reopen")
         }
 
-        // Second open — the migrator is idempotent (no destructive reset);
+        // Second open - the migrator is idempotent (no destructive reset);
         // every row written before the reopen must still be readable.
         let reopened = try PulseStore(path: path)
         let convs = try reopened.cachedConversations()
@@ -241,7 +241,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(reopened.draft(conversationId: "c1"), "survives reopen")
     }
 
-    // ── v3 (W1-DATA-B) — full-fidelity cache + threads ──────
+    // v3 (W1-DATA-B) - full-fidelity cache + threads
 
     /// The closest thing to a v2→v3 upgrade this suite can run without
     /// linking GRDB in the test target: rows written with every v3 column
@@ -271,11 +271,11 @@ final class PulseStoreMigrationTests: XCTestCase {
         let reopened = try PulseStore(path: path)
         let rows = try reopened.messages(conversationId: "c1")
         // t-root and m-legacy share a createdAt stamp, so their relative
-        // order is unspecified — assert membership, not sequence.
+        // order is unspecified - assert membership, not sequence.
         XCTAssertEqual(rows.count, 4)
         XCTAssertEqual(Set(rows.map(\.id)), ["t-root", "t-r1", "t-r2", "m-legacy"])
 
-        // Legacy row: exactly the v2 shape — v3 columns stay NULL/empty and
+        // Legacy row: exactly the v2 shape - v3 columns stay NULL/empty and
         // the old replyToId→parentId conflation does NOT resurrect.
         let legacy = try XCTUnwrap(rows.first { $0.id == "m-legacy" })
         XCTAssertEqual(legacy.content, "cached body")
@@ -349,7 +349,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         let store = try PulseStore()
         // First write: pinned, reacted, thread reply.
         try store.upsert(messages: [makeV3Message(id: "t-r1", conversationId: "c1", parentId: "t-root", createdAt: "2026-09-07T13:00:00.000Z")])
-        // Second write — an edit/unpin/unreact tombstone-swap arrives as a
+        // Second write - an edit/unpin/unreact tombstone-swap arrives as a
         // fresh row for the same id; the upsert must overwrite ALL columns.
         let before = makeV3Message(id: "t-r1", conversationId: "c1", parentId: "t-root", createdAt: "2026-09-07T13:00:00.000Z")
         let edited = WireChatMessage(
@@ -377,7 +377,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertNil(row.imagePath)
     }
 
-    // ── v4 (W2-DATA-B) — Wave 2 depth columns + topics + saved library ──
+    // v4 (W2-DATA-B) - Wave 2 depth columns + topics + saved library
 
     /// The v3→v4 upgrade, same pattern the v2→v3 test uses (the migrator is
     /// private and GRDB is not linked into the test target): rows written
@@ -427,7 +427,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         // Full-fidelity row: every v4 COLUMN round-trips through GRDB.
         // viewedAt/transcript/transcribedAt/pollJson/linkPreviewJson/topicId
         // are real columns; viewedBy + linkUrl are NOT cached (they ride the
-        // next authoritative wire row — v4 store contract, PulseStore.messageRow).
+        // next authoritative wire row - v4 store contract, PulseStore.messageRow).
         let rich = try XCTUnwrap(rows.first { $0.id == "v4-poll" })
         XCTAssertEqual(rich.viewedAt, "2026-09-08T12:01:00.000Z")
         XCTAssertNil(rich.viewedBy)
@@ -459,7 +459,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         let store = try PulseStore()
         try store.upsert(messages: [makeV4Message(id: "m1", conversationId: "c1", createdAt: "2026-09-08T12:00:00.000Z")])
         // A plain follow-up row for the same id must clear the Wave 2
-        // columns (envelope rows are authoritative — spec §0).
+        // columns (envelope rows are authoritative - spec §0).
         let cleared = makeMessage(id: "m1", conversationId: "c1")
         try store.upsert(messages: [cleared])
 
@@ -482,14 +482,14 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(topics.map(\.id), ["t1", "t2"])
         XCTAssertEqual(topics[0].emoji, "🎨")
         XCTAssertEqual(topics[0].messageCount, 12)
-        XCTAssertEqual(topics[1].emoji, "💬") // column NOT NULL DEFAULT '💬'
+        XCTAssertEqual(topics[1].emoji, "chat") // column NOT NULL DEFAULT 'chat' (R18-b icon ids)
 
         // A re-upsert without t2 prunes it (topic deleted by another member).
         try store.upsert(topics: [design], conversationId: "c1")
         topics = try store.topics(conversationId: "c1")
         XCTAssertEqual(topics.map(\.id), ["t1"])
 
-        // Pruning is scoped to the conversation — c2 rows stay untouched.
+        // Pruning is scoped to the conversation - c2 rows stay untouched.
         let other = WireTopic(id: "t3", name: "Ops", emoji: "🛠️", lastMessageAt: "2026-09-08T10:00:00.000Z", messageCount: 1)
         try store.upsert(topics: [other], conversationId: "c2")
         XCTAssertEqual(try store.topics(conversationId: "c2").map(\.id), ["t3"])
@@ -595,7 +595,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertNil(PulseStore.linkPreview(fromJson: "garbage"))
     }
 
-    // ── v8 round-trips (R1-W2B — D28 forward queue + F-MD-06 translations) ──
+    // v8 round-trips (R1-W2B - D28 forward queue + F-MD-06 translations)
 
     func testV8TranslationsRoundTripThroughCache() throws {
         let store = try PulseStore()

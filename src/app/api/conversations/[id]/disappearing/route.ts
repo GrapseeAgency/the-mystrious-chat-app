@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/disappearing — WhatsApp/Signal TTL switch
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/disappearing - WhatsApp/Signal TTL switch
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -24,7 +22,7 @@ const TTL_PRESETS = [0, 86_400, 604_800, 2_592_000] as const // off · 24h · 7d
 /**
  * PATCH /api/conversations/[id]/disappearing  body { userId, ttlSeconds }
  * → 200 { conversation: ConversationDetail } · relays conversation:updated.
- * Any participant may change it — applies to messages sent AFTER the change.
+ * Any participant may change it - applies to messages sent AFTER the change.
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params

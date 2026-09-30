@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/read — mark-read receipt + relay
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/read - mark-read receipt + relay
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { memberIdsOf, notifySocket, safeJson, strField } from '@/lib/serializers'

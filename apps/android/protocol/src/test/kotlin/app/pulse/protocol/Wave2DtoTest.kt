@@ -7,14 +7,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Wave-2 wire parity — poll / link preview / saved library / topics /
+ * Wave-2 wire parity - poll / link preview / saved library / topics /
  * transcribe DTOs decode the REAL gateway shapes (src/lib/serializers.ts
  * mapMessage + the Wave-2 routes), tolerate unknown keys, and degrade to
  * nulls/defaults when optional keys are missing entirely.
  */
 class Wave2DtoTest {
 
-    /** Realistic message.poll JSON — matches serializers.ts mapMessage exactly. */
+    /** Realistic message.poll JSON - matches serializers.ts mapMessage exactly. */
     private val pollMessageJson = """
     {
       "id": "m-poll",
@@ -55,7 +55,7 @@ class Wave2DtoTest {
         assertEquals("Lunch spot today?", poll.question)
         assertFalse(poll.closed)
         assertEquals(3, poll.totalVotes)
-        // myOptionId parses — but clients derive the pick from votedBy ONLY.
+        // myOptionId parses - but clients derive the pick from votedBy ONLY.
         assertEquals("optB", poll.myOptionId)
         assertEquals(listOf("optA", "optB", "optC"), poll.options.map { it.id })
         assertEquals(listOf("Ramen", "Tacos", "Pizza"), poll.options.map { it.text })

@@ -7,13 +7,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Wave 8 — prefs pipeline + quiet-hours parity tests.
+ * Wave 8 - prefs pipeline + quiet-hours parity tests.
  * Locks the 1:1 port of web src/lib/prefs-defaults.ts mergePrefs and
  * src/lib/pulse-settings.ts isQuietHoursNow/minutesOf (lines 60-83).
  */
 class Wave8LogicTest {
 
-    // ── mergePrefs: defaults + clamping parity ────────────────────
+    // mergePrefs: defaults + clamping parity
 
     @Test
     fun `null blank and garbage blobs decode to defaults`() {
@@ -118,7 +118,7 @@ class Wave8LogicTest {
         assertFalse(text.contains("wallpaper"))
     }
 
-    // ── minutesOf parity (web pulse-settings.ts:60-67) ────────────
+    // minutesOf parity (web pulse-settings.ts:60-67)
 
     @Test
     fun `minutesOf parses padded and unpadded hours`() {
@@ -141,12 +141,12 @@ class Wave8LogicTest {
 
     @Test
     fun `minutesOf clamps out-of-range parts like parseInt plus clamp`() {
-        // regex admits "99:99" (1-2 digits) — the clamp pins 23:59
+        // regex admits "99:99" (1-2 digits) - the clamp pins 23:59
         assertEquals(23 * 60 + 59, PulseWave8Logic.minutesOf("99:99"))
         assertEquals(23 * 60 + 59, PulseWave8Logic.minutesOf("25:61"))
     }
 
-    // ── isQuietHoursNow parity (web pulse-settings.ts:73-83) ──────
+    // isQuietHoursNow parity (web pulse-settings.ts:73-83)
 
     @Test
     fun `toggle off is always false`() {
@@ -190,7 +190,7 @@ class Wave8LogicTest {
         assertFalse(PulseWave8Logic.isQuietHoursNow(true, "abc", "xyz", 13 * 60))
     }
 
-    // ── incoming attention gate ──────────────────────────────────
+    // incoming attention gate
 
     @Test
     fun `attention is gated by quiet hours and needs one armed channel`() {

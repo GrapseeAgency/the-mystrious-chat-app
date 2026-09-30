@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Wave 6 — the report panel (F-CP-06), finishing the Wave 0 dialog with
+/// Wave 6 - the report panel (F-CP-06), finishing the Wave 0 dialog with
 /// full web parity (report-panel.tsx): private-by-design intro copy, the
 /// 6 wire reasons, details ≤500, the reporter's OWN prior submissions as
 /// the honest "already reported" hint, and the idempotent-verdict toasts.
@@ -11,7 +11,7 @@ struct ReportPanelView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    /// Wire reasons — the exact values POST /api/users/[id]/report accepts.
+    /// Wire reasons - the exact values POST /api/users/[id]/report accepts.
     static let reasons: [(key: String, label: String)] = [
         ("spam", "Spam"),
         ("harassment", "Harassment or bullying"),
@@ -70,7 +70,7 @@ struct ReportPanelView: View {
             Label("Report \(reported.name)", systemImage: "flag.fill")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(PulseTheme.amber600)
-            Text("Tell us what's happening. Reports are private — \(firstName) will not be notified.")
+            Text("Tell us what's happening. Reports are private - \(firstName) will not be notified.")
                 .font(.system(size: 12.5))
                 .foregroundStyle(PulseTheme.textSecondary)
             if let hint {
@@ -169,7 +169,7 @@ struct ReportPanelView: View {
         .disabled(reason.isEmpty || pending || details.count > Self.detailsMax)
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     private func loadHistory() async {
         history = await session.api.reportHistory(reportedId: reported.id)
@@ -188,7 +188,7 @@ struct ReportPanelView: View {
             )
             PulseHaptics.success()
             session.toasts.show(verdict.updated == true
-                ? "Report updated — thanks for the extra detail"
+                ? "Report updated - thanks for the extra detail"
                 : "Report submitted. Thanks for helping keep Pulse safe.")
             dismiss()
             onDone()

@@ -34,7 +34,7 @@ class VoiceRoomStateMachineTest {
         machine.dispatch(VoiceRoomStateMachine.Event.RosterArrived("c1", listOf(peer("a"), peer("b"))))
         assertEquals(VoiceRoomStateMachine.Status.JOINED, state.status)
         assertEquals(listOf("a", "b"), state.roster.map { it.id })
-        // Joiners AND leavers arrive via wholesale replace — never merged.
+        // Joiners AND leavers arrive via wholesale replace - never merged.
         machine.dispatch(VoiceRoomStateMachine.Event.RosterArrived("c1", listOf(peer("a"), peer("c"))))
         assertEquals(listOf("a", "c"), state.roster.map { it.id })
     }

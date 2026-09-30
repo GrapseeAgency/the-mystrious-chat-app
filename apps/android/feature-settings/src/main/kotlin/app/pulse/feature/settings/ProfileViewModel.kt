@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Profile tab state holder — identity management + appearance prefs. */
+/** Profile tab state holder - identity management + appearance prefs. */
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val repo: PulseRepository,
@@ -58,19 +58,19 @@ class ProfileViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
-     * R16 — live presence set (web profile-tab.tsx:110/169 usePulseRealtime
+     * R16 - live presence set (web profile-tab.tsx:110/169 usePulseRealtime
      * `.onlineIds` parity): drives the profile avatar's online ring.
      */
     val onlineIds: StateFlow<Set<String>> = repo.observePresence()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
-    /** Live probe of the configured origin — honest connectivity verdict. */
+    /** Live probe of the configured origin - honest connectivity verdict. */
     data class ProbeState(val running: Boolean = false, val ok: Boolean? = null, val detail: String = "")
 
     private val _probe = MutableStateFlow(ProbeState())
     val probe: StateFlow<ProbeState> = _probe.asStateFlow()
 
-    // R2-A item 10 — the wallet chip (web profile-tab.tsx:149-156: GET
+    // R2-A item 10 - the wallet chip (web profile-tab.tsx:149-156: GET
     // /api/hub/wallet → balance row with loading/error handling).
     data class WalletUi(
         val loading: Boolean = false,
@@ -81,7 +81,7 @@ class ProfileViewModel @Inject constructor(
     private val _wallet = MutableStateFlow(WalletUi())
     val wallet: StateFlow<WalletUi> = _wallet.asStateFlow()
 
-    /** Wallet chip refresh — viewer-less renders nothing (web parity). */
+    /** Wallet chip refresh - viewer-less renders nothing (web parity). */
     fun loadWallet() {
         if (viewerId.value == null || _wallet.value.loading) return
         _wallet.value = WalletUi(loading = true)
@@ -95,8 +95,8 @@ class ProfileViewModel @Inject constructor(
     }
 
     /**
-     * R14 gap 7a — profile stats row (web profile-tab.tsx:466-491):
-     * Messages / Rooms / Coins / Member since via GET /api/users/{id}/stats —
+     * R14 gap 7a - profile stats row (web profile-tab.tsx:466-491):
+     * Messages / Rooms / Coins / Member since via GET /api/users/{id}/stats -
      * the SAME loader pattern SettingsViewModel.refreshFootprintStats uses
      * (reuse, not duplication); Coins rides the existing wallet source.
      */
@@ -144,7 +144,7 @@ class ProfileViewModel @Inject constructor(
     /** Switch the device viewer (native identity parity with web onboarding). */
     fun chooseIdentity(user: User) {
         viewModelScope.launch {
-            // Wave 8 — the previous identity's credential must not ride along.
+            // Wave 8 - the previous identity's credential must not ride along.
             runCatching { repo.clearSessionToken() }
             prefs.setViewer(user.id, user.name)
             repo.start(user.id)
@@ -186,7 +186,7 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch { prefs.setServerBase(value) }
     }
 
-    /** GET <base>/api/users with a hard 5s budget — ms timing on success. */
+    /** GET <base>/api/users with a hard 5s budget - ms timing on success. */
     fun probeServer(base: String) {
         val origin = base.trim().trimEnd('/')
         if (!origin.startsWith("http")) {
@@ -209,13 +209,13 @@ class ProfileViewModel @Inject constructor(
                 }
             }
             result.fold(
-                onSuccess = { _probe.value = ProbeState(ok = true, detail = "connected — /api/users answered") },
+                onSuccess = { _probe.value = ProbeState(ok = true, detail = "connected - /api/users answered") },
                 onFailure = { _probe.value = ProbeState(ok = false, detail = it.message ?: "unreachable") },
             )
         }
     }
 
-    // R6 — M3: ProfileViewModel.forgetIdentity was REMOVED — it cleared the
+    // R6 - M3: ProfileViewModel.forgetIdentity was REMOVED - it cleared the
     // prefs viewer but NOT the encrypted session vault, so SessionViewModel's
     // cold-start re-seed resurrected the identity on the next launch. The
     // ProfileScreen "Forget this viewer" row now routes to the app-level

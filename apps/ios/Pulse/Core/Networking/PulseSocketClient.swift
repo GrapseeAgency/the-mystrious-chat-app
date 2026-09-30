@@ -1,7 +1,7 @@
 import Foundation
 import SocketIO
 
-/// REAL Socket.IO relay client — mirrors Android PulseSocketClient and the
+/// REAL Socket.IO relay client - mirrors Android PulseSocketClient and the
 /// web use-pulse-socket.ts: connect → emit join → typed signal stream.
 ///
 /// Wave 0 power-up: subscribes the FULL S→C event set from
@@ -14,16 +14,16 @@ public final class PulseSocketClient {
         case joined(onlineUserIds: [String])
         case presenceSnapshot(onlineUserIds: [String])
         case messageNew(conversationId: String, raw: [String: Any])
-        /// N3-b — payload is { type, message (tombstoned), recipientIds, conversationId }.
+        /// N3-b - payload is { type, message (tombstoned), recipientIds, conversationId }.
         case messageDeleted(conversationId: String, raw: [String: Any])
-        /// N3-b — payload is { type, message (fresh reactions), ... }.
+        /// N3-b - payload is { type, message (fresh reactions), ... }.
         case messageReact(conversationId: String, raw: [String: Any])
         case messageRead(conversationId: String, userId: String, lastReadAt: String?)
-        /// Wave 0 — the rest of the message:* relay family (edited / pinned /
+        /// Wave 0 - the rest of the message:* relay family (edited / pinned /
         /// viewed / poll:voted / link:preview / translation:added). The payload
         /// is the same SocketMessageEvent envelope; features decode it later.
         case messageEnvelope(event: String, conversationId: String, raw: [String: Any])
-        /// Wave 0 — { conversationId, conversation?: WireConversationSummary }.
+        /// Wave 0 - { conversationId, conversation?: WireConversationSummary }.
         case conversationUpdated(conversationId: String, raw: [String: Any])
         case typing(conversationId: String, userId: String, userName: String, isTyping: Bool)
         // Voice rooms (R21-b).
@@ -35,12 +35,12 @@ public final class PulseSocketClient {
         case stageState(conversationId: String, raw: [String: Any])
         case stageEnded(conversationId: String)
         case spaceState(conversationId: String, raw: [String: Any])
-        // Call signaling (generic — includes call:reject).
+        // Call signaling (generic - includes call:reject).
         case callSignal(event: String, raw: [String: Any])
-        // 3-d — GROUP call signaling (gcall:* family, mesh). Same envelope
+        // 3-d - GROUP call signaling (gcall:* family, mesh). Same envelope
         // shape as callSignal; the session routes it to the group engine.
         case groupCallSignal(event: String, raw: [String: Any])
-        /// Wave 8 — the relay refused our join because the PRESENTED session
+        /// Wave 8 - the relay refused our join because the PRESENTED session
         /// token failed verification (invalid/rotated). The server disconnects
         /// right after emitting this; the session layer reacts (clears the
         /// Keychain token, drops the token from future joins, honest toast).
@@ -49,20 +49,20 @@ public final class PulseSocketClient {
 
     private let manager: SocketManager
     private let socket: SocketIOClient
-    /// Last joined identity — re-emitted on every (re)connect.
+    /// Last joined identity - re-emitted on every (re)connect.
     private var lastUserId: String?
-    /// Wave 8 — the session token riding the join payload. A PRESENT token
+    /// Wave 8 - the session token riding the join payload. A PRESENT token
     /// is verified server-side (invalid → join:error + disconnect); token-
     /// less joins stay accepted (web migration parity). `updateToken` lets
     /// the session drop a rotated token without tearing the client down.
     private var lastToken: String?
 
     public init(socketURL: URL) {
-        // Reconnect backoff — W0-PLAN parity with Android (800ms → 5s cap;
+        // Reconnect backoff - W0-PLAN parity with Android (800ms → 5s cap;
         // the Swift client is integer-seconds: 1s → exponential 1.5^n with
         // jitter, clamped at 5s). reconnects(true) keeps retrying forever.
         // `.connectParams` appends XTransformPort=3003 to every poll/WS request
-        // — the edge routes on the query (the /socket.io/ path rule 308s and
+        // - the edge routes on the query (the /socket.io/ path rule 308s and
         // would break WS upgrades). Mirrors Android PulseSocketClient exactly;
         // a direct relay server ignores the extra query key.
         manager = SocketManager(
@@ -99,13 +99,13 @@ public final class PulseSocketClient {
             // The transport just dropped and a retry is scheduled (v16 fires
             // `.reconnect` when the socket ENTERS the reconnecting state).
             // Emits made while disconnected are buffered and flushed the
-            // moment the reconnect lands — re-joining here restores the user
+            // moment the reconnect lands - re-joining here restores the user
             // room even if the .connect handler below were to race.
             guard let self, let payload = self.joinPayload() else { return }
             self.socket.emit("join", payload)
         }
 
-        // Wave 8 — token gate refusal. The relay emits
+        // Wave 8 - token gate refusal. The relay emits
         // { error: "Session token is invalid or has been rotated. Log in again."
         // } and disconnects us; the session layer consumes the signal.
         socket.on("join:error") { [weak self] data, _ in
@@ -126,7 +126,7 @@ public final class PulseSocketClient {
             self?.signals?(.presenceSnapshot(onlineUserIds: ids))
         }
 
-        // ── message relay family ──────────────────────────────
+        // message relay family
         socket.on("message:new") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any] else { return }
             self?.signals?(.messageNew(conversationId: Self.conversationId(in: obj), raw: obj))
@@ -155,7 +155,7 @@ public final class PulseSocketClient {
 
         socket.on("message:read") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any] else { return }
-            // W1-DATA-B — the watermark model: the relay carries the bumped
+            // W1-DATA-B - the watermark model: the relay carries the bumped
             // participant lastReadAt; parse it tolerantly (older relays omit
             // it and callers fall back to "now").
             self?.signals?(.messageRead(
@@ -174,7 +174,7 @@ public final class PulseSocketClient {
             ))
         }
 
-        // ── voice rooms ───────────────────────────────────────
+        // voice rooms
         socket.on("voice:roster") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any] else { return }
             let roster = obj["roster"] as? [[String: Any]] ?? []
@@ -185,7 +185,7 @@ public final class PulseSocketClient {
         }
         socket.on("voice:ptt") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any] else { return }
-            // W5-f — the relay emits `on` (voice:ptt { conversationId, userId,
+            // W5-f - the relay emits `on` (voice:ptt { conversationId, userId,
             // on }, mini-services/pulse-socket/index.ts L922-926); the legacy
             // `active` key stays a tolerant fallback so the speaking ring
             // never silently dies on either shape.
@@ -213,7 +213,7 @@ public final class PulseSocketClient {
             ))
         }
 
-        // ── stage + spatial rooms ─────────────────────────────
+        // stage + spatial rooms
         socket.on("stage:state") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any] else { return }
             self?.signals?(.stageState(conversationId: obj["conversationId"] as? String ?? "", raw: obj))
@@ -227,7 +227,7 @@ public final class PulseSocketClient {
             self?.signals?(.spaceState(conversationId: obj["conversationId"] as? String ?? "", raw: obj))
         }
 
-        // ── call signaling (offer/answer/ice/reject/cancel/hangup) ──
+        // call signaling (offer/answer/ice/reject/cancel/hangup)
         for event in ["call:offer", "call:answer", "call:ice", "call:reject", "call:cancel", "call:hangup"] {
             socket.on(event) { [weak self] data, _ in
                 guard let obj = data.first as? [String: Any] else { return }
@@ -235,11 +235,11 @@ public final class PulseSocketClient {
             }
         }
 
-        // ── 3-d — group call signaling (mesh) ────────────────────
+        // 3-d - group call signaling (mesh)
         // gcall:ring/state/offer/answer/ice/leave/ended/full. The relay
         // emits offer/answer/ice TARGETED (roomOf(to)); state/ring/ended/
         // full broadcast to the call room / user rooms. gcall:leave is
-        // C→S only — the handler below simply never fires against the
+        // C→S only - the handler below simply never fires against the
         // current relay (kept for symmetry + forward tolerance).
         for event in ["gcall:ring", "gcall:state", "gcall:offer", "gcall:answer", "gcall:ice", "gcall:leave", "gcall:ended", "gcall:full"] {
             socket.on(event) { [weak self] data, _ in
@@ -251,7 +251,7 @@ public final class PulseSocketClient {
         socket.connect()
     }
 
-    /// Wave 8 — the join payload builder: { userId } plus { token } ONLY when
+    /// Wave 8 - the join payload builder: { userId } plus { token } ONLY when
     /// a session token is present (the relay verifies present tokens and
     /// refuses invalid ones; absent ones stay accepted). nil when no
     /// identity was ever joined.
@@ -264,7 +264,7 @@ public final class PulseSocketClient {
         return payload
     }
 
-    /// Wave 8 — rotation reaction: drop the (now invalid) token so the next
+    /// Wave 8 - rotation reaction: drop the (now invalid) token so the next
     /// reconnect joins token-less (accepted) instead of looping join:error.
     public func updateToken(_ token: String?) {
         lastToken = token
@@ -280,8 +280,8 @@ public final class PulseSocketClient {
         ])
     }
 
-    /// W3-b — emit one C→S call signaling event (call:offer / call:answer /
-    /// call:ice / call:reject / call:cancel / call:hangup — and, 3-d, the
+    /// W3-b - emit one C→S call signaling event (call:offer / call:answer /
+    /// call:ice / call:reject / call:cancel / call:hangup - and, 3-d, the
     /// gcall:* family; the emit path is the same generic funnel). The payload
     /// shape is built by CallWire / GroupCallWire (unit-tested against the
     /// relay's validation). Emits made while disconnected are buffered by
@@ -291,10 +291,10 @@ public final class PulseSocketClient {
         socket.emit(event, payload)
     }
 
-    // ── W5-f — voice rooms / stage / space (typed emit helpers) ──
+    // W5-f - voice rooms / stage / space (typed emit helpers)
     //
     // All 14 C→S rooms events. Payloads come from VoiceRoomWire (pure,
-    // unit-tested in VoiceRoomWireTests — the EXACT shapes the relay
+    // unit-tested in VoiceRoomWireTests - the EXACT shapes the relay
     // validates). Best-effort like emitTyping: never throws, emits made
     // while disconnected are buffered by socket.io and flushed on the
     // next reconnect.
@@ -377,7 +377,7 @@ public final class PulseSocketClient {
         socket.emit(PulseSocketEvents.spaceLeave.rawValue, VoiceRoomWire.spaceLeave(conversationId: conversationId))
     }
 
-    /// W5-f — generic rooms-event funnel for the session model (the socket
+    /// W5-f - generic rooms-event funnel for the session model (the socket
     /// is session-owned; mirrors emitCallSignal). Payloads are built by the
     /// pure VoiceRoomWire builders so the shape stays unit-tested.
     public func emitRoomSignal(event: String, payload: [String: Any]) {

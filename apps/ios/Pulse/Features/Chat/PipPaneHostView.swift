@@ -1,7 +1,6 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// R1-W2I — PiP pane host (F-PI-01..03). iOS mirror of the web
+// R1-W2I - PiP pane host (F-PI-01..03). iOS mirror of the web
 // PipChat + pip-stack and of the Android PipPaneOverlay:
 //   · ONE expanded draggable glass card (the focused pane)
 //   · every other live pane collapses into a 48pt pill stack on
@@ -12,14 +11,13 @@ import SwiftUI
 //   · header tap → opens the conversation in the main shell
 //   · composer sends through the REAL api path with the same
 //     outbox fallback the room composer uses (no second socket)
-//   · data = the shared GRDB cache (cachedConversations) — the web
+//   · data = the shared GRDB cache (cachedConversations) - the web
 //     "no extra polling" rule
 // Mounted once at the RootView level, below the call/rooms overlays.
-// ─────────────────────────────────────────────────────────────
 
 struct PipPaneHostView: View {
     @ObservedObject var session: PulseSession
-    /// Direct observation — PulseSession does not forward nested store
+    /// Direct observation - PulseSession does not forward nested store
     /// changes, so pane additions/removals must be observed here.
     @ObservedObject var pip: PulsePiPStore
     /// Bridge into the main shell (RootView): open the conversation full-screen.
@@ -43,7 +41,7 @@ struct PipPaneHostView: View {
         .animation(reduceMotion ? nil : .pulse(.pulseSnappy, reduceMotion: reduceMotion), value: pip.panes)
     }
 
-    // ── focused pane ──────────────────────────────────────────
+    // focused pane
 
     private func focusedPane(in geo: GeometryProxy) -> PulsePiPStore.PipPane? {
         guard let id = pip.conversationId else { return nil }
@@ -88,7 +86,7 @@ struct PipPaneHostView: View {
                         .lineLimit(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text("No messages yet — say hi from here.")
+                    Text("No messages yet - say hi from here.")
                         .font(.system(size: 13))
                         .foregroundStyle(PulseTheme.textSecondary)
                 }
@@ -107,8 +105,8 @@ struct PipPaneHostView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: .black.opacity(0.28), radius: 18, y: 10)
         .onAppear {
-            // R7 — the expanded window is the reading surface: mark the pane
-            // seen LOCALLY (web pip-chat.tsx:255-259 onSeen parity — no server
+            // R7 - the expanded window is the reading surface: mark the pane
+            // seen LOCALLY (web pip-chat.tsx:255-259 onSeen parity - no server
             // /read call; the store's 1s guard absorbs repeat appearances and
             // the pill badges read this watermark).
             pip.markSeen(pane.conversationId, at: Date().timeIntervalSince1970 * 1000)
@@ -126,7 +124,7 @@ struct PipPaneHostView: View {
         )
     }
 
-    // ── collapsed pill stack ──────────────────────────────────
+    // collapsed pill stack
 
     private func pillStack(in geo: GeometryProxy) -> some View {
         let pills = pip.panes.filter(\.minimized)
@@ -164,7 +162,7 @@ struct PipPaneHostView: View {
         (try? session.store?.cachedConversations())?.first { $0.id == id } ?? nil
     }
 
-    // ── send (real path + outbox fallback) ────────────────────
+    // send (real path + outbox fallback)
 
     private func sendFromPane(_ conversationId: String) {
         let body = paneDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -184,18 +182,18 @@ struct PipPaneHostView: View {
                 // Network-class failure → the outbox queue (same contract as
                 // the room composer); hard failures restore the draft.
                 if PulseOutboxEngine.isDroppable(error) {
-                    session.toasts.show("Couldn't send from the mini chat — kept as draft")
+                    session.toasts.show("Couldn't send from the mini chat - kept as draft")
                     paneDraft = body
                 } else {
                     session.enqueueOutbox(conversationId: conversationId, clientId: UUID().uuidString, content: body)
-                    session.toasts.show("Message queued — sends when you're back online")
+                    session.toasts.show("Message queued - sends when you're back online")
                 }
             }
         }
     }
 }
 
-// ── pieces ───────────────────────────────────────────────────
+// pieces
 
 private struct PipPaneHeader: View {
     let title: String
@@ -270,8 +268,8 @@ private struct PipPaneComposer: View {
 
 private struct PipPanePill: View {
     let conversation: PulseConversation?
-    /// R7 — the pane's local seen watermark (ms epoch): the badge counts only
-    /// rows newer than it (web usePaneUnread parity) — the expanded card's
+    /// R7 - the pane's local seen watermark (ms epoch): the badge counts only
+    /// rows newer than it (web usePaneUnread parity) - the expanded card's
     /// markSeen onAppear clears the pill's stale badge.
     let lastSeenAt: Double
     let onClose: () -> Void

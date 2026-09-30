@@ -1,14 +1,12 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// Wave 7 — collaboration & hub room surfaces (F-RO-02…09):
+// Wave 7 - collaboration & hub room surfaces (F-RO-02…09):
 // red packet card + create/detail sheets, tic-tac-toe card,
 // tournament card, kanban board, whiteboard canvas, events,
 // reminders and the leaderboard. Poll transports mirror the web
 // exactly: kanban 1.5 s while open, game card 1.5 s while active,
 // whiteboard 900 ms since-delta, red packet bubble 20 s.
 // Server error copy surfaces verbatim through Wave7RoomActions.
-// ─────────────────────────────────────────────────────────────
 
 // MARK: - Room actions hub (sheet flags + API calls)
 
@@ -32,7 +30,7 @@ final class Wave7RoomActions: ObservableObject {
     var reminderAnchor: WireChatMessage?
 
     /// Carrier messages created by game/tournament/red-packet flows must appear
-    /// in the stream — the room VM injects this sink.
+    /// in the stream - the room VM injects this sink.
     var onCarrierMessage: ((WireChatMessage) -> Void)?
 
     // Card-side fetchers/actors, wired once by the room (captures session.api).
@@ -45,7 +43,7 @@ final class Wave7RoomActions: ObservableObject {
     var cardJoinTournament: (String) -> Void = { _ in }
     var cardFinishTournament: (String) -> Void = { _ in }
     var cardOpenDetail: (String) -> Void = { _ in }
-    // R7 — rematch (web game-tictactoe-card.tsx:213-236): the card hands the
+    // R7 - rematch (web game-tictactoe-card.tsx:213-236): the card hands the
     // opponent id; the room wires conversation.id + api. rematchInFlight
     // disables the card button while the POST /api/games round-trip runs.
     var cardRematch: (String) -> Void = { _ in }
@@ -72,7 +70,7 @@ final class Wave7RoomActions: ObservableObject {
                 let result = try await api.createRedPacket(conversationId: conversationId, total: total, count: count, note: note)
                 if let message = result.message { onCarrierMessage?(message) }
                 redPacketCreateOpen = false
-                toast("Red packet sent — \(total) PC in \(count) grabs")
+                toast("Red packet sent - \(total) PC in \(count) grabs")
             } catch {
                 toast(describe(error), isError: true)
             }
@@ -119,10 +117,10 @@ final class Wave7RoomActions: ObservableObject {
         }
     }
 
-    /// R7 — rematch (web game-tictactoe-card.tsx:213-236): POST /api/games
+    /// R7 - rematch (web game-tictactoe-card.tsx:213-236): POST /api/games
     /// with the finished match's opponent; the fresh challenge message rides
     /// the carrier-message sink exactly like createGame. Web copy verbatim:
-    /// "Rematch sent — new challenge in the chat."
+    /// "Rematch sent - new challenge in the chat."
     func rematchGame(api: PulseAPIClient, conversationId: String, opponentId: String) {
         guard !rematchInFlight else { return }
         rematchInFlight = true
@@ -131,7 +129,7 @@ final class Wave7RoomActions: ObservableObject {
             do {
                 let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
                 if let message = result.message { onCarrierMessage?(message) }
-                toast("Rematch sent — new challenge in the chat.")
+                toast("Rematch sent - new challenge in the chat.")
             } catch {
                 toast(describe(error), isError: true)
             }
@@ -155,7 +153,7 @@ final class Wave7RoomActions: ObservableObject {
         Task { @MainActor in
             do {
                 _ = try await api.joinTournament(tournamentId)
-                toast("You are in — play tic-tac-toe matches to score points")
+                toast("You are in - play tic-tac-toe matches to score points")
             } catch {
                 toast(describe(error), isError: true)
             }
@@ -204,7 +202,7 @@ final class Wave7RoomActions: ObservableObject {
 
     // MARK: whiteboard
 
-    /// R1-W2G D44 — the sheet needs the sync VERDICT: a pending stroke
+    /// R1-W2G D44 - the sheet needs the sync VERDICT: a pending stroke
     /// leaves the durable draft only when the server confirms the POST
     /// (web whiteboard-sheet.tsx:497-500 truth). The verbatim error toast
     /// still surfaces from here on failure.
@@ -240,7 +238,7 @@ final class Wave7RoomActions: ObservableObject {
             do {
                 _ = try await api.createEvent(conversationId: conversationId, title: title, startsAtIso: startsAtIso, description: description, location: location)
                 eventsOpen = false
-                toast("Event scheduled — see you there")
+                toast("Event scheduled - see you there")
             } catch {
                 toast(describe(error), isError: true)
             }
@@ -261,9 +259,9 @@ final class Wave7RoomActions: ObservableObject {
                 if result.alreadyCheckedIn == true {
                     toast("Already checked in.")
                 } else if result.xpAwarded == true {
-                    toast("Checked in — see you there · +15 XP")
+                    toast("Checked in - see you there · +15 XP")
                 } else {
-                    toast("Checked in — see you there")
+                    toast("Checked in - see you there")
                 }
             } catch {
                 toast(describe(error), isError: true)
@@ -292,7 +290,7 @@ final class Wave7RoomActions: ObservableObject {
                 )
                 reminderAnchor = nil
                 remindersOpen = false
-                // Tier 1 — schedule the local fire (offline-capable); the
+                // Tier 1 - schedule the local fire (offline-capable); the
                 // conversationId rides the userInfo so the tap opens the room.
                 if let iso = item.remindAt {
                     let ms = Self.epochMs(from: iso)
@@ -387,7 +385,7 @@ struct Wave7RedPacketCard: View {
         .contentShape(Rectangle())
         .onTapGesture { if detail != nil { onOpenDetail() } }
         .task(id: packetId) {
-            // 20 s poll — web redpacket-bubble.tsx:79.
+            // 20 s poll - web redpacket-bubble.tsx:79.
             while !Task.isCancelled {
                 detail = await load(packetId)
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
@@ -405,7 +403,7 @@ struct Wave7RedPacketCard: View {
     private var metaText: String {
         if let myGrab, myGrab > 0 { return "You grabbed \(myGrab) PC" }
         if isMine { return "\(detail?.packet?.grabbed ?? 0)/\(count) claimed · \(total) PC" }
-        if status == "expired" { return "Expired — unclaimed PC refunded" }
+        if status == "expired" { return "Expired - unclaimed PC refunded" }
         if status == "exhausted" { return "Fully grabbed" }
         return "\(total) PC · \(count) grabs"
     }
@@ -454,7 +452,7 @@ struct Wave7RedPacketDetailBody: View {
 
     private var statusText: String {
         switch detail.packet?.status {
-        case "expired": return "Expired — unclaimed PC refunded to the sender"
+        case "expired": return "Expired - unclaimed PC refunded to the sender"
         case "exhausted": return "Fully grabbed"
         default: return "\(detail.packet?.grabbed ?? 0)/\(detail.packet?.count ?? 0) claimed"
         }
@@ -479,7 +477,7 @@ struct Wave7RedPacketCreateSheet: View {
                         .keyboardType(.numberPad)
                     TextField("Note (optional, ≤60)", text: $note)
                 } footer: {
-                    Text("Whole PC only — every grab wins at least 1.")
+                    Text("Whole PC only - every grab wins at least 1.")
                 }
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(.red)
@@ -512,7 +510,7 @@ struct Wave7TicTacToeCard: View {
     let load: (String) async -> WireGameDetail?
     let onMove: (Int) -> Void
     let onJoin: () -> Void
-    // R7 — rematch (web game-tictactoe-card.tsx:452-476): the hub carries the
+    // R7 - rematch (web game-tictactoe-card.tsx:452-476): the hub carries the
     // in-flight spinner/toast and the cardRematch sink the room wires.
     var wave7: Wave7RoomActions? = nil
 
@@ -538,7 +536,7 @@ struct Wave7TicTacToeCard: View {
                 Button("Take the O seat", action: onJoin)
                     .buttonStyle(.bordered)
             }
-            // R7 — finished match with the viewer as a player → rematch offer
+            // R7 - finished match with the viewer as a player → rematch offer
             // (web game-tictactoe-card.tsx:452-476). Disabled while the POST
             // round-trip runs; the new challenge arrives via the message stream.
             if finished, mySide != nil, let opponentId = rematchOpponentId {
@@ -566,7 +564,7 @@ struct Wave7TicTacToeCard: View {
         .padding(12)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 16))
         .task(id: "\(matchId)-\(detail?.match?.status ?? "")") {
-            // 1.5 s poll while active — web game-tictactoe-card.tsx:33,134.
+            // 1.5 s poll while active - web game-tictactoe-card.tsx:33,134.
             guard detail?.match?.status == "active" || detail == nil else { return }
             detail = await load(matchId)
             while detail?.match?.status == "active" && !Task.isCancelled {
@@ -590,13 +588,13 @@ struct Wave7TicTacToeCard: View {
         match.status == "active" && match.playerOId == nil && mySide == nil
     }
 
-    // R7 — web isFinished parity (`status !== 'active'`, match present): the
+    // R7 - web isFinished parity (`status !== 'active'`, match present): the
     // empty fallback match has a nil status → NOT finished (no premature pill).
     private var finished: Bool {
         match.status != nil && match.status != "active"
     }
 
-    /// R7 — the other seat's player (web :215 `mySide === 'X' ? playerOId : playerXId`).
+    /// R7 - the other seat's player (web :215 `mySide === 'X' ? playerOId : playerXId`).
     private var rematchOpponentId: String? {
         guard mySide != nil else { return nil }
         return mySide == "X" ? match.playerOId : match.playerXId
@@ -604,9 +602,9 @@ struct Wave7TicTacToeCard: View {
 
     private var headline: String {
         switch match.status {
-        case "x_won": return "X wins — \(detail?.playerX?.name ?? "X")"
-        case "o_won": return "O wins — \(detail?.playerO?.name ?? "O")"
-        case "draw": return "Draw — both +10 XP"
+        case "x_won": return "X wins - \(detail?.playerX?.name ?? "X")"
+        case "o_won": return "O wins - \(detail?.playerO?.name ?? "O")"
+        case "draw": return "Draw - both +10 XP"
         default:
             if match.playerOId == nil && mySide == nil { return "Open challenge - tap a seat to join" }
             if match.playerOId == nil { return "Tic-tac-toe - open challenge" }
@@ -896,7 +894,7 @@ struct Wave7WhiteboardSheet: View {
     let conversationId: String
     let viewerId: String
     let load: (Int64?) async -> WireWhiteboardPage?
-    /// R1-W2G D44 — async WITH a verdict: the draft store clears a stroke
+    /// R1-W2G D44 - async WITH a verdict: the draft store clears a stroke
     /// only when its server sync confirms (see Wave7RoomActions.postStrokes).
     let onStrokes: ([WireWhiteboardStrokePost]) async -> Bool
     let onUndo: () -> Void
@@ -907,7 +905,7 @@ struct Wave7WhiteboardSheet: View {
     @State private var lastServerTime: Int64 = 0
     @State private var resetAt: Int64 = 0
     @State private var localStrokes: [(String, Double, [[Double]])] = []
-    /// R1-W2G D44 — single-flight flush: while a batch POST is in flight,
+    /// R1-W2G D44 - single-flight flush: while a batch POST is in flight,
     /// fresh strokes (already draft-persisted at draw time) ride the NEXT
     /// pass instead of racing the in-flight verdict.
     @State private var flushing = false
@@ -951,7 +949,7 @@ struct Wave7WhiteboardSheet: View {
                     onFinish: { pts in
                         if pts.count >= 2 {
                             localStrokes.append((color, width, pts))
-                            // R1-W2G D44 — persist the pending stroke BEFORE
+                            // R1-W2G D44 - persist the pending stroke BEFORE
                             // any sync attempt so a crash/kill mid-draw
                             // never loses it (web :527-529 draws the pending
                             // stroke instantly; the native adds the durable
@@ -973,10 +971,10 @@ struct Wave7WhiteboardSheet: View {
                 Spacer()
             }
             .task {
-                // R1-W2G D44 — restore the unsynced draft FIRST (a crash/kill
+                // R1-W2G D44 - restore the unsynced draft FIRST (a crash/kill
                 // mid-draw must not lose strokes), then the full snapshot
                 // drops restored copies the server already has (their first
-                // POST landed before the crash — exact color+width+points).
+                // POST landed before the crash - exact color+width+points).
                 localStrokes = PulseWhiteboardDraft.strokes(conversationId: conversationId)
                     .map { stroke in (stroke.color, stroke.width, stroke.points) }
                 // Full snapshot, then since-delta poll at 900 ms (web whiteboard-sheet.tsx:66).
@@ -1001,7 +999,7 @@ struct Wave7WhiteboardSheet: View {
                             resetAt = r
                             remoteStrokes = []
                             localStrokes = []
-                            // R1-W2G D44 — the board was reset server-side;
+                            // R1-W2G D44 - the board was reset server-side;
                             // the pending draft is gone with it.
                             PulseWhiteboardDraft.clear(conversationId: conversationId)
                         }
@@ -1012,10 +1010,10 @@ struct Wave7WhiteboardSheet: View {
         }
     }
 
-    /// R1-W2G D44 — the draft store IS the pending queue (web pending
+    /// R1-W2G D44 - the draft store IS the pending queue (web pending
     /// semantics, whiteboard-sheet.tsx:527-529): batches of ≤ 40 POST, and
     /// each batch leaves the draft only on the server verdict. A failed
-    /// batch is removed honestly (:497-500) — the strokes never reached the
+    /// batch is removed honestly (:497-500) - the strokes never reached the
     /// server, so the canvas drops them too instead of faking a sync (the
     /// postStrokes toast says why). The draft is re-read every pass, so
     /// strokes drawn mid-flight simply ride the next batch.
@@ -1164,7 +1162,7 @@ struct Wave7EventsSheet: View {
                     }
                 }
                 if events.isEmpty {
-                    Section { Text("No events yet — schedule the first one.").foregroundStyle(.secondary) }
+                    Section { Text("No events yet - schedule the first one.").foregroundStyle(.secondary) }
                 }
                 ForEach(events, id: \.id) { event in
                     Section {
@@ -1274,8 +1272,8 @@ struct Wave7RemindersSheet: View {
     let onCreate: (String, String, WireChatMessage?) -> Void
     let onResolve: (String) -> Void
     let onDelete: (String) -> Void
-    // R7 — web reminders-sheet.tsx:337-343 parity: rows anchored to a message
-    // offer a jump ("View", the web's action label) — same room jumps +
+    // R7 - web reminders-sheet.tsx:337-343 parity: rows anchored to a message
+    // offer a jump ("View", the web's action label) - same room jumps +
     // flashes; other rooms navigate there.
     let onJump: (WireReminderItem) -> Void
     let anchored: WireChatMessage?
@@ -1291,7 +1289,7 @@ struct Wave7RemindersSheet: View {
             Form {
                 Section {
                     TextField(anchored != nil ? "Note (anchored to a message)" : "Note", text: $note)
-                    TextField("When — \"in 30m\", \"tomorrow\", \"2026-01-20 09:00\"", text: $whenText)
+                    TextField("When - \"in 30m\", \"tomorrow\", \"2026-01-20 09:00\"", text: $whenText)
                     if let error {
                         Text(error).font(.footnote).foregroundStyle(.red)
                     }
@@ -1307,7 +1305,7 @@ struct Wave7RemindersSheet: View {
                         }
                         let finalNote = parsed?.note ?? note.trimmingCharacters(in: .whitespaces)
                         if resolvedIso == nil {
-                            error = "No sane time found — try \"in 30m\", \"tomorrow\" or an exact date."
+                            error = "No sane time found - try \"in 30m\", \"tomorrow\" or an exact date."
                         } else if finalNote.isEmpty {
                             error = "Note can't be empty."
                         } else {
@@ -1335,7 +1333,7 @@ struct Wave7RemindersSheet: View {
                             }
                             Spacer()
                             if item.messageId != nil, item.firedAt == nil {
-                                // R7 — "View" = the web's jump action label
+                                // R7 - "View" = the web's jump action label
                                 // (due-toast :231); fired rows stay inert
                                 // exactly like web `disabled={fired}`.
                                 Button { onJump(item) } label: { Text("View").foregroundStyle(PulseTheme.color(named: "emerald")) }
@@ -1369,7 +1367,7 @@ struct Wave7RemindersSheet: View {
 
     private func subtitle(_ item: WireReminderItem) -> String {
         let time = Wave7EventsSheet.formatTime(item.remindAt)
-        let due = isDue(item) ? "DUE NOW — " : ""
+        let due = isDue(item) ? "DUE NOW - " : ""
         let room: String
         if let name = item.conversation?.name, !name.isEmpty {
             room = " · \(name)"
@@ -1417,7 +1415,7 @@ struct Wave7LeaderboardSheet: View {
                     Button(scopeGlobal ? "This room" : "Global") { scopeGlobal.toggle() }
                 }
                 if rows.isEmpty {
-                    Section { Text("No standings yet — send messages, win games, join tournaments.").foregroundStyle(.secondary) }
+                    Section { Text("No standings yet - send messages, win games, join tournaments.").foregroundStyle(.secondary) }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { i, row in
                     HStack {

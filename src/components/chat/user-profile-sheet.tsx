@@ -1,10 +1,9 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — other-user profile sheet (R26-d).
+// Pulse - other-user profile sheet (R26-d).
 // Opened from chat room member taps, group info rows and the
 // contacts list. Immersive glass page-style layout: a deep-glass
 // hero (specular rim + glossy sheen) with the user's gradient
 // orbs, presence-ring avatar, name + member badge, tap-to-copy
-// @handle pill, status glyph + text, bio — then REAL stats from
+// @handle pill, status glyph + text, bio - then REAL stats from
 // /api/users/[id]/stats, mutual rooms from the live conversations
 // cache, member-since / last-active footer and the working
 // Message action (creates the DM via POST /api/conversations when
@@ -15,12 +14,11 @@
 // bio/handle have explicit fallbacks, and mutual rooms only mount
 // when the overlap is real. If a caller reports "nothing shows",
 // audit the CALLER first (see worklog R26-d: chat-room DM bubbles
-// render no avatar at all — chat-room.tsx owns that gate).
+// render no avatar at all - chat-room.tsx owns that gate).
 //
 // z-layering: content sits at z-[80] so it also opens above the
 // full-screen GroupInfoSheet (z-[70]) when tapping a member row.
-// Zero emojis — Lucide icons + framer-motion microinteractions.
-// ─────────────────────────────────────────────────────────────
+// Zero emojis - Lucide icons + framer-motion microinteractions.
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -84,7 +82,7 @@ export function UserProfileSheet({
   user: AppUser | null
   open: boolean
   onOpenChange: (v: boolean) => void
-  /** provided by callers that can navigate (Contacts) — takes priority */
+  /** provided by callers that can navigate (Contacts) - takes priority */
   onMessage?: (userId: string) => void
 }) {
   const reducedMotion = useReducedMotion()
@@ -152,7 +150,7 @@ export function UserProfileSheet({
     },
   })
 
-  // R47 — block pair-state (is THIS user blocked by me?) + the toggle.
+  // R47 - block pair-state (is THIS user blocked by me?) + the toggle.
   const blockQ = useQuery({
     queryKey: ['block-pair', me?.id ?? '-', user?.id ?? '-'],
     queryFn: async (): Promise<boolean> => {
@@ -182,7 +180,7 @@ export function UserProfileSheet({
       haptic(14)
       if (me && user) {
         void queryClient.invalidateQueries({ queryKey: ['block-pair', me.id, user.id] })
-        // the DM composer reads detail.dmBlocked — refresh any live rooms
+        // the DM composer reads detail.dmBlocked - refresh any live rooms
         void queryClient.invalidateQueries({ queryKey: ['conversation'] })
       }
       toast.success(next ? `Blocked ${user?.name ?? 'account'}` : `Unblocked ${user?.name ?? 'account'}`)
@@ -254,7 +252,7 @@ export function UserProfileSheet({
           variants={listVariants}
           className="-mt-2 flex flex-col gap-3.5 px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-1"
         >
-          {/* ── glass hero — deep glass + sheen + gradient orbs ── */}
+          {/*  glass hero - deep glass + sheen + gradient orbs  */}
           <motion.div
             variants={itemVariants}
             className="glass-deep glass-sheen relative isolate overflow-hidden rounded-3xl p-4"
@@ -348,7 +346,7 @@ export function UserProfileSheet({
             </p>
           </motion.div>
 
-          {/* ── real stats ── */}
+          {/*  real stats  */}
           <motion.div variants={itemVariants}>
             <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
               Activity
@@ -375,7 +373,7 @@ export function UserProfileSheet({
             )}
           </motion.div>
 
-          {/* ── mutual rooms (real overlap from my conversations) ── */}
+          {/*  mutual rooms (real overlap from my conversations)  */}
           {me && mutualRooms.length > 0 ? (
             <motion.div
               variants={itemVariants}
@@ -409,7 +407,7 @@ export function UserProfileSheet({
             </motion.div>
           ) : null}
 
-          {/* ── member since / last active (real timestamps) ── */}
+          {/*  member since / last active (real timestamps)  */}
           <motion.p
             variants={itemVariants}
             className="px-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400"
@@ -438,7 +436,7 @@ export function UserProfileSheet({
             ) : null}
           </motion.p>
 
-          {/* ── actions — one primary button + two quiet copy pills ── */}
+          {/*  actions - one primary button + two quiet copy pills  */}
           <motion.div variants={itemVariants} className="flex items-center gap-2">
             <motion.div
               whileTap={reducedMotion ? undefined : { scale: 0.98 }}
@@ -484,7 +482,7 @@ export function UserProfileSheet({
             ) : null}
           </motion.div>
 
-          {/* ── R47 — block / unblock (danger quiet row; toggles in place) + R48 report ── */}
+          {/*  R47 - block / unblock (danger quiet row; toggles in place) + R48 report  */}
           {!isSelfView ? (
             <>
               <motion.button

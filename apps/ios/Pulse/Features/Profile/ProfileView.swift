@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Profile — R17 Neo mirror of the web R35 profile-tab: a slim flat
+/// Profile - R17 Neo mirror of the web R35 profile-tab: a slim flat
 /// identity cover with a scanline texture (zero carnival blobs), an
 /// overlapping 84pt avatar on a 2.5pt identity ring, mono @handle chip,
 /// one flat stats instrument row, and quiet hairline cards for Saved /
@@ -14,22 +14,22 @@ struct ProfileView: View {
     @ObservedObject var prefs: PulsePrefs
 
     @State private var identitySheet = false
-    // Wave 6 — the full profile editor (F-CP-04/09) via the real PATCH.
+    // Wave 6 - the full profile editor (F-CP-04/09) via the real PATCH.
     @State private var editProfileOpen = false
-    // R7 bonus — the saved-messages library in the profile tab (web hosts it
+    // R7 bonus - the saved-messages library in the profile tab (web hosts it
     // here; iOS only exposed it through the dock-More menu).
     @State private var savedOpen = false
-    // R2-B — hub wallet chip state (GET /api/hub/wallet?userId=).
+    // R2-B - hub wallet chip state (GET /api/hub/wallet?userId=).
     enum WalletPhase: Equatable { case loading, loaded, failed }
     @State private var walletPhase: WalletPhase = .loading
     @State private var walletCoins: Int = 0
-    // R14 5-b — the activity stats row (GET /api/users/{id}/stats — the
+    // R14 5-b - the activity stats row (GET /api/users/{id}/stats - the
     // same endpoint the Settings footprint + user pages call).
     @State private var stats: WireUserStats?
     @State private var statsFailed = false
-    // R14 5-b — the @handle chip's copy confirmation (web handleCopied).
+    // R14 5-b - the @handle chip's copy confirmation (web handleCopied).
     @State private var handleCopied = false
-    // R17 Neo — the account card: copy-ID confirmation + sign-out dialog.
+    // R17 Neo - the account card: copy-ID confirmation + sign-out dialog.
     @State private var idCopied = false
     @State private var signOutArmed = false
 
@@ -66,7 +66,7 @@ struct ProfileView: View {
             ProfileEditView(session: session, prefs: prefs)
         }
         .sheet(isPresented: $savedOpen) {
-            // R7 bonus — the EXISTING SavedLibraryView route (RootView mounts
+            // R7 bonus - the EXISTING SavedLibraryView route (RootView mounts
             // the same sheet from dock-More). "Open original" hands the room
             // + jump target to the session bridge; the Chats tab consumes it
             // (Published replay) on next activation.
@@ -81,7 +81,7 @@ struct ProfileView: View {
         }
     }
 
-    // ── hero (web profile-tab R35 hero: flat cover, no orbs) ────────────
+    // hero (web profile-tab R35 hero: flat cover, no orbs)
 
     /// Flat identity cover (112pt) + overlapping avatar block. The cover is
     /// the member-color gradient with a cheap capped scanline texture and a
@@ -130,7 +130,7 @@ struct ProfileView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
-    /// Scanline texture — capped rows of 1pt rects at low opacity (cheap,
+    /// Scanline texture - capped rows of 1pt rects at low opacity (cheap,
     /// static; the web equivalent is the .scan-fx overlay).
     private var scanlines: some View {
         VStack(spacing: 7) {
@@ -175,7 +175,7 @@ struct ProfileView: View {
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(PulseTheme.titleOnPanel)
                 .lineLimit(1)
-            // R17 — quiet trust mark (web PulseSeal tinted accent).
+            // R17 - quiet trust mark (web PulseSeal tinted accent).
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 15))
                 .foregroundStyle(PulseTheme.accent)
@@ -183,7 +183,7 @@ struct ProfileView: View {
         }
     }
 
-    /// Mono @handle chip on ultraThinMaterial — tap to copy (web copyHandle
+    /// Mono @handle chip on ultraThinMaterial - tap to copy (web copyHandle
     /// :243-251); no handle → opens the editor.
     private var handleChip: some View {
         Button {
@@ -209,10 +209,13 @@ struct ProfileView: View {
     /// Status + bio at 13pt (web status line + bio block).
     private var statusBioBlock: some View {
         VStack(spacing: 6) {
-            if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
+            // R18-b - stored value is an icon ID (unknown -> registry default).
+            if let id = PulseStatusIconId.normalize(prefs.viewerStatusEmoji) {
                 HStack(spacing: 6) {
-                    Text(pulseStatusGlyphDisplay(emoji))
-                        .font(.system(size: 14))
+                    Image(systemName: id.symbolName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(PulseTheme.accent)
+                        .accessibilityLabel(id.label)
                     if let text = prefs.viewerStatusText, !text.isEmpty {
                         Text(text)
                             .font(.system(size: 13, weight: .medium))
@@ -235,7 +238,7 @@ struct ProfileView: View {
         .padding(.horizontal, 12)
     }
 
-    /// Quick actions — one signal, one ghost (web: filled accent "Edit
+    /// Quick actions - one signal, one ghost (web: filled accent "Edit
     /// profile" capsule + glass "Share" capsule). Share rides the existing
     /// ShareLink deep-link message; no handle → honest inert ghost.
     private var actionCapsules: some View {
@@ -276,9 +279,9 @@ struct ProfileView: View {
         }
     }
 
-    // ── stats (web R35: one flat instrument row, mono numerals) ─────────
+    // stats (web R35: one flat instrument row, mono numerals)
 
-    /// Messages / Rooms / Coins / Since — real data only; failures render
+    /// Messages / Rooms / Coins / Since - real data only; failures render
     /// the honest em dash, loads render the quiet interpunct.
     private var statsRow: some View {
         HStack(spacing: 0) {
@@ -288,7 +291,7 @@ struct ProfileView: View {
             statDivider
             statCell(value: coinsValueText, label: "Coins", accent: true)
             statDivider
-            statCell(value: memberSinceShort ?? "—", label: "Since", small: true)
+            statCell(value: memberSinceShort ?? "-", label: "Since", small: true)
         }
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
@@ -322,24 +325,24 @@ struct ProfileView: View {
     }
 
     private var statsValueText: String {
-        guard let stats else { return statsFailed ? "—" : "·" }
+        guard let stats else { return statsFailed ? "-" : "·" }
         return (stats.messages ?? 0).formatted()
     }
 
     private var roomsValueText: String {
-        guard let stats else { return statsFailed ? "—" : "·" }
+        guard let stats else { return statsFailed ? "-" : "·" }
         return (stats.chats ?? 0).formatted()
     }
 
     private var coinsValueText: String {
         switch walletPhase {
         case .loading: return "·"
-        case .failed: return "—"
+        case .failed: return "-"
         case .loaded: return walletCoins.formatted()
         }
     }
 
-    /// The short member-since stamp (web memberSinceShort parity) — the
+    /// The short member-since stamp (web memberSinceShort parity) - the
     /// stats joinedAt (server-derived createdAt), month-year format
     /// (web formatMemberSince, pulse-utils.ts :280-283); omitted when unknown.
     private var memberSinceShort: String? {
@@ -360,9 +363,9 @@ struct ProfileView: View {
         }
     }
 
-    // ── data loads (unchanged behavior) ──────────────────────
+    // data loads (unchanged behavior)
 
-    /// R14 5-b — the @handle chip tap → clipboard + haptic (web copyHandle
+    /// R14 5-b - the @handle chip tap → clipboard + haptic (web copyHandle
     /// :243-251). No handle → opens the editor (web opens the handle sheet).
     private func copyHandle() {
         guard let handle = prefs.viewer?.username, !handle.isEmpty else {
@@ -378,7 +381,7 @@ struct ProfileView: View {
         }
     }
 
-    /// R17 — account ID tap → clipboard + haptic (web copyId :510-529).
+    /// R17 - account ID tap → clipboard + haptic (web copyId :510-529).
     private func copyAccountId() {
         guard let id = prefs.viewer?.id, !id.isEmpty else { return }
         UIPasteboard.general.string = id
@@ -390,7 +393,7 @@ struct ProfileView: View {
         }
     }
 
-    /// R17 — sign out, mirroring the IdentityPickerSheet forget flow:
+    /// R17 - sign out, mirroring the IdentityPickerSheet forget flow:
     /// session teardown first, then setViewer(nil) which wipes the stored
     /// viewer + identity-bound token; RootView flips to onboarding.
     private func signOut() {
@@ -414,9 +417,9 @@ struct ProfileView: View {
         }
     }
 
-    // ── cards ────────────────────────────────────────────────
+    // cards
 
-    /// R17 — Saved messages in a quiet hairline card (web ProfileSection
+    /// R17 - Saved messages in a quiet hairline card (web ProfileSection
     /// "Saved" → ChevronRow).
     private var savedCard: some View {
         VStack(spacing: 0) {
@@ -449,7 +452,7 @@ struct ProfileView: View {
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
     }
 
-    /// R17 — the account card (web ProfileSection "Account"): Copy account
+    /// R17 - the account card (web ProfileSection "Account"): Copy account
     /// ID, Switch identity (the iOS-native switcher), Sign out. Rows split
     /// by hairlines, no heavy chrome.
     private var accountCard: some View {
@@ -552,7 +555,7 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: 8) {
             neoCardHeader("Wallet")
             Button {
-                // A failed fetch is honest — tap retries (web refetch parity).
+                // A failed fetch is honest - tap retries (web refetch parity).
                 guard walletPhase == .failed else { return }
                 walletPhase = .loading
                 Task { await loadWallet() }
@@ -567,7 +570,7 @@ struct ProfileView: View {
                     case .loading:
                         ProgressView().controlSize(.small)
                     case .failed:
-                        Text("—")
+                        Text("-")
                             .font(.system(size: 13, weight: .semibold).monospacedDigit())
                             .foregroundStyle(PulseTheme.neoMuted)
                     case .loaded:
@@ -592,14 +595,17 @@ struct ProfileView: View {
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
     }
 
-    /// F-CP-09 — the viewer's status emoji + text, live from prefs.
+    /// F-CP-09 - the viewer's status icon + text, live from prefs.
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             neoCardHeader("Status")
-            if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
+            // R18-b - stored value is an icon ID (unknown -> registry default).
+            if let id = PulseStatusIconId.normalize(prefs.viewerStatusEmoji) {
                 HStack(spacing: 8) {
-                    Text(pulseStatusGlyphDisplay(emoji))
-                        .font(.system(size: 18))
+                    Image(systemName: id.symbolName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(PulseTheme.accent)
+                        .accessibilityLabel(id.label)
                     Text(prefs.viewerStatusText ?? "")
                         .font(.system(size: 13))
                         .foregroundStyle(PulseTheme.textSecondary)
@@ -621,7 +627,7 @@ struct ProfileView: View {
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
     }
 
-    /// Appearance — mode picker + the ambient FX strip (unchanged behavior;
+    /// Appearance - mode picker + the ambient FX strip (unchanged behavior;
     /// the previews are the real Metal/Canvas modes).
     private var appearanceCard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -640,7 +646,7 @@ struct ProfileView: View {
                 Text("Ambient field")
                     .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(PulseTheme.titleOnPanel)
-                Text("The web's WebGL modes, rebuilt with Metal + Canvas — same palette, same physics.")
+                Text("The web's WebGL modes, rebuilt with Metal + Canvas - same palette, same physics.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(PulseTheme.neoMuted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -681,7 +687,7 @@ struct ProfileView: View {
         .buttonStyle(PulseButtonStyle())
     }
 
-    /// Motion note (unchanged copy — Reduce Motion is honored system-wide).
+    /// Motion note (unchanged copy - Reduce Motion is honored system-wide).
     private var motionCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             neoCardHeader("Motion")
@@ -706,7 +712,7 @@ struct ProfileView: View {
                 .font(.system(size: 13))
             LabeledContent("Stack", value: "SwiftUI · GRDB · Socket.IO")
                 .font(.system(size: 13))
-            Text("Rebuilt natively against the same live gateway as the web app — chats, rooms, reactions, typing and presence are real.")
+            Text("Rebuilt natively against the same live gateway as the web app - chats, rooms, reactions, typing and presence are real.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(PulseTheme.neoMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -717,7 +723,7 @@ struct ProfileView: View {
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
     }
 
-    // ── Neo card primitives ──────────────────────────────────
+    // Neo card primitives
 
     /// Small uppercase card header (web ProfileSection title).
     private func neoCardHeader(_ title: String) -> some View {
@@ -743,11 +749,11 @@ struct ProfileView: View {
             .padding(.leading, 56)
     }
 
-    /// R47 — the shared text: verbatim web copy (profile-tab.tsx:270) plus
+    /// R47 - the shared text: verbatim web copy (profile-tab.tsx:270) plus
     /// the pulse://user/{id} deep link when the viewer id exists (the app
     /// scheme registered in project.yml; PulseDeepLink routes it back in).
     static func shareMessage(handle: String, userId: String?) -> String {
-        var text = "Find me on Pulse — @\(handle)"
+        var text = "Find me on Pulse - @\(handle)"
         if let userId, !userId.isEmpty {
             text += "\n\(PulseDeepLink.scheme)://user/\(userId)"
         }

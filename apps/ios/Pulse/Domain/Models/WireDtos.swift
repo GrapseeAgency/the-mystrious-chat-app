@@ -1,6 +1,6 @@
 import Foundation
 
-/// REAL wire DTOs — mirror of the live gateway JSON (identical to Android
+/// REAL wire DTOs - mirror of the live gateway JSON (identical to Android
 /// `apps/android/protocol/WireDtos.kt` and `packages/protocol/contracts.ts`).
 /// Codable + Sendable; unknown keys ignored for forward compatibility.
 
@@ -19,7 +19,7 @@ public struct WireReaction: Codable, Hashable, Sendable {
     public let createdAt: String?
 }
 
-/// N3-b — reactions as the wire actually carries them: grouped per emoji
+/// N3-b - reactions as the wire actually carries them: grouped per emoji
 /// (see serializers.groupReactions: { emoji, userIds, count }).
 public struct WireReactionGroup: Codable, Hashable, Sendable {
     public let emoji: String
@@ -27,9 +27,9 @@ public struct WireReactionGroup: Codable, Hashable, Sendable {
     public let count: Int
 }
 
-/// N3-b — the quoted-parent snippet embedded on replies. The wire shape is
+/// N3-b - the quoted-parent snippet embedded on replies. The wire shape is
 /// { id, content, senderName, deleted } (NO conversationId/senderId/kind),
-/// so it decodes into its own type — decoding it as WireChatMessage (N2
+/// so it decodes into its own type - decoding it as WireChatMessage (N2
 /// placeholder) failed for every message that actually had a reply.
 public struct WireReplySnippet: Codable, Hashable, Sendable {
     public let id: String
@@ -38,7 +38,7 @@ public struct WireReplySnippet: Codable, Hashable, Sendable {
     public let deleted: Bool?
 }
 
-/// N3-b — AppUser mirror (GET/POST /api/users), tolerant decode: unknown
+/// N3-b - AppUser mirror (GET/POST /api/users), tolerant decode: unknown
 /// keys ignored, every field optional except id/name (live shapes verified).
 public struct WireUser: Codable, Hashable, Sendable, Identifiable {
     public let id: String
@@ -62,7 +62,7 @@ public struct WireUserEnvelope: Codable, Sendable {
     public let user: WireUser
 }
 
-/// N3-b — Hub wallet (GET /api/hub/wallet?userId=). Real economy numbers.
+/// N3-b - Hub wallet (GET /api/hub/wallet?userId=). Real economy numbers.
 public struct WireWallet: Codable, Hashable, Sendable {
     public let userId: String?
     public let coins: Int?
@@ -74,27 +74,27 @@ public struct WireWallet: Codable, Hashable, Sendable {
 
 public struct WireWalletPage: Codable, Sendable {
     public let wallet: WireWallet?
-    // W7 — the hub wallet route returns the ledger alongside (≤ N rows, desc).
+    // W7 - the hub wallet route returns the ledger alongside (≤ N rows, desc).
     public let ledger: [WireLedgerEntry]?
 }
 
-/// N3-b — error body with the username-taken contract
+/// N3-b - error body with the username-taken contract
 /// (409 { error, code: "username_taken", suggestion }).
 public struct WireErrorBody: Codable, Sendable {
     public let error: String?
     public let code: String?
     public let suggestion: String?
-    /// R44 — slow-mode 429s carry { error, retryAfter } (seconds to wait).
+    /// R44 - slow-mode 429s carry { error, retryAfter } (seconds to wait).
     public let retryAfter: Int?
 }
 
-/// GET /api/users/check-username — live @handle availability (onboarding picker).
+/// GET /api/users/check-username - live @handle availability (onboarding picker).
 public struct WireUsernameCheck: Codable, Sendable {
     public let available: Bool
     public let suggestion: String?
 }
 
-/// GET registry/handles.json — static-CDN availability source
+/// GET registry/handles.json - static-CDN availability source
 /// (offline-first fallback when no live gateway answers).
 public struct WireHandleRegistry: Codable, Sendable {
     public let reserved: [String]?
@@ -102,7 +102,7 @@ public struct WireHandleRegistry: Codable, Sendable {
 }
 
 /// Tolerant wrapper: responses arrive as { "conversation": ... } (200 deduped
-/// / 201 created) — and defensively as the bare object on older relays.
+/// / 201 created) - and defensively as the bare object on older relays.
 public struct WireConversationEnvelope: Codable, Sendable {
     public let conversation: WireConversationSummary?
 
@@ -116,7 +116,7 @@ public struct WireConversationEnvelope: Codable, Sendable {
 }
 
 /// Tolerant wrapper: { "message": ... } (POST messages / POST react add a
-/// streak + xpAwarded sibling) — falls back to the bare message object.
+/// streak + xpAwarded sibling) - falls back to the bare message object.
 public struct WireMessageEnvelope: Codable, Sendable {
     public let message: WireChatMessage?
 
@@ -128,7 +128,7 @@ public struct WireMessageEnvelope: Codable, Sendable {
         return try JSONDecoder().decode(WireChatMessage.self, from: data)
     }
 
-    /// Lenient variant for POST /api/messages/{id}/unfurl — the route answers
+    /// Lenient variant for POST /api/messages/{id}/unfurl - the route answers
     /// `{ message: null }` when nothing was unfurled (nothing link-ish in the
     /// content / unreachable host). The strict extract above would fall
     /// through to the bare-object decode and THROW on that body; this variant
@@ -144,7 +144,7 @@ public struct WireMessageEnvelope: Codable, Sendable {
         return try? JSONDecoder().decode(WireChatMessage.self, from: data)
     }
 
-    /// R5-A Item 5 — send-result variant: carries the streak sibling when the
+    /// R5-A Item 5 - send-result variant: carries the streak sibling when the
     /// server includes it ({ message, streak?, xpAwarded }), falls back to the
     /// bare message row (streak = nil) for older relays.
     public static func extractSendResult(from data: Data) throws -> PulseSendResult {
@@ -156,7 +156,7 @@ public struct WireMessageEnvelope: Codable, Sendable {
     }
 }
 
-/// R5-A Item 5 — full send response shape:
+/// R5-A Item 5 - full send response shape:
 /// { message, streak?: {count,best,continued} | null, xpAwarded }.
 public struct WireSendResponse: Codable, Sendable {
     public let message: WireChatMessage?
@@ -164,7 +164,7 @@ public struct WireSendResponse: Codable, Sendable {
     public let xpAwarded: Int?
 }
 
-/// R5-A Item 5 — decoded send outcome: the message row plus the streak
+/// R5-A Item 5 - decoded send outcome: the message row plus the streak
 /// verdict (nil when this send did not change the streak / older relays
 /// answer the bare row).
 public struct PulseSendResult: Sendable {
@@ -195,12 +195,12 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     public let viewOnce: Bool?
     public let anon: Bool?
     public let anonAlias: String?
-    // W2-DATA-B — Wave 2 additive fields (all optional: old relays never
+    // W2-DATA-B - Wave 2 additive fields (all optional: old relays never
     // send them and the decoder must stay tolerant both ways).
-    /// View-once burn stamp — the FIRST non-sender open, wire ISO string.
+    /// View-once burn stamp - the FIRST non-sender open, wire ISO string.
     public let viewedAt: String?
     /// Who consumed the view-once attachment. Server column is a SINGLE
-    /// userId string (Message.viewedBy String? in prisma/schema.prisma) —
+    /// userId string (Message.viewedBy String? in prisma/schema.prisma) -
     /// NOT an array, despite what stale fixtures once guessed.
     public let viewedBy: String?
     /// Cached voice-note transcription (real ASR, stored on the row).
@@ -212,25 +212,25 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     public let linkUrl: String?
     public let linkPreview: WireLinkPreview?
     public let poll: WirePoll?
-    // W7 — rich-object carrier payload (red packet / game / tournament).
+    // W7 - rich-object carrier payload (red packet / game / tournament).
     // The wire value is a RAW JSON STRING ({packetId..}/{matchId..}/…);
     // cards decode it tolerantly via PulseWave7Logic. Defaulted var keeps
     // the memberwise init source-compatible with every existing call site.
     public var payload: String? = nil
-    /// REM-B F-MS-19 — disappearing-TTL burn stamp (server sets createdAt +
+    /// REM-B F-MS-19 - disappearing-TTL burn stamp (server sets createdAt +
     /// ttlSeconds on rows of TTL-enabled rooms; the client hides past rows).
     public var expiresAt: String? = nil
-    /// REM-B D42/AI-01 — automation-bot authorship stamp (F-MS-21 engine):
+    /// REM-B D42/AI-01 - automation-bot authorship stamp (F-MS-21 engine):
     /// true on rows posted by @pulseai automations → bot tag chip in the room.
     public var viaAutomation: Bool? = nil
-    /// R1-W2B F-MD-06 — persisted LLM translations (serializers.ts L232/320:
+    /// R1-W2B F-MD-06 - persisted LLM translations (serializers.ts L232/320:
     /// [{lang,text}]). Defaulted var keeps the memberwise init source-compatible
     /// with every existing call site; older relays omit the key → nil.
     public var translations: [WireTranslation]? = nil
 }
 
 /// One persisted per-language translation on a message row (web
-/// MessageTranslationEntry parity — src/lib/types.ts:120).
+/// MessageTranslationEntry parity - src/lib/types.ts:120).
 public struct WireTranslation: Codable, Hashable, Sendable {
     public let lang: String
     public let text: String
@@ -248,30 +248,30 @@ public struct WireMessagesPage: Codable, Sendable {
 }
 
 
-/// GET /api/messages/{id}/thread?userId= — thread-root message + its replies
+/// GET /api/messages/{id}/thread?userId= - thread-root message + its replies
 /// (replies asc). Wave 1 thread sheet page (spec §1.1 "Thread read").
 public struct WireThreadPage: Codable, Sendable {
     public let parent: WireChatMessage
     public let replies: [WireChatMessage]
 }
 
-/// GET /api/conversations/{id}/pinned?userId= — pinned list (pinnedAt asc).
+/// GET /api/conversations/{id}/pinned?userId= - pinned list (pinnedAt asc).
 public struct WirePinnedPage: Codable, Sendable {
     public let messages: [WireChatMessage]
 }
 
-/// POST /api/messages/{id}/save {userId} — save/star toggle verdict.
+/// POST /api/messages/{id}/save {userId} - save/star toggle verdict.
 public struct WireSavedToggle: Codable, Sendable {
     public let saved: Bool
 }
 
-/// POST /api/uploads {dataUrl} — media upload verdict (JSON, NOT multipart).
+/// POST /api/uploads {dataUrl} - media upload verdict (JSON, NOT multipart).
 public struct WireUploadResult: Codable, Sendable {
     public let filePath: String?
     public let imagePath: String?
 }
 
-// ── W2-DATA-B — Wave 2 wire shapes (polls, previews, saved, topics) ──
+// W2-DATA-B - Wave 2 wire shapes (polls, previews, saved, topics)
 
 /// One poll choice inside message.poll. `votedBy` is the vote source of
 /// truth (userIds); `myOptionId` on the parent poll is actor-relative, so
@@ -285,9 +285,9 @@ public struct WirePollOption: Codable, Hashable, Sendable {
 }
 
 /// Live poll card attached to exactly one message. Backend contract
-/// (spec §0): NO `multiple`, NO `closesAt` — single-choice, manual close.
+/// (spec §0): NO `multiple`, NO `closesAt` - single-choice, manual close.
 /// `myOptionId` is ACTOR-RELATIVE on relayed rows (poll:voted envelopes map
-/// the row with the ACTOR as viewer) and null on history GETs — UI must
+/// the row with the ACTOR as viewer) and null on history GETs - UI must
 /// derive the own pick from votedBy ONLY.
 public struct WirePoll: Codable, Hashable, Sendable {
     public let id: String
@@ -297,7 +297,7 @@ public struct WirePoll: Codable, Hashable, Sendable {
     public let totalVotes: Int?
     public let myOptionId: String?
 
-    /// Own poll pick — derived from votedBy ONLY (web parity, spec §1 row 2).
+    /// Own poll pick - derived from votedBy ONLY (web parity, spec §1 row 2).
     /// Rendering myOptionId would show another member's vote as "mine" on
     /// vote/close relays. First option whose votedBy contains the viewer;
     /// nil when the viewer has not voted (or no viewer).
@@ -308,7 +308,7 @@ public struct WirePoll: Codable, Hashable, Sendable {
 }
 
 /// Open-Graph preview inside message.linkPreview (all string|null on the
-/// wire — the unfurl route fills og:title/description/image/site_name).
+/// wire - the unfurl route fills og:title/description/image/site_name).
 public struct WireLinkPreview: Codable, Hashable, Sendable {
     public let url: String?
     public let title: String?
@@ -325,7 +325,7 @@ public struct WireSavedConversation: Codable, Hashable, Sendable {
     public let name: String?
 }
 
-/// GET /api/users/{id}/saved item — newest-first, cap 100, NO server
+/// GET /api/users/{id}/saved item - newest-first, cap 100, NO server
 /// pagination/search (local filter/search is the native capability).
 public struct WireSavedItem: Codable, Hashable, Sendable {
     public let savedAt: String
@@ -337,7 +337,7 @@ public struct WireSavedPage: Codable, Hashable, Sendable {
     public let items: [WireSavedItem]?
 }
 
-/// Zulip-style topic. "General" is NOT a row — it is the unfiltered room;
+/// Zulip-style topic. "General" is NOT a row - it is the unfiltered room;
 /// only real Topic rows ride this shape.
 public struct WireTopic: Codable, Hashable, Sendable, Identifiable {
     public let id: String
@@ -352,7 +352,7 @@ public struct WireTopicsPage: Codable, Hashable, Sendable {
 }
 
 /// Tolerant wrapper: POST /api/conversations/{id}/topics answers
-/// { topic } on BOTH the 200 dedupe and the 201 create — falls back to the
+/// { topic } on BOTH the 200 dedupe and the 201 create - falls back to the
 /// bare topic object defensively (older-relay pattern).
 public struct WireTopicEnvelope: Codable, Hashable, Sendable {
     public let topic: WireTopic?
@@ -366,7 +366,7 @@ public struct WireTopicEnvelope: Codable, Hashable, Sendable {
     }
 }
 
-/// POST /api/messages/{id}/transcribe verdict — `cached: true` on the
+/// POST /api/messages/{id}/transcribe verdict - `cached: true` on the
 /// second call (the transcript is stored on the message row, never re-billed).
 public struct WireTranscribeResult: Codable, Hashable, Sendable {
     public let transcript: String
@@ -374,12 +374,12 @@ public struct WireTranscribeResult: Codable, Hashable, Sendable {
     public let cached: Bool?
 }
 
-/// DELETE /api/topics/{id} verdict — { ok: true } (creator/admin only).
+/// DELETE /api/topics/{id} verdict - { ok: true } (creator/admin only).
 public struct WireOk: Codable, Hashable, Sendable {
     public let ok: Bool?
 }
 
-// ── REM-B — group admin / scheduled / slow-mode wire shapes ──
+// REM-B - group admin / scheduled / slow-mode wire shapes
 
 /// POST /api/conversations/{id}/invite { requesterId, regenerate? }
 /// → 200 { inviteCode } (admin-only; lazy-create on first call).
@@ -387,7 +387,7 @@ public struct WireInviteCode: Codable, Sendable {
     public let inviteCode: String?
 }
 
-/// DELETE /api/conversations/{id}/members { requesterId } — leave verdict
+/// DELETE /api/conversations/{id}/members { requesterId } - leave verdict
 /// with the server's last-admin succession result.
 public struct WireLeaveResult: Codable, Sendable {
     public let ok: Bool?
@@ -406,7 +406,7 @@ public struct WireSlowModeResult: Codable, Sendable {
     public let slowModeSeconds: Int?
 }
 
-/// GET/POST /api/conversations/{id}/scheduled — Telegram-style delayed send
+/// GET/POST /api/conversations/{id}/scheduled - Telegram-style delayed send
 /// rows owned by the caller (pending + refused; sentAt null on both).
 public struct WireScheduledItem: Codable, Hashable, Sendable, Identifiable {
     public let id: String
@@ -422,9 +422,9 @@ public struct WireScheduledPage: Codable, Sendable {
     public let items: [WireScheduledItem]?
 }
 
-// ── R1-W2B — quick phrases / translation wire shapes ──
+// R1-W2B - quick phrases / translation wire shapes
 
-/// One quick phrase (GET/POST /api/users/{id}/phrases — route.ts L18-68:
+/// One quick phrase (GET/POST /api/users/{id}/phrases - route.ts L18-68:
 /// { id, text, position }, position asc, ≤12 rows, text ≤120 chars).
 public struct WireQuickPhrase: Codable, Hashable, Sendable, Identifiable {
     public let id: String
@@ -456,7 +456,7 @@ public struct WireConversationMember: Codable, Hashable, Sendable {
 
 /// Streak fields arrive as `{"count": n}` objects on the live wire (sometimes
 /// enriched with labels); decode flexibly so int/object forms both parse.
-/// R5-A Item 5 — the messages-POST streak additionally carries best +
+/// R5-A Item 5 - the messages-POST streak additionally carries best +
 /// continued (route.ts:678-706); conversation summaries ride {count} only,
 /// so both new fields stay optional and tolerant.
 public struct WireStreak: Codable, Hashable, Sendable {
@@ -504,48 +504,48 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     public let myStreak: WireStreak?
     public let deadStreak: WireStreak?
     public let lostStreak: WireStreak?
-    /// N10-b — viewer flagged this row mark-as-unread (nil on older relays).
+    /// N10-b - viewer flagged this row mark-as-unread (nil on older relays).
     public let myManualUnread: Bool?
-    // REM-B F-GR — conversation-DETAIL-only fields (tolerant: summaries
+    // REM-B F-GR - conversation-DETAIL-only fields (tolerant: summaries
     // decode nil). inviteCode mirrors serializers.ts L525 (groups only);
     // slowModeSeconds the R44 member-send throttle (0 = off). Defaulted vars
     // keep the memberwise init source-compatible with existing call sites.
     public var inviteCode: String? = nil
     public var slowModeSeconds: Int? = nil
-    // R2-B R38/R42 — screen-security flags (serializers.ts:530-533): the
+    // R2-B R38/R42 - screen-security flags (serializers.ts:530-533): the
     // room-wide switch + the viewer's personal veil. Absent on list
     // summaries and older relays → nil (veil off).
     public var screenPrivacy: Bool? = nil
     public var myScreenPrivacy: Bool? = nil
-    // R47 — DM blocked-pair dead-end flag (serializers.ts:542 `dmBlocked`,
+    // R47 - DM blocked-pair dead-end flag (serializers.ts:542 `dmBlocked`,
     // DETAIL-only: a UserBlock in EITHER direction between the viewer and
     // the other participant; groups always send false). Absent on list
     // summaries and older relays → nil (not blocked).
     public var dmBlocked: Bool? = nil
 
-    /// R47 — nil-coalescing helper: the DM dead-end notice flag (web
+    /// R47 - nil-coalescing helper: the DM dead-end notice flag (web
     /// chat-room.tsx:2293 `detailData?.dmBlocked ?? false` parity).
     public var dmBlockedNow: Bool { dmBlocked ?? false }
 
-    /// Pin/mute state derived from the wire timestamps (web parity helpers —
+    /// Pin/mute state derived from the wire timestamps (web parity helpers -
     /// ChatsView swipe + context menus read these).
     public var isPinned: Bool { !(pinnedAt ?? "").isEmpty }
     public var isMuted: Bool { !(mutedUntil ?? "").isEmpty }
 
-    /// N10-b — archive state from the wire timestamp (ChatActionSheet reads it).
+    /// N10-b - archive state from the wire timestamp (ChatActionSheet reads it).
     public var isArchived: Bool { !(archivedAt ?? "").isEmpty }
 
-    /// N10-b — nil-coalescing helper: the mark-as-unread dot flag.
+    /// N10-b - nil-coalescing helper: the mark-as-unread dot flag.
     public var manualUnread: Bool { myManualUnread ?? false }
 
-    /// N10-b — server-truth mute: mutedUntil in the FUTURE, not merely non-null
-    /// (expired mutes must not mute — web mutedUntil > Date.now() check).
+    /// N10-b - server-truth mute: mutedUntil in the FUTURE, not merely non-null
+    /// (expired mutes must not mute - web mutedUntil > Date.now() check).
     public var isMutedNow: Bool {
         guard let mutedUntil, !mutedUntil.isEmpty, let date = PulseFormat.date(mutedUntil) else { return false }
         return date > Date()
     }
 
-    /// N10-b — optimistic helper: replaces one field in the summary.
+    /// N10-b - optimistic helper: replaces one field in the summary.
     public func withMutedUntil(_ value: String?) -> WireConversationSummary {
         WireConversationSummary(
             id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
@@ -557,7 +557,7 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
         )
     }
 
-    /// N10-b — optimistic helper: flips the manual-unread flag.
+    /// N10-b - optimistic helper: flips the manual-unread flag.
     public func withManualUnread(_ value: Bool) -> WireConversationSummary {
         WireConversationSummary(
             id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
@@ -569,7 +569,7 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
         )
     }
 
-    /// N10-b — optimistic helper: sets/clears the archived watermark.
+    /// N10-b - optimistic helper: sets/clears the archived watermark.
     public func withArchived(_ value: String?) -> WireConversationSummary {
         WireConversationSummary(
             id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
@@ -581,7 +581,7 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
         )
     }
 
-    /// N10-b — optimistic helper: zeroes the unread count.
+    /// N10-b - optimistic helper: zeroes the unread count.
     public func withUnreadCount(_ value: Int) -> WireConversationSummary {
         WireConversationSummary(
             id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
@@ -593,7 +593,7 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
         )
     }
 
-    /// N10-b — optimistic helper: sets/clears the pinned watermark.
+    /// N10-b - optimistic helper: sets/clears the pinned watermark.
     public func withPinnedAt(_ value: String?) -> WireConversationSummary {
         WireConversationSummary(
             id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
@@ -610,9 +610,9 @@ public struct WireConversationsPage: Codable, Sendable {
     public let conversations: [WireConversationSummary]
 }
 
-// ── N10-b home-page wire shapes (tolerant: unreachable features degrade) ──
+// N10-b home-page wire shapes (tolerant: unreachable features degrade)
 
-/// GET /api/stories?requesterId= — 24h status groups (mine first, others by
+/// GET /api/stories?requesterId= - 24h status groups (mine first, others by
 /// newest story DESC). Fields are tolerant/optional: unknown keys are ignored
 /// and a missing field decodes as nil so older builds never crash on drift.
 public struct WireStoryGroup: Codable, Hashable, Sendable {
@@ -622,10 +622,10 @@ public struct WireStoryGroup: Codable, Hashable, Sendable {
     public let stories: [WireStoryItem]?
 }
 
-/// One story (Wave 4 widening — the full GET /api/stories item shape).
+/// One story (Wave 4 widening - the full GET /api/stories item shape).
 public struct WireStoryItem: Codable, Hashable, Sendable {
     public let id: String?
-    /// "image" | "text" — imagePath != nil ⇒ image (the wire kind is advisory).
+    /// "image" | "text" - imagePath != nil ⇒ image (the wire kind is advisory).
     public let kind: String?
     public let imagePath: String?
     public let caption: String?
@@ -642,12 +642,12 @@ public struct WireStoriesPage: Codable, Sendable {
     public let groups: [WireStoryGroup]?
 }
 
-/// 201 POST /api/stories response — { story: StoryItem }.
+/// 201 POST /api/stories response - { story: StoryItem }.
 public struct WireStoryCreated: Codable, Sendable {
     public let story: WireStoryItem?
 }
 
-/// POST /api/stories/{id}/view response — { viewCount, owner? }.
+/// POST /api/stories/{id}/view response - { viewCount, owner? }.
 public struct WireStoryViewCount: Codable, Sendable {
     public let viewCount: Int?
     public let owner: Bool?
@@ -662,12 +662,12 @@ public struct WireStoryViewer: Codable, Hashable, Sendable {
     public let viewedAt: String?
 }
 
-/// GET /api/stories/{id}/view response — { viewers: [...] }.
+/// GET /api/stories/{id}/view response - { viewers: [...] }.
 public struct WireStoryViewersPage: Codable, Sendable {
     public let viewers: [WireStoryViewer]?
 }
 
-/// GET /api/folders?userId= — Signal/Beeper chat folders.
+/// GET /api/folders?userId= - Signal/Beeper chat folders.
 public struct WireFolder: Codable, Hashable, Sendable {
     public let id: String
     public let name: String
@@ -680,7 +680,7 @@ public struct WireFoldersPage: Codable, Sendable {
     public let folders: [WireFolder]?
 }
 
-/// GET /api/mentions?userId= — only the item count feeds the entry pill.
+/// GET /api/mentions?userId= - only the item count feeds the entry pill.
 public struct WireMentionsPage: Codable, Sendable {
     public let items: [WireMentionItem]?
 }
@@ -689,7 +689,7 @@ public struct WireMentionItem: Codable, Hashable, Sendable {
     public let id: String?
 }
 
-/// GET /api/search?userId=&q= — global message search hits.
+/// GET /api/search?userId=&q= - global message search hits.
 public struct WireSearchMessage: Codable, Hashable, Sendable {
     public let id: String
     public let conversationId: String
@@ -710,10 +710,10 @@ public struct WireSearchPage: Codable, Sendable {
     public let total: Int?
 }
 
-// ── wire → domain mappers (mirror Android data/repository mappers) ──
+// wire → domain mappers (mirror Android data/repository mappers)
 
 extension WireConversationSummary {
-    /// Cache-restore constructor — rebuilds a display-grade summary from a
+    /// Cache-restore constructor - rebuilds a display-grade summary from a
     /// PulseConversation row (Wave 0 offline rehydration: title, preview,
     /// unread, pin/mute/archive flags). Members/lastMessage are NOT cached;
     /// bubbles fall back to the domain fields. Replaced on first refresh.
@@ -797,7 +797,7 @@ extension WireConversationSummary {
 
 extension WireChatMessage {
     /// Tombstone copy for message:deleted socket events. The memberwise
-    /// initializer is internal, which is fine — every caller is in-module.
+    /// initializer is internal, which is fine - every caller is in-module.
     public func deletedCopy() -> WireChatMessage {
         WireChatMessage(
             id: id, conversationId: conversationId, senderId: senderId,
@@ -825,7 +825,7 @@ extension WireChatMessage {
             createdAt: createdAt,
             editedAt: editedAt,
             deletedAt: deletedAt,
-            // Spec §2 row 5 — parentId is the THREAD ROOT; replyToId is ONLY
+            // Spec §2 row 5 - parentId is the THREAD ROOT; replyToId is ONLY
             // the inline-quote snippet. Never conflate them again.
             replyToId: replyTo?.id,
             threadRootId: parentId,
@@ -847,35 +847,33 @@ extension WireChatMessage {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-// W5-f — Wave 5 voice rooms / stage / space (parity spec
+// W5-f - Wave 5 voice rooms / stage / space (parity spec
 // docs/WAVE5-VOICE-SPACES-PARITY-SPEC.md §0). Relay events are
 // [String: Any] dictionaries; the tolerant decode helpers below
 // mirror PulseSession.decodeMessage (JSONSerialization →
 // JSONDecoder) so older/mutated payloads degrade to nil fields,
-// never crashes. All rooms are EPHEMERAL — nothing here is stored.
-// ─────────────────────────────────────────────────────────────
+// never crashes. All rooms are EPHEMERAL - nothing here is stored.
 
 /// The 21 wire event names (14 C→S + 7 S→C) of the rooms relay,
 /// mirroring mini-services/pulse-socket/index.ts handlers and
 /// packages/protocol/src/contracts.ts. Shared names (voice:ptt,
-/// voice:chunk, voice:transcript) appear once — direction is clear
+/// voice:chunk, voice:transcript) appear once - direction is clear
 /// from the emit/receive site.
 public enum PulseSocketEvents: String, CaseIterable, Sendable {
-    // C→S — voice room (walkie-talkie PTT)
+    // C→S - voice room (walkie-talkie PTT)
     case voiceJoin = "voice:join"
     case voiceLeave = "voice:leave"
     case voicePtt = "voice:ptt"
     case voiceChunk = "voice:chunk"
     case voiceTranscript = "voice:transcript"
-    // C→S — stage room (Clubhouse hierarchy)
+    // C→S - stage room (Clubhouse hierarchy)
     case stageJoin = "stage:join"
     case stageHand = "stage:hand"
     case stageApprove = "stage:approve"
     case stageMute = "stage:mute"
     case stageEnd = "stage:end"
     case stageLeave = "stage:leave"
-    // C→S — spatial presence
+    // C→S - spatial presence
     case spaceJoin = "space:join"
     case spaceMove = "space:move"
     case spaceLeave = "space:leave"
@@ -899,9 +897,9 @@ public enum PulseSocketEvents: String, CaseIterable, Sendable {
     ]
 }
 
-/// One `voice:roster` peer — the public-safe shape the relay emits
+/// One `voice:roster` peer - the public-safe shape the relay emits
 /// ({ id, name, username, color }; joinedAt is NOT on the wire but
-/// the roster ORDER is by it — tolerated here for forward drift).
+/// the roster ORDER is by it - tolerated here for forward drift).
 public struct WireVoicePeer: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let name: String?
@@ -910,7 +908,7 @@ public struct WireVoicePeer: Codable, Hashable, Sendable, Identifiable {
     public let joinedAt: Double?
 }
 
-/// `voice:roster` payload — the roster REPLACES any previous one
+/// `voice:roster` payload - the roster REPLACES any previous one
 /// wholesale (web parity: roster state = server truth).
 public struct WireVoiceRoster: Codable, Hashable, Sendable {
     public let conversationId: String?
@@ -923,7 +921,7 @@ public struct WireVoiceRoster: Codable, Hashable, Sendable {
 
     /// Tolerant decode from the raw relay dictionary (the Signal carries
     /// the peers array as [[String: Any]]). Each entry decodes
-    /// INDIVIDUALLY — a malformed entry (missing id, wrong shape) is
+    /// INDIVIDUALLY - a malformed entry (missing id, wrong shape) is
     /// dropped, never poisoning the whole roster.
     public static func decode(conversationId: String, rawPeers: [[String: Any]]) -> WireVoiceRoster? {
         let peers = rawPeers.compactMap { entry -> WireVoicePeer? in
@@ -935,7 +933,7 @@ public struct WireVoiceRoster: Codable, Hashable, Sendable {
     }
 }
 
-/// `voice:ptt` — the relay echoes to the SENDER too (self ring glows).
+/// `voice:ptt` - the relay echoes to the SENDER too (self ring glows).
 /// The server emits `on`; the tolerant decode also accepts `active`.
 public struct WireVoicePtt: Codable, Hashable, Sendable {
     public let conversationId: String?
@@ -962,7 +960,7 @@ public struct WireVoicePtt: Codable, Hashable, Sendable {
         on = decodedOn ?? decodedActive
     }
 
-    /// Custom encode — `active` is a computed accessor and must never be
+    /// Custom encode - `active` is a computed accessor and must never be
     /// synthesized-encoded; the wire only ever carries `on`.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -972,7 +970,7 @@ public struct WireVoicePtt: Codable, Hashable, Sendable {
     }
 }
 
-/// `voice:chunk` — base64 of Int16LE PCM 16 kHz mono, 250 ms = 4000
+/// `voice:chunk` - base64 of Int16LE PCM 16 kHz mono, 250 ms = 4000
 /// samples per full chunk; seq starts at 1 (server floor()s, relays
 /// to the room EXCEPT the sender).
 public struct WireVoiceChunk: Codable, Hashable, Sendable {
@@ -982,7 +980,7 @@ public struct WireVoiceChunk: Codable, Hashable, Sendable {
     public let data: String?
 }
 
-/// `voice:transcript` — the server stamps name/color/at (the emitter
+/// `voice:transcript` - the server stamps name/color/at (the emitter
 /// only sends conversationId/userId/text).
 public struct WireVoiceTranscriptEvent: Codable, Hashable, Sendable {
     public let conversationId: String?
@@ -990,7 +988,7 @@ public struct WireVoiceTranscriptEvent: Codable, Hashable, Sendable {
     public let name: String?
     public let color: String?
     public let text: String?
-    /// Server epoch ms stamp (tolerated — the client sweeps with its own clock).
+    /// Server epoch ms stamp (tolerated - the client sweeps with its own clock).
     public let at: Double?
 }
 
@@ -999,14 +997,14 @@ public struct WireVoiceTranscriptResult: Codable, Hashable, Sendable {
     public let transcript: String
 }
 
-/// One person on a stage roster ({ id, name, color } — public-safe).
+/// One person on a stage roster ({ id, name, color } - public-safe).
 public struct WireStagePerson: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let name: String?
     public let color: String?
 }
 
-/// `stage:state` — host (null = seat empty, NO auto-promotion),
+/// `stage:state` - host (null = seat empty, NO auto-promotion),
 /// speakers (host first), hands (FIFO by raisedAt), listeners and the
 /// additive listenerCount (fallback = listeners.count on old relays).
 public struct WireStageState: Codable, Hashable, Sendable {
@@ -1020,11 +1018,11 @@ public struct WireStageState: Codable, Hashable, Sendable {
     public var speakerList: [WireStagePerson] { speakers ?? [] }
     public var handList: [WireStagePerson] { hands ?? [] }
     public var listenerList: [WireStagePerson] { listeners ?? [] }
-    /// The header chip count — the wire field when present, else the row count.
+    /// The header chip count - the wire field when present, else the row count.
     public var listenerTotal: Int { listenerCount ?? listenerList.count }
 }
 
-/// `space:state` player — normalized 0..1 coords, rounded 4dp by the server.
+/// `space:state` player - normalized 0..1 coords, rounded 4dp by the server.
 public struct WireSpacePlayer: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let name: String?
@@ -1033,19 +1031,19 @@ public struct WireSpacePlayer: Codable, Hashable, Sendable, Identifiable {
     public let y: Double?
 }
 
-/// `space:state` — FULL state replace (stale players self-heal; the
+/// `space:state` - FULL state replace (stale players self-heal; the
 /// server prunes 5-minute idlers).
 public struct WireSpaceState: Codable, Hashable, Sendable {
     public let conversationId: String?
     public let players: [WireSpacePlayer]?
 }
 
-/// Pure C→S payload builders for the 14 rooms events (W5-f) — the EXACT
+/// Pure C→S payload builders for the 14 rooms events (W5-f) - the EXACT
 /// shapes mini-services/pulse-socket/index.ts validates. Single source of
 /// truth for both PulseSocketClient's typed emit helpers and the session
 /// model's emit funnel; unit-tested in VoiceRoomWireTests.
 public enum VoiceRoomWire {
-    /// Public-safe user dict — { id, name, username, color }.
+    /// Public-safe user dict - { id, name, username, color }.
     public static func user(id: String, name: String, username: String?, color: String?) -> [String: Any] {
         [
             "id": id,
@@ -1055,7 +1053,7 @@ public enum VoiceRoomWire {
         ]
     }
 
-    // ── voice room ───────────────────────────────────────
+    // voice room
     public static func voiceJoin(conversationId: String, userId: String, name: String, username: String?, color: String?) -> [String: Any] {
         [
             "conversationId": conversationId,
@@ -1079,7 +1077,7 @@ public enum VoiceRoomWire {
         ["conversationId": conversationId, "userId": userId, "text": text]
     }
 
-    // ── stage room ───────────────────────────────────────
+    // stage room
     public static func stageJoin(conversationId: String, userId: String, name: String, username: String?, color: String?, asHost: Bool) -> [String: Any] {
         [
             "conversationId": conversationId,
@@ -1108,7 +1106,7 @@ public enum VoiceRoomWire {
         ["conversationId": conversationId]
     }
 
-    // ── spatial presence ─────────────────────────────────
+    // spatial presence
     public static func spaceJoin(conversationId: String, userId: String, name: String, username: String?, color: String?) -> [String: Any] {
         [
             "conversationId": conversationId,
@@ -1125,9 +1123,7 @@ public enum VoiceRoomWire {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-// W3-b — Wave 3 call history (GET/POST /api/calls, src/lib/call-types.ts).
-// ─────────────────────────────────────────────────────────────
+// W3-b - Wave 3 call history (GET/POST /api/calls, src/lib/call-types.ts).
 
 /// Peer info resolved server-side for history rows (wire CallPeerInfo).
 public struct WireCallPeerInfo: Codable, Hashable, Sendable {
@@ -1145,7 +1141,7 @@ public struct WireCallLogItem: Codable, Hashable, Sendable, Identifiable {
     public let conversationId: String
     public let callerId: String
     public let calleeId: String
-    /// "voice" | "video" (optional on the wire — server toItem always sends it,
+    /// "voice" | "video" (optional on the wire - server toItem always sends it,
     /// tolerant for older relays).
     public let kind: String?
     /// "completed" | "missed" | "declined".
@@ -1161,7 +1157,7 @@ public struct WireCallLogPage: Codable, Hashable, Sendable {
     public let items: [WireCallLogItem]?
 }
 
-/// POST /api/calls → 201 { item } — tolerant wrapper that falls back to the
+/// POST /api/calls → 201 { item } - tolerant wrapper that falls back to the
 /// bare row object defensively (older-relay pattern, mirrors WireTopicEnvelope).
 public struct WireCallLogEnvelope: Codable, Hashable, Sendable {
     public let item: WireCallLogItem?

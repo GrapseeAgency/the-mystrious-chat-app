@@ -1,13 +1,11 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// Pulse onboarding — native mirror of the web OnboardingScreen,
+// Pulse onboarding - native mirror of the web OnboardingScreen,
 // two steps:
 //   1. display name + avatar color (existing reclaim-by-name flow)
-//   2. @handle picker — auto-suggested from the name, live
+//   2. @handle picker - auto-suggested from the name, live
 //      availability via GET /api/users/check-username (debounced),
 //      skippable. Creates the real account via POST /api/users.
-// ─────────────────────────────────────────────────────────────
 
 // MARK: - View model
 
@@ -36,7 +34,7 @@ final class OnboardingViewModel: ObservableObject {
     @Published private(set) var pending = false
     @Published private(set) var signingIn = false
     @Published var notice: String?
-    /// Wave 8 — the reclaim confirm: "log in instead" found a live identity
+    /// Wave 8 - the reclaim confirm: "log in instead" found a live identity
     /// by name; the confirm step calls POST /api/users/login (which issues
     /// + ROTATES the session token) before the session starts.
     @Published private(set) var reclaimCandidate: WireUser?
@@ -49,7 +47,7 @@ final class OnboardingViewModel: ObservableObject {
         self.api = api
     }
 
-    // ── handle math — mirrors normalizeUsername on the server ──
+    // handle math - mirrors normalizeUsername on the server
 
     static func isValidHandle(_ value: String) -> Bool {
         guard (usernameMin...usernameMax).contains(value.count) else { return false }
@@ -89,7 +87,7 @@ final class OnboardingViewModel: ObservableObject {
         return !trimmed.isEmpty && trimmed.count <= Self.nameMax
     }
 
-    // ── intents ──────────────────────────────────────────────
+    // intents
 
     func startHandleStep() {
         guard validName else { return }
@@ -123,20 +121,20 @@ final class OnboardingViewModel: ObservableObject {
         setHandle(suggestion)
     }
 
-    /// Start chatting — create the account WITH the picked @handle.
+    /// Start chatting - create the account WITH the picked @handle.
     func submit(onSuccess: @escaping (WireUser, String?) -> Void) {
         let trimmed = handle.trimmingCharacters(in: .whitespaces)
         guard Self.isValidHandle(trimmed), !pending, serverTakenMessage == nil else { return }
         create(username: trimmed, onSuccess: onSuccess)
     }
 
-    /// Skip for now — create the account without a handle.
+    /// Skip for now - create the account without a handle.
     func skip(onSuccess: @escaping (WireUser, String?) -> Void) {
         guard !pending else { return }
         create(username: nil, onSuccess: onSuccess)
     }
 
-    /// "That's me — log in instead" — the web's reclaim-by-name affordance.
+    /// "That's me - log in instead" - the web's reclaim-by-name affordance.
     /// Step 1: the live lookup; success opens the CONFIRM step (the login
     /// itself rotates the session token, so it waits for an explicit tap).
     func loginInstead(onSuccess: @escaping (WireUser, String?) -> Void) {
@@ -158,12 +156,12 @@ final class OnboardingViewModel: ObservableObject {
         }
     }
 
-    /// R14 5-b — the ?login= AUTO-sign-in (web onboarding-screen.tsx
+    /// R14 5-b - the ?login= AUTO-sign-in (web onboarding-screen.tsx
     /// :161-182 parity): the web looks the name up and setUser()s straight
-    /// from the hit — no confirm tap. iOS sessions hold a Keychain token, so
+    /// from the hit - no confirm tap. iOS sessions hold a Keychain token, so
     /// the same auto path runs the token-issuing login POST the moment the
     /// lookup lands. A miss / 404 / network error keeps the name as the
-    /// signup prefill and surfaces the notice — the web contract verbatim.
+    /// signup prefill and surfaces the notice - the web contract verbatim.
     func deepLinkLogin(onSuccess: @escaping (WireUser, String?) -> Void) {
         guard validName, !signingIn, !confirming else { return }
         signingIn = true
@@ -186,7 +184,7 @@ final class OnboardingViewModel: ObservableObject {
         }
     }
 
-    /// Wave 8 — reclaim confirm: POST /api/users/login { name }. 200 → the
+    /// Wave 8 - reclaim confirm: POST /api/users/login { name }. 200 → the
     /// token lands in the Keychain (A-1) and the session starts. Honest
     /// 404 copy verbatim; the confirm step collapses on any failure.
     func confirmReclaim(onSuccess: @escaping (WireUser, String?) -> Void) {
@@ -216,7 +214,7 @@ final class OnboardingViewModel: ObservableObject {
         notice = nil
     }
 
-    // ── plumbing ─────────────────────────────────────────────
+    // plumbing
 
     private func create(username: String?, onSuccess: @escaping (WireUser, String?) -> Void) {
         let trimmed = trimmedName
@@ -227,7 +225,7 @@ final class OnboardingViewModel: ObservableObject {
             guard let self else { return }
             defer { self.pending = false }
             do {
-                // Wave 8 — the 201 envelope carries the session token.
+                // Wave 8 - the 201 envelope carries the session token.
                 let envelope = try await self.api.createAccount(name: trimmed, color: self.color, username: username)
                 onSuccess(envelope.user, envelope.token)
             } catch let failure as PulseAPIClient.Failure {
@@ -243,15 +241,15 @@ final class OnboardingViewModel: ObservableObject {
                     // Onboarding completes; the app runs offline-first from here.
                     onSuccess(Self.localIdentity(name: trimmed, color: self.color, username: username), nil)
                 } else {
-                    self.notice = failure.message ?? "Network error — try again."
+                    self.notice = failure.message ?? "Network error - try again."
                 }
             } catch {
-                self.notice = "Network error — try again."
+                self.notice = "Network error - try again."
             }
         }
     }
 
-    /// Debounced live availability — same 350ms rhythm as the web picker.
+    /// Debounced live availability - same 350ms rhythm as the web picker.
     private func scheduleCheck() {
         checkTask?.cancel()
         let candidate = handle
@@ -287,14 +285,14 @@ final class OnboardingViewModel: ObservableObject {
 
     static func message(of error: Error) -> String {
         if let failure = error as? PulseAPIClient.Failure {
-            // Transport-level errors carry raw engine strings — humans get copy.
-            if failure.status == nil { return "Can't reach the Pulse server — check your connection." }
+            // Transport-level errors carry raw engine strings - humans get copy.
+            if failure.status == nil { return "Can't reach the Pulse server - check your connection." }
             if let message = failure.message { return message }
         }
-        return "Network error — try again."
+        return "Network error - try again."
     }
 
-    /// Offline identity — stable random id, same shape as a server row.
+    /// Offline identity - stable random id, same shape as a server row.
     static func localIdentity(name: String, color: String, username: String?) -> WireUser {
         let suffix = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
         return WireUser(
@@ -318,9 +316,9 @@ final class OnboardingViewModel: ObservableObject {
 struct OnboardingView: View {
     let session: PulseSession
     let prefs: PulsePrefs
-    /// R14 5-b — the ?login= deep link (web onboarding-screen.tsx :161-182
+    /// R14 5-b - the ?login= deep link (web onboarding-screen.tsx :161-182
     /// parity): a non-nil name prefills the display-name field and runs the
-    /// SAME live lookup the "That's me — log in instead" affordance uses
+    /// SAME live lookup the "That's me - log in instead" affordance uses
     /// (one-shot; the confirm card stays the explicit sign-in gate because
     /// the login rotates the session token).
     var deepLinkLoginName: String?
@@ -383,8 +381,8 @@ struct OnboardingView: View {
         }
     }
 
-    /// R14 5-b — ?login= prefill + one-shot AUTO-sign-in (web
-    /// onboarding-screen.tsx :161-182 — found → signed in + welcome; miss →
+    /// R14 5-b - ?login= prefill + one-shot AUTO-sign-in (web
+    /// onboarding-screen.tsx :161-182 - found → signed in + welcome; miss →
     /// the name stays as the signup prefill and onboarding continues
     /// normally with the notice line up).
     private func handleDeepLinkLogin() {
@@ -396,7 +394,7 @@ struct OnboardingView: View {
         viewModel.deepLinkLogin(onSuccess: complete)
     }
 
-    // ── hero + wordmark ──────────────────────────────────────
+    // hero + wordmark
 
     private var hero: some View {
         ZStack {
@@ -443,7 +441,7 @@ struct OnboardingView: View {
         }
     }
 
-    // ── step 1: display name + avatar color ──────────────────
+    // step 1: display name + avatar color
 
     private var nameStep: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -491,7 +489,7 @@ struct OnboardingView: View {
                 }
             }
 
-            // Wave 8 — reclaim confirm: the lookup found this name live on
+            // Wave 8 - reclaim confirm: the lookup found this name live on
             // the Pulse; logging in issues + ROTATES a session token.
             if viewModel.reclaimCandidate != nil {
                 reclaimConfirmCard
@@ -503,7 +501,7 @@ struct OnboardingView: View {
         }
     }
 
-    // ── step 2: pick a @handle ───────────────────────────────
+    // step 2: pick a @handle
 
     private var trimmedHandle: String { viewModel.handle.trimmingCharacters(in: .whitespaces) }
     private var validHandle: Bool { OnboardingViewModel.isValidHandle(trimmedHandle) }
@@ -532,7 +530,7 @@ struct OnboardingView: View {
                     Text("Pick your handle")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(zinc900)
-                    Text("Creating account for “\(viewModel.trimmedName)” — optional, but it makes you findable.")
+                    Text("Creating account for “\(viewModel.trimmedName)” - optional, but it makes you findable.")
                         .font(.system(size: 11))
                         .foregroundStyle(zinc500)
                 }
@@ -558,7 +556,7 @@ struct OnboardingView: View {
                 // live availability line (web aria-live region)
                 Group {
                     if trimmedHandle.isEmpty {
-                        noticeLine("Skip it if you prefer — you can add one later in Profile.", zinc400)
+                        noticeLine("Skip it if you prefer - you can add one later in Profile.", zinc400)
                     } else if !validHandle {
                         noticeLine("3–20 characters: lowercase letters, digits, underscore.", zinc500)
                     } else if isChecking {
@@ -596,7 +594,7 @@ struct OnboardingView: View {
         }
     }
 
-    // ── shared atoms ─────────────────────────────────────────
+    // shared atoms
 
     private func fieldLabel(_ text: String) -> some View {
         Text(text)
@@ -659,7 +657,7 @@ struct OnboardingView: View {
         .disabled(!enabled)
     }
 
-    /// "That's me — log in instead" — emerald-tinted outline button (web parity).
+    /// "That's me - log in instead" - emerald-tinted outline button (web parity).
     private var loginButton: some View {
         Button {
             viewModel.loginInstead(onSuccess: complete)
@@ -671,7 +669,7 @@ struct OnboardingView: View {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                Text(viewModel.signingIn ? "Signing you in…" : "That's me — log in instead")
+                Text(viewModel.signingIn ? "Signing you in…" : "That's me - log in instead")
                     .font(.system(size: 14, weight: .semibold))
             }
             .frame(maxWidth: .infinity, minHeight: 44)
@@ -687,11 +685,11 @@ struct OnboardingView: View {
         }
         .buttonStyle(PulseButtonStyle())
         .disabled(!viewModel.validName || viewModel.signingIn || viewModel.reclaimCandidate != nil)
-        .accessibilityLabel("That's me — log in instead")
+        .accessibilityLabel("That's me - log in instead")
     }
 
-    /// Wave 8 — reclaim confirm card: explicit "log in" (the login rotates
-    /// the stored token hash — last login wins) + an escape hatch.
+    /// Wave 8 - reclaim confirm card: explicit "log in" (the login rotates
+    /// the stored token hash - last login wins) + an escape hatch.
     private var reclaimConfirmCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(
@@ -757,13 +755,13 @@ struct OnboardingView: View {
         .disabled(!enabled)
     }
 
-    /// dashed zinc tip card — the web footer, copy adapted for the native app.
+    /// dashed zinc tip card - the web footer, copy adapted for the native app.
     private var tipCard: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "sparkles")
                 .font(.system(size: 12))
                 .foregroundStyle(PulseTheme.emerald)
-            Text("Tip: your @handle is optional — add or change it anytime from your Profile.")
+            Text("Tip: your @handle is optional - add or change it anytime from your Profile.")
                 .font(.system(size: 12))
                 .foregroundStyle(zinc500)
         }
@@ -779,9 +777,9 @@ struct OnboardingView: View {
         )
     }
 
-    // ── completion ───────────────────────────────────────────
+    // completion
 
-    /// Wave 8 — `token` rides the create/login envelopes. ORDER MATTERS:
+    /// Wave 8 - `token` rides the create/login envelopes. ORDER MATTERS:
     /// setViewer clears the identity-bound token on an id change; the fresh
     /// token persists AFTER so rotation (login) lands intact. The offline
     /// local-identity path arrives with token = nil (nothing to store).
@@ -800,7 +798,7 @@ struct OnboardingView: View {
 
 // MARK: - atoms
 
-/// One avatar-color circle — gradient fill, emerald ring + check when picked.
+/// One avatar-color circle - gradient fill, emerald ring + check when picked.
 private struct SwatchCircle: View {
     let name: String
     let isSelected: Bool
@@ -833,7 +831,7 @@ private struct SwatchCircle: View {
 }
 
 /// The web's shadcn Input: 44dp rounded field on zinc-50/zinc-800,
-/// emerald focus ring, amber error border — SwiftUI implementation.
+/// emerald focus ring, amber error border - SwiftUI implementation.
 private struct PulseOnboardingField: View {
     @Binding var text: String
     let placeholder: String

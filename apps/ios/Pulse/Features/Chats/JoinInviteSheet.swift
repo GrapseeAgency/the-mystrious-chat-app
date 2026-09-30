@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Wave 6 — the invite deep-link join sheet (F-DL, join-sheet.tsx parity):
+/// Wave 6 - the invite deep-link join sheet (F-DL, join-sheet.tsx parity):
 /// previews the group behind a pulse://invite/{code} link, then joins (or
 /// jumps in when the viewer is already a member). Every state + string is
 /// the verbatim web copy: invalid-link pair, member-count line, the two
@@ -85,7 +85,7 @@ struct JoinInviteSheet: View {
             }
             .foregroundStyle(PulseTheme.textSecondary)
             Text(invite.alreadyMember == true
-                ? "You are already in this group — jump back in?"
+                ? "You are already in this group - jump back in?"
                 : "You were invited to join this group on Pulse.")
                 .font(.system(size: 13))
                 .foregroundStyle(PulseTheme.textSecondary)
@@ -155,7 +155,7 @@ struct JoinInviteSheet: View {
                 dismiss()
                 onJoined(conv)
             } else {
-                session.toasts.show("Joined — find it at the top of your chats")
+                session.toasts.show("Joined - find it at the top of your chats")
             }
         } catch let failure as PulseAPIClient.Failure {
             session.toasts.show(failure.message ?? "Could not join the group")

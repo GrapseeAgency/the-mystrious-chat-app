@@ -1,14 +1,12 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — #/chats/channels sub-page (R30-c).
+// Pulse - #/chats/channels sub-page (R30-c).
 // WhatsApp-Channels/Telegram-style broadcast directory INSIDE the
 // chats tab, mounted exactly like #/chats/archived: dark glass
 // page, hash-routed (navigateHash('/chats/channels') opens,
 // backHash() closes), staggered row entrances.
-//   SUBSCRIBED — the viewer's channels (tap = open the room)
-//   DISCOVER   — the rest of the directory (Subscribe pill → POST
+//   SUBSCRIBED - the viewer's channels (tap = open the room)
+//   DISCOVER   - the rest of the directory (Subscribe pill → POST
 //                /api/channels/[id]/subscribe, optimistic move).
-// Data is the REAL /api/channels directory — no mocks.
-// ─────────────────────────────────────────────────────────────
+// Data is the REAL /api/channels directory - no mocks.
 'use client'
 
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -43,11 +41,11 @@ export interface ChannelsPageProps {
   open: boolean
   me: AppUser
   onBack: () => void
-  /** open a channel room — the same navigation call the chats list uses */
+  /** open a channel room - the same navigation call the chats list uses */
   onOpenConversation: (conversationId: string) => void
 }
 
-/** Section label — same rhythm as the archived page / info page. */
+/** Section label - same rhythm as the archived page / info page. */
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <motion.p
@@ -59,7 +57,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-/** One directory row — glass, 56px target, Radio tile + meta + action pill. */
+/** One directory row - glass, 56px target, Radio tile + meta + action pill. */
 function ChannelRow({
   channel,
   index,
@@ -82,7 +80,7 @@ function ChannelRow({
       transition={{ ...spring.soft, delay: stagger(Math.min(index, 9)) }}
       className="glass-row-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left"
       role="row"
-      aria-label={`${channel.name} — ${channel.memberCount} subscribers`}
+      aria-label={`${channel.name} - ${channel.memberCount} subscribers`}
     >
       <button
         type="button"
@@ -90,7 +88,7 @@ function ChannelRow({
         aria-label={`Open ${channel.name}`}
         className="flex min-w-0 flex-1 items-center gap-3 outline-none"
       >
-        {/* R33-b — circular channel photo when one is set; the broadcast-icon
+        {/* R33-b - circular channel photo when one is set; the broadcast-icon
             glass tile stays the fallback (unread dot overlays both).
             R34-a shapes: channels are THINGS → both photo and fallback tile
             wear the .pulse-squircle mask (the unread dot sits OUTSIDE the
@@ -167,7 +165,7 @@ export function ChannelsPage({ open, me, onBack, onOpenConversation }: ChannelsP
   const subscribed = channels.filter((c) => c.isSubscribed)
   const discover = channels.filter((c) => !c.isSubscribed)
 
-  /** Subscribe — optimistic move into SUBSCRIBED, real memberCount on settle. */
+  /** Subscribe - optimistic move into SUBSCRIBED, real memberCount on settle. */
   const subscribe = useMutation({
     mutationFn: async (channel: ChannelSummary) => {
       return apiJson<SubscribeResponse>(
@@ -193,7 +191,7 @@ export function ChannelsPage({ open, me, onBack, onOpenConversation }: ChannelsP
     },
     onError: (_error, _channel, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(['channels', me.id], ctx.previous)
-      toast.error('Could not subscribe — try again')
+      toast.error('Could not subscribe - try again')
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['channels', me.id] })
@@ -216,7 +214,7 @@ export function ChannelsPage({ open, me, onBack, onOpenConversation }: ChannelsP
           role="region"
           aria-label="Channels"
         >
-          {/* frosted sub-page header — same glass recipe as #/chats/archived */}
+          {/* frosted sub-page header - same glass recipe as #/chats/archived */}
           <header className="glass-deep glass-sheen shrink-0 border-b border-zinc-200/70 pt-[max(0px,env(safe-area-inset-top))] dark:border-white/10">
             <div className="flex items-center gap-2 px-3 py-2.5">
               <motion.button
@@ -240,7 +238,7 @@ export function ChannelsPage({ open, me, onBack, onOpenConversation }: ChannelsP
                   </span>
                 </h1>
                 <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-                  Broadcast spaces — only admins post
+                  Broadcast spaces - only admins post
                 </p>
               </div>
               <motion.button
@@ -307,7 +305,7 @@ export function ChannelsPage({ open, me, onBack, onOpenConversation }: ChannelsP
                   No channels yet
                 </h2>
                 <p className="max-w-[260px] text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  Start one from the new-chat sheet — pick New channel. Yours shows up here, and in
+                  Start one from the new-chat sheet - pick New channel. Yours shows up here, and in
                   every subscriber&apos;s list.
                 </p>
               </motion.div>
@@ -337,7 +335,7 @@ export function ChannelsPage({ open, me, onBack, onOpenConversation }: ChannelsP
                   </div>
                 ) : (
                   <p className="px-3 pt-1 pb-2 text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                    Nothing yet — discover a channel below.
+                    Nothing yet - discover a channel below.
                   </p>
                 )}
 

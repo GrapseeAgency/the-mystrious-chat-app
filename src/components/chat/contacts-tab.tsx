@@ -1,13 +1,11 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — Contacts tab (R27-a): real A–Z indexed people
+// Pulse Chat - Contacts tab (R27-a): real A–Z indexed people
 // directory with hash sub-pages.
 //   • root            → A–Z indexed contact list (sticky glass
 //                       letter headers + kinetic index rail),
 //                       real DM-membership marks, socket presence.
 //   • #/contacts/add  → search-as-you-type sub-page (own file).
-// Row tap → navigateHash('#/user/<id>') — the standalone user
+// Row tap → navigateHash('#/user/<id>') - the standalone user
 // profile route page (user-route-page.tsx).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -73,7 +71,7 @@ export function ContactsTab({
   const onlineIds = usePulseRealtime().onlineIds
 
   /**
-   * Entrance stagger plays ONLY on the tab's first list render — the flag flips
+   * Entrance stagger plays ONLY on the tab's first list render - the flag flips
    * after the first commit that has rows, so refetches never re-animate.
    */
   const [entranceOn, setEntranceOn] = useState(true)
@@ -93,7 +91,7 @@ export function ContactsTab({
     staleTime: 15_000,
   })
 
-  // real DM membership — shared cache with the chats list
+  // real DM membership - shared cache with the chats list
   const conversations = useQuery({
     queryKey: ['conversations', me.id],
     queryFn: async (): Promise<ConversationsResponse> => {
@@ -138,7 +136,7 @@ export function ContactsTab({
 
   const letters = useMemo(() => sections.map((s) => s.letter), [sections])
 
-  // ── index rail: refs + active-letter tracking + tap-to-scroll ──
+  // index rail: refs + active-letter tracking + tap-to-scroll 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const sectionRefs = useRef(new Map<string, HTMLElement>())
   const [activeLetter, setActiveLetter] = useState<string | null>(null)
@@ -196,7 +194,7 @@ export function ContactsTab({
             exit={{ opacity: 0, transition: { duration: 0.12 } }}
             className="absolute inset-0 flex flex-col"
           >
-            {/* ── toolbar ── */}
+            {/*  toolbar  */}
             <header className="shrink-0 border-b border-zinc-200/70 pt-[max(0.75rem,env(safe-area-inset-top))] dark:border-zinc-800/80">
               <motion.div
                 initial={entranceOn && !reducedMotion ? { opacity: 0, y: -10 } : false}
@@ -240,7 +238,7 @@ export function ContactsTab({
               </motion.div>
             </header>
 
-            {/* ── scroll body + index rail ── */}
+            {/*  scroll body + index rail  */}
             <div className="relative min-h-0 flex-1">
               <div
                 ref={scrollRef}
@@ -327,7 +325,7 @@ export function ContactsTab({
                 )}
               </div>
 
-              {/* ── kinetic index rail (sticky letter bubbles, tap-to-scroll) ── */}
+              {/*  kinetic index rail (sticky letter bubbles, tap-to-scroll)  */}
               {!loading && letters.length > 1 ? (
                 <nav
                   aria-label="Contact index"

@@ -58,11 +58,11 @@ import app.pulse.ui.initialsOf
 import kotlinx.coroutines.delay
 
 /**
- * Wave 5 — the stage surface (spec §1.2 ST-1..ST-8): amber host card with a
+ * Wave 5 - the stage surface (spec §1.2 ST-1..ST-8): amber host card with a
  * crown, speaker tiles glowing from voice:ptt, a FIFO hand queue with
  * host-only Approve/Decline, the audience row + count chip, listener hand
  * raising, host/speaker-only PTT, the two-tap End confirm (2600ms reset) and
- * "Claim host" when the seat is empty (ST-7 — no auto-promotion).
+ * "Claim host" when the seat is empty (ST-7 - no auto-promotion).
  */
 @Composable
 fun StageScreen(
@@ -130,7 +130,7 @@ fun StageScreen(
                         Text("Syncing stage…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         Text(
-                            "Join as a listener — the first person in a fresh stage hosts it.",
+                            "Join as a listener - the first person in a fresh stage hosts it.",
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -184,7 +184,7 @@ private fun StageRoster(
             )
         }
 
-        // Claim host — the seat is empty after the host left; there is NO
+        // Claim host - the seat is empty after the host left; there is NO
         // auto-promotion (ST-7).
         if (state.canClaimHost) {
             Button(
@@ -309,7 +309,7 @@ private fun StageControls(
     conversationId: String,
     onClose: () -> Unit,
 ) {
-    // Two-tap End confirm with the 2600ms reset (ST-5) — armed state mirrors
+    // Two-tap End confirm with the 2600ms reset (ST-5) - armed state mirrors
     // the machine's window and self-expires.
     var endArmed by remember { mutableStateOf(false) }
     LaunchedEffect(endArmed) {
@@ -410,7 +410,7 @@ private fun EndedPanel(onClose: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
-/** One stage person tile — the [glowing] ring is the voice:ptt speaking truth. */
+/** One stage person tile - the [glowing] ring is the voice:ptt speaking truth. */
 @Composable
 internal fun PersonTile(
     name: String,

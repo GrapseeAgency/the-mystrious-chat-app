@@ -188,7 +188,7 @@ private val DockTeal600 = Color(0xFF0D9488)
 private val DockInactiveDark = Color(0xFF8CA398) // R35 Neo - dimmed text token
 private val DockInactiveLight = Color(0xFF71717A)
 
-/** Canonical tab order — drives dock layout + direction-aware transitions. */
+/** Canonical tab order - drives dock layout + direction-aware transitions. */
 private val TAB_ROUTES = listOf("chats", "hub", "contacts", "profile")
 
 private data class DockTab(
@@ -208,19 +208,19 @@ private val DOCK_TABS = listOf(
 )
 
 /**
- * R10-a — launcher-shortcut request. [tab] is a validated TAB_ROUTES entry;
+ * R10-a - launcher-shortcut request. [tab] is a validated TAB_ROUTES entry;
  * [action] is one of the SHORTCUT_ACTION_* ids (or null for plain tab jumps).
  */
 data class ShortcutRequest(val tab: String? = null, val action: String? = null)
 
-/** R10-a — extras + actions shared with res/xml/shortcuts.xml. */
+/** R10-a - extras + actions shared with res/xml/shortcuts.xml. */
 const val ACTION_SHORTCUT = "app.pulse.android.action.SHORTCUT"
 const val EXTRA_SHORTCUT_TAB = "pulse.shortcut.tab"
 const val EXTRA_SHORTCUT_ACTION = "pulse.shortcut.action"
 const val SHORTCUT_ACTION_NEW_MESSAGE = "new_message"
 const val SHORTCUT_ACTION_SEARCH = "search"
 
-/** Dock-scoped state — live unread total for the Chats badge (web useUnread). */
+/** Dock-scoped state - live unread total for the Chats badge (web useUnread). */
 @HiltViewModel
 class ShellViewModel @Inject constructor(
     repo: PulseRepository,
@@ -236,7 +236,7 @@ class ShellViewModel @Inject constructor(
         _searchTick.value += 1
     }
 
-    // Wave 6 — a pulse://invite code lands here and the chats surface raises
+    // Wave 6 - a pulse://invite code lands here and the chats surface raises
     // the JoinInviteSheet (web ?join= parity).
     private val _pendingInvite = MutableStateFlow<String?>(null)
     val pendingInvite: StateFlow<String?> = _pendingInvite.asStateFlow()
@@ -255,19 +255,19 @@ class MainActivity : FragmentActivity() {
 
     @Inject lateinit var repository: app.pulse.domain.repository.PulseRepository
 
-    /** R10-a — biometric App lock: state holder + prompt presenter. */
+    /** R10-a - biometric App lock: state holder + prompt presenter. */
     @Inject lateinit var appLock: app.pulse.android.security.PulseAppLock
 
-    /** Wave 6 — pulse:// deep links (invite/user/room); consumed by the shell. */
+    /** Wave 6 - pulse:// deep links (invite/user/room); consumed by the shell. */
     private val deepLinks = MutableStateFlow<app.pulse.core.link.PulseDeepLink?>(null)
 
-    /** R10-a — the share-in payload forwarded by ShareInActivity (null = none). */
+    /** R10-a - the share-in payload forwarded by ShareInActivity (null = none). */
     private val shareIn = MutableStateFlow<ShareInPayload?>(null)
 
-    /** R10-a — launcher-shortcut tab/action requests (null = none pending). */
+    /** R10-a - launcher-shortcut tab/action requests (null = none pending). */
     private val shortcutRequest = MutableStateFlow<ShortcutRequest?>(null)
 
-    /** Wave 7 — POST_NOTIFICATIONS launcher (must register before STARTED). */
+    /** Wave 7 - POST_NOTIFICATIONS launcher (must register before STARTED). */
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             // Honest: denial keeps in-app surfaces live, no reminders as push.
@@ -278,13 +278,13 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         super.onStart()
-        // R6 — M4: the incoming-attention gate is foreground-only (single
+        // R6 - M4: the incoming-attention gate is foreground-only (single
         // activity → this is app-level truth).
         app.pulse.android.notify.IncomingAttention.foreground = true
         // Foreground outbox trigger (Wave 0): whatever queued while the app
         // was dead/backgrounded drains the moment the surface is up.
         lifecycleScope.launch { runCatching { repository.flushOutbox() } }
-        // Wave 7 — ask for the notifications permission ONCE (API 33+), then
+        // Wave 7 - ask for the notifications permission ONCE (API 33+), then
         // run the due-loop: GET ?due=1 → local notification → PATCH firedAt.
         app.pulse.android.notify.ReminderNotifier.ensureChannel(this)
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -305,8 +305,8 @@ class MainActivity : FragmentActivity() {
                                 item.id,
                                 item.note.ifBlank { "Reminder" },
                                 item.snippet ?: item.conversation.name,
-                                // R2-C item 6 — the tap deep-links into the chat.
-                                // R7 item 4 — the anchored message rides along so
+                                // R2-C item 6 - the tap deep-links into the chat.
+                                // R7 item 4 - the anchored message rides along so
                                 // the room auto-jumps + flashes on open.
                                 item.conversationId.ifBlank { null },
                                 item.messageId,
@@ -327,7 +327,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // R10-a — App lock: whenever Pulse reaches the foreground while the
+        // R10-a - App lock: whenever Pulse reaches the foreground while the
         // toggle is on and this session hasn't unlocked, the BiometricPrompt
         // goes up over everything (the Compose gate overlay backs it up).
         appLock.onHostResume(this)
@@ -337,7 +337,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         handleIntent(intent)
         // True edge-to-edge with NO system scrims: the app surface (ambient field)
-        // shows behind the status bar AND the navigation bar — the default
+        // shows behind the status bar AND the navigation bar - the default
         // enableEdgeToEdge() nav scrim is what painted a gray band over the dock.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
@@ -354,7 +354,7 @@ class MainActivity : FragmentActivity() {
                 deepLink = deepLinks.collectAsStateWithLifecycle().value,
                 onConsumeDeepLink = { deepLinks.value = null },
                 repository = repository,
-                // R10-a — lock gate + share-in + shortcut requests.
+                // R10-a - lock gate + share-in + shortcut requests.
                 appLock = appLock,
                 onRequestUnlock = { appLock.presentPrompt(this) },
                 shareInFlow = shareIn,
@@ -372,7 +372,7 @@ class MainActivity : FragmentActivity() {
     }
 
     /**
-     * R10-a — one landing place for every external intent shape: pulse://
+     * R10-a - one landing place for every external intent shape: pulse://
      * deep links (Wave 6), the share-in hand-off from ShareInActivity, and
      * the launcher-shortcut tab/action extras. Unknown shapes stay no-ops.
      */
@@ -388,7 +388,7 @@ class MainActivity : FragmentActivity() {
                     intent.getParcelableExtra(ShareInActivity.EXTRA_SHARE_STREAM) as? android.net.Uri
                 }
                 shareIn.value = if (text.isNullOrBlank() && stream == null) {
-                    // Unreadable payload — say so and close, no half state.
+                    // Unreadable payload - say so and close, no half state.
                     android.widget.Toast.makeText(
                         this,
                         "Couldn't read the shared content",
@@ -414,15 +414,15 @@ class MainActivity : FragmentActivity() {
 fun PulseRoot(
     deepLink: app.pulse.core.link.PulseDeepLink? = null,
     onConsumeDeepLink: () -> Unit = {},
-    // R8 Task 3-c — the repository rides down to the shell so the FCM
+    // R8 Task 3-c - the repository rides down to the shell so the FCM
     // registration can sync the moment a viewer identity exists.
     repository: app.pulse.domain.repository.PulseRepository,
     session: SessionViewModel = hiltViewModel(),
-    // R10-a — biometric App lock gate (covers onboarding, the shell and the
-    // share-in sheet alike — the whole UI sits behind it while locked).
+    // R10-a - biometric App lock gate (covers onboarding, the shell and the
+    // share-in sheet alike - the whole UI sits behind it while locked).
     appLock: app.pulse.android.security.PulseAppLock,
     onRequestUnlock: () -> Unit,
-    // R10-a — share-in payload + launcher-shortcut requests from the activity.
+    // R10-a - share-in payload + launcher-shortcut requests from the activity.
     shareInFlow: StateFlow<ShareInPayload?>,
     onConsumeShareIn: () -> Unit,
     shortcutFlow: StateFlow<ShortcutRequest?>,
@@ -434,7 +434,7 @@ fun PulseRoot(
     val darkRaw by session.darkOverride.collectAsStateWithLifecycle()
     val uiThemeRaw by session.uiTheme.collectAsStateWithLifecycle()
     val reduced by session.reducedMotion.collectAsStateWithLifecycle()
-    // R2-C item 3 — the selected design language (web pulse.uiTheme.v2).
+    // R2-C item 3 - the selected design language (web pulse.uiTheme.v2).
     val uiTheme = app.pulse.ui.PulseUiTheme.fromId(uiThemeRaw)
 
     val dark = when (darkRaw) {
@@ -459,7 +459,7 @@ fun PulseRoot(
     // Boot the live layer (REST refresh + socket join) as soon as identity exists.
     LaunchedEffect(viewerId) { session.bootstrap(viewerId) }
 
-    // R7 item 8 — the session-rotated re-login notice (SessionViewModel sets
+    // R7 item 8 - the session-rotated re-login notice (SessionViewModel sets
     // it when the stored token was rejected) finally reaches the onboarding
     // screen it was always meant for.
     val sessionNotice by session.sessionNotice.collectAsStateWithLifecycle()
@@ -472,7 +472,7 @@ fun PulseRoot(
         Box(
             Modifier
                 .fillMaxSize()
-                // R2-C item 3 — the design-language page backdrop (aurora
+                // R2-C item 3 - the design-language page backdrop (aurora
                 // radials for glass, ink-linear for kinetic, …) sits behind
                 // the ambient FX field like the web .ui-root.
                 .pulseUiThemePageBackground(uiTheme, dark),
@@ -505,7 +505,7 @@ fun PulseRoot(
                 reducedMotion = reduced,
             )
 
-            // R10-a — the App lock gate draws LAST: a full-screen overlay over
+            // R10-a - the App lock gate draws LAST: a full-screen overlay over
             // onboarding/shell/particles so nothing behind it is reachable.
             if (appLock.locked.collectAsStateWithLifecycle().value) {
                 AppLockGate(appLock = appLock, onRequestUnlock = onRequestUnlock)
@@ -515,7 +515,7 @@ fun PulseRoot(
 }
 
 /**
- * The four-tab shell behind the onboarding gate — web MainShell parity:
+ * The four-tab shell behind the onboarding gate - web MainShell parity:
  * direction-aware tab transitions + the floating glass Capsule dock.
  */
 @Composable
@@ -524,9 +524,9 @@ private fun PulseShell(
     session: SessionViewModel,
     deepLink: app.pulse.core.link.PulseDeepLink? = null,
     onConsumeDeepLink: () -> Unit = {},
-    // R8 Task 3-c — FCM push registration syncs against the viewer identity.
+    // R8 Task 3-c - FCM push registration syncs against the viewer identity.
     repository: app.pulse.domain.repository.PulseRepository,
-    // R10-a — share-in sheet + launcher-shortcut tab/action requests.
+    // R10-a - share-in sheet + launcher-shortcut tab/action requests.
     shareIn: ShareInPayload? = null,
     onConsumeShareIn: () -> Unit = {},
     shortcutRequest: ShortcutRequest? = null,
@@ -536,13 +536,13 @@ private fun PulseShell(
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val shell: ShellViewModel = hiltViewModel()
-    // Wave 3 — activity-scoped call surface. The engine is a @Singleton; this
+    // Wave 3 - activity-scoped call surface. The engine is a @Singleton; this
     // VM just exposes it to every screen + the root overlay.
     val callVm: CallViewModel = hiltViewModel()
-    // R8 Task 3-c — the group-call overlay rides the exact same pattern: the
+    // R8 Task 3-c - the group-call overlay rides the exact same pattern: the
     // mesh engine is a @Singleton, this VM is the bridge (one session).
     val groupCallVm: GroupCallViewModel = hiltViewModel()
-    // Wave 5 — the voice-rooms overlay rides the exact same pattern: the
+    // Wave 5 - the voice-rooms overlay rides the exact same pattern: the
     // engine is a @Singleton (rooms outlive surfaces), the VM is the bridge.
     val voiceVm: VoiceRoomsViewModel = hiltViewModel()
     val unread by shell.unread.collectAsStateWithLifecycle()
@@ -550,18 +550,18 @@ private fun PulseShell(
     val viewerName by session.viewerName.collectAsStateWithLifecycle()
     val viewerColor by session.viewerColor.collectAsStateWithLifecycle()
     val voiceState by voiceVm.voiceState.collectAsStateWithLifecycle()
-    // R1-W2I — PiP pane overlay (F-PI-01..03): the renderer VM bridge; the
+    // R1-W2I - PiP pane overlay (F-PI-01..03): the renderer VM bridge; the
     // pane state itself lives in the PulsePiPStore @Singleton so panes
     // outlive every surface (web usePipChat module-singleton parity).
     val pipVm: PipOverlayViewModel = hiltViewModel()
-    // R4-B item 3 — the navigation architecture (web pulse.navStyle.v2): the
+    // R4-B item 3 - the navigation architecture (web pulse.navStyle.v2): the
     // shell re-renders the matching dock live when the Appearance pick lands.
     val navStyle by session.navStyle.collectAsStateWithLifecycle()
     val reducedMotion by session.reducedMotion.collectAsStateWithLifecycle()
 
     // Identity adoption for the voice/stage/space wire payloads (the calls
     // surface receives the same values through callPeer's caller args).
-    // R8 Task 3-c — the group-call mesh needs the same identity, and the FCM
+    // R8 Task 3-c - the group-call mesh needs the same identity, and the FCM
     // registration syncs as soon as a viewer identity exists (retried here on
     // every login/identity change; no-op while push is unarmed).
     LaunchedEffect(viewerId, viewerName, viewerColor) {
@@ -573,13 +573,13 @@ private fun PulseShell(
         }
     }
 
-    // R8 Task 3-c — one-shot group-call notices (web toasts) ride the shell
+    // R8 Task 3-c - one-shot group-call notices (web toasts) ride the shell
     // snackbar host (declared below honest()).
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var moreMenuOpen by remember { mutableStateOf(false) }
-    // R2-A item 1 — the shell-hosted new-chat composer (web mounts
+    // R2-A item 1 - the shell-hosted new-chat composer (web mounts
     // NewChatSheet at the shell; both the dock FAB and the chats header
     // pencil raise it).
     var newChatOpen by remember { mutableStateOf(false) }
@@ -594,13 +594,13 @@ private fun PulseShell(
         }
     }
 
-    // Wave 6 — pulse:// deep links: room/user open directly, invites land on
+    // Wave 6 - pulse:// deep links: room/user open directly, invites land on
     // the chats tab and surface the JoinInviteSheet there (web ?join= parity).
     LaunchedEffect(deepLink, viewerId) {
         if (viewerId == null || deepLink == null) return@LaunchedEffect
         when (deepLink) {
             is app.pulse.core.link.PulseDeepLink.Room -> {
-                // R7 item 4 — the jump payload (reminder anchor) routes through
+                // R7 item 4 - the jump payload (reminder anchor) routes through
                 // the ?jump= nav arg so ChatRoomScreen auto-jumps + flashes.
                 val jump = deepLink.jumpMessageId
                 if (jump.isNullOrBlank()) {
@@ -619,9 +619,9 @@ private fun PulseShell(
         onConsumeDeepLink()
     }
 
-    // R10-a — launcher shortcuts: Chats (tab jump), New message (the
+    // R10-a - launcher shortcuts: Chats (tab jump), New message (the
     // shell-hosted composer), Search (the chats surface raises its search
-    // field — the SAME path the dock's search button drives). Pending
+    // field - the SAME path the dock's search button drives). Pending
     // requests hold until a viewer identity exists (same idiom as the
     // deep links above); anything unrecognized consumes as a no-op.
     LaunchedEffect(shortcutRequest, viewerId) {
@@ -646,7 +646,7 @@ private fun PulseShell(
         scope.launch { snackbar.showSnackbar(message, withDismissAction = false) }
     }
 
-    // R8 Task 3-c — group-call one-shot notices (web toast parity).
+    // R8 Task 3-c - group-call one-shot notices (web toast parity).
     LaunchedEffect(groupCallVm) {
         groupCallVm.notices.collect { message -> honest(message) }
     }
@@ -656,10 +656,10 @@ private fun PulseShell(
     // saved library keeps it too (it's a shell page, not a room).
     val showDock = currentRoute in TAB_ROUTES || currentRoute == "archived" || currentRoute == "saved"
 
-    // The system nav bar (gesture pill or 3-button strip) draws over the app —
+    // The system nav bar (gesture pill or 3-button strip) draws over the app -
     // every bottom-anchored surface must clear it.
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    // R4-B item 3 — per-style content clearance: hub/contacts/profile/saved
+    // R4-B item 3 - per-style content clearance: hub/contacts/profile/saved
     // + the snackbar host clear the dock through this one channel (web
     // pb-[env(safe-area-inset-bottom)+Npx] per architecture).
     val dockSpace = when (navStyle) {
@@ -676,7 +676,7 @@ private fun PulseShell(
         PulseNavStyle.GESTURE -> 76.dp + navBottom
         PulseNavStyle.CONTEXTUAL_DOCK -> 88.dp + navBottom
     }
-    // floating-top pins the glass capsule beneath the top edge — each screen's
+    // floating-top pins the glass capsule beneath the top edge - each screen's
     // own statusBarsPadding still applies; this routes only the EXTRA nav
     // height through the shell scaffold (rail routes its width via the Row
     // below). command-bar (R14) pins a compact strip beneath the top edge the
@@ -685,7 +685,7 @@ private fun PulseShell(
 
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()) {
-            // rail — the ONE style that lives as a layout sibling (web RailNav is
+            // rail - the ONE style that lives as a layout sibling (web RailNav is
             // a persistent flex child, not an overlay): content insets by weight.
             if (showDock && navStyle == PulseNavStyle.RAIL) {
                 RailDock(
@@ -743,7 +743,7 @@ private fun PulseShell(
                     onSwitchTab = { route -> switchTab(route) },
                     onOpenArchived = { navController.navigate("archived") },
                     onCycleTheme = { session.cycleDarkOverride() },
-                    // Wave 4 stories — the rail is the ONLY stories entry point
+                    // Wave 4 stories - the rail is the ONLY stories entry point
                     // (web parity): ring tap = viewer seeded at that author,
                     // "+" tap = composer.
                     onOpenStoriesViewer = { start ->
@@ -760,9 +760,9 @@ private fun PulseShell(
                     },
                     onOpenMentions = { navController.navigate("mentions") },
                     onOpenChannels = { navController.navigate("channels") },
-                    // R2-A item 2 — the header phone button opens the REAL calls page.
+                    // R2-A item 2 - the header phone button opens the REAL calls page.
                     onOpenCalls = { navController.navigate("calls") },
-                    // R2-A item 1 — the header pencil opens the shell-hosted composer.
+                    // R2-A item 1 - the header pencil opens the shell-hosted composer.
                     onOpenNewChat = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         newChatOpen = true
@@ -770,7 +770,7 @@ private fun PulseShell(
                     searchRequest = searchTick,
                 )
 
-                // Wave 6 — pulse://invite/<code> lands here as the JoinInviteSheet
+                // Wave 6 - pulse://invite/<code> lands here as the JoinInviteSheet
                 // (web ?join= parity: preview → already-member jump or join → open room).
                 val pendingInvite by shell.pendingInvite.collectAsStateWithLifecycle()
                 pendingInvite?.let { code ->
@@ -821,7 +821,7 @@ private fun PulseShell(
                                 callerColor = viewerColor,
                             )
                         },
-                        // Wave R1-W2D — real video calls (wire kind 'video';
+                        // Wave R1-W2D - real video calls (wire kind 'video';
                         // camera prompt handled in ContactsScreen).
                         onVideoCallUser = { user ->
                             callVm.callPeer(
@@ -843,7 +843,7 @@ private fun PulseShell(
                     CallsView(
                         onBack = { navController.popBackStack() },
                         onOpenRoom = { id -> navController.navigate("room/$id") },
-                        // R3-B item 5 — redial: the SAME engine path as the contacts
+                        // R3-B item 5 - redial: the SAME engine path as the contacts
                         // call button, driven by the row's denormalized peer + wire
                         // kind (the engine resolves the DM, iOS R2-D parity).
                         onRedial = { row ->
@@ -862,7 +862,7 @@ private fun PulseShell(
                     )
                 }
             }
-            // R2-A item 6/7/8/9 — the room-info surface: automations manager,
+            // R2-A item 6/7/8/9 - the room-info surface: automations manager,
             // webhooks manager, screen-security toggles and the photo edit.
             composable(
                 "room-info/{conversationId}",
@@ -880,17 +880,17 @@ private fun PulseShell(
                     ProfileScreen(
                         onEditProfile = { navController.navigate("profile/edit") },
                         onOpenBlocked = { navController.navigate("settings/blocked") },
-                        // R16 — web profile-tab.tsx:497-508: the profile tab's
+                        // R16 - web profile-tab.tsx:497-508: the profile tab's
                         // "Saved messages" row lands on the real starred library.
                         onOpenSaved = { navController.navigate("saved") },
-                        // R6 — M3: the durable sign-out. The app-level session VM
+                        // R6 - M3: the durable sign-out. The app-level session VM
                         // clears prefs + the encrypted vault + token; viewerId →
                         // null unmounts the shell and PulseRoot shows onboarding.
                         onForgetViewer = { session.forgetViewer() },
                     )
                 }
             }
-            // Wave 6 — social graph: user page, add contact, profile edit, blocked list.
+            // Wave 6 - social graph: user page, add contact, profile edit, blocked list.
             composable(
                 "user/{id}",
                 arguments = listOf(navArgument("id") { type = NavType.StringType }),
@@ -921,7 +921,7 @@ private fun PulseShell(
                     BlockedListScreen(onBack = { navController.popBackStack() })
                 }
             }
-            // Wave 8 — the full Settings root + nine sections.
+            // Wave 8 - the full Settings root + nine sections.
             composable("settings") {
                 Box(Modifier.fillMaxSize()) {
                     SettingsRootScreen(
@@ -966,7 +966,7 @@ private fun PulseShell(
                     "data" -> Box(Modifier.fillMaxSize()) {
                         DataSection(
                             onBack = { navController.popBackStack() },
-                            // R14 gap 6 — "The Hub" row lands on the Hub tab;
+                            // R14 gap 6 - "The Hub" row lands on the Hub tab;
                             // switchTab pops the settings back stack to the
                             // start destination, closing the settings sheet.
                             onOpenHub = { switchTab("hub") },
@@ -996,7 +996,7 @@ private fun PulseShell(
                 ),
             ) { entry ->
                 val conversationId = entry.arguments?.getString("conversationId").orEmpty()
-                // R8 Task 3-c — the OPEN conversation is the group-call probe
+                // R8 Task 3-c - the OPEN conversation is the group-call probe
                 // target + outsider-banner gate (web openConversationId parity);
                 // cleared when the room leaves composition.
                 DisposableEffect(conversationId) {
@@ -1009,17 +1009,17 @@ private fun PulseShell(
                     jumpMessageId = entry.arguments?.getString("jump"),
                     onBack = { navController.popBackStack() },
                     onOpenThread = { id, rootId -> navController.navigate("room/$id/thread/$rootId") },
-                    // R7 item 4 — cross-room reminder jumps (web
+                    // R7 item 4 - cross-room reminder jumps (web
                     // REMINDER_JUMP_EVENT) land on the room + jump arg.
                     onJumpToRoom = { id, msgId -> navController.navigate("room/$id?jump=$msgId") },
-                    // Wave 5 voice room entry — header mic + "Voice · N live"
+                    // Wave 5 voice room entry - header mic + "Voice · N live"
                     // pill, opening the overlay the same way calls open.
                     voiceJoined = voiceState.joined && voiceState.conversationId == conversationId,
                     voiceLiveCount = voiceState.roster.size,
                     onOpenVoiceRoom = { voiceVm.openVoice(conversationId) },
-                    // R2-A item 6/7/8/9 — the room-menu "Room info" entry.
+                    // R2-A item 6/7/8/9 - the room-menu "Room info" entry.
                     onOpenRoomInfo = { id -> navController.navigate("room-info/$id") },
-                    // R8 Task 3-c — group calls (mesh): the header voice/video
+                    // R8 Task 3-c - group calls (mesh): the header voice/video
                     // buttons (permission-gated inside the room) dial through
                     // the ONE shell-level session; the room also reports its
                     // display title for the probe/banner identity.
@@ -1048,7 +1048,7 @@ private fun PulseShell(
                     onBack = { navController.popBackStack() },
                 )
             }
-            // Wave 2 — the dock "Saved" menu item now lands on the real library
+            // Wave 2 - the dock "Saved" menu item now lands on the real library
             // (fetch → Room cache → search → unsave → jump-to-message rows).
             composable("saved") {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
@@ -1060,9 +1060,9 @@ private fun PulseShell(
                     )
                 }
             }
-            // Wave 4 — full-screen stories. The viewer/composer are ROOM-class
+            // Wave 4 - full-screen stories. The viewer/composer are ROOM-class
             // surfaces (no dock). The nav-entry-scoped StoriesViewModel boots on
-            // entry: one fresh REST fetch (REST only — zero socket for stories)
+            // entry: one fresh REST fetch (REST only - zero socket for stories)
             // + 60s poll while open, so D2 expiry and D3 vanishing reconcile.
             composable(
                 "stories/viewer?start={start}",
@@ -1094,7 +1094,7 @@ private fun PulseShell(
         }
     }
 
-    // ── R4-B item 3 — the dock dispatch: one shared action bundle (tabs,
+    // R4-B item 3 - the dock dispatch: one shared action bundle (tabs,
     // compose → NewChatSheet, More → Settings/Search/Saved/Stories) over the
     // SAME state for every architecture; the rail renders as a layout
     // sibling above, every other style is an overlay here.
@@ -1103,7 +1103,7 @@ private fun PulseShell(
             onSelect = { route -> switchTab(route) },
             onCompose = {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                // R2-A item 1 — the REAL new-chat composer (was a stub toast).
+                // R2-A item 1 - the REAL new-chat composer (was a stub toast).
                 newChatOpen = true
             },
             onSearch = {
@@ -1199,7 +1199,7 @@ private fun PulseShell(
                 moreMenuOpen = moreMenuOpen,
                 onMoreMenuChange = { moreMenuOpen = it },
             )
-            // R14 gap 13 — the 5 remaining web architectures as honest mobile
+            // R14 gap 13 - the 5 remaining web architectures as honest mobile
             // adaptations (renderer comments live on each composable).
             PulseNavStyle.FLOATING_DOCK -> FloatingDockDock(
                 modifier = Modifier.align(Alignment.BottomCenter),
@@ -1251,7 +1251,7 @@ private fun PulseShell(
         }
     }
 
-        // R2-A item 1 — the shell-hosted new-chat composer (web mounts the
+        // R2-A item 1 - the shell-hosted new-chat composer (web mounts the
         // NewChatSheet at the shell): dock FAB + chats header pencil both
         // raise it; a create navigates into the room and the Room-cache-backed
         // chats list refreshes itself through the existing flows.
@@ -1267,7 +1267,7 @@ private fun PulseShell(
             )
         }
 
-        // R10-a — the share-in sheet (system "Share into Pulse" target):
+        // R10-a - the share-in sheet (system "Share into Pulse" target):
         // pick a conversation, the payload goes through the SAME send
         // paths the surfaces use, then the room opens on the result.
         shareIn?.let { payload ->
@@ -1291,9 +1291,9 @@ private fun PulseShell(
             ) { Text(data.visuals.message, fontSize = 13.sp) }
         }
 
-        // R1-W2I — the PiP pane overlay (F-PI-01..03): floats above the
+        // R1-W2I - the PiP pane overlay (F-PI-01..03): floats above the
         // NavHost + dock and every pushed room (web mounts PipChat at the
-        // shell AND inside the room overlay — the two never co-render, so
+        // shell AND inside the room overlay - the two never co-render, so
         // one always-on instance here is the same net effect). Hidden on
         // the Settings sub-pages (web hides the shell instance while
         // settings is open). Sits BELOW the call/voice overlays.
@@ -1303,11 +1303,11 @@ private fun PulseShell(
                 viewerId = viewerId,
                 dark = dark,
                 reducedMotion = reducedMotion,
-                // R4-B item 3 — keep the draggable panes clear of the LEFT
+                // R4-B item 3 - keep the draggable panes clear of the LEFT
                 // rail band when the rail style is active.
                 startInset = if (showDock && navStyle == PulseNavStyle.RAIL) 68.dp else 0.dp,
                 onOpenRoom = { id ->
-                    // F-PI-03 open bridge — a header tap opens the conversation
+                    // F-PI-03 open bridge - a header tap opens the conversation
                     // in the main shell; a tap inside its own room is a no-op
                     // (web dispatch is equally inert with no shell listener).
                     val currentEntry = navController.currentBackStackEntry
@@ -1319,12 +1319,12 @@ private fun PulseShell(
             )
         }
 
-        // Wave 3 — the call overlay owns the WHOLE screen whenever the engine
+        // Wave 3 - the call overlay owns the WHOLE screen whenever the engine
         // is not idle (ringing/connecting/connected/ended). Renders above the
-        // dock and every tab — one call, one surface.
+        // dock and every tab - one call, one surface.
         CallOverlay(callVm)
 
-        // R8 Task 3-c — the group-call ring/ongoing banner floats above every
+        // R8 Task 3-c - the group-call ring/ongoing banner floats above every
         // tab (web main-shell mounts GroupCallRingBanner at shell level), and
         // the group overlay owns the whole screen once the session leaves idle
         // (the engine refuses to run both call kinds at once).
@@ -1336,13 +1336,13 @@ private fun PulseShell(
         )
         GroupCallOverlay(groupCallVm)
 
-        // Wave 5 — the voice rooms overlay (voice room / stage / space) sits
+        // Wave 5 - the voice rooms overlay (voice room / stage / space) sits
         // next to the call overlay; one room surface at a time, engine-owned.
         VoiceRoomsOverlay(voiceVm)
     }
 }
 
-// ── direction-aware tab transitions (web ±24px slide + 220ms fade) ────
+// direction-aware tab transitions (web ±24px slide + 220ms fade)
 
 private val pulseEaseOut = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
 
@@ -1364,7 +1364,7 @@ private fun tabExit(fromRoute: String?, toRoute: String?): ExitTransition {
         fadeOut(tween(220, easing = pulseEaseOut))
 }
 
-// ── the Floating Capsule dock (web default nav, spec §12) ─────────────
+// the Floating Capsule dock (web default nav, spec §12)
 
 @Composable
 private fun CapsuleDock(
@@ -1372,7 +1372,7 @@ private fun CapsuleDock(
     active: String,
     unread: Int,
     dark: Boolean,
-    // R4-B item 3 — the reduce-motion idiom is shared by every nav style.
+    // R4-B item 3 - the reduce-motion idiom is shared by every nav style.
     reducedMotion: Boolean = false,
     onSelect: (String) -> Unit,
     onCompose: () -> Unit,
@@ -1412,7 +1412,9 @@ private fun CapsuleDock(
                     .fillMaxWidth()
                     .pulseGlass(dark, RoundedCornerShape(28.dp)),
             ) {
-                // active pill — slides between tab slots (web layoutId pill)
+                // active pill - slides between tab slots (web layoutId pill).
+                // R18 Neo dock polish - the signal rides the neon mint token
+                // (DockEmerald600 = PulsePalette.NeonMint), not legacy emerald.
                 Box(
                     Modifier
                         .offset(x = pillXAnim, y = pad)
@@ -1421,14 +1423,14 @@ private fun CapsuleDock(
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    PulsePalette.Emerald.copy(alpha = if (dark) 0.16f else 0.20f),
-                                    PulsePalette.Emerald.copy(alpha = if (dark) 0.05f else 0.06f),
+                                    DockEmerald600.copy(alpha = if (dark) 0.16f else 0.20f),
+                                    DockEmerald600.copy(alpha = if (dark) 0.05f else 0.06f),
                                 ),
                             ),
                         )
                         .border(
                             1.dp,
-                            PulsePalette.Emerald.copy(alpha = if (dark) 0.25f else 0.30f),
+                            DockEmerald600.copy(alpha = if (dark) 0.28f else 0.30f),
                             RoundedCornerShape(22.dp),
                         ),
                 )
@@ -1503,12 +1505,12 @@ private fun DockTabButton(
     unread: Int,
     dark: Boolean,
     modifier: Modifier = Modifier,
-    // R4-B item 3 — reduce-motion kills the wobble (web useReducedMotion).
+    // R4-B item 3 - reduce-motion kills the wobble (web useReducedMotion).
     reducedMotion: Boolean = false,
     onSelect: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
-    // web wobble — icon rotates [0, -8, 6, 0]° when a tab becomes active
+    // web wobble - icon rotates [0, -8, 6, 0]° when a tab becomes active
     val rotate = remember { Animatable(0f) }
     LaunchedEffect(active) {
         if (active && !reducedMotion) {
@@ -1533,6 +1535,19 @@ private fun DockTabButton(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(contentAlignment = Alignment.Center) {
+                // R18 Neo dock polish - soft neon halo under the active glyph
+                // (mint bloom, zero new deps; inert when inactive).
+                if (active) {
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(DockEmerald600.copy(alpha = if (dark) 0.16f else 0.12f), Color.Transparent),
+                                ),
+                            ),
+                    )
+                }
                 Icon(
                     imageVector = if (active) tab.activeIcon else tab.inactiveIcon,
                     contentDescription = tab.label,
@@ -1550,12 +1565,13 @@ private fun DockTabButton(
                     DockUnreadBadge(unread, dark)
                 }
             }
-            Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 tab.label,
                 fontSize = 10.sp,
                 lineHeight = 10.sp,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                letterSpacing = if (active) 0.2.sp else 0.sp,
                 color = if (active) activeTint else inactiveTint,
             )
         }
@@ -1565,16 +1581,19 @@ private fun DockTabButton(
 @Composable
 private fun DockUnreadBadge(count: Int, dark: Boolean) {
     val label = if (count > 99) "99+" else "$count"
+    // R18 Neo dock polish - solid mint pill with the locked on-accent ink;
+    // the ring melts into the dock surface (carbon / paper) instead of a
+    // hardcoded zinc.
     Text(
         label,
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
-        color = Color.White,
+        color = PulsePalette.OnNeonMint,
         modifier = Modifier
             .offset(x = 10.dp, y = (-6).dp)
             .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.Teal)))
-            .border(2.dp, if (dark) Color(0xFF18181B) else Color.White, CircleShape)
+            .background(DockEmerald600)
+            .border(2.dp, if (dark) PulsePalette.NeoSurface else Color.White, CircleShape)
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
 }
@@ -1593,7 +1612,7 @@ private fun ComposeDockButton(onCompose: () -> Unit, size: Dp = 46.dp) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Filled.Add, contentDescription = "New chat", tint = Color.White, modifier = Modifier.size(if (size >= 44.dp) 20.dp else 17.dp))
+        Icon(Icons.Filled.Add, contentDescription = "New chat", tint = PulsePalette.OnNeonMint, modifier = Modifier.size(if (size >= 44.dp) 20.dp else 17.dp))
     }
 }
 
@@ -1631,7 +1650,7 @@ private fun MoreDockButton(
             expanded = open,
             onDismissRequest = { onOpenChange(false) },
             shape = RoundedCornerShape(16.dp),
-            containerColor = if (dark) Color(0xFF1C1C1F) else Color.White,
+            containerColor = if (dark) PulsePalette.NeoSurface2 else Color.White,
         ) {
             DropdownMenuItem(
                 text = { Text("Settings", fontSize = 14.sp) },
@@ -1669,9 +1688,9 @@ private fun MoreDockButton(
     }
 }
 
-// ── R4-B item 3 / R14 — the navigation architectures (web nav-router.tsx) ─
+// R4-B item 3 / R14 - the navigation architectures (web nav-router.tsx)
 //
-// Ports of the web renderers — ALL 13 since R14:
+// Ports of the web renderers - ALL 13 since R14:
 //   FloatingTopDock  · nav-router.tsx:466  FloatingTopNav
 //   PillDock         · nav-router.tsx:563  PillNav
 //   BottomBarDock    · nav-router.tsx:617  BottomBar
@@ -1679,17 +1698,17 @@ private fun MoreDockButton(
 //   FloatingTabBarDock · nav-router.tsx:719 FloatingTabBar
 //   RailDock         · nav-router.tsx:873  RailNav
 //   IslandDock       · nav-router.tsx:925  IslandNav
-//   FloatingDockDock · nav-router.tsx FloatingDock  — icon-only dock, the
+//   FloatingDockDock · nav-router.tsx FloatingDock  - icon-only dock, the
 //                      ACTIVE tile magnifies (the web's hover magnify adapted
 //                      to a press/active scale).
-//   CommandBarDock   · nav-router.tsx:786-870 CommandBar — compact top strip
+//   CommandBarDock   · nav-router.tsx:786-870 CommandBar - compact top strip
 //                      with tabs + inline search/settings buttons.
-//   RadialDock       · nav-router.tsx RadialNav — center FAB fanning the
+//   RadialDock       · nav-router.tsx RadialNav - center FAB fanning the
 //                      destinations in an arc overlay (veil + auto-close).
-//   GestureDock      · nav-router.tsx:1117-1189 GestureNav — minimal pill +
+//   GestureDock      · nav-router.tsx:1117-1189 GestureNav - minimal pill +
 //                      drag handle; horizontal drag switches tabs, tap opens
 //                      the quick switcher.
-//   ContextualDockDock · nav-router.tsx:1193-1240 ContextualDock — the
+//   ContextualDockDock · nav-router.tsx:1193-1240 ContextualDock - the
 //                      trailing chip morphs per tab (New chat / Search /
 //                      New group / Settings).
 // (capsule IS the existing CapsuleDock.)
@@ -1699,7 +1718,7 @@ private fun MoreDockButton(
 // NewChatSheet + More menu, the PulseMotion springs and the reduce-motion +
 // haptics idioms.
 
-/** Shared dock callbacks — every architecture drives the identical state. */
+/** Shared dock callbacks - every architecture drives the identical state. */
 private data class DockActions(
     val onSelect: (String) -> Unit,
     val onCompose: () -> Unit,
@@ -1757,7 +1776,7 @@ private fun BarTabItem(
     }
 }
 
-// ── 2 · floating-top — glass capsule pinned beneath the top edge ─────
+// 2 · floating-top - glass capsule pinned beneath the top edge
 
 @Composable
 private fun FloatingTopDock(
@@ -1855,7 +1874,7 @@ private fun FloatingTopDock(
     }
 }
 
-// ── 4 · pill — single segmented pill with sliding emerald fill ───────
+// 4 · pill - single segmented pill with sliding emerald fill
 
 @Composable
 private fun PillTabItem(
@@ -1957,7 +1976,7 @@ private fun PillDock(
     }
 }
 
-// ── 5/6 · bottom-bar + tab-bar — edge-to-edge bars ───────────────────
+// 5/6 · bottom-bar + tab-bar - edge-to-edge bars
 
 @Composable
 private fun BarDockChrome(
@@ -2106,7 +2125,7 @@ private fun TabBarDock(
     }
 }
 
-// ── 7 · floating-tab-bar — detached elevated card, active tab lifted ─
+// 7 · floating-tab-bar - detached elevated card, active tab lifted
 
 @Composable
 private fun FloatingTabBarDock(
@@ -2203,7 +2222,7 @@ private fun FloatingTabBarDock(
     }
 }
 
-// ── 9 · rail — persistent LEFT side rail, content insets by weight ───
+// 9 · rail - persistent LEFT side rail, content insets by weight
 
 @Composable
 private fun RailTabItem(
@@ -2312,7 +2331,7 @@ private fun RailDock(
     }
 }
 
-// ── 10 · island — dynamic-island pill that expands on tap ────────────
+// 10 · island - dynamic-island pill that expands on tap
 
 @Composable
 private fun IslandDock(
@@ -2327,7 +2346,7 @@ private fun IslandDock(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
-    // web auto-collapse (4200 ms), paused while the More menu is open —
+    // web auto-collapse (4200 ms), paused while the More menu is open -
     // the menu lives inside the expanded island and must not vanish.
     LaunchedEffect(expanded, moreMenuOpen) {
         if (expanded && !moreMenuOpen) {
@@ -2363,9 +2382,9 @@ private fun IslandDock(
                     .padding(horizontal = 12.dp, vertical = 6.dp)
                     .semantics {
                         contentDescription = if (expanded) {
-                            "Navigation — collapse"
+                            "Navigation - collapse"
                         } else {
-                            "Navigation — ${activeTab.label}, tap to expand"
+                            "Navigation - ${activeTab.label}, tap to expand"
                         }
                     },
                 verticalAlignment = Alignment.CenterVertically,
@@ -2449,7 +2468,7 @@ private fun IslandDock(
     }
 }
 
-// ── 3 · floating-dock — icon-only dock, the ACTIVE tile magnifies ────
+// 3 · floating-dock - icon-only dock, the ACTIVE tile magnifies
 
 @Composable
 private fun FloatingDockDock(
@@ -2522,7 +2541,7 @@ private fun FloatingDockDock(
     }
 }
 
-// ── 8 · command-bar — compact top strip with search/settings buttons ─
+// 8 · command-bar - compact top strip with search/settings buttons
 
 @Composable
 private fun CommandBarDock(
@@ -2635,7 +2654,7 @@ private fun CommandBarDock(
     }
 }
 
-// ── 11 · radial — center FAB fanning the destinations in an arc ─────
+// 11 · radial - center FAB fanning the destinations in an arc
 
 @Composable
 private fun RadialDock(
@@ -2667,7 +2686,7 @@ private fun RadialDock(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             if (open) {
                 Box(Modifier.height(180.dp), contentAlignment = Alignment.BottomCenter) {
-                    // veil — taps outside the chips close the fan
+                    // veil - taps outside the chips close the fan
                     Box(
                         Modifier
                             .matchParentSize()
@@ -2740,7 +2759,7 @@ private fun RadialDock(
     }
 }
 
-// ── 12 · gesture — minimal pill; drag switches tabs, tap = switcher ─
+// 12 · gesture - minimal pill; drag switches tabs, tap = switcher
 
 @Composable
 private fun GestureDock(
@@ -2764,7 +2783,7 @@ private fun GestureDock(
             expanded = switcherOpen,
             onDismissRequest = { switcherOpen = false },
             shape = RoundedCornerShape(16.dp),
-            containerColor = if (dark) Color(0xFF1C1C1F) else Color.White,
+            containerColor = if (dark) PulsePalette.NeoSurface2 else Color.White,
         ) {
             DOCK_TABS.forEach { tab ->
                 DropdownMenuItem(
@@ -2821,7 +2840,7 @@ private fun GestureDock(
     }
 }
 
-// ── 13 · contextual-dock — the trailing chip morphs per active tab ──
+// 13 · contextual-dock - the trailing chip morphs per active tab
 
 @Composable
 private fun ContextualDockDock(
@@ -2836,7 +2855,7 @@ private fun ContextualDockDock(
 ) {
     val haptics = LocalHapticFeedback.current
     // web ContextualDock: the trailing action adapts to the active tab
-    // (nav-router.tsx:1193-1240 — New chat / Search / New group / Settings).
+    // (nav-router.tsx:1193-1240 - New chat / Search / New group / Settings).
     val (chipLabel, chipIcon, chipAction) = when (active) {
         "chats" -> Triple("New chat", Icons.Filled.Add, actions.onCompose)
         "hub" -> Triple("Search", Icons.Filled.Search, actions.onSearch)
@@ -2909,10 +2928,10 @@ private fun ContextualDockDock(
 }
 
 /**
- * R10-a — the App lock gate overlay: a full-screen Compose surface that
+ * R10-a - the App lock gate overlay: a full-screen Compose surface that
  * covers EVERYTHING (onboarding, shell, rooms, the share-in sheet) while
  * [PulseAppLock.locked] is true. The system BiometricPrompt is the real
- * gate — this overlay is the honest fallback surface (prompt dismissed,
+ * gate - this overlay is the honest fallback surface (prompt dismissed,
  * backoff countdown, or a device that lost its credentials), never a fake
  * unlock.
  */
@@ -2974,12 +2993,12 @@ private fun AppLockGate(
             }
             Spacer(Modifier.height(22.dp))
             when {
-                // The device has NO credential to verify with — no prompt can
+                // The device has NO credential to verify with - no prompt can
                 // ever succeed, so the gate offers the honest way out instead.
                 unlockImpossible -> Button(onClick = { appLock.disableWithoutCredentials() }) {
                     Text("Turn off App lock")
                 }
-                // Max attempts (or a system lockout) — wait out the backoff.
+                // Max attempts (or a system lockout) - wait out the backoff.
                 backingOff -> {
                     val secondsLeft = ((backoffUntilMs - nowMs) / 1000).coerceAtLeast(0)
                     Button(onClick = {}, enabled = false) {

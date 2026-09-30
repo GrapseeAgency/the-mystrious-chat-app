@@ -1,32 +1,30 @@
 import SwiftUI
 import LocalAuthentication
 
-// ─────────────────────────────────────────────────────────────
-// R10-b — biometric app lock (LAContext.deviceOwnerAuthentication).
+// R10-b - biometric app lock (LAContext.deviceOwnerAuthentication).
 //
 // Honest model:
-//  • Arm — leaving the foreground (scenePhase → .background) while the
+//  • Arm - leaving the foreground (scenePhase → .background) while the
 //    PulsePrefs toggle is on marks `needsLock`; the RootView full-screen
 //    cover presents when the scene is active again.
-//  • Unlock — ONE evaluatePolicy(.deviceOwnerAuthentication): the system
+//  • Unlock - ONE evaluatePolicy(.deviceOwnerAuthentication): the system
 //    owns the Face ID / Touch ID prompt and the automatic passcode
 //    fallback (that is the policy's contract). Success clears the gate.
-//  • Honest error mapping — .passcodeNotSet surfaces "Set a passcode to
+//  • Honest error mapping - .passcodeNotSet surfaces "Set a passcode to
 //    use App lock."; user-cancelled attempts stay SILENT (the user
 //    aborted, that is not an error to shout); everything else prints the
 //    system copy verbatim. Never a fake success.
 //  • The Settings enable path runs ONE real evaluatePolicy before the
-//    toggle persists — a device that cannot enforce the lock never keeps
+//    toggle persists - a device that cannot enforce the lock never keeps
 //    the setting on (honest toast + the toggle stays off).
-//  • Interplay — while the gate is up, notification quick-reply REFUSES
+//  • Interplay - while the gate is up, notification quick-reply REFUSES
 //    to send (PulseQuickReplyCoordinator falls back to opening the room,
 //    which shows this cover) so the lock cannot be bypassed from a
 //    banner.
 //
-// Persistence rides PulsePrefs ("pulse.appLock.enabled" — the local-only
+// Persistence rides PulsePrefs ("pulse.appLock.enabled" - the local-only
 // device-security key; there is no web/account equivalent to sync with,
 // same precedent as the per-conversation screenPrivacy veil).
-// ─────────────────────────────────────────────────────────────
 
 @MainActor
 public final class PulseAppLock: ObservableObject {
@@ -37,7 +35,7 @@ public final class PulseAppLock: ObservableObject {
     /// the RootView fullScreenCover(isPresented:) binding can dismiss it
     /// after a successful unlock.
     @Published public var needsLock = false
-    /// Honest failure copy for the last attempt (nil = nothing to show —
+    /// Honest failure copy for the last attempt (nil = nothing to show -
     /// user-cancelled attempts stay silent by design).
     @Published public private(set) var statusMessage: String?
 
@@ -49,7 +47,7 @@ public final class PulseAppLock: ObservableObject {
         needsLock = appLockEnabled
     }
 
-    // ── availability probe (no UI, used by the Settings toggle) ──
+    // availability probe (no UI, used by the Settings toggle)
 
     /// canEvaluatePolicy never prompts. Returns nil when the device can
     /// enforce the lock, otherwise the honest reason it cannot.
@@ -61,9 +59,9 @@ public final class PulseAppLock: ObservableObject {
         return describe(error: error as? LAError, fallback: "This device can't enforce App lock.")
     }
 
-    // ── unlock gate (the cover's Unlock button + auto-prompt) ──
+    // unlock gate (the cover's Unlock button + auto-prompt)
 
-    /// One real evaluatePolicy(.deviceOwnerAuthentication) — biometry
+    /// One real evaluatePolicy(.deviceOwnerAuthentication) - biometry
     /// first, passcode fallback automatic. Failure maps honestly into
     /// `statusMessage` (user-cancel → silent) and the gate stays up.
     public func unlock() async {
@@ -77,7 +75,7 @@ public final class PulseAppLock: ObservableObject {
         }
     }
 
-    /// The Settings enable path — ONE real evaluate confirms the device
+    /// The Settings enable path - ONE real evaluate confirms the device
     /// can actually enforce the lock before the toggle persists. True
     /// only when the policy genuinely passed.
     public func runEnableConfirmation() async -> Bool {
@@ -99,7 +97,7 @@ public final class PulseAppLock: ObservableObject {
         case .userCancel, .userFallback, .systemCancel, .appCancel:
             return nil
         default:
-            return describe(error: error as? LAError, fallback: "Authentication failed — try again.")
+            return describe(error: error as? LAError, fallback: "Authentication failed - try again.")
         }
     }
 
@@ -112,7 +110,7 @@ public final class PulseAppLock: ObservableObject {
         case .biometryNotEnrolled:
             return "Enroll Face ID or Touch ID (or keep your passcode) to use App lock."
         case .biometryLockout:
-            return "Biometry is locked out — unlock with your passcode first."
+            return "Biometry is locked out - unlock with your passcode first."
         default:
             if let message = error?.localizedDescription, !message.isEmpty {
                 return message
@@ -123,7 +121,7 @@ public final class PulseAppLock: ObservableObject {
 }
 
 /// The full-screen lock gate (RootView fullScreenCover). Follows the app's
-/// overlay grammar — page wash, one centered column, emerald accent. The
+/// overlay grammar - page wash, one centered column, emerald accent. The
 /// system prompt auto-fires on appear (banking-app behavior); cancelling
 /// leaves the manual Unlock button as the honest retry.
 @MainActor
@@ -170,7 +168,7 @@ struct PulseAppLockView: View {
             }
         }
         .task {
-            // Auto-prompt once the cover is up — the user asked for the
+            // Auto-prompt once the cover is up - the user asked for the
             // lock; asking again on every return IS the feature.
             await lock.unlock()
         }

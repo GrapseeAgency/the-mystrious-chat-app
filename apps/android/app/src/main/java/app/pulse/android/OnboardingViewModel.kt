@@ -19,13 +19,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-// ─────────────────────────────────────────────────────────────
-// Pulse onboarding — two steps, web parity (onboarding-screen.tsx):
+// Pulse onboarding - two steps, web parity (onboarding-screen.tsx):
 //   1. display name + avatar color (existing reclaim-by-name flow)
-//   2. @handle picker — auto-suggested from the name, live
+//   2. @handle picker - auto-suggested from the name, live
 //      availability via GET /api/users/check-username (debounced),
 //      skippable. Creates the real account via POST /api/users.
-// ─────────────────────────────────────────────────────────────
 
 enum class OnboardingStep { NAME, HANDLE }
 
@@ -135,7 +133,7 @@ class OnboardingViewModel @Inject constructor(
         setHandle(suggestion)
     }
 
-    /** Start chatting — create the account WITH the picked @handle. */
+    /** Start chatting - create the account WITH the picked @handle. */
     fun submit() {
         val s = _state.value
         val handle = s.handle.trim()
@@ -143,16 +141,16 @@ class OnboardingViewModel @Inject constructor(
         createAccount(handle)
     }
 
-    /** Skip for now — create the account without a handle. */
+    /** Skip for now - create the account without a handle. */
     fun skip() {
         if (_state.value.pending) return
         createAccount(null)
     }
 
     /**
-     * "That's me — log in instead" — the web's reclaim-by-name affordance.
+     * "That's me - log in instead" - the web's reclaim-by-name affordance.
      * Wave 8: this now runs POST /api/users/login { name }, which ROTATES the
-     * stored session hash and hands back the fresh token — the repository
+     * stored session hash and hands back the fresh token - the repository
      * persists it (Keystore-backed SessionTokenStore) before the success
      * lands. The honest 404 copy ("No identity with that name on this
      * Pulse.") surfaces verbatim.
@@ -168,7 +166,7 @@ class OnboardingViewModel @Inject constructor(
                 onFailure = { error ->
                     _state.value = _state.value.copy(
                         signingIn = false,
-                        notice = (error as? OnboardingError)?.message ?: "Network error — try again.",
+                        notice = (error as? OnboardingError)?.message ?: "Network error - try again.",
                     )
                 },
             )
@@ -200,7 +198,7 @@ class OnboardingViewModel @Inject constructor(
                         )
                         else -> _state.value = _state.value.copy(
                             pending = false,
-                            notice = oe?.message ?: "Network error — try again.",
+                            notice = oe?.message ?: "Network error - try again.",
                         )
                     }
                 },
@@ -208,7 +206,7 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 
-    /** Debounced live availability — same 350ms rhythm as the web picker. */
+    /** Debounced live availability - same 350ms rhythm as the web picker. */
     private fun scheduleCheck() {
         checkJob?.cancel()
         val handle = _state.value.handle
@@ -257,7 +255,7 @@ class OnboardingViewModel @Inject constructor(
 
     private suspend fun complete(user: User) {
         prefs.setViewer(user.id, user.name, user.color)
-        // The encrypted vault is the durable identity — the plaintext prefs
+        // The encrypted vault is the durable identity - the plaintext prefs
         // keys remain only as the read-only UI mirror (Wave 0 secure session).
         runCatching {
             val current = secureSessionStore.load()

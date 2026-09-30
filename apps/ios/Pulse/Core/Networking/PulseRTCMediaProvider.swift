@@ -2,11 +2,10 @@ import Foundation
 import AVFoundation
 import WebRTC
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — Wave 3 REAL WebRTC media provider (stasel/WebRTC binary
+// Pulse - Wave 3 REAL WebRTC media provider (stasel/WebRTC binary
 // distribution, SPM product "WebRTC").
 //
-// Wave R1-W2D — REAL video: a kind 'video' offer (checked on the WIRE kind
+// Wave R1-W2D - REAL video: a kind 'video' offer (checked on the WIRE kind
 // AND the offer SDP's m=video line) is answered WITH a real camera track
 // (RTCCameraVideoCapturer, front camera default) instead of audio-only
 // (defect D21 fixed). No usable camera / denied permission ⇒ the audio-only
@@ -15,17 +14,16 @@ import WebRTC
 //
 // Audio-only media path (kind 'voice' fully implemented):
 //
-// Actor-isolation map (kept boring on purpose — no local compile):
+// Actor-isolation map (kept boring on purpose - no local compile):
 //   • PulseCallMediaProviding is @MainActor (engine + provider both live on
 //     the main actor).
-//   • PulseCallPeerConnecting / PulseCallPeerDelegate are PLAIN protocols —
+//   • PulseCallPeerConnecting / PulseCallPeerDelegate are PLAIN protocols -
 //     the RTCPeerConnection adapter is a nonisolated NSObject (its Obj-C
 //     delegate callbacks fire on WebRTC threads), so actor-qualifying the
 //     protocol would poison the conformance.
 //   • Every WebRTC callback is converted to plain values FIRST, then hops
 //     to the main actor via Task { @MainActor in ... } before touching the
 //     delegate (which the engine owns).
-// ─────────────────────────────────────────────────────────────
 
 /// One-time SSL bootstrap (process-wide, idempotent).
 enum PulseRTCBootstrap {
@@ -34,7 +32,7 @@ enum PulseRTCBootstrap {
     }()
 }
 
-/// ICE/PC state as the engine's state machine understands it (plain values —
+/// ICE/PC state as the engine's state machine understands it (plain values -
 /// safe to carry across actor boundaries).
 public enum PulseCallConnectionState: Equatable, Sendable {
     case connecting
@@ -46,12 +44,12 @@ public enum PulseCallConnectionState: Equatable, Sendable {
 
 /// Delegate the peer adapter notifies (always invoked ON the main actor).
 public protocol PulseCallPeerDelegate: AnyObject {
-    /// Trickle ICE — one local candidate per callback (plain values only).
+    /// Trickle ICE - one local candidate per callback (plain values only).
     func peerDidProduceLocalCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int32?)
     /// ICE connection state mapping (see PulseRTCPeerAdapter.mapIceState).
     func peerConnectionStateDidChange(_ state: PulseCallConnectionState)
     /// Remote video track arrived over the negotiated m=video line
-    /// (default no-op — only the call engine cares).
+    /// (default no-op - only the call engine cares).
     func peerDidReceiveRemoteVideoTrack(_ track: RTCVideoTrack)
 }
 
@@ -68,11 +66,11 @@ public protocol PulseCallPeerConnecting: AnyObject {
     func addRemoteCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) async throws
     /// Mute = audio track enabled toggle (web parity: track.enabled).
     func setAudioEnabled(_ enabled: Bool)
-    /// Wave R1-W2D — REAL camera path. Creates + attaches a front-camera
+    /// Wave R1-W2D - REAL camera path. Creates + attaches a front-camera
     /// RTCCameraVideoCapturer track (1280×720@30 preferred) BEFORE the SDP
     /// dance. Returns false when no usable camera exists → audio-only.
     func enableLocalVideoCapture() -> Bool
-    /// Camera (video) toggle — RTCVideoTrack.isEnabled flip (web parity).
+    /// Camera (video) toggle - RTCVideoTrack.isEnabled flip (web parity).
     func setVideoEnabled(_ enabled: Bool)
     /// Front ⇄ back camera flip.
     func switchCamera()
@@ -89,7 +87,7 @@ public protocol PulseCallPeerConnecting: AnyObject {
 @MainActor
 public protocol PulseCallMediaProviding: AnyObject {
     func requestMicPermission() async -> Bool
-    /// Wave R1-W2D — camera permission (requests when .notDetermined).
+    /// Wave R1-W2D - camera permission (requests when .notDetermined).
     func requestCameraPermission() async -> Bool
     /// Sync capability probe: camera authorized AND ≥1 capture device.
     func canCaptureVideo() -> Bool
@@ -98,17 +96,17 @@ public protocol PulseCallMediaProviding: AnyObject {
     func makePeerConnection(delegate: (any PulseCallPeerDelegate)?) -> (any PulseCallPeerConnecting)?
 }
 
-// ── 3-d — GROUP mesh media surface ──────────────────────────
+// 3-d - GROUP mesh media surface
 
 /// One mesh peer connection: the 1:1 surface (PulseCallPeerConnecting)
 /// PLUS the ability to attach the ONE shared local track. The mesh engine
 /// attaches the same acquired track to every peer connection (web parity:
-/// one local MediaStream feeding all RTCPeerConnections —
+/// one local MediaStream feeding all RTCPeerConnections -
 /// group-call-overlay.tsx ensurePeerConnection :239-240).
 public protocol PulseGroupCallPeerConnecting: PulseCallPeerConnecting {
     /// Attach one SHARED local track to this peer connection. The same
     /// RTCAudioTrack/RTCVideoTrack instance may be attached to every mesh
-    /// peer — one acquisition, N connections (track-level enabled flips
+    /// peer - one acquisition, N connections (track-level enabled flips
     /// then affect all peers at once, exactly like the web stream).
     func attachSharedTrack(_ track: RTCMediaStreamTrack, streamId: String)
 }
@@ -121,7 +119,7 @@ public protocol PulseGroupCallMediaProviding: AnyObject {
     func requestCameraPermission() async -> Bool
     /// Sync capability probe: camera authorized AND ≥1 capture device.
     func canCaptureVideo() -> Bool
-    /// A peer connection with NO local tracks — the engine attaches the
+    /// A peer connection with NO local tracks - the engine attaches the
     /// shared tracks itself (attachSharedTrack) BEFORE the SDP dance.
     func makeMeshPeerConnection(delegate: (any PulseCallPeerDelegate)?) -> (any PulseGroupCallPeerConnecting)?
     /// The ONE shared mic track (lazily created once per acquisition).
@@ -131,7 +129,7 @@ public protocol PulseGroupCallMediaProviding: AnyObject {
     func startSharedVideoCapture() -> RTCVideoTrack?
     /// Stops + releases the shared camera (call teardown).
     func stopSharedVideoCapture()
-    /// Track-level toggles — one flip feeds every mesh peer (web
+    /// Track-level toggles - one flip feeds every mesh peer (web
     /// track.enabled parity on the single local stream).
     func setSharedAudioEnabled(_ enabled: Bool)
     func setSharedVideoEnabled(_ enabled: Bool)
@@ -139,9 +137,9 @@ public protocol PulseGroupCallMediaProviding: AnyObject {
     func switchSharedCamera()
 }
 
-// ── real provider ────────────────────────────────────────────
+// real provider
 
-/// The real provider — the ONE WebRTC factory for the whole process. It
+/// The real provider - the ONE WebRTC factory for the whole process. It
 /// feeds BOTH engines (3-d): the 1:1 engine through PulseCallMediaProviding
 /// and the mesh group engine through PulseGroupCallMediaProviding (the
 /// shared-track methods below satisfy the latter).
@@ -149,7 +147,7 @@ public protocol PulseGroupCallMediaProviding: AnyObject {
 public final class PulseRTCMediaProvider: PulseCallMediaProviding, PulseGroupCallMediaProviding {
     private let factory: RTCPeerConnectionFactory
 
-    // ── 3-d — shared mesh media state (ONE acquisition, N peer connections)
+    // 3-d - shared mesh media state (ONE acquisition, N peer connections)
     private var sharedAudio: RTCAudioTrack?
     private var sharedVideoSource: RTCVideoSource?
     private var sharedVideoCapturer: RTCCameraVideoCapturer?
@@ -168,7 +166,7 @@ public final class PulseRTCMediaProvider: PulseCallMediaProviding, PulseGroupCal
         await PulseCallAudioSession.shared.requestMicPermission()
     }
 
-    /// Camera permission — requests on first use, honest about denial.
+    /// Camera permission - requests on first use, honest about denial.
     public func requestCameraPermission() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
@@ -190,10 +188,10 @@ public final class PulseRTCMediaProvider: PulseCallMediaProviding, PulseGroupCal
         PulseRTCPeerAdapter(factory: factory, delegate: delegate)
     }
 
-    // ── 3-d — PulseGroupCallMediaProviding ───────────────────
+    // 3-d - PulseGroupCallMediaProviding
 
     public func makeMeshPeerConnection(delegate: (any PulseCallPeerDelegate)?) -> (any PulseGroupCallPeerConnecting)? {
-        // Bare adapter — NO internal audio track; the engine attaches the
+        // Bare adapter - NO internal audio track; the engine attaches the
         // shared tracks (web addTrack-at-creation parity).
         PulseRTCPeerAdapter(factory: factory, delegate: delegate, attachLocalAudio: false)
     }
@@ -266,7 +264,7 @@ public final class PulseRTCMediaProvider: PulseCallMediaProviding, PulseGroupCal
     }
 }
 
-// ── shared video-format selection (1:1 adapter + mesh provider) ──
+// shared video-format selection (1:1 adapter + mesh provider)
 
 /// Closest-to-target format + fps helpers extracted from the adapter so the
 /// shared (mesh) capturer selects IDENTICAL formats (web ideal 1280×720@30).
@@ -284,7 +282,7 @@ enum PulseRTCVideoFormats {
         }
     }
 
-    /// Highest frame rate the format supports (first range wins — all ranges
+    /// Highest frame rate the format supports (first range wins - all ranges
     /// of a live format share the ceiling in practice).
     static func fpsCeiling(of format: AVCaptureDevice.Format) -> Double {
         format.videoSupportedFrameRateRanges.first?.maxFrameRate ?? Double(CallVideoConstants.targetFps)
@@ -297,9 +295,9 @@ enum PulseRTCVideoFormats {
     }
 }
 
-// ── real peer adapter ────────────────────────────────────────
+// real peer adapter
 
-/// Thread-safe weak delegate holder — WebRTC callbacks fire off-main; the
+/// Thread-safe weak delegate holder - WebRTC callbacks fire off-main; the
 /// box is read there, the main-actor hop happens in the adapter methods.
 final class PulseRTCDelegateBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -324,7 +322,7 @@ enum PulseRTCError: Error {
 /// they convert WebRTC objects into plain values FIRST, then hop to the main
 /// actor before notifying the delegate. Candidate-generation implements BOTH
 /// historical selector spellings (didGenerateIceCandidate: modern,
-/// didGenerate: legacy) — whichever the pinned framework build declares, one
+/// didGenerate: legacy) - whichever the pinned framework build declares, one
 /// witness matches and neither can fail to compile (delegate members are
 /// @optional Obj-C, extra methods are inert).
 final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallPeerConnecting, PulseGroupCallPeerConnecting {
@@ -333,7 +331,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     private var audioTrack: RTCAudioTrack?
     private let box: PulseRTCDelegateBox
 
-    // ── video handles (Wave R1-W2D — REAL camera path) ──
+    // video handles (Wave R1-W2D - REAL camera path)
     private var videoSource: RTCVideoSource?
     private var videoCapturer: RTCCameraVideoCapturer?
     private var localVideo: RTCVideoTrack?
@@ -343,7 +341,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     /// main-actor-confined call flow in practice).
     static var currentDevice: AVCaptureDevice?
 
-    /// 1:1 call adapter — local mic track attached at creation (video rides
+    /// 1:1 call adapter - local mic track attached at creation (video rides
     /// enableLocalVideoCapture on the same connection). Delegates to the
     /// full initializer with the legacy attachLocalAudio: true behavior.
     convenience init?(factory: RTCPeerConnectionFactory, delegate: (any PulseCallPeerDelegate)?) {
@@ -351,7 +349,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     }
 
     /// Full initializer. `attachLocalAudio: false` produces the BARE mesh
-    /// adapter (3-d): no local tracks at construction — the group engine
+    /// adapter (3-d): no local tracks at construction - the group engine
     /// attaches the ONE shared audio/video track pair instead.
     init?(factory: RTCPeerConnectionFactory, delegate: (any PulseCallPeerDelegate)?, attachLocalAudio: Bool) {
         box = PulseRTCDelegateBox(delegate)
@@ -386,7 +384,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
 
         // Audio-only: one sendrecv audio transceiver carries the whole call
         // (the offer's m-line is sendrecv, so both sides both send + receive).
-        // Mesh adapters (attachLocalAudio: false) skip this — the engine
+        // Mesh adapters (attachLocalAudio: false) skip this - the engine
         // attaches the shared track before the SDP dance.
         if attachLocalAudio {
             let source = factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
@@ -399,7 +397,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         pc.delegate = self
     }
 
-    // ── PulseCallPeerConnecting ──────────────────────────────
+    // PulseCallPeerConnecting
 
     func createOffer() async throws -> String {
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
@@ -475,7 +473,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         }
     }
 
-    /// 3-d — mesh attach: ONE shared local track onto THIS peer connection
+    /// 3-d - mesh attach: ONE shared local track onto THIS peer connection
     /// (the same track instance can be attached to every mesh peer).
     func attachSharedTrack(_ track: RTCMediaStreamTrack, streamId: String) {
         pc.add(track, streamIds: [streamId])
@@ -485,13 +483,13 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         audioTrack?.isEnabled = enabled
     }
 
-    // ── REAL camera path (Wave R1-W2D) ──────────────────
+    // REAL camera path (Wave R1-W2D)
 
     /// Creates + attaches a REAL front-camera video track (back camera as
     /// fallback, any device last). MUST run BEFORE the SDP dance so the
     /// unified-plan transceiver associates with the peer's m=video line
     /// (web callee parity: getUserMedia BEFORE setRemoteDescription).
-    /// Returns false when no usable camera exists — audio-only fallback.
+    /// Returns false when no usable camera exists - audio-only fallback.
     func enableLocalVideoCapture() -> Bool {
         if localVideo != nil { return true }
         let devices = RTCCameraVideoCapturer.captureDevices()
@@ -508,14 +506,14 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         localVideo = track
         videoSource = source
         videoCapturer = capturer
-        // 30fps ceiling — the web profile is 1280×720 ideal; the chosen
+        // 30fps ceiling - the web profile is 1280×720 ideal; the chosen
         // format's own frame-rate range is respected when lower.
         // NOTE: RTCCameraVideoCapturer.startCapture takes (device, format, fps)
-        // — fps as Int (stasel/WebRTC 125 ObjC bridge).
+        // - fps as Int (stasel/WebRTC 125 ObjC bridge).
         let fps = max(1, min(Int(CallVideoConstants.targetFps), Int(Self.fpsCeiling(of: format))))
         capturer.startCapture(with: device, format: format, fps: fps) { error in
             if let error {
-                // Async capture failure (device yanked mid-call) — the call
+                // Async capture failure (device yanked mid-call) - the call
                 // stays alive audio/video-black; honest hardware-gate territory.
                 NSLog("[call] startCapture failed: %@", error.localizedDescription)
             }
@@ -528,7 +526,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     }
 
     func switchCamera() {
-        // RTCCameraVideoCapturer has no switchCamera in this build — flip =
+        // RTCCameraVideoCapturer has no switchCamera in this build - flip =
         // stop, then re-start on the opposite-position device (same pipeline).
         guard let capturer = videoCapturer else { return }
         let devices = RTCCameraVideoCapturer.captureDevices()
@@ -578,10 +576,10 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         pc.close()
     }
 
-    // ── RTCPeerConnectionDelegate (off-main; hop with plain values) ──
+    // RTCPeerConnectionDelegate (off-main; hop with plain values)
     // Signatures verified against the PINNED binary's headers
     // (stasel/WebRTC 125.0.0): the nine pre-@optional methods are REQUIRED
-    // and must match the ObjC selectors exactly — that mismatch was the
+    // and must match the ObjC selectors exactly - that mismatch was the
     // first CI round's conformance failure.
 
     // REQUIRED: peerConnection:didChangeSignalingState: → Swift drops the
@@ -590,10 +588,10 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
         // Signaling churn is not a state-machine input (offer/answer drive it).
     }
 
-    // REQUIRED: peerConnection:didAddStream: (UnifiedPlan — inert)
+    // REQUIRED: peerConnection:didAddStream: (UnifiedPlan - inert)
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
 
-    // REQUIRED: peerConnection:didRemoveStream: (UnifiedPlan — inert)
+    // REQUIRED: peerConnection:didRemoveStream: (UnifiedPlan - inert)
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
 
     // REQUIRED: peerConnectionShouldNegotiate:
@@ -624,7 +622,7 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     // REQUIRED: peerConnection:didOpenDataChannel:
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
 
-    // ── @optional — the richer UNIFIED_PLAN peer-connection state ──
+    // @optional - the richer UNIFIED_PLAN peer-connection state
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         // Same truth as the ICE mapping, idempotent at the state machine
         // (ready-after-ready is a no-op).
@@ -632,11 +630,11 @@ final class PulseRTCPeerAdapter: NSObject, RTCPeerConnectionDelegate, PulseCallP
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChangeStandardizedIceConnectionState newState: RTCIceConnectionState) {
-        // Covered by didChangeIceConnectionState — ignore to stay idempotent.
+        // Covered by didChangeIceConnectionState - ignore to stay idempotent.
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didStartReceivingOn transceiver: RTCRtpTransceiver) {
-        // UNIFIED_PLAN remote-track intake — video m-lines promote the
+        // UNIFIED_PLAN remote-track intake - video m-lines promote the
         // receiver's track into the render flow (engine publishes it).
         guard transceiver.mediaType == .video else { return }
         guard let track = transceiver.receiver.track as? RTCVideoTrack else { return }

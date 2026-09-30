@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// /api/channels — broadcast channel directory + creation (R30-c)
+// /api/channels - broadcast channel directory + creation (R30-c)
 // WhatsApp-Channels / Telegram-channel style: isGroup + broadcastMode
 // rooms where only admins post. GET = directory for a viewer,
 // POST = create a channel (creator becomes the admin) + first post.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { memberIdsOf, notifySocket, safeJson, strField } from '@/lib/serializers'
@@ -15,12 +13,12 @@ const NAME_MIN = 2
 const NAME_MAX = 40
 const DESCRIPTION_MAX = 200
 const PREVIEW_MAX = 60
-const FIRST_MESSAGE = 'Channel created — say it loud.'
+const FIRST_MESSAGE = 'Channel created - say it loud.'
 
-/** R33-b — accepted stored photo paths: "/api/uploads/<uuid>.<image-ext>". */
+/** R33-b - accepted stored photo paths: "/api/uploads/<uuid>.<image-ext>". */
 const PHOTO_PATH_RE = /^\/api\/uploads\/([A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp))$/
 
-/** Validated upload path or null — '' clears (stored as null). */
+/** Validated upload path or null - '' clears (stored as null). */
 function normalizePhotoPath(value: unknown): string | null | undefined {
   if (value === undefined) return undefined
   const raw = typeof value === 'string' ? value.trim() : ''
@@ -134,7 +132,7 @@ export async function POST(req: Request) {
     )
   }
 
-  // R33-b — optional channel photo at creation (same upload chain as profiles)
+  // R33-b - optional channel photo at creation (same upload chain as profiles)
   const photo = normalizePhotoPath(body.photo)
   if (photo === undefined) {
     return NextResponse.json(

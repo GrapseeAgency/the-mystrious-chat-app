@@ -1,4 +1,4 @@
-# Pulse Android — version catalog (single source of truth for every module)
+# Pulse Android - version catalog (single source of truth for every module)
 [versions]
 agp = "8.7.3"
 kotlin = "2.0.21"
@@ -30,7 +30,7 @@ junit4 = "4.13.2"
 [libraries]
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
-# R10-a — BiometricPrompt app lock (BIOMETRIC_WEAK | DEVICE_CREDENTIAL).
+# R10-a - BiometricPrompt app lock (BIOMETRIC_WEAK | DEVICE_CREDENTIAL).
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }

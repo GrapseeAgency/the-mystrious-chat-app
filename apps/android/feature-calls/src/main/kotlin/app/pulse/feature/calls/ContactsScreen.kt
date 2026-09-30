@@ -74,7 +74,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 
 /**
- * Contacts tab — native directory of Pulse accounts with live presence,
+ * Contacts tab - native directory of Pulse accounts with live presence,
  * one-tap DM creation, and safety actions (block/report) in native menus.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -97,7 +97,7 @@ fun ContactsScreen(
     var filter by remember { mutableStateOf("") }
     var safetyTarget by remember { mutableStateOf<User?>(null) }
     var reportTarget by remember { mutableStateOf<User?>(null) }
-    // Wave 3 — outgoing calls start here. RECORD_AUDIO must be live before
+    // Wave 3 - outgoing calls start here. RECORD_AUDIO must be live before
     // the engine touches the mic; denial keeps the call unstarted (honest).
     var callTarget by remember { mutableStateOf<User?>(null) }
     val micLauncher = rememberLauncherForActivityResult(
@@ -107,7 +107,7 @@ fun ContactsScreen(
         callTarget = null
         if (granted && target != null) onCallUser(target)
     }
-    // Wave R1-W2D — outgoing VIDEO calls: mic AND camera in one prompt
+    // Wave R1-W2D - outgoing VIDEO calls: mic AND camera in one prompt
     // (camera denial is handled honestly by the engine's audio-only fallback).
     var videoCallTarget by remember { mutableStateOf<User?>(null) }
     val videoLauncher = rememberLauncherForActivityResult(
@@ -180,7 +180,7 @@ fun ContactsScreen(
                 }
             }
             else -> {
-                // R5-B ITEM 2 — web contacts-tab.tsx parity: A–Z sections with
+                // R5-B ITEM 2 - web contacts-tab.tsx parity: A–Z sections with
                 // STICKY letter headers + a right-edge index rail. While a
                 // search filter is active the list stays flat (web behavior).
                 val searching = filter.isNotBlank()
@@ -263,7 +263,7 @@ fun ContactsScreen(
                         }
                         item { Spacer(Modifier.height(20.dp)) }
                     }
-                    // Kinetic index rail — web hides it while ≤1 letter section
+                    // Kinetic index rail - web hides it while ≤1 letter section
                     // exists and while searching (flat results).
                     if (!searching && sections.size > 1) {
                         IndexRail(
@@ -307,7 +307,7 @@ fun ContactsScreen(
     }
 
     reportTarget?.let { target ->
-        // Wave 6 — the six-reason private report panel (server enum contract).
+        // Wave 6 - the six-reason private report panel (server enum contract).
         ReportPanel(
             firstName = target.name.trim().split(" ").first(),
             priorReasons = emptyList(),
@@ -387,7 +387,7 @@ private fun ContactRow(
                     modifier = Modifier.size(18.dp),
                 )
             }
-            // Wave R1-W2D — video call entry (wire kind 'video').
+            // Wave R1-W2D - video call entry (wire kind 'video').
             IconButton(onClick = onVideoCall) {
                 Icon(
                     Icons.Filled.Videocam,
@@ -411,7 +411,7 @@ private fun ContactRow(
 }
 
 /**
- * R5-B ITEM 2 — the sticky glass letter header (web contacts-tab.tsx:301-309):
+ * R5-B ITEM 2 - the sticky glass letter header (web contacts-tab.tsx:301-309):
  * uppercase letter + a per-section count chip.
  */
 @Composable
@@ -444,7 +444,7 @@ private fun LetterHeader(letter: String, count: Int) {
 }
 
 /**
- * R5-B ITEM 2 — the kinetic index rail (web contacts-tab.tsx:330-373):
+ * R5-B ITEM 2 - the kinetic index rail (web contacts-tab.tsx:330-373):
  * sticky letter bubbles pinned to the right edge. TAP a letter jumps to its
  * section; DRAGGING along the rail keeps jumping live across letters
  * (pointerInput vertical-drag maps the pointer Y onto the letter list).

@@ -1,7 +1,7 @@
 import SwiftUI
 import QuickLook
 
-/// Wave 1 document preview — QLPreviewController behind the SwiftUI
+/// Wave 1 document preview - QLPreviewController behind the SwiftUI
 /// fullScreenCover (file bubbles download to tmp, then QuickLook opens the
 /// local file URL). The controller brings its own nav bar with Done/share.
 struct QuickLookView: UIViewControllerRepresentable {

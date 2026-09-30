@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Story palette (web AVATAR_GRADIENTS parity)
 
-/// The 8 story gradient stages — Tailwind palette values matching the web
+/// The 8 story gradient stages - Tailwind palette values matching the web
 /// (from-*-400 to-*-600). Unknown keys degrade to emerald (server default).
 enum StoryPalette {
     static let keys = ["emerald", "rose", "amber", "violet", "teal", "orange", "pink", "cyan"]
@@ -34,7 +34,7 @@ enum StoryPalette {
 
 // MARK: - Relative time (web storyRelativeTime parity)
 
-/// "now" / "Xm" / "Xh" / "Xd" — the day branch is unreachable for live
+/// "now" / "Xm" / "Xh" / "Xd" - the day branch is unreachable for live
 /// stories (24h TTL) but kept for the owner viewers list.
 func storyRelativeTime(_ epochMs: Int64, now: Int64) -> String {
     guard epochMs > 0 else { return "" }
@@ -61,7 +61,7 @@ func storyEpochMs(_ iso: String?) -> Int64 {
     return 0
 }
 
-// MARK: - Tray ring partition (R1-W2G — pulled out of ChatsView's private
+// MARK: - Tray ring partition (R1-W2G - pulled out of ChatsView's private
 // StoriesRowView so the CI target can pin it; the audit's story-ring gap)
 
 /// The chats-tray story ring feed: the viewer's OWN group drives the "My
@@ -82,7 +82,7 @@ public enum PulseStoryRing {
 
 // MARK: - Composer state (web composer parity, pure)
 
-/// Pure composer state — Text/Photo pill toggle, hard 280-char caption cap,
+/// Pure composer state - Text/Photo pill toggle, hard 280-char caption cap,
 /// the 8 gradient keys, upload/post flags and the canPost gate that mirrors
 /// POST /api/stories server validation exactly.
 struct StoryComposerState: Equatable {
@@ -93,7 +93,7 @@ struct StoryComposerState: Equatable {
     var mode: Mode = .text
     var caption: String = ""
     var background: String = StoryPalette.defaultKey
-    /// Uploaded gateway filename (from POST /api/uploads) — non-nil ⇒ photo content.
+    /// Uploaded gateway filename (from POST /api/uploads) - non-nil ⇒ photo content.
     var imagePath: String?
     var uploading = false
     var posting = false
@@ -123,7 +123,7 @@ struct StoryComposerState: Equatable {
         return next
     }
 
-    /// Swatch select — TEXT mode only (ignored in photo mode, wire rule).
+    /// Swatch select - TEXT mode only (ignored in photo mode, wire rule).
     func withBackground(_ key: String) -> StoryComposerState {
         guard mode == .text, StoryPalette.isValid(key) else { return self }
         var next = self
@@ -186,7 +186,7 @@ final class StoryViewerMachine: ObservableObject {
         var index = 0
         var elapsedMs: Int64 = 0
         var paused = false
-        /// drag-down dismiss OR finished the last story — the view closes on this.
+        /// drag-down dismiss OR finished the last story - the view closes on this.
         var dismissed = false
         var pendingMark: PendingMark?
         var revision = 0
@@ -207,14 +207,14 @@ final class StoryViewerMachine: ObservableObject {
 
     private let startUserId: String?
     private var started = false
-    /// Timestamp of the last tick while unpaused — nil = clock not armed.
+    /// Timestamp of the last tick while unpaused - nil = clock not armed.
     private var lastTickAt: Int64?
 
     init(startUserId: String? = nil) {
         self.startUserId = startUserId
     }
 
-    // ── inputs ──────────────────────────────────────────────
+    // inputs
 
     func tick(nowMs: Int64) {
         var next = bump()
@@ -250,7 +250,7 @@ final class StoryViewerMachine: ObservableObject {
 
     func dragDismiss() { var next = bump(); next.dismissed = true; state = next }
 
-    /// Feed update — start-position pick, D2 expiry re-filter and D3 vanish
+    /// Feed update - start-position pick, D2 expiry re-filter and D3 vanish
     /// reconciliation all flow through this one door.
     func groupsUpdated(_ groups: [WireStoryGroup], nowMs: Int64) {
         var next = bump()
@@ -303,7 +303,7 @@ final class StoryViewerMachine: ObservableObject {
                 next.pendingMark = pendingMark(for: next)
             }
         } else {
-            // Same story still live — keep position AND elapsed (no restart).
+            // Same story still live - keep position AND elapsed (no restart).
             let hadMark = next.pendingMark?.storyId == currentId
             next.flat = flat
             next.index = found
@@ -329,7 +329,7 @@ final class StoryViewerMachine: ObservableObject {
         state = next
     }
 
-    /// D6: ONE retry — the first failure re-queues, the second gives up.
+    /// D6: ONE retry - the first failure re-queues, the second gives up.
     func viewMarkFailed(storyId: String) {
         var next = bump()
         if let mark = next.pendingMark, mark.storyId == storyId {
@@ -338,7 +338,7 @@ final class StoryViewerMachine: ObservableObject {
         state = next
     }
 
-    // ── internals ───────────────────────────────────────────
+    // internals
 
     private func bump() -> State {
         var next = state
@@ -368,7 +368,7 @@ final class StoryViewerMachine: ObservableObject {
     }
 }
 
-/// Wire groups are structs with let fields — build the mutated copy.
+/// Wire groups are structs with let fields - build the mutated copy.
 func WireStoryGroupCopy(
     _ group: WireStoryGroup,
     allSeen: Bool?? = nil,
@@ -382,7 +382,7 @@ func WireStoryGroupCopy(
     )
 }
 
-/// Wire items are structs with let fields — build the seen/count-updated copy.
+/// Wire items are structs with let fields - build the seen/count-updated copy.
 func WireStoryItemCopy(_ item: WireStoryItem, viewedByMe: Bool, viewCount: Int) -> WireStoryItem {
     WireStoryItem(
         id: item.id,

@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/folders/[id]/conversations — folder membership (Task R24-a)
+// /api/folders/[id]/conversations - folder membership (Task R24-a)
 //
 // Contract:
 //   PUT { conversationIds: string[] }
@@ -9,7 +8,6 @@
 //          Duplicates are collapsed; every id must reference a real
 //          conversation (400 otherwise) · 404 unknown folder.
 //          An empty array clears the folder. → 200 { folder }
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson } from '@/lib/serializers'
@@ -66,7 +64,7 @@ export async function PUT(req: Request, { params }: RouteCtx) {
     )
   }
 
-  // Collapse duplicates while preserving first-appearance order —
+  // Collapse duplicates while preserving first-appearance order -
   // createMany would otherwise trip @@unique([folderId, conversationId]).
   const ids = Array.from(
     new Set(

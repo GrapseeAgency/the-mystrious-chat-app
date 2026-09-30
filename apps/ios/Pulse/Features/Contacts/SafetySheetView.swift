@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Wave 6 — F-CP-07/08. The DM safety-number surface (safety-sheet.tsx
+/// Wave 6 - F-CP-07/08. The DM safety-number surface (safety-sheet.tsx
 /// parity): the server-computed 60 digits in a 12×5 tile grid, the verbatim
 /// comparison caption, and Mark-verified / Reset actions. NO optimistic
-/// lies — both actions settle against the server, then refetch the truth
+/// lies - both actions settle against the server, then refetch the truth
 /// (web onSettled invalidateQueries parity).
 @MainActor
 final class SafetyBadgeModel: ObservableObject {
@@ -36,7 +36,7 @@ final class SafetyBadgeModel: ObservableObject {
         }
     }
 
-    /// POST verify — settle-confirmed: the toast fires on success, the state
+    /// POST verify - settle-confirmed: the toast fires on success, the state
     /// refetches afterwards (never pre-flips the badge).
     func verify() async {
         guard let session else { return }
@@ -50,7 +50,7 @@ final class SafetyBadgeModel: ObservableObject {
         await load(force: true)
     }
 
-    /// DELETE unverify — same settle-then-refetch rule.
+    /// DELETE unverify - same settle-then-refetch rule.
     func reset() async {
         guard let session else { return }
         do {
@@ -64,7 +64,7 @@ final class SafetyBadgeModel: ObservableObject {
     }
 }
 
-/// Roster-level memory of verified peers — populated whenever any surface
+/// Roster-level memory of verified peers - populated whenever any surface
 /// fetches a pair's safety state (user page, room header, this sheet).
 /// The contacts rows read it WITHOUT fetching (no N×GET amplification);
 /// a badge appears after any of the two ends verified the pair.
@@ -142,7 +142,7 @@ struct SafetySheetView: View {
         .padding(.top, 8)
     }
 
-    /// The 60 digits — 12 groups of 5, rendered 3 per row (web 3×4 glass
+    /// The 60 digits - 12 groups of 5, rendered 3 per row (web 3×4 glass
     /// tiles). Client-side split via PulseSafetyNumber.groups (pure, tested).
     private var tileGrid: some View {
         let groups = PulseSafetyNumber.groups(model.state?.safetyNumber ?? "")

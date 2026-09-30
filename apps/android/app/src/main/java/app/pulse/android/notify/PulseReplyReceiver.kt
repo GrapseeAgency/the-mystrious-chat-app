@@ -24,12 +24,12 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 
 /**
- * R10-a — notification quick-reply. The system RemoteInput hand-off for the
+ * R10-a - notification quick-reply. The system RemoteInput hand-off for the
  * "Reply" action PulseMessagingService attaches to every message notification
  * with a conversationId.
  *
  * Contract (honest end to end):
- *  · the SAME send path ChatRoomViewModel uses — [SendMessageUseCase] — so a
+ *  · the SAME send path ChatRoomViewModel uses - [SendMessageUseCase] - so a
  *    network-class failure lands in the offline outbox exactly like an
  *    in-app send (temp `local_` bubble + [OutboxWorker] flush);
  *  · no viewer session → NEVER a fake send. The notification is re-posted as
@@ -38,7 +38,7 @@ import androidx.core.content.ContextCompat
  *  · delivered → the notification is cancelled (a silent success, no fake
  *    "sent" theater);
  *  · queued → the notification STAYS and the user is told the truth
- *    ("Couldn't send — queued") plus an expedited outbox flush is armed;
+ *    ("Couldn't send - queued") plus an expedited outbox flush is armed;
  *  · definitive failure → the notification STAYS and the honest failure
  *    text is toasted.
  *
@@ -57,7 +57,7 @@ class PulseReplyReceiver : BroadcastReceiver() {
             text = RemoteInput.getResultsFromIntent(intent)
                 ?.getCharSequence(PulseReplyPayload.KEY_REPLY_TEXT),
         )
-        // Nothing usable (no conversation, empty reply) — clear the reply UI
+        // Nothing usable (no conversation, empty reply) - clear the reply UI
         // quietly instead of pretending a message went out.
         if (parsed == null) {
             intent.getStringExtra(PulseReplyPayload.EXTRA_CONVERSATION_ID)
@@ -94,14 +94,14 @@ class PulseReplyReceiver : BroadcastReceiver() {
                     if (PulseReplyPayload.isQueued(receipt.message.id)) {
                         // Network-class failure → the outbox owns delivery now.
                         OutboxWorker.enqueue(context)
-                        PulseReplyPayload.toast(context, "Couldn't send — queued")
+                        PulseReplyPayload.toast(context, "Couldn't send - queued")
                     } else {
-                        // Delivered — the notification did its job.
+                        // Delivered - the notification did its job.
                         NotificationManagerCompat.from(context).cancel(notificationId)
                     }
                 }
                 .onFailure { failure ->
-                    // Definitive failure — keep the notification, say why.
+                    // Definitive failure - keep the notification, say why.
                     PulseReplyPayload.toast(context, failure.message ?: "Couldn't send")
                 }
         } catch (t: Throwable) {
@@ -113,18 +113,18 @@ class PulseReplyReceiver : BroadcastReceiver() {
 }
 
 /**
- * Pure quick-reply kernel — the RemoteInput/extras contract, the notification
+ * Pure quick-reply kernel - the RemoteInput/extras contract, the notification
  * id scheme (the SAME `(conversationId).hashCode().and(0x3FFFFFFF)` math the
  * messaging service uses, so reply/repost/cancel address one notification),
  * and the queued-vs-delivered verdict. Object-form so a plain JVM test pins
- * it (app/src/test — no Robolectric needed).
+ * it (app/src/test - no Robolectric needed).
  */
 object PulseReplyPayload {
 
     const val KEY_REPLY_TEXT = "pulse_reply_text"
     const val EXTRA_CONVERSATION_ID = "app.pulse.android.reply.conversationId"
 
-    /** Server cap — SendMessageUseCase.MAX_LENGTH (kept in lockstep). */
+    /** Server cap - SendMessageUseCase.MAX_LENGTH (kept in lockstep). */
     const val MAX_CHARS = 2000
 
     data class Parsed(val conversationId: String, val text: String)
@@ -174,7 +174,7 @@ object PulseReplyPayload {
         runCatching { NotificationManagerCompat.from(context).notify(notificationId(conversationId), notification) }
     }
 
-    /** Toasts must ride the main looper — the receiver finishes on IO. */
+    /** Toasts must ride the main looper - the receiver finishes on IO. */
     fun toast(context: Context, message: String) {
         runCatching {
             android.os.Handler(android.os.Looper.getMainLooper()).post {

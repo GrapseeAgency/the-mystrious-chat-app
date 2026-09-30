@@ -1,10 +1,9 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — Live Voice room (R21-b "Beyond Chat" wave).
+// Pulse - Live Voice room (R21-b "Beyond Chat" wave).
 // Voxer/Zello/Telegram voice-chat style walkie-talkie rooms
 // relayed through the pulse-socket service (port 3003).
 //
 // REAL audio, zero mocks:
-//  · join → getUserMedia({audio}) — permission-denied surfaces an
+//  · join → getUserMedia({audio}) - permission-denied surfaces an
 //    honest inline error (no fake audio ever plays or sends).
 //  · PTT (hold-to-talk, tap-to-latch) → raw mic PCM is captured
 //    via AudioWorklet (ScriptProcessor fallback), downsampled to
@@ -12,22 +11,21 @@
 //    and emitted as `voice:chunk` over the socket relay.
 //  · receivers decode chunks into an AudioBuffer queue with a
 //    small jitter buffer for gapless-ish playback.
-//  · nothing is recorded, stored, or uploaded — chunks are relayed
+//  · nothing is recorded, stored, or uploaded - chunks are relayed
 //    peer-to-peer through the socket service and dropped.
 //
-// R48 — LIVE CAPTIONS (opt-in): while transmitting with captions
+// R48 - LIVE CAPTIONS (opt-in): while transmitting with captions
 // enabled, the speaker's own downsampled PCM is additionally
 // accumulated into ~4 s windows, wrapped in a WAV container and
 // POSTed to /api/voice/transcribe (real ASR, participant-gated).
 // The returned text is relayed as an ephemeral `voice:transcript`
 // socket event and rendered as a caption strip for everyone in the
-// room. Transcripts are never stored — same "live only" contract.
+// room. Transcripts are never stored - same "live only" contract.
 //
 // The session ENGINE (mic + socket + roster) lives in the
 // `useVoiceRoom` hook so the room keeps running while the sheet
 // is closed (the chat shows a "Voice · N live" pill). The sheet
 // below is pure UI on top of that controller.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -51,14 +49,14 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/chat/user-avatar'
 
-// ── audio pipeline constants ─────────────────────────────────
-const TARGET_RATE = 16_000 // Hz — wideband voice, keeps chunks small
+// audio pipeline constants 
+const TARGET_RATE = 16_000 // Hz - wideband voice, keeps chunks small
 const CHUNK_MS = 250 // emit a chunk every 250 ms
 const CHUNK_SAMPLES = Math.round((TARGET_RATE * CHUNK_MS) / 1000) // 4000 samples
 const JITTER_BUFFER_S = 0.085 // playback pre-roll for smooth-ish scheduling
 const RELAY_CONNECT_TIMEOUT_MS = 8_000
 
-// R48 — live-caption windows
+// R48 - live-caption windows
 const CAPTION_WINDOW_MS = 4_000 // one ASR window ≈ 4 s of speech
 const CAPTION_WINDOW_SAMPLES = Math.round((TARGET_RATE * CAPTION_WINDOW_MS) / 1000) // 64 000
 const CAPTION_MIN_SAMPLES = TARGET_RATE // never ASR less than ~1 s of audio
@@ -73,7 +71,7 @@ export interface VoicePeerInfo {
   color: string
 }
 
-/** R48 — one ephemeral live-caption line (never persisted). */
+/** R48 - one ephemeral live-caption line (never persisted). */
 export interface VoiceCaption {
   id: string
   userId: string
@@ -102,13 +100,13 @@ export interface VoiceRoomController {
   leave: () => void
   setPtt: (on: boolean) => void
   toggleMute: () => void
-  /** R48 — live captions toggle + current strip (ephemeral) */
+  /** R48 - live captions toggle + current strip (ephemeral) */
   captionsOn: boolean
   toggleCaptions: () => void
   captions: VoiceCaption[]
 }
 
-// ── binary helpers ───────────────────────────────────────────
+// binary helpers 
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = ''
@@ -164,7 +162,7 @@ function downsampleBlock(input: Float32Array, outLen: number): Float32Array {
 }
 
 /**
- * R48 — wrap 16 kHz mono Float32 PCM in a minimal 44-byte-header WAV
+ * R48 - wrap 16 kHz mono Float32 PCM in a minimal 44-byte-header WAV
  * container (PCM16) so the ASR service accepts the raw capture window.
  */
 function encodeWav(samples: Float32Array): Uint8Array {
@@ -191,7 +189,7 @@ function encodeWav(samples: Float32Array): Uint8Array {
   return new Uint8Array(buffer)
 }
 
-// ── the engine hook ──────────────────────────────────────────
+// the engine hook 
 
 export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomController {
   const [status, setStatus] = useState<VoiceRoomStatus>('idle')
@@ -201,7 +199,7 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
   const [speakingIds, setSpeakingIds] = useState<ReadonlySet<string>>(new Set())
   const [micMuted, setMicMuted] = useState(false)
   const [transmitting, setTransmitting] = useState(false)
-  // R48 — live captions (opt-in, remembered per browser)
+  // R48 - live captions (opt-in, remembered per browser)
   const [captionsOn, setCaptionsOn] = useState(() => {
     try {
       return window.localStorage.getItem(CAPTIONS_PREF_KEY) === '1'
@@ -223,14 +221,14 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
   const transmittingRef = useRef(false)
   const mutedRef = useRef(false)
   const mountedRef = useRef(true)
-  // R48 — caption plumbing
+  // R48 - caption plumbing
   const captionsOnRef = useRef(captionsOn)
   const captionChunksRef = useRef<Float32Array[]>([])
   const captionCountRef = useRef(0)
   const captionBusyRef = useRef(false)
   const captionConvRef = useRef<string | null>(null)
 
-  // ── socket plumbing ────────────────────────────────────────
+  // socket plumbing 
 
   const lastResyncRef = useRef(0)
 
@@ -258,7 +256,7 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
     sock.on('connect', () => {
       if (!mountedRef.current) return
       setConnected(true)
-      // the relay wipes rosters on reconnect/restart — re-register the mic
+      // the relay wipes rosters on reconnect/restart - re-register the mic
       if (joinedConvRef.current) emitVoiceJoin(sock, joinedConvRef.current)
     })
     sock.on('disconnect', () => {
@@ -355,7 +353,7 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
           }
         }
       } catch {
-        // a corrupt chunk must never take the room down — drop it
+        // a corrupt chunk must never take the room down - drop it
       }
     })
 
@@ -381,10 +379,10 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
     return sock
   }, [emitVoiceJoin, me.id])
 
-  // ── capture pipeline ───────────────────────────────────────
+  // capture pipeline 
 
   /**
-   * R48 — ship one caption window: concat the accumulated 16 kHz PCM,
+   * R48 - ship one caption window: concat the accumulated 16 kHz PCM,
    * wrap it in WAV and run it through the real ASR endpoint, then relay
    * the text to the voice room. One window in flight at a time; audio
    * that arrives while busy keeps accumulating and merges into the next
@@ -401,7 +399,7 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
       }
       return
     }
-    if (captionBusyRef.current) return // keep accumulating — merges into the next window
+    if (captionBusyRef.current) return // keep accumulating - merges into the next window
 
     const merged = new Float32Array(total)
     let offset = 0
@@ -427,14 +425,14 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
             audioBase64: bytesToBase64(wav),
           }),
         })
-        if (!res.ok) return // honest silence — captions are best-effort
+        if (!res.ok) return // honest silence - captions are best-effort
         const data = (await res.json()) as { transcript?: string }
         const text = (data.transcript ?? '').trim()
         if (text.length > 0 && sock && sock.connected && convId) {
           sock.emit('voice:transcript', { conversationId: convId, userId: me.id, text })
         }
       } catch {
-        // network hiccup — drop the window; the next one retries on its own
+        // network hiccup - drop the window; the next one retries on its own
       } finally {
         captionBusyRef.current = false
       }
@@ -456,7 +454,7 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
         data,
       })
     } catch {
-      // encode failure — drop this slice, the stream keeps flowing
+      // encode failure - drop this slice, the stream keeps flowing
     }
   }, [me.id])
 
@@ -473,7 +471,7 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
       if (block.count === block.buf.length) {
         const down = downsampleBlock(block.buf, CHUNK_SAMPLES)
         sendChunk(down)
-        // R48 — tap the same downsampled stream for the caption window
+        // R48 - tap the same downsampled stream for the caption window
         if (captionsOnRef.current && captionConvRef.current) {
           captionChunksRef.current.push(down)
           captionCountRef.current += down.length
@@ -486,11 +484,11 @@ export function useVoiceRoom(conversationId: string, me: AppUser): VoiceRoomCont
     }
   }, [sendChunk, flushCaptionWindow])
 
-  /** AudioWorklet source inlined as a Blob URL — no extra public file needed. */
+  /** AudioWorklet source inlined as a Blob URL - no extra public file needed. */
   const attachCapture = useCallback(async (ctx: AudioContext, stream: MediaStream) => {
     const source = ctx.createMediaStreamSource(stream)
     const sink = ctx.createGain()
-    sink.gain.value = 0 // capture only — never monitor locally (no echo loop)
+    sink.gain.value = 0 // capture only - never monitor locally (no echo loop)
     sink.connect(ctx.destination)
 
     const workletSrc = `class PulseCaptureProcessor extends AudioWorkletProcessor {
@@ -519,7 +517,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
       node = null // fall through to the ScriptProcessor path
     }
     if (!node) {
-      // ScriptProcessor fallback (deprecated but universal — incl. older Safari)
+      // ScriptProcessor fallback (deprecated but universal - incl. older Safari)
       const processor = ctx.createScriptProcessor(4096, 1, 1)
       processor.onaudioprocess = (event) => {
         const channel = event.inputBuffer.getChannelData(0)
@@ -574,7 +572,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
     setConnected(false)
   }, [])
 
-  // ── public controls ────────────────────────────────────────
+  // public controls 
 
   const join = useCallback(() => {
     if (status === 'joining' || status === 'joined') return
@@ -602,7 +600,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
         ctxRef.current = ctx
         void ctx.resume().catch(() => undefined)
 
-        // 2. mic — the honest gate; permission denial lands in the inline error
+        // 2. mic - the honest gate; permission denial lands in the inline error
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         })
@@ -649,13 +647,13 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
       } catch (error) {
         const name = error instanceof DOMException ? error.name : ''
         if (name === 'NotAllowedError' || name === 'SecurityError') {
-          fail('Microphone access was denied — allow it in your browser settings to go live.')
+          fail('Microphone access was denied - allow it in your browser settings to go live.')
         } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
           fail('No usable microphone was found on this device.')
         } else if (name === 'NotReadableError') {
-          fail('Your microphone is busy in another app — close it and try again.')
+          fail('Your microphone is busy in another app - close it and try again.')
         } else {
-          fail('Could not reach the voice relay — check your connection and retry.')
+          fail('Could not reach the voice relay - check your connection and retry.')
         }
       }
     })()
@@ -668,7 +666,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
       try {
         sock.emit('voice:leave', { conversationId: convId })
       } catch {
-        /* socket already gone — disconnect cleanup covers it */
+        /* socket already gone - disconnect cleanup covers it */
       }
     }
     joinedConvRef.current = null
@@ -706,7 +704,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
       try {
         sock.emit('voice:ptt', { conversationId: convId, userId: me.id, on: true })
       } catch {
-        /* best effort — rings self-heal on the next toggle */
+        /* best effort - rings self-heal on the next toggle */
       }
     } else {
       if (!transmittingRef.current) return
@@ -719,7 +717,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
         sendChunk(downsampleBlock(block.buf.subarray(0, block.count), outLen))
         block.count = 0
       }
-      // R48 — ship the final caption window (if the tail reached ~1 s)
+      // R48 - ship the final caption window (if the tail reached ~1 s)
       flushCaptionWindow(true)
       try {
         sock.emit('voice:ptt', { conversationId: convId, userId: me.id, on: false })
@@ -746,7 +744,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
     }
   }, [setPtt])
 
-  // R48 — captions toggle (persisted; turning OFF mid-flight drops the
+  // R48 - captions toggle (persisted; turning OFF mid-flight drops the
   // accumulated window so no audio is transcribed after the opt-out)
   const toggleCaptions = useCallback(() => {
     const next = !captionsOnRef.current
@@ -755,7 +753,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
     try {
       window.localStorage.setItem(CAPTIONS_PREF_KEY, next ? '1' : '0')
     } catch {
-      /* private mode — session-only preference is fine */
+      /* private mode - session-only preference is fine */
     }
     if (!next) {
       captionChunksRef.current = []
@@ -763,7 +761,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
     }
   }, [])
 
-  // R48 — caption strip TTL: drop faded lines every second
+  // R48 - caption strip TTL: drop faded lines every second
   const hasCaptions = captions.length > 0
   useEffect(() => {
     if (!hasCaptions) return
@@ -814,7 +812,7 @@ registerProcessor('pulse-capture-processor', PulseCaptureProcessor)`
   }
 }
 
-// ── the sheet UI ─────────────────────────────────────────────
+// the sheet UI 
 
 function SpeakingBars() {
   return (
@@ -887,7 +885,7 @@ export function VoiceRoomSheet({
   onClose,
 }: {
   title: string
-  /** the local user's id — marks "you" in the roster */
+  /** the local user's id - marks "you" in the roster */
   myId: string
   voice: VoiceRoomController
   onClose: () => void
@@ -954,7 +952,7 @@ export function VoiceRoomSheet({
     if (voice.inRoom && !voice.connected) {
       return { dot: 'bg-rose-400', text: 'Reconnecting to the relay…', pulse: true }
     }
-    return { dot: 'bg-zinc-500', text: 'Standby — not connected', pulse: false }
+    return { dot: 'bg-zinc-500', text: 'Standby - not connected', pulse: false }
   })()
 
   const canTalk = voice.inRoom && !voice.micMuted
@@ -976,7 +974,7 @@ export function VoiceRoomSheet({
       <motion.div
         role="dialog"
         aria-modal="true"
-        aria-label={`Live voice room — ${title}`}
+        aria-label={`Live voice room - ${title}`}
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
@@ -1054,7 +1052,7 @@ export function VoiceRoomSheet({
               </span>
               <p className="text-[13px] font-semibold text-zinc-200">Nobody is on stage yet</p>
               <p className="max-w-[240px] text-[11.5px] leading-relaxed text-zinc-500">
-                Join the room, hold the talk button and speak — everyone inside hears you instantly.
+                Join the room, hold the talk button and speak - everyone inside hears you instantly.
               </p>
             </div>
           )}
@@ -1080,11 +1078,11 @@ export function VoiceRoomSheet({
 
           {voice.inRoom && voice.micMuted ? (
             <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-[11.5px] font-medium text-amber-300" role="status">
-              Mic is muted — unmute to talk.
+              Mic is muted - unmute to talk.
             </p>
           ) : null}
 
-          {/* R48 — live caption strip (ephemeral, fades after 7 s) */}
+          {/* R48 - live caption strip (ephemeral, fades after 7 s) */}
           {voice.captions.length > 0 ? (
             <div
               role="log"
@@ -1133,14 +1131,14 @@ export function VoiceRoomSheet({
             {/* push-to-talk */}
             <button
               type="button"
-              aria-label={voice.transmitting ? 'Stop transmitting' : 'Push to talk — hold or tap to latch'}
+              aria-label={voice.transmitting ? 'Stop transmitting' : 'Push to talk - hold or tap to latch'}
               aria-pressed={voice.transmitting}
               disabled={!canTalk}
               onPointerDown={onPttDown}
               onPointerUp={onPttUp}
               onPointerCancel={onPttUp}
               onPointerLeave={() => {
-                // only a genuinely-held pointer drag-off stops the mic —
+                // only a genuinely-held pointer drag-off stops the mic -
                 // never a mouse merely drifting across a latched button
                 if (pointerActiveRef.current) onPttUp()
               }}
@@ -1211,7 +1209,7 @@ export function VoiceRoomSheet({
             )}
           </div>
 
-          {/* R48 — captions toggle row */}
+          {/* R48 - captions toggle row */}
           <div className="flex items-center justify-center pb-2">
             <button
               type="button"

@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — client session store (zustand + sessionStorage)
+// Pulse Chat - client session store (zustand + sessionStorage)
 // Per-tab identity so two browser tabs can chat as two accounts.
-// ─────────────────────────────────────────────────────────────
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type { AppUser } from '@/lib/types'

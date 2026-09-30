@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Contacts — the native directory: every identity on this Pulse with live
+/// Contacts - the native directory: every identity on this Pulse with live
 /// presence rings, one-tap DM creation (server-side dedupe), and native
 /// safety actions (block / report) via confirmationDialog.
 struct ContactsView: View {
@@ -8,14 +8,14 @@ struct ContactsView: View {
 
     @State private var viewModel = ContactsViewModel()
     @State private var reportTarget: WireUser?
-    // Wave 3 — call history surface.
+    // Wave 3 - call history surface.
     @State private var callsHistoryOpen = false
-    // Wave 6 — user-page push (F-CP-03) + the explicit add-contact page
+    // Wave 6 - user-page push (F-CP-03) + the explicit add-contact page
     // (F-CP-02) + the safety-verified badge cache (F-CP-08).
     @State private var path = NavigationPath()
     @State private var addContactOpen = false
     @StateObject private var safetyBadges = PulseSafetyBadgeCache.shared
-    // R5-A Item 2 — the A–Z index rail (web contacts-tab.tsx:141-172):
+    // R5-A Item 2 - the A–Z index rail (web contacts-tab.tsx:141-172):
     // active letter highlight + drag-live-jump tracking.
     @State private var activeLetter: String?
     @State private var railDragging = false
@@ -65,7 +65,7 @@ struct ContactsView: View {
                     session: session,
                 )
             }
-            // Wave 6 deep links — the session hands a user id over (same
+            // Wave 6 deep links - the session hands a user id over (same
             // bridge as pendingOpenRoom); consume on arrival.
             .onReceive(session.$pendingUserRoute) { route in
                 guard let route else { return }
@@ -75,9 +75,9 @@ struct ContactsView: View {
         }
         .onAppear { viewModel.observe(session: session) }
         .sheet(isPresented: $callsHistoryOpen) {
-            // R2-D — web calls-page parity: tapping a row closes the history
+            // R2-D - web calls-page parity: tapping a row closes the history
             // and reopens the chat through the RootView linked-room bridge
-            // (the same path pulse://room takes — fetch → Chats tab → open).
+            // (the same path pulse://room takes - fetch → Chats tab → open).
             CallsHistoryView(session: session, onOpenConversation: { conversationId in
                 callsHistoryOpen = false
                 session.pendingLinkedRoomId = conversationId
@@ -96,7 +96,7 @@ struct ContactsView: View {
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
-        // Wave 6 — the full report panel (verbatim intro/reasons/hint) replaces
+        // Wave 6 - the full report panel (verbatim intro/reasons/hint) replaces
         // the Wave-0 form; the verdict toasts live in the panel itself.
         .sheet(item: $reportTarget) { target in
             ReportPanelView(reported: target, session: session) {}
@@ -111,13 +111,13 @@ struct ContactsView: View {
         }
     }
 
-    /// R5-A Item 2 — search REPLACES the A–Z sections with flat results
+    /// R5-A Item 2 - search REPLACES the A–Z sections with flat results
     /// (web contacts-add/search behavior; the rail hides while filtering).
     private var isFiltering: Bool {
         !viewModel.query.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    /// A–Z sections from the display name (case-insensitive, "#" last) —
+    /// A–Z sections from the display name (case-insensitive, "#" last) -
     /// the pure grouping kernel lives in PulseAZIndex (tested).
     private var sections: [PulseAZIndex.Section<WireUser>] {
         PulseAZIndex.sections(filtered, nameOf: { $0.name })
@@ -162,7 +162,7 @@ struct ContactsView: View {
     }
 
     private var listFooter: some View {
-        Text("\(session.onlineUserIds.count) online · \(filtered.count) people — tap a row for the full profile; stats, safety number, block and report live there.")
+        Text("\(session.onlineUserIds.count) online · \(filtered.count) people - tap a row for the full profile; stats, safety number, block and report live there.")
             .font(.caption)
             .foregroundStyle(.secondary)
     }
@@ -186,12 +186,12 @@ struct ContactsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
             // Live active-letter tracking while scrolling (web
-            // trackActiveLetter parity — the honest List-native analog).
+            // trackActiveLetter parity - the honest List-native analog).
             if !railDragging { activeLetter = section.letter }
         }
     }
 
-    /// R5-A Item 2 — the right-edge A–Z rail (web :330-373): tap a letter →
+    /// R5-A Item 2 - the right-edge A–Z rail (web :330-373): tap a letter →
     /// scroll to that section; DRAG along the rail → live jump letter by
     /// letter. Hidden while filtering and when there's one section or fewer
     /// (web hides at letters.length ≤ 1).
@@ -199,7 +199,7 @@ struct ContactsView: View {
     private func indexRail(_ proxy: ScrollViewProxy) -> some View {
         let letters = sections.map(\.letter)
         if !isFiltering && letters.count > 1 {
-            // Letters are fixed 17pt rows + 6pt top/bottom padding — the
+            // Letters are fixed 17pt rows + 6pt top/bottom padding - the
             // drag math uses that height directly (no geometry needed).
             VStack(spacing: 0) {
                 ForEach(letters, id: \.self) { letter in
@@ -221,7 +221,7 @@ struct ContactsView: View {
             }
             .padding(.vertical, 6)
             .background(Capsule().fill(.ultraThinMaterial))
-            // Gesture scope = the capsule strip ONLY — the full-width
+            // Gesture scope = the capsule strip ONLY - the full-width
             // frames below are pure layout and must stay swipe/tap
             // transparent to the rows beneath.
             .contentShape(Rectangle())
@@ -269,7 +269,7 @@ struct ContactsView: View {
             isViewer: user.id == session.viewer?.id,
             safetyVerified: safetyBadges.isVerified(user.id),
             onOpenProfile: {
-                // Wave 6 — rows push the FULL user page (stats,
+                // Wave 6 - rows push the FULL user page (stats,
                 // block/unblock, report, safety). Chat stays a button.
                 path.append(UserRoute(userId: user.id, name: user.name))
             },
@@ -277,7 +277,7 @@ struct ContactsView: View {
                 viewModel.openDM(user, session: session)
             },
         )
-        // The rail strip stays usable — rows keep clear of the right edge
+        // The rail strip stays usable - rows keep clear of the right edge
         // (the phone-app index-rail pattern).
         .padding(.trailing, 18)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -287,7 +287,7 @@ struct ContactsView: View {
                 Label("Call", systemImage: "phone.fill")
             }
             .tint(PulseTheme.emerald)
-            // Wave R1-W2D — real video call entry (wire kind 'video').
+            // Wave R1-W2D - real video call entry (wire kind 'video').
             Button {
                 viewModel.callVideo(user, session: session)
             } label: {
@@ -315,7 +315,7 @@ private struct ContactRow: View {
     let user: WireUser
     let online: Bool
     let isViewer: Bool
-    /// Wave 6 — the pair's safety number is verified (F-CP-08 badge).
+    /// Wave 6 - the pair's safety number is verified (F-CP-08 badge).
     var safetyVerified: Bool = false
     var onOpenProfile: () -> Void = {}
     let onMessage: () -> Void
@@ -335,7 +335,7 @@ private struct ContactRow: View {
                 HStack(spacing: 4) {
                     Text(user.name).font(.body.weight(.semibold))
                     if user.verified == true || safetyVerified {
-                        // F-CP-08 — verified sparkle (account badge OR the
+                        // F-CP-08 - verified sparkle (account badge OR the
                         // pair's safety number is marked verified).
                         Image(systemName: "checkmark.seal.fill")
                             .font(.caption)
@@ -382,15 +382,16 @@ private struct ContactRow: View {
         .accessibilityLabel("\(user.name), double-tap Chat to message, or open the profile from the row")
     }
 
-    /// F-CP-09 — status emoji + text rows: the status line wins (glyph +
+    /// F-CP-09 - status icon + text rows: the status line wins (label +
     /// text), otherwise the @handle, else the neutral stamp.
     private var subtitle: String {
-        if let emoji = user.statusEmoji, !emoji.isEmpty {
-            let glyph = pulseStatusGlyphDisplay(emoji)
+        // R18-b - the stored statusEmoji is an icon ID; the row speaks its
+        // human label (web status-glyph LABEL_BY_ID), never a raw emoji.
+        if let id = PulseStatusIconId.normalize(user.statusEmoji) {
             if let text = user.statusText, !text.isEmpty {
-                return "\(glyph) \(text)"
+                return "\(id.label) · \(text)"
             }
-            return glyph
+            return id.label
         }
         if let text = user.statusText, !text.isEmpty { return text }
         return user.username.map { "@\($0)" } ?? "On Pulse"
@@ -440,13 +441,13 @@ final class ContactsViewModel: ObservableObject {
         }
     }
 
-    /// Wave 3 — one-tap voice call. The DM is resolved first (server dedupes
+    /// Wave 3 - one-tap voice call. The DM is resolved first (server dedupes
     /// pairs), then the engine opens the ring; the engine owns the mic
     /// permission prompt + the honest denied state itself.
     func call(_ user: WireUser, session: PulseSession) {
         guard user.id != session.viewer?.id else { return }
         guard let engine = session.callEngine else {
-            errorText = "Calls aren't ready yet — try again in a moment."
+            errorText = "Calls aren't ready yet - try again in a moment."
             return
         }
         PulseHaptics.tap()
@@ -463,13 +464,13 @@ final class ContactsViewModel: ObservableObject {
         }
     }
 
-    /// Wave R1-W2D — one-tap VIDEO call (wire kind 'video'). The engine
+    /// Wave R1-W2D - one-tap VIDEO call (wire kind 'video'). The engine
     /// resolves the camera capability first: no usable camera degrades to a
     /// voice call with an honest toast (web acquireMedia parity).
     func callVideo(_ user: WireUser, session: PulseSession) {
         guard user.id != session.viewer?.id else { return }
         guard let engine = session.callEngine else {
-            errorText = "Calls aren't ready yet — try again in a moment."
+            errorText = "Calls aren't ready yet - try again in a moment."
             return
         }
         PulseHaptics.tap()
@@ -490,7 +491,7 @@ final class ContactsViewModel: ObservableObject {
         do {
             try await session.api.block(userId: user.id)
             PulseHaptics.success()
-            // Wave 6 — verbatim pair-toast (UserPage parity).
+            // Wave 6 - verbatim pair-toast (UserPage parity).
             session.toasts.show("Blocked \(user.name)")
         } catch {
             session.toasts.show(ChatsViewModel.describe(error))

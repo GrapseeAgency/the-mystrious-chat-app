@@ -17,7 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Wave 7 — collaboration & hub REST contract tests (JVM, MockEngine).
+ * Wave 7 - collaboration & hub REST contract tests (JVM, MockEngine).
  * Locks the exact verbs/paths/bodies the server routes define (worklog 7-a):
  * red packets, whiteboard (since-polling), kanban, events, reminders, games,
  * tournaments, leaderboard, hub economy, apps installs/communities.
@@ -51,7 +51,7 @@ class Wave7ApiTest {
 
     private fun configured() = PulseEndpoints.applyBase("https://gw.example")
 
-    // ── red packets ──────────────────────────────────────────────
+    // red packets
 
     @Test
     fun `create red packet posts total count and note`() = runTest {
@@ -86,13 +86,13 @@ class Wave7ApiTest {
     fun `insufficient funds maps to 402 failure with verbatim copy`() = runTest {
         configured()
         status = HttpStatusCode.PaymentRequired
-        response = """{"error":"Insufficient PC — you have 10, tried to send 100."}"""
+        response = """{"error":"Insufficient PC - you have 10, tried to send 100."}"""
         val r = api().createRedPacket("u1", "c1", total = 100, count = 5, note = null)
         assertTrue(r is PulseResult.Failure)
         assertTrue((r as PulseResult.Failure).message?.contains("Insufficient PC") == true)
     }
 
-    // ── whiteboard ───────────────────────────────────────────────
+    // whiteboard
 
     @Test
     fun `whiteboard GET carries requesterId and since epoch`() = runTest {
@@ -145,7 +145,7 @@ class Wave7ApiTest {
         assertTrue(lastUrl.contains("requesterId=u1"))
     }
 
-    // ── kanban ───────────────────────────────────────────────────
+    // kanban
 
     @Test
     fun `kanban board GET and card create POST`() = runTest {
@@ -176,7 +176,7 @@ class Wave7ApiTest {
         assertTrue(lastUrl.contains("userId=u1"))
     }
 
-    // ── events ───────────────────────────────────────────────────
+    // events
 
     @Test
     fun `event create posts startsAt ISO and RSVP posts status`() = runTest {
@@ -202,7 +202,7 @@ class Wave7ApiTest {
         assertTrue((r as PulseResult.Success).value.alreadyCheckedIn)
     }
 
-    // ── reminders ────────────────────────────────────────────────
+    // reminders
 
     @Test
     fun `reminders GET due flag and POST body`() = runTest {
@@ -220,13 +220,13 @@ class Wave7ApiTest {
         assertEquals("rm1", (c as PulseResult.Success).value.id)
     }
 
-    // ── games ────────────────────────────────────────────────────
+    // games
 
     @Test
     fun `game create posts open challenge and move posts cell`() = runTest {
         configured()
         response = """{"match":{"id":"m1","conversationId":"c1","game":"tictactoe","playerXId":"u1","playerOId":null,"board":"         ","turn":"X","status":"active","moveCount":0},
-            "message":{"id":"gm1","conversationId":"c1","senderId":"u1","content":"⚔️ Tic-tac-toe — open challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z"}}"""
+            "message":{"id":"gm1","conversationId":"c1","senderId":"u1","content":"⚔️ Tic-tac-toe - open challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z"}}"""
         val r = api().createGame("u1", "c1", opponentId = null)
         assertTrue(r is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/games"))
@@ -240,7 +240,7 @@ class Wave7ApiTest {
         assertTrue(lastBody.contains("\"cell\":4"))
     }
 
-    // ── hub economy ──────────────────────────────────────────────
+    // hub economy
 
     @Test
     fun `wallet checkin posts userId`() = runTest {
@@ -322,7 +322,7 @@ class Wave7ApiTest {
         assertTrue(!lastUrl.contains("conversationId"))
     }
 
-    // ── offline gate ─────────────────────────────────────────────
+    // offline gate
 
     @Test
     fun `unconfigured gateway returns network failure without firing`() = runTest {

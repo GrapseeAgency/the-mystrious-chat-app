@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// /api/stories/[id] — delete my own status story (cascades views)
+// /api/stories/[id] - delete my own status story (cascades views)
 //
 // Raw SQL instead of the typed delegate: the StatusStory table was pushed
 // after the running dev server cached its Prisma client (see /api/stories).
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { Prisma } from '../../../../../prisma/generated-client'
 import { db } from '@/lib/db'
@@ -16,7 +14,7 @@ interface RouteCtx {
 
 /**
  * DELETE /api/stories/[id]?requesterId=
- * Owner-only removal — StoryView rows are removed explicitly (schema also
+ * Owner-only removal - StoryView rows are removed explicitly (schema also
  * cascades). → { ok: true } | 400 missing requesterId | 404 unknown | 403 not owner
  */
 export async function DELETE(req: Request, { params }: RouteCtx) {

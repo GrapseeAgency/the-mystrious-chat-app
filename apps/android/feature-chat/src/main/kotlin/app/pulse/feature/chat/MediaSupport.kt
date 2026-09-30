@@ -79,7 +79,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Wave 1 media pipeline — the Android half of [PulseMedia]: bitmap downscale
+ * Wave 1 media pipeline - the Android half of [PulseMedia]: bitmap downscale
  * to the wire's ≤1280px JPEG q0.82 policy, data-URL encoding, document reads
  * with the ≤10MB client gate, FileProvider open/share plumbing and the media
  * BUBBLE renderers (Coil image + document card + fullscreen lightbox).
@@ -89,7 +89,7 @@ object MediaSupport {
     /**
      * Image → downscaled JPEG data-URL. Two-pass BitmapFactory decode with
      * inSampleSize (memory-safe), then a bounds-level ≤1280px scale, then
-     * JPEG q0.82 — exactly the spec §1.1 upload policy.
+     * JPEG q0.82 - exactly the spec §1.1 upload policy.
      */
     suspend fun imageToDataUrl(context: Context, uri: Uri): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
@@ -137,13 +137,13 @@ object MediaSupport {
     }
 
     /**
-     * D30 camera capture — a fresh JPEG file under cacheDir/camera plus its
+     * D30 camera capture - a fresh JPEG file under cacheDir/camera plus its
      * FileProvider content URI (authority "${applicationId}.files", path
      * pattern "camera/" in res/xml/pulse_file_paths.xml). The system camera
      * app writes the full-resolution shot to THIS uri via
      * ActivityResultContracts.TakePicture; the file then flows through
-     * [imageToDataUrl] — the SAME ≤1280px JPEG q0.82 pipeline the gallery
-     * picker uses — so camera and gallery uploads are wire-identical.
+     * [imageToDataUrl] - the SAME ≤1280px JPEG q0.82 pipeline the gallery
+     * picker uses - so camera and gallery uploads are wire-identical.
      */
     fun newCameraCaptureUri(context: Context): Uri {
         val dir = File(context.cacheDir, "camera").apply { mkdirs() }
@@ -153,7 +153,7 @@ object MediaSupport {
 
     /**
      * Recorded voice note → data-URL. Voice is already an encoded AAC/MPEG_4
-     * stream (MediaRecorder output) — no bitmap pass, just the same base64
+     * stream (MediaRecorder output) - no bitmap pass, just the same base64
      * chunking shape as [imageToDataUrl] so the wire regex
      * `audio/(webm|mpeg|ogg|wav|mp4|aac)` accepts it.
      */
@@ -211,12 +211,12 @@ object MediaSupport {
         return uri.lastPathSegment ?: "document"
     }
 
-    /** Media URL for message paths — {gateway}/api/uploads/{path} (spec §1.1). */
+    /** Media URL for message paths - {gateway}/api/uploads/{path} (spec §1.1). */
     fun mediaUrl(path: String?): String? =
         path?.takeIf { it.isNotBlank() }?.let { PulseEndpoints.http("/api/uploads/" + it.removePrefix("/")) }
 
     /**
-     * Absolute-or-relative URL resolver for link-preview thumbnails — the
+     * Absolute-or-relative URL resolver for link-preview thumbnails - the
      * unfurler stores whatever the OG tags carried (relative paths resolve
      * against the gateway origin, absolute URLs pass through untouched).
      */
@@ -225,10 +225,10 @@ object MediaSupport {
             if (it.startsWith("http://") || it.startsWith("https://")) it else PulseEndpoints.http(it)
         }
 
-    /** Mime for a downloaded file — extension map with the stored name. */
+    /** Mime for a downloaded file - extension map with the stored name. */
     fun mimeForFile(fileName: String?): String = PulseMedia.mimeForFileName(fileName)
 
-    /** FileProvider VIEW intent — opens a downloaded document/photo outside the app. */
+    /** FileProvider VIEW intent - opens a downloaded document/photo outside the app. */
     fun buildOpenIntent(context: Context, absolutePath: String, mime: String): Intent {
         val uri = fileUri(context, absolutePath)
         val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -239,7 +239,7 @@ object MediaSupport {
     }
 
     /**
-     * FileProvider SEND intent — the long-press "Share" alternative and the
+     * FileProvider SEND intent - the long-press "Share" alternative and the
      * D24 export hand-off (R1-W2H). The chooser carries ClipData + the grant
      * flag too: some OEM resolver sheets only honor recipient grants off the
      * chooser intent, and a dropped grant reads as "file unavailable" there.
@@ -265,7 +265,7 @@ object MediaSupport {
     }
 }
 
-/** Coil image bubble — fixed max size, crossfade, tap → lightbox. */
+/** Coil image bubble - fixed max size, crossfade, tap → lightbox. */
 @Composable
 internal fun ImageBubble(
     message: Message,
@@ -306,7 +306,7 @@ internal fun ImageBubble(
 }
 
 /**
- * Dashed rounded border (draw-behind) — the view-once tombstone and the topic
+ * Dashed rounded border (draw-behind) - the view-once tombstone and the topic
  * "+" chip share the hand-drawn dashed stroke (Compose border() can't dash).
  */
 internal fun Modifier.pulseDashedBorder(color: Color, width: Dp = 1.5.dp, cornerRadius: Dp = 12.dp): Modifier =
@@ -324,7 +324,7 @@ internal fun Modifier.pulseDashedBorder(color: Color, width: Dp = 1.5.dp, corner
 /**
  * Wave 2 view-once GATE (spec §1 row 6, unopened leg): blurred Coil image +
  * darkened overlay + EyeOff + "Tap to view once". Tap consumes the photo
- * (repo.markMessageViewed fire-and-forget) and opens the lightbox instantly —
+ * (repo.markMessageViewed fire-and-forget) and opens the lightbox instantly -
  * reveal is NOT gated on the POST (web parity).
  */
 @Composable
@@ -351,7 +351,7 @@ internal fun ViewOnceGateBubble(
             contentAlignment = Alignment.Center,
         ) {
             // Anti-leak gate (spec row 6): NO image is fetched/rendered at all
-            // before consumption — a dark scrim + glyph instead of the web
+            // before consumption - a dark scrim + glyph instead of the web
             // blur (Modifier.blur no-ops below API 31; zero-leak beats parity).
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -380,7 +380,7 @@ internal fun ViewOnceGateBubble(
 }
 
 /**
- * Eye-off glyph drawn natively — material-icons-extended is deliberately off
+ * Eye-off glyph drawn natively - material-icons-extended is deliberately off
  * the classpath (same reason as PulseCheckCheck in MessageSheets.kt).
  */
 @Composable
@@ -420,7 +420,7 @@ internal fun PulseEyeOff(
 
 /**
  * Wave 2 view-once BURN tombstone (spec §1 row 6 anti-replay hardening):
- * once viewedAt != null the row NEVER renders the image — no blurred original,
+ * once viewedAt != null the row NEVER renders the image - no blurred original,
  * no lightbox entry, no preview fetch. Dashed placeholder only.
  */
 @Composable
@@ -457,7 +457,7 @@ internal fun BurnedPhotoBubble(modifier: Modifier = Modifier) {
     }
 }
 
-/** Document bubble — icon, name, human size, tap → download + open. */
+/** Document bubble - icon, name, human size, tap → download + open. */
 @Composable
 internal fun FileBubble(
     message: Message,
@@ -530,10 +530,10 @@ internal fun FileBubble(
 }
 
 /**
- * Fullscreen lightbox — black stage, tap-dismiss, caption below (spec D.4).
+ * Fullscreen lightbox - black stage, tap-dismiss, caption below (spec D.4).
  * D32 (R1-W2H): pinch-to-zoom + pan on the image (scale clamped 1f…5f, pan
  * clamped to the stage so the photo can't be flung off-screen), double-tap
- * resets to 1x, background tap still dismisses — but ONLY at 1x, so a zoom
+ * resets to 1x, background tap still dismisses - but ONLY at 1x, so a zoom
  * session never ends on a stray tap. The scrim stays.
  */
 @Composable

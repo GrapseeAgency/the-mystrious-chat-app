@@ -1,16 +1,14 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — red packet chat bubble (Task R23-a, WeChat-style grabs)
+// Pulse - red packet chat bubble (Task R23-a, WeChat-style grabs)
 //
 // Self-fetching bubble for kind:'redpacket' messages. Tap opens
 // the packet (POST grab) with a spring flip + particle burst, or
 // expands the sender's grabs list (best-luck badge on the max).
-// Real data only — every render reads GET /api/redpackets/[id].
+// Real data only - every render reads GET /api/redpackets/[id].
 //
 // Wiring contract for chat-room (lead): render inside the
-// kind === 'redpacket' branch —
+// kind === 'redpacket' branch -
 //   <RedPacketBubble packetId={payload.packetId} meId={me.id}
 //     mine={msg.senderId === me.id} senderName={msg.sender.name} />
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
@@ -24,7 +22,7 @@ import { haptic } from '@/lib/pulse-settings'
 import { cn } from '@/lib/utils'
 import { ease, fireParticles, spring } from '@/lib/motion'
 
-// ── wire types (mirror of the REST contract) ─────────────────
+// wire types (mirror of the REST contract) 
 
 interface RedPacketDetail {
   packet: {
@@ -49,7 +47,7 @@ interface GrabResponse {
   count: number
 }
 
-// ── component ────────────────────────────────────────────────
+// component 
 
 export default function RedPacketBubble({
   packetId,
@@ -89,7 +87,7 @@ export default function RedPacketBubble({
 
   /** Status line exactly per the QA contract (mine > grabbed > state). */
   const statusLine = useMemo(() => {
-    if (isMine && packet) return `${packet.grabbed} of ${packet.count} grabbed — tap for details`
+    if (isMine && packet) return `${packet.grabbed} of ${packet.count} grabbed - tap for details`
     if (myGrab !== null) return `+${myGrab} PC`
     if (!packet) return ''
     if (packet.status === 'open') return 'Tap to open'
@@ -177,7 +175,7 @@ export default function RedPacketBubble({
         )}
       >
         <div className="flex items-center gap-3 px-4 py-3.5">
-          {/* envelope face ↔ revealed amount — spring flip */}
+          {/* envelope face ↔ revealed amount - spring flip */}
           <AnimatePresence mode="wait" initial={false}>
             {justRevealed ? (
               <motion.span
@@ -233,7 +231,7 @@ export default function RedPacketBubble({
         </div>
       </motion.button>
 
-      {/* grabs ledger — owner detail view + claim history for grabbers */}
+      {/* grabs ledger - owner detail view + claim history for grabbers */}
       <AnimatePresence initial={false}>
         {expanded && data ? (
           <motion.div

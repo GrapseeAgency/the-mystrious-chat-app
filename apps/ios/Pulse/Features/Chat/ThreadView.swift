@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Wave 1 thread surface — the web ThreadSheet outcome natively: parent card
-/// on top, replies asc below, composer that sends `parentId` (spec §1.1 —
+/// Wave 1 thread surface - the web ThreadSheet outcome natively: parent card
+/// on top, replies asc below, composer that sends `parentId` (spec §1.1 -
 /// the thread-ROOT id, NEVER the inline-quote replyToId). Optimistic temp
 /// rows swap on send exactly like the river; realtime appends arrive via the
 /// session signal stream; every landed row persists through the GRDB cache.
-/// Thread replies are NEVER queued offline (spec §2 row 5 — web parity).
+/// Thread replies are NEVER queued offline (spec §2 row 5 - web parity).
 struct ThreadView: View {
     let conversation: WireConversationSummary
     let root: WireChatMessage
@@ -19,7 +19,7 @@ struct ThreadView: View {
     @State private var draft = ""
     @State private var sending = false
     @State private var errorText: String?
-    // Wave 2 view-once — threads reuse the same gate/burn bubble; the reveal
+    // Wave 2 view-once - threads reuse the same gate/burn bubble; the reveal
     // opens the lightbox right here (the sheet owns its cover).
     @State private var lightbox: MediaLightboxTarget?
     @FocusState private var composerFocused: Bool
@@ -72,7 +72,7 @@ struct ThreadView: View {
         .onReceive(session.signals) { handle(signal: $0) }
     }
 
-    // ── content ──────────────────────────────────────────────
+    // content
 
     @ViewBuilder
     private var threadBody: some View {
@@ -97,23 +97,23 @@ struct ThreadView: View {
             .padding(.top, 40)
             .frame(maxWidth: .infinity)
         case .loaded:
-            // The parent card — plain bubble, no thread chip, no menus.
+            // The parent card - plain bubble, no thread chip, no menus.
             let parentMessage = parent ?? root
             BubbleView(
                 message: parentMessage,
                 mine: parentMessage.senderId == viewerId,
                 groupChat: conversation.isGroup,
                 viewerColor: { colorOf(senderId: parentMessage.senderId) },
-                // Wave 8 — thread bubbles honor the prefs corner token too.
+                // Wave 8 - thread bubbles honor the prefs corner token too.
                 bubbleRadius: session.prefs?.bubbleRadius ?? .lg,
                 viewerId: viewerId,
                 onViewOnceOpen: { message in revealViewOnce(message) },
-                // R3-A item 7 — thread bubbles format + mention-chip too.
+                // R3-A item 7 - thread bubbles format + mention-chip too.
                 memberNames: conversation.members.map(\.name),
             )
             .padding(.bottom, 4)
             ForEach(Array(replies.enumerated()), id: \.element.id) { index, reply in
-                // Day chip when the calendar day changes between rows — the
+                // Day chip when the calendar day changes between rows - the
                 // first reply compares against the parent's day.
                 let previous = index == 0 ? parentMessage : replies[index - 1]
                 if PulseFormat.dayLabel(previous.createdAt) != PulseFormat.dayLabel(reply.createdAt) {
@@ -125,18 +125,18 @@ struct ThreadView: View {
                     mine: reply.senderId == viewerId,
                     groupChat: conversation.isGroup,
                     viewerColor: { colorOf(senderId: reply.senderId) },
-                    // Wave 8 — prefs corner token (session handoff).
+                    // Wave 8 - prefs corner token (session handoff).
                     bubbleRadius: session.prefs?.bubbleRadius ?? .lg,
                     viewerId: viewerId,
                     onViewOnceOpen: { message in revealViewOnce(message) },
-                    // R3-A item 7 — thread bubbles format + mention-chip too.
+                    // R3-A item 7 - thread bubbles format + mention-chip too.
                     memberNames: conversation.members.map(\.name),
                 )
             }
         }
     }
 
-    /// Wave 2 view-once in threads — instant reveal (web parity), then the
+    /// Wave 2 view-once in threads - instant reveal (web parity), then the
     /// idempotent burn stamp; the relayed envelope reconciles the rest.
     private func revealViewOnce(_ message: WireChatMessage) {
         guard message.viewOnce == true,
@@ -163,10 +163,10 @@ struct ThreadView: View {
         return PulseTheme.color(named: member?.color)
     }
 
-    // ── data ─────────────────────────────────────────────────
+    // data
 
     private func load() async {
-        // Cache seed first — the sheet paints instantly, offline too.
+        // Cache seed first - the sheet paints instantly, offline too.
         if let store = session.store {
             let cached = (try? store.messages(threadRootId: root.id)) ?? []
             if !cached.isEmpty {
@@ -191,7 +191,7 @@ struct ThreadView: View {
         }
     }
 
-    /// Realtime — a relayed reply for THIS thread appends (id-dedupe) and
+    /// Realtime - a relayed reply for THIS thread appends (id-dedupe) and
     /// lands in the GRDB cache; everything else is ignored here.
     private func handle(signal: PulseSocketClient.Signal) {
         switch signal {
@@ -214,7 +214,7 @@ struct ThreadView: View {
         }
     }
 
-    // ── composer ─────────────────────────────────────────────
+    // composer
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
@@ -241,7 +241,7 @@ struct ThreadView: View {
         .background(.ultraThinMaterial)
     }
 
-    /// Optimistic thread send — temp `local_<clientId>` row swaps for the
+    /// Optimistic thread send - temp `local_<clientId>` row swaps for the
     /// real one on success. Any failure removes the temp and surfaces an
     /// honest error; the outbox NEVER queues thread replies (spec §2 row 5).
     private func sendReply() {

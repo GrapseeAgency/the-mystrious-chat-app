@@ -1,19 +1,17 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — shared API contract types (single source of truth)
+// Pulse Chat - shared API contract types (single source of truth)
 // Backend routes MUST serialize to exactly these shapes.
-// ─────────────────────────────────────────────────────────────
 
 export interface AppUser {
   id: string
   name: string
-  username: string | null // unique @handle — shown instead of raw IDs everywhere
+  username: string | null // unique @handle - shown instead of raw IDs everywhere
   about: string
   color: string // emerald|rose|amber|violet|teal|orange|pink|cyan
-  avatar: string | null // profile photo path (/uploads/<uuid>.<ext>) — null = palette avatar fallback
+  avatar: string | null // profile photo path (/uploads/<uuid>.<ext>) - null = palette avatar fallback
   statusEmoji: string | null // Discord-style custom status glyph
   statusText: string | null // Discord-style custom status line
   createdAt: string // ISO
-  /** ISO — "profile last active". R46: null when the user hides last seen
+  /** ISO - "profile last active". R46: null when the user hides last seen
    *  (server scrubs the stamp; realtime presence is a separate signal). */
   lastSeenAt: string | null
 }
@@ -24,7 +22,7 @@ export interface MessageAuthor {
   name: string
   username: string | null
   color: string
-  avatar: string | null // profile photo path (/api/uploads/<file>) — null = palette fallback
+  avatar: string | null // profile photo path (/api/uploads/<file>) - null = palette fallback
 }
 
 export type MessageStatus = 'sent' | 'deleted'
@@ -59,7 +57,7 @@ export interface PollOptionTally {
   text: string
   position: number
   voteCount: number
-  /** userIds of voters — clients derive their own pick, reaction-style */
+  /** userIds of voters - clients derive their own pick, reaction-style */
   votedBy: string[]
 }
 
@@ -94,17 +92,17 @@ export interface ChatMessage {
   imagePath: string | null // served via GET /api/uploads/[imagePath]
   audioPath: string | null // voice-note file served via GET /api/uploads/[audioPath]
   durationMs: number | null // voice-note length in milliseconds
-  /** R40 additive — document attachment (kind 'file'): stored filename served
+  /** R40 additive - document attachment (kind 'file'): stored filename served
    *  via GET /api/uploads/[filePath], original filename for display, byte size. */
   filePath: string | null
   fileName: string | null
   fileSize: number | null
-  /** R43 additive — cached voice-note transcription (real ASR service; null =
+  /** R43 additive - cached voice-note transcription (real ASR service; null =
    *  never transcribed). Rendered under the voice bubble once present. */
   transcript: string | null
   transcribedAt: string | null
-  editedAt: string | null // ISO or null — set when the sender edited the text
-  pinnedAt: string | null // ISO or null — pinned within the conversation
+  editedAt: string | null // ISO or null - set when the sender edited the text
+  pinnedAt: string | null // ISO or null - pinned within the conversation
   pinnedBy: string | null // userId of whoever pinned (null when unpinned)
   parentId: string | null // Slack/Zulip thread root this reply belongs to
   topicId: string | null // Zulip-style topic filing (null = General)
@@ -119,7 +117,7 @@ export interface ChatMessage {
   poll: PollData | null
   translations: MessageTranslationEntry[] // persisted LLM translations by lang
   /** R39 additive: true when the message was landed by a keyword automation
-   *  (machine-sent — bubbles surface an honest "Automation" chip). Always
+   *  (machine-sent - bubbles surface an honest "Automation" chip). Always
    *  present on server-serialized messages; omitted (undefined = false) on
    *  client-side optimistic/queued constructions. */
   viaAutomation?: boolean
@@ -138,15 +136,15 @@ export interface ConversationSummary {
   lastMessage: ChatMessage | null
   unreadCount: number // count of non-deleted messages from others newer than my lastReadAt
   myStreak: { count: number } | null // R31-a viewer's LIVE chat streak (null = none / broken)
-  /** R33-b additive: streak whose lastDay is YESTERDAY UTC with count >= 2 —
+  /** R33-b additive: streak whose lastDay is YESTERDAY UTC with count >= 2 -
    *  still live (myStreak stays populated) but dies at tonight's UTC midnight
    *  unless the viewer messages today. null/absent = nothing at risk. */
   deadStreak?: { count: number; lastDay: string } | null
-  /** R37 additive: honest end-state — a 2+ day chain whose lastDay is OLDER
+  /** R37 additive: honest end-state - a 2+ day chain whose lastDay is OLDER
    *  than yesterday (UTC); the day passed and the streak died. null/absent =
    *  none. Never populated beside a live myStreak or deadStreak. */
   lostStreak?: { count: number; best: number; lastDay: string } | null
-  /** R33-b additive: channel/group photo path ("/api/uploads/<file>") — null = palette avatar fallback */
+  /** R33-b additive: channel/group photo path ("/api/uploads/<file>") - null = palette avatar fallback */
   photo: string | null
   pinnedAt: string | null // viewer's pin watermark (null = not pinned)
   mutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
@@ -154,10 +152,10 @@ export interface ConversationSummary {
   ttlSeconds: number // disappearing-message TTL for THIS chat (0 = off)
   broadcastMode: boolean // admin-only posting (groups/stage channels)
   isSelf: boolean // Signal-style Note to Self conversation
-  /** R44 additive: viewer's mark-as-unread flag — the row shows the unread
+  /** R44 additive: viewer's mark-as-unread flag - the row shows the unread
    *  dot even when unreadCount is 0; cleared when the room is opened. */
   myManualUnread: boolean
-  /** R45 — server-synced composer draft (cross-device; null = none). */
+  /** R45 - server-synced composer draft (cross-device; null = none). */
   myDraft: string | null
 }
 
@@ -173,7 +171,7 @@ export interface ChannelSummary {
   isSubscribed: boolean // viewer has a participant row
   unread: boolean // viewer has an unread admin message (lastReadAt watermark)
   preview: string | null // last message content snippet (60 chars, may be null)
-  /** R33-b additive: channel photo path ("/api/uploads/<file>") — null = broadcast-icon glass fallback */
+  /** R33-b additive: channel photo path ("/api/uploads/<file>") - null = broadcast-icon glass fallback */
   photo: string | null
 }
 
@@ -188,32 +186,32 @@ export interface ConversationDetail {
   members: Array<AppUser & { lastReadAt: string; role: GroupRole }>
   myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
   myStreak: { count: number; best: number } | null // R31-a viewer's LIVE chat streak (null = none / broken)
-  /** R33-b additive — same semantics as ConversationSummary.deadStreak:
+  /** R33-b additive - same semantics as ConversationSummary.deadStreak:
    *  live-but-dies-tonight streak (lastDay = yesterday UTC, count >= 2). */
   deadStreak?: { count: number; lastDay: string } | null
-  /** R37 additive — same semantics as ConversationSummary.lostStreak:
+  /** R37 additive - same semantics as ConversationSummary.lostStreak:
    *  dead chain (lastDay older than yesterday UTC, count >= 2). */
   lostStreak?: { count: number; best: number; lastDay: string } | null
-  /** R33-b additive: channel/group photo path ("/api/uploads/<file>") — null = palette avatar fallback */
+  /** R33-b additive: channel/group photo path ("/api/uploads/<file>") - null = palette avatar fallback */
   photo: string | null
   inviteCode: string | null // shareable join code (groups only; null = no active link)
   ttlSeconds: number // disappearing-message TTL (0 = off)
   broadcastMode: boolean // admin-only posting
-  /** R38 additive: Signal screen security — frost the message area whenever
+  /** R38 additive: Signal screen security - frost the message area whenever
    *  the Pulse window loses focus (blur / hidden tab). false = plain room. */
   screenPrivacy: boolean
   /** R42 additive: the VIEWER's personal screen-security flag (per-participant
    *  veil). The room frosts when EITHER this or the room-wide flag is on. */
   myScreenPrivacy: boolean
   /** R44 additive: Telegram-style slow mode (0 = off; members wait Ns between
-   *  sends, admins exempt — server enforces via 429 + retryAfter). */
+   *  sends, admins exempt - server enforces via 429 + retryAfter). */
   slowModeSeconds: number
   /** R44 additive: viewer's mark-as-unread flag (row badge until opened). */
   myManualUnread: boolean
-  /** R45 — the viewer's server-synced composer draft (restored in the composer
+  /** R45 - the viewer's server-synced composer draft (restored in the composer
    * when this device has no local draft for the conversation). */
   myDraft: string | null
-  /** R47 additive — DM blocked-pair dead-end flag (a UserBlock exists in
+  /** R47 additive - DM blocked-pair dead-end flag (a UserBlock exists in
    *  EITHER direction). The composer renders a notice instead of the input. */
   dmBlocked?: boolean
   isSelf: boolean // Signal-style Note to Self conversation
@@ -231,7 +229,7 @@ export interface InvitePreview {
   alreadyMember: boolean
 }
 
-/** Global search hit — a message plus the conversation it lives in. */
+/** Global search hit - a message plus the conversation it lives in. */
 export interface SearchResultMessage extends ChatMessage {
   /** resolved display title (group name or DM partner name) */
   conversationName: string
@@ -261,7 +259,7 @@ export interface ScheduledItem {
 export interface ReminderItem {
   id: string
   conversationId: string
-  /** anchored message — null = conversation-level reminder */
+  /** anchored message - null = conversation-level reminder */
   messageId: string | null
   /** free-text context shown in the nudge (may be empty when anchored) */
   note: string
@@ -275,14 +273,14 @@ export interface ReminderItem {
   snippet: string | null
 }
 
-// ── R24 — topics, folders, tournaments, leaderboard ──────────
+// R24 - topics, folders, tournaments, leaderboard 
 
 /** Zulip-style topic chip row (GET /api/conversations/[id]/topics). */
 export interface TopicSummary {
   id: string
   name: string
   emoji: string
-  lastMessageAt: string // ISO — sort key
+  lastMessageAt: string // ISO - sort key
   messageCount: number // real filed-message count
 }
 
@@ -326,7 +324,7 @@ export interface TournamentSummary {
   }>
 }
 
-/** R39 — one keyword auto-reply rule (GET/POST /api/conversations/[id]/automations). */
+/** R39 - one keyword auto-reply rule (GET/POST /api/conversations/[id]/automations). */
 export interface AutomationSummary {
   id: string
   conversationId: string
@@ -336,11 +334,11 @@ export interface AutomationSummary {
   hits: number // lifetime fire count
   lastFiredAt: string | null // ISO or null
   createdAt: string // ISO
-  /** admin who authored the rule — also the author of fired replies */
+  /** admin who authored the rule - also the author of fired replies */
   createdBy: { id: string; name: string; color: string; avatar: string | null } | null
 }
 
-// ── Socket event payloads (port 3003 mini service) ────────────
+// Socket event payloads (port 3003 mini service) 
 
 export interface PresenceSnapshot {
   onlineUserIds: string[]
@@ -384,7 +382,7 @@ export interface ConversationUpdatedEvent {
   recipientIds: string[]
 }
 
-// ── Hub economy (wallet / tasks / market / logs / swap) ──────
+// Hub economy (wallet / tasks / market / logs / swap) 
 
 export interface WalletState {
   userId: string
@@ -456,6 +454,6 @@ export interface UserStats {
   groups: number
   days: number
   joinedAt: string
-  /** R46 — null when the profile owner hides last seen. */
+  /** R46 - null when the profile owner hides last seen. */
   lastSeenAt: string | null
 }

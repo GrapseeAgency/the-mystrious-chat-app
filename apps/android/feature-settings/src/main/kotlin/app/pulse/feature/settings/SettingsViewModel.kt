@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Wave 8 — the Settings surfaces' state holder (root + all nine sections).
+ * Wave 8 - the Settings surfaces' state holder (root + all nine sections).
  *
  * Prefs pipeline (web parity with src/lib/prefs.ts): every toggle applies
  * locally FIRST (optimistic), then PATCHes /api/settings; a failed PATCH
@@ -45,7 +45,7 @@ class SettingsViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
-    // ── viewer identity (Account section) ────────────────────────
+    // viewer identity (Account section)
 
     val viewerId: StateFlow<String?> = prefs.viewerId
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -58,35 +58,35 @@ class SettingsViewModel @Inject constructor(
     /** Live profile row for the Account card (@handle + avatar). */
     val viewerProfile: StateFlow<UserProfile?> = _viewerProfile.asStateFlow()
 
-    // ── user preferences blob (server-backed) ────────────────────
+    // user preferences blob (server-backed)
 
     val pulsePrefs: StateFlow<WirePulsePrefs> = repo.pulsePrefs
         .stateIn(viewModelScope, SharingStarted.Eagerly, PulseWave8Logic.DEFAULTS)
 
     private val _prefsOffline = MutableStateFlow(false)
 
-    /** True when the last PATCH failed — the local change STAYS (honest hint). */
+    /** True when the last PATCH failed - the local change STAYS (honest hint). */
     val prefsOffline: StateFlow<Boolean> = _prefsOffline.asStateFlow()
 
-    // ── local-only settings (web pulse.settings.v1 parity) ───────
+    // local-only settings (web pulse.settings.v1 parity)
 
     val hapticsOn: StateFlow<Boolean> = prefs.hapticsOn
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
-    /** R14 — device ding master (web pulse.settings.v1 soundOn, default true). */
+    /** R14 - device ding master (web pulse.settings.v1 soundOn, default true). */
     val soundOn: StateFlow<Boolean> = prefs.soundOn
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
-    // ── remote push status (R9 — honest device state, mirrors the iOS row) ──
+    // remote push status (R9 - honest device state, mirrors the iOS row)
     // Device state, not a preference: :app publishes snapshots into the domain
     // holder at every push-wiring transition (init / sync / new-token /
-    // sign-out). An unarmed build reports Off — nothing is faked.
+    // sign-out). An unarmed build reports Off - nothing is faked.
 
     private val _pushStatus = MutableStateFlow(app.pulse.domain.push.PulsePushStatus.snapshot())
 
     val pushStatus: StateFlow<app.pulse.domain.push.PulsePushStatus.Snapshot> = _pushStatus.asStateFlow()
 
-    /** Re-read the device snapshot (cheap — settings screen entry + back). */
+    /** Re-read the device snapshot (cheap - settings screen entry + back). */
     fun refreshPushStatus() {
         _pushStatus.value = app.pulse.domain.push.PulsePushStatus.snapshot()
     }
@@ -110,36 +110,36 @@ class SettingsViewModel @Inject constructor(
     val reducedMotion: StateFlow<Boolean> = prefs.reducedMotion
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    /** Appearance — the existing darkOverride pref (shared with Profile). */
+    /** Appearance - the existing darkOverride pref (shared with Profile). */
     val darkOverride: StateFlow<String> = prefs.darkOverride
         .stateIn(viewModelScope, SharingStarted.Eagerly, "system")
 
-    /** Appearance — the existing ambient FX pref (shared with Profile). */
+    /** Appearance - the existing ambient FX pref (shared with Profile). */
     val fxMode: StateFlow<String> = prefs.fxMode
         .stateIn(viewModelScope, SharingStarted.Eagerly, "aurora")
 
-    /** R2-C item 3 — the design language (web pulse.uiTheme.v2 value string). */
+    /** R2-C item 3 - the design language (web pulse.uiTheme.v2 value string). */
     val uiTheme: StateFlow<String> = prefs.uiTheme
         .stateIn(viewModelScope, SharingStarted.Eagerly, "glass")
 
-    /** R4-B item 3 — the navigation architecture (web pulse.navStyle.v2 parity). */
+    /** R4-B item 3 - the navigation architecture (web pulse.navStyle.v2 parity). */
     val navStyle: StateFlow<app.pulse.protocol.PulseNavStyle> = prefs.navStyle
         .stateIn(viewModelScope, SharingStarted.Eagerly, app.pulse.protocol.PulseNavStyle.CAPSULE)
 
     /**
-     * R10-a — biometric App lock (device-local DataStore flag, same block as
+     * R10-a - biometric App lock (device-local DataStore flag, same block as
      * haptics/quiet-hours; never the server blob). The MainActivity lock gate
      * reads the SAME flow through [app.pulse.android.security.PulseAppLock].
      */
     val appLockEnabled: StateFlow<Boolean> = prefs.appLockEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    /** Real-time & Voice — live relay truth. */
+    /** Real-time & Voice - live relay truth. */
     val connected: StateFlow<Boolean> = repo.observeConnected()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
-     * R7 item 6 — "People online now" (web settings-screen.tsx:1419-1424):
+     * R7 item 6 - "People online now" (web settings-screen.tsx:1419-1424):
      * the SAME live presence flow the room presence chips consume, reduced to
      * a count for the trailing badge.
      */
@@ -148,8 +148,8 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     /**
-     * R15 — web "Device network" row parity (settings-screen.tsx:1483-1492):
-     * navigator.onLine equivalent — the CONNECTIVITY_SERVICE active-network
+     * R15 - web "Device network" row parity (settings-screen.tsx:1483-1492):
+     * navigator.onLine equivalent - the CONNECTIVITY_SERVICE active-network
      * validated-internet truth, re-evaluated on every network callback. This is
      * DEVICE truth, independent of the socket relay above it.
      */
@@ -177,7 +177,7 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
-        // R15 — device-network tracker (web navigator.onLine parity).
+        // R15 - device-network tracker (web navigator.onLine parity).
         refreshDeviceOnline()
         runCatching {
             val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -203,7 +203,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ── prefs mutations (optimistic local FIRST, then PATCH) ─────
+    // prefs mutations (optimistic local FIRST, then PATCH)
 
     fun setBubbleRadius(value: String) = updatePrefs(WirePulsePrefs(bubbleRadius = value))
     fun setDensity(value: String) = updatePrefs(WirePulsePrefs(density = value))
@@ -216,7 +216,7 @@ class SettingsViewModel @Inject constructor(
     fun setTypingVisible(value: Boolean) = updatePrefs(WirePulsePrefs(typingVisible = value))
 
     /**
-     * Reduced motion — dual-write: the LOCAL device pref drives the ambient
+     * Reduced motion - dual-write: the LOCAL device pref drives the ambient
      * field/particles immediately, the server blob keeps cross-platform parity.
      */
     fun setReducedMotion(value: Boolean) {
@@ -225,10 +225,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * R14 gap 9 — Ambient FX — dual-write EXACTLY like reduced motion above:
+     * R14 gap 9 - Ambient FX - dual-write EXACTLY like reduced motion above:
      * the LOCAL device pref drives the AGSL shaders immediately, and the
      * server blob now ALSO gets the patch (the wire builder already carried
-     * the "fx.webglMode" key — Wave8Dtos.toPatchJson — it was simply never
+     * the "fx.webglMode" key - Wave8Dtos.toPatchJson - it was simply never
      * sent).
      */
     fun setFxMode(value: String) {
@@ -244,13 +244,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ── local settings setters ───────────────────────────────────
+    // local settings setters
 
     fun setHapticsOn(value: Boolean) {
         viewModelScope.launch { prefs.setHapticsOn(value) }
     }
 
-    /** R14 — the device ding master (local-only; the web keeps it in pulse.settings.v1). */
+    /** R14 - the device ding master (local-only; the web keeps it in pulse.settings.v1). */
     fun setSoundOn(value: Boolean) {
         viewModelScope.launch { prefs.setSoundOn(value) }
     }
@@ -271,7 +271,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { prefs.setDarkOverride(value) }
     }
 
-    /** R14 gap 10 — the default chats-list filter (SAME device key the chats chips write). */
+    /** R14 gap 10 - the default chats-list filter (SAME device key the chats chips write). */
     val chatsListFilter: StateFlow<String> = prefs.chatsListFilter
         .stateIn(viewModelScope, SharingStarted.Eagerly, "all")
 
@@ -279,18 +279,18 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { prefs.setChatsListFilter(value) }
     }
 
-    /** R2-C item 3 — design-language swap; the shell re-reads it live. */
+    /** R2-C item 3 - design-language swap; the shell re-reads it live. */
     fun setUiTheme(value: String) {
         viewModelScope.launch { prefs.setUiTheme(value) }
     }
 
-    /** R4-B item 3 — navigation-style swap; the shell re-reads it live. */
+    /** R4-B item 3 - navigation-style swap; the shell re-reads it live. */
     fun setNavStyle(style: app.pulse.protocol.PulseNavStyle) {
         viewModelScope.launch { prefs.setNavStyle(style) }
     }
 
     /**
-     * R10-a — App lock persistence. The caller (PrivacySection) runs the
+     * R10-a - App lock persistence. The caller (PrivacySection) runs the
      * one-shot confirmation BiometricPrompt BEFORE this lands, so a device
      * without biometrics/screen lock never keeps the flag on.
      */
@@ -305,7 +305,7 @@ class SettingsViewModel @Inject constructor(
         quietEnd.value,
     )
 
-    // ── Chat section — Drafts & Outbox manager (fully offline) ───
+    // Chat section - Drafts & Outbox manager (fully offline)
 
     data class DraftRow(val conversationId: String, val title: String, val text: String)
 
@@ -355,7 +355,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repo.clearOutbox() }
     }
 
-    // ── Data & Storage — footprint + cleanup ─────────────────────
+    // Data & Storage - footprint + cleanup
 
     data class Footprint(val databaseBytes: Long = 0, val imageCacheBytes: Long = 0) {
         val totalBytes: Long get() = databaseBytes + imageCacheBytes
@@ -363,7 +363,7 @@ class SettingsViewModel @Inject constructor(
 
     private val _footprint = MutableStateFlow(Footprint())
 
-    /** Measured footprint — DB file(s) via getDatabasePath + the Coil disk cache. */
+    /** Measured footprint - DB file(s) via getDatabasePath + the Coil disk cache. */
     val footprint: StateFlow<Footprint> = _footprint.asStateFlow()
 
     fun refreshFootprint() {
@@ -393,14 +393,14 @@ class SettingsViewModel @Inject constructor(
     private fun java.io.File.walkBytes(): Long =
         walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
-    // ── Data & Storage — "Your footprint" live tiles (web settings-screen.tsx
-    //    :1496-1571) — the SAME repo stats path the user page consumes
-    //    (GET /api/users/{id}/stats), evaluated for the VIEWER. ──────────
+    // Data & Storage - "Your footprint" live tiles (web settings-screen.tsx
+    //    :1496-1571) - the SAME repo stats path the user page consumes
+    // (GET /api/users/{id}/stats), evaluated for the VIEWER.
 
     data class FootprintStats(
         val loading: Boolean = false,
         val stats: UserStats? = null,
-        /** Honest failure — the UI offers a retry instead of fake zeros. */
+        /** Honest failure - the UI offers a retry instead of fake zeros. */
         val error: String? = null,
     )
 
@@ -431,7 +431,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ── Real-time & Voice — live probe (timed real GET) ──────────
+    // Real-time & Voice - live probe (timed real GET)
 
     data class ProbeState(
         val running: Boolean = false,
@@ -444,14 +444,14 @@ class SettingsViewModel @Inject constructor(
 
     val probe: StateFlow<ProbeState> = _probe.asStateFlow()
 
-    /** The configured gateway origin — null/blank = offline-first (honest copy). */
+    /** The configured gateway origin - null/blank = offline-first (honest copy). */
     val gatewayHost: String get() = PulseEndpoints.gatewayHttpUrl
 
-    /** Time a REAL GET /api/users — an honest latency verdict, not a fake ping. */
+    /** Time a REAL GET /api/users - an honest latency verdict, not a fake ping. */
     fun probeGateway() {
         val origin = PulseEndpoints.gatewayHttpUrl
         if (origin.isBlank()) {
-            _probe.value = ProbeState(ok = false, detail = "No gateway configured — Pulse runs offline-first.")
+            _probe.value = ProbeState(ok = false, detail = "No gateway configured - Pulse runs offline-first.")
             return
         }
         _probe.value = ProbeState(running = true)

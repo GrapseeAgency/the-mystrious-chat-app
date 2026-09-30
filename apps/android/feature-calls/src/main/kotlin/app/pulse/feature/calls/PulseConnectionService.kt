@@ -15,7 +15,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /**
- * R8 Task 3-c — the self-managed [ConnectionService]. The system instantiates
+ * R8 Task 3-c - the self-managed [ConnectionService]. The system instantiates
  * this class (manifest-registered, BIND_TELECOM_CONNECTION_SERVICE) for every
  * Telecom call the controller presents; Hilt injects the [CallEngine] the
  * connections drive. Created connections are state MIRRORS of the engine:
@@ -46,9 +46,9 @@ class PulseConnectionService : ConnectionService() {
         val kind = extras.getString(TelecomCallController.EXTRA_PULSE_KIND) ?: "voice"
 
         // The ring may have already been answered/declined in-app (or expired)
-        // by the time the system builds the connection — never fake a ring.
+        // by the time the system builds the connection - never fake a ring.
         if (engine.snapshot.value.state != CallState.INCOMING_RINGING) {
-            Log.w(TAG, "incoming connection for a non-ringing engine — failing honestly")
+            Log.w(TAG, "incoming connection for a non-ringing engine - failing honestly")
             return failedConnection(request)
         }
         val connection = PulseConnection(engine, controller).apply {

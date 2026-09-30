@@ -4,9 +4,9 @@ package app.pulse.feature.voice.engine
  * Pure jitter-buffer playhead for per-peer PCM chunks (spec §1.1 VR-5).
  *
  * Per-peer state {lastSeq, nextAtMs}; a chunk at [seq] is:
- *  • DROPPED when `seq <= lastSeq` (duplicate or stale — the reconnect
+ *  • DROPPED when `seq <= lastSeq` (duplicate or stale - the reconnect
  *    blackhole guard), otherwise
- *  • scheduled at `max(now + PRE_ROLL_MS, nextAt)` — an 85ms pre-roll absorbs
+ *  • scheduled at `max(now + PRE_ROLL_MS, nextAt)` - an 85ms pre-roll absorbs
  *    jitter, and chaining `nextAt = at + duration` keeps back-to-back blocks
  *    gapless.
  *
@@ -28,7 +28,7 @@ class PlaybackScheduler(private val preRollMs: Long = PRE_ROLL_MS) {
 
     private val peers = HashMap<String, PeerState>()
 
-    /** Decides AND advances — a Schedule verdict has already moved the playhead. */
+    /** Decides AND advances - a Schedule verdict has already moved the playhead. */
     fun decide(userId: String, seq: Long, durationMs: Long, nowMs: Long): Decision {
         val peer = peers.getOrPut(userId) { PeerState() }
         if (seq <= peer.lastSeq) return Decision.Drop

@@ -10,7 +10,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Wave 3 — thin activity-scoped bridge between the call UI and the
+ * Wave 3 - thin activity-scoped bridge between the call UI and the
  * [CallEngine] singleton (the engine owns ALL call state; ViewModels come
  * and go with screens, the call must not).
  */
@@ -24,7 +24,7 @@ class CallViewModel @Inject constructor(
     val micMuted: StateFlow<Boolean> = engine.micMuted
     val speakerOn: StateFlow<Boolean> = engine.speakerOn
 
-    // Wave R1-W2D — video mirrors (engine-owned; UI only renders).
+    // Wave R1-W2D - video mirrors (engine-owned; UI only renders).
     val videoCaptureActive: StateFlow<Boolean> = engine.videoCaptureActive
     val cameraEnabled: StateFlow<Boolean> = engine.cameraEnabled
     val videoNotice: StateFlow<String?> = engine.videoNotice
@@ -53,13 +53,13 @@ class CallViewModel @Inject constructor(
 
     fun toggleSpeaker(): Boolean = engine.toggleSpeaker()
 
-    /** Camera (video) toggle — no-op on voice calls / audio-only fallback. */
+    /** Camera (video) toggle - no-op on voice calls / audio-only fallback. */
     fun toggleVideo(): Boolean = engine.toggleVideo()
 
-    /** Front ⇄ back flip — honest no-op when no camera is attached. */
+    /** Front ⇄ back flip - honest no-op when no camera is attached. */
     fun switchCamera(): Boolean = engine.switchCamera()
 
-    /** Peer entry point for the contacts list — the engine resolves the DM. */
+    /** Peer entry point for the contacts list - the engine resolves the DM. */
     fun callPeer(
         peerId: String,
         name: String,

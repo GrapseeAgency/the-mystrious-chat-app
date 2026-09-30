@@ -1,6 +1,6 @@
 import Foundation
 
-/// Domain models — mirror of Android `domain/model/Models.kt` and web `types.ts`.
+/// Domain models - mirror of Android `domain/model/Models.kt` and web `types.ts`.
 /// These three types are the protocol core; every client renders the same shapes.
 public struct PulseUser: Codable, Hashable, Sendable {
     public let id: String

@@ -1,12 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — in-room message search sub-page (#/room/<id>/search) — R27-c.
+// Pulse - in-room message search sub-page (#/room/<id>/search) - R27-c.
 // Full-screen glass sheet above the chat room: a glass search field
 // with LIVE client filtering over the room's real loaded messages,
 // plus a debounced room-scoped API search (?q= scans the whole
 // conversation) so hits beyond the loaded window are still real.
 // Results are grouped by sender; tapping one closes this page and
 // reuses the room's jump-to-message machinery (scroll + glass flash).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -27,20 +25,20 @@ export interface RoomSearchPageProps {
   /** the room's real loaded message window (client filter source) */
   loadedMessages: ChatMessage[]
   reducedMotion?: boolean
-  /** backHash() — returns to the room */
+  /** backHash() - returns to the room */
   onClose: () => void
   /** jump + flash in the room (after onClose) */
   onJump: (messageId: string) => void
 }
 
-/** Escape a string for safe RegExp use (local copy — keeps parity with the room). */
+/** Escape a string for safe RegExp use (local copy - keeps parity with the room). */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
  * Snippet text for one result row (R41): document hits surface their fileName
- * — as "Document — <fileName>" — whenever the caption is empty or does not
+ * - as "Document - <fileName>" - whenever the caption is empty or does not
  * itself match the query, so the row always shows WHY it matched. Other kinds
  * keep the existing Photo/Voice message fallbacks.
  */
@@ -49,7 +47,7 @@ function searchHitSnippet(m: ChatMessage, query: string): string {
   if (m.filePath) {
     const captionMatches = text.length > 0 && text.toLowerCase().includes(query.toLowerCase())
     if (captionMatches) return text
-    if (m.fileName) return `Document — ${m.fileName}`
+    if (m.fileName) return `Document - ${m.fileName}`
     return text.length > 0 ? text : 'Document'
   }
   return text || (m.imagePath ? 'Photo' : m.audioPath ? 'Voice message' : 'Message')
@@ -134,7 +132,7 @@ export function RoomSearchPage({
   }, [loadedMessages, query])
 
   /**
-   * Room-scoped whole-history search — the conversation messages API
+   * Room-scoped whole-history search - the conversation messages API
    * accepts ?q= and scans every non-deleted row of THIS conversation
    * (real data, not the global cross-chat endpoint).
    */
@@ -192,7 +190,7 @@ export function RoomSearchPage({
       aria-label={`Search messages in this chat`}
       className="absolute inset-0 z-[55] flex flex-col bg-zinc-100/85 backdrop-blur-2xl dark:bg-black/70"
     >
-      {/* header — back + glass search field */}
+      {/* header - back + glass search field */}
       <div className="flex min-h-14 shrink-0 items-center gap-1.5 px-2 pt-[env(safe-area-inset-top)]">
         <button
           type="button"
@@ -247,7 +245,7 @@ export function RoomSearchPage({
                 Search this conversation
               </p>
               <p className="mt-2 max-w-[230px] text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
-                Find any message by its text or by a document's file name — results group by sender
+                Find any message by its text or by a document's file name - results group by sender
                 and jump straight back to the thread.
               </p>
             </div>

@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — chats-list loading skeleton (R27-e: extracted so the
+// Pulse - chats-list loading skeleton (R27-e: extracted so the
 // main list and the #/chats/archived sub-page share one shape).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { Skeleton } from '@/components/ui/skeleton'
