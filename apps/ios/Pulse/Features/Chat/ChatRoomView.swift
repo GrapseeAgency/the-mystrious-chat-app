@@ -3668,6 +3668,13 @@ struct PulseBubbleBody: View {
 struct RoomPillLabel: View {
     let text: String
 
+    /// Unlabeled init so call sites keep the `RoomPillLabel("...")` shape
+    /// (the memberwise init would demand `text:` - the mismatch inside the
+    /// big row body is what crashed the type-checker's diagnostics).
+    init(_ text: String) {
+        self.text = text
+    }
+
     var body: some View {
         Text(text)
             .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
