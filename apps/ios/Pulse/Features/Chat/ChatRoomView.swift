@@ -676,9 +676,21 @@ private struct RoomContent: View {
     // R19-b - the custom room top bar (the system navigation bar is hidden):
     // back tile, avatar + name + presence block, call/video/search glyph
     // tiles, the voice-room entry and one overflow menu carrying every
-    // former toolbar entry (info, safety, theme, recap, reminders,
-    // leaderboard, mini-chat). Every action is byte-identical to the old
+    // former toolbar entry. Every action is byte-identical to the old
     // ToolbarItem wiring - only the chrome moved.
+    // Background: one glass strip with a 1pt bottom hairline, bleeding into
+    // the top safe area.
+    private var roomTopBarBackground: some View {
+        Rectangle()
+            .fill(PulseTheme.headerFill)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(PulseTheme.hairlineStrong)
+                    .frame(height: 1)
+            }
+            .ignoresSafeArea(edges: .top)
+    }
+
     private var roomTopBar: some View {
         HStack(spacing: 10) {
             Button {
@@ -776,16 +788,7 @@ private struct RoomContent: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            Rectangle()
-                .fill(PulseTheme.headerFill)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(PulseTheme.hairlineStrong)
-                        .frame(height: 1)
-                }
-                .ignoresSafeArea(edges: .top),
-        )
+        .background(roomTopBarBackground)
     }
 
     /// One 36pt glyph tile in the top bar (glass fill + hairline rim).
@@ -833,13 +836,10 @@ private struct RoomContent: View {
                 Button {
                     safetyOpen = true
                 } label: {
-                    Label(
-                        dmPartner != nil && safetyBadges.isVerified(dmPartner!.id)
-                            ? "Safety number - verified"
-                            : "Safety number",
-                        systemImage: dmPartner != nil && safetyBadges.isVerified(dmPartner!.id)
-                            ? "checkmark.shield.fill"
-                            : "shield.lefthalf.filled",
+                    let verified = dmPartner.map { safetyBadges.isVerified($0.id) } ?? false
+                    return Label(
+                        verified ? "Safety number - verified" : "Safety number",
+                        systemImage: verified ? "checkmark.shield.fill" : "shield.lefthalf.filled",
                     )
                 }
             }

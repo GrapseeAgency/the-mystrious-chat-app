@@ -890,6 +890,10 @@ private struct PulseOnboardingField: View {
         return PulseTheme.hairlineStrong
     }
 
+    /// Field fill rides the Neo glass token (dark = carbon glass, light =
+    /// the paper wash). Local alias so the call site keeps its shape.
+    private var zincField: Color { PulseTheme.glassFill }
+
     var body: some View {
         HStack(spacing: leadingAt ? 4 : 0) {
             if leadingAt {
