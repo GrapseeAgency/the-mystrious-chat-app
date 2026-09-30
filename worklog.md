@@ -4301,3 +4301,19 @@ Work Log:
 
 Stage Summary:
 - main = origin R19-b state + version bump 27 / 0.11.6-native. Zero emoji lines in shipped code on all three platforms. v0.11.6-native tag push hands off to Android CI for the signed release APK.
+
+---
+Task ID: R18-release
+Agent: Z.ai main session (orchestrator)
+Task: ship v0.11.6-native and verify the published artifact
+
+Work Log:
+- Pushed main (5157fbb) + tag v0.11.6-native via inline-token URL (token never persisted in any repo file).
+- CI: Pulse Android CI on v0.11.6-native = SUCCESS; iOS CI in flight (artifact-only pipeline).
+- Release LIVE: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.11.6-native with Pulse-v0.11.6-native.apk (25,462,241 bytes).
+- DOWNLOADED the shipped APK and verified: aapt2 dump badging -> versionCode='27' versionName='0.11.6-native' (27 > 26, satisfies the >23 floor); dex scan confirms the R19 vector vocabulary strings shipped (thumbsup, briefcase, confetti, headphones, Stamp/stamp systems; class names R8-minified as expected).
+- Mirror /home/z/pulse-mirror.git recreated (sandbox wipe) and synced (all refs).
+- Cron review loop created: job 426315, fixed_rate 900s, webDevReview kind, priority 10 - it will QA via agent-browser, fix bugs, and advance styling/features each cycle.
+
+Stage Summary:
+- v0.11.6-native (versionCode 27) is the current release: zero emojis in shipped code on web + Android + iOS, vector id contract (icon-ids.ts) everywhere, native custom-UI overhaul (R19) on both mobile platforms. Next honest residue: iOS CI compile is the last gate for the 455-test suite; web long-tail lucide icons in deep screens remain the next styling wave (cron loop owns it).
