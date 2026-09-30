@@ -191,7 +191,9 @@ enum PulseReactionId: String, CaseIterable, Equatable, Hashable {
 /// Sticker messages carry one of these stable stamp ids in their payload
 /// (the payload key keeps its historical name; web STAMP_IDS, server
 /// default `sparkles`). Every surface maps the id to its own large glyph.
-enum PulseStampId: String, CaseIterable, Equatable, Hashable {
+/// Public because PulseRemediationLogic.StampPack exposes stamp ids in
+/// its public surface (public declarations cannot use internal types).
+public enum PulseStampId: String, CaseIterable, Equatable, Hashable {
     case bolt, flame, sparkles, rocket, target, star
     case trophy, crown, gift, cake, music, heart
     case palette, camera, mic, gamepad, brain, drama
