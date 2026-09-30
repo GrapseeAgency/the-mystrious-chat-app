@@ -153,13 +153,13 @@ final class Wave8LogicTests: XCTestCase {
 
     // native bubble/density token values
 
-    /// The native corner radii the ChatRoomView consumes (md=10, lg=16,
-    /// pill=26) and the density row spacing - pinned so a refactor can't
-    /// silently drift the visual contract.
+    /// The native corner radii the ChatRoomView consumes (md=12, lg=20,
+    /// pill=28 - the R19-b Neo spec) and the density row spacing - pinned
+    /// so a refactor can't silently drift the visual contract.
     func testNativeTokenValues() {
-        XCTAssertEqual(PulseBubbleRadius.md.cornerRadius, 10)
-        XCTAssertEqual(PulseBubbleRadius.lg.cornerRadius, 16)
-        XCTAssertEqual(PulseBubbleRadius.pill.cornerRadius, 26)
+        XCTAssertEqual(PulseBubbleRadius.md.cornerRadius, 12)
+        XCTAssertEqual(PulseBubbleRadius.lg.cornerRadius, 20)
+        XCTAssertEqual(PulseBubbleRadius.pill.cornerRadius, 28)
         XCTAssertEqual(PulseDensity.cozy.rowSpacing, 6)
         XCTAssertEqual(PulseDensity.compact.rowSpacing, 2)
     }
