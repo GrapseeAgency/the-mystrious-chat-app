@@ -785,9 +785,9 @@ private struct ChatsHeaderBar: View {
 
                 // R19-b - search rides the header tiles now (the old glass
                 // pill is gone; the tile opens the same search surface).
-                headerTile("magnifyingglass", "Search chats and messages", onStartSearch)
-                headerTile("phone", "Open calls", onPhone)
-                headerTile("square.and.pencil", "New chat", onCompose)
+                headerTile("magnifyingglass", "Search chats and messages", action: onStartSearch)
+                headerTile("phone", "Open calls", action: onPhone)
+                headerTile("square.and.pencil", "New chat", action: onCompose)
                 headerTile(appearanceIcon, "Appearance: \(appearanceName)") {
                     prefs.cycleAppearance()
                 }
