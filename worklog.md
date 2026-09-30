@@ -4285,3 +4285,19 @@ Stage Summary:
 - The native apps now have custom-drawn flagship surfaces (chats list, chat room, onboarding, dock) in the Neo language instead of Material/Cupertino chrome; Android compile-proven, iOS brace-proven with CI as arbiter.
 - Honest caveats: (1) iOS compile verdict lands with CI (watch the run for 3babf1b); (2) native visual output unverifiable in this sandbox (no emulator/Xcode) - verified by compile/brace gates + machine-verified registry mirrors; (3) historical Room schema JSONs 6-9 had their 'chat default' literals stripped by the repo-wide sweep, remaining self-consistent (defaultValue and createSql stripped alike), migration behavior unchanged; (4) who-reacted sheet still groups by raw wire key on iOS (historical), renders normalized; (5) jumbo-emoji render for user-typed emoji text kept on web (runtime content, no shipped emoji).
 - NOT DONE (next wave candidates): release packaging (v0.11.6-native APK) pending user look at the new UI; Android/iOS remaining deep screens (hub, contacts, calls, wave7 surfaces) still carry older chrome and are candidates for the same custom treatment.
+
+---
+Task ID: R18-close
+Agent: Z.ai main session (orchestrator)
+Task: reconcile with parallel R18/R19 waves on origin, adopt canonical tree, ship v0.11.6-native
+
+Work Log:
+- DISCOVERY: origin/main carried a PARALLEL implementation pushed from another session: 7aa9cf2 (same local checkpoint), 4c207e5 "R18: icon-id wire contract (folders/topics/status) on web+Android+iOS", 3babf1b "R19: zero-emoji mandate + native custom-UI overhaul", plus iOS CI fixes and R19-b test pins. Its vocabulary: src/lib/icon-ids.ts with FOLDER_ICON_IDS (folder/briefcase/game/heart/flame/target/music/brain), TOPIC_ICON_IDS (chat/palette/rocket/brain/confetti/wrench/pin/coffee), STATUS_ICON_IDS (flame/sparkles/target/coffee/headphones/moon/bulb/rocket/sleep/food/vacation), REACTION_IDS (heart/fire/laugh/wow/sad/celebrate/thumbsup), REACTION_DEFAULT heart.
+- DECISION: origin canon wins (CI-tested, mobile test-pinned). Local R18 commit 4b8c404 reset away; my unique residues were already covered by origin except none remained. Sticker picker on origin = REDESIGNED vector stamp system (stamp ids from icon-ids registry, tiles render STAMP_ICON_GLYPHS vectors, payload value is a stamp id, raw values never rendered) - satisfies the zero-emoji mandate while keeping feature parity.
+- VERIFICATION of adopted tree: emoji scan src/** + apps/android + apps/ios = 0 lines each (historical Room schema JSONs exempt); react route validates REACTION_IDS ("Unsupported reaction."); users route validates STATUS_ICON_IDS; no EMOJI_PICKER in composer.
+- BROWSER VERIFIED on adopted tree: DM open, message send via composer, action menu lists 7 vector reactions (Heart/Fire/Laugh/Wow/Sad/Celebrate/Thumbs up), Fire reaction -> chip renders mint VECTOR flame on the bubble (screenshot), vector hearts particle burst, clean composer (attach/photo/stamps/text/mic - no emoji popover).
+- Android version bump: apps/android/app/build.gradle.kts defaults 26 -> 27, 0.11.5-native -> 0.11.6-native (CI on v* tag builds signed APK + publishes release).
+- Sandbox note: dev DB was wiped externally mid-session (POST /api/maintenance/dispatch probes in logs); all golden-path flows re-verified from scratch on the canonical tree.
+
+Stage Summary:
+- main = origin R19-b state + version bump 27 / 0.11.6-native. Zero emoji lines in shipped code on all three platforms. v0.11.6-native tag push hands off to Android CI for the signed release APK.
